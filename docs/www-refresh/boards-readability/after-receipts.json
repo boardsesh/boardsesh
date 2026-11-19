@@ -31,61 +31,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -108,76 +76,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -200,136 +128,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -352,46 +208,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -414,46 +246,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -476,46 +284,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -538,46 +322,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -600,46 +360,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -662,46 +398,22 @@
             "text": "Spray wall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Your own wall photo",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Set up your spray wall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -745,61 +457,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -822,76 +502,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -914,136 +554,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1066,46 +634,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1128,46 +672,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1190,46 +710,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1252,46 +748,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1314,46 +786,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Find a wall with Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1376,46 +824,22 @@
             "text": "Spray wall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Your own wall photo",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Set up your spray wall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -1459,61 +883,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1536,76 +928,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1628,136 +980,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1780,46 +1060,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1842,46 +1098,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1904,46 +1136,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -1966,46 +1174,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2028,46 +1212,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2090,46 +1250,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Una foto de tu Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configura tu Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -2167,61 +1303,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2244,76 +1348,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2336,136 +1400,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2488,46 +1480,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2550,46 +1518,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2612,46 +1556,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2674,46 +1594,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2736,46 +1632,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Encuentra un rocódromo con Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2798,46 +1670,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Una foto de tu Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configura tu Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -2875,61 +1723,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -2952,76 +1768,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3044,136 +1820,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3196,46 +1900,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3258,46 +1938,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3320,46 +1976,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3382,46 +2014,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3444,46 +2052,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3506,46 +2090,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Une photo de votre Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configurer votre Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -3583,61 +2143,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3660,76 +2188,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3752,136 +2240,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3904,46 +2320,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -3966,46 +2358,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4028,46 +2396,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4090,46 +2434,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4152,46 +2472,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trouver une salle avec Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4214,46 +2510,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Une photo de votre Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configurer votre Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -4291,61 +2563,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4368,76 +2608,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4460,136 +2660,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4612,46 +2740,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4674,46 +2778,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4736,46 +2816,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4798,46 +2854,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4860,46 +2892,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -4922,46 +2930,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Ein Foto deiner Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Deine Spraywall einrichten",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -4999,61 +2983,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5076,76 +3028,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5168,136 +3080,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5320,46 +3160,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5382,46 +3198,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5444,46 +3236,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5506,46 +3274,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5568,46 +3312,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Finde eine Halle mit Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5630,46 +3350,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Ein Foto deiner Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Deine Spraywall einrichten",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -5707,61 +3403,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5784,76 +3448,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -5876,136 +3500,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6028,46 +3580,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6090,46 +3618,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6152,46 +3656,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6214,46 +3694,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6276,46 +3732,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6338,46 +3770,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Una foto della tua Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configura la tua Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -6415,61 +3823,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Kilter · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6492,76 +3868,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Tension · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6584,136 +3920,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con MoonBoard · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6736,46 +4000,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Decoy · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6798,46 +4038,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Touchstone · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6860,46 +4076,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Grasshopper · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6922,46 +4114,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con So iLL · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -6984,46 +4152,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Trova una palestra con Woods · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7046,46 +4190,22 @@
             "text": "Spraywall",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Una foto della tua Spraywall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Configura la tua Spraywall",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -7123,61 +4243,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Kilter 的岩馆 · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7200,76 +4288,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Tension 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7292,136 +4340,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 MoonBoard 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7444,46 +4420,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Decoy 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7506,46 +4458,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Touchstone 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7568,46 +4496,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Grasshopper 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7630,46 +4534,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 So iLL 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7692,46 +4572,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Woods 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7754,46 +4610,22 @@
             "text": "喷点墙",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "你自己的喷点墙照片",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "设置你的喷点墙",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
@@ -7831,61 +4663,29 @@
             "text": "Kilter",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Kilter Board Homewall",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Kilter 的岩馆 · 1",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -7908,76 +4708,36 @@
             "text": "Tension",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original Layout",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Mirror",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Tension Board 2 Spray",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Tension 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8000,136 +4760,64 @@
             "text": "MoonBoard",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2010",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2016",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2017",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "MoonBoard Masters 2019",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "Mini MoonBoard 2025",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 MoonBoard 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8152,46 +4840,22 @@
             "text": "Decoy",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Dungeon Trainer",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Decoy 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8214,46 +4878,22 @@
             "text": "Touchstone",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Winter 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Touchstone 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8276,46 +4916,22 @@
             "text": "Grasshopper",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Grasshopper 2020",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Grasshopper 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8338,46 +4954,22 @@
             "text": "So iLL",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Summer 2024",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 So iLL 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8400,46 +4992,22 @@
             "text": "Woods",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "Original",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "查找设有 Woods 的岩馆 · 0",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       },
@@ -8462,46 +5030,22 @@
             "text": "喷点墙",
             "ratio": 15.195723716808427,
             "unresolved": false,
-            "foreground": [
-              231,
-              226,
-              240
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
           },
           {
             "text": "你自己的喷点墙照片",
             "ratio": 8.152695336839507,
             "unresolved": false,
-            "foreground": [
-              172,
-              165,
-              189
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
           },
           {
             "text": "设置你的喷点墙",
             "ratio": 6.488667053928703,
             "unresolved": false,
-            "foreground": [
-              151,
-              132,
-              255
-            ],
-            "background": [
-              17,
-              10,
-              32
-            ]
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
           }
         ]
       }
