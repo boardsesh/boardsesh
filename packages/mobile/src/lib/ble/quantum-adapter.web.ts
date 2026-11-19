@@ -29,7 +29,7 @@ import {
 } from './quantum-transport';
 
 // Web Bluetooth has no MTU API. Quantum frames are capped to 227 bytes by the
-// protocol; Chromium performs the one acknowledged write or rejects it. Never
+// protocol; Chromium performs the selected characteristic write or rejects it. Never
 // hide that rejection by fragmenting the command.
 const WEB_QUANTUM_MAXIMUM_WRITE_BYTES = 509;
 const WEB_PHYSICAL_SCOPE = {};
@@ -60,7 +60,7 @@ type QuantumWebCharacteristics = {
 };
 
 export const QUANTUM_WEB_REQUEST_DEVICE_OPTIONS: WebRequestDeviceOptions = {
-  filters: [{ namePrefix: 'eWalls_' }, { namePrefix: 'QB_' }, { namePrefix: 'QBB_' }],
+  filters: [{ namePrefix: 'QB_' }, { namePrefix: 'QBB_' }],
   optionalServices: [QUANTUM_SERVICE_UUID, QUANTUM_LEGACY_SERVICE_UUID],
 };
 
@@ -180,8 +180,15 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
       const characteristics = await discoverQuantumWebCharacteristics(server, assertCurrentAttempt);
       assertCurrentAttempt();
       if (!characteristics) {
-        throw new Error('Quantum controller characteristics FFF1/FFF2/FFF4/FFF5 were not found');
+        throw new Error(
+          'Quantum binary control requires FFF1/FFF2/FFF4/FFF5; legacy JSON controllers without FFF5 are unsupported',
+        );
       }
+      const write = characteristics.write;
+      const supported = deviceName.startsWith('QB_')
+        ? write.properties?.write && typeof write.writeValueWithResponse === 'function'
+        : write.properties?.writeWithoutResponse && typeof write.writeValueWithoutResponse === 'function';
+      if (!supported) throw new Error('Quantum FFF2 does not support the selected controller write mode');
       const metadata = parseQuantumControllerMetadata(bytesFromView(await characteristics.metadata.readValue()));
       assertCurrentAttempt();
       if (!metadata || metadata.model.id !== selectedModelId) {
@@ -233,7 +240,7 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     return Promise.resolve();
   }
 
-  writeWithResponse(frame: Uint8Array): Promise<void> {
+  writeFrame(frame: Uint8Array): Promise<void> {
     if (frame.length === 0 || frame.length > this.maximumWriteBytes) {
       return Promise.reject(
         new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${this.maximumWriteBytes}`),
@@ -243,7 +250,8 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
       const write = this.characteristics?.write;
       if (!write) throw new Error('Quantum controller is not connected');
       if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) this.notificationInbox.markRosterRequest();
-      await write.writeValueWithResponse(frame.slice());
+      if (this.device?.name?.startsWith('QB_')) await write.writeValueWithResponse(frame.slice());
+      else await write.writeValueWithoutResponse(frame.slice());
     });
   }
 

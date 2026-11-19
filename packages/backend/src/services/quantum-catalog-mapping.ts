@@ -6,7 +6,7 @@ import type {
   QuantumModelRow,
   QuantumRouteLightRow,
   QuantumRouteRow,
-  ValidatedQuantumSnapshot,
+  QuantumCatalogRows,
 } from '@boardsesh/quantum-sync';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { getQuantumPlacementId } from '@boardsesh/board-constants/quantum';
@@ -31,7 +31,7 @@ export const QUANTUM_MAX_DIODES_PER_ACTIVATION = 92;
 const POSTGRES_INTEGER_MIN = -2_147_483_648;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
-const QUANTUM_ROLE_ROWS = [
+export const QUANTUM_ROLE_ROWS = [
   {
     boardType: QUANTUM_BOARD_TYPE,
     id: 12,
@@ -87,15 +87,15 @@ export type PreparedQuantumClimb = Readonly<{
   edgeRight: number;
   edgeBottom: number;
   edgeTop: number;
-  angle: number;
+  angle: number | null;
   framesCount: 1;
   framesPace: 0;
   frames: string;
   controllerRouteUuid: string;
   isDraft: false;
   isListed: boolean;
-  createdAt: string;
-  publishedAt: string;
+  createdAt: string | null;
+  publishedAt: string | null;
   synced: true;
   syncError: null;
   userId: null;
@@ -103,7 +103,7 @@ export type PreparedQuantumClimb = Readonly<{
   compatibleSizeIds: readonly number[];
   holdFingerprint: string;
   characteristics: readonly string[];
-  sourceMetadata: Readonly<{ grade: string; tags: readonly string[]; plays: number; updatedAt: number }>;
+  sourceMetadata: Readonly<Record<string, unknown>>;
 }>;
 
 export type PreparedQuantumStat = Readonly<{
@@ -112,8 +112,8 @@ export type PreparedQuantumStat = Readonly<{
   angle: number;
   displayDifficulty: number | null;
   difficultyAverage: number | null;
-  upstreamAscensionistCount: number;
-  ascensionistCount: number;
+  upstreamAscensionistCount: number | null;
+  ascensionistCount: number | null;
   upstreamQualityAverage: number | null;
   qualityAverage: number | null;
   qualityNormalized: true;
@@ -152,7 +152,7 @@ export type PreparedQuantumCatalog = Readonly<{
 }>;
 
 /**
- * Translate the signed source's grade-id array to Boardsesh's canonical grade
+ * Translate the source grade-id array to Boardsesh's canonical grade
  * ids. Unknown and malformed encodings stay null; the source's top id maps to
  * 34 and is deliberately clamped to Boardsesh's current maximum of 33.
  */
@@ -192,18 +192,16 @@ export function mapQuantumGrade(rawGrade: string): number | null {
 }
 
 export function prepareQuantumCatalog(
-  snapshot: Readonly<ValidatedQuantumSnapshot>,
+  { rows }: { rows: QuantumCatalogRows },
   importedAt: Date = new Date(),
 ): PreparedQuantumCatalog {
   const importedAtIso = importedAt.toISOString();
-  const modelsByCode = new Map(snapshot.rows.models.map((model) => [model.model, model]));
-  const routesByUuid = new Map(snapshot.rows.routes.map((route) => [route.uuid, route]));
-  const diodesByModelAndUuid = new Map(
-    snapshot.rows.diodes.map((diode) => [modelUuidKey(diode.model, diode.diodeUuid), diode]),
-  );
-  const lightsByRouteModel = groupRouteLights(snapshot.rows.routeLights);
+  const modelsByCode = new Map(rows.models.map((model) => [model.model, model]));
+  const routesByUuid = new Map(rows.routes.map((route) => [route.uuid, route]));
+  const diodesByModelAndUuid = new Map(rows.diodes.map((diode) => [modelUuidKey(diode.model, diode.diodeUuid), diode]));
+  const lightsByRouteModel = groupRouteLights(rows.routeLights);
 
-  const layouts = snapshot.rows.models.map((model) => ({
+  const layouts = rows.models.map((model) => ({
     boardType: QUANTUM_BOARD_TYPE,
     id: model.layoutId,
     productId: quantumProductId(model.layoutId),
@@ -214,7 +212,7 @@ export function prepareQuantumCatalog(
     password: null,
     createdAt: null,
   }));
-  const productSizes = snapshot.rows.models.map((model, position) => ({
+  const productSizes = rows.models.map((model, position) => ({
     boardType: QUANTUM_BOARD_TYPE,
     id: model.productSizeId,
     productId: quantumProductId(model.layoutId),
@@ -228,7 +226,7 @@ export function prepareQuantumCatalog(
     position,
     isListed: true,
   }));
-  const productSizeLayoutSets = snapshot.rows.models.map((model) => ({
+  const productSizeLayoutSets = rows.models.map((model) => ({
     boardType: QUANTUM_BOARD_TYPE,
     id: model.productSizeId,
     productSizeId: model.productSizeId,
@@ -237,7 +235,7 @@ export function prepareQuantumCatalog(
     imageFilename: null,
     isListed: true,
   }));
-  const holes = snapshot.rows.diodes.map((diode) => {
+  const holes = rows.diodes.map((diode) => {
     const model = requireModel(modelsByCode, diode.model);
     return {
       boardType: QUANTUM_BOARD_TYPE,
@@ -250,7 +248,7 @@ export function prepareQuantumCatalog(
       mirrorGroup: 0,
     };
   });
-  const placements = snapshot.rows.diodes.map((diode) => {
+  const placements = rows.diodes.map((diode) => {
     const model = requireModel(modelsByCode, diode.model);
     return {
       boardType: QUANTUM_BOARD_TYPE,
@@ -261,7 +259,7 @@ export function prepareQuantumCatalog(
       defaultPlacementRoleId: QUANTUM_DEFAULT_ROLE_ID,
     };
   });
-  const leds = snapshot.rows.diodes.map((diode) => {
+  const leds = rows.diodes.map((diode) => {
     const model = requireModel(modelsByCode, diode.model);
     return {
       boardType: QUANTUM_BOARD_TYPE,
@@ -278,7 +276,7 @@ export function prepareQuantumCatalog(
   const aliases = new Map<string, string>();
   const climbIndexByUuid = new Map<string, number>();
 
-  const routeModels = [...snapshot.rows.routeModels].sort((left, right) => left.appUuid.localeCompare(right.appUuid));
+  const routeModels = [...rows.routeModels].sort((left, right) => left.appUuid.localeCompare(right.appUuid));
   for (const routeModel of routeModels) {
     const model = requireModel(modelsByCode, routeModel.model);
     const route = requireRoute(routesByUuid, routeModel.routeUuid);
@@ -391,7 +389,7 @@ export function prepareQuantumCatalog(
   }
 
   return Object.freeze({
-    hardwareFingerprint: computeQuantumHardwareFingerprint(snapshot.rows.models, snapshot.rows.diodes),
+    hardwareFingerprint: computeQuantumHardwareFingerprint(rows.models, rows.diodes),
     grades: Object.freeze(
       BOULDER_GRADES.map((grade) => ({
         boardType: QUANTUM_BOARD_TYPE,
@@ -402,7 +400,7 @@ export function prepareQuantumCatalog(
       })),
     ),
     products: Object.freeze(
-      [...new Set(snapshot.rows.models.map((model) => quantumProductId(model.layoutId)))]
+      [...new Set(rows.models.map((model) => quantumProductId(model.layoutId)))]
         .sort((left, right) => left - right)
         .map((productId) => ({
           boardType: QUANTUM_BOARD_TYPE,
@@ -564,7 +562,7 @@ function holdStateForRoleId(roleId: 12 | 13 | 14): QuantumHoldState {
   return 'HAND';
 }
 
-function fingerprintFromHolds(holds: readonly PreparedQuantumHold[]): string {
+export function fingerprintFromHolds(holds: readonly PreparedQuantumHold[]): string {
   const tuples = holds
     .map((hold) => `${hold.holdId}:${hold.holdState}:${hold.frameNumber}`)
     .sort()

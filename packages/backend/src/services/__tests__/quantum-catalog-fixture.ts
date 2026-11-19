@@ -1,3 +1,8 @@
+import { QUANTUM_HARDWARE_FINGERPRINT } from '@boardsesh/board-constants/quantum';
+import { db, type Database } from '../../db/client';
+import { loadEwallsCatalogState } from '../ewalls-catalog-state';
+import { importPreparedEwallsCatalog } from '../quantum-catalog-import';
+import { prepareQuantumCatalog } from '../quantum-catalog-mapping';
 import type {
   QuantumDiodeRow,
   QuantumModelCode,
@@ -5,7 +10,7 @@ import type {
   QuantumRouteLightRow,
   QuantumRouteModelRow,
   QuantumRouteRow,
-  ValidatedQuantumSnapshot,
+  QuantumCatalogRows,
 } from '@boardsesh/quantum-sync';
 
 const MODEL_ROWS: readonly QuantumModelRow[] = [
@@ -30,8 +35,7 @@ const DIODE_ROWS: readonly QuantumDiodeRow[] = [
 ];
 
 export type QuantumFixtureOptions = Readonly<{
-  eventId?: string;
-  manifestCreatedAt?: number;
+  checkpoint?: string;
   appUuid?: string;
   routeUuid?: string;
   routeName?: string;
@@ -43,7 +47,10 @@ export type QuantumFixtureOptions = Readonly<{
   steps?: readonly number[];
 }>;
 
-export function quantumCatalogFixture(options: QuantumFixtureOptions = {}): ValidatedQuantumSnapshot {
+export function quantumCatalogFixture(options: QuantumFixtureOptions = {}): {
+  rows: QuantumCatalogRows;
+  checkpoint: string;
+} {
   const routeUuid = options.routeUuid ?? '11111111-1111-4111-8111-111111111111';
   const appUuid = options.appUuid ?? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const selectedModel = options.model ?? 'xl';
@@ -79,32 +86,13 @@ export function quantumCatalogFixture(options: QuantumFixtureOptions = {}): Vali
   const diodes = options.diodes ?? DIODE_ROWS;
 
   return Object.freeze({
-    eventId: options.eventId ?? 'f'.repeat(64),
-    eventPubkey: '7'.repeat(64),
-    eventCreatedAt: options.manifestCreatedAt ?? 1_800_000_000,
-    dTag: 'cruxcoach/quantum-db',
-    board: 'quantum',
-    source: 'ewalls-authorized-snapshot',
-    manifestCreatedAt: options.manifestCreatedAt ?? 1_800_000_000,
-    chunkName: 'quantum_snapshot_v1',
-    chunkSha256: 'c'.repeat(64),
-    compressedSize: 1_024,
-    decompressedSha256: 'd'.repeat(64),
-    decompressedSize: 4_096,
-    selectedMirrorUrl: 'https://mirror.example/quantum.zst',
+    checkpoint: options.checkpoint ?? 'first',
     rows: Object.freeze({
       models: MODEL_ROWS,
       diodes,
       routes: Object.freeze([route]),
       routeModels: Object.freeze([routeModel]),
       routeLights: Object.freeze(routeLights),
-    }),
-    summary: Object.freeze({
-      models: MODEL_ROWS.length,
-      diodes: diodes.length,
-      routes: 1,
-      routeModels: 1,
-      routeLights: routeLights.length,
     }),
   });
 }
@@ -113,7 +101,10 @@ export function quantumFixtureDiodes(): readonly QuantumDiodeRow[] {
   return DIODE_ROWS;
 }
 
-export function quantumSharedRouteFixture(options: QuantumFixtureOptions = {}): ValidatedQuantumSnapshot {
+export function quantumSharedRouteFixture(options: QuantumFixtureOptions = {}): {
+  rows: QuantumCatalogRows;
+  checkpoint: string;
+} {
   const snapshot = quantumCatalogFixture({ ...options, steps: [1] });
   const routeUuid = snapshot.rows.routes[0]!.uuid;
   const light = snapshot.rows.routeLights[0]!;
@@ -132,7 +123,6 @@ export function quantumSharedRouteFixture(options: QuantumFixtureOptions = {}): 
         { ...light, model: 'm' },
       ],
     },
-    summary: { ...snapshot.summary, routeModels: 3, routeLights: 3 },
   };
 }
 
@@ -179,4 +169,36 @@ function diode(
     y,
     z: 0,
   };
+}
+
+export async function importFixture(
+  fixture: ReturnType<typeof quantumCatalogFixture>,
+  options: { database?: Database; now?: () => Date } = {},
+) {
+  const scope = { board: '', forcedType: 'big' };
+  const database = options.database ?? db;
+  const prior = await loadEwallsCatalogState(database, scope, 'catalogue-service');
+  const catalog = prepareQuantumCatalog(fixture, options.now?.());
+  return importPreparedEwallsCatalog(
+    {
+      batch: {
+        kind: 'bootstrap',
+        scope,
+        checkpoint: fixture.checkpoint,
+        baseCheckpoint: null,
+        routes: { upsert: fixture.rows.routes.map((route) => ({ id: route.uuid })), deleted: [] },
+        diodes: null,
+        account: {
+          ascents: { upsert: [], deleted: [] },
+          favorites: { upsert: [], deleted: [] },
+          projects: { upsert: [], deleted: [] },
+        },
+      },
+      catalog: { ...catalog, hardwareFingerprint: QUANTUM_HARDWARE_FINGERPRINT },
+      diodes: [{ id: 'fixture-diode', autocadId: 1 }],
+      upstreamAccountId: 'catalogue-service',
+      expectedCheckpoint: prior?.checkpoint ?? null,
+    },
+    options,
+  );
 }

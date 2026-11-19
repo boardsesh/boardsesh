@@ -44,6 +44,7 @@ describe('fixed Quantum source and generated map', () => {
       const actual = loadQuantumGeometryTables(reordered);
       expect(actual.hardwareFingerprint).toBe(baseline.hardwareFingerprint);
       expect(actual.geometrySha256).toBe(baseline.geometrySha256);
+      expect(actual.sourceDiodes).toEqual(baseline.sourceDiodes);
       expect(actual.sourceSha256).not.toBe(baseline.sourceSha256);
     } finally {
       rmSync(directory, { recursive: true, force: true });

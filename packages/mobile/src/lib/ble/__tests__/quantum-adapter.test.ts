@@ -58,6 +58,7 @@ function rosterFrame(): Uint8Array {
 function setupController(
   options: {
     deviceId?: string;
+    deviceName?: string;
     metadataBytes?: Uint8Array;
     hangMetadataRead?: boolean;
     hangWrite?: boolean;
@@ -87,7 +88,11 @@ function setupController(
       ? new Promise<{ value: string }>(() => {})
       : Promise.resolve({ value: base64(options.metadataBytes ?? metadata(1, 12, 12)) }),
   );
+  const writeWithoutResponse = vi.fn(async () => undefined);
   const characteristic = (uuid: string) => ({
+    isWritableWithResponse: true,
+    isWritableWithoutResponse: true,
+    writeWithoutResponse,
     uuid,
     get isNotifying() {
       return uuid === QUANTUM_NOTIFY_CHARACTERISTIC_UUID && notificationReady;
@@ -119,7 +124,7 @@ function setupController(
   discovered.discoverAllServicesAndCharacteristics.mockImplementation(() =>
     options.hangServiceDiscovery ? new Promise<typeof discovered>(() => {}) : Promise.resolve(discovered),
   );
-  const requestMTU = vi.fn(() =>
+  const requestMTU = vi.fn((_requestedMtu: number, _transactionId: string) =>
     options.hangMtuRequest ? new Promise<typeof discovered>(() => {}) : Promise.resolve(discovered),
   );
   const connectedDevice = {
@@ -135,7 +140,7 @@ function setupController(
   manager.startDeviceScan.mockImplementation(
     (_services: unknown, _options: unknown, callback: (error: null, device: unknown) => void) => {
       callback(null, { id: 'decoy', localName: 'QB_not-a-serial', rssi: -10 });
-      callback(null, { id: deviceId, localName: 'QB_AABBCCDDEEFF', rssi: -35 });
+      callback(null, { id: deviceId, localName: options.deviceName ?? 'QB_AABBCCDDEEFF', rssi: -35 });
     },
   );
 
@@ -146,6 +151,7 @@ function setupController(
   };
   return {
     adapter: new RNQuantumBluetoothTransport(picker),
+    writeWithoutResponse,
     requestMTU,
     writeWithResponse,
     stateRead,
@@ -195,7 +201,7 @@ describe('RNQuantumBluetoothTransport', () => {
     expect(controller.requestMTU).toHaveBeenCalledWith(512, expect.stringMatching(/^quantum-MTU-request-/));
 
     const frame = Uint8Array.from({ length: 227 }, (_, index) => index & 0xff);
-    await controller.adapter.writeWithResponse(frame);
+    await controller.adapter.writeFrame(frame);
     expect(controller.writeWithResponse).toHaveBeenCalledOnce();
     expect(controller.writeWithResponse).toHaveBeenCalledWith(base64(frame), expect.any(String));
   });
@@ -236,15 +242,14 @@ describe('RNQuantumBluetoothTransport', () => {
     }
   });
 
-  it('reassembles FFF1 notifications newer than the explicit roster request', async () => {
+  it('receives complete FFF1 values newer than the explicit roster request', async () => {
     const controller = setupController();
     await controller.adapter.requestAndConnect('m');
     const frame = rosterFrame();
 
-    await controller.adapter.writeWithResponse(encodeQuantumRosterRequest());
+    await controller.adapter.writeFrame(encodeQuantumRosterRequest());
     const pending = controller.adapter.waitForNotification(1_000);
-    controller.emitNotification(frame.slice(0, 8));
-    controller.emitNotification(frame.slice(8));
+    controller.emitNotification(frame);
 
     await expect(pending).resolves.toEqual(frame);
   });
@@ -305,7 +310,7 @@ describe('RNQuantumBluetoothTransport', () => {
       expect(manager.cancelDeviceConnection).toHaveBeenCalledTimes(disconnects);
       expect(manager.stopDeviceScan).toHaveBeenCalledTimes(scanStops);
       expect(manager.cancelTransaction).not.toHaveBeenCalledWith(secondTransactionId);
-      await second.adapter.writeWithResponse(encodeQuantumRosterRequest());
+      await second.adapter.writeFrame(encodeQuantumRosterRequest());
       expect(second.writeWithResponse).toHaveBeenCalledOnce();
     },
   );
@@ -405,11 +410,11 @@ describe('RNQuantumBluetoothTransport', () => {
     const second = setupController();
     await second.adapter.requestAndConnect('m');
     manager.cancelDeviceConnection.mockClear();
-    await expect(first.adapter.writeWithResponse(encodeQuantumRosterRequest())).rejects.toThrow('not connected');
+    await expect(first.adapter.writeFrame(encodeQuantumRosterRequest())).rejects.toThrow('not connected');
     expect(first.writeWithResponse).not.toHaveBeenCalled();
     await first.adapter.disconnect();
     expect(manager.cancelDeviceConnection).not.toHaveBeenCalled();
-    await second.adapter.writeWithResponse(encodeQuantumRosterRequest());
+    await second.adapter.writeFrame(encodeQuantumRosterRequest());
     expect(second.writeWithResponse).toHaveBeenCalledOnce();
   });
 
@@ -432,10 +437,22 @@ describe('RNQuantumBluetoothTransport', () => {
     await disconnecting;
     await secondConnect;
     expect(manager.connectToDevice).toHaveBeenCalledTimes(2);
-    await second.adapter.writeWithResponse(encodeQuantumRosterRequest());
+    await second.adapter.writeFrame(encodeQuantumRosterRequest());
     expect(second.writeWithResponse).toHaveBeenCalledOnce();
   });
 
+  it('tries smaller Android MTUs and uses a single unacknowledged write on binary QBB', async () => {
+    const controller = setupController({ deviceName: 'QBB_AABBCCDDEEFF', negotiatedMtu: 185 });
+    controller.requestMTU
+      .mockRejectedValueOnce(new Error('512 unavailable'))
+      .mockRejectedValueOnce(new Error('247 unavailable'));
+    await controller.adapter.requestAndConnect('m');
+    expect(controller.requestMTU.mock.calls.map(([requestedMtu]) => requestedMtu)).toEqual([512, 247, 185]);
+    expect(controller.adapter.maximumWriteBytes).toBe(182);
+    await controller.adapter.writeFrame(encodeQuantumRosterRequest());
+    expect(controller.writeWithoutResponse).toHaveBeenCalledOnce();
+    expect(controller.writeWithResponse).not.toHaveBeenCalled();
+  });
   it('probes the current service before the legacy fallback', async () => {
     const controller = setupController();
     await controller.adapter.requestAndConnect('m');
@@ -452,11 +469,11 @@ describe('RNQuantumBluetoothTransport', () => {
     await controller.adapter.requestAndConnect('m');
 
     const maximumQuantumFrame = Uint8Array.from({ length: 227 }, (_, index) => index & 0xff);
-    await controller.adapter.writeWithResponse(maximumQuantumFrame);
+    await controller.adapter.writeFrame(maximumQuantumFrame);
 
     expect(controller.writeWithResponse).toHaveBeenCalledOnce();
     expect(controller.writeWithResponse).toHaveBeenCalledWith(base64(maximumQuantumFrame), expect.any(String));
-    await expect(controller.adapter.writeWithResponse(new Uint8Array(513))).rejects.toThrow('allows 512');
+    await expect(controller.adapter.writeFrame(new Uint8Array(513))).rejects.toThrow('allows 512');
   });
 
   it('cancels a hanging Android MTU request and retires the setup connection', async () => {
@@ -547,14 +564,14 @@ describe('RNQuantumBluetoothTransport', () => {
 
     vi.useFakeTimers();
     try {
-      const write = controller.adapter.writeWithResponse(encodeQuantumRosterRequest());
+      const write = controller.adapter.writeFrame(encodeQuantumRosterRequest());
       const rejectedWrite = expect(write).rejects.toThrow('acknowledged write timed out');
       await vi.advanceTimersByTimeAsync(5_000);
 
       await rejectedWrite;
       expect(manager.cancelTransaction).toHaveBeenCalledWith(expect.stringMatching(/^quantum-acknowledged-write-/));
       expect(manager.cancelDeviceConnection).toHaveBeenCalledWith('quantum-device');
-      expect(disconnected).toHaveBeenCalledWith({ description: 'Quantum acknowledged write timed out' });
+      expect(disconnected).toHaveBeenCalledWith({ description: 'Quantum controller write timed out' });
       await expect(controller.adapter.readState()).rejects.toThrow('not connected');
     } finally {
       vi.useRealTimers();
@@ -564,7 +581,7 @@ describe('RNQuantumBluetoothTransport', () => {
   it('cancels a timed-out FFF4 read and keeps only the FFF1 notification fallback', async () => {
     const controller = setupController({ hangStateRead: true });
     await controller.adapter.requestAndConnect('m');
-    await controller.adapter.writeWithResponse(encodeQuantumRosterRequest());
+    await controller.adapter.writeFrame(encodeQuantumRosterRequest());
 
     vi.useFakeTimers();
     try {
@@ -587,7 +604,7 @@ describe('RNQuantumBluetoothTransport', () => {
   it('retires the link when neither FFF4 nor FFF1 confirms a roster', async () => {
     const controller = setupController({ hangStateRead: true });
     await controller.adapter.requestAndConnect('m');
-    await controller.adapter.writeWithResponse(encodeQuantumRosterRequest());
+    await controller.adapter.writeFrame(encodeQuantumRosterRequest());
     const disconnected = vi.fn();
     controller.adapter.onDisconnect(disconnected);
 

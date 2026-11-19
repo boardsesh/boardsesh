@@ -29,12 +29,12 @@ function metadataView(): DataView {
   return new DataView(bytes.buffer);
 }
 
-function setupDevice(name = 'eWalls_gym_AABBCCDDEEFF', id = 'web-quantum') {
+function setupDevice(name = 'QB_AABBCCDDEEFF', id = 'web-quantum') {
   const writeValueWithResponse = vi.fn(async () => undefined);
   const listeners = new Map<string, (event: { target?: { value?: DataView } }) => void>();
   const characteristic = (uuid: string) => ({
     uuid,
-    properties: { writeWithoutResponse: false },
+    properties: { write: true, writeWithoutResponse: true },
     writeValueWithResponse,
     writeValueWithoutResponse: vi.fn(async () => undefined),
     readValue: vi.fn(async () =>
@@ -101,7 +101,7 @@ describe('WebQuantumBluetoothTransport', () => {
 
   it('offers only exact Quantum name prefixes and both service generations', () => {
     expect(QUANTUM_WEB_REQUEST_DEVICE_OPTIONS).toEqual({
-      filters: [{ namePrefix: 'eWalls_' }, { namePrefix: 'QB_' }, { namePrefix: 'QBB_' }],
+      filters: [{ namePrefix: 'QB_' }, { namePrefix: 'QBB_' }],
       optionalServices: [QUANTUM_SERVICE_UUID, QUANTUM_LEGACY_SERVICE_UUID],
     });
   });
@@ -119,7 +119,7 @@ describe('WebQuantumBluetoothTransport', () => {
     expect(connection.serial).toBe('AABBCCDDEEFF');
 
     const frame = Uint8Array.from({ length: 227 }, (_, index) => index & 0xff);
-    await transport.writeWithResponse(frame);
+    await transport.writeFrame(frame);
     expect(controller.writeValueWithResponse).toHaveBeenCalledOnce();
     expect(controller.writeValueWithResponse).toHaveBeenCalledWith(frame);
     expect(
@@ -127,6 +127,26 @@ describe('WebQuantumBluetoothTransport', () => {
     ).toHaveBeenCalledOnce();
   });
 
+  it('uses the advertised without-response mode for binary QBB', async () => {
+    const controller = setupDevice('QBB_AABBCCDDEEFF');
+    const transport = new WebQuantumBluetoothTransport();
+    await transport.requestAndConnect('l');
+    await transport.writeFrame(new Uint8Array([1, 0x47]));
+    expect(
+      controller.characteristics.get(QUANTUM_WRITE_CHARACTERISTIC_UUID)?.writeValueWithoutResponse,
+    ).toHaveBeenCalledOnce();
+    expect(controller.writeValueWithResponse).not.toHaveBeenCalled();
+  });
+  it('rejects legacy JSON and refuses unsupported characteristic write modes', async () => {
+    const legacy = setupDevice();
+    legacy.characteristics.delete(QUANTUM_METADATA_CHARACTERISTIC_UUID);
+    await expect(new WebQuantumBluetoothTransport().requestAndConnect('l')).rejects.toThrow('legacy JSON');
+    const binary = setupDevice('QBB_AABBCCDDEEFF');
+    const write = binary.characteristics.get(QUANTUM_WRITE_CHARACTERISTIC_UUID)!;
+    write.properties.writeWithoutResponse = false;
+    await expect(new WebQuantumBluetoothTransport().requestAndConnect('l')).rejects.toThrow('write mode');
+    expect(binary.writeValueWithResponse).not.toHaveBeenCalled();
+  });
   it('rejects a prefix match without the final 12-hex serial', async () => {
     setupDevice('QB_not-a-controller');
     const transport = new WebQuantumBluetoothTransport();
@@ -181,7 +201,7 @@ describe('WebQuantumBluetoothTransport', () => {
       await firstRejected;
       expect(shared.device.gatt.disconnect).toHaveBeenCalledTimes(disconnects);
       expect(shared.device.gatt.connected).toBe(true);
-      await second.writeWithResponse(new Uint8Array([1, 0x47]));
+      await second.writeFrame(new Uint8Array([1, 0x47]));
       expect(shared.writeValueWithResponse).toHaveBeenCalledOnce();
     },
   );
@@ -218,11 +238,11 @@ describe('WebQuantumBluetoothTransport', () => {
     const second = new WebQuantumBluetoothTransport();
     await first.requestAndConnect('l');
     await second.requestAndConnect('l');
-    await expect(first.writeWithResponse(new Uint8Array([1, 0x47]))).rejects.toThrow('not connected');
+    await expect(first.writeFrame(new Uint8Array([1, 0x47]))).rejects.toThrow('not connected');
     expect(shared.writeValueWithResponse).not.toHaveBeenCalled();
     await first.disconnect();
     expect(shared.device.gatt.disconnect).not.toHaveBeenCalled();
-    await second.writeWithResponse(new Uint8Array([1, 0x47]));
+    await second.writeFrame(new Uint8Array([1, 0x47]));
     expect(shared.writeValueWithResponse).toHaveBeenCalledOnce();
     expect(shared.device.gatt.connected).toBe(true);
   });

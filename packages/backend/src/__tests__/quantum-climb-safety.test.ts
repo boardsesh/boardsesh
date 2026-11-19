@@ -9,20 +9,8 @@ import { boardPresenceQueries } from '../graphql/resolvers/board-presence/querie
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { pubsub } from '../pubsub';
 import { roomManager } from '../services/room-manager';
-import { importValidatedQuantumSnapshot as importSnapshot } from '../services/quantum-catalog-import';
-import { quantumCanonicalClimbUuid, computeQuantumHardwareFingerprint } from '../services/quantum-catalog-mapping';
-import { quantumCatalogFixture } from '../services/__tests__/quantum-catalog-fixture';
-
-function importValidatedQuantumSnapshot(...args: Parameters<typeof importSnapshot>) {
-  const [snapshot, signal, options] = args;
-  return importSnapshot(snapshot, signal, {
-    ...options,
-    expectedHardwareFingerprint: computeQuantumHardwareFingerprint(
-      quantumCatalogFixture().rows.models,
-      quantumCatalogFixture().rows.diodes,
-    ),
-  });
-}
+import { quantumCanonicalClimbUuid } from '../services/quantum-catalog-mapping';
+import { importFixture, quantumCatalogFixture } from '../services/__tests__/quantum-catalog-fixture';
 
 const OWNER = 'quantum-safety-owner';
 const VIEWER = 'quantum-safety-viewer';
@@ -40,7 +28,7 @@ beforeAll(async () => {
       { id: VIEWER, name: 'Quantum viewer', email: 'quantum-safety-viewer@example.com' },
     ])
     .onConflictDoNothing();
-  await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+  await importFixture(quantumCatalogFixture());
   // Other models enclose the authored holds, but use different physical diodes.
   await db
     .update(schema.boardProductSizes)
