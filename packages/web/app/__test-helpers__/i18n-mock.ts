@@ -37,6 +37,7 @@ import enFeed from '@boardsesh/i18n/locales/en-US/feed.json';
 import enGyms from '@boardsesh/i18n/locales/en-US/gyms.json';
 import enKiosk from '@boardsesh/i18n/locales/en-US/kiosk.json';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
+import enWebsite from '@boardsesh/i18n/locales/en-US/website.json';
 import enNotifications from '@boardsesh/i18n/locales/en-US/notifications.json';
 import enOauth from '@boardsesh/i18n/locales/en-US/oauth.json';
 import enPlaylists from '@boardsesh/i18n/locales/en-US/playlists.json';
@@ -60,6 +61,7 @@ const CATALOGS: Record<string, unknown> = {
   gyms: enGyms,
   kiosk: enKiosk,
   marketing: enMarketing,
+  website: enWebsite,
   notifications: enNotifications,
   oauth: enOauth,
   playlists: enPlaylists,

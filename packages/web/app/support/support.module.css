@@ -2,7 +2,7 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding: var(--spacing-12) var(--spacing-4);
+  padding: var(--spacing-12) 0;
 }
 
 .hero::before {
@@ -48,7 +48,7 @@
 .heroActions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--spacing-3);
   margin-top: var(--spacing-5);

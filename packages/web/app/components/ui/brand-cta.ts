@@ -35,12 +35,14 @@ export type BrandCtaOptions = {
  * `medium` pins `minHeight: 44` because MUI's `sizeMedium` is 40px, under the
  * 44px target the rest of the site holds itself to. `small` lives in the header,
  * where `marketing-header.module.css` already floors every control at 44px, and
- * `large` is 48px from MUI — so medium is the only step that needs it said.
+ * `large` explicitly floors the target at 48px because callers may leave MUI's
+ * size at its 40px medium default.
  */
 const SIZE_SX = {
   small: { px: 2, flexShrink: 0, whiteSpace: 'nowrap' },
   medium: { px: 3, minHeight: 44 },
   large: {
+    minHeight: 48,
     px: 4,
     py: 1.5,
     fontSize: themeTokens.typography.fontSize.lg,

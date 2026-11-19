@@ -241,6 +241,8 @@ export {
   importPathChosen,
   spraywallPathClicked,
   navLinkClicked,
+  gymClaimPathClicked,
+  partnerContactClicked,
   type WebsiteJourneyPlacement,
   type WebsiteCompatibilityBoard,
   type WebsiteImportPath,

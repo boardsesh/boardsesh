@@ -1,0 +1,83 @@
+{
+  "sources": [
+    {
+      "phase": "before",
+      "source": "d09aefa25f943464e0a019247cc265db872437cc"
+    },
+    {
+      "phase": "after",
+      "source": "50d1211593194c3a1e076f08742ff49df6637583"
+    }
+  ],
+  "fixture": {
+    "cx": 95,
+    "cy": 190,
+    "r": 8
+  },
+  "results": [
+    {
+      "phase": "before",
+      "mirrored": false,
+      "transform": "translate(-85.4%, -90.2%)",
+      "cssParses": true,
+      "computedTransform": "matrix(1, 0, 0, 1, -1029.47, -2174.67)",
+      "centreInside": true,
+      "centre": {
+        "x": 115.7249755859375,
+        "y": 123.19384765625
+      },
+      "slot": {
+        "width": 176,
+        "height": 246.390625
+      }
+    },
+    {
+      "phase": "after",
+      "mirrored": false,
+      "transform": "translate(-85.4%, -90.2%)",
+      "cssParses": true,
+      "computedTransform": "matrix(1, 0, 0, 1, -1029.47, -2174.67)",
+      "centreInside": true,
+      "centre": {
+        "x": 115.7249755859375,
+        "y": 123.19384765625
+      },
+      "slot": {
+        "width": 176,
+        "height": 246.390625
+      }
+    },
+    {
+      "phase": "before",
+      "mirrored": true,
+      "transform": "translate(--2.7755575615628914e-15%, -90.2%)",
+      "cssParses": false,
+      "computedTransform": "none",
+      "centreInside": false,
+      "centre": {
+        "x": 60.2734375,
+        "y": 2297.859375
+      },
+      "slot": {
+        "width": 176,
+        "height": 246.390625
+      }
+    },
+    {
+      "phase": "after",
+      "mirrored": true,
+      "transform": "translate(-0%, -90.2%)",
+      "cssParses": true,
+      "computedTransform": "matrix(1, 0, 0, 1, 0, -2174.67)",
+      "centreInside": true,
+      "centre": {
+        "x": 60.2734375,
+        "y": 123.19384765625
+      },
+      "slot": {
+        "width": 176,
+        "height": 246.390625
+      }
+    }
+  ]
+}

@@ -3,6 +3,11 @@
 import { navLinkClicked, webAppOpened, type WebsiteNavTarget } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
 import React, { useCallback, useState } from 'react';
+import { useInstallPlatform } from '@/app/hooks/use-install-platform';
+import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { resolveHeroInstall } from '@/app/lib/hero-install';
+import { buildStoreUrl } from '@/app/lib/store-links';
+import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
@@ -27,14 +32,14 @@ import { useStatsFilterBridge } from '@/app/components/stats-filter-bridge/stats
 import { useProfileHeaderShare } from '@/app/components/profile-header-bridge/profile-header-bridge-context';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import { brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { APP_URL } from '@/app/lib/app-origin';
 import BrandLockup from './brand-lockup';
 import styles from './marketing-header.module.css';
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
 // off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
-const HEADER_START_CLIMBING_SX = brandCtaSx({ size: 'small' });
+const HEADER_START_CLIMBING_SX = brandCtaOutlinedSx({ size: 'small' });
 
 const BRAND_SX = {
   flexShrink: 0,
@@ -178,6 +183,10 @@ function getProfileHeaderConfig(pathname: string, t: (key: string) => string): P
  */
 export default function MarketingHeader() {
   const { t } = useTranslation('common');
+  const { platform, nativeStore } = useInstallPlatform();
+  const inboundCampaign = useInboundCampaign();
+  const headerInstall = resolveHeroInstall(platform, nativeStore);
+  const headerStore = headerInstall.stores[0];
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
   const [navMenuAnchor, setNavMenuAnchor] = useState<HTMLElement | null>(null);
@@ -207,6 +216,27 @@ export default function MarketingHeader() {
     });
   }, [profileHeaderConfig, profileHeaderShare.displayName, profileHeaderShare.isActive, showMessage, t]);
 
+  const phoneInstallAction = (
+    <Button
+      className={styles.phoneInstall}
+      href={buildStoreUrl(headerStore, { placement: 'header', inbound: inboundCampaign })}
+      target="_blank"
+      rel="noopener noreferrer"
+      variant="outlined"
+      sx={HEADER_START_CLIMBING_SX}
+      onClick={() =>
+        trackAppInstallClick({
+          platform: headerStore,
+          source: headerStore === 'ios' ? 'app-store' : 'google-play',
+          placement: 'header',
+          mode: headerInstall.mode,
+        })
+      }
+    >
+      {t('header.getApp')}
+    </Button>
+  );
+
   const brandLink = (
     <Button
       component={LocaleLink}
@@ -220,20 +250,14 @@ export default function MarketingHeader() {
     </Button>
   );
 
-  // The four destinations www still owns. `/boards` is deliberately absent —
-  // the route does not exist, and the climbing UI it would have pointed at
-  // moved to the app in W-16.
   const navLinks: { href: WebsiteNavTarget; label: string }[] = [
+    { href: '/boards', label: t('header.nav.boards') },
     { href: '/gyms', label: t('header.nav.gyms') },
+    { href: '/spraywalls', label: t('header.nav.spray') },
     { href: '/playlists', label: t('header.nav.playlists') },
-    { href: '/about', label: t('header.nav.about') },
     { href: '/help', label: t('header.nav.help') },
   ];
 
-  // Both treatments render the same four anchors. The inline row is always in
-  // the DOM (CSS hides it below 1100px rather than unmounting it), so a crawler
-  // reads the links on every page regardless of viewport — the menu below is a
-  // touch affordance, not the only copy of them.
   const primaryNav = (
     <>
       <Box component="nav" aria-label={t('header.navLabel')} className={styles.nav}>
@@ -268,6 +292,28 @@ export default function MarketingHeader() {
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         >
+          {!session?.user?.id && (
+            <MenuItem component={LocaleLink} href="/auth/login" onClick={() => setNavMenuAnchor(null)}>
+              {t('header.signIn')}
+            </MenuItem>
+          )}
+          {session?.user?.id && (
+            <MenuItem
+              component={LocaleLink}
+              href={`/profile/${session.user.id}`}
+              onClick={() => {
+                trackWebsiteJourneyEvent(navLinkClicked('header-menu', 'profile'));
+                setNavMenuAnchor(null);
+              }}
+            >
+              {t('ariaLabels.yourProfile')}
+            </MenuItem>
+          )}
+          {session?.user?.id && (
+            <MenuItem component={LocaleLink} href="/settings" onClick={() => setNavMenuAnchor(null)}>
+              {t('ariaLabels.settings')}
+            </MenuItem>
+          )}
           {navLinks.map(({ href, label }) => (
             <MenuItem
               key={href}
@@ -391,6 +437,7 @@ export default function MarketingHeader() {
       <header className={styles.header} data-testid="marketing-header">
         {brandLink}
         <Box sx={{ flex: 1 }} />
+        {phoneInstallAction}
       </header>
     );
   }
@@ -400,13 +447,15 @@ export default function MarketingHeader() {
       {brandLink}
       {primaryNav}
       <Box sx={{ flex: 1 }} />
-      {accountAction}
+      <Box className={styles.accountSlot}>{accountAction}</Box>
+      {phoneInstallAction}
       <Box className={styles.desktopAppLink}>
         <StartClimbingButton
           label={t('header.startClimbing')}
           ariaLabel={t('ariaLabels.startClimbing')}
           size="small"
           placement="header"
+          variant="outlined"
           sx={HEADER_START_CLIMBING_SX}
         />
       </Box>

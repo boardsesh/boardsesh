@@ -1,0 +1,15 @@
+{
+  "applicationSource": "f642c2e8a8755c4bb10ba33dd9261b14829cee79",
+  "browser": "Chromium",
+  "baseURL": "https://localhost:3000",
+  "conditions": "Reduced motion; explicit declined-consent cookie; development-only controls hidden where screenshots are captured.",
+  "scope": "Twenty public phone layout/journey cases and two phone/desktop real-pointer video cases.",
+  "stats": {
+    "startTime": "2026-11-19T07:19:47.612Z",
+    "duration": 47012.797000000006,
+    "expected": 22,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

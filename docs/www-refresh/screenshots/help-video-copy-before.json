@@ -1,0 +1,90 @@
+[
+  {
+    "locale": "en-US",
+    "path": "/help/finding-climbs",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 7,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "en-US",
+    "path": "/help/board-and-bluetooth",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 2,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "en-US",
+    "path": "/help/logbook",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 1,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "en-US",
+    "path": "/help/spray-walls",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 4,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "es",
+    "path": "/es/help/finding-climbs",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 7,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "es",
+    "path": "/es/help/board-and-bluetooth",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 2,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "es",
+    "path": "/es/help/logbook",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 1,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "locale": "es",
+    "path": "/es/help/spray-walls",
+    "status": 200,
+    "rawKeys": true,
+    "hints": false,
+    "fallbacks": false,
+    "videos": 4,
+    "overflow": false,
+    "errors": []
+  }
+]

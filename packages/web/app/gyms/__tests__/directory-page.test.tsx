@@ -63,8 +63,8 @@ describe('store button (#6027)', () => {
 
     expect(serialised).toContain('Get the app');
     expect(serialised).toContain("Light up your gym's boards from your phone and log every send.");
-    expect(serialised).toContain('"ios":"Install from App Store"');
-    expect(serialised).toContain('"android":"Get it on Google Play"');
+    expect(serialised).toContain('"ios":"App Store"');
+    expect(serialised).toContain('"android":"Google Play"');
   });
 
   it('stays on an empty result page, where the search failed but the app still works', async () => {

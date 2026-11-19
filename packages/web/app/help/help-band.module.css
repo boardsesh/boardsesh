@@ -19,9 +19,9 @@
 }
 
 .inner {
-  max-width: 1136px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 96px var(--spacing-6);
+  padding: 96px var(--page-gutter);
 }
 
 .continues .inner {
@@ -161,7 +161,7 @@ h3.title.title {
 
 @media (max-width: 900px) {
   .inner {
-    padding: 56px var(--spacing-4);
+    padding: 56px var(--page-gutter);
   }
 
   .withMedia,
@@ -218,5 +218,11 @@ h3.title.title {
   .body p,
   .body li {
     font-size: var(--font-size-base);
+  }
+}
+
+@media (max-width: 359px) {
+  .inner {
+    padding-inline: var(--spacing-4);
   }
 }

@@ -99,7 +99,7 @@ describe('HomeGymSearch', () => {
   it('states the live catalogue size in the intro', async () => {
     await renderSection();
 
-    expect(screen.getByText(/4,740 gyms, club walls and garages already have a board listed/)).toBeTruthy();
+    expect(screen.getByText(/4,740 gyms, club walls and home walls are listed in the board directory/)).toBeTruthy();
   });
 
   it('still renders the heading and the directory link when the counts fail', async () => {

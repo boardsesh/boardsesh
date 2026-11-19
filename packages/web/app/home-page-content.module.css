@@ -1,8 +1,10 @@
 .main {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 1200px;
+  max-width: var(--page-wide);
   margin: 0 auto;
-  padding-inline: var(--spacing-8);
+  padding-inline: var(--page-gutter);
   padding-bottom: var(--spacing-16);
   gap: calc(var(--spacing-16) + var(--spacing-4));
 }
@@ -12,7 +14,7 @@
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--spacing-10);
-  padding-block: var(--spacing-12) var(--spacing-4);
+  padding-top: var(--spacing-12);
   min-width: 0;
 }
 
@@ -20,8 +22,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--spacing-6);
-  padding-bottom: var(--spacing-6);
+  gap: var(--spacing-4);
+  min-width: 0;
 }
 
 .hero .heroEyebrow {
@@ -32,8 +34,9 @@
 }
 
 .hero .heroTitle {
-  max-width: 12ch;
-  font-size: clamp(44px, 4.8vw, 64px);
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(44px, 4.2vw, 64px);
+  font-weight: 700;
   line-height: 1.04;
   letter-spacing: -0.035em;
   text-wrap: balance;
@@ -46,18 +49,18 @@
   line-height: 1.65;
 }
 
-/* Sits between the subtitle and the buttons, quieter than both — it is evidence,
-   not a second pitch. */
-.heroProof {
-  margin-top: var(--spacing-2);
-  color: var(--neutral-500);
-}
-
 .heroActions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-3);
   margin-top: var(--spacing-2);
+}
+
+.heroSecondary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-5);
 }
 
 .previewGroup {
@@ -67,9 +70,11 @@
   gap: var(--spacing-5);
   min-width: 0;
 }
+
 .previewGroup > :last-child {
   align-self: center;
 }
+
 .heroPreview {
   position: relative;
   isolation: isolate;
@@ -77,9 +82,11 @@
   max-width: 490px;
   aspect-ratio: 490 / 680;
 }
+
 .heroPreview:has([data-preview-platform='android']) {
   aspect-ratio: 490 / 570;
 }
+
 .heroPreview::before {
   content: '';
   position: absolute;
@@ -94,58 +101,87 @@
   );
   pointer-events: none;
 }
+
 .heroShowcase {
   display: flex;
   justify-content: center;
   max-width: none;
   aspect-ratio: auto;
 }
+
 .previewPhone {
   position: absolute;
   display: block;
 }
+
 .previewLeft {
   width: 46%;
   top: 0;
   left: 0;
 }
+
 .previewRight {
   width: 46%;
   top: 0;
   right: 0;
 }
+
 .previewPrimary {
   width: 53%;
   top: 16%;
   left: 23.5%;
 }
 
-.onboarding {
-  border-top: 1px solid var(--separator);
-  padding-top: var(--spacing-12);
+.importBand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacing-10);
+  align-items: center;
+}
+
+.importBand > h2,
+.importBand > p {
+  grid-column: 1;
+}
+
+.importBand > p {
+  max-width: 64ch;
+}
+
+.importAction {
+  grid-column: 2;
+  grid-row: 1 / 4;
+}
+
+.wallGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-5);
+}
+
+.proofStrip {
+  padding-block: var(--spacing-6);
+  border-block: 1px solid var(--separator);
 }
 
 @media (max-width: 760px) {
   .main {
-    padding-inline: var(--spacing-6);
     padding-bottom: var(--spacing-10);
-    gap: calc(var(--spacing-12) + var(--spacing-2));
+    gap: var(--spacing-8);
   }
 
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-8);
-    padding-block: var(--spacing-10) 0;
+    padding-top: var(--spacing-6);
   }
 
   .heroCopy {
-    gap: var(--spacing-4);
-    padding-bottom: 0;
+    gap: var(--spacing-3);
   }
 
   .hero .heroTitle {
     font-size: 40px;
-    max-width: 14ch;
   }
 
   .hero .heroLead {
@@ -173,16 +209,20 @@
     padding-inline: var(--spacing-4);
   }
 
-  .onboarding {
-    padding-top: var(--spacing-8);
+  .heroSecondary {
+    gap: var(--spacing-2) var(--spacing-4);
+  }
+
+  .importBand {
+    display: block;
+  }
+
+  .wallGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 359px) {
-  .main {
-    padding-inline: var(--spacing-4);
-  }
-
   .hero .heroTitle {
     font-size: 36px;
   }

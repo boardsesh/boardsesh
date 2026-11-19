@@ -1,0 +1,82 @@
+[
+  {
+    "width": 390,
+    "path": "/setter/will_avelar",
+    "status": 200,
+    "scrollWidth": 390,
+    "headerBottom": 53.109375,
+    "back": {
+      "x": 24,
+      "y": 77.109375,
+      "width": 44,
+      "height": 44
+    },
+    "share": {
+      "x": 322.578125,
+      "y": 77.390625,
+      "width": 43.421875,
+      "height": 43.421875
+    },
+    "accessibilityTree": "- button \"Back\""
+  },
+  {
+    "width": 390,
+    "path": "/playlists/00000000-0000-4000-8000-000000000109",
+    "status": 200,
+    "scrollWidth": 390,
+    "headerBottom": 53.109375,
+    "back": {
+      "x": 24,
+      "y": 77.109375,
+      "width": 44,
+      "height": 44
+    },
+    "share": {
+      "x": 273.65625,
+      "y": 232.984375,
+      "width": 43.421875,
+      "height": 43.421875
+    },
+    "accessibilityTree": "- button \"Back\""
+  },
+  {
+    "width": 1440,
+    "path": "/setter/will_avelar",
+    "status": 200,
+    "scrollWidth": 1440,
+    "headerBottom": 72,
+    "back": {
+      "x": 152,
+      "y": 96,
+      "width": 44,
+      "height": 44
+    },
+    "share": {
+      "x": 828.578125,
+      "y": 96.28125,
+      "width": 43.421875,
+      "height": 43.421875
+    },
+    "accessibilityTree": "- button \"Back\""
+  },
+  {
+    "width": 1440,
+    "path": "/playlists/00000000-0000-4000-8000-000000000109",
+    "status": 200,
+    "scrollWidth": 1440,
+    "headerBottom": 72,
+    "back": {
+      "x": 152,
+      "y": 96,
+      "width": 44,
+      "height": 44
+    },
+    "share": {
+      "x": 779.65625,
+      "y": 237.890625,
+      "width": 43.421875,
+      "height": 43.421875
+    },
+    "accessibilityTree": "- button \"Back\""
+  }
+]

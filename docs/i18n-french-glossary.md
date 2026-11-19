@@ -79,3 +79,5 @@ Never: _spray wall_, _spray-wall_, _spraywall_, _mur de spray_, _mur spray_, _mu
 
 - Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`, `it`) — the catalog completeness test fails on missing keys.
 - See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow, and `docs/i18n-spanish-glossary.md` for the Spanish counterpart.
+
+English public website copy has a scoped “spray wall” exception described in `docs/ai-design-guidelines.md`. This does not change this locale’s Spraywall terminology or the native/store convention.

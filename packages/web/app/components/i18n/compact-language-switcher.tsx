@@ -4,11 +4,10 @@ import React, { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
-import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import {
   DEFAULT_LOCALE,
@@ -20,20 +19,12 @@ import {
 } from '@/app/lib/i18n/config';
 import { localeHref, stripLocalePrefix } from '@/app/lib/i18n/locale-href';
 
-const FLAGS: Record<Locale, string> = {
-  'en-US': '🇺🇸',
-  es: '🇪🇸',
-  fr: '🇫🇷',
-  de: '🇩🇪',
-  it: '🇮🇹',
-};
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
-const flagSx = { fontSize: 20, lineHeight: 1 };
-const menuFlagSx = { fontSize: 18, lineHeight: 1, minWidth: 24 };
+const languageNameSx = { fontSize: 14, lineHeight: 1 };
 
 type LabelProps = {
   ariaLabel: string;
-  flag: string;
+  label: string;
 };
 
 function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate: (label: string) => string }) {
@@ -67,26 +58,21 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
   return (
     <>
       <Tooltip title={LOCALE_LABELS[current]}>
-        <IconButton
+        <Button
           onClick={handleOpen}
           aria-label={ariaLabelTemplate(LOCALE_LABELS[current])}
           aria-haspopup="menu"
           aria-expanded={open ? true : undefined}
           size="small"
         >
-          <Box component="span" sx={flagSx} aria-hidden>
-            {FLAGS[current]}
+          <Box component="span" sx={languageNameSx}>
+            {LOCALE_LABELS[current]}
           </Box>
-        </IconButton>
+        </Button>
       </Tooltip>
       <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
         {SUPPORTED_LOCALES.map((locale) => (
           <MenuItem key={locale} selected={locale === current} onClick={() => handleSelect(locale)}>
-            <ListItemIcon>
-              <Box component="span" sx={menuFlagSx} aria-hidden>
-                {FLAGS[locale]}
-              </Box>
-            </ListItemIcon>
             <ListItemText>{LOCALE_LABELS[locale]}</ListItemText>
           </MenuItem>
         ))}
@@ -95,13 +81,13 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
   );
 }
 
-function CompactLanguageSwitcherFallback({ ariaLabel, flag }: LabelProps) {
+function CompactLanguageSwitcherFallback({ ariaLabel, label }: LabelProps) {
   return (
-    <IconButton disabled size="small" aria-label={ariaLabel}>
-      <Box component="span" sx={flagSx} aria-hidden>
-        {flag}
+    <Button disabled size="small" aria-label={ariaLabel}>
+      <Box component="span" sx={languageNameSx}>
+        {label}
       </Box>
-    </IconButton>
+    </Button>
   );
 }
 
@@ -115,7 +101,7 @@ export default function CompactLanguageSwitcher() {
       fallback={
         <CompactLanguageSwitcherFallback
           ariaLabel={ariaLabelTemplate(LOCALE_LABELS[fallbackLocale])}
-          flag={FLAGS[fallbackLocale]}
+          label={LOCALE_LABELS[fallbackLocale]}
         />
       }
     >

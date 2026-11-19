@@ -8,6 +8,8 @@ export const WEBSITE_JOURNEY_EVENTS = {
   ImportPathChosen: 'Import Path Chosen',
   SpraywallPathClicked: 'Spraywall Path Clicked',
   NavLinkClicked: 'Nav Link Clicked',
+  GymClaimPathClicked: 'Gym Claim Path Clicked',
+  PartnerContactClicked: 'Partner Contact Clicked',
 } as const;
 
 export const WEBSITE_JOURNEY_PLACEMENTS = [
@@ -30,6 +32,7 @@ export const WEBSITE_JOURNEY_PLACEMENTS = [
   'climb-list',
   'spray-climb',
   'spray-wall',
+  'spraywalls',
   'gyms-directory',
   'help',
   'run-a-wall',
@@ -44,6 +47,12 @@ export type WebsiteNavTarget =
   | '/boards'
   | '/spraywalls'
   | '/run-a-wall'
+  | '/for-gyms'
+  | '/developers'
+  | 'source'
+  | 'roadmap'
+  | 'discord'
+  | 'report-bug'
   | '/gyms'
   | '/gyms/kilter'
   | '/gyms/tension'
@@ -89,4 +98,17 @@ export function spraywallPathClicked(placement: WebsiteJourneyPlacement): Websit
 
 export function navLinkClicked(area: WebsiteNavArea, target: WebsiteNavTarget): WebsiteJourneyEvent {
   return { name: WEBSITE_JOURNEY_EVENTS.NavLinkClicked, properties: { area, target } };
+}
+
+/** Generic search entry, before a particular gym or claim has been chosen. */
+export function gymClaimPathClicked(placement: 'home' | 'for-gyms'): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.GymClaimPathClicked, properties: { placement } };
+}
+
+/** Contact intent only: opening an email app does not establish a submission. */
+export function partnerContactClicked(
+  type: 'partner' | 'builder',
+  placement: 'home' | 'for-gyms',
+): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.PartnerContactClicked, properties: { type, placement } };
 }

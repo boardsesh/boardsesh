@@ -46,22 +46,6 @@ function loadStrings(locale: string): CatalogEntry[] {
   return entries;
 }
 
-// The public trust FAQ follows the English website spelling. Keep this exact
-// key allowlist separate from native catalogs, store text and other locales.
-const ENGLISH_WEBSITE_FAQ_KEYS = new Set([
-  'trust.questions.sprayPrivacy.question',
-  'trust.questions.sprayPrivacy.answer',
-]);
-
-function isEnglishWebsiteCopy(entry: CatalogEntry, locale: string): boolean {
-  return locale === 'en-US' && entry.file === 'marketing.json' && ENGLISH_WEBSITE_FAQ_KEYS.has(entry.keyPath);
-}
-
-function hasWrongEnglishWebSpelling(entry: CatalogEntry): boolean {
-  const terms = [...entry.value.matchAll(/\bspray[ -]?walls?\b/gi)].map(([term]) => term);
-  return terms.length === 0 || terms.some((term) => term !== 'spray wall' && term !== 'spray walls');
-}
-
 // Spray-wall strings whose key and value never say "spray".
 const EXTRA_SPRAY_KEYS = new Set([
   'boards.json:mobile.manage.deleteWallMessage',
@@ -125,6 +109,21 @@ function loadStoreTexts(locale: Locale): CatalogEntry[] {
     }
   }
   return entries;
+}
+
+// The Nov 2026 website brief deliberately uses two words in English public
+// prose. Keep native/store conventions, literal controls and other locales intact.
+const ENGLISH_LITERAL_UI_KEYS = new Set(['help.spray.add.step1']);
+function isEnglishWebsiteCopy(entry: CatalogEntry, locale: string): boolean {
+  if (locale !== 'en-US') return false;
+  if (entry.file === 'website.json') return true;
+  if (entry.file === 'marketing.json') return !ENGLISH_LITERAL_UI_KEYS.has(entry.keyPath);
+  if (entry.file === 'common.json') return ['header.nav.spray', 'footer.journeys.setupSpray'].includes(entry.keyPath);
+  // Audited web front-door subtree; native reads climbs.mobile.*, not these keys.
+  return entry.file === 'climbs.json' && entry.keyPath.startsWith('spray.');
+}
+function hasWrongEnglishWebSpelling(entry: CatalogEntry): boolean {
+  return /\bspraywalls?\b|\bspray-walls?\b/i.test(entry.value);
 }
 
 type TermRule = {
@@ -314,11 +313,45 @@ describe('spray wall term pins', () => {
   });
 });
 
+describe('English website spray wall spelling', () => {
+  it('keeps audited public prose in two words', () => {
+    const offenders = loadStrings('en-US')
+      .filter((entry) => isEnglishWebsiteCopy(entry, 'en-US'))
+      .filter(hasWrongEnglishWebSpelling);
+    expect(offenders.map((entry) => `${entry.file}:${entry.keyPath} — ${entry.value}`)).toEqual([]);
+  });
+  it('catches a broken web fixture and preserves the native/store and literal-UI rules', () => {
+    const brokenWeb = { file: 'website.json', keyPath: 'sprayTitle', value: 'Your Spraywall' };
+    expect(isEnglishWebsiteCopy(brokenWeb, 'en-US') && hasWrongEnglishWebSpelling(brokenWeb)).toBe(true);
+    const native = { file: 'common.json', keyPath: 'mobile.spray.title', value: 'Your spray wall' };
+    expect(isEnglishWebsiteCopy(native, 'en-US')).toBe(false);
+    expect(RULES[0].bannedEverywhere.test(native.value)).toBe(true);
+    const literal = { file: 'marketing.json', keyPath: 'help.spray.add.step1', value: 'Tap Spraywall' };
+    expect(isEnglishWebsiteCopy(literal, 'en-US')).toBe(false);
+    expect(RULES[0].bannedEverywhere.test(literal.value)).toBe(false);
+  });
+});
+
+// Both public FAQ strings must name their subject using the website spelling.
+const ENGLISH_WEBSITE_FAQ_KEYS = new Set([
+  'trust.questions.sprayPrivacy.question',
+  'trust.questions.sprayPrivacy.answer',
+]);
+
+function isEnglishWebsiteFaqCopy(entry: CatalogEntry, locale: string): boolean {
+  return locale === 'en-US' && entry.file === 'marketing.json' && ENGLISH_WEBSITE_FAQ_KEYS.has(entry.keyPath);
+}
+
+function hasWrongEnglishFaqSpelling(entry: CatalogEntry): boolean {
+  const terms = [...entry.value.matchAll(/\bspray[ -]?walls?\b/gi)].map(([term]) => term);
+  return terms.length === 0 || terms.some((term) => term !== 'spray wall' && term !== 'spray walls');
+}
+
 describe('English website trust FAQ spelling', () => {
   it('requires lowercase spray wall in both public FAQ strings', () => {
-    const faqStrings = loadStrings('en-US').filter((entry) => isEnglishWebsiteCopy(entry, 'en-US'));
+    const faqStrings = loadStrings('en-US').filter((entry) => isEnglishWebsiteFaqCopy(entry, 'en-US'));
     expect(faqStrings).toHaveLength(2);
-    expect(faqStrings.filter(hasWrongEnglishWebSpelling)).toEqual([]);
+    expect(faqStrings.filter(hasWrongEnglishFaqSpelling)).toEqual([]);
   });
 
   it('rejects retired web spellings while preserving the native, store and locale rules', () => {
@@ -327,15 +360,15 @@ describe('English website trust FAQ spelling', () => {
       keyPath: 'trust.questions.sprayPrivacy.question',
       value: 'Your spray wall photo',
     };
-    expect(isEnglishWebsiteCopy(webQuestion, 'en-US')).toBe(true);
-    expect(hasWrongEnglishWebSpelling(webQuestion)).toBe(false);
+    expect(isEnglishWebsiteFaqCopy(webQuestion, 'en-US')).toBe(true);
+    expect(hasWrongEnglishFaqSpelling(webQuestion)).toBe(false);
     for (const value of ['Your Spraywall photo', 'Your spray-wall photo', 'Your Spray wall photo', 'Your photo']) {
-      expect(hasWrongEnglishWebSpelling({ ...webQuestion, value })).toBe(true);
+      expect(hasWrongEnglishFaqSpelling({ ...webQuestion, value })).toBe(true);
     }
-    expect(isEnglishWebsiteCopy(webQuestion, 'it')).toBe(false);
-    expect(isEnglishWebsiteCopy({ ...webQuestion, file: 'common.json' }, 'en-US')).toBe(false);
-    expect(isEnglishWebsiteCopy({ ...webQuestion, keyPath: 'help.spray.add.step1' }, 'en-US')).toBe(false);
-    expect(isEnglishWebsiteCopy({ ...webQuestion, file: 'fastlane/metadata/en-US' }, 'en-US')).toBe(false);
+    expect(isEnglishWebsiteFaqCopy(webQuestion, 'it')).toBe(false);
+    expect(isEnglishWebsiteFaqCopy({ ...webQuestion, file: 'common.json' }, 'en-US')).toBe(false);
+    expect(isEnglishWebsiteFaqCopy({ ...webQuestion, keyPath: 'help.spray.add.step1' }, 'en-US')).toBe(false);
+    expect(isEnglishWebsiteFaqCopy({ ...webQuestion, file: 'fastlane/metadata/en-US' }, 'en-US')).toBe(false);
     expect(RULES[0].bannedEverywhere.test(webQuestion.value)).toBe(true);
   });
 });

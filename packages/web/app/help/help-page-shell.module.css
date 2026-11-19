@@ -16,9 +16,9 @@
 }
 
 .heroInner {
-  max-width: 1136px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 56px var(--spacing-6) var(--spacing-16);
+  padding: 56px var(--page-gutter) var(--spacing-16);
 }
 
 .breadcrumb {
@@ -36,6 +36,10 @@
   line-height: 1.04;
   letter-spacing: -0.03em;
   text-wrap: balance;
+}
+
+.guideTitle.guideTitle {
+  font-size: 44px;
 }
 
 /* --neutral-600 on the page violet: 10.5:1. */
@@ -93,7 +97,7 @@
 
 @media (max-width: 900px) {
   .heroInner {
-    padding: var(--spacing-8) var(--spacing-4) var(--spacing-10);
+    padding: var(--spacing-8) var(--page-gutter) var(--spacing-10);
   }
 
   .title.title {
@@ -125,7 +129,7 @@
   z-index: 5;
   width: 100%;
   min-width: 0;
-  padding: var(--spacing-2) var(--spacing-4);
+  padding: var(--spacing-2) var(--page-gutter);
   background: var(--read-surface);
   border-bottom: 1px solid var(--separator);
 }
@@ -138,4 +142,23 @@
   border-color: var(--color-primary);
   color: var(--color-primary);
   background: var(--semantic-selected-light);
+}
+
+@media (max-width: 900px) {
+  .guideTitle.guideTitle {
+    font-size: 44px;
+  }
+}
+
+@media (max-width: 760px) {
+  .guideTitle.guideTitle {
+    font-size: 32px;
+  }
+}
+
+@media (max-width: 359px) {
+  .heroInner,
+  .stickyJumpNav {
+    padding-inline: var(--spacing-4);
+  }
 }

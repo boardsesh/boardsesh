@@ -171,7 +171,7 @@ describe('MarketingHeader', () => {
   // must not learn how wide the screen is).
   // -----------------------------------------------------------------------
   describe('primary nav', () => {
-    const NAV_PATHS = ['/gyms', '/playlists', '/about', '/help'];
+    const NAV_PATHS = ['/boards', '/gyms', '/spraywalls', '/playlists', '/help'];
 
     for (const [label, pathname] of [
       ['the default header', '/some-page'],
@@ -194,15 +194,15 @@ describe('MarketingHeader', () => {
       const { container } = render(<MarketingHeader />);
 
       const labels = Array.from(container.querySelectorAll('nav a')).map((anchor) => anchor.textContent);
-      expect(labels).toEqual(['Gyms', 'Playlists', 'About', 'Help']);
+      expect(labels).toEqual(['Boards', 'Gyms', 'Spray walls', 'Playlists', 'Help']);
     });
 
     // The wireframe draws a "Boards" tab. `/boards` does not exist, so linking
     // it would put a 404 in the chrome of every page.
-    it('links nowhere into /boards — the route does not exist', () => {
+    it('links to the supported-boards page from the shared header', () => {
       const { container } = render(<MarketingHeader />);
 
-      expect(container.querySelectorAll('a[href^="/boards"]').length).toBe(0);
+      expect(container.querySelectorAll('a[href="/boards"]').length).toBe(1);
     });
 
     // The narrow-viewport treatment is a menu button, not a second set of
@@ -220,7 +220,7 @@ describe('MarketingHeader', () => {
       const menuItemHrefs = screen
         .getAllByRole('menuitem')
         .map((item) => item.closest('a')?.getAttribute('href') ?? item.getAttribute('href'));
-      expect(menuItemHrefs).toEqual([...NAV_PATHS, APP_URL]);
+      expect(menuItemHrefs).toEqual(['/profile/user-1', '/settings', ...NAV_PATHS, APP_URL]);
     });
 
     // The centred and brand-only variants own their whole bar — a profile

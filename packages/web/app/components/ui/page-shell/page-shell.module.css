@@ -18,18 +18,20 @@
 
 .inner {
   margin: 0 auto;
-  padding: 0 var(--spacing-8);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 0 var(--page-gutter);
   width: 100%;
 }
 
 /* Reading measure for long-form copy. ~68ch is the comfortable line length; the
    760px cap keeps it from stretching on a wide viewport at a large font size. */
 .prose {
-  max-width: min(68ch, 760px);
+  max-width: var(--page-wide);
 }
 
 .wide {
-  max-width: 1200px;
+  max-width: var(--page-wide);
 }
 
 .header {
@@ -58,14 +60,15 @@
 
 .header .title {
   margin: 0;
-  font-size: 40px;
-  line-height: 1.15;
+  font-family: var(--font-display), sans-serif;
+  font-size: 44px;
+  line-height: 1.1;
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
 
 .header .titleCompact {
-  font-size: 24px;
+  font-size: 44px;
 }
 
 @media (max-width: 760px) {
@@ -74,7 +77,7 @@
   }
 
   .header .titleCompact {
-    font-size: 21px;
+    font-size: 32px;
   }
 }
 
@@ -119,7 +122,8 @@
    `.section > h2`, whose descendant combinator out-specified MUI by accident;
    `.x.x` does it on purpose and works for a standalone heading too. */
 .sectionHeadingType.sectionHeadingType {
-  font-size: 32px;
+  font-family: var(--font-display), sans-serif;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.02em;
@@ -157,7 +161,7 @@
 
 @media (max-width: 760px) {
   .sectionHeadingType.sectionHeadingType {
-    font-size: 28px;
+    font-size: 24px;
   }
 }
 
@@ -232,4 +236,14 @@
   .inner {
     padding-inline: var(--spacing-4);
   }
+}
+
+@media (max-width: 1199px) {
+  .prose {
+    padding-right: var(--page-gutter);
+  }
+}
+
+.prose > * {
+  max-width: 720px;
 }

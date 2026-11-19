@@ -383,3 +383,40 @@ html[data-consent='granted'] .analytics-consent-banner,
 html[data-consent='denied'] .analytics-consent-banner {
   display: none;
 }
+
+/* Public website grid and display type. Body copy retains the system stack. */
+:root {
+  --page-wide: 1200px;
+  --page-read: 784px;
+  --page-gutter: 32px;
+}
+h1,
+h2 {
+  font-family: var(--font-display), sans-serif;
+}
+.website-wall-photo {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--border-radius-lg);
+}
+@media (max-width: 760px) {
+  :root {
+    --page-gutter: 24px;
+  }
+}
+@media (max-width: 359px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}
+
+main h1.MuiTypography-root {
+  font-size: 44px;
+  line-height: 1.1;
+}
+@media (max-width: 760px) {
+  main h1.MuiTypography-root {
+    font-size: 32px;
+  }
+}

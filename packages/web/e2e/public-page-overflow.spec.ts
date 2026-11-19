@@ -1,9 +1,12 @@
 import { expect, test } from '@playwright/test';
 
-test.use({ viewport: { width: 390, height: 664 }, storageState: { cookies: [], origins: [] } });
+test.use({ viewport: { width: 390, height: 664 } });
 
 const PUBLIC_PAGES = [
   '/',
+  '/boards',
+  '/spraywalls',
+  '/for-gyms',
   '/about',
   '/support',
   '/legal',

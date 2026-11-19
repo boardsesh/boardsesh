@@ -990,10 +990,12 @@
     "nav": {
       "gyms": "Hallen",
       "playlists": "Playlists",
-      "about": "Über uns",
-      "help": "Hilfe"
+      "help": "Hilfe",
+      "boards": "Boards",
+      "spray": "Spraywalls"
     },
-    "navLabel": "Hauptnavigation"
+    "navLabel": "Hauptnavigation",
+    "getApp": "App holen"
   },
   "share": {
     "profileTitle": "Kletterprofil von {{name}}",
@@ -1245,30 +1247,37 @@
     "fallbackCta": "Stattdessen die Store-Seite öffnen"
   },
   "footer": {
-    "tagline": "Deine Boards. Eine App. Wechsle das Board, ohne die App zu wechseln.",
+    "tagline": "Deine Boards. Eine App. Kostenlos für deine nächste Session.",
     "navLabel": "Fußzeile",
-    "trademarkNote": "Kompatibel mit Kilter, Tension und MoonBoard. Nicht mit Aurora Climbing oder Moon Climbing verbunden.",
+    "trademarkNote": "Kompatibel mit Boards von {{boards}}. Boardsesh ist unabhängig und wird von keinem Boardhersteller einschließlich Aurora Climbing hergestellt oder unterstützt. Marken gehören ihren Inhabern.",
     "links": {
-      "home": "Startseite",
       "about": "Über uns",
       "support": "Boardsesh unterstützen",
       "help": "Hilfe",
-      "docs": "Doku",
-      "buildPlans": "Baupläne",
       "playlists": "Playlists",
       "auroraMigration": "Routenbuch mitnehmen",
       "legal": "Impressum",
       "privacy": "Datenschutz",
-      "gymsKilter": "Hallen mit einem Kilter Board",
-      "gymsTension": "Hallen mit einem Tension Board",
-      "gymsMoonboard": "Hallen mit einem MoonBoard",
-      "gyms": "Alle Hallen und Wände"
+      "gyms": "Alle Hallen"
     },
-    "groups": {
-      "findAGym": "Halle finden",
-      "explore": "Entdecken",
-      "smallPrint": "Kleingedrucktes"
-    }
+    "groups": {},
+    "journeys": {
+      "climb": "Klettern",
+      "walls": "Für Wände",
+      "project": "Projekt",
+      "help": "Hilfe",
+      "supportedBoards": "Unterstützte Boards",
+      "setupSpray": "Deine Spraywall einrichten",
+      "claimGym": "Deine Halle beanspruchen",
+      "partners": "Partner und Griffhersteller",
+      "source": "Quellcode",
+      "roadmap": "Roadmap",
+      "discord": "Discord",
+      "developers": "Entwickler*innen",
+      "bluetooth": "Board verbindet sich nicht?",
+      "reportBug": "Fehler melden"
+    },
+    "openBrowser": "Im Browser öffnen"
   },
   "unsavedChanges": {
     "title": "Änderungen verwerfen?",

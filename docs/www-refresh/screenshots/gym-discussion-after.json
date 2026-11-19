@@ -1,0 +1,20 @@
+[
+  {
+    "locale": "en-US",
+    "path": "/gym/bugbash7844-qa-gym",
+    "status": 200,
+    "javascriptEnabled": false,
+    "label": "Start the discussion",
+    "expected": "Start the discussion",
+    "rawKey": false
+  },
+  {
+    "locale": "es",
+    "path": "/es/gym/bugbash7844-qa-gym",
+    "status": 200,
+    "javascriptEnabled": false,
+    "label": "Iniciar la conversación",
+    "expected": "Iniciar la conversación",
+    "rawKey": false
+  }
+]

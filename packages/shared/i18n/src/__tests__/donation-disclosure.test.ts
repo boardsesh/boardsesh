@@ -112,8 +112,6 @@ const SUPPORT_COPY_KEYS = [
   // `support.otherWays.*` titles above rather than duplicating them.
   'home.support.eyebrow',
   'home.support.title',
-  'home.support.p1',
-  'home.support.p2',
   'home.support.chipIn',
   'home.support.source',
   'home.support.otherWays',

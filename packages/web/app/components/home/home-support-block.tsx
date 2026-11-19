@@ -56,8 +56,7 @@ export default async function HomeSupportBlock() {
             {t('home.support.eyebrow')}
           </Typography>
           <PageSection title={t('home.support.title')}>
-            <Prose>{t('home.support.p1')}</Prose>
-            <Prose>{t('home.support.p2')}</Prose>
+            <Prose>{t('funding.body')}</Prose>
             <Box className={styles.actions}>
               <Button variant="contained" sx={CHIP_IN_SX} component={LocaleLink} href="/support">
                 {t('home.support.chipIn')}

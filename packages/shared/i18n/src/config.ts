@@ -36,6 +36,7 @@ export const ALL_NAMESPACES = [
   'common',
   'consent',
   'marketing',
+  'website',
   'auth',
   'settings',
   'profile',

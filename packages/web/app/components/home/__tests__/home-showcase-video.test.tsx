@@ -80,13 +80,18 @@ describe('HomeShowcaseVideo', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders a sized, high-priority poster and no video source before the page is idle', () => {
+  it('preloads the sized hero poster only on desktop and defers the video source', () => {
     render(<HomeShowcaseVideo />);
     const poster = document.querySelector('img');
     expect(poster?.getAttribute('src')).toBe('/images/home/showcase-hero-9x16.webp');
     expect(poster?.getAttribute('width')).toBe('720');
     expect(poster?.getAttribute('height')).toBe('1280');
-    expect(poster?.getAttribute('fetchpriority')).toBe('high');
+    expect(poster?.getAttribute('fetchpriority')).toBe('auto');
+    const desktopPreload = document.querySelector('link[rel="preload"][as="image"]');
+    expect(desktopPreload?.getAttribute('href')).toBe(poster?.getAttribute('src'));
+    expect(desktopPreload?.getAttribute('media')).toBe('(min-width: 761px)');
+    expect(desktopPreload?.getAttribute('fetchpriority')).toBe('high');
+    expect(poster?.getAttribute('loading')).toBe('lazy');
     expect(poster?.hasAttribute('decoding')).toBe(false);
     expect(getVideo().getAttribute('src')).toBeNull();
     expect(getVideo().getAttribute('preload')).toBe('none');
@@ -94,8 +99,8 @@ describe('HomeShowcaseVideo', () => {
 
   it('keeps the poster visible and the video hidden until it is playing', () => {
     render(<HomeShowcaseVideo />);
-    runIdleCallbacks();
     scrollIntoView(true);
+    runIdleCallbacks();
     const poster = document.querySelector('img');
     expect(poster).toBeTruthy();
     expect(poster?.hasAttribute('hidden')).toBe(false);
@@ -119,22 +124,23 @@ describe('HomeShowcaseVideo', () => {
     expect(items[5].textContent).toBe(tFromCatalog('marketing', 'home.showcase.scenes.island'));
   });
 
-  it('loads the webm after window load plus idle, then plays once in view', () => {
+  it('keeps a below-fold video unloaded until it is in view and idle', () => {
     render(<HomeShowcaseVideo />);
     expect(getVideo().getAttribute('src')).toBeNull();
 
     runIdleCallbacks();
+    expect(getVideo().getAttribute('src')).toBeNull();
+    scrollIntoView(true);
+    runIdleCallbacks();
     expect(getVideo().getAttribute('src')).toBe('/videos/home/showcase-9x16-lite.webm');
     expect(getVideo().preload).toBe('auto');
-    expect(playSpy).not.toHaveBeenCalled();
-
-    scrollIntoView(true);
     expect(playSpy).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the mp4 when webm is not playable', () => {
     canPlayTypeSpy.mockReturnValue('');
     render(<HomeShowcaseVideo />);
+    scrollIntoView(true);
     runIdleCallbacks();
     expect(getVideo().getAttribute('src')).toBe('/videos/home/showcase-9x16-lite.mp4');
   });
@@ -142,8 +148,8 @@ describe('HomeShowcaseVideo', () => {
   it('keeps the poster and shows a play button when the reader saves data', () => {
     Object.defineProperty(window.navigator, 'connection', { value: { saveData: true }, configurable: true });
     render(<HomeShowcaseVideo />);
-    runIdleCallbacks();
     scrollIntoView(true);
+    runIdleCallbacks();
 
     expect(getVideo().getAttribute('src')).toBeNull();
     expect(playSpy).not.toHaveBeenCalled();
@@ -156,8 +162,8 @@ describe('HomeShowcaseVideo', () => {
   it('does not autoplay for reduced motion but plays on request', () => {
     reducedMotion = true;
     render(<HomeShowcaseVideo />);
-    runIdleCallbacks();
     scrollIntoView(true);
+    runIdleCallbacks();
     expect(getVideo().getAttribute('src')).toBeNull();
     expect(playSpy).not.toHaveBeenCalled();
 
@@ -167,8 +173,8 @@ describe('HomeShowcaseVideo', () => {
 
   it('pauses and resumes through the hook with exactly one play() call per resume', () => {
     render(<HomeShowcaseVideo />);
-    runIdleCallbacks();
     scrollIntoView(true);
+    runIdleCallbacks();
     expect(playSpy).toHaveBeenCalledTimes(1);
 
     const setPaused = (value: boolean) => Object.defineProperty(getVideo(), 'paused', { value, configurable: true });
@@ -188,8 +194,8 @@ describe('HomeShowcaseVideo', () => {
   it('treats refused autoplay like data saver: poster stays, big play button, one play() per click', async () => {
     playSpy.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
     render(<HomeShowcaseVideo />);
-    runIdleCallbacks();
     scrollIntoView(true);
+    runIdleCallbacks();
     await act(async () => {
       await Promise.resolve();
     });

@@ -981,7 +981,7 @@
       "unavailable": "Les blocs similaires n’ont pas chargé. Rechargement en cours…"
     },
     "cta": {
-      "climbThis": "Allumer ce bloc",
+      "climbThis": "Ouvrir le bloc dans l’app",
       "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
       "helper": "L’ouvre dans l’app, prêt à être allumé sur ta board."
     },

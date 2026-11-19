@@ -28,7 +28,7 @@ describe('PopularBoardRail physical identity', () => {
   it('links the board name and app action to the same named installation', () => {
     render(<PopularBoardRail boards={[discoveryBoard()]} />);
     expect(screen.getByRole('link', { name: 'Training room Kilter' }).getAttribute('href')).toBe('/b/northside-kilter');
-    expect(screen.getByRole('link', { name: 'Open this board' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Climb on this board' }).getAttribute('href')).toBe(
       `${APP_URL}/b/northside-kilter/40/list`,
     );
     expect(screen.getByRole('link', { name: 'Northside Boulders' }).getAttribute('href')).toBe(
@@ -49,10 +49,9 @@ describe('PopularBoardRail physical identity', () => {
       />,
     );
     expect(screen.getByRole('link', { name: 'Southside Kilter' }).getAttribute('href')).toBe('/b/southside-kilter');
-    expect(screen.getAllByRole('link', { name: 'Open this board' }).map((link) => link.getAttribute('href'))).toEqual([
-      `${APP_URL}/b/northside-kilter/40/list`,
-      `${APP_URL}/b/southside-kilter/40/list`,
-    ]);
+    expect(
+      screen.getAllByRole('link', { name: 'Climb on this board' }).map((link) => link.getAttribute('href')),
+    ).toEqual([`${APP_URL}/b/northside-kilter/40/list`, `${APP_URL}/b/southside-kilter/40/list`]);
   });
 
   it('retains a named board when its artwork is unsupported', () => {
@@ -74,7 +73,7 @@ describe('PopularBoardRail physical identity', () => {
     );
     expect(screen.getByText('Kilter · 35°')).toBeTruthy();
     expect(screen.getByText('Selected climb: Night shift')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open this board' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Climb on this board' }).getAttribute('href')).toBe(
       `${APP_URL}/b/northside-kilter/35/list`,
     );
     expect(screen.getByText(/Previews are snapshots, not live updates/)).toBeTruthy();

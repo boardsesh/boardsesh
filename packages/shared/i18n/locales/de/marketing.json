@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Kletter-App: kompatibel mit Kilter, Tension und MoonBoard",
-      "description": "Teile eine Live-Warteschlange mit deiner Crew und verfolge deine Begehungen an allen Boards. Kompatibel mit Kilter, Tension, MoonBoard und mehr.",
-      "ogDescription": "Beleuchte Boulder am Board, trag deine Begehungen ein und klettere mit deiner Crew. Kompatibel mit Kilter, Tension, MoonBoard und mehr.",
-      "ogTitle": "Boardsesh: eine App für deine Boards"
+      "title": "Deine Boardsession, gut organisiert. | Boardsesh",
+      "description": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew. Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
+      "ogDescription": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
+      "ogTitle": "Deine Boardsession, gut organisiert."
     },
     "about": {
       "title": "Von Kletterer*innen, offen für alle",
@@ -53,44 +53,30 @@
   },
   "home": {
     "hero": {
-      "title": "Deine Boards. Eine App.",
-      "eyebrow": "Kompatibel mit Kilter, Tension, MoonBoard & mehr",
-      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
-      "subtitle": "Wechsle das Board, ohne die App zu wechseln.",
+      "title": "Deine Boardsession, gut organisiert.",
+      "eyebrow": "Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
+      "subtitle": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
       "startClimbingAria": "In der App losklettern",
-      "startClimbingWeb": "Im Browser losklettern →",
-      "ctaInstallIos": "Im App Store laden",
-      "ctaInstallAndroid": "Bei Google Play holen",
+      "startClimbingWeb": "Im Browser öffnen",
+      "ctaInstallIos": "App Store",
+      "ctaInstallAndroid": "Google Play",
       "ctaUpdate": "App aktualisieren",
+      "proof": "In den letzten 30 Tagen haben rund {{formattedClimbers}} Kletternde mit Boardsesh {{formattedClimbs}} Mal einen Boulder am Board beleuchtet.",
       "tensionShotAlt": "Ein Boulder an einem Tension Board in Boardsesh",
       "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh",
-      "proof": "{{formattedClimbers}} Kletterer*innen haben in den letzten 30 Tagen {{formattedClimbs}} Boulder an echten Boards beleuchtet.",
-      "proofNoCount": "Kostenlos, Open Source und bezahlt von den Kletterer*innen, die es nutzen."
+      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board"
     },
-    "onboardingHeader": "Mach's zu deinem",
-    "cards": {
-      "auroraTitle": "Übernimm dein Kilter- oder Tension-Routenbuch",
-      "auroraDescription": "Verknüpfe dein Konto einmal. Deine Begehungen werden etwa alle 12 Stunden übernommen.",
-      "playlistTitle": "Bau eine Playlist",
-      "playlistDescription": "Stell deine Boulder zusammen, bevor du in die Halle kommst",
-      "bluetoothTitle": "Verbinde dein Board",
-      "bluetoothDescription": "Per Bluetooth koppeln und den nächsten Boulder beleuchten",
-      "gymTitle": "Finde eine Halle in deiner Nähe",
-      "gymDescription": "Sieh, welche Wände ein Kilter Board, Tension Board oder MoonBoard haben"
-    },
+    "cards": {},
     "gymCard": {
       "ownerSubtitle": "Die Halle deiner Crew, nur einen Fingertipp entfernt",
       "manage": "Verwalten",
       "viewPage": "Seite ansehen"
     },
     "gymSearch": {
-      "eyebrow": "Hallenverzeichnis",
       "title": "Finde ein Board in deiner Nähe",
-      "lead_one": "{{formattedCount}} Halle, Vereinswand oder Garage hat schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
-      "lead_other": "{{formattedCount}} Hallen, Vereinswände und Garagen haben schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
-      "leadNoCount": "Hallen, Vereinswände und Garagen mit einem Board an der Wand sind schon eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
-      "geoHint": "Ortung aus? Tipp einfach eine Stadt ein: gleiche Ergebnisse, ohne Berechtigungsabfrage.",
-      "browseAll": "Zum kompletten Hallenverzeichnis"
+      "lead_one": "Im Boardverzeichnis stehen {{formattedCount}} Hallen, Vereinswände und Wände zu Hause.",
+      "lead_other": "Im Boardverzeichnis stehen {{formattedCount}} Hallen, Vereinswände und Wände zu Hause.",
+      "leadNoCount": "Hallen, Vereinswände und Garagen mit einem Board an der Wand sind schon eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten."
     },
     "boards": {
       "title": "Beliebte Boards",
@@ -101,7 +87,7 @@
       "preview": "Board-Vorschau: {{board}}",
       "typeAngle": "{{board}} · {{angle}}°",
       "selectedClimb": "Ausgewählter Boulder: {{climb}}",
-      "open": "Dieses Board öffnen"
+      "open": "An diesem Board klettern"
     },
     "recentBeta": {
       "title": "Frische Beta",
@@ -114,8 +100,8 @@
         "spray": "Auch deine Spraywall.",
         "wall": "Sieh, was an der Wand läuft.",
         "crew": "Deine Crew. Eine Warteschlange.",
-        "workouts": "Gib deiner Session einen Plan.",
-        "island": "Steuere die Wand über die Dynamic Island.",
+        "workouts": "Plane ein Training und klettere dann.",
+        "island": "Der nächste Boulder, direkt vom Sperrbildschirm.",
         "log": "Jede Begehung im Blick.",
         "outro": "Weniger Handy. Mehr Wand."
       },
@@ -124,7 +110,7 @@
       "play": "Demo abspielen"
     },
     "features": {
-      "title": "Board-Abend, geregelt",
+      "title": "So sieht eine Session aus",
       "lead": "Vom ersten Boulder bis zur letzten Begehung bleibt eure Session zusammen.",
       "queue": {
         "title": "Deine Crew. Eine Live-Warteschlange.",
@@ -141,18 +127,12 @@
         "body": "Sieh Begehungen und Fortschritte an jedem Board.",
         "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
       },
-      "spray": {
-        "title": "Auch deine Spraywall.",
-        "body": "Fotografier jede Spraywall. Schraub und logge Boulder darauf.",
-        "shotAlt": "Ein hervorgehobener Boulder auf dem Foto einer Spraywall in Boardsesh"
-      }
+      "spray": {}
     },
     "support": {
       "eyebrow": "Kostenlos, und das bleibt so",
       "title": "Boardsesh läuft, weil Kletterer*innen beisteuern",
-      "p1": "Keine Werbung, keine gesperrten Screens, keine zweite Klasse. Ganz Boardsesh bleibt für alle offen, ob du sponserst oder nicht, Selbsthosting inklusive.",
-      "p2": "Die Zeit, die es braucht, Boardsesh zu bauen, zahlen die Leute, die es benutzen.",
-      "chipIn": "Beisteuern",
+      "chipIn": "Mithelfen",
       "source": "Code ansehen",
       "otherWays": "Kein Geld übrig?"
     },
@@ -186,7 +166,7 @@
       "title": "Komm in die Community",
       "body": "Ob du Code schreibst, Boulder schraubst oder uns einfach sagen willst, was kaputt ist — wir hören gern von dir.",
       "discord": "Tritt der Crew auf Discord bei",
-      "support": "Unterstütze Boardsesh"
+      "support": "Mithelfen"
     },
     "legalLink": "Rechtliches & Richtlinie zum geistigen Eigentum",
     "footer": "Von Kletterer*innen gebaut. Offen für alle.",
@@ -205,6 +185,10 @@
       "title": "Was als Nächstes kommt",
       "body": "Mehr Boards, besseres Offline-Klettern und Historienimporte aus weiteren Apps. Folge der Roadmap und diskutiere auf Discord mit.",
       "cta": "Lies die Roadmap"
+    },
+    "profile": {
+      "title": "Alle deine Boards. Ein Profil.",
+      "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
     }
   },
   "support": {
@@ -257,7 +241,7 @@
         "cta": "Sprachkataloge ansehen →"
       },
       "patch": {
-        "title": "Code schicken",
+        "title": "Etwas im Code verbessern",
         "body": "Die ganze App ist öffentlich: Web, Mobile, Backend und die Board-Daten dahinter.",
         "cta": "Ansehen, wie es gebaut ist →"
       },

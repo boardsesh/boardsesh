@@ -1,0 +1,13 @@
+{
+  "artifactSource": "1e8a59caa775df5c5a07442ee4d5c88df4c55115",
+  "buildId": "P1mq-Uboo8bDK17yyWnPC",
+  "rawUtf8Bytes": 287713,
+  "gzipBytes": 36977,
+  "budgetBytes": 60000,
+  "betaRows": 20,
+  "expectedHeading": "Board night, sorted.",
+  "requiredFixtureOperations": ["GetRecentBetaLinks", "GetCommunityStats"],
+  "isolatedCache": true,
+  "databaseAndVendorConnectionsBlocked": true,
+  "verdict": "pass"
+}

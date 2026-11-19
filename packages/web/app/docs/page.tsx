@@ -18,7 +18,7 @@ export async function generateMetadata() {
 export default async function DocsPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['docs'] }}>
       <DocsClientPage developerDocsState={getDeveloperDocsState()} />
     </I18nProvider>
   );

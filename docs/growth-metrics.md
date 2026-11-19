@@ -1775,3 +1775,11 @@ external-link clicks. Card giving and running-cost publication remain deferred
 in #7877. No synthetic events, baseline figures or human comprehension results
 are created by this change. These events fire only on deliberate clicks; no
 new render, scroll, timer or hover events consume the event budget.
+
+## Public website figures
+
+The homepage proof (`marketing.home.hero.proof`) uses `communityStats`: distinct non-null signed-in user IDs and count of `board_climb_events` rows newer than 30 days. Rows require approximately 60 seconds of sustained board presence. Repeated lighting of the same problem counts again, so copy says “times”, never distinct climbs or sends. Climbers round to hundreds; lighting events round to thousands. These figures exclude photo-only spray wall use and are not all-product MAU. Source: backend `social/community-stats.ts`; public cache TTL is one hour.
+
+The homepage and directory location figure counts directory listings, including gyms, clubs and home walls from public board-location sources and climber submissions. It measures directory coverage, not customers or Boardsesh adoption. Do not publish a per-board climber split or an unverified all-product monthly-active figure.
+
+For epic #7844 the owner explicitly waived baseline collection before shipping the website improvements. No elapsed observation or experiment is claimed by these changes.

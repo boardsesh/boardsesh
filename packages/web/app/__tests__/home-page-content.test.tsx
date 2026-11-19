@@ -5,7 +5,7 @@ import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 import { APP_URL } from '@/app/lib/app-origin';
-import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 // Every hero store link names the hero as its placement (#6027).
 const HERO_PLAY_STORE_URL = buildStoreUrl('android', { placement: 'hero' });
@@ -31,8 +31,8 @@ function resolveMarketingKey(key: string): string {
 
 let mockLanguage = 'en-US';
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => resolveMarketingKey(key),
+  useTranslation: (namespace = 'marketing') => ({
+    t: (key: string) => tFromCatalog(namespace, key),
     i18n: { language: mockLanguage, changeLanguage: () => Promise.resolve() },
   }),
 }));
@@ -86,8 +86,8 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 // Board artwork is an ordinary backend image and needs no browser renderer mock.
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
-  default: ({ href, children, className }: { href: string; children?: React.ReactNode; className?: string }) => (
-    <a href={href} className={className}>
+  default: ({ href, children, ...props }: { href: string; children?: React.ReactNode; [key: string]: unknown }) => (
+    <a href={href} {...props}>
       {children}
     </a>
   ),
@@ -140,55 +140,58 @@ describe('HomePageContent', () => {
     setUserAgent(ORIGINAL_UA);
   });
 
-  it('explains the app before discovery and shows three real board captures outside English', () => {
-    mockLanguage = 'es';
+  it('keeps discovery after the app introduction', () => {
     render(
       <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
     );
     const featureSection = screen.getByTestId('features');
     const gymSection = screen.getByTestId('gyms');
     expect(featureSection.compareDocumentPosition(gymSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
-    expect(screen.getByAltText(resolveMarketingKey('home.hero.tensionShotAlt'))).toBeTruthy();
-    expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
   });
 
-  it('shows the demo video in the hero on the English page, in place of the phone stack', () => {
+  it('keeps the playable demo in the hero before the journey and feature sections', () => {
     render(<HomePageContent featureStrip={<section data-testid="features" />} />);
     const heroHeading = screen.getByRole('heading', { level: 1 });
+    const hero = heroHeading.closest('section');
     const video = screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'));
     const featureSection = screen.getByTestId('features');
-    expect(heroHeading.compareDocumentPosition(video) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hero?.contains(video)).toBe(true);
     expect(video.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelectorAll('video')).toHaveLength(1);
     expect(screen.queryByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeNull();
-    expect(screen.queryByRole('heading', { name: /see it on the wall/i })).toBeNull();
     expect(document.querySelectorAll('figcaption li')).toHaveLength(8);
     expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.play') })).toBeTruthy();
   });
 
-  it.each(['es', 'fr', 'de'])('keeps the phone stack and no video in the %s hero', (language) => {
-    mockLanguage = language;
-    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
-    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
-    expect(document.querySelector('video')).toBeNull();
-  });
+  it.each(['es', 'fr', 'de', 'it'])(
+    'keeps the three real board captures without English video on the %s page',
+    (language) => {
+      mockLanguage = language;
+      render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+      const hero = screen.getByRole('heading', { level: 1 }).closest('section');
+      for (const key of ['tensionShotAlt', 'moonboardShotAlt', 'playShotAlt']) {
+        expect(hero?.contains(screen.getByAltText(resolveMarketingKey(`home.hero.${key}`)))).toBe(true);
+      }
+      expect(document.querySelector('video')).toBeNull();
+    },
+  );
 
   describe('hero install CTA', () => {
     it('renders both store buttons on desktop web', async () => {
       setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
       render(<HomePageContent {...defaultProps} />);
-      expect(await screen.findByRole('link', { name: /install from app store/i })).toBeTruthy();
-      fireEvent.click(await screen.findByRole('link', { name: /get it on google play/i }));
-      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        HERO_PLAY_STORE_URL,
-      );
+      expect(await screen.findByRole('link', { name: /app store|get the free app/i })).toBeTruthy();
+      fireEvent.click(await screen.findByRole('link', { name: /google play|get the free app/i }));
+      expect(
+        screen.getByRole('link', { name: /google play|get the free app|update the app/i }).getAttribute('href'),
+      ).toBe(HERO_PLAY_STORE_URL);
     });
 
     it('shows the App Store install CTA on iOS web and opens the store on click', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('link', { name: /install from app store/i });
+      const button = await screen.findByRole('link', { name: /app store|get the free app/i });
       fireEvent.click(button);
 
       expect(button.getAttribute('href')).toBe(HERO_APP_STORE_URL);
@@ -208,12 +211,12 @@ describe('HomePageContent', () => {
       setUserAgent(ANDROID_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('link', { name: /get it on google play/i });
+      const button = await screen.findByRole('link', { name: /google play|get the free app/i });
       fireEvent.click(button);
 
-      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        HERO_PLAY_STORE_URL,
-      );
+      expect(
+        screen.getByRole('link', { name: /google play|get the free app|update the app/i }).getAttribute('href'),
+      ).toBe(HERO_PLAY_STORE_URL);
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -230,7 +233,7 @@ describe('HomePageContent', () => {
       setUserAgent(ANDROID_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('link', { name: /get it on google play/i });
+      const button = await screen.findByRole('link', { name: /google play|get the free app/i });
       const referrer = new URLSearchParams(
         new URL(button.getAttribute('href') ?? '').searchParams.get('referrer') ?? '',
       );
@@ -270,9 +273,9 @@ describe('HomePageContent', () => {
       const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
-        HERO_PLAY_STORE_URL,
-      );
+      expect(
+        screen.getByRole('link', { name: /google play|get the free app|update the app/i }).getAttribute('href'),
+      ).toBe(HERO_PLAY_STORE_URL);
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -297,72 +300,40 @@ describe('HomePageContent', () => {
 
       render(<HomePageContent {...defaultProps} />);
       expect(await screen.findByRole('link', { name: /update the app/i })).toBeTruthy();
-      expect(screen.queryByRole('link', { name: /get it on google play/i })).toBeNull();
+      expect(screen.queryByRole('link', { name: /google play|get the free app/i })).toBeNull();
       expect(mockWaitForCapacitor).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('SSR physical boards', () => {
-    it('renders one crawlable named-board link per physical installation', () => {
-      setUserAgent(IOS_SAFARI_UA);
-      render(
-        <HomePageContent
-          {...defaultProps}
-          initialBoards={[discoveryBoard(), discoveryBoard({ uuid: 'board-two', slug: 'southside-kilter' })]}
-        />,
-      );
-
+  describe('public journeys', () => {
+    it('offers all catalog boards and the photo wall before session detail', () => {
+      render(<HomePageContent featureStrip={<section data-testid="features" />} />);
       const boardLinks = screen
         .getAllByRole('link')
-        .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => href.startsWith('/b/'));
-      expect(boardLinks).toEqual(['/b/northside-kilter', '/b/southside-kilter']);
-    });
-
-    it('renders no board links and does not crash when the backend returned nothing', () => {
-      setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} initialBoards={[]} />);
-
-      const boardLinks = screen
-        .getAllByRole('link')
-        .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => href.startsWith('/b/'));
-      expect(boardLinks).toHaveLength(0);
-    });
-  });
-
-  describe('onboarding cards are links', () => {
-    it('points the Aurora and Playlist cards at real routes', () => {
-      render(<HomePageContent {...defaultProps} />);
-
+        .filter((link) => link.getAttribute('href')?.startsWith('/boards#'));
+      expect(boardLinks).toHaveLength(8);
+      expect(boardLinks.map((link) => link.textContent)).toContain('Woods');
       expect(
-        screen.getByRole('link', { name: new RegExp(resolveMarketingKey('home.cards.auroraTitle'), 'i') }),
-      ).toHaveProperty('href');
+        boardLinks[0].compareDocumentPosition(screen.getByTestId('features')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
       expect(hrefs).toContain('/bring-your-logbook');
-      expect(hrefs).toContain('/playlists');
+      expect(hrefs).toContain('/spraywalls');
+      expect(hrefs).toContain('/gyms?claim=1');
+      expect(hrefs).toContain('/for-gyms');
     });
 
-    // The gym nudge came out with the search drawer and left a comment behind
-    // promising its return "when #4372 builds the gyms directory". It did, so
-    // the card is back — and unlike HomeGymCard, which self-gates to null, this
-    // one renders for the signed-out visitor this suite mocks.
-    it('points the "find a gym" card at the directory', () => {
-      render(<HomePageContent {...defaultProps} />);
-
-      const card = screen.getByRole('link', {
-        name: new RegExp(resolveMarketingKey('home.cards.gymTitle'), 'i'),
-      });
-      expect(card.getAttribute('href')).toBe('/gyms');
+    it('reports a named compatibility choice without a wall or account identifier', () => {
+      render(<HomePageContent />);
+      fireEvent.click(screen.getByRole('link', { name: 'Woods' }));
+      expect(mockTrack).toHaveBeenCalledWith('Compatibility Board Selected', { board: 'woods', source: 'home-chip' });
     });
 
-    it('hands the "Connect your board" card off to the app origin', () => {
-      render(<HomePageContent {...defaultProps} />);
-
-      const card = screen.getByRole('link', {
-        name: new RegExp(resolveMarketingKey('home.cards.bluetoothTitle'), 'i'),
-      });
-      expect(card.getAttribute('href')).toBe(APP_URL);
+    it('keeps the browser handoff as a real app anchor', () => {
+      render(<HomePageContent />);
+      expect(screen.getByLabelText(resolveMarketingKey('home.hero.startClimbingAria')).getAttribute('href')).toBe(
+        APP_URL,
+      );
     });
   });
 

@@ -1,0 +1,186 @@
+[
+  {
+    "locale": "en-US",
+    "width": 390,
+    "scrollWidth": 390,
+    "hero": {
+      "x": 24,
+      "y": 72,
+      "right": 366,
+      "bottom": 1061.5625,
+      "width": 342,
+      "height": 989.5625
+    },
+    "card": {
+      "x": 24,
+      "y": 1649.5625,
+      "right": 366,
+      "bottom": 1925.5625,
+      "width": 342,
+      "height": 276
+    },
+    "body": {
+      "x": 41,
+      "y": 1734.5625,
+      "right": 349,
+      "bottom": 1806.5625,
+      "width": 308,
+      "height": 72
+    },
+    "link": {
+      "x": 41,
+      "y": 1822.5625,
+      "right": 174.421875,
+      "bottom": 1866.5625,
+      "width": 133.421875,
+      "height": 44
+    },
+    "assurance": {
+      "x": 41,
+      "y": 1866.5625,
+      "right": 349,
+      "bottom": 1908.5625,
+      "width": 308,
+      "height": 42
+    },
+    "order": ["H2", "P", "A", "P"]
+  },
+  {
+    "locale": "en-US",
+    "width": 844,
+    "scrollWidth": 844,
+    "hero": {
+      "x": 32,
+      "y": 72,
+      "right": 812,
+      "bottom": 746.46875,
+      "width": 780,
+      "height": 674.46875
+    },
+    "card": {
+      "x": 32,
+      "y": 1327.46875,
+      "right": 812,
+      "bottom": 1499.96875,
+      "width": 780,
+      "height": 172.5
+    },
+    "body": {
+      "x": 53,
+      "y": 1393.96875,
+      "right": 617.578125,
+      "bottom": 1441.96875,
+      "width": 564.578125,
+      "height": 48
+    },
+    "link": {
+      "x": 657.578125,
+      "y": 1391.71875,
+      "right": 791,
+      "bottom": 1435.71875,
+      "width": 133.421875,
+      "height": 44
+    },
+    "assurance": {
+      "x": 53,
+      "y": 1457.96875,
+      "right": 551.3125,
+      "bottom": 1478.96875,
+      "width": 498.3125,
+      "height": 21
+    },
+    "order": ["H2", "P", "A", "P"]
+  },
+  {
+    "locale": "en-US",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "hero": {
+      "x": 152,
+      "y": 72,
+      "right": 1288,
+      "bottom": 828,
+      "width": 1136,
+      "height": 756
+    },
+    "card": {
+      "x": 152,
+      "y": 1333,
+      "right": 1288,
+      "bottom": 1505.5,
+      "width": 1136,
+      "height": 172.5
+    },
+    "body": {
+      "x": 173,
+      "y": 1399.5,
+      "right": 742.5,
+      "bottom": 1447.5,
+      "width": 569.5,
+      "height": 48
+    },
+    "link": {
+      "x": 1133.578125,
+      "y": 1397.25,
+      "right": 1267,
+      "bottom": 1441.25,
+      "width": 133.421875,
+      "height": 44
+    },
+    "assurance": {
+      "x": 173,
+      "y": 1463.5,
+      "right": 671.3125,
+      "bottom": 1484.5,
+      "width": 498.3125,
+      "height": 21
+    },
+    "order": ["H2", "P", "A", "P"]
+  },
+  {
+    "locale": "de",
+    "width": 844,
+    "scrollWidth": 844,
+    "hero": {
+      "x": 32,
+      "y": 72,
+      "right": 812,
+      "bottom": 593.921875,
+      "width": 780,
+      "height": 521.921875
+    },
+    "card": {
+      "x": 32,
+      "y": 1174.921875,
+      "right": 812,
+      "bottom": 1408.921875,
+      "width": 780,
+      "height": 234
+    },
+    "body": {
+      "x": 53,
+      "y": 1278.921875,
+      "right": 595.3125,
+      "bottom": 1350.921875,
+      "width": 542.3125,
+      "height": 72
+    },
+    "link": {
+      "x": 635.3125,
+      "y": 1269.921875,
+      "right": 791,
+      "bottom": 1313.921875,
+      "width": 155.6875,
+      "height": 44
+    },
+    "assurance": {
+      "x": 53,
+      "y": 1366.921875,
+      "right": 551.3125,
+      "bottom": 1387.921875,
+      "width": 498.3125,
+      "height": 21
+    },
+    "order": ["H2", "P", "A", "P"]
+  }
+]

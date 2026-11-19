@@ -125,7 +125,7 @@ export async function fetchDirectoryPage(
 export type FacetCounts = Record<DirectoryFacet, number>;
 export type FacetCountsResult = { ok: true; counts: FacetCounts } | { ok: false };
 
-async function fetchFacetTotal(boardTypes: string[]): Promise<number | null> {
+export async function fetchFacetTotal(boardTypes: string[]): Promise<number | null> {
   try {
     const response = await runFacetCountQuery({
       input: {

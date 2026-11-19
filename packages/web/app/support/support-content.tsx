@@ -70,7 +70,7 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
       title={t('support.hero.title')}
       lead={t('funding.body')}
       width="wide"
-      headerAlign="center"
+      headerAlign="start"
       headerClassName={styles.hero}
       eyebrow={<Image src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')} width={52} height={52} alt="" />}
       headerActions={

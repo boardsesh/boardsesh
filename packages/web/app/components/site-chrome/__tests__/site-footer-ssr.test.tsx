@@ -40,7 +40,10 @@ const SITEMAP_PATHS = [
   '/about',
   '/support',
   '/help',
-  '/docs',
+  '/developers',
+  '/boards',
+  '/spraywalls',
+  '/for-gyms#partners',
   '/playlists',
   '/bring-your-logbook',
   '/legal',
@@ -55,7 +58,7 @@ const SITEMAP_PATHS = [
  * them, but only if the anchors are in the first HTML — which is exactly what
  * this file exists to prove, so they belong here and not in `SITEMAP_PATHS`.
  */
-const GYM_DIRECTORY_PATHS = ['/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard'];
+const GYM_DIRECTORY_PATHS = ['/gyms', '/gyms?claim=1'];
 const FOOTER_PATHS = [...SITEMAP_PATHS, ...GYM_DIRECTORY_PATHS];
 
 describe('SiteFooter server-rendered HTML', () => {
@@ -74,19 +77,15 @@ describe('SiteFooter server-rendered HTML', () => {
     // which is exactly what proves the label came from the catalog rather than
     // being an empty or icon-only anchor.
     for (const key of [
-      'footer.links.home',
       'footer.links.about',
       'footer.links.support',
       'footer.links.help',
-      'footer.links.docs',
+      'footer.journeys.developers',
       'footer.links.playlists',
       'footer.links.auroraMigration',
       'footer.links.legal',
       'footer.links.privacy',
       'footer.links.gyms',
-      'footer.links.gymsKilter',
-      'footer.links.gymsTension',
-      'footer.links.gymsMoonboard',
     ]) {
       expect(html).toContain(key);
     }

@@ -84,3 +84,5 @@ Kept in English by convention (technical board-config terms): **layout**, **set 
 
 - Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`, `it`) — `catalog-completeness.test.ts` fails on missing keys.
 - See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow.
+
+English public website copy has a scoped “spray wall” exception described in `docs/ai-design-guidelines.md`. This does not change this locale’s Spraywall terminology or the native/store convention.

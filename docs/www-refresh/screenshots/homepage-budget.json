@@ -1,0 +1,13 @@
+{
+  "artifactSource": "1e8a59caa775df5c5a07442ee4d5c88df4c55115",
+  "buildId": "P1mq-Uboo8bDK17yyWnPC",
+  "status": 200,
+  "rawUtf8Bytes": 285734,
+  "gzipBytes": 37716,
+  "budgetBytes": 60000,
+  "firstHeading": "Board night, sorted.",
+  "hasApiOnlyCopy": false,
+  "verdict": "pass",
+  "measurement": "Node gzipSync default compression, existing production-smoke homepage assertion",
+  "server": "local production output on 127.0.0.1:3012 with correctly configured local HTTPS backend"
+}

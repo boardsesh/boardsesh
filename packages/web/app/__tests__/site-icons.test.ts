@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
+vi.mock('next/font/local', () => ({
+  default: () => ({ className: 'display-font', variable: '--font-display' }),
+}));
 vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }));

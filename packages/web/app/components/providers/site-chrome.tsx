@@ -30,15 +30,10 @@ import SiteFooter from '../site-chrome/site-footer';
  */
 export default function SiteChrome({
   children,
-  showBuildPlans = false,
+  developerHref,
 }: {
   children: React.ReactNode;
-  /**
-   * Server-resolved `cnc-packs` gate, passed straight through to SiteFooter.
-   * SiteChrome itself is a client component and must not resolve it — see the
-   * note at the call site in app/layout.tsx.
-   */
-  showBuildPlans?: boolean;
+  developerHref?: '/developers' | '/docs';
 }) {
   return (
     <StatsFilterBridgeProvider>
@@ -46,7 +41,7 @@ export default function SiteChrome({
         <PlaylistsAdapterProvider>
           <MarketingHeader />
           {children}
-          <SiteFooter showBuildPlans={showBuildPlans} />
+          <SiteFooter developerHref={developerHref} />
           <ConsentBanner />
         </PlaylistsAdapterProvider>
       </ProfileHeaderShareProvider>

@@ -1,0 +1,137 @@
+[
+  {
+    "width": 390,
+    "path": "/",
+    "before": {
+      "count": 1,
+      "inHero": true,
+      "src": null,
+      "play": {
+        "x": 301.578125,
+        "y": 447.671875,
+        "width": 51.421875,
+        "height": 51.421875
+      },
+      "poster": {
+        "x": 24,
+        "y": 434.671875,
+        "width": 342,
+        "height": 608
+      },
+      "overflow": false,
+      "preloads": [
+        {
+          "href": null,
+          "media": null
+        },
+        {
+          "href": "/images/home/showcase-hero-9x16.webp",
+          "media": "(min-width: 761px)"
+        }
+      ]
+    },
+    "playback": "played and paused"
+  },
+  {
+    "width": 1440,
+    "path": "/",
+    "before": {
+      "count": 1,
+      "inHero": true,
+      "src": null,
+      "play": {
+        "x": 995.046875,
+        "y": 442,
+        "width": 64,
+        "height": 64
+      },
+      "poster": {
+        "x": 827.921875,
+        "y": 120,
+        "width": 398.25,
+        "height": 708
+      },
+      "overflow": false,
+      "preloads": [
+        {
+          "href": null,
+          "media": null
+        },
+        {
+          "href": "/images/home/showcase-hero-9x16.webp",
+          "media": "(min-width: 761px)"
+        }
+      ]
+    },
+    "playback": "played and paused"
+  },
+  {
+    "locale": "en-US",
+    "path": "/about",
+    "switch": "iOS and Android selected matching captures",
+    "ios": "/_next/image?url=%2Fimages%2Fapp%2Fios%2Fprofile-overview.webp&w=3840&q=75",
+    "android": "/_next/image?url=%2Fimages%2Fapp%2Fandroid%2Fprofile-overview.webp&w=3840&q=75",
+    "icons": 6
+  },
+  {
+    "locale": "es",
+    "path": "/about",
+    "switch": "iOS and Android selected matching captures",
+    "ios": "/_next/image?url=%2Fimages%2Fapp%2Fios%2Fprofile-overview.webp&w=3840&q=75",
+    "android": "/_next/image?url=%2Fimages%2Fapp%2Fandroid%2Fprofile-overview.webp&w=3840&q=75",
+    "icons": 6
+  },
+  {
+    "locale": "es",
+    "path": "/",
+    "shots": ["tension", "moonboard", "kilter"],
+    "videoCount": 0
+  },
+  {
+    "locale": "fr",
+    "path": "/about",
+    "switch": "iOS and Android selected matching captures",
+    "ios": "/_next/image?url=%2Fimages%2Fapp%2Fios%2Fprofile-overview.webp&w=3840&q=75",
+    "android": "/_next/image?url=%2Fimages%2Fapp%2Fandroid%2Fprofile-overview.webp&w=3840&q=75",
+    "icons": 6
+  },
+  {
+    "locale": "fr",
+    "path": "/",
+    "shots": ["tension", "moonboard", "kilter"],
+    "videoCount": 0
+  },
+  {
+    "locale": "de",
+    "path": "/about",
+    "switch": "iOS and Android selected matching captures",
+    "ios": "/_next/image?url=%2Fimages%2Fapp%2Fios%2Fprofile-overview.webp&w=3840&q=75",
+    "android": "/_next/image?url=%2Fimages%2Fapp%2Fandroid%2Fprofile-overview.webp&w=3840&q=75",
+    "icons": 6
+  },
+  {
+    "locale": "de",
+    "path": "/",
+    "shots": ["tension", "moonboard", "kilter"],
+    "videoCount": 0
+  },
+  {
+    "locale": "it",
+    "path": "/about",
+    "switch": "iOS and Android selected matching captures",
+    "ios": "/_next/image?url=%2Fimages%2Fapp%2Fios%2Fprofile-overview.webp&w=3840&q=75",
+    "android": "/_next/image?url=%2Fimages%2Fapp%2Fandroid%2Fprofile-overview.webp&w=3840&q=75",
+    "icons": 6
+  },
+  {
+    "locale": "it",
+    "path": "/",
+    "shots": ["tension", "moonboard", "kilter"],
+    "videoCount": 0
+  },
+  {
+    "width": 1440,
+    "motion": "no-preference",
+    "autoplay": "plays when visible and idle"
+  }
+]
