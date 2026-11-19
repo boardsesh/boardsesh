@@ -442,6 +442,10 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   'packages/backend/src/auth/current-store/system-identities.ts': { gate: 'assertLegacyIdentityWriterAllowed(' },
   // The operator switch itself: the gate held exclusively.
   'packages/backend/src/scripts/auth-authority.ts': { writes: 3, gate: 'lockAuthorityGateExclusively(' },
+  // One-off repair: its transaction coordinator takes the exclusive authority
+  // gate, checks the supported current-store state and verifies the writer
+  // drain before invoking any domain handler. The ordering is pinned below.
+  'packages/backend/src/scripts/account-consolidation/authentication-handler.ts': { writes: 15 },
   // Per-account password guess counter (#7656): no identity, credential or user
   // id, only rejected-password counts by keyed digest. Fails open in 250 ms, so
   // it must never wait on the authority gate.
@@ -528,6 +532,19 @@ describe('identity writer catalog', () => {
       const source = readRepoFile(path);
       for (const name of functions) expect(source).toContain(`function ${name}(`);
     }
+  });
+
+  it('keeps consolidation handlers behind the authority and maintenance guards', () => {
+    const executor = readRepoFile('packages/backend/src/scripts/account-consolidation/executor.ts');
+    const authorityGuard = executor.indexOf('await lockConsolidationAuthority(transaction);');
+    const maintenanceGuard = executor.indexOf('await hooks.verifyMaintenance(transaction);');
+    const handlerCall = executor.indexOf('await handler.apply(transaction, context)');
+    expect(authorityGuard).toBeGreaterThan(-1);
+    expect(maintenanceGuard).toBeGreaterThan(authorityGuard);
+    expect(handlerCall).toBeGreaterThan(maintenanceGuard);
+    expect(executor).toContain("{ isolationLevel: 'read committed' }");
+    const guard = readRepoFile('packages/backend/src/scripts/account-consolidation/authority-guard.ts');
+    expect(guard).toContain('await lockAuthorityGateExclusively(transaction);');
   });
 
   it('keeps each legacy writer behind its gate', () => {
