@@ -40,6 +40,8 @@ describe('getAuthErrorMessage', () => {
       Callback: 'Error in the authentication callback.',
       OAuthAccountNotLinked:
         'This email is already associated with another account. Please sign in using your original method.',
+      OAuthLinkRequired:
+        "You're already signed in, and this Google or Apple account isn't connected to your account yet. Connect it from Settings to sign in with it next time.",
       SessionRequired: 'You must be signed in to access this page.',
     };
 
@@ -62,6 +64,7 @@ describe('getAuthErrorMessage', () => {
       'EmailCreateAccount',
       'Callback',
       'OAuthAccountNotLinked',
+      'OAuthLinkRequired',
       'SessionRequired',
     ]);
     expect(new Set(KNOWN_AUTH_ERROR_CODES)).toEqual(expectedCodes);

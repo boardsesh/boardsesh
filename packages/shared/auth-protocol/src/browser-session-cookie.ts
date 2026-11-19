@@ -22,6 +22,10 @@
  * is in the signed input, so a login value does not verify under the bridged
  * name, nor the reverse.
  *
+ * The viewer marker (`viewer-marker.ts`) rides with it: written beside a
+ * session cookie by the same response and cleared by every clear here, so one
+ * is never sent without the other. Nothing on the server reads it.
+ *
  * What a caller must do (the codec cannot check these):
  * - `secure` is never false in production. Fail startup if production resolves
  *   to it; plain names can be set from http or `document.cookie` on any
@@ -38,7 +42,8 @@
  * - Pass the `Cookie` header as received (`headers.get('cookie')`). A header
  *   rebuilt or joined with `, ` is not parsed.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { VIEWER_MARKER_VALUE_LENGTH, viewerMarkerCookieName, viewerMarkerDigestInput } from './viewer-marker';
 
 /**
  * Cookie names, one block. The two-name split is a recommendation pending the
@@ -228,8 +233,43 @@ export function serializeBrowserSessionCookie({
   return `${name}=${signedValue}; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=${BROWSER_SESSION_COOKIE_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
-function clearCookie(name: string, domain: string | undefined, secure: boolean): string {
-  return `${name}=; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+function clearCookie(name: string, domain: string | undefined, secure: boolean, httpOnly = true): string {
+  return `${name}=; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=0${httpOnly ? '; HttpOnly' : ''}; SameSite=Lax${secure ? '; Secure' : ''}`;
+}
+
+/**
+ * The viewer marker (`viewer-marker.ts`) for a login: the first 16 characters
+ * of `base64url(sha256("boardsesh-viewer-v1:" + authSessionId))`. The same
+ * value `computeViewerMarker` gives in a browser. Throws for an empty id.
+ */
+export function viewerMarkerValue(authSessionId: string): string {
+  if (typeof authSessionId !== 'string' || authSessionId.length === 0)
+    throw new Error('VIEWER_MARKER_SESSION_ID_INVALID');
+  return createHash('sha256')
+    .update(viewerMarkerDigestInput(authSessionId))
+    .digest('base64url')
+    .slice(0, VIEWER_MARKER_VALUE_LENGTH);
+}
+
+export interface ViewerMarkerCookieOptions {
+  /** The login the session cookie in the same response names. */
+  authSessionId: string;
+  /** Exactly the session cookie's own `domain`, so both cookies share a scope. Requires `secure`. */
+  domain?: string;
+  /** The session cookie's own secure-context flag. */
+  secure: boolean;
+}
+
+/**
+ * One `Set-Cookie` value that installs the viewer marker beside a session
+ * cookie: the session cookie's Path, Domain, Max-Age, SameSite and Secure, and
+ * not HttpOnly, so page scripts can compare it. Only the session-cookie
+ * builders call this, so the marker is never sent without the cookie it names.
+ */
+export function serializeViewerMarkerCookie({ authSessionId, domain, secure }: ViewerMarkerCookieOptions): string {
+  assertDomain(domain, secure);
+  const name = viewerMarkerCookieName(secure);
+  return `${name}=${viewerMarkerValue(authSessionId)}; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=${BROWSER_SESSION_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
 export interface BrowserSessionCookieClearOptions {
@@ -243,7 +283,9 @@ export interface BrowserSessionCookieClearOptions {
 
 /**
  * `Set-Cookie` values that delete both session cookies at `Path=/` in the
- * host-only scope and, when `domain` is given, the Domain scope too.
+ * host-only scope and, when `domain` is given, the Domain scope too, then the
+ * viewer marker in the same scopes by the same name rule (its clears carry no
+ * HttpOnly, as it is written without).
  *
  * The two `__Secure-` names are always cleared; a `__Secure-` cookie is only
  * accepted with `Secure`, so its deletion carries it (over http the browser
@@ -274,5 +316,12 @@ export function browserSessionCookieClears({
     const plainName = browserSessionCookieName(kind, false);
     if (carriedNames.has(plainName)) appendClears(plainName, secure);
   }
+  const appendMarkerClears = (name: string, secureClear: boolean) => {
+    clears.push(clearCookie(name, undefined, secureClear, false));
+    if (domain) clears.push(clearCookie(name, domain, secureClear, false));
+  };
+  appendMarkerClears(viewerMarkerCookieName(true), true);
+  const plainMarker = viewerMarkerCookieName(false);
+  if (carriedNames.has(plainMarker)) appendMarkerClears(plainMarker, secure);
   return clears;
 }

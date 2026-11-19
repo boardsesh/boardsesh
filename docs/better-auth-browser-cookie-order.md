@@ -1,8 +1,56 @@
-# BA05 browser cookie response-order counterexample
+# Browser cookie response order
 
-The dedicated QA proof characterizes the existing NextAuth cookie slot. It does
-not activate a writer, change response admission, or fix account switching.
-Rollout ownership remains in #7430.
+The question this fixture asks: when a browser holds copies of a session
+cookie in more than one scope (Domain and host-only), or two replies that
+write it race, which copy wins, and can any order leave the browser on the
+wrong account?
+
+## Rerun on the #7596 design (B7c)
+
+`packages/web/e2e/browser-session/cookie-order.spec.ts` asks it again on the
+design in [better-auth-browser-session.md](better-auth-browser-session.md), in
+Chromium and WebKit, on the browser-session harness: https
+`www.boardsesh.test` and `app.boardsesh.test` under one parent domain, the
+production build of www, the real backend and PostgreSQL, under
+`AUTH_BROWSER_SESSION_MODE=better-auth`. The edge in front of the servers
+holds a reply after the server answered it and lets it go on release, so the
+browser stores that reply's `Set-Cookie` only then, as a slow network would
+deliver it (`holdResponse` in `partner-oauth-e2e/edge.ts`, the
+`responseHolds` fixture). It runs on every pull request run of
+`browser-session-e2e.yml` and nightly. Each case logs a `[cookie-order]` line
+with the engine and what the browser ended with.
+
+| Case | Rule of the design | Chromium | WebKit |
+| --- | --- | --- | --- |
+| Two logins in two tabs, A's reply held until B's login (from the app host) has landed | The login reply that arrives last wins; the other tab's login is gone; no data crosses accounts (accepted, #7596 item 1) | Ends on A on www and the app; one Domain login cookie, A's marker | Same |
+| A held session read and ws-auth reply landing after B's login | Only logins and sign-out write the session cookie | Neither writes a cookie; B stays | Same |
+| A host-only copy beside the Domain login cookie | Differing copies read as conflicted: signed out | Signed out on both hosts. Sends the Domain copy first | Signed out on both hosts. Sends the host-only copy first |
+| Then a login on www | A login clears the host-only copy | Cleared; one Domain copy; B | Same |
+| Then a login from the app host | A login clears the host-only copy | Cleared; one Domain copy; B | **Kept**: WebKit stores the Domain cookie from that reply but not the host-only clear, so the browser stays signed out (never A) until a login on www. `test.fail` (`WEBKIT_KEEPS_HOST_ONLY_COPY_ON_APP_LOGIN`); see below |
+| A bridging session read held until after B's login | A login cookie outranks a bridged one | The bridged cookie lands; B on both hosts; no later read writes anything | Same |
+| Apple: the resumed callback (the reply that publishes the sign-in) held until another account logged in | Last login wins (accepted) | Ends on the Apple account, one login cookie, its marker | Same |
+| Apple: held until a newer Apple sign-in of the same account landed | Last login wins (accepted) | Ends on the held login of the same account | Same |
+
+No order in either engine left the browser on an account other than the one
+whose login reply arrived last, or signed out.
+
+**The WebKit case.** It needs a host-only `__Secure-boardsesh.session_token`
+on www beside the Domain one. Production www writes the session cookie with
+`Domain=.boardsesh.com` whenever `NEXTAUTH_URL` is its own origin
+(`sessionCookieDomain`), and the canonical-origin check stops a deployment
+that is not, so only a misconfigured deployment could leave such a copy, and
+a sibling host cannot set a host-only cookie for www. The result is a browser
+signed out, not one on the wrong account. Whether to accept it, or to change
+the design (for example, have the app send its login through a top-level
+navigation to www), is an owner question raised on #7596.
+
+The older proof (`cookie-order-browser.proof.ts`, the NextAuth cookie through
+the legacy route exports, Chromium only, outside every CI job) is deleted. Its
+renewal and set-password rows cannot happen on this design: neither writes the
+session cookie, which acceptance 1 checks in both engines. Its Apple rows are
+the accepted last-login-wins outcome above.
+
+## The race on the NextAuth design (before #7596)
 
 At integration commit `265310e046`, Chromium passed three successful-publication
 controls and failed six later-login acceptance cases. A completed earlier A
@@ -14,35 +62,9 @@ response overwrote the later login for every tested response family:
 | Actual set-password replacement | Earlier A restored | Earlier A SID restored |
 | Actual Apple callback | Earlier A restored | Earlier A SID restored |
 
-Each case verifies the later cookie is stored and shared before releasing A,
-then checks both the exact UID/SID and a fresh public session read. The three
-controls verify these same responses can publish A when no later login occurs.
-
-The fixture uses HTTPS `www.boardsesh.test` and `app.boardsesh.test`, the shared
-`.boardsesh.test` HttpOnly cookie, the real app-origin allowlist/CORS helper,
-and an actual return-to-app credentials callback. Only owned loopback listeners
-and synthetic accounts are used. Browser requests to every other origin are
-blocked. Real route exports run through an owned HTTP bridge; this is not a full
-Next server or deployment proof. The external Apple provider is synthetic. The
-set-password source is an explicitly public-encoded synthetic guarded proof;
-its backend mutation, receipt, replacement response and later login are real.
-WebKit was not installed in this environment and remains unqualified.
-
-Run only against the explicit disposable local fixture. This command is
-intentionally nonzero until guarded publication satisfies the six invariants:
-
-```sh
-BOARDSESH_AUTH_PROOF_DATABASE_URL='<owned localhost admin URL accepted by the proof>' \
-  vp test run --config packages/backend/auth-proofs/cookie-order.vite.config.ts --reporter=agent
-```
-
-The expired-cookie cases in the older publication proof are not new evidence:
-current response admission emits no clearing cookie for that refused source.
-The positive response-order gap remains. A final server check cannot make an
-already delayed `Set-Cookie` conditional on a later login. Origin-scoped locks
-and component epochs do not span www/app or top-level callbacks.
-
-> **Note for #7596.** This section stays. It is the real race, and acceptance item 1 of #7596 reruns this fixture on Chromium and WebKit. Under the re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md) only login and sign-out responses write the session cookie, so the renewal and set-password rows above can no longer restore an earlier account. The two Apple callback cases are a login racing a later login, which #7596 accepts: the browser keeps whichever login response arrived last, and no data crosses accounts. When the fixture is rerun, those two cases need the accepted outcome as their expectation instead of counting as failures. That last point is inferred from the spec, not run.
+That was the NextAuth cookie slot, which every session read rewrites. The
+#7596 design answers it by writing the session cookie only from logins and
+sign-out.
 
 ## Dark backend selection prerequisite
 

@@ -5,7 +5,7 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert, { type AlertColor } from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import { themeTokens } from '@/app/theme/theme-config';
-import { isSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
+import { runIfSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
 
 type SnackbarAction = {
   label: string;
@@ -46,10 +46,12 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
 
   const showMessage = useCallback(
     (text: string, severity: AlertColor, action?: SnackbarAction, duration?: number) => {
-      if (!isSessionGenerationCurrent(generation)) return;
-      keyCounterRef.current += 1;
-      const key = keyCounterRef.current;
-      setMessages((prev) => [...prev, { key, text, severity, action, duration }]);
+      // Shown at once, or after a running viewer check confirms this login; never for another account.
+      runIfSessionGenerationCurrent(generation, () => {
+        keyCounterRef.current += 1;
+        const key = keyCounterRef.current;
+        setMessages((prev) => [...prev, { key, text, severity, action, duration }]);
+      });
     },
     [generation],
   );

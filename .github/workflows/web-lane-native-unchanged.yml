@@ -1,0 +1,43 @@
+name: Web lane leaves native unchanged
+
+# #7596 acceptance 7: the web session cutover (the stacked feat/7596-*,
+# test/7596-* and fix/7596-* branches) changes no file that ships to phones. Every file under
+# packages/mobile or packages/shared without a `.web` suffix reaches iOS and
+# Android by OTA, so the check fails on any such change outside
+# scripts/check-native-unchanged.ts's allowlist. Other pull requests skip the
+# job: native work elsewhere is not bound by this rule.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-lane-native-unchanged-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-unchanged:
+    name: No native change in the web lane
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feat/7596-') || startsWith(github.head_ref, 'test/7596-') || startsWith(github.head_ref, 'fix/7596-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The merge base with main has to be in the clone.
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Compare with main
+        run: |
+          git fetch --no-tags origin main
+          vp exec tsx scripts/check-native-unchanged.ts origin/main

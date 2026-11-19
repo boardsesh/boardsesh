@@ -638,7 +638,26 @@ before and after in all four cells (3, 164, 6 and 173).
 
 At most two coalesced reads and one sweep batch compete for the two connections
 (`MAX_CONCURRENT_COALESCED_ADMISSION_READS` 2, `MAX_SWEEP_BATCHES_PER_ROUND` 1;
-`MAX_UNSETTLED_AUTH_ADMISSION_READS` stays 8). Coalesced callers past the two reads
+`MAX_UNSETTLED_AUTH_ADMISSION_READS` stays 8). The browser access token (#7596,
+B3a) adds a second coalesced read on the request path, the session read by
+session id, and it shares those two slots with the account read: both coalescers
+are in the `per-request` slot group, so together they still start at most two
+reads, and when one ends the waiting coalescers are woken in turn, so a browser
+burst cannot starve the phone apps' account read. A same-tick burst of 50 browser
+validations and one native one takes at most four statements in the test (one or
+two in practice), and nine operations on one socket take one.
+
+The sweep's round is now up to two statements for a batch, one after the other:
+the account read, then, only when the batch has browser sockets, the session
+read for their sessions, in 128-id chunks read one at a time. A failure in either
+leaves the whole batch open for that round. With no browser sockets the second
+statement is not run.
+
+The session read is one statement: `auth_session` by primary key, left-joined to
+its lineage by primary key, `users`, `auth_subject_cutoffs` and the denial of the
+same id. On the local test Postgres with 10,000 sessions, 4,000 runs each through
+drizzle (round trip, not the bare statement as in the table below): 1 id, median
+1.78 ms, p99 5.74 ms; 128 ids, median 5.80 ms, p99 13.18 ms. Coalesced callers past the two reads
 wait in the coalescer, where one that outlives the deadline is refused before any
 read starts, instead of queueing on a connection and using up the deadline there.
 

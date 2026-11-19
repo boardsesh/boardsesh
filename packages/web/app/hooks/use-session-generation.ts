@@ -15,7 +15,11 @@ export function useSessionGeneration(): number {
   return useSyncExternalStore(subscribe, readGeneration, serverGeneration);
 }
 
-/** True while `generation` is still the page's account and the page is not retiring. */
-export function isSessionGenerationCurrent(generation: number): boolean {
-  return browserSessionGuard().isCurrent(generation);
+/**
+ * Runs `action` while `generation` is still the page's account: at once, or,
+ * while a false viewer marker is being checked, once the check confirms the
+ * same login (never when it names another account or proves nothing).
+ */
+export function runIfSessionGenerationCurrent(generation: number, action: () => void): void {
+  browserSessionGuard().runIfCurrent(generation, action);
 }

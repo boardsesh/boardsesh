@@ -16,7 +16,8 @@ vi.mock('next-auth/jwt', () => ({
 
 // Real names, stubbed predicate: the route's job here is to try BOTH, and a
 // stub that invented names would not prove that.
-vi.mock('@/app/lib/auth/secure-cookies', () => ({
+vi.mock('@/app/lib/auth/secure-cookies', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/lib/auth/secure-cookies')>()),
   isSecureCookieContext: () => true,
   sessionCookieNameCandidates: () => ['__Secure-next-auth.session-token', 'next-auth.session-token'],
 }));
@@ -210,6 +211,19 @@ describe('GET /api/internal/ws-auth', () => {
       expect(stderr.lines.join('')).toContain('cookie read failed');
     } finally {
       stderr.restore();
+    }
+  });
+
+  it('answers 503 for an unknown mode value, and reads no cookie and writes none (#7596)', async () => {
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', 'Better-Auth');
+    try {
+      const response = await GET(request());
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(getTokenMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });

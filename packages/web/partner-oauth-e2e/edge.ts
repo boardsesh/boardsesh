@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
   createServer as createHttpServer,
@@ -66,6 +67,22 @@ export interface EdgeOptions {
    * Observation only: nothing it does changes the response.
    */
   onResponse?: (observation: EdgeResponseObservation) => void;
+  /**
+   * Asked once for every response, after the upstream server answered and
+   * before a byte of it goes to the client. A promise holds the response
+   * (status, headers, Set-Cookie and body) until it settles, as a slow network
+   * would; undefined passes it on at once. The browser-session cookie-order
+   * spec uses it to deliver a login's reply after a later one.
+   */
+  holdResponse?: (request: EdgeRequestObservation) => Promise<void> | undefined;
+}
+
+/** What the edge knows of a request when its response comes back. */
+export interface EdgeRequestObservation {
+  host: string;
+  method: string;
+  /** The path without its query string. */
+  path: string;
 }
 
 /** One Set-Cookie header, as names and attributes only. The value never leaves this file. */
@@ -75,6 +92,12 @@ export interface EdgeSetCookie {
   attributes: string[];
   /** True when the header deletes the cookie: an empty value, `Max-Age` of 0 or less, or an `Expires` in the past. */
   clears: boolean;
+  /**
+   * The first 16 hex characters of the value's SHA-256, so a spec can tell two
+   * writes of one value from two different values without seeing either.
+   * Empty for a clear.
+   */
+  valueDigest: string;
 }
 
 export interface EdgeResponseObservation {
@@ -103,7 +126,8 @@ export function describeSetCookie(header: string): EdgeSetCookie {
     value === '' ||
     (maxAge !== undefined && Number(maxAge) <= 0) ||
     (expires !== undefined && Date.parse(expires) < Date.now());
-  return { name, attributes, clears };
+  const valueDigest = value === '' ? '' : createHash('sha256').update(value).digest('hex').slice(0, 16);
+  return { name, attributes, clears, valueDigest };
 }
 
 export interface Edge {
@@ -144,6 +168,11 @@ function tlsServer(options: EdgeOptions, clientAddress: string, sockets: Set<Soc
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
   });
+  // Node closes an idle keep-alive connection after 5 s by default, and a browser that reuses it in
+  // that instant sees a network error (WebKit: "internal error"), which the specs then read as an
+  // app that never loads. Keep idle connections far longer than any spec waits between requests.
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
   // Next's dev server keeps a WebSocket open for hot reload; pass upgrades straight through.
   server.on('upgrade', (incoming: IncomingMessage, clientSocket: Duplex, head: Buffer) => {
     const hostname = hostnameOf(incoming.headers.host);
@@ -202,21 +231,30 @@ function forward(options: EdgeOptions, clientAddress: string, incoming: Incoming
       agent: false,
     },
     (response) => {
-      const headers: OutgoingHttpHeaders = {};
-      for (const [name, headerValue] of Object.entries(response.headers)) {
-        if (headerValue !== undefined && !DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = headerValue;
-      }
-      outgoing.writeHead(response.statusCode ?? 502, headers);
-      options.onResponse?.({
-        host: hostname,
-        method: incoming.method ?? 'GET',
-        path: (incoming.url ?? '/').split('?')[0],
-        status: response.statusCode ?? 502,
-        setCookies: (response.headers['set-cookie'] ?? []).map(describeSetCookie),
-      });
-      response.pipe(outgoing);
+      void relay(response);
     },
   );
+  async function relay(response: IncomingMessage) {
+    const held = options.holdResponse?.({
+      host: hostname,
+      method: incoming.method ?? 'GET',
+      path: (incoming.url ?? '/').split('?')[0],
+    });
+    if (held) await held;
+    const headers: OutgoingHttpHeaders = {};
+    for (const [name, headerValue] of Object.entries(response.headers)) {
+      if (headerValue !== undefined && !DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = headerValue;
+    }
+    outgoing.writeHead(response.statusCode ?? 502, headers);
+    options.onResponse?.({
+      host: hostname,
+      method: incoming.method ?? 'GET',
+      path: (incoming.url ?? '/').split('?')[0],
+      status: response.statusCode ?? 502,
+      setCookies: (response.headers['set-cookie'] ?? []).map(describeSetCookie),
+    });
+    response.pipe(outgoing);
+  }
   upstream.on('error', () => {
     if (!outgoing.headersSent) outgoing.writeHead(502, { 'content-type': 'text/plain' });
     outgoing.end('The upstream server did not answer.');

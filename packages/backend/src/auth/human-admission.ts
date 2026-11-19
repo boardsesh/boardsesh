@@ -66,7 +66,7 @@ function cutoffState(
   };
 }
 
-const readCoalescedSubjectState = createAdmissionCoalescer(readHumanSubjectStates);
+const readCoalescedSubjectState = createAdmissionCoalescer(readHumanSubjectStates, 'per-request');
 
 /**
  * Fresh primary admission only: undefined is a deleted or missing account.

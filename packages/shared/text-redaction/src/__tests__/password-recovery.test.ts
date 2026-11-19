@@ -10,6 +10,10 @@ describe('first-password telemetry boundary', () => {
     '/auth/confirm-first-password',
     '/fr/auth/confirm-first-password/',
     '/api/internal/auth/first-password/submit',
+    // The rebuilt www routes (#7596 B5e2).
+    '/api/auth/first-password/confirm',
+    '/api/auth/first-password/status',
+    '/api/auth/first-password/recover',
   ])('redacts the new confirmation URL and structured body at %s', (path) => {
     const capability = 'E'.repeat(43);
     const marked = `${path}#token=${capability}&operation=${'a'.repeat(64)}`;

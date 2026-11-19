@@ -10,7 +10,13 @@ import { validateQueryDepth } from '../graphql/query-depth';
 import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { pubsub } from '../pubsub/index';
-import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
+import {
+  validateToken,
+  extractAuthToken,
+  extractControllerApiKey,
+  validateControllerApiKey,
+  type AuthResult,
+} from '../middleware/auth';
 import {
   admitsCredential,
   AUTH_ADMISSION_BATCH_SIZE,
@@ -20,6 +26,7 @@ import {
 } from '../auth/human-admission';
 import { decideCredential, type PresentedCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
 import { selectSweepBatches } from './admission-sweep-batches';
+import { isBrowserSessionStillLive, readLiveBrowserSessions, type LiveBrowserSessions } from './browser-session-sweep';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { isApiHost } from '../handlers/api-host';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
@@ -179,7 +186,13 @@ export function setupWebSocketServer(httpServer: HttpServer): {
   // The stamps let the sweep decide each socket's credential without decrypting it.
   const humanBindings = new Map<
     WebSocket,
-    { context: ConnectionContext; token: string; userId: string; credential: PresentedCredential }
+    {
+      context: ConnectionContext;
+      token: string;
+      userId: string;
+      credential: PresentedCredential;
+      browserSession?: AuthResult['browserSession'];
+    }
   >();
   const closeAdmission = (socket: WebSocket, unavailable: boolean) => {
     if (socket.readyState === socket.OPEN) {
@@ -238,8 +251,16 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       roundBatches.map(async (requestedIds) => {
         const requested = new Set(requestedIds);
         let subjects: ReadonlyMap<string, SubjectCutoffState>;
+        let liveBrowserSessions: LiveBrowserSessions;
         try {
           subjects = await readHumanSubjectStates(requestedIds);
+          // Browser access tokens also need their session read: the account
+          // state does not show a session that expired or lost its lineage.
+          liveBrowserSessions = await readLiveBrowserSessions(
+            captured.flatMap(([, binding]) =>
+              requested.has(binding.userId) && binding.browserSession ? [binding.browserSession.sessionId] : [],
+            ),
+          );
         } catch {
           // A failed read proves nothing about these accounts, and a primary that
           // cannot answer cannot commit a deletion or a reset either. Leave them
@@ -257,7 +278,11 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           )
             continue;
           const decision = decideCredential(binding.credential, subjects.get(binding.userId), decidedAt);
-          if (!admitsCredential(decision, 'socket-sweep')) closeAdmission(socket, false);
+          if (
+            !admitsCredential(decision, 'socket-sweep') ||
+            (binding.browserSession && !isBrowserSessionStillLive(binding, liveBrowserSessions))
+          )
+            closeAdmission(socket, false);
         }
       }),
     ).finally(() => {
@@ -290,6 +315,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let authenticatedUserId: string | undefined;
         let credentialExpiresAt: number | undefined;
         let presentedCredential: PresentedCredential | undefined;
+        let browserSession: AuthResult['browserSession'];
 
         if (token !== null) {
           let authResult;
@@ -310,6 +336,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             authenticatedUserId = authResult.userId;
             credentialExpiresAt = authResult.credentialExpiresAt;
             presentedCredential = authResult.credential;
+            browserSession = authResult.browserSession;
             logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
           } else {
             // Existing clients expect an expired optional credential to keep
@@ -487,6 +514,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             token,
             userId: authenticatedUserId,
             credential: presentedCredential,
+            ...(browserSession ? { browserSession } : {}),
           });
         }
 

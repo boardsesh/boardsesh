@@ -661,6 +661,38 @@ adapter never finds a session by token, so a correctly signed Better Auth cookie
 still signs no one in. A signed-out authorize is one with no NextAuth cookie,
 which is why it can run outside a transaction.
 
+With `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` (#7596, B6) the first-party
+session cookies come first: a verified `__Secure-boardsesh.session_token`
+(login), else a verified `__Secure-boardsesh.bridged_session_token`, checked
+with `AUTH_BROWSER_SESSION_COOKIE_SECRET` (signature bound to the cookie kind)
+and admitted by the same live-session read every request uses
+(`readFirstPartySession`). A login cookie sent twice with different values, or
+a bridged one with no login cookie, is signed out, never a fallback; so is a
+verified cookie whose session has ended, even beside a legacy cookie. The one
+exception is www's stale-cookie rule, shared as `isNewerLegacyLogin`
+(`@boardsesh/auth-protocol/legacy-login-precedence`, vectors in
+`legacy-login-precedence-vectors`), decided by the first-party cookie's kind
+(its name, never the session's `source`): beside a login cookie, a legacy
+cookie with another session id and a later sign-in time wins; beside a bridged
+cookie, a legacy cookie with another string session id wins with no time test.
+Only the deployed `__Secure-next-auth.session-token` name counts; a plain-named
+legacy cookie never outranks a first-party one. www may answer the older
+session for a moment where api picks the newer login: when its bridge of the
+newer cookie fails or is rate limited, and on a POST session read, which does
+not apply the rule. That is transient, and api's answer is the newer login.
+`B6_PARTNER_CONSENT` left the cutover lists with #7880: www calls the shared
+function and runs the shared vectors (`legacy-login-precedence.server.test.ts`). Without a first-party cookie the
+deployed secure NextAuth cookie can supply the login. A bridged session keeps the legacy cookie's
+session id and guarded sign-in time, so it names the same partner session as
+that cookie did and nobody consents again at cutover; a login session uses its
+own id and time; a carried one keeps its time. With the mode on and the cookie
+secret missing, short or reused, every consent request answers 503 (logged once
+per process), because reading as if the cookies were absent could fall back to
+an older legacy login, even another account's. The consent writes no cookie and
+never bridges. With the mode off the legacy cookie supplies the login. In
+both modes, consent checks the selected login’s session denial and account
+generation after locking the user. A revoked login stays signed out across rollback.
+
 **When a sign-in counts** (decision 19). The cookie must carry an `auth_time`
 the web wrote at sign-in (#6981 F5), under 30 days old, written beside
 `link_guarded: true` (so the web was guarding links when it was minted), and more

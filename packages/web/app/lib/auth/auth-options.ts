@@ -1,9 +1,11 @@
 import { webCredentialProofMode, webCredentialProofSchema } from '@boardsesh/auth-protocol';
+import { BROWSER_SESSION_MODE_ENV, parseBrowserSessionMode } from '@boardsesh/auth-protocol/browser-session-mode';
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
 import * as Sentry from '@sentry/nextjs';
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import GoogleProvider from 'next-auth/providers/google';
+import { oidcStandInWellKnown } from './oidc-stand-in.server';
 import AppleProvider from 'next-auth/providers/apple';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { getDb } from '@/app/lib/db/db';
@@ -64,6 +66,15 @@ async function signInGeneration(userId: string): Promise<number> {
   }
 }
 
+/** Any mode but `legacy` (an unknown value too) takes the generation from a backend proof only. */
+function browserSessionModeRequiresProof(): boolean {
+  try {
+    return parseBrowserSessionMode(process.env[BROWSER_SESSION_MODE_ENV]) !== 'legacy';
+  } catch {
+    return true;
+  }
+}
+
 const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
 const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
 const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple']);
@@ -88,6 +99,21 @@ function reportMissingOAuthEmail(provider: string): void {
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
 
+/**
+ * The browser-session e2e run's stand-in discovery document for a provider
+ * (`oidc-stand-in.server.ts`): only on `.boardsesh.test` origins, never on a
+ * hosted deployment. Refused anywhere else, where instrumentation.ts stops
+ * the boot; here a refused value simply points nowhere.
+ */
+function providerStandIn(provider: 'google' | 'apple'): { wellKnown: string } | Record<string, never> {
+  try {
+    const wellKnown = oidcStandInWellKnown(provider);
+    return wellKnown ? { wellKnown } : {};
+  } catch {
+    return {};
+  }
+}
+
 // Only add Google provider if credentials are configured
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   providers.push(
@@ -95,6 +121,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
+      ...providerStandIn('google'),
     }),
   );
 }
@@ -107,6 +134,7 @@ if (process.env.APPLE_ID && process.env.APPLE_SECRET) {
       clientSecret: process.env.APPLE_SECRET,
       checks: ['pkce', 'state'],
       allowDangerousEmailAccountLinking: true,
+      ...providerStandIn('apple'),
     }),
   );
 }
@@ -120,6 +148,10 @@ providers.push(
       transferToken: { label: 'Transfer Token', type: 'text' },
     },
     async authorize(credentials) {
+      // Under AUTH_BROWSER_SESSION_MODE=better-auth (or any value but legacy) www
+      // refuses this provider (#7596 B4c-web): nothing has called it since
+      // 2026-08-15, and a transfer token would otherwise mint a second session.
+      if (browserSessionModeRequiresProof()) return null;
       if (!credentials?.transferToken) {
         return null;
       }
@@ -505,6 +537,10 @@ export const authOptions: NextAuthOptions = {
           ['credentials', 'google', 'apple', 'native-oauth'].includes(account?.provider ?? '')
         )
           throw new Error('Backend web credential proof required');
+        // Under AUTH_BROWSER_SESSION_MODE=better-auth only a backend proof names the
+        // generation; www never stamps a sign-in from its own read (#7596 B2c,
+        // STAGED_WEB_PROOF_GENERATION_STAMP). Legacy reads nothing more.
+        if (!proved && browserSessionModeRequiresProof()) throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();
         if (proved?.requiresAccountCutoff) token.legacy_no_sid = true;
         else delete token.legacy_no_sid;

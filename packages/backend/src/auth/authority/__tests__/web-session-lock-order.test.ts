@@ -81,6 +81,7 @@ async function passwordLogin(database: typeof environment.database, email: strin
     requestId: randomUUID(),
     issuedAt: Date.now(),
     webSession: { presented: { kind: 'canonical-token', token } },
+    credentialProofVersion: 1,
     payload: { email, password: ORIGINAL_PASSWORD },
   });
   if (reply.outcome !== 'authenticated' || !reply.webSession) throw new Error('No web session issued');
@@ -141,6 +142,7 @@ describe('a login and the writers that end its sessions share one lock order', (
   });
   beforeEach(() => {
     vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', 'synthetic-web-session-retired-mailbox-key-6975');
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'compatible');
   });
   afterEach(() => {
     vi.restoreAllMocks();

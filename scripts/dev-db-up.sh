@@ -307,7 +307,8 @@ PG_CONTAINER=$(docker compose ps -q postgres)
 
 echo "Waiting for postgres to be healthy..."
 attempts=0
-max_attempts=30
+# A cold CI runner can take over 30 s to start the seeded image (#7810, run 44349715985).
+max_attempts=120
 until docker exec "$PG_CONTAINER" pg_isready -U postgres -q 2>/dev/null; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge "$max_attempts" ]; then

@@ -51,6 +51,10 @@
     "settings": {
       "title": "Settings",
       "description": "Manage your Boardsesh account, profile, and preferences"
+    },
+    "firstPassword": {
+      "title": "Add a password",
+      "description": "Add a password to your Boardsesh account"
     }
   },
   "title": "Settings",
@@ -706,5 +710,59 @@
   },
   "writeRefused": {
     "tryAgain": "That didn't go through. Try again."
+  },
+  "signInMethods": {
+    "title": "Sign-in methods",
+    "description": "How you sign in to Boardsesh. A change asks you to confirm it's you, and signs you out on your other devices.",
+    "password": "Password",
+    "passwordSet": "Set",
+    "passwordNotSet": "Not set",
+    "connect": "Connect {{provider}}",
+    "disconnect": "Disconnect",
+    "notAvailableYet": "Not available yet",
+    "onlyMethod": "This is your only way to sign in. Add another one before you disconnect it.",
+    "noPassword": "You don't have a password yet. Add one to sign in with your email and to confirm changes here.",
+    "setPassword": "Set a password",
+    "confirmLink": "Confirm it's you to connect {{provider}}.",
+    "confirmUnlink": "Confirm it's you to disconnect {{provider}}.",
+    "passwordLabel": "Password",
+    "confirm": "Confirm",
+    "continueWithGoogle": "Continue with Google",
+    "cancel": "Cancel",
+    "wrongPassword": "That password didn't work. Try again.",
+    "tryAgainSoon": "That didn't go through. Try again in a minute.",
+    "loadFailed": "We couldn't load your sign-in methods.",
+    "retry": "Try again",
+    "results": {
+      "linked": "{{provider}} is connected. Your other devices will ask you to sign in again.",
+      "unlinked": "{{provider}} is disconnected. Your other devices will ask you to sign in again.",
+      "cancelled": "Nothing changed: you cancelled at the provider.",
+      "expired": "That took too long. Start again.",
+      "state_mismatch": "That answer didn't match this request. Start again.",
+      "session_required": "Sign in again, then start over.",
+      "identity_changed": "You're signed in as someone else now.",
+      "provider_not_verified": "The provider couldn't confirm that account. Try again.",
+      "unavailable": "That didn't go through. Try again in a minute.",
+      "reauthentication_required": "That sign-in wasn't recent enough. Confirm it's you again.",
+      "last_usable_method": "You can't remove your only way to sign in.",
+      "ownership_conflict": "That account is already connected to another Boardsesh account.",
+      "too_many_pending": "Too many changes are waiting. Try again in 15 minutes.",
+      "provider_unavailable": "That provider isn't available right now.",
+      "replayed": "That request was already used. Start again.",
+      "failed": "That didn't work. Try again."
+    },
+    "disconnectProvider": "Disconnect {{provider}}",
+    "cancelPending": "Cancel pending changes",
+    "pendingCancelled": "Cancelled. Try again now; anything still waiting ends within 15 minutes."
+  },
+  "firstPassword": {
+    "title": "Add a password",
+    "description": "We'll email a link to {{email}}. Open it in this browser within five minutes to choose your password.",
+    "send": "Email me a link",
+    "sendAgain": "Send another link",
+    "sent": "Link sent to {{email}}. Open it in this browser within five minutes.",
+    "notEligible": "We can't add a password to this account from here. If it already has one, sign in with it.",
+    "tryAgainSoon": "We couldn't send the link. Try again later.",
+    "back": "Back to Settings"
   }
 }

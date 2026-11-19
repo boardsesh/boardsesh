@@ -2,7 +2,14 @@ import { decode } from 'next-auth/jwt';
 import { webCredentialProofMode, webCredentialProofSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { NextResponse, type NextRequest } from 'next/server';
-import { getAdmittedRawServerToken, getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import type { Session } from 'next-auth';
+import { BROWSER_SESSION_MODE_ENV } from '@boardsesh/auth-protocol/browser-session-mode';
+import {
+  capturePresentedWebCredential,
+  getAdmittedRawServerToken,
+  getAdmittedServerSession,
+} from '@/app/lib/auth/admitted-session.server';
+import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
 import {
   issueNativeOAuthTransferToken,
   NATIVE_OAUTH_ATTEMPT_COOKIE,
@@ -46,31 +53,118 @@ const deepLinkRedirect = (url: string) => {
   return response;
 };
 
+type CreationProof = NonNullable<Session['nativeOAuthCreationProof']>;
+
+/**
+ * The receipt of an account a provider sign-in just created, bound to the
+ * app's own attempt (its signed cookie and the query), or nothing.
+ */
+function verifiedCreationProof(
+  request: NextRequest,
+  proof: CreationProof | undefined,
+  session: { userId: string; authSessionId: string | undefined },
+) {
+  const attempt = verifyNativeOAuthAttempt(request.cookies.get(NATIVE_OAUTH_ATTEMPT_COOKIE)?.value);
+  return attempt &&
+    attempt.attemptId === request.nextUrl.searchParams.get('attemptId') &&
+    attempt.provider === request.nextUrl.searchParams.get('provider') &&
+    proof?.provider === attempt.provider &&
+    proof.authSessionId === session.authSessionId &&
+    proof.accountCreation.userId === session.userId &&
+    proof.signedInAt > attempt.startedAt &&
+    proof.signedInAt <= Date.now()
+    ? {
+        accountCreation: proof.accountCreation,
+        authSessionId: proof.authSessionId,
+        provider: proof.provider,
+        attemptId: attempt.attemptId,
+      }
+    : {};
+}
+
+const transferRedirect = (transferToken: string, nextPath: string) =>
+  deepLinkRedirect(
+    `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`,
+  );
+
+/**
+ * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4c-web): the account,
+ * its session id, generation, sign-in time and link guard come from the
+ * request's canonical session resolution (the one renders use; a legacy-only
+ * browser is bridged without a cookie). The legacy NextAuth cookie is read
+ * only for the account-creation receipt a provider sign-in puts on its twin,
+ * which no session read carries, and only when it names the same login: a
+ * legacy cookie of another login (or one that does not decode) refuses. Writes
+ * no cookie. A request whose session is known only by its legacy cookie (its
+ * bridge over budget or failing) answers `session_unavailable`.
+ *
+ * Supplying the receipt without the legacy cookie needs a backend change: the
+ * web OAuth `resolve` command knows whether it created the account, so it
+ * would store the receipt (provider, created-at, sign-in time) with the issued
+ * session, and the session read would return it while that sign-in is
+ * minutes old.
+ */
+async function canonicalNativeCallback(request: NextRequest, nextPath: string): Promise<Response> {
+  const { serverBrowserSession } = await import('@/app/lib/auth/server-browser-session.server');
+  const resolved = await serverBrowserSession({ method: 'GET' });
+  if (!resolved || resolved.kind === 'legacy')
+    return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_unavailable`);
+  if (resolved.kind === 'signed-out') return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
+  const { session } = resolved;
+  // Outside the `try`: an authority outage reading the cookie is `session_unavailable` (GET's catch).
+  const twin = await capturePresentedWebCredential(request);
+  // Only a real login hands the app a sign-in time and a link guard; a carried or
+  // bridged session never does, as the 15-minute token drops them (#7802 review M1).
+  const realLogin = session.source === 'login';
+  let transferToken: string;
+  try {
+    let creationProof: CreationProof | undefined;
+    if (twin) {
+      if (!process.env.NEXTAUTH_SECRET) throw new Error('Source credential unavailable');
+      const claims = await decode({ token: twin.credential, secret: process.env.NEXTAUTH_SECRET });
+      if (claims?.sub !== session.userId || claims.authSessionId !== session.authSessionId)
+        throw new Error('Legacy cookie names another login');
+      creationProof = claims.nativeOAuthCreationProof;
+    }
+    const credentialProof = webCredentialProofSchema.parse({
+      version: 1,
+      userId: session.userId,
+      authSessionId: session.authSessionId,
+      generation: session.generation,
+      authenticatedAt: realLogin ? session.authenticatedAt : null,
+      linkGuarded: realLogin && session.linkGuarded,
+    });
+    transferToken = issueNativeOAuthTransferToken({
+      userId: session.userId,
+      generation: session.generation,
+      nextPath,
+      authSessionId: session.authSessionId,
+      credentialProof,
+      ...verifiedCreationProof(request, creationProof, session),
+    });
+  } catch {
+    return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=token_issue_failed`);
+  }
+  return transferRedirect(transferToken, nextPath);
+}
+
 async function nativeCallback(request: NextRequest) {
+  const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get('next'));
+  const rawMode = process.env[BROWSER_SESSION_MODE_ENV];
+  if (rawMode !== undefined && rawMode !== '' && rawMode !== 'legacy') {
+    const browserSession = browserSessionRouteMode();
+    if (browserSession.kind === 'unavailable') throw new CredentialAuthorityUnavailable();
+    if (browserSession.kind === 'better-auth') return canonicalNativeCallback(request, nextPath);
+  }
   const session = await getAdmittedServerSession();
   if (!session?.user?.id) {
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   }
 
-  const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get('next'));
-  const attempt = verifyNativeOAuthAttempt(request.cookies.get(NATIVE_OAUTH_ATTEMPT_COOKIE)?.value);
-  const proof = session.nativeOAuthCreationProof;
-  const verifiedProof =
-    attempt &&
-    attempt.attemptId === request.nextUrl.searchParams.get('attemptId') &&
-    attempt.provider === request.nextUrl.searchParams.get('provider') &&
-    proof?.provider === attempt.provider &&
-    proof.authSessionId === session.authSessionId &&
-    proof.accountCreation.userId === session.user.id &&
-    proof.signedInAt > attempt.startedAt &&
-    proof.signedInAt <= Date.now()
-      ? {
-          accountCreation: proof.accountCreation,
-          authSessionId: proof.authSessionId,
-          provider: proof.provider,
-          attemptId: attempt.attemptId,
-        }
-      : {};
+  const verifiedProof = verifiedCreationProof(request, session.nativeOAuthCreationProof, {
+    userId: session.user.id,
+    authSessionId: session.authSessionId,
+  });
   let transferToken: string;
   try {
     let credentialProof: WebCredentialProof | undefined;
@@ -102,8 +196,7 @@ async function nativeCallback(request: NextRequest) {
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=token_issue_failed`);
   }
 
-  const redirectUrl = `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
-  return deepLinkRedirect(redirectUrl);
+  return transferRedirect(transferToken, nextPath);
 }
 
 export async function GET(request: NextRequest) {

@@ -30,6 +30,12 @@ export interface FirstPartySession {
    * no column stores it.
    */
   readonly source?: FirstPartySessionSource;
+  /**
+   * The legacy lineage the session belongs to: a legacy cookie's own, or a
+   * canonical row's `legacy_lineage_id`. Lets a caller find the one row the
+   * bridge made from a cookie without a session id (exact id and lineage).
+   */
+  readonly lineageId?: string | null;
 }
 export type FirstPartySessionResult =
   | { readonly status: 'admitted'; readonly session: FirstPartySession }
@@ -41,6 +47,63 @@ export type FirstPartyCredential =
   // Only the canonical opaque session token, after transport cookie signature
   // validation. Never accept a public session ID as an authentication token.
   | { readonly kind: 'canonical-token'; readonly token: string };
+
+/**
+ * The row rules every canonical session read applies, whatever found the row
+ * (the cookie's token digest, or a browser access token's session id): the row
+ * is unexpired, and its legacy lineage, when that row exists, is unrevoked and
+ * still names this account and this row. Undefined means not live.
+ */
+export function canonicalFirstPartySession(
+  canonical: typeof authSession.$inferSelect | undefined,
+  lineage: typeof authCredentialLineage.$inferSelect | undefined,
+  now: Date,
+): FirstPartySession | undefined {
+  if (!canonical || canonical.expiresAt.getTime() <= now.getTime()) return undefined;
+  if (canonical.legacyLineageId && lineage?.id === canonical.legacyLineageId) {
+    if (lineage.revokedAt || lineage.userId !== canonical.userId || lineage.sessionId !== canonical.id)
+      return undefined;
+  }
+  return {
+    userId: canonical.userId,
+    authSessionId: canonical.id,
+    generation: canonical.revocationGeneration ?? 0,
+    requiresAccountCutoff: canonical.legacyLineageId?.startsWith('credential:') ?? false,
+    // createdAt may be an epoch sentinel; it never proves authentication.
+    authenticatedAt: canonical.originalAuthenticatedAt,
+    linkGuarded: canonical.originalAuthenticatedAt !== null,
+    expiresAt: canonical.expiresAt,
+    // Rows without a lineage come from sign-ins this system verified
+    // (`issueWebSession`, the staged provider sign-ins). The bridge and
+    // the native refresh binding always record one, and a `carried`
+    // web session records a `carried:` id that names no lineage row.
+    source: canonical.legacyLineageId === null ? 'login' : 'bridge',
+    lineageId: canonical.legacyLineageId,
+  };
+}
+
+/**
+ * The account rules: the account exists and is not deleted, the session's
+ * generation is the account's, and its id has no denial. Strict: no `observe`.
+ */
+export function admitsFirstPartySession(
+  session: FirstPartySession,
+  subject: SubjectCutoffState | undefined,
+  now: Date,
+): boolean {
+  return (
+    decideCredential(
+      {
+        kind: 'web-session',
+        generationClaim: session.generation,
+        sessionKeyClaim: session.authSessionId,
+        authTimeClaim: session.authenticatedAt ? session.authenticatedAt.getTime() / 1000 : null,
+      },
+      subject,
+      now.getTime(),
+    ).denial === null
+  );
+}
 
 /** No positive cache. Crypto refusal differs from primary/database unavailability. */
 export async function readFirstPartySession(
@@ -65,6 +128,7 @@ export async function readFirstPartySession(
         // Read directly, a NextAuth cookie is the legacy login itself. Once
         // bridged, its canonical row reads as `bridge` below.
         source: 'login',
+        lineageId: proof.lineageId,
       };
     } else {
       if (!credential.token || credential.token.length > 4096) return { status: 'denied' };
@@ -74,41 +138,19 @@ export async function readFirstPartySession(
         .from(authSession)
         .where(eq(authSession.token, sessionTokenDigest(credential.token)));
       if (!canonical || canonical.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
-      if (canonical.legacyLineageId) {
-        const [lineage] = await database
-          .select()
-          .from(authCredentialLineage)
-          .where(eq(authCredentialLineage.id, canonical.legacyLineageId));
-        if (lineage && (lineage.revokedAt || lineage.userId !== canonical.userId || lineage.sessionId !== canonical.id))
-          return { status: 'denied' };
-      }
-      session = {
-        userId: canonical.userId,
-        authSessionId: canonical.id,
-        generation: canonical.revocationGeneration ?? 0,
-        requiresAccountCutoff: canonical.legacyLineageId?.startsWith('credential:') ?? false,
-        // createdAt may be an epoch sentinel; it never proves authentication.
-        authenticatedAt: canonical.originalAuthenticatedAt,
-        linkGuarded: canonical.originalAuthenticatedAt !== null,
-        expiresAt: canonical.expiresAt,
-        // Rows without a lineage come from sign-ins this system verified
-        // (`issueWebSession`, the staged provider sign-ins). The bridge and
-        // the native refresh binding always record one, and a `carried`
-        // web session records a `carried:` id that names no lineage row.
-        source: canonical.legacyLineageId === null ? 'login' : 'bridge',
-      };
+      const [lineage] = canonical.legacyLineageId
+        ? await database
+            .select()
+            .from(authCredentialLineage)
+            .where(eq(authCredentialLineage.id, canonical.legacyLineageId))
+        : [];
+      const admitted = canonicalFirstPartySession(canonical, lineage, now);
+      if (!admitted) return { status: 'denied' };
+      session = admitted;
     }
-    const decision = decideCredential(
-      {
-        kind: 'web-session',
-        generationClaim: session.generation,
-        sessionKeyClaim: session.authSessionId,
-        authTimeClaim: session.authenticatedAt ? session.authenticatedAt.getTime() / 1000 : null,
-      },
-      await readSubject(session.userId),
-      now.getTime(),
-    );
-    return decision.denial === null ? { status: 'admitted', session } : { status: 'denied' };
+    return admitsFirstPartySession(session, await readSubject(session.userId), now)
+      ? { status: 'admitted', session }
+      : { status: 'denied' };
   } catch {
     // Adapter errors can contain query parameters. No exception details escape.
     return { status: 'unavailable' };

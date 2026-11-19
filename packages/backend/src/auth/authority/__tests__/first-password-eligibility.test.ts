@@ -105,12 +105,13 @@ describe('first-password actual selected-authority eligibility', () => {
       expect(await sourceState(owner)).toEqual(before);
     });
 
-    it(`${selected}: refuses an existing selected password or any additional provider without consuming source state`, async () => {
+    it(`${selected}: refuses an existing selected password and a Facebook-only account without consuming source state`, async () => {
       const passwordOwner = await environment.actor(selected, 'canonical-token', { provider: 'apple' });
       await reserve(passwordOwner);
       const passwordBefore = await sourceState(passwordOwner);
       await expect(admit(passwordOwner)).rejects.toMatchObject({ outcome: 'denied', code: 'already_set' });
       expect(await sourceState(passwordOwner)).toEqual(passwordBefore);
+      // Apple and Google together are eligible (decision of 2026-11-18 on #7596).
       const mixedOwner = await environment.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
       await reserve(mixedOwner);
       await withFirstPasswordAuthority(environment.database, runtime(), async (transaction, authority) => {
@@ -119,9 +120,25 @@ describe('first-password actual selected-authority eligibility', () => {
           0,
         );
       });
-      const mixedBefore = await sourceState(mixedOwner);
-      await expect(admit(mixedOwner)).rejects.toMatchObject({ outcome: 'denied', code: 'not_eligible' });
-      expect(await sourceState(mixedOwner)).toEqual(mixedBefore);
+      await expect(admit(mixedOwner)).resolves.toBeDefined();
+      // A Facebook-only account stays not eligible (its own open owner decision).
+      const facebookOwner = await environment.actor(selected, 'canonical-token', {
+        password: false,
+        provider: 'apple',
+      });
+      await reserve(facebookOwner);
+      await withFirstPasswordAuthority(environment.database, runtime(), async (transaction, authority) => {
+        const identity = bindIdentityAuthority(transaction, authority);
+        const [appleRow] = await identity.listProviders(facebookOwner.userId);
+        await identity.insertProvider({ userId: facebookOwner.userId, provider: 'facebook', subject: randomUUID() }, 0);
+        await identity.removeProvider(
+          { userId: facebookOwner.userId, provider: 'apple', subject: appleRow.subject },
+          0,
+        );
+      });
+      const facebookBefore = await sourceState(facebookOwner);
+      await expect(admit(facebookOwner)).rejects.toMatchObject({ outcome: 'denied', code: 'not_eligible' });
+      expect(await sourceState(facebookOwner)).toEqual(facebookBefore);
     });
 
     it(`${selected}: refuses missing or ambiguous reservation membership and a wrong actor UID`, async () => {
@@ -224,9 +241,9 @@ describe('first-password actual selected-authority eligibility', () => {
       });
       const holding = observer.begin(async (transaction) => {
         if (selected === 'better-auth')
-          await transaction`UPDATE auth_account SET provider_id='google' WHERE user_id=${owner.userId} AND provider_id='apple'`;
+          await transaction`UPDATE auth_account SET provider_id='facebook' WHERE user_id=${owner.userId} AND provider_id='apple'`;
         else
-          await transaction`UPDATE accounts SET provider='google' WHERE "userId"=${owner.userId} AND provider='apple'`;
+          await transaction`UPDATE accounts SET provider='facebook' WHERE "userId"=${owner.userId} AND provider='apple'`;
         ready();
         await released;
       });

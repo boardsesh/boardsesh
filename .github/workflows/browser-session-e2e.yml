@@ -20,10 +20,10 @@ on:
   workflow_dispatch:
     inputs:
       www:
-        description: 'How www runs: next dev, or next build + next start (the nightly default)'
+        description: 'How www runs: next build + next start (every CI run), or next dev (local runs and this option only)'
         type: choice
-        options: [dev, production]
-        default: dev
+        options: [production, dev]
+        default: production
   schedule:
     - cron: '41 17 * * *' # daily, 17:41 UTC
   pull_request:
@@ -32,6 +32,9 @@ on:
       - 'scripts/browser-session-e2e.ts'
       - 'packages/web/partner-oauth-e2e/edge.ts'
       - 'packages/web/partner-oauth-e2e/server-environment.ts'
+      - 'packages/web/auth-proofs/apple-oidc-fixture.ts'
+      - 'packages/web/auth-proofs/google-oidc-fixture.ts'
+      - 'packages/web/instrumentation.ts'
       - 'packages/web/app/lib/auth/**'
       - 'packages/web/app/api/auth/**'
       - 'packages/web/app/api/internal/ws-auth/**'
@@ -53,7 +56,9 @@ jobs:
   browser-session:
     name: Browser session (Chromium and WebKit)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The nightly runs both modes against production builds of www. A pull
+    # request runs the acceptance smoke subset only and stays well under this.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -78,16 +83,52 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      # One attempt hung for 30 minutes on a runner (#7810, run 44384191160); give each
+      # attempt 10 minutes and try three times, so a stuck download costs minutes, not the job.
       - name: Install Playwright chromium and webkit
-        run: vp exec playwright install --with-deps chromium webkit
+        run: |
+          for attempt in 1 2 3; do
+            timeout 600 vp exec playwright install --with-deps chromium webkit && exit 0
+            echo "Playwright install attempt $attempt failed or timed out."
+            sleep 10
+          done
+          exit 1
         working-directory: packages/web
 
-      - name: Run the browser-session specs in both engines
+      # Today's mode first, on the dev database as the image has it: the B7a
+      # baseline specs (legacy-mode, accounts, restart, legacy-session). The
+      # nightly and a dispatch run it; a pull request goes straight to the
+      # acceptance run below.
+      - name: Run the legacy-mode baseline specs in both engines
+        if: github.event_name != 'pull_request'
         env:
-          # The nightly runs www as a production build (Router Cache and several auth
-          # branches differ from next dev); a pull request keeps next dev, which
-          # starts minutes sooner. A dispatch chooses.
-          BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
+          BROWSER_SESSION_E2E_WWW: ${{ inputs.www || 'production' }}
+        run: vp run test:e2e:browser-session
+
+      - name: Upload the legacy-mode Playwright report
+        uses: actions/upload-artifact@v4
+        if: always() && github.event_name != 'pull_request'
+        with:
+          name: playwright-report-browser-session-legacy
+          path: packages/web/playwright-report/browser-session/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # The #7596 acceptance specs under AUTH_BROWSER_SESSION_MODE=better-auth.
+      # The global setup prepares the database (the credential LOGIN and an
+      # enforced authority manifest) and gives both servers every precondition;
+      # BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow, honoured only on the .test
+      # hosts, empties the cutover blocker lists. Every run, pull request or
+      # nightly, runs every spec against the production build of www (about 11
+      # minutes of job time): restarts are `next start`, not a recompile. `next
+      # dev` is for local runs and the dispatch option only. No Playwright
+      # retries: the harness retries two named infrastructure errors once each
+      # and fails the run past two (harness-retries.ts).
+      - name: Run the browser-session acceptance specs in both engines
+        env:
+          BROWSER_SESSION_E2E_WWW: ${{ inputs.www || 'production' }}
+          AUTH_BROWSER_SESSION_MODE: better-auth
+          BROWSER_SESSION_E2E_REUSE_EXPORT: '1'
         # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
         run: vp run test:e2e:browser-session
 

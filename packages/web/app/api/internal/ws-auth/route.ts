@@ -8,14 +8,29 @@ import { decode, getToken, type JWT } from 'next-auth/jwt';
 import { isSecureCookieContext, sessionCookieNameCandidates } from '@/app/lib/auth/secure-cookies';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
 import { reportHandledError } from '@/app/lib/observability/report-error';
+import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
+import { browserAccessTokenAnswer } from '@/app/lib/auth/browser-access-token-route.server';
 
 const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
 
 /**
  * API endpoint to get a WebSocket authentication token.
- * Returns the NextAuth JWT token that can be passed to the WebSocket backend.
+ *
+ * With `AUTH_BROWSER_SESSION_MODE` unset, empty or `legacy`: the NextAuth JWT
+ * that can be passed to the WebSocket backend, exactly as before. Under
+ * `better-auth` (#7596 B3b): the backend's 15-minute browser access token for
+ * the session `/api/auth/session` resolves for the same request, with the same
+ * ids (`browser-access-token-route.server.ts`). Any other mode value is 503.
  */
 export async function GET(request: NextRequest) {
+  const mode = browserSessionRouteMode();
+  if (mode.kind === 'unavailable') return unavailableCredentialResponse();
+  if (mode.kind === 'better-auth') return browserAccessTokenAnswer(request, mode.cookies);
+  return legacyWsAuthToken(request);
+}
+
+/** The NextAuth JWT, read and admitted as on main. */
+async function legacyWsAuthToken(request: NextRequest) {
   const log = createRequestLogger(request);
   try {
     // Pass cookieName + secureCookie explicitly: next-auth's internal derivation

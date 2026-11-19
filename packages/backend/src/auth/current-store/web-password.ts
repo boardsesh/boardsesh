@@ -7,7 +7,6 @@ import {
   type PasswordReply,
   type RegisterCommand,
   type RegisterReply,
-  type WebSessionRequest,
 } from '@boardsesh/auth-protocol';
 import {
   ACCOUNT_EMAIL_CANDIDATE_LIMIT,
@@ -56,9 +55,7 @@ import {
 } from '../authority/router';
 import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
-import { readFirstPartySession, type FirstPartySession } from '../authority/session-reader';
-import { issueWebSession, lockWebSessionAccounts, presentedWebCredential } from '../authority/web-session';
-import { readLockedWebSubjectState } from './web-credential-state';
+import { issueWebSession, lockWebSessionAccounts, readPresentedWebSession } from '../authority/web-session';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
@@ -360,33 +357,6 @@ async function lockWebPasswordAuthentication(
 }
 
 /**
- * The session the login arrived with, read in this transaction. One that no
- * longer reads as live needs no revocation; an unreadable store fails the login.
- *
- * A login revokes only a session it can name: a canonical row or a legacy
- * cookie with its own session id. A legacy cookie without one could only be
- * ended by cutting off its whole account (every session and every phone), so
- * it is left alone and the login goes ahead (#7596 review of #7722, finding 1).
- * The subject state is read before the user lock is taken; both ways it can
- * be used (an idempotent SID denial, or nothing) stay correct under the lock.
- */
-async function readPresentedSession(
-  transaction: CurrentStoreTransaction,
-  request: WebSessionRequest,
-  now: Date,
-): Promise<FirstPartySession | undefined> {
-  const { presented } = request;
-  if (!presented) return undefined;
-  const credential = presentedWebCredential(presented);
-  const outcome = await readFirstPartySession(transaction, credential, now, (userId) =>
-    readLockedWebSubjectState(transaction, userId),
-  );
-  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
-  if (outcome.status !== 'admitted' || outcome.session.requiresAccountCutoff) return undefined;
-  return outcome.session;
-}
-
-/**
  * One-request password/UID verification snapshot. With `webSession` (its mode
  * checked by the transport), it also issues a first-party web session for the
  * verified account and revokes the presented one, in the same transaction.
@@ -401,6 +371,10 @@ export async function authenticateWebPassword(
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
+  // A session is never issued without the proof that gives its legacy rollback
+  // cookie the same session id. The transport refuses this as 400 first.
+  if (input.webSession && credentialProofVersion === undefined)
+    throw new Error('A web session needs a credential proof');
   const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password, compareSlot);
   const { receipt } = prepared;
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
@@ -442,7 +416,9 @@ export async function authenticateWebPassword(
     // BA-02: the lock covers every row the address rule could name (the typed
     // text and its other capitals), still in users.id order.
     const now = new Date();
-    const presented = input.webSession ? await readPresentedSession(transaction, input.webSession, now) : undefined;
+    const presented = input.webSession
+      ? await readPresentedWebSession(transaction, input.webSession.presented, now)
+      : undefined;
     const selected = await lockWebPasswordAuthentication(transaction, prepared, presented?.userId);
     assertFresh(issuedAt);
     if (!selected)

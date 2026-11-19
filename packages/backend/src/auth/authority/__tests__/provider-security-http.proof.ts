@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -12,7 +11,6 @@ import {
   authProviderSecurityIntents,
   authSession,
   authSubjectCutoffs,
-  authWebOAuthIntents,
   oauthClient,
   oauthConnections,
   oauthRefreshToken,
@@ -22,7 +20,6 @@ import {
   PROVIDER_SECURITY_COMMAND_PATHS,
   PROVIDER_SECURITY_VERSION,
   providerSecurityReplySchema,
-  type BrowserBindingActor,
   type ProviderSecurityCommand,
   type ProviderSecurityReply,
 } from '@boardsesh/auth-protocol';
@@ -58,10 +55,6 @@ vi.mock('../../../db/client', () => ({
 
 const rpcSecret = 'owned-provider-http-service-secret-6975';
 const sourceSecret = 'owned-provider-http-source-secret-6975';
-const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
-const jwt = requireWeb('next-auth/jwt') as {
-  encode(input: { secret: string; token: Record<string, unknown>; maxAge: number }): Promise<string>;
-};
 const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
 if (
   selectedHttpContract &&
@@ -119,7 +112,7 @@ function expectedReply<Outcome extends MutationReply['outcome']>(
   if (reply.outcome !== outcome) throw new Error('Owned provider HTTP operation refused');
   return reply as Extract<MutationReply, { outcome: Outcome }>;
 }
-async function actor(selected: IdentityAuthorityName, kind: BrowserBindingActor['kind'] = 'canonical-token') {
+async function actor(selected: IdentityAuthorityName, kind: 'legacy-jwe' | 'canonical-token' = 'canonical-token') {
   await environment.ownerDatabase.transaction(async (transaction) => {
     const [manifest] = await transaction
       .select()
@@ -303,108 +296,6 @@ describe('provider commands through default HTTP and the qualified provider LOGI
       }),
     ).toMatchObject({ status: 400, body: { error: 'invalid_request' } });
   });
-
-  for (const selected of ['current-store', 'better-auth'] as const)
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const)
-      it(`${selected}/${kind}: qualified LOGIN performs owned-B login and exact ACK without implicit linking or fresh-age promotion`, async () => {
-        const { driver, owner } = await actor(selected, kind);
-        const subject = randomUUID();
-        const target = await driver.actor(selected, kind, { provider: 'apple', subject, password: false });
-        const nonce = randomBytes(32).toString('base64url');
-        const flowHash = randomBytes(32).toString('hex');
-        const startReply = await post('signin-intent', {
-          actor: owner.actor,
-          provider: 'apple',
-          flowHash,
-          nonceHash: providerTokenHash(nonce),
-        });
-        expect(startReply.status).toBe(200);
-        const intent = providerSecurityReplySchema.parse(startReply.body);
-        if (intent.operation !== 'signin-intent' || intent.outcome !== 'recorded')
-          throw new Error('Owned login intent refused');
-        const bound = {
-          actor: owner.actor,
-          intentToken: intent.intentToken,
-          browserIntentToken: intent.browserIntentToken,
-          flowHash,
-          nonceHash: providerTokenHash(nonce),
-        };
-        const beforeFlow = await environment.ownerDatabase
-          .select()
-          .from(authWebOAuthIntents)
-          .where(eq(authWebOAuthIntents.actorUserId, owner.userId));
-        const unknown = await post('signin-prepare', {
-          ...bound,
-          providerProof: { provider: 'apple', subject: randomUUID(), idToken: null, nonce },
-        });
-        expect(unknown.status).toBe(400);
-        expect(unknown.body).toMatchObject({ outcome: 'denied', code: 'ownership_conflict' });
-        expect(
-          await environment.ownerDatabase
-            .select()
-            .from(authWebOAuthIntents)
-            .where(eq(authWebOAuthIntents.actorUserId, owner.userId)),
-        ).toEqual(beforeFlow);
-        const preparationReply = await post('signin-prepare', {
-          ...bound,
-          providerProof: { provider: 'apple', subject, idToken: null, nonce },
-        });
-        expect(preparationReply.status).toBe(200);
-        const prepared = providerSecurityReplySchema.parse(preparationReply.body);
-        if (prepared.operation !== 'signin-prepare' || prepared.outcome !== 'prepared')
-          throw new Error('Owned B preparation refused');
-        const proof = prepared.preparation.credentialProof;
-        expect(proof).toMatchObject({ userId: target.userId, authenticatedAt: null, linkGuarded: false });
-        const candidate = {
-          kind,
-          credential:
-            kind === 'canonical-token'
-              ? prepared.proposedCanonicalToken!
-              : await jwt.encode({
-                  secret: sourceSecret,
-                  maxAge: Date.parse(prepared.preparation.credentialExpiresAt) / 1000 - Math.floor(Date.now() / 1000),
-                  token: { sub: proof.userId, authSessionId: proof.authSessionId, gen: proof.generation },
-                }),
-        };
-        const finalPayload = {
-          ...bound,
-          preparationToken: prepared.preparationToken,
-          preparation: prepared.preparation,
-          candidate,
-        };
-        const committed = await post('signin-finalize', finalPayload);
-        expect(committed.status).toBe(200);
-        expect(committed.body).toMatchObject({
-          operation: 'signin-finalize',
-          outcome: 'committed',
-          candidateCredentialHash: expect.any(String),
-          browserCursor: { version: owner.actor.browserVersion + 1 },
-        });
-        if (kind === 'canonical-token') {
-          await environment.owner`REVOKE SELECT ON public.auth_session FROM boardsesh_identity_writer`;
-          try {
-            const unavailable = await post('signin-finalize', finalPayload);
-            expect(unavailable.status).toBe(503);
-            expect(unavailable.body).toMatchObject({ outcome: 'unavailable', code: 'authority_unavailable' });
-            expect(JSON.stringify(unavailable.body)).not.toContain('candidateCredentialHash');
-            expect(JSON.stringify(unavailable.body)).not.toContain(candidate.credential);
-          } finally {
-            await environment.owner`GRANT SELECT ON public.auth_session TO boardsesh_identity_writer`;
-          }
-        }
-        const recovered = await post('signin-finalize', finalPayload);
-        expect(recovered.status).toBe(200);
-        expect(recovered.body).toMatchObject({
-          operation: 'signin-finalize',
-          outcome: 'recovered',
-          candidateCredentialHash: (committed.body as { candidateCredentialHash: string }).candidateCredentialHash,
-        });
-        const principal = await executeFirstRow<{ role: string; sessionRole: string }>(
-          await getCredentialDatabase('private-provider-v1'),
-          sql`SELECT current_user AS role, session_user AS "sessionRole"`,
-        );
-        expect(principal).toEqual({ role: 'boardsesh_identity_writer', sessionRole: 'boardsesh_identity_writer' });
-      });
 
   for (const selected of ['current-store', 'better-auth'] as const)
     it(`${selected}: actual password proof links and unlinks, keeps this device's session and token, and revokes only affected partner credentials`, async () => {

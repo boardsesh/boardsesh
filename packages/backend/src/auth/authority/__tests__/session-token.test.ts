@@ -4,10 +4,10 @@ import { EncryptJWT } from 'jose';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { authSession, users } from '@boardsesh/db/schema';
-import { createEnvironment } from './environment';
+import { createEnvironment, testBridgeTokenKey } from './environment';
 import { bridgeLegacyCredential } from '../bridge';
 import { readFirstPartySession } from '../session-reader';
-import { newSessionToken, sessionTokenDigest } from '../session-token';
+import { bridgedSessionToken, bridgeTokenKey, newSessionToken, sessionTokenDigest } from '../session-token';
 
 const secret = 'synthetic-session-token-digest-secret';
 const now = new Date(Math.floor(Date.now() / 1000) * 1000);
@@ -80,14 +80,31 @@ describe('session tokens at rest', () => {
       .setIssuedAt(now.getTime() / 1000)
       .setExpirationTime(now.getTime() / 1000 + 3600)
       .encrypt(key);
-    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, 'on', now);
-    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Synthetic bridge refused');
+    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', now);
+    if (bridged.status !== 'bridged') throw new Error('Synthetic bridge refused');
     const [row] = await environment.database.select().from(authSession).where(eq(authSession.id, bridged.session.id));
     expect(row.token).toBe(sessionTokenDigest(bridged.token));
     expect(await read(bridged.token)).toBe('admitted');
     expect(await read(row.token)).toBe('denied');
-    // A second bridge of the same login finds the row and cannot hand the token out again.
-    const again = await bridgeLegacyCredential(environment.database, cookie, secret, 'on', now);
-    expect(again.status === 'bridged' && again.token).toBeNull();
+    // A second bridge of the same login derives the same token again; the row is unchanged.
+    const again = await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', now);
+    expect(again.status === 'bridged' && again.token).toBe(bridged.token);
+    expect('token' in bridged.session).toBe(false);
+    expect(
+      (await environment.database.select().from(authSession).where(eq(authSession.id, bridged.session.id)))[0].token,
+    ).toBe(row.token);
+  });
+
+  it('derives a bridged token from the session id under the bridge key alone', () => {
+    const otherKey = bridgeTokenKey('another-synthetic-bridge-token-secret-0123456789');
+    const first = bridgedSessionToken(testBridgeTokenKey, 'session-a');
+    expect(bridgedSessionToken(testBridgeTokenKey, 'session-a')).toEqual(first);
+    expect(first.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(first.stored).toBe(sessionTokenDigest(first.token));
+    expect(bridgedSessionToken(testBridgeTokenKey, 'session-b').token).not.toBe(first.token);
+    expect(bridgedSessionToken(otherKey, 'session-a').token).not.toBe(first.token);
+    // The key prints no bytes, and a short or padded secret is refused.
+    expect(JSON.stringify(testBridgeTokenKey)).not.toMatch(/synthetic/);
+    for (const weak of ['', 'short', ` ${'x'.repeat(40)}`]) expect(() => bridgeTokenKey(weak)).toThrow();
   });
 });

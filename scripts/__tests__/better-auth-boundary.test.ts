@@ -218,6 +218,24 @@ describe('first-party authority boundary', () => {
   });
 });
 
+describe('www browser session cutover list', () => {
+  const MODE_MODULE = 'packages/web/app/lib/auth/browser-session-mode.server.ts';
+  const RESOLVER_CALL = /browserSessionRouteModeResolver\(([^)]*)\)/g;
+
+  it('builds the production resolver from the frozen list, and only tests and proofs pass another', () => {
+    const callers = trackedSourceFiles.filter((path) =>
+      readRepoFile(path).includes('browserSessionRouteModeResolver('),
+    );
+    for (const path of callers) {
+      const lists = [...readRepoFile(path).matchAll(RESOLVER_CALL)].map(([, argument]) => argument.trim());
+      if (!isProductionSource(path) || path.startsWith('packages/web/auth-proofs/')) continue;
+      expect(path).toBe(MODE_MODULE);
+      expect(lists).toEqual(['cutoverBlockers: readonly string[]', 'BROWSER_SESSION_WEB_CUTOVER_BLOCKERS']);
+    }
+    expect(callers).toContain(MODE_MODULE);
+  });
+});
+
 describe('partner folder resolution', () => {
   const importer = 'packages/backend/src/auth/session.ts';
 
@@ -536,5 +554,80 @@ describe('identity writer catalog', () => {
       .filter(([path, reviewed]) => reviewed.gate !== undefined && !readRepoFile(path).includes(reviewed.gate))
       .map(([path]) => path);
     expect(ungated).toEqual([]);
+  });
+});
+
+const BROWSER_SESSION_MODE_MODULE = `${FIRST_PARTY_AUTHORITY_ROOT}browser-session-mode.ts`;
+const BROWSER_SESSION_CHECKER_CALL = /(?<!function\s)\bbrowserSessionModeChecker\s*\(([^)]*)\)/g;
+
+/** Each production call of the startup-check builder, with its argument. */
+function browserSessionCheckerCalls(source: string): string[] {
+  return [...source.matchAll(BROWSER_SESSION_CHECKER_CALL)].map(([, argument]) => argument.trim());
+}
+
+describe('browser session cutover blockers', () => {
+  it('finds the builder calls and skips its definition', () => {
+    expect(
+      browserSessionCheckerCalls(
+        'export function browserSessionModeChecker(cutoverBlockers: readonly string[]) {}\n' +
+          'const check = browserSessionModeChecker([]);',
+      ),
+    ).toEqual(['[]']);
+  });
+
+  it('lets only tests build the startup check with a list other than BROWSER_SESSION_CUTOVER_BLOCKERS', () => {
+    const calls = trackedSourceFiles
+      .filter((path) => isProductionSource(path) && !/\.proof\.[cm]?[jt]sx?$/.test(path))
+      .flatMap((path) => browserSessionCheckerCalls(readRepoFile(path)).map((argument) => `${path}: ${argument}`));
+    expect(calls).toEqual([`${BROWSER_SESSION_MODE_MODULE}: BROWSER_SESSION_CUTOVER_BLOCKERS`]);
+  });
+});
+
+describe('the browser acceptance cutover seam', () => {
+  const VARIABLE = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+  const CONSTANT = 'E2E_BROWSER_SESSION_CUTOVER_ENV';
+  const SEAM_MODULES = [BROWSER_SESSION_MODE_MODULE, 'packages/web/app/lib/auth/browser-session-mode.server.ts'];
+  const isTestHarness = (path: string) =>
+    path.startsWith('packages/web/e2e/') ||
+    path.startsWith('packages/web/auth-proofs/') ||
+    /\.proof\.[cm]?[jt]sx?$/.test(path);
+  const count = (source: string, needle: string) => source.split(needle).length - 1;
+
+  it('is read in production code by one function per service, and nowhere else', () => {
+    const readers = trackedSourceFiles.filter(
+      (path) =>
+        isProductionSource(path) &&
+        !isTestHarness(path) &&
+        (readRepoFile(path).includes(VARIABLE) || readRepoFile(path).includes(CONSTANT)),
+    );
+    expect(readers.sort()).toEqual([...SEAM_MODULES].sort());
+    for (const path of SEAM_MODULES) {
+      const source = readRepoFile(path);
+      const seam = /function cutoverBlockersInEffect\([\s\S]*?\n}\n/.exec(source)?.[0] ?? '';
+      // The name once, in its constant; the constant read once, inside the seam.
+      expect(count(source, `'${VARIABLE}'`), path).toBe(1);
+      expect(count(seam, `[${CONSTANT}]`), path).toBe(1);
+      expect(count(source.replace(seam, ''), CONSTANT), path).toBe(1);
+    }
+  });
+});
+
+describe('the browser-session e2e provider stand-ins (#7596 B7c)', () => {
+  const VARIABLES = ['BOARDSESH_E2E_GOOGLE_OIDC_WELL_KNOWN', 'BOARDSESH_E2E_APPLE_OIDC_WELL_KNOWN'];
+  const MODULE = 'packages/web/app/lib/auth/oidc-stand-in.server.ts';
+  const isTestHarness = (path: string) =>
+    path.startsWith('packages/web/e2e/') ||
+    path.startsWith('packages/web/auth-proofs/') ||
+    /\.proof\.[cm]?[jt]sx?$/.test(path);
+
+  it('are named in production code by one module only, which names each once', () => {
+    const readers = trackedSourceFiles.filter(
+      (path) =>
+        isProductionSource(path) &&
+        !isTestHarness(path) &&
+        VARIABLES.some((variable) => readRepoFile(path).includes(variable)),
+    );
+    expect(readers).toEqual([MODULE]);
+    for (const variable of VARIABLES) expect(readRepoFile(MODULE).split(`'${variable}'`).length - 1).toBe(1);
   });
 });

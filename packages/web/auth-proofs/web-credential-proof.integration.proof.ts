@@ -28,10 +28,13 @@ import { recordSecurityMutation } from '../../backend/src/auth/current-store/sec
 import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { bridgeLegacyCredential } from '../../backend/src/auth/authority/bridge';
+import { bridgeTokenKey } from '../../backend/src/auth/authority/session-token';
 import { recordFunctionLevelIdentityMirrorForTests } from '../../backend/src/auth/authority/mirror-activation';
 
 // These writers run with the mirror on and no backend boot (function-level mirror).
 recordFunctionLevelIdentityMirrorForTests();
+
+const bridgeKey = bridgeTokenKey('synthetic-web-credential-proof-bridge-token-secret');
 
 const holder = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = 'synthetic-web-backend-proof-secret';
@@ -523,16 +526,16 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
       const raw = await Promise.all([0, 1].map(() => encode({ token: { sub: accepted.id }, secret, maxAge: 3600 })));
       const decodedRaw = await Promise.all(raw.map((credential) => decode({ token: credential, secret })));
       expect(decodedRaw[0]?.jti).not.toBe(decodedRaw[1]?.jti);
-      // The row stores a digest, so only the bridge call that created a row
-      // hands out its raw token; a later bridge of the same row answers null.
+      // Every bridge hands out the row's token, derived from its session id;
+      // each cookie here is bridged once, so one token per bridged row.
       const canonicalAliases: string[] = [];
       const bridgedSessionIds = new Set<string>();
       async function bridge(credential: string) {
-        const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
+        const outcome = await bridgeLegacyCredential(environment.database, credential, secret, bridgeKey, 'on');
         expect(outcome.status).toBe('bridged');
         if (outcome.status !== 'bridged') throw new Error('Synthetic alias was refused');
         bridgedSessionIds.add(outcome.session.id);
-        if (outcome.token) canonicalAliases.push(outcome.token);
+        canonicalAliases.push(outcome.token);
         return outcome.session;
       }
       await Promise.all(raw.map(bridge));
@@ -574,10 +577,9 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
           const renewal = await callback({ token: { ...claims } });
           const credential = await encode({ token: renewal, secret, maxAge: 3600 });
           concurrentChildren.push(credential);
-          const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
-          if (outcome.status === 'bridged') {
-            if (outcome.token) canonicalAliases.push(outcome.token);
-          } else expect(outcome.status).toBe('denied');
+          const outcome = await bridgeLegacyCredential(environment.database, credential, secret, bridgeKey, 'on');
+          if (outcome.status === 'bridged') canonicalAliases.push(outcome.token);
+          else expect(outcome.status).toBe('denied');
         }),
       ]);
       children.push(...concurrentChildren);
@@ -585,7 +587,9 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
         expect(
           (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status,
         ).toBe('denied');
-        expect((await bridgeLegacyCredential(environment.database, credential, secret, 'on')).status).toBe('denied');
+        expect((await bridgeLegacyCredential(environment.database, credential, secret, bridgeKey, 'on')).status).toBe(
+          'denied',
+        );
       }
       for (const token of canonicalAliases)
         expect((await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status).toBe(

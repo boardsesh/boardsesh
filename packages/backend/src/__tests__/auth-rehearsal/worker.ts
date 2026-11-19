@@ -101,6 +101,8 @@ async function initialize(message: Initialization) {
   await marker();
   // Application singletons are imported only AFTER namespace, fixed-target and marker checks.
   const { bridgeLegacyCredential } = await import('../../auth/authority/bridge');
+  const { bridgeTokenKey } = await import('../../auth/authority/session-token');
+  const rehearsalBridgeKey = bridgeTokenKey('synthetic-auth-rehearsal-bridge-token-secret');
   const { readFirstPartySession } = await import('../../auth/authority/session-reader');
   const { revokeNativeCredentials } = await import('../../auth/authority/native-revocation');
   const { recordSecurityMutation } = await import('../../auth/current-store/security-mutations');
@@ -156,6 +158,7 @@ async function initialize(message: Initialization) {
           database,
           candidate.credential ?? '',
           process.env.NEXTAUTH_SECRET ?? '',
+          rehearsalBridgeKey,
           'on',
         );
         result = {

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     } catch {
       throw new AuthBackendUnavailableError();
     }
-    const session = await getAdmittedServerSession();
+    const session = await getAdmittedServerSession({ method: request.method });
     // In `legacy` mode nothing below compares the body's expected identity with
     // the cookie, so this is the only thing that stops a stale tab writing a
     // password to the account the cookie names now. The settings card, through

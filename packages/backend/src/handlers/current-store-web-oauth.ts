@@ -6,6 +6,7 @@ import {
   webOAuthCommandSchema,
   webOAuthReplySchema,
   webOAuthReplyStatus,
+  webSessionMode,
 } from '@boardsesh/auth-protocol';
 import { getCredentialDatabase } from '../auth/credential-database';
 import {
@@ -83,6 +84,19 @@ export async function handleCurrentStoreWebOAuth(
   if (!isWebPasswordCommandFresh(Date.parse(command.issuedAt))) {
     sendJson(response, 400, { error: 'expired_request' });
     return;
+  }
+  // A sign-in that asks for a web session needs its own mode (#7596 B5a),
+  // checked before any limiter key or database work.
+  if (command.operation === 'resolve' && command.webSession !== undefined) {
+    try {
+      if (webSessionMode(process.env) !== 'backend-staging') {
+        sendJson(response, 404, { error: 'disabled' });
+        return;
+      }
+    } catch {
+      sendJson(response, 503, { error: 'unavailable' });
+      return;
+    }
   }
   try {
     checkRateLimit(`current-store-web-oauth:${operation}`, 180, 60_000);

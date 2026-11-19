@@ -22,6 +22,7 @@ import {
   type PresentedWebSession,
 } from '@boardsesh/auth-protocol';
 import {
+  authCredentialLineage,
   authEmailProjection,
   authSession,
   authSessionDenials,
@@ -96,7 +97,7 @@ beforeEach(() => {
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-web-session-read-retired-mailbox-key',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'off',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible',
     AUTH_CUTOFF_ENFORCEMENT: 'enforce',
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
@@ -138,6 +139,7 @@ async function login(email: string, extra: Record<string, unknown> = {}) {
     requestId: randomUUID(),
     issuedAt: Date.now(),
     webSession: {},
+    credentialProofVersion: 1,
     payload: { email, password: PASSWORD },
     ...extra,
   });
@@ -161,7 +163,7 @@ const read = (presented: PresentedWebSession) =>
   post(WEB_SESSION_COMMAND_PATHS.session, command('session', { presented }));
 const canonical = (token: string): PresentedWebSession => ({ kind: 'canonical-token', token });
 
-async function legacyCookie(userId: string, authSessionId?: string) {
+async function legacyCookie(userId: string, authSessionId?: string, generation?: number) {
   const key = await hkdf(
     'sha256',
     new TextEncoder().encode(nextAuthSecret),
@@ -170,7 +172,10 @@ async function legacyCookie(userId: string, authSessionId?: string) {
     32,
   );
   const issuedAt = Math.floor(Date.now() / 1000);
-  return new EncryptJWT(authSessionId === undefined ? {} : { authSessionId })
+  return new EncryptJWT({
+    ...(authSessionId === undefined ? {} : { authSessionId }),
+    ...(generation === undefined ? {} : { gen: generation }),
+  })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setSubject(userId)
     .setIssuedAt(issuedAt)
@@ -191,6 +196,7 @@ async function rows(userId: string) {
     profiles: await select.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
     sessions: await select.select().from(authSession).where(eq(authSession.userId, userId)).orderBy(authSession.id),
     denials: await select.select().from(authSessionDenials).where(eq(authSessionDenials.userId, userId)),
+    lineages: await select.select().from(authCredentialLineage).where(eq(authCredentialLineage.userId, userId)),
     cutoffs: await select.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
   };
 }
@@ -285,6 +291,61 @@ describe('session read', () => {
     }
   });
 
+  it('answers 401 for a legacy cookie that was signed out, cut off or deleted, and writes nothing', async () => {
+    const dead: { userId: string; credential: string }[] = [];
+    const signedOut = await climber();
+    const signedOutSession = randomUUID();
+    const signedOutCookie = await legacyCookie(signedOut.id, signedOutSession);
+    await post(
+      WEB_SESSION_COMMAND_PATHS.signout,
+      command('signout', {
+        presented: { kind: 'legacy-jwe', credential: signedOutCookie },
+        expectedUserId: signedOut.id,
+        expectedAuthSessionId: signedOutSession,
+      }),
+    );
+    dead.push({ userId: signedOut.id, credential: signedOutCookie });
+    for (const deletedAt of [null, new Date()]) {
+      const cutOff = await climber();
+      const credential = await legacyCookie(cutOff.id, randomUUID());
+      await environment.database.insert(authSubjectCutoffs).values({
+        userId: cutOff.id,
+        generation: 1,
+        revokedThrough: new Date(),
+        deletedAt,
+        lastOperationId: randomUUID(),
+      });
+      dead.push({ userId: cutOff.id, credential });
+    }
+    for (const { userId, credential } of dead) {
+      const before = await rows(userId);
+      const { status, body } = await read({ kind: 'legacy-jwe', credential });
+      expect(status).toBe(401);
+      expect(webSessionReadReplySchema.parse(body)).toMatchObject({ outcome: 'unauthenticated' });
+      expect(await rows(userId)).toEqual(before);
+    }
+  });
+
+  it('admits a legacy cookie only at its account generation: a zero, missing or higher stamp on a moved account is 401', async () => {
+    const moved = await climber();
+    await environment.database.insert(authSubjectCutoffs).values({
+      userId: moved.id,
+      generation: 1,
+      revokedThrough: new Date(),
+      deletedAt: null,
+      lastOperationId: randomUUID(),
+    });
+    for (const stamp of [undefined, 0, 2]) {
+      const { status } = await read({
+        kind: 'legacy-jwe',
+        credential: await legacyCookie(moved.id, randomUUID(), stamp),
+      });
+      expect(status, `stamp ${String(stamp)}`).toBe(401);
+    }
+    const current = await read({ kind: 'legacy-jwe', credential: await legacyCookie(moved.id, randomUUID(), 1) });
+    expect(current.status).toBe(200);
+  });
+
   it('answers 503 for a legacy cookie when the backend cannot read one', async () => {
     const { id } = await climber();
     const credential = await legacyCookie(id, randomUUID());
@@ -335,7 +396,7 @@ describe('login and sign-out', () => {
     expect((await rows(id)).cutoffs).toEqual([]);
   });
 
-  it('clears a no-SID legacy cookie without writing anything', async () => {
+  it('signs out a no-SID legacy cookie by a denial of its own id and nothing else', async () => {
     const { id, email } = await climber();
     await login(email);
     const noSid = await legacyCookie(id);
@@ -352,7 +413,9 @@ describe('login and sign-out', () => {
       }),
     );
     expect(status).toBe(200);
-    expect(await rows(id)).toEqual(before);
+    const after = await rows(id);
+    expect(after.denials.map((denial) => denial.sessionId)).toEqual([authSessionId.authSessionId]);
+    expect({ ...after, denials: [] }).toEqual({ ...before, denials: [] });
   });
 
   it('still accepts the first sign-out body, a bare token', async () => {

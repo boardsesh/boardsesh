@@ -105,7 +105,8 @@ describe('provider security keyed by the first-party web session (#7596 B5c1)', 
     expect(row.browserBindingHash).toBe(providerWebSessionHash(owner.sid));
     expect(row.browserBindingHash).toMatch(/^[a-f0-9]{64}$/);
     expect(row.browserBindingHash).not.toBe(createHash('sha256').update(owner.sid).digest('hex'));
-    expect(row.browserBindingHash).not.toBe(providerTokenHash(owner.actor.browserBindingToken));
+    // Never the hash of the session token itself either.
+    expect(row.browserBindingHash).not.toBe(providerTokenHash(owner.actor.credential));
     expect(row.browserVersion).toBe(0);
     expect(row.browserBindingExpiresAt).toEqual(owner.sourceExpiresAt);
     expect(row).toMatchObject({

@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
+import { issuedWebSessionSchema, presentedWebSessionSchema } from './web-session';
 
-/** Independent identity-only protocol; it never issues a continuing credential. */
+/** Identity protocol. It issues a first-party web session only when `resolve` asks for one (#7596 B5a). */
 export const WEB_OAUTH_PROTOCOL_VERSION = 1;
 export const WEB_OAUTH_PATH_PREFIX = '/api/internal/auth/current-store/web-oauth/v1';
 export const WEB_OAUTH_COMMAND_PATHS = {
@@ -39,11 +40,42 @@ export const webOAuthIntentCommandSchema = z
     payload: z.object(intentPayload).strict(),
   })
   .strict();
+/**
+ * The SHA-256 (hex) a Google sign-in's `flow` must equal for its ID token to
+ * count as a fresh sign-in: `JSON.stringify([WEB_OAUTH_GOOGLE_NONCE_DOMAIN, nonce])`.
+ * Binding the nonce into the intent's flow makes it single use with the intent.
+ */
+export const WEB_OAUTH_GOOGLE_NONCE_DOMAIN = 'web-oauth-google-nonce-v1';
+
+/**
+ * Asks `resolve` to sign the browser in with a first-party web session
+ * (#7596 B5a): issued for the resolved account in the same transaction,
+ * revoking `presented`, the session the request arrived with. Needs
+ * `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` (404 without it) and
+ * `actorCookie: null`: a sign-in never links a provider to the presented account.
+ */
+export const webOAuthSessionRequestSchema = z
+  .object({
+    presented: presentedWebSessionSchema.optional(),
+    /**
+     * Google only, optional: the raw ID token of this callback and its nonce.
+     * The session counts as a fresh sign-in only when the backend verifies a
+     * signed `auth_time` under five minutes old for this subject; otherwise,
+     * and always for Apple, it is `carried`.
+     */
+    googleAuthentication: z
+      .object({ idToken: z.string().min(1).max(16_384), nonce: z.string().min(1).max(1024) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const webOAuthResolveCommandSchema = z
   .object({
     ...metadata,
     operation: z.literal('resolve'),
     credentialProofVersion: z.literal(WEB_CREDENTIAL_PROOF_VERSION).optional(),
+    webSession: webOAuthSessionRequestSchema.optional(),
     issuedAt: timestamp,
     payload: z.object({ ...intentPayload, subject, email: email.nullable(), name, image }).strict(),
   })
@@ -51,8 +83,13 @@ export const webOAuthResolveCommandSchema = z
 export const webOAuthCommandSchema = z.union([webOAuthIntentCommandSchema, webOAuthResolveCommandSchema]);
 
 const GENERIC_DENIAL_CODES = ['identity_unavailable', 'replayed'] as const;
-/** Only `resolve` sees a provider profile, so only it can name these two outcomes. */
-const RESOLVE_DENIAL_CODES = [...GENERIC_DENIAL_CODES, 'email_conflict', 'email_required'] as const;
+/**
+ * Only `resolve` sees a provider profile, so only it can name these outcomes.
+ * `link_required` (#7596 B5e1, decision D1): a session sign-in presented a live
+ * session and no account owns the provider identity. Nothing is created and the
+ * presented session is kept; the climber connects the provider from Settings.
+ */
+const RESOLVE_DENIAL_CODES = [...GENERIC_DENIAL_CODES, 'email_conflict', 'email_required', 'link_required'] as const;
 
 function deniedReply<
   Operation extends keyof typeof WEB_OAUTH_COMMAND_PATHS,
@@ -95,6 +132,8 @@ export const webOAuthResolveReplySchema = z.union([
       operation: z.literal('resolve'),
       outcome: z.literal('resolved'),
       credentialProof: webCredentialProofSchema.optional(),
+      /** Only when the command asked for one. `token` is the only copy. */
+      webSession: issuedWebSessionSchema.optional(),
       user: webOAuthUserSchema,
       createdUser: z.boolean(),
       account: webOAuthAccountSchema,
@@ -112,6 +151,7 @@ export const webOAuthProtocolRejectionSchema = z
 export type WebOAuthProvider = z.infer<typeof webOAuthProviderSchema>;
 export type WebOAuthIntentCommand = z.infer<typeof webOAuthIntentCommandSchema>;
 export type WebOAuthResolveCommand = z.infer<typeof webOAuthResolveCommandSchema>;
+export type WebOAuthSessionRequest = z.infer<typeof webOAuthSessionRequestSchema>;
 export type WebOAuthCommand = z.infer<typeof webOAuthCommandSchema>;
 export type WebOAuthUser = z.infer<typeof webOAuthUserSchema>;
 export type WebOAuthAccount = z.infer<typeof webOAuthAccountSchema>;

@@ -173,6 +173,9 @@ export function passwordGuessEmailKey(environment: Environment = process.env): s
     environment[BATCH_SYSTEM_USER_COMMAND_ENV.secret],
     environment[DELETED_EMAIL_KEY_ENV],
     environment[DEVICE_TOKEN_SECRET_ENV],
+    environment.AUTH_BROWSER_SESSION_COOKIE_SECRET,
+    environment.AUTH_BROWSER_ACCESS_TOKEN_SECRET,
+    environment.AUTH_BRIDGE_TOKEN_SECRET,
   ];
   if (
     key !== key.trim() ||

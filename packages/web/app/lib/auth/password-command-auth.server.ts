@@ -1,7 +1,12 @@
 import 'server-only';
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { AUTH_BACKEND_UNAVAILABLE, type PasswordReply } from '@boardsesh/auth-protocol';
+import {
+  AUTH_BACKEND_UNAVAILABLE,
+  type IssuedWebSessionReply,
+  type PasswordReply,
+  type WebSessionRequest,
+} from '@boardsesh/auth-protocol';
 import {
   AuthBackendUnavailableError,
   createPasswordCommandClient,
@@ -52,12 +57,20 @@ function reportAcceptedPassword(existing: Provider, onPasswordAccepted: () => vo
  * per-client limit can give that attempt back. `clientAddress` is the visitor a
  * trusted edge vouched for (`cloudflareVouchedVisitorAddress`), or null to let
  * the backend use its per-process budget.
+ *
+ * `webSession` (only under `AUTH_BROWSER_SESSION_MODE=better-auth`) asks the
+ * backend to issue a first-party session too. A verified login must then come
+ * back with that session and with a credential proof naming the same session
+ * id and generation, so the legacy cookie NextAuth writes from the proof names
+ * the same session; anything else is unavailable. An account that still needs
+ * email verification gets no session, as today it gets no cookie.
  */
 export function createPasswordCommandAuthRequest(
   base: NextAuthOptions,
   clientFactory: () => PasswordCommandClient = createPasswordCommandClient,
   onPasswordAccepted: () => void = () => {},
   clientAddress: string | null = null,
+  webSession?: WebSessionRequest,
 ) {
   let unavailable = false;
   let verdict: AuthenticatedReply | undefined;
@@ -69,7 +82,11 @@ export function createPasswordCommandAuthRequest(
           isCredentialsProvider(existing) ? reportAcceptedPassword(existing, onPasswordAccepted) : existing,
         ),
       };
-      return { options, unavailable: () => false };
+      return {
+        options,
+        unavailable: () => false,
+        issuedWebSession: (): IssuedWebSessionReply | undefined => undefined,
+      };
     }
   } catch {
     unavailable = true;
@@ -93,9 +110,11 @@ export function createPasswordCommandAuthRequest(
           credentials.email,
           credentials.password,
           clientAddress ?? undefined,
+          ...(webSession ? [webSession] : []),
         );
         if (reply.outcome === 'invalid_credentials') return null;
         if (reply.outcome !== 'authenticated') return rejectUnavailable();
+        if (webSession && !issuedAsAsked(reply)) return rejectUnavailable();
         verdict = reply;
         onPasswordAccepted();
         return { ...reply.user, ...(reply.credentialProof ? { webCredentialProof: reply.credentialProof } : {}) };
@@ -125,7 +144,25 @@ export function createPasswordCommandAuthRequest(
       },
     },
   };
-  return { options, unavailable: () => unavailable };
+  return {
+    options,
+    unavailable: () => unavailable,
+    /** The session the backend issued for this login, once NextAuth has run; undefined when none was asked for or issued. */
+    issuedWebSession: (): IssuedWebSessionReply | undefined => (unavailable ? undefined : verdict?.webSession),
+  };
+}
+
+/** A verified login carries the asked-for session, and its proof names that session; an unverified one carries none. */
+function issuedAsAsked(reply: AuthenticatedReply): boolean {
+  const awaitingVerification = reply.verification.required && !reply.verification.verified;
+  if (awaitingVerification) return reply.webSession === undefined;
+  const { webSession, credentialProof } = reply;
+  return (
+    webSession !== undefined &&
+    credentialProof !== undefined &&
+    credentialProof.authSessionId === webSession.sessionId &&
+    credentialProof.generation === webSession.generation
+  );
 }
 
 /** NextAuth converts authorize exceptions into redirects/401; preserve a retryable public result. */

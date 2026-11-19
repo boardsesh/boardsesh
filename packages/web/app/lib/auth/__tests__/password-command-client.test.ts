@@ -106,6 +106,17 @@ describe('server-only password command transport', () => {
       expect(received[0].body).toMatchObject({ operation: 'password', clientAddress: visitorAddress });
     }
   });
+  it('sends the web session request it is given, and none otherwise', async () => {
+    const client = createPasswordCommandClient({ environment: environment() });
+    const webSession = { presented: { kind: 'canonical-token' as const, token: 'previous-token' } };
+    await client.password('Legacy@example.com', 'one', undefined, webSession);
+    expect(received[0].body).toMatchObject({ operation: 'password', webSession });
+    expect(received[0].body).not.toHaveProperty('clientAddress');
+    await client.password('Legacy@example.com', 'one', undefined, {});
+    expect(received[1].body).toMatchObject({ webSession: {} });
+    await client.password('Legacy@example.com', 'one');
+    expect(received[2].body).not.toHaveProperty('webSession');
+  });
   it.each([undefined, '', 'fe80::1%en0', '2001:db8::/64', 'not-an-ip'])(
     'omits a client address the backend would refuse (%j), so the sign-in still reaches it',
     async (visitorAddress) => {

@@ -5,7 +5,6 @@ import { assertAccountGuessLimitConfiguration } from './auth/password-guess-limi
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleCurrentStoreWebSession } from './handlers/current-store-web-session';
 import { handleProviderSecurity } from './handlers/provider-security';
-import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleFirstPassword } from './handlers/first-password';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
@@ -812,10 +811,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith(GUESS_LIMIT_PREFIX + '/')) {
         await handleGuessLimitCommand(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/anonymous-provider/v1/')) {
-        await handleAnonymousProvider(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/first-password/v1/')) {

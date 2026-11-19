@@ -4,7 +4,7 @@ import {
   equalFirstPasswordDigest,
   firstPasswordDeadline,
   firstPasswordEmailBinding,
-  isAppleOnlyFirstPasswordInventory,
+  isFirstPasswordInventory,
 } from '../first-password-policy';
 
 const runtime = captureFirstPasswordRuntime({
@@ -76,16 +76,21 @@ describe('first-password confirmation policy', () => {
     );
   });
 
-  it('requires at least one Apple identity and refuses every other linked provider', () => {
-    expect(isAppleOnlyFirstPasswordInventory([apple], 'owned-user', 0)).toBe(true);
-    expect(isAppleOnlyFirstPasswordInventory([apple, { ...apple, subject: 'second' }], 'owned-user', 0)).toBe(true);
-    for (const provider of ['google', 'facebook', 'unknown'])
-      expect(isAppleOnlyFirstPasswordInventory([apple, { ...apple, provider }], 'owned-user', 0)).toBe(false);
-    expect(isAppleOnlyFirstPasswordInventory([], 'owned-user', 0)).toBe(false);
-    expect(isAppleOnlyFirstPasswordInventory([{ ...apple, generation: 1 }], 'owned-user', 0)).toBe(false);
-    expect(isAppleOnlyFirstPasswordInventory([{ ...apple, userId: 'other' }], 'owned-user', 0)).toBe(false);
-    expect(isAppleOnlyFirstPasswordInventory([{ ...apple, subject: '' }], 'owned-user', 0)).toBe(false);
-    expect(isAppleOnlyFirstPasswordInventory([apple], 'owned-user', Number.NaN)).toBe(false);
+  it('needs a Google or Apple identity, all of this user at this generation (decision of 2026-11-18)', () => {
+    const google = { ...apple, provider: 'google', subject: 'google-subject' };
+    const facebook = { ...apple, provider: 'facebook', subject: 'facebook-subject' };
+    expect(isFirstPasswordInventory([apple], 'owned-user', 0)).toBe(true);
+    expect(isFirstPasswordInventory([google], 'owned-user', 0)).toBe(true);
+    expect(isFirstPasswordInventory([apple, google], 'owned-user', 0)).toBe(true);
+    expect(isFirstPasswordInventory([google, facebook], 'owned-user', 0)).toBe(true);
+    expect(isFirstPasswordInventory([apple, { ...apple, subject: 'second' }], 'owned-user', 0)).toBe(true);
+    expect(isFirstPasswordInventory([facebook], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([{ ...apple, provider: 'unknown' }], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([{ ...apple, generation: 1 }], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([google, { ...apple, userId: 'other' }], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([{ ...google, subject: '' }], 'owned-user', 0)).toBe(false);
+    expect(isFirstPasswordInventory([apple], 'owned-user', Number.NaN)).toBe(false);
   });
 
   it('caps confirmation at five minutes and the presented session expiry', () => {

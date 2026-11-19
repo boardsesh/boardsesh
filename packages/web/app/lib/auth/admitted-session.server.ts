@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { getServerSession } from 'next-auth/next';
 import { getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
+import { BROWSER_SESSION_MODE_ENV } from '@boardsesh/auth-protocol/browser-session-mode';
 import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './credential-admission.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
 
@@ -60,12 +61,57 @@ const admitServerCredentialForRender = cache(async () => {
   return userId ? { presented, userId } : null;
 });
 
-export async function getAdmittedRawServerToken(): Promise<string | undefined> {
+/**
+ * Who reads the session, and how. By default the browser's session as the
+ * mode resolves it. `method`: a route handler's request method; under
+ * `better-auth` only a GET or HEAD may bridge a legacy-only browser (a write
+ * answers it from the admitted legacy cookie, as the session read does for a
+ * POST). Without it, a server action (Next's `Next-Action` header) counts as a
+ * write and anything else as a read.
+ */
+export type AdmittedSessionSource = { readonly method?: string };
+
+/**
+ * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4a) the request's one
+ * resolution, from `server-browser-session.server.ts`; undefined in `legacy`
+ * mode. Loaded on first use, so `legacy` mode loads and runs exactly what it
+ * did before.
+ */
+async function resolvedForRequest(source: AdmittedSessionSource) {
+  // Unset, empty and `legacy` are `legacy` to `browserSessionRouteMode` as
+  // well; any other value goes there and gets its answer (503 when invalid).
+  const rawMode = process.env[BROWSER_SESSION_MODE_ENV];
+  if (rawMode === undefined || rawMode === '' || rawMode === 'legacy') return undefined;
+  const module = await import('./server-browser-session.server');
+  const resolved = await module.serverBrowserSession(source.method === undefined ? {} : { method: source.method });
+  return resolved === undefined ? undefined : { resolved, module };
+}
+
+async function getLegacyAdmittedRawServerToken(): Promise<string | undefined> {
   return (await admitServerCredentialForRender())?.presented.credential;
 }
 
+/**
+ * The credential a server render forwards to the backend as a bearer. In
+ * `legacy` mode the admitted NextAuth cookie, as before. Under `better-auth`
+ * the backend's 15-minute access token of the request's one resolution, or
+ * the admitted legacy cookie when the session read would answer from it too.
+ * Never sets or clears a cookie.
+ */
+export async function getAdmittedRawServerToken(source: AdmittedSessionSource = {}): Promise<string | undefined> {
+  const held = await resolvedForRequest(source);
+  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedRawServerToken();
+  return held.resolved.kind === 'active' ? held.resolved.accessToken : undefined;
+}
+
 /** Never mint a session or silently turn an authority outage into anonymity. */
-export async function getAdmittedServerSession() {
+export async function getAdmittedServerSession(source: AdmittedSessionSource = {}) {
+  const held = await resolvedForRequest(source);
+  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedServerSession();
+  return held.resolved.kind === 'active' ? held.module.sessionFromActive(held.resolved.session) : null;
+}
+
+async function getLegacyAdmittedServerSession() {
   const admitted = await admitServerCredentialForRender();
   if (!admitted) return null;
   const { presented, userId } = admitted;
