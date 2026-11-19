@@ -2,7 +2,7 @@
 
 Boardsesh 2.8.0 adds AI-assisted Mandarin translations in Simplified Chinese
 (`zh-CN`, displayed as 中文（简体）). These are provisional translations, not a
-native-speaker-reviewed glossary. All 22 shared catalogs cover web and mobile;
+native-speaker-reviewed glossary. All 23 shared catalogs cover web and mobile;
 mobile bundles only its existing 13 namespaces. iOS permission prompts use
 `zh-Hans`. Simplified Chinese device preferences select this catalog; Traditional
 Chinese preferences continue to the next supported device language.
