@@ -39,7 +39,7 @@ describe('privacy policy, apps you connect', () => {
     expect(screen.getByRole('heading', { name: 'Apps you connect' })).toBeTruthy();
     expect(screen.getByText(/including ticks you keep to “Only me”/)).toBeTruthy();
     expect(screen.getByText(/a climb someone else set that is still a draft or unlisted/)).toBeTruthy();
-    expect(screen.getByText(/not the climb’s name or the Spraywall’s name/)).toBeTruthy();
+    expect(screen.getByText(/not the climb’s name or the spray wall’s name/)).toBeTruthy();
     // Every password write ends connections (the user_credentials trigger), not only a reset.
     expect(screen.getByText(/Any change to your password, including resetting it or setting one/)).toBeTruthy();
     expect(screen.getByText(/does not delete what the app already copied/)).toBeTruthy();

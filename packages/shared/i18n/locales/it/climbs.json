@@ -981,7 +981,7 @@
       "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…"
     },
     "cta": {
-      "climbThis": "Illumina questo blocco",
+      "climbThis": "Apri il blocco nell’app",
       "ariaLabel": "Apri {{climbName}} nell'app Boardsesh",
       "helper": "Lo apre nell’app, pronto da illuminare sul tuo pannello."
     },

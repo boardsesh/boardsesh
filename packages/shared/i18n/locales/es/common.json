@@ -41,10 +41,12 @@
     "nav": {
       "gyms": "Rocódromos",
       "playlists": "Listas",
-      "about": "Sobre nosotros",
-      "help": "Ayuda"
+      "help": "Ayuda",
+      "boards": "Plafones",
+      "spray": "Spraywalls"
     },
-    "navLabel": "Navegación principal"
+    "navLabel": "Navegación principal",
+    "getApp": "Consigue la app"
   },
   "share": {
     "profileTitle": "Perfil de escalada de {{name}}",
@@ -1245,30 +1247,37 @@
     "fallbackCta": "Abrir la página de la tienda"
   },
   "footer": {
-    "tagline": "Tus plafones. Una app. Cambia de plafón sin cambiar de app.",
+    "tagline": "Tus plafones. Una app. Gratis para tu próxima sesión.",
     "navLabel": "Pie de página",
-    "trademarkNote": "Compatible con Kilter, Tension y MoonBoard. Sin relación con Aurora Climbing ni Moon Climbing.",
+    "trademarkNote": "Compatible con los plafones {{boards}}. Boardsesh es independiente y no está creado ni respaldado por ningún fabricante, incluido Aurora Climbing. Las marcas pertenecen a sus titulares.",
     "links": {
-      "home": "Inicio",
       "about": "Sobre nosotros",
       "support": "Apoya Boardsesh",
       "help": "Ayuda",
-      "docs": "Documentación",
-      "buildPlans": "Planos de construcción",
       "playlists": "Listas",
       "auroraMigration": "Trae tu logbook",
       "legal": "Aviso legal",
       "privacy": "Privacidad",
-      "gymsKilter": "Rocódromos con un plafón Kilter",
-      "gymsTension": "Rocódromos con un plafón Tension",
-      "gymsMoonboard": "Rocódromos con un MoonBoard",
-      "gyms": "Todos los rocódromos y muros"
+      "gyms": "Todos los rocódromos"
     },
-    "groups": {
-      "findAGym": "Encuentra un rocódromo",
-      "explore": "Explora",
-      "smallPrint": "Letra pequeña"
-    }
+    "groups": {},
+    "journeys": {
+      "climb": "Escala",
+      "walls": "Para salas",
+      "project": "Proyecto",
+      "help": "Ayuda",
+      "supportedBoards": "Plafones compatibles",
+      "setupSpray": "Configura tu Spraywall",
+      "claimGym": "Reclama tu rocódromo",
+      "partners": "Colaboradores y fabricantes",
+      "source": "Código fuente",
+      "roadmap": "Próximos pasos",
+      "discord": "Discord",
+      "developers": "Desarrolladores",
+      "bluetooth": "¿No se conecta el plafón?",
+      "reportBug": "Informa de un error"
+    },
+    "openBrowser": "Ábrelo en el navegador"
   },
   "unsavedChanges": {
     "title": "¿Descartar los cambios?",

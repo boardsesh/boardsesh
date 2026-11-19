@@ -1,0 +1,18 @@
+[
+  {
+    "width": 390,
+    "path": "/auth/login",
+    "hrefs": [
+      "https://apps.apple.com/app/boardsesh/id6761350784?ct=auth-login&mt=8",
+      "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=auth-login&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dauth-login"
+    ]
+  },
+  {
+    "width": 1440,
+    "path": "/auth/login",
+    "hrefs": [
+      "https://apps.apple.com/app/boardsesh/id6761350784?ct=auth-login&mt=8",
+      "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=auth-login&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dauth-login"
+    ]
+  }
+]

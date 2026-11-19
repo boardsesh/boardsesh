@@ -1041,7 +1041,8 @@ jobs:
 
   typecheck:
     needs: [changes]
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
+    # Catalog-only changes can grow the homepage RSC payload too.
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
     # Stays GitHub-hosted: OOM-killed on the fleet, exit 137, on every run.
     # `vp run typecheck` fans out at --concurrency-limit 4, so `next build` and
     # three `tsc --noEmit` share one slot's ~3.4 GB. Same failure family as
@@ -1067,6 +1068,11 @@ jobs:
       # full set.
       - name: Typecheck (cache-driven affected)
         run: vp run typecheck
+      # Reuse the runnable standalone output restored by build:web's task cache.
+      # The checker fails on missing output; it never starts another build.
+      - name: Check rendered homepage gzip budget
+        timeout-minutes: 2
+        run: vp exec tsx scripts/check-homepage-budget.ts
 
   db-migrations:
     needs: [changes]

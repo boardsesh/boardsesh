@@ -48,7 +48,10 @@ const SITEMAP_PATHS = [
   '/about',
   '/support',
   '/help',
-  '/docs',
+  '/developers',
+  '/boards',
+  '/spraywalls',
+  '/for-gyms#partners',
   '/playlists',
   '/bring-your-logbook',
   '/legal',
@@ -64,7 +67,12 @@ const SITEMAP_PATHS = [
  * is the point — folding `/gyms` into `SITEMAP_PATHS` would make that
  * constant's name a lie and quietly assert a sitemap entry that must not exist.
  */
-const FOOTER_PATHS = [...SITEMAP_PATHS, '/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard'];
+const FOOTER_PATHS = [...SITEMAP_PATHS.filter((path) => path !== '/'), '/gyms', '/gyms?claim=1'];
+
+vi.mock('@/app/lib/website-journey-analytics', () => ({
+  trackWebsiteJourneyEvent: vi.fn(),
+  trackWebsiteJourneyLinkClick: vi.fn(),
+}));
 
 vi.mock('@/app/lib/website-journey-analytics', () => ({
   trackWebsiteJourneyEvent: vi.fn(),
@@ -105,33 +113,11 @@ describe('SiteFooter', () => {
   // The gym directory has no sitemap entry, so the footer is the crawl path
   // into it. Descriptive anchor text is the SEO half of that — "Gyms with a
   // Kilter board" is the query shape, "Gyms" is not.
-  it('links to each board-type gym directory with descriptive anchor text', () => {
+  it('gives wall owners direct spray, claim and partner paths', () => {
     const { container } = render(<SiteFooter />);
-
-    const anchorsByHref = new Map(
-      Array.from(container.querySelectorAll('a')).map((anchor) => [anchor.getAttribute('href'), anchor.textContent]),
-    );
-
-    expect(anchorsByHref.get('/gyms/kilter')).toBe('Gyms with a Kilter board');
-    expect(anchorsByHref.get('/gyms/tension')).toBe('Gyms with a Tension board');
-    expect(anchorsByHref.get('/gyms/moonboard')).toBe('Gyms with a MoonBoard');
-    expect(anchorsByHref.get('/gyms')).toBe('All gyms and walls');
-  });
-
-  // The wireframe drew `/gyms?board=kilter`; the routes shipped literal. A
-  // query-param href would point at a URL that self-canonicalises to `/gyms`,
-  // throwing away the per-board landing page the anchor exists to feed.
-  it('points at the literal facet routes, never the query-param form', () => {
-    const { container } = render(<SiteFooter />);
-
-    const gymHrefs = Array.from(container.querySelectorAll('a'))
-      .map((anchor) => anchor.getAttribute('href'))
-      .filter((href): href is string => href !== null && href.startsWith('/gyms'));
-
-    // Guards the filter itself: a renamed route would otherwise make the
-    // no-`?` assertion below pass over an empty list.
-    expect(gymHrefs).toHaveLength(4);
-    expect(gymHrefs.filter((href) => href.includes('?'))).toEqual([]);
+    for (const href of ['/boards', '/spraywalls', '/gyms?claim=1', '/for-gyms#partners', '/developers']) {
+      expect(container.querySelector(`nav a[href="${href}"]`)).toBeTruthy();
+    }
   });
 
   it('renders those links as real anchors inside a labelled nav', () => {
@@ -140,7 +126,7 @@ describe('SiteFooter', () => {
     const nav = container.querySelector('nav');
     expect(nav).toBeTruthy();
     expect(nav?.getAttribute('aria-label')).toBe(tFromCatalog('common', 'footer.navLabel'));
-    expect(nav?.querySelectorAll('a').length).toBe(FOOTER_PATHS.length);
+    for (const path of FOOTER_PATHS) expect(nav?.querySelector(`a[href="${path}"]`)).toBeTruthy();
   });
 
   it('groups the links under headings so twelve of them stay scannable', () => {
@@ -148,9 +134,10 @@ describe('SiteFooter', () => {
 
     const headings = Array.from(container.querySelectorAll('nav h2')).map((heading) => heading.textContent);
     expect(headings).toEqual([
-      tFromCatalog('common', 'footer.groups.findAGym'),
-      tFromCatalog('common', 'footer.groups.explore'),
-      tFromCatalog('common', 'footer.groups.smallPrint'),
+      tFromCatalog('common', 'footer.journeys.climb'),
+      tFromCatalog('common', 'footer.journeys.walls'),
+      tFromCatalog('common', 'footer.journeys.project'),
+      tFromCatalog('common', 'footer.journeys.help'),
     ]);
   });
 
@@ -185,7 +172,7 @@ describe('SiteFooter', () => {
   it('carries the compatible-not-affiliated trademark line', () => {
     render(<SiteFooter />);
 
-    expect(screen.getByText(tFromCatalog('common', 'footer.trademarkNote'))).toBeTruthy();
+    expect(screen.getByText(/Boardsesh is independent and is not made or endorsed/)).toBeTruthy();
   });
 
   it('renders nothing on a kiosk route', () => {

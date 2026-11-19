@@ -1,7 +1,7 @@
 .footer {
   border-top: 1px solid var(--separator);
   margin-top: var(--spacing-16);
-  padding: var(--spacing-12) var(--spacing-8) calc(var(--spacing-6) + var(--safe-area-inset-bottom));
+  padding: var(--spacing-12) var(--page-gutter) calc(var(--spacing-6) + var(--safe-area-inset-bottom));
   background: color-mix(in srgb, var(--semantic-surface) 20%, var(--semantic-background));
 }
 
@@ -88,5 +88,34 @@
 @media (max-width: 359px) {
   .footer {
     padding-inline: var(--spacing-4);
+  }
+}
+
+.inner {
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+.intro {
+  max-width: none;
+}
+.links {
+  width: 100%;
+  max-width: none;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.linkGroup:last-child {
+  grid-column: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  gap: var(--spacing-1);
+}
+.linkGroup:last-child h2 {
+  flex-basis: auto;
+}
+@media (max-width: 760px) {
+  .links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

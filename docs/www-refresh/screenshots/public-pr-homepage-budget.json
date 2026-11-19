@@ -1,0 +1,17 @@
+{
+  "release": "0292c150c7",
+  "status": 200,
+  "utf8Bytes": 284432,
+  "gzipBytes": 39159,
+  "budgetBytes": 60000,
+  "viewport": 390,
+  "normalUserAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  "h1": "Your boards. One app.",
+  "scrollWidth": 390,
+  "rawKeys": [],
+  "pageErrors": [],
+  "expectedSearchLabel": "Search gyms",
+  "expectedNearMeLabel": "Use my location",
+  "expectedPreviewLabel": "App preview",
+  "buildEnv": "explicit local HTTPS backend8081 + trusted local certificate; local DB environment verified loopback"
+}

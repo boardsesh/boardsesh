@@ -1,333 +1,270 @@
 'use client';
 
 import React from 'react';
-
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import MuiLink from '@mui/material/Link';
+import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
-import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
-import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
-import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
-import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
+import { useTranslation } from 'react-i18next';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import {
+  compatibilityBoardSelected,
+  spraywallPathClicked,
+  gymClaimPathClicked,
+  partnerContactClicked,
+} from '@boardsesh/analytics';
+import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { resolveHeroInstall } from '@/app/lib/hero-install';
-import { useTranslation } from 'react-i18next';
-import { themeTokens } from '@/app/theme/theme-config';
+import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
-import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
-import { APP_URL } from '@/app/lib/app-origin';
-import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
+import { PageSection, PageCard } from '@/app/components/ui/page-shell';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
-import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
-import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
-import { useInstallPlatform } from '@/app/hooks/use-install-platform';
-import OnboardingCard from '@/app/components/home/onboarding-card';
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
 import styles from './home-page-content.module.css';
-import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 
 type HomePageContentProps = {
-  initialBoards?: BoardDiscoveryBoard[];
-  /** Pre-formatted on the server; the hero never sees the raw numbers. */
   heroProof?: string;
   initialRecentBeta?: RecentBetaLinkRow[];
-  /**
-   * Sections rendered on the SERVER and passed down as slots.
-   *
-   * This component is `'use client'` because the hero reads the visitor's
-   * platform. These three are async React Server Components that fetch their
-   * own data, so they cannot be imported here — a client module cannot await a
-   * server one. Rendering them in `page.tsx` and handing them down keeps their
-   * markup server-rendered (which is the point: the gym links and the marketing
-   * copy have to be in the first HTML a crawler sees) while letting them sit
-   * between two client blocks.
-   */
   gymSearch?: React.ReactNode;
   featureStrip?: React.ReactNode;
   supportBlock?: React.ReactNode;
-  /**
-   * The monthly support banner. `page.tsx` passes it only inside its window
-   * (`support-banner-window.ts`, days 1 to 7 of each month) and once a monthly
-   * Payment Link exists, so otherwise the slot is empty and
-   * nothing about it is in the HTML. It is fixed to the viewport, so where it
-   * sits here only sets its place in the reading order.
-   */
   supportBanner?: React.ReactNode;
+  trustFaq?: React.ReactNode;
 };
-
-// Shared rounded-full brand CTA styling for the hero buttons — the Velvet violet
-// fill with an amber spark glow (Velvet's warm half on the hero). The
-// scheme-aware fill clears AA with white text in both modes. The global MUI
-// Button override adds a translateY(-1px) on hover; cancel it so the CTA stays
-// anchored under the warm glow.
-// The homepage hero is the one surface that carries the amber glow.
-const HERO_CTA_SX = brandCtaSx({ size: 'large', glow: true });
-
-// The second store on desktop: outlined, so it is clearly the same kind of
-// action as the primary without competing with it for weight. Same size step as
-// HERO_CTA_SX above, from the same ramp, so the pair cannot drift again.
-const HERO_SECONDARY_CTA_SX = brandCtaOutlinedSx({ size: 'large' });
-
-// The web hand-off reads as a link, so it takes the foreground violet rather
-// than the fill — #9784FF on text, never behind white.
-const HERO_WEB_CTA_SX = {
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  color: 'var(--color-primary)',
-  '&:hover': { backgroundColor: 'var(--semantic-selected-light)' },
-} as const;
+const HERO_PRIMARY = brandCtaSx({ size: 'large', glow: true });
+const HERO_SECONDARY = brandCtaOutlinedSx({ size: 'large' });
+const LINK_TARGET = { display: 'inline-flex', alignItems: 'center', minHeight: 44 } as const;
 
 export default function HomePageContent({
-  initialBoards,
   heroProof,
   initialRecentBeta = [],
   gymSearch,
   featureStrip,
   supportBlock,
   supportBanner,
+  trustFaq,
 }: HomePageContentProps) {
   const { t, i18n } = useTranslation('marketing');
-  // The video's text is burned in English, so only the English page shows it;
-  // every other locale keeps the phone stack.
-  const showsHeroVideo = i18n.language === 'en-US';
-  const { platform: installPlatform, nativeStore } = useInstallPlatform();
-  // A visitor who landed on a tagged link keeps that source in the store link.
+  const { t: website } = useTranslation('website');
+  const { platform, nativeStore } = useInstallPlatform();
   const inboundCampaign = useInboundCampaign();
-
-  // Hero CTA drives app installs. The store, label and icon follow the detected
-  // platform — except on desktop, where there is no phone OS to infer and the
-  // hero offers both stores rather than guessing.
-  const heroInstall = resolveHeroInstall(installPlatform, nativeStore);
-  const HeroInstallIcon = heroInstall.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
-  const heroInstallButtons = heroInstall.stores.map((store, index) => ({
-    store,
-    url: buildStoreUrl(store, { placement: 'hero', inbound: inboundCampaign }),
-    source: store === 'android' ? ('google-play' as const) : ('app-store' as const),
-    label:
-      heroInstall.mode === 'update'
-        ? t('home.hero.ctaUpdate')
-        : store === 'android'
-          ? t('home.hero.ctaInstallAndroid')
-          : t('home.hero.ctaInstallIos'),
-    // Only the first store reads as the primary action; a second filled pill of
-    // equal weight would be no hierarchy at all.
-    primary: index === 0,
-  }));
-
+  const install = resolveHeroInstall(platform, nativeStore);
+  const HeroInstallIcon = install.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
+  const showsHeroVideo = i18n.language === 'en-US';
   return (
-    // Page-level translate="no" was removed because it blocked browser
-    // translation of every static UI label on this page. The error boundary
-    // (app/error.tsx) auto-recovers from any residual translator-DOM
-    // NotFoundError (issue #2064).
-    <Box
-      sx={{
-        minHeight: '100dvh',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Box
-        component="main"
-        className={styles.main}
-        sx={{
-          flex: 1,
-          pt: 'var(--global-header-height)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {supportBanner}
-
-        {/* Hero: Install-the-app CTA */}
-        <Box className={styles.hero}>
-          <Box className={styles.heroCopy}>
-            <Typography component="p" className={styles.heroEyebrow}>
-              {t('home.hero.eyebrow')}
-            </Typography>
-            {/* `component` fixes the semantics: MUI maps a variant to its literal
-              tag, so this used to server-render no <h1> at all on the
-              highest-traffic indexable page on the site. The size is set here
-              rather than by variant — the hero is the one large thing on the
-              page and it was rendering at h5, smaller than the section headings
-              further down. */}
-            <Typography
-              variant="h3"
-              component="h1"
-              className={styles.heroTitle}
-              fontWeight={themeTokens.typography.fontWeight.bold}
-              sx={{
-                color: 'var(--bs-text-brand-primary)',
-              }}
-            >
-              {t('home.hero.title')}
-            </Typography>
-            <Typography variant="body1" className={styles.heroLead}>
-              {t('home.hero.subtitle')}
-            </Typography>
-            {/* The site made no claim about itself anywhere — no number, no
-                rating, not one climber's words. For a free project that IS the
-                trust story, so it goes in the one place everyone reads. */}
-            {heroProof && (
-              <Typography variant="body2" className={styles.heroProof}>
-                {heroProof}
-              </Typography>
-            )}
-            {/* Store-first, per the marketing wireframe: the app is the product
-              and the web is the way in for someone who has not installed it.
-              A phone browser gets the one store that matches it; a desktop
-              browser gets both. Retired native shells receive an update link. */}
-            <Box className={styles.heroActions}>
-              {heroInstallButtons.map((button) => (
-                <Button
-                  key={button.store}
-                  variant={button.primary ? 'contained' : 'outlined'}
-                  size="large"
-                  startIcon={<HeroInstallIcon />}
-                  href={button.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => {
-                    trackAppInstallClick({
-                      platform: button.store,
-                      source: button.source,
-                      placement: 'hero',
-                      mode: heroInstall.mode,
-                    });
-                  }}
-                  sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
-                >
-                  {button.label}
-                </Button>
-              ))}
-            </Box>
-            {/* Secondary: hand off to the Expo-web app (single sign-on when logged
-              in, the app's own login otherwise). A text link, not a second
-              filled pill — two equal-weight buttons is no hierarchy at all. */}
+    <Box component="main" className={styles.main} sx={{ pt: 'var(--global-header-height)' }}>
+      {supportBanner}
+      <Box component="section" className={styles.hero}>
+        <Box className={styles.heroCopy}>
+          <MuiLink
+            component={LocaleLink}
+            href="/boards"
+            underline="hover"
+            className={styles.heroEyebrow}
+            sx={LINK_TARGET}
+          >
+            {t('home.hero.eyebrow')}
+          </MuiLink>
+          <Typography component="h1" className={styles.heroTitle}>
+            {t('home.hero.title')}
+          </Typography>
+          <Typography component="p" className={styles.heroLead}>
+            {t('home.hero.subtitle')}
+          </Typography>
+          <Box className={styles.heroActions}>
+            {install.stores.map((store, index) => (
+              <Button
+                key={store}
+                variant={index === 0 ? 'contained' : 'outlined'}
+                size="large"
+                startIcon={<HeroInstallIcon />}
+                sx={index === 0 ? HERO_PRIMARY : HERO_SECONDARY}
+                href={buildStoreUrl(store, { placement: 'hero', inbound: inboundCampaign })}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() =>
+                  trackAppInstallClick({
+                    platform: store,
+                    source: store === 'ios' ? 'app-store' : 'google-play',
+                    placement: 'hero',
+                    mode: install.mode,
+                  })
+                }
+              >
+                {install.mode === 'update'
+                  ? t('home.hero.ctaUpdate')
+                  : install.stores.length === 1
+                    ? website('freeApp')
+                    : store === 'ios'
+                      ? t('home.hero.ctaInstallIos')
+                      : t('home.hero.ctaInstallAndroid')}
+              </Button>
+            ))}
+          </Box>
+          <Box className={styles.heroSecondary}>
             <StartClimbingButton
               label={t('home.hero.startClimbingWeb')}
               ariaLabel={t('home.hero.startClimbingAria')}
-              size="large"
               variant="text"
-              sx={HERO_WEB_CTA_SX}
+              sx={{ p: 0, minHeight: 44 }}
             />
+            <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={LINK_TARGET}>
+              {website('importLink')}
+            </MuiLink>
           </Box>
-          <Box className={styles.previewGroup}>
-            {showsHeroVideo ? (
-              <Box className={`${styles.heroPreview} ${styles.heroShowcase}`}>
-                <HomeShowcaseVideo />
+        </Box>
+        <Box className={styles.previewGroup}>
+          {showsHeroVideo ? (
+            <Box className={`${styles.heroPreview} ${styles.heroShowcase}`}>
+              <HomeShowcaseVideo />
+            </Box>
+          ) : (
+            <>
+              <Box className={styles.heroPreview}>
+                <MarketingScreenshot
+                  shot="tension"
+                  alt={t('home.hero.tensionShotAlt')}
+                  sizes="(max-width: 760px) 42vw, 230px"
+                  className={`${styles.previewPhone} ${styles.previewLeft}`}
+                />
+                <MarketingScreenshot
+                  shot="moonboard"
+                  alt={t('home.hero.moonboardShotAlt')}
+                  sizes="(max-width: 760px) 42vw, 230px"
+                  className={`${styles.previewPhone} ${styles.previewRight}`}
+                />
+                <MarketingScreenshot
+                  shot="kilter"
+                  alt={t('home.hero.playShotAlt')}
+                  sizes="(max-width: 760px) 48vw, 260px"
+                  className={`${styles.previewPhone} ${styles.previewPrimary}`}
+                />
               </Box>
-            ) : (
-              <>
-                <Box className={styles.heroPreview}>
-                  <MarketingScreenshot
-                    shot="tension"
-                    alt={t('home.hero.tensionShotAlt')}
-                    sizes="(max-width: 760px) 42vw, 230px"
-                    className={`${styles.previewPhone} ${styles.previewLeft}`}
-                  />
-                  <MarketingScreenshot
-                    shot="moonboard"
-                    alt={t('home.hero.moonboardShotAlt')}
-                    sizes="(max-width: 760px) 42vw, 230px"
-                    className={`${styles.previewPhone} ${styles.previewRight}`}
-                  />
-                  <MarketingScreenshot
-                    shot="kilter"
-                    alt={t('home.hero.playShotAlt')}
-                    sizes="(max-width: 760px) 48vw, 260px"
-                    preload
-                    className={`${styles.previewPhone} ${styles.previewPrimary}`}
-                  />
-                </Box>
-                <MarketingPreviewSwitch />
-              </>
-            )}
-          </Box>
+              <MarketingPreviewSwitch />
+            </>
+          )}
         </Box>
-
-        {featureStrip}
-        <PopularBoardRail boards={initialBoards ?? []} />
-        {gymSearch}
-        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
-
-        {/* Onboarding Cards */}
-        {/* The stack used to be a single column capped at 420px, which on a
-            1440px screen was a narrow ribbon of cards down the middle with
-            empty violet either side. A CSS grid (no JS breakpoint) gives two
-            columns once there is room and stays one column on a phone. The
-            section header spans the full width via gridColumn: '1 / -1'. */}
-        <Box
-          className={styles.onboarding}
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-            gap: 1.5,
-            width: '100%',
-          }}
-        >
-          <Typography
-            variant="h3"
-            component="h2"
-            className={sectionHeadingTypeClassName}
-            sx={{ gridColumn: '1 / -1', mb: 1.5 }}
-          >
-            {t('home.onboardingHeader')}
-          </Typography>
-
-          {/* Signed-in only: the gym you help run, with Manage / View links.
-              Self-gates to null for signed-out visitors and for climbers with
-              no gym. */}
-          <Box sx={{ gridColumn: '1 / -1' }}>
-            <HomeGymCard />
-          </Box>
-
-          {/* The "find a gym" nudge the drawers used to carry, restored now that
-              the directory exists. Everyone sees it, including the signed-out
-              visitors HomeGymCard renders nothing for. */}
-          <OnboardingCard
-            icon={<PlaceOutlined />}
-            title={t('home.cards.gymTitle')}
-            description={t('home.cards.gymDescription')}
-            accent="brand"
-            href="/gyms"
-          />
-
-          <OnboardingCard
-            icon={<HistoryOutlined />}
-            title={t('home.cards.auroraTitle')}
-            description={t('home.cards.auroraDescription')}
-            accent="brand"
-            href="/bring-your-logbook"
-          />
-
-          <OnboardingCard
-            icon={<LocalOfferOutlined />}
-            title={t('home.cards.playlistTitle')}
-            description={t('home.cards.playlistDescription')}
-            accent="brand"
-            href="/playlists"
-          />
-
-          <OnboardingCard
-            icon={<BluetoothOutlined />}
-            title={t('home.cards.bluetoothTitle')}
-            description={t('home.cards.bluetoothDescription')}
-            accent="brand"
-            href={APP_URL}
-            external
-          />
-        </Box>
-
-        {/* Support — last thing before the footer, so it catches people who
-            have just read what the app does and are already convinced. */}
-        {supportBlock}
       </Box>
+      <PageCard>
+        <PageSection title={website('sprayTitle')} lead={website('sprayLead')}>
+          <MuiLink
+            component={LocaleLink}
+            href="/spraywalls"
+            onClick={() => trackWebsiteJourneyEvent(spraywallPathClicked('home-chip'))}
+            sx={LINK_TARGET}
+          >
+            {website('sprayRoute')}
+          </MuiLink>
+          <MuiLink component={LocaleLink} href="/help/spray-walls" sx={{ ...LINK_TARGET, ml: 2 }}>
+            {website('photoGuide')}
+          </MuiLink>
+        </PageSection>
+      </PageCard>
+      <PageSection title={website('boardChoices')}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          {SUPPORTED_BOARDS.filter((board) => board !== 'spray').map((board) => (
+            <Chip
+              key={board}
+              component={LocaleLink}
+              clickable
+              href={`/boards#${board}`}
+              onClick={() => trackWebsiteJourneyEvent(compatibilityBoardSelected(board, 'home-chip'))}
+              label={boardTypeLabel(board)}
+              variant="outlined"
+              sx={{ minHeight: 44, borderColor: 'var(--control-border)' }}
+            />
+          ))}
+          <Chip
+            component={LocaleLink}
+            clickable
+            href="/spraywalls"
+            onClick={() => trackWebsiteJourneyEvent(spraywallPathClicked('home-chip'))}
+            label={website('wallCard')}
+            variant="outlined"
+            sx={{ minHeight: 44, borderColor: 'var(--control-border)' }}
+          />
+        </Box>
+      </PageSection>
+      <Box className={styles.journeyGrid}>
+        <PageCard>
+          <PageSection title={website('importTitle')} lead={website('importBody')}>
+            <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={LINK_TARGET}>
+              {website('importLink')}
+            </MuiLink>
+            <Typography variant="body2" color="text.secondary">
+              {website('trust')}
+            </Typography>
+          </PageSection>
+        </PageCard>
+      </Box>
+      {featureStrip}
+      <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+      {heroProof ? (
+        <Box component="aside" className={styles.proofStrip}>
+          <Typography component="p" variant="h5">
+            {heroProof}
+          </Typography>
+          <Typography component="p" variant="body2" color="text.secondary">
+            {website('proofNote')}
+          </Typography>
+        </Box>
+      ) : null}
+      {gymSearch}
+      <PageSection title={website('runWall')}>
+        <Box className={styles.wallGrid}>
+          <PageCard>
+            <PageSection headingLevel={3} title={website('gymCard')} lead={website('gymBody')}>
+              <MuiLink
+                component={LocaleLink}
+                href="/gyms?claim=1"
+                onClick={() => trackWebsiteJourneyEvent(gymClaimPathClicked('home'))}
+                sx={LINK_TARGET}
+              >
+                {website('claimGym')}
+              </MuiLink>
+              <MuiLink component={LocaleLink} href="/for-gyms" sx={LINK_TARGET}>
+                {website('forGymsTitle')}
+              </MuiLink>
+            </PageSection>
+          </PageCard>
+          <PageCard>
+            <PageSection headingLevel={3} title={website('wallCard')} lead={website('sprayNoLights')}>
+              <MuiLink
+                component={LocaleLink}
+                href="/spraywalls"
+                onClick={() => trackWebsiteJourneyEvent(spraywallPathClicked('home-chip'))}
+                sx={LINK_TARGET}
+              >
+                {website('sprayRoute')}
+              </MuiLink>
+            </PageSection>
+          </PageCard>
+          <PageCard>
+            <PageSection headingLevel={3} title={website('partnerCard')} lead={website('partnerBody')}>
+              <MuiLink
+                href="mailto:support@boardsesh.com?subject=Boardsesh%20wall%20partnership"
+                onClick={() => trackWebsiteJourneyEvent(partnerContactClicked('partner', 'home'))}
+                sx={LINK_TARGET}
+              >
+                {website('contact')}
+              </MuiLink>
+            </PageSection>
+          </PageCard>
+        </Box>
+      </PageSection>
+      {trustFaq}
+      {supportBlock}
     </Box>
   );
 }

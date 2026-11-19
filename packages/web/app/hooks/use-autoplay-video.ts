@@ -37,6 +37,8 @@ type UseAutoplayVideoOptions = {
 };
 
 type UseAutoplayVideoResult = {
+  /** True only while the video intersects the viewport. */
+  inView: boolean;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** True for reduced-motion readers and when the browser refused autoplay. */
   showsControls: boolean;
@@ -126,6 +128,7 @@ export function useAutoplayVideo({
 
   return {
     videoRef,
+    inView,
     showsControls: prefersReducedMotion === true || autoplayRefused,
     prefersReducedMotion,
     autoplayRefused,

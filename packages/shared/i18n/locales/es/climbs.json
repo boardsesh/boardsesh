@@ -981,7 +981,7 @@
       "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…"
     },
     "cta": {
-      "climbThis": "Iluminar este bloque",
+      "climbThis": "Abre el bloque en la app",
       "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
       "helper": "Se abre en la app, listo para iluminarlo en tu plafón."
     },

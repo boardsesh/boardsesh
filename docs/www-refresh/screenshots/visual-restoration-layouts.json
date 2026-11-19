@@ -1,0 +1,203 @@
+[
+  {
+    "viewport": 390,
+    "path": "/",
+    "status": 200,
+    "title": "Board night, sorted. | Boardsesh",
+    "geometry": {
+      "width": 390,
+      "scrollWidth": 390,
+      "headings": [
+        {
+          "text": "Board night, sorted.",
+          "x": 24,
+          "fontSize": "40px"
+        }
+      ],
+      "install": [
+        {
+          "text": "Get the app",
+          "visible": true,
+          "y": 4.046875
+        }
+      ],
+      "storeButtons": [
+        {
+          "text": "Get the free app",
+          "height": 48
+        }
+      ],
+      "publicLinks": [
+        "/kilter/homewall/10x12-full-ride/main-kicker_main_aux-kicker_aux/20/view/baptized-in-the-wilderness-BDB9608E1F134A26AB174073B00357A7",
+        "/kilter/homewall/10x12-full-ride/main-kicker_main_aux-kicker_aux/20/view/goldeneye-86CEA3B12B1744F797317921113348F7",
+        "/kilter/homewall/10x12-full-ride/main-kicker_main_aux-kicker_aux/30/view/fingerpistols-D7D0A103EE77477B80A41C9C60B71ACE",
+        "/kilter/homewall/10x12-full-ride/main-kicker_main_aux-kicker_aux/30/view/smoking-hook-8af28605-6ebb-4ca4-8c3e-0ea3fd2a89ea",
+        "/kilter/original/12x14-commercial/screw_bolt/50/view/inverted-spear-of-heaven-8dc1702e-849d-457e-a4e6-f40417fc35b1",
+        "/soill/summer-2024/12x12-20-rows-17-columns/the-set/25/view/jackson-my-friend-30431a41659444aeb99b2dbfb5ef5082",
+        "/grasshopper/2020/grandmaster-12-x-12-with-tweeners/tweeners_power_gradient_flow_engage_dimension/40/view/grass-hops-ABEA52A2B09340B2AF8A959C9D13A286",
+        "/grasshopper/2020/grandmaster-12-x-12-with-tweeners/tweeners_power_gradient_flow_engage_dimension/30/view/dark-wave-5D610363EDDD4E2C84E8687679811560"
+      ],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 390,
+    "path": "/about",
+    "status": 200,
+    "title": "Built by climbers, open to everyone | Boardsesh",
+    "geometry": {
+      "width": 390,
+      "scrollWidth": 390,
+      "headings": [
+        {
+          "text": "Made by climbers. Open to everyone.",
+          "x": 24,
+          "fontSize": "32px"
+        }
+      ],
+      "install": [
+        {
+          "text": "Get the app",
+          "visible": true,
+          "y": 4.046875
+        }
+      ],
+      "storeButtons": [],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 390,
+    "path": "/de/about",
+    "status": 200,
+    "title": "Von Kletterer*innen, offen für alle | Boardsesh",
+    "geometry": {
+      "width": 390,
+      "scrollWidth": 390,
+      "headings": [
+        {
+          "text": "Von Kletterer*innen gebaut. Offen für alle.",
+          "x": 24,
+          "fontSize": "32px"
+        }
+      ],
+      "install": [],
+      "storeButtons": [],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 390,
+    "path": "/de/support",
+    "status": 200,
+    "title": "Spenden und die Server am Laufen halten | Boardsesh",
+    "geometry": {
+      "width": 390,
+      "scrollWidth": 390,
+      "headings": [
+        {
+          "text": "Halt Boardsesh am Laufen",
+          "x": 24,
+          "fontSize": "32px"
+        }
+      ],
+      "install": [],
+      "storeButtons": [],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 390,
+    "path": "/de/legal",
+    "status": 200,
+    "title": "Rechtliches & Richtlinie zum geistigen Eigentum | Boardsesh",
+    "geometry": {
+      "width": 390,
+      "scrollWidth": 390,
+      "headings": [
+        {
+          "text": "Rechtliches & Richtlinie zum geistigen Eigentum",
+          "x": 24,
+          "fontSize": "32px"
+        }
+      ],
+      "install": [],
+      "storeButtons": [],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 1440,
+    "path": "/",
+    "status": 200,
+    "title": "Board night, sorted. | Boardsesh",
+    "geometry": {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "headings": [
+        {
+          "text": "Board night, sorted.",
+          "x": 152,
+          "fontSize": "60.48px"
+        }
+      ],
+      "install": [
+        {
+          "text": "Get the app",
+          "visible": false,
+          "y": 0
+        }
+      ],
+      "storeButtons": [
+        {
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "text": "Google Play",
+          "height": 48
+        }
+      ],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  },
+  {
+    "viewport": 1440,
+    "path": "/about",
+    "status": 200,
+    "title": "Built by climbers, open to everyone | Boardsesh",
+    "geometry": {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "headings": [
+        {
+          "text": "Made by climbers. Open to everyone.",
+          "x": 152,
+          "fontSize": "44px"
+        }
+      ],
+      "install": [
+        {
+          "text": "Get the app",
+          "visible": false,
+          "y": 0
+        }
+      ],
+      "storeButtons": [],
+      "publicLinks": [],
+      "duplicateIds": []
+    },
+    "errors": []
+  }
+]

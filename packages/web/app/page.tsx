@@ -5,9 +5,9 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
 import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
-import { getBoardDiscovery } from './lib/server-board-discovery';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import HomePageContent from './home-page-content';
+import TrustFaq from '@/app/components/marketing/trust-faq';
 import HomeGymSearch from './components/home/home-gym-search';
 import { cachedCommunityStats } from './lib/graphql/server-cached-client';
 import HomeFeatureStrip from './components/home/home-feature-strip';
@@ -29,8 +29,7 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [boards, recentBeta, locale, communityStats] = await Promise.all([
-    getBoardDiscovery(),
+  const [recentBeta, locale, communityStats] = await Promise.all([
     getRecentBetaLinks(),
     getLocale(),
     cachedCommunityStats(),
@@ -43,19 +42,48 @@ export default async function Home() {
   const numberFormat = new Intl.NumberFormat(locale);
   const heroProof = communityStats
     ? t('home.hero.proof', {
-        formattedClimbers: numberFormat.format(communityStats.climbersLast30Days),
-        formattedClimbs: numberFormat.format(communityStats.litLast30Days),
+        formattedClimbers: numberFormat.format(Math.round(communityStats.climbersLast30Days / 100) * 100),
+        formattedClimbs: numberFormat.format(Math.round(communityStats.litLast30Days / 1000) * 1000),
       })
-    : t('home.hero.proofNoCount');
+    : undefined;
 
   // The banner asks people to go monthly, so it waits for a monthly Payment Link
   // to exist. The page reads request headers, so this env read is per request.
   const showSupportBanner = isSupportBannerWindow(new Date()) && hasMonthlyLinks(readSupportLinksConfig());
 
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['home', 'preview'] }}>
-      {/* The hero's Next Image owns its responsive preload. Board and beta
-          thumbnails now sit below the hero and must not compete with it. */}
+    <I18nProvider
+      locale={locale}
+      namespaces={['marketing', 'website']}
+      resourceKeys={{
+        marketing: ['home', 'preview'],
+        website: [
+          'freeApp',
+          'trust',
+          'boardChoices',
+          'importTitle',
+          'importBody',
+          'importLink',
+          'sprayTitle',
+          'sprayLead',
+          'sprayRoute',
+          'photoGuide',
+          'proofNote',
+          'runWall',
+          'gymCard',
+          'gymBody',
+          'forGymsTitle',
+          'claimGym',
+          'wallCard',
+          'sprayNoLights',
+          'partnerCard',
+          'partnerBody',
+          'contact',
+        ],
+      }}
+    >
+      {/* The English hero preloads its poster on desktop; the localized app
+          captures and below-fold thumbnails keep their default lazy loading. */}
       <SiteJsonLd />
       {/* The hero video is English-only (its text is burned in), so only the
           English page describes it to crawlers. */}
@@ -66,12 +94,16 @@ export default async function Home() {
           them. This keeps their markup — the gym links especially — in the
           first HTML a crawler sees. */}
       <HomePageContent
-        initialBoards={boards}
         heroProof={heroProof}
         initialRecentBeta={recentBeta}
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}
         supportBlock={<HomeSupportBlock />}
+        trustFaq={
+          <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['funding', 'trust'] }}>
+            <TrustFaq limit={6} />
+          </I18nProvider>
+        }
         supportBanner={showSupportBanner ? <HomeSupportBanner /> : null}
       />
     </I18nProvider>

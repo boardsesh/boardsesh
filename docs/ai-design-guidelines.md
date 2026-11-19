@@ -475,6 +475,13 @@ dark when no choice is saved, with a black `color-scheme: dark` shell so it neve
 
 Dark only, with the foreground/fill violet split never collapsed: [web-velvet-send.md](./web-velvet-send.md).
 
-## English website trust FAQ
 
-The public website trust FAQ uses “spray wall”, two words and lowercase in a sentence. Native app controls and store listings retain “Spraywall”. Other locales follow their own terminology glossaries, including grammatical gender and plurals.
+## English website words
+
+The website uses “Get the free app” on phones and “App Store” / “Google Play” for the desktop store pair. “Open it in your browser” opens the browser app; the desktop header keeps “Start climbing”. A climb handoff says “Open climb in the app”: opening it does not itself light a connected wall. “Chip in” opens Support; “Give once” and “Give monthly” appear only for configured giving routes. “Bring your logbook” opens import guidance.
+
+A board is the physical product, a wall is the climbing surface and a gym is the place. A completed climb is a send; use “log” for recording it and “logbook entry” when sends and attempts are both included. The crew is the people, a session is their shared climbing time and the queue is the ordered list within it. The logbook is history; a profile is the public page.
+
+English public website copy uses “spray wall”, two words, lower case within a sentence. The native app and store listings retain their existing “Spraywall” spelling. Help preserves exact names of controls readers must tap. Spanish, French, German and Italian keep the terminology and grammatical gender in their own glossary documents; the English website exception does not replace those rules.
+
+The public trust FAQ question and answer each name “spray wall” in lowercase. Their narrow guard also rejects a missing term, the single-word app spelling, a hyphen and mid-sentence capitalization. This does not change the native/store or locale rules above.

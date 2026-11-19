@@ -13,6 +13,9 @@ import { IOS_APP_STORE_ID, IOS_APP_STORE_URL } from '../lib/store-urls';
  */
 
 vi.mock('server-only', () => ({}));
+vi.mock('next/font/local', () => ({
+  default: () => ({ className: 'display-font', variable: '--font-display' }),
+}));
 
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));

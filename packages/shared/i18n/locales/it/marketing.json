@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "App di arrampicata compatibile con Kilter, Tension e MoonBoard",
-      "description": "Condividi una coda live con la tua crew e tieni traccia delle ripetizioni su tutti i pannelli. Funziona con Kilter, Tension, MoonBoard e altri.",
-      "ogDescription": "Illumina i blocchi in parete, registra le tue ripetizioni e scala con la tua crew. Funziona con Kilter, Tension, MoonBoard e altri.",
-      "ogTitle": "Boardsesh: un'app per i tuoi pannelli"
+      "title": "La tua sessione, ben organizzata. | Boardsesh",
+      "description": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo. Gratis. Compatibile con pannelli come Kilter, Tension e MoonBoard.",
+      "ogDescription": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo.",
+      "ogTitle": "La tua sessione, ben organizzata."
     },
     "about": {
       "title": "Fatta da climber, aperta a tutti",
@@ -53,44 +53,30 @@
   },
   "home": {
     "hero": {
-      "title": "I tuoi pannelli. Un'app.",
-      "eyebrow": "Funziona con Kilter, Tension, MoonBoard e altri",
-      "playShotAlt": "Un blocco aperto in Boardsesh con le prese illuminate sul pannello",
-      "subtitle": "Cambia pannello senza cambiare app.",
+      "title": "La tua sessione, ben organizzata.",
+      "eyebrow": "Gratis. Compatibile con pannelli come Kilter, Tension e MoonBoard.",
+      "subtitle": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo.",
       "startClimbingAria": "Inizia ad arrampicare nell'app",
-      "startClimbingWeb": "Inizia ad arrampicare sul web →",
-      "ctaInstallIos": "Installa dall'App Store",
-      "ctaInstallAndroid": "Scaricala su Google Play",
+      "startClimbingWeb": "Aprilo nel browser",
+      "ctaInstallIos": "App Store",
+      "ctaInstallAndroid": "Google Play",
       "ctaUpdate": "Aggiorna l'app",
+      "proof": "Negli ultimi 30 giorni, circa {{formattedClimbers}} scalatori hanno usato Boardsesh per illuminare un blocco sul pannello {{formattedClimbs}} volte.",
       "tensionShotAlt": "Un blocco su un Tension Board in Boardsesh",
       "moonboardShotAlt": "Un blocco su una MoonBoard in Boardsesh",
-      "proof": "{{formattedClimbers}} climber hanno illuminato {{formattedClimbs}} blocchi su pannelli veri negli ultimi 30 giorni.",
-      "proofNoCount": "Gratis, open source e pagata dai climber che la usano."
+      "playShotAlt": "Un blocco aperto in Boardsesh con le prese illuminate sul pannello"
     },
-    "onboardingHeader": "Rendila tua",
-    "cards": {
-      "auroraTitle": "Porta qui il tuo diario Kilter o Tension",
-      "auroraDescription": "Collega il tuo account una volta. Le tue ripetizioni arrivano circa ogni 12 ore.",
-      "playlistTitle": "Crea una playlist",
-      "playlistDescription": "Metti in fila i blocchi prima di arrivare in palestra",
-      "bluetoothTitle": "Connetti il tuo pannello",
-      "bluetoothDescription": "Accoppia via Bluetooth e illumina il prossimo blocco",
-      "gymTitle": "Trova una palestra vicino a te",
-      "gymDescription": "Scopri quali palestre hanno un Kilter, un Tension o una MoonBoard"
-    },
+    "cards": {},
     "gymCard": {
       "ownerSubtitle": "La palestra della tua crew, a un tocco",
       "manage": "Gestisci",
       "viewPage": "Vedi la pagina"
     },
     "gymSearch": {
-      "eyebrow": "Elenco palestre",
       "title": "Trova un pannello vicino a te",
-      "lead_one": "{{formattedCount}} palestra, club o garage ha già un pannello in elenco. Cerca per nome o città, oppure lascia che il browser ti localizzi.",
-      "lead_other": "{{formattedCount}} palestre, club e garage hanno già un pannello in elenco. Cerca per nome o città, oppure lascia che il browser ti localizzi.",
-      "leadNoCount": "Palestre, club e garage con un pannello in parete sono già in elenco. Cerca per nome o città, oppure lascia che il browser ti localizzi.",
-      "geoHint": "Posizione disattivata? Scrivi una città: stessi risultati, nessuna richiesta di permesso.",
-      "browseAll": "Sfoglia l'elenco completo delle palestre"
+      "lead_one": "L’elenco dei pannelli comprende {{formattedCount}} palestre, club e pareti domestiche.",
+      "lead_other": "L’elenco dei pannelli comprende {{formattedCount}} palestre, club e pareti domestiche.",
+      "leadNoCount": "Palestre, club e garage con un pannello in parete sono già in elenco. Cerca per nome o città, oppure lascia che il browser ti localizzi."
     },
     "boards": {
       "title": "Pannelli popolari",
@@ -101,7 +87,7 @@
       "preview": "Anteprima del pannello: {{board}}",
       "typeAngle": "{{board}} · {{angle}}°",
       "selectedClimb": "Blocco selezionato: {{climb}}",
-      "open": "Apri questo pannello"
+      "open": "Arrampica su questo pannello"
     },
     "recentBeta": {
       "title": "Beta fresche",
@@ -114,8 +100,8 @@
         "spray": "Anche la tua Spraywall.",
         "wall": "Guarda cosa c'è in parete.",
         "crew": "La tua crew. Una coda.",
-        "workouts": "Dai un piano alla tua session.",
-        "island": "Controlla il pannello dalla Dynamic Island.",
+        "workouts": "Organizza un allenamento, poi arrampica.",
+        "island": "Il prossimo blocco, dalla schermata di blocco.",
         "log": "Ricorda ogni ripetizione.",
         "outro": "Meno telefono. Più parete."
       },
@@ -124,7 +110,7 @@
       "play": "Avvia la demo"
     },
     "features": {
-      "title": "La serata al pannello è servita",
+      "title": "Ecco una sessione",
       "lead": "Dal primo blocco all'ultima ripetizione, tieni insieme tutta la session.",
       "queue": {
         "title": "La tua crew. Una coda live.",
@@ -141,18 +127,12 @@
         "body": "Guarda ripetizioni e progressi su ogni pannello.",
         "shotAlt": "Le tue ripetizioni e i tuoi progressi sui vari pannelli nel profilo Boardsesh"
       },
-      "spray": {
-        "title": "Anche la tua Spraywall.",
-        "body": "Fotografa qualsiasi Spraywall. Tracciaci blocchi e registrali.",
-        "shotAlt": "Un blocco evidenziato sulla foto di una Spraywall in Boardsesh"
-      }
+      "spray": {}
     },
     "support": {
       "eyebrow": "Gratis, e continuerà a esserlo",
       "title": "Boardsesh va avanti grazie ai climber che contribuiscono",
-      "p1": "Niente pubblicità, niente schermate bloccate, niente versione premium. Ogni parte di Boardsesh resta aperta a tutti, sostenitori o no, self-hosting incluso.",
-      "p2": "Le persone che lo usano finanziano il tempo necessario a svilupparlo.",
-      "chipIn": "Dai una mano",
+      "chipIn": "Contribuisci",
       "source": "Leggi il codice",
       "otherWays": "Non hai soldi da parte?"
     },
@@ -186,7 +166,7 @@
       "title": "Entra nella community",
       "body": "Che tu scriva codice, tracci blocchi o voglia solo dirci cosa non funziona, ci fa piacere sentirti.",
       "discord": "Entra nella crew su Discord",
-      "support": "Sostieni Boardsesh"
+      "support": "Contribuisci"
     },
     "legalLink": "Note legali e proprietà intellettuale",
     "footer": "Fatta da climber. Aperta a tutti.",
@@ -205,6 +185,10 @@
       "title": "Cosa viene dopo",
       "body": "Più pannelli, arrampicata offline migliore e importazione della cronologia da altre app. Segui la roadmap e partecipa su Discord.",
       "cta": "Leggi la roadmap"
+    },
+    "profile": {
+      "title": "Tutti i tuoi pannelli. Un profilo.",
+      "shotAlt": "Le tue ripetizioni e i tuoi progressi sui vari pannelli nel profilo Boardsesh"
     }
   },
   "support": {
@@ -257,7 +241,7 @@
         "cta": "Sfoglia i cataloghi delle lingue →"
       },
       "patch": {
-        "title": "Manda una patch",
+        "title": "Migliora qualcosa nel codice",
         "body": "Tutta l'app è pubblica: web, mobile, backend e i dati dei pannelli che ci stanno dietro.",
         "cta": "Scopri come è fatta →"
       },

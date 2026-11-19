@@ -990,10 +990,12 @@
     "nav": {
       "gyms": "Salles",
       "playlists": "Playlists",
-      "about": "À propos",
-      "help": "Aide"
+      "help": "Aide",
+      "boards": "Boards",
+      "spray": "Spraywalls"
     },
-    "navLabel": "Navigation principale"
+    "navLabel": "Navigation principale",
+    "getApp": "Obtenir l’app"
   },
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
@@ -1245,30 +1247,37 @@
     "fallbackCta": "Ouvrir la page du store"
   },
   "footer": {
-    "tagline": "Tes boards. Une seule app. Change de board sans changer d’app.",
+    "tagline": "Vos boards. Une app. Gratuite pour votre prochaine session.",
     "navLabel": "Pied de page",
-    "trademarkNote": "Compatible Kilter, Tension et MoonBoard. Sans lien avec Aurora Climbing ni Moon Climbing.",
+    "trademarkNote": "Compatible avec les boards {{boards}}. Boardsesh est indépendant et n’est ni créé ni approuvé par un fabricant de boards, y compris Aurora Climbing. Les marques appartiennent à leurs propriétaires.",
     "links": {
-      "home": "Accueil",
       "about": "À propos",
       "support": "Soutenir Boardsesh",
       "help": "Aide",
-      "docs": "Doc développeur",
-      "buildPlans": "Plans de construction",
       "playlists": "Playlists",
       "auroraMigration": "Récupérer ton carnet",
       "legal": "Mentions légales",
       "privacy": "Confidentialité",
-      "gymsKilter": "Salles avec une board Kilter",
-      "gymsTension": "Salles avec une board Tension",
-      "gymsMoonboard": "Salles avec un MoonBoard",
-      "gyms": "Toutes les salles et tous les murs"
+      "gyms": "Toutes les salles"
     },
-    "groups": {
-      "findAGym": "Trouver une salle",
-      "explore": "Explorer",
-      "smallPrint": "Petits caractères"
-    }
+    "groups": {},
+    "journeys": {
+      "climb": "Grimper",
+      "walls": "Pour les murs",
+      "project": "Projet",
+      "help": "Aide",
+      "supportedBoards": "Boards compatibles",
+      "setupSpray": "Configurer votre Spraywall",
+      "claimGym": "Revendiquer votre salle",
+      "partners": "Partenaires et fabricants",
+      "source": "Code source",
+      "roadmap": "Feuille de route",
+      "discord": "Discord",
+      "developers": "Développeurs",
+      "bluetooth": "Le board ne se connecte pas ?",
+      "reportBug": "Signaler un bug"
+    },
+    "openBrowser": "Ouvrir dans votre navigateur"
   },
   "unsavedChanges": {
     "title": "Abandonner les modifications ?",

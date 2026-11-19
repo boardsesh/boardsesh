@@ -68,7 +68,7 @@ const sharedComponents: Components<Theme> = {
   MuiButton: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.button,
+        borderRadius: themeTokens.borderRadius.full,
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
         // Velvet hover is a background TINT, never a lift. Contained variants carry

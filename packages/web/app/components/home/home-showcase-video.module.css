@@ -2,7 +2,7 @@
 .figure {
   position: relative;
   isolation: isolate;
-  width: min(100%, calc(70svh * 9 / 16));
+  width: 100%;
   aspect-ratio: 9 / 16;
   margin: 0 auto;
   overflow: hidden;
@@ -65,7 +65,7 @@
 }
 
 /* Poster with nothing playing (data saver, reduced motion): the play button is
-   the call to action, so it sits in the middle and is larger. */
+   the call to action, so it is larger and centered on desktop. */
 .figure .toggleCentered {
   top: 50%;
   left: 50%;
@@ -96,10 +96,32 @@
    beside the hero copy, as wide as fits without outgrowing the viewport height
    (header and 120px of breathing room). Below that the phone layout above holds:
    the copy comes first and the card sits directly below at full content width,
-   capped at 70% of the screen height. */
+   without cropping the portrait composition. */
 @media (min-width: 761px) {
   .figure {
     width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
     margin: 0;
+  }
+
+  /* Layout centering survives the global reduced-motion hover transform reset. */
+  .figure .toggleCentered {
+    inset: 0;
+    width: 64px;
+    height: 64px;
+    margin: auto;
+    transform: none;
+  }
+}
+
+/* Keep the manual play affordance visible when the phone poster first enters
+   the viewport, even before its middle reaches the fold. */
+@media (max-width: 760px) {
+  .figure .toggleCentered {
+    top: var(--spacing-3);
+    right: var(--spacing-3);
+    left: auto;
+    min-width: 48px;
+    min-height: 48px;
+    transform: none;
   }
 }

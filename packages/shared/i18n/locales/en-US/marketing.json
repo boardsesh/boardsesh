@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Climbing app compatible with Kilter, Tension & MoonBoard",
-      "description": "Share a live queue with your crew and track your sends across boards. Works with Kilter, Tension, MoonBoard and more.",
-      "ogDescription": "Light up climbs, log your sends and climb with your crew. Works with Kilter, Tension, MoonBoard and more.",
-      "ogTitle": "Boardsesh: one app for your boards"
+      "title": "Board night, sorted. | Boardsesh",
+      "description": "Pick a climb, light it on the wall and share one queue with your crew. Free to use. Works with boards including Kilter, Tension and MoonBoard.",
+      "ogDescription": "Pick a climb, light it on the wall and share one queue with your crew.",
+      "ogTitle": "Board night, sorted."
     },
     "about": {
       "title": "Built by climbers, open to everyone",
@@ -40,57 +40,43 @@
     },
     "helpLogbook": {
       "title": "Log, edit and delete sends, and attach beta videos",
-      "description": "Log a tick in the Boardsesh app, edit or delete it later, bring your Kilter or Tension logbook across, and attach an Instagram or TikTok beta video to a climb."
+      "description": "Log a send or attempt in the Boardsesh app, edit it later, bring your Kilter or Tension logbook across, and attach a beta video to a climb."
     },
     "helpBoardAndBluetooth": {
       "title": "Put a climb on your board: Bluetooth and driving the wall",
       "description": "Connect Boardsesh to a Kilter, Tension or MoonBoard, learn what driving the wall means, swipe the wall button to keep climbs lighting, and fix a board that won't connect."
     },
     "helpSprayWalls": {
-      "title": "How to photograph and set up your Spraywall",
-      "description": "Shoot your Spraywall square on and in portrait, add it to Boardsesh, fix the holds it finds, and edit them later or after a reset."
+      "title": "How to photograph and set up your spray wall",
+      "description": "Shoot your spray wall square on and in portrait, add it to Boardsesh, fix the holds it finds, and edit them later or after a reset."
     }
   },
   "home": {
     "hero": {
-      "title": "Your boards. One app.",
-      "eyebrow": "Works with Kilter, Tension, MoonBoard & More",
-      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
-      "subtitle": "Switch boards without switching apps.",
+      "title": "Board night, sorted.",
+      "eyebrow": "Free to use. Works with boards including Kilter, Tension and MoonBoard.",
+      "subtitle": "Pick a climb, light it on the wall and share one queue with your crew.",
       "startClimbingAria": "Start climbing in the app",
-      "startClimbingWeb": "Start climbing on the web →",
-      "ctaInstallIos": "Install from App Store",
-      "ctaInstallAndroid": "Get it on Google Play",
+      "startClimbingWeb": "Open it in your browser",
+      "ctaInstallIos": "App Store",
+      "ctaInstallAndroid": "Google Play",
       "ctaUpdate": "Update the app",
+      "proof": "In the last 30 days, about {{formattedClimbers}} climbers used Boardsesh to light a climb on their board {{formattedClimbs}} times.",
       "tensionShotAlt": "A climb on a Tension board in Boardsesh",
       "moonboardShotAlt": "A climb on a MoonBoard in Boardsesh",
-      "proof": "{{formattedClimbers}} climbers lit {{formattedClimbs}} climbs on real boards in the last 30 days.",
-      "proofNoCount": "Free, open source, and paid for by the climbers who use it."
+      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board"
     },
-    "onboardingHeader": "Make it yours",
-    "cards": {
-      "auroraTitle": "Bring your Kilter or Tension logbook",
-      "auroraDescription": "Link your account once. Your sends come across about every 12 hours.",
-      "playlistTitle": "Build a playlist",
-      "playlistDescription": "Line up your climbs before you get to the gym",
-      "bluetoothTitle": "Connect your board",
-      "bluetoothDescription": "Pair via Bluetooth and light up your next climb",
-      "gymTitle": "Find a gym near you",
-      "gymDescription": "See which walls run a Kilter, Tension or MoonBoard"
-    },
+    "cards": {},
     "gymCard": {
       "ownerSubtitle": "Your crew's gym, one tap away",
       "manage": "Manage",
       "viewPage": "View page"
     },
     "gymSearch": {
-      "eyebrow": "Gym directory",
       "title": "Find a board near you",
-      "lead_one": "{{formattedCount}} gym, club wall or garage already has a board listed. Search by name or town, or let your browser find you.",
-      "lead_other": "{{formattedCount}} gyms, club walls and garages already have a board listed. Search by name or town, or let your browser find you.",
-      "leadNoCount": "Gyms, club walls and garages with a board on the wall are already listed. Search by name or town, or let your browser find you.",
-      "geoHint": "Location off? Type a town instead — same results, no permission prompt.",
-      "browseAll": "Browse the full gym directory"
+      "lead_one": "{{formattedCount}} gyms, club walls and home walls are listed in the board directory.",
+      "lead_other": "{{formattedCount}} gyms, club walls and home walls are listed in the board directory.",
+      "leadNoCount": "Gyms, club walls and garages with a board on the wall are already listed. Search by name or town, or let your browser find you."
     },
     "boards": {
       "title": "Popular boards",
@@ -101,21 +87,21 @@
       "preview": "Board preview: {{board}}",
       "typeAngle": "{{board}} · {{angle}}°",
       "selectedClimb": "Selected climb: {{climb}}",
-      "open": "Open this board"
+      "open": "Climb on this board"
     },
     "recentBeta": {
       "title": "Fresh beta",
       "lead": "See the climb and its beta: videos climbers have just linked."
     },
     "showcase": {
-      "videoLabel": "Demo: every board in one app, including a Spraywall, then a crew queue, a workout plan and a logged send.",
+      "videoLabel": "Demo: every board in one app, including a spray wall, then a crew queue, a workout plan and a logged send.",
       "scenes": {
         "boards": "Every board. One app.",
-        "spray": "Your Spraywall, too.",
+        "spray": "Your spray wall, too.",
         "wall": "See what's on the wall.",
         "crew": "Your crew. One queue.",
-        "workouts": "Give your session a plan.",
-        "island": "Control the wall from the island.",
+        "workouts": "Plan a workout, then climb it.",
+        "island": "Next climb, straight from your lock screen.",
         "log": "Remember every send.",
         "outro": "Less phone. More wall."
       },
@@ -124,7 +110,7 @@
       "play": "Play demo"
     },
     "features": {
-      "title": "Board night, sorted",
+      "title": "What a session looks like",
       "lead": "From the first climb to the last send, keep the whole session together.",
       "queue": {
         "title": "Your crew. One live queue.",
@@ -141,17 +127,11 @@
         "body": "See your sends and progress across every board.",
         "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
       },
-      "spray": {
-        "title": "Your Spraywall, too.",
-        "body": "Photograph any Spraywall. Set and log climbs on it.",
-        "shotAlt": "A climb highlighted on a Spraywall photo in Boardsesh"
-      }
+      "spray": {}
     },
     "support": {
       "eyebrow": "Free, and staying that way",
       "title": "Boardsesh runs on climbers chipping in",
-      "p1": "No ads, no locked screens, no second tier. Every part of Boardsesh stays open to everyone, sponsor or not — self-hosting included.",
-      "p2": "The time it takes to build it is paid for by the people who use it.",
       "chipIn": "Chip in",
       "source": "Read the source",
       "otherWays": "Not got money spare?"
@@ -186,7 +166,7 @@
       "title": "Join the Community",
       "body": "Whether you write code, set problems, or just want to tell us what's broken, we'd like to hear from you.",
       "discord": "Join the crew on Discord",
-      "support": "Support Boardsesh"
+      "support": "Chip in"
     },
     "legalLink": "Legal & Intellectual Property Policy",
     "footer": "Made by climbers. Open to everyone.",
@@ -205,6 +185,10 @@
       "title": "What's next",
       "body": "More boards, better offline climbing and history import from more apps. Follow the roadmap and join the discussion on Discord.",
       "cta": "Read the roadmap"
+    },
+    "profile": {
+      "title": "All your boards. One profile.",
+      "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
     }
   },
   "support": {
@@ -257,7 +241,7 @@
         "cta": "Browse the locale catalogs →"
       },
       "patch": {
-        "title": "Send a patch",
+        "title": "Fix something in the code",
         "body": "The whole app is public: web, mobile, backend, and the board data behind them.",
         "cta": "See how it is built →"
       },
@@ -631,8 +615,8 @@
           "body": "Log and edit sends, and attach beta videos."
         },
         "spray": {
-          "title": "Spraywalls",
-          "body": "Photograph your Spraywall and fix the holds Boardsesh finds."
+          "title": "Spray walls",
+          "body": "Photograph your spray wall and fix the holds Boardsesh finds."
         },
         "read": "Read the guide"
       },
@@ -785,36 +769,36 @@
       }
     },
     "spray": {
-      "breadcrumb": "Spraywalls",
+      "breadcrumb": "Spray walls",
       "hero": {
-        "title": "Set up your Spraywall",
-        "subtitle": "Every hold and climb is set on one photo of your Spraywall, so the shot matters."
+        "title": "Set up your spray wall",
+        "subtitle": "Every hold and climb is set on one photo of your spray wall, so the shot matters."
       },
       "watch": {
         "title": "Watch the walkthrough",
         "lead": "Boardsesh finds the holds in your photo, so a good shot means fewer to fix.",
-        "videoAlt": "Adding a Spraywall and editing its holds in the Boardsesh app"
+        "videoAlt": "Adding a spray wall and editing its holds in the Boardsesh app"
       },
       "photo": {
         "title": "Taking the photo",
         "lead": "Five habits give the hold finder a clean photo.",
-        "square": "Stand square on, in line with the Spraywall's middle. From the side, far holds shrink.",
+        "square": "Stand square on, in line with the spray wall's middle. From the side, far holds shrink.",
         "portrait": "Hold the phone in portrait and shoot at 1x. Landscape shrinks holds to a strip.",
-        "tilt": "Tilt the phone to match the Spraywall's angle, parallel to its face.",
-        "frame": "Get the whole Spraywall in frame. If it doesn't fit, step back instead of using the wide lens.",
+        "tilt": "Tilt the phone to match the spray wall's angle, parallel to its face.",
+        "frame": "Get the whole spray wall in frame. If it doesn't fit, step back instead of using the wide lens.",
         "lighting": "Use bright, even light so the holds stand out.",
-        "exampleAlt": "An indoor Spraywall photographed square on, with every hold in frame",
-        "exampleCaption": "Whole Spraywall in frame, shot square on."
+        "exampleAlt": "An indoor spray wall photographed square on, with every hold in frame",
+        "exampleCaption": "Whole spray wall in frame, shot square on."
       },
       "add": {
-        "title": "Add the Spraywall",
+        "title": "Add the spray wall",
         "lead": "Take a photo, let Boardsesh scan for holds, then name it.",
         "step1": "Open Boards and tap Spraywall.",
         "step2": "Take or choose a photo. Use Crop or rotate to tidy its edges.",
         "step3": "Pin the four corners to unlock other backgrounds, or skip to keep the photo.",
         "step4": "Let Boardsesh scan the photo, then review the hold rings.",
         "step5": "Swipe to pick a background and how holds light up. Without corner pins, Photo is the only background.",
-        "p1": "Last, name the Spraywall and set its angle, then publish. The angle is fixed once you publish."
+        "p1": "Last, name the spray wall and set its angle, then publish. The angle is fixed once you publish."
       },
       "fix": {
         "title": "Fix holds before you publish",
@@ -824,11 +808,11 @@
         "trace": "Trace: redraw the selected hold's outline in one loop.",
         "refine": "Refine: brush along the outline to grow or shrink it.",
         "join": "Join: select a hold, then tap another to merge their outlines.",
-        "imageAlt": "Spraywall editor with a selected hold and the five tools",
+        "imageAlt": "Spray wall editor with a selected hold and the five tools",
         "imageCaption": "Select a ring to see its controls.",
         "maybe": "Dashed rings are uncertain. Tap one, then tap Keep.",
         "toggle": "Tap a ring to select it, and tap again to switch it off. You can switch it back on or delete it.",
-        "longPress": "Press and hold a ring to move it, or bare Spraywall to place a new hold.",
+        "longPress": "Press and hold a ring to move it, or bare spray wall to place a new hold.",
         "gestures": "Pan with two fingers and pinch to zoom. Undo and Redo step through your edits.",
         "missedTitle": "Hold with no ring?",
         "videoAlt": "Adding missed holds, correcting outlines and publishing hold changes",
@@ -844,11 +828,11 @@
       "edit": {
         "title": "Edit holds later",
         "lead": "You can add or fix holds any time. Adding holds leaves existing climbs unchanged.",
-        "p1": "On Boards, tap your Spraywall to make it active. Tap the magnifying-glass Climbs tab, then the Spraywall name at the top. Tap Edit holds, and finish with Publish holds.",
+        "p1": "On Boards, tap your spray wall to make it active. Tap the magnifying-glass Climbs tab, then the spray wall name at the top. Tap Edit holds, and finish with Publish holds.",
         "p2": "If your edits remove a hold that published climbs use, Boardsesh asks you to confirm. Keep holds cancels. Remove anyway publishes.",
         "p3": "Those climbs stay, with a missing-hold warning, and so do their logged ascents. Moving, resizing, reshaping or joining a hold does the same.",
         "p4": "Tap Remix on an affected climb to set an updated copy. It does not repair the original.",
-        "p5": "If the holds changed across the Spraywall, tap Reset this Spraywall in the same sheet and start from a new photo. Publishing archives the old Spraywall with its climbs."
+        "p5": "If the holds changed across the spray wall, tap Reset this spray wall in the same sheet and start from a new photo. Publishing archives the old spray wall with its climbs."
       },
       "pencil": {
         "title": "Apple Pencil on iPad",
@@ -928,17 +912,17 @@
       "body2": "You can revoke location permission at any time in your device settings. The app works fully without it."
     },
     "sprayPhotos": {
-      "title": "Spraywall photos",
-      "body1": "When you add a Spraywall, we keep its photo and the holds you mark. Who can see the photo follows the Spraywall's visibility setting: private, link-only or public. Members of a gym can also see the Spraywalls attached to that gym.",
-      "body2": "Each Spraywall has a “Help train hold finding” switch. While it is on, we use the Spraywall's photo and the holds you mark to train the hold finder, the part of the app that spots holds in a new Spraywall photo. A Boardsesh admin checks them first to make sure they are good to learn from. That applies at every visibility, private Spraywalls included. The copy we use for training is kept in private storage and is never shared or published outside Boardsesh.",
-      "body3": "The switch is on when you add a Spraywall, and you can change it then or any time later under Edit board. Spraywalls added before the switch existed, or with a version of the app that does not show it, start with it off. We train on a Spraywall whose switch is on under legitimate interest to improve hold finding; switching it off is how you object, and it takes effect as described below.",
-      "body4": "Switching it off, deleting the Spraywall, or deleting your account takes the Spraywall out of our stored training set within 24 hours. A copy already downloaded for a training run can be used for up to 7 more days, and is deleted the next time we fetch the set. Models we already trained keep what they learned, but they hold no copy of your photo.",
-      "body5": "If a Spraywall is reported, a Boardsesh admin can see its photo to review the report, whatever the switch says. When you delete a Spraywall, we delete its photo after 30 days. When you delete your account, your Spraywall photos are deleted with it; a training copy leaves on the timing above. Resetting a Spraywall keeps the old one, photo included, as an archived Spraywall until you delete it too. Turning the switch off on either Spraywall covers both."
+      "title": "Spray wall photos",
+      "body1": "When you add a spray wall, we keep its photo and the holds you mark. Who can see the photo follows the spray wall's visibility setting: private, link-only or public. Members of a gym can also see the spray walls attached to that gym.",
+      "body2": "Each spray wall has a “Help train hold finding” switch. While it is on, we use the spray wall's photo and the holds you mark to train the hold finder, the part of the app that spots holds in a new spray wall photo. A Boardsesh admin checks them first to make sure they are good to learn from. That applies at every visibility, private spray walls included. The copy we use for training is kept in private storage and is never shared or published outside Boardsesh.",
+      "body3": "The switch is on when you add a spray wall, and you can change it then or any time later under Edit board. spray walls added before the switch existed, or with a version of the app that does not show it, start with it off. We train on a spray wall whose switch is on under legitimate interest to improve hold finding; switching it off is how you object, and it takes effect as described below.",
+      "body4": "Switching it off, deleting the spray wall, or deleting your account takes the spray wall out of our stored training set within 24 hours. A copy already downloaded for a training run can be used for up to 7 more days, and is deleted the next time we fetch the set. Models we already trained keep what they learned, but they hold no copy of your photo.",
+      "body5": "If a spray wall is reported, a Boardsesh admin can see its photo to review the report, whatever the switch says. When you delete a spray wall, we delete its photo after 30 days. When you delete your account, your spray wall photos are deleted with it; a training copy leaves on the timing above. Resetting a spray wall keeps the old one, photo included, as an archived spray wall until you delete it too. Turning the switch off on either spray wall covers both."
     },
     "connectedApps": {
       "title": "Apps you connect",
       "intro": "You can connect another app to your Boardsesh account, such as a training planner. Before anything is shared, Boardsesh shows you the app, who makes it, a link to its privacy policy and what it asks to see. Nothing is shared until you choose Allow.",
-      "whatItGets": "Depending on what you allow, the app can see your display name and profile photo, and every tick in your logbook, including ticks you keep to “Only me”. Each tick comes with the climb it is on: its name, grade, board and layout. That includes a climb someone else set that is still a draft or unlisted, because the tick is part of your logbook. On someone else’s Spraywall that isn’t public, the app gets your tick but not the climb’s name or the Spraywall’s name.",
+      "whatItGets": "Depending on what you allow, the app can see your display name and profile photo, and every tick in your logbook, including ticks you keep to “Only me”. Each tick comes with the climb it is on: its name, grade, board and layout. That includes a climb someone else set that is still a draft or unlisted, because the tick is part of your logbook. On someone else’s spray wall that isn’t public, the app gets your tick but not the climb’s name or the spray wall’s name.",
       "afterSharing": "Once the app has your data, the app’s own privacy policy covers what it does with it.",
       "disconnect": "You can disconnect an app at any time in your Boardsesh settings. Any change to your password, including resetting it or setting one for the first time, disconnects every app. After that the app can’t read anything new. Disconnecting, or deleting your Boardsesh account, does not delete what the app already copied: ask the app to delete it."
     },
@@ -971,7 +955,7 @@
       "title": "Data sharing",
       "body1ProductAnalytics": "We do not sell your data, show ads in Boardsesh or share information with data brokers. The providers described above process data for hosting, storage, payments, service reliability and optional analytics, which on our website includes ad measurement with Meta and Reddit. Aurora Climbing synchronization runs when you enable it.",
       "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like sessions. This is visible in the app and is part of how the product works.",
-      "body3SprayPhotos": "We do not give Spraywall photos or the holds you mark to anyone else to train on. The only model trained on them is our own hold finder. Other people see a Spraywall's photo as its visibility setting allows, and members of a gym see the Spraywalls attached to that gym, private ones included. A public Spraywall's photo is on the open web."
+      "body3SprayPhotos": "We do not give spray wall photos or the holds you mark to anyone else to train on. The only model trained on them is our own hold finder. Other people see a spray wall's photo as its visibility setting allows, and members of a gym see the spray walls attached to that gym, private ones included. A public spray wall's photo is on the open web."
     },
     "retention": {
       "title": "Data retention",

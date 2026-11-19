@@ -45,7 +45,7 @@ export default async function SupportPage({ searchParams }: SupportPageProps) {
   });
   const thanks = params.thanks === '1';
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['support', 'funding'] }}>
       <SupportContent options={options} src={src} thanks={thanks} />
     </I18nProvider>
   );

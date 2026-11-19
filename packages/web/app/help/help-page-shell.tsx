@@ -40,7 +40,7 @@ export default function HelpPageShell({ title, lead, breadcrumb, jumpLinks, jump
       <Box component="header" className={styles.hero}>
         <Box className={styles.heroInner}>
           {breadcrumb ? <Box className={styles.breadcrumb}>{breadcrumb}</Box> : null}
-          <Typography variant="h2" component="h1" className={styles.title}>
+          <Typography variant="h2" component="h1" className={`${styles.title} ${breadcrumb ? styles.guideTitle : ''}`}>
             {title}
           </Typography>
           <Typography variant="body1" component="p" className={styles.lead}>

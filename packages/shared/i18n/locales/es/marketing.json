@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "App de escalada compatible con Kilter, Tension y MoonBoard",
-      "description": "Comparte una cola en directo con tu grupo y sigue tus encadenes en cada plafón. Compatible con Kilter, Tension, MoonBoard y más.",
-      "ogDescription": "Enciende bloques, registra tus encadenes y escala con tu grupo. Compatible con Kilter, Tension, MoonBoard y más.",
-      "ogTitle": "Boardsesh: una app para tus plafones"
+      "title": "Tu sesión, bien organizada. | Boardsesh",
+      "description": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo. Gratis. Compatible con plafones como Kilter, Tension y MoonBoard.",
+      "ogDescription": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo.",
+      "ogTitle": "Tu sesión, bien organizada."
     },
     "about": {
       "title": "Creada por escaladores, abierta a todo el mundo",
@@ -53,44 +53,30 @@
   },
   "home": {
     "hero": {
-      "title": "Tus plafones. Una app.",
-      "eyebrow": "Compatible con Kilter, Tension, MoonBoard y más",
-      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
-      "subtitle": "Cambia de plafón sin cambiar de app.",
+      "title": "Tu sesión, bien organizada.",
+      "eyebrow": "Gratis. Compatible con plafones como Kilter, Tension y MoonBoard.",
+      "subtitle": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo.",
       "startClimbingAria": "Empieza a escalar en la app",
-      "startClimbingWeb": "Empieza a escalar en la web →",
-      "ctaInstallIos": "Descárgala en el App Store",
-      "ctaInstallAndroid": "Disponible en Google Play",
+      "startClimbingWeb": "Ábrelo en el navegador",
+      "ctaInstallIos": "App Store",
+      "ctaInstallAndroid": "Google Play",
       "ctaUpdate": "Actualiza la app",
+      "proof": "En los últimos 30 días, unos {{formattedClimbers}} escaladores usaron Boardsesh para iluminar un bloque en su plafón {{formattedClimbs}} veces.",
       "tensionShotAlt": "Un bloque en un plafón Tension en Boardsesh",
       "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh",
-      "proof": "{{formattedClimbers}} escaladores encendieron {{formattedClimbs}} bloques en plafones reales en los últimos 30 días.",
-      "proofNoCount": "Gratis, de código abierto y pagado por los escaladores que lo usan."
+      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón"
     },
-    "onboardingHeader": "Hazlo tuyo",
-    "cards": {
-      "auroraTitle": "Trae tu logbook de Kilter o Tension",
-      "auroraDescription": "Vincula tu cuenta una vez. Tus encadenes llegan cada 12 horas más o menos.",
-      "playlistTitle": "Crea una playlist",
-      "playlistDescription": "Prepara tus problemas antes de ir al rocódromo",
-      "bluetoothTitle": "Conecta tu plafón",
-      "bluetoothDescription": "Vincula por Bluetooth e ilumina tu siguiente problema",
-      "gymTitle": "Encuentra un rocódromo cerca",
-      "gymDescription": "Mira qué muros tienen un plafón Kilter, uno Tension o un MoonBoard"
-    },
+    "cards": {},
     "gymCard": {
       "ownerSubtitle": "El rocódromo de tu equipo, a un toque",
       "manage": "Gestionar",
       "viewPage": "Ver página"
     },
     "gymSearch": {
-      "eyebrow": "Directorio de rocódromos",
       "title": "Encuentra un plafón cerca de ti",
-      "lead_one": "{{formattedCount}} rocódromo, muro de club o garaje ya tiene un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
-      "lead_other": "{{formattedCount}} rocódromos, muros de club y garajes ya tienen un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
-      "leadNoCount": "Rocódromos, muros de club y garajes con un plafón en la pared ya están listados. Busca por nombre o ciudad, o deja que el navegador te localice.",
-      "geoHint": "¿Ubicación desactivada? Escribe una ciudad: mismos resultados, sin pedir permisos.",
-      "browseAll": "Ver el directorio completo de rocódromos"
+      "lead_one": "El directorio de plafones incluye {{formattedCount}} salas, clubes y paredes domésticas.",
+      "lead_other": "El directorio de plafones incluye {{formattedCount}} salas, clubes y paredes domésticas.",
+      "leadNoCount": "Rocódromos, muros de club y garajes con un plafón en la pared ya están listados. Busca por nombre o ciudad, o deja que el navegador te localice."
     },
     "boards": {
       "title": "Plafones populares",
@@ -101,7 +87,7 @@
       "preview": "Vista previa del plafón: {{board}}",
       "typeAngle": "{{board}} · {{angle}}°",
       "selectedClimb": "Bloque seleccionado: {{climb}}",
-      "open": "Abrir este plafón"
+      "open": "Escala en este plafón"
     },
     "recentBeta": {
       "title": "Beta fresca",
@@ -114,8 +100,8 @@
         "spray": "Tu Spraywall, también.",
         "wall": "Mira qué hay en el plafón.",
         "crew": "Tu grupo. Una cola.",
-        "workouts": "Dale un plan a tu sesión.",
-        "island": "Controla el plafón desde la Dynamic Island.",
+        "workouts": "Planifica un entrenamiento y luego escala.",
+        "island": "El siguiente bloque, desde la pantalla de bloqueo.",
         "log": "Recuerda cada encadene.",
         "outro": "Menos móvil. Más plafón."
       },
@@ -124,7 +110,7 @@
       "play": "Reproducir demo"
     },
     "features": {
-      "title": "Noche de plafón, resuelta",
+      "title": "Así es una sesión",
       "lead": "Del primer bloque al último encadene, comparte toda la sesión.",
       "queue": {
         "title": "Tu grupo. Una cola en directo.",
@@ -141,18 +127,12 @@
         "body": "Ve tus encadenes y tu progreso en cada plafón.",
         "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
       },
-      "spray": {
-        "title": "Tu Spraywall, también.",
-        "body": "Fotografía cualquier Spraywall. Monta y registra bloques en él.",
-        "shotAlt": "Un bloque resaltado sobre la foto de un Spraywall en Boardsesh"
-      }
+      "spray": {}
     },
     "support": {
       "eyebrow": "Gratis, y así se queda",
       "title": "Boardsesh sale adelante porque los escaladores echan una mano",
-      "p1": "Sin anuncios, sin pantallas bloqueadas, sin segunda categoría. Todo Boardsesh sigue abierto para cualquiera, patrocines o no, incluido el autoalojamiento.",
-      "p2": "El tiempo que lleva construirlo lo paga la gente que lo usa.",
-      "chipIn": "Echa una mano",
+      "chipIn": "Colabora",
       "source": "Mira el código",
       "otherWays": "¿No te sobra el dinero?"
     },
@@ -186,7 +166,7 @@
       "title": "Únete a la Comunidad",
       "body": "Tanto si escribes código, abres problemas o solo quieres contarnos qué está roto, queremos saber de ti.",
       "discord": "Únete al grupo en Discord",
-      "support": "Apoya Boardsesh"
+      "support": "Colabora"
     },
     "legalLink": "Política Legal y de Propiedad Intelectual",
     "footer": "Hecho por escaladores. Abierto para todos.",
@@ -205,6 +185,10 @@
       "title": "Qué viene ahora",
       "body": "Más plafones, mejor escalada sin conexión e importación del historial de más apps. Sigue la hoja de ruta y participa en Discord.",
       "cta": "Lee la hoja de ruta"
+    },
+    "profile": {
+      "title": "Todos tus plafones. Un perfil.",
+      "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
     }
   },
   "support": {
@@ -257,7 +241,7 @@
         "cta": "Explora los catálogos de idiomas →"
       },
       "patch": {
-        "title": "Manda un parche",
+        "title": "Mejora algo en el código",
         "body": "Toda la app es pública: web, móvil, backend y los datos de plafones que hay detrás.",
         "cta": "Mira cómo está hecho →"
       },

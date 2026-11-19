@@ -990,10 +990,12 @@
     "nav": {
       "gyms": "Gyms",
       "playlists": "Playlists",
-      "about": "About",
-      "help": "Help"
+      "help": "Help",
+      "boards": "Boards",
+      "spray": "Spray walls"
     },
-    "navLabel": "Main navigation"
+    "navLabel": "Main navigation",
+    "getApp": "Get the app"
   },
   "share": {
     "profileTitle": "{{name}}'s climbing profile",
@@ -1245,30 +1247,37 @@
     "fallbackCta": "Open the store page instead"
   },
   "footer": {
-    "tagline": "Your boards. One app. Switch boards without switching apps.",
+    "tagline": "Your boards. One app. Free for your next session.",
     "navLabel": "Footer",
-    "trademarkNote": "Works with Kilter, Tension and MoonBoard. Not affiliated with Aurora Climbing or Moon Climbing.",
+    "trademarkNote": "Works with {{boards}} boards. Boardsesh is independent and is not made or endorsed by any board maker, including Aurora Climbing. Trademarks belong to their owners.",
     "links": {
-      "home": "Home",
       "about": "About",
       "support": "Support Boardsesh",
       "help": "Help",
-      "docs": "Developer docs",
-      "buildPlans": "Build plans",
       "playlists": "Playlists",
       "auroraMigration": "Bring your logbook",
       "legal": "Legal",
       "privacy": "Privacy",
-      "gymsKilter": "Gyms with a Kilter board",
-      "gymsTension": "Gyms with a Tension board",
-      "gymsMoonboard": "Gyms with a MoonBoard",
-      "gyms": "All gyms and walls"
+      "gyms": "All gyms"
     },
-    "groups": {
-      "findAGym": "Find a gym",
-      "explore": "Explore",
-      "smallPrint": "Small print"
-    }
+    "groups": {},
+    "journeys": {
+      "climb": "Climb",
+      "walls": "For walls",
+      "project": "Project",
+      "help": "Help",
+      "supportedBoards": "Supported boards",
+      "setupSpray": "Set up your spray wall",
+      "claimGym": "Claim your gym",
+      "partners": "Partners and hold makers",
+      "source": "Source code",
+      "roadmap": "Roadmap",
+      "discord": "Discord",
+      "developers": "Developers",
+      "bluetooth": "Board won’t connect?",
+      "reportBug": "Report a bug"
+    },
+    "openBrowser": "Open it in your browser"
   },
   "unsavedChanges": {
     "title": "Discard changes?",

@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { preload } from 'react-dom';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import PauseRounded from '@mui/icons-material/PauseRounded';
@@ -66,8 +65,8 @@ function readsDataSaver(): boolean {
 /**
  * The hero video: a 9:16 demo of the app, silent and looping.
  *
- * The poster is a plain `<img>` (sized, high priority, decoded with the page)
- * because it is the largest thing in the first paint. The video sits on top of
+ * The poster is a sized plain `<img>` with a desktop-only high-priority preload
+ * for the first desktop paint. Phones load it lazily. The video sits on top of
  * it in the same box, invisible until its first frame plays, and gets no `src`
  * until the page has loaded and gone idle. Readers who save data or ask for
  * reduced motion keep the poster and get a play button.
@@ -78,7 +77,6 @@ function readsDataSaver(): boolean {
 export default function HomeShowcaseVideo() {
   const { t } = useTranslation('marketing');
   const sources = React.useMemo(() => showcaseVideoSources(), []);
-  preload(sources.poster, { as: 'image', fetchPriority: 'high' });
 
   const [dataSaver, setDataSaver] = React.useState<boolean | null>(null);
   const [sourceReady, setSourceReady] = React.useState(false);
@@ -89,7 +87,7 @@ export default function HomeShowcaseVideo() {
   // The hook needs to know whether autoplay is allowed before it may touch the
   // video, so `enabled` follows the two values read below.
   const [autoplayAllowed, setAutoplayAllowed] = React.useState(false);
-  const { videoRef, prefersReducedMotion, autoplayRefused, isShowingVideo, userPaused, toggleUserPaused } =
+  const { videoRef, inView, prefersReducedMotion, autoplayRefused, isShowingVideo, userPaused, toggleUserPaused } =
     useAutoplayVideo({
       rootMargin: '0px',
       threshold: 0.1,
@@ -106,9 +104,9 @@ export default function HomeShowcaseVideo() {
   }, [dataSaver, prefersReducedMotion]);
 
   React.useEffect(() => {
-    if (!autoplayAllowed) return;
+    if (!autoplayAllowed || !inView) return;
     return whenLoadedAndIdle(() => setSourceReady(true));
-  }, [autoplayAllowed]);
+  }, [autoplayAllowed, inView]);
 
   const ensureSource = React.useCallback(
     (video: HTMLVideoElement) => {
@@ -199,13 +197,15 @@ export default function HomeShowcaseVideo() {
 
   return (
     <Box component="figure" className={styles.figure}>
+      <link rel="preload" as="image" href={sources.poster} media="(min-width: 761px)" fetchPriority="high" />
       <img
         className={styles.poster}
         src={sources.poster}
         width={SHOWCASE_POSTER_WIDTH}
         height={SHOWCASE_POSTER_HEIGHT}
         alt=""
-        fetchPriority="high"
+        loading="lazy"
+        fetchPriority="auto"
       />
       <video
         ref={videoRef}

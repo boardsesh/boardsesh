@@ -990,10 +990,12 @@
     "nav": {
       "gyms": "Palestre",
       "playlists": "Playlist",
-      "about": "Info",
-      "help": "Aiuto"
+      "help": "Aiuto",
+      "boards": "Pannelli",
+      "spray": "Spraywall"
     },
-    "navLabel": "Navigazione principale"
+    "navLabel": "Navigazione principale",
+    "getApp": "Scarica l’app"
   },
   "share": {
     "profileTitle": "Il profilo di arrampicata di {{name}}",
@@ -1245,30 +1247,37 @@
     "fallbackCta": "Apri invece la pagina dello store"
   },
   "footer": {
-    "tagline": "I tuoi pannelli. Una sola app. Cambia pannello senza cambiare app.",
+    "tagline": "I tuoi pannelli. Una app. Gratis per la prossima sessione.",
     "navLabel": "Footer",
-    "trademarkNote": "Funziona con Kilter, Tension e MoonBoard. Non affiliato ad Aurora Climbing né a Moon Climbing.",
+    "trademarkNote": "Compatibile con i pannelli {{boards}}. Boardsesh è indipendente e non è creato né approvato da produttori di pannelli, incluso Aurora Climbing. I marchi appartengono ai rispettivi titolari.",
     "links": {
-      "home": "Home",
       "about": "Info",
       "support": "Sostieni Boardsesh",
       "help": "Aiuto",
-      "docs": "Documentazione per sviluppatori",
       "playlists": "Playlist",
       "auroraMigration": "Porta il tuo diario",
       "legal": "Note legali",
       "privacy": "Privacy",
-      "gymsKilter": "Palestre con un Kilter Board",
-      "gymsTension": "Palestre con un Tension Board",
-      "gymsMoonboard": "Palestre con una MoonBoard",
-      "gyms": "Tutte le palestre e pareti",
-      "buildPlans": "Progetti di costruzione"
+      "gyms": "Tutte le palestre"
     },
-    "groups": {
-      "findAGym": "Trova una palestra",
-      "explore": "Esplora",
-      "smallPrint": "Informazioni legali"
-    }
+    "groups": {},
+    "journeys": {
+      "climb": "Arrampica",
+      "walls": "Per le pareti",
+      "project": "Progetto",
+      "help": "Aiuto",
+      "supportedBoards": "Pannelli compatibili",
+      "setupSpray": "Configura la tua Spraywall",
+      "claimGym": "Rivendica la palestra",
+      "partners": "Partner e produttori",
+      "source": "Codice sorgente",
+      "roadmap": "Sviluppi futuri",
+      "discord": "Discord",
+      "developers": "Sviluppatori",
+      "bluetooth": "Il pannello non si collega?",
+      "reportBug": "Segnala un problema"
+    },
+    "openBrowser": "Aprilo nel browser"
   },
   "unsavedChanges": {
     "title": "Scartare le modifiche?",

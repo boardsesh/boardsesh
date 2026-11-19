@@ -981,7 +981,7 @@
       "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…"
     },
     "cta": {
-      "climbThis": "Diesen Boulder beleuchten",
+      "climbThis": "Boulder in der App öffnen",
       "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
       "helper": "Öffnet ihn in der App, bereit zum Beleuchten auf deinem Board."
     },

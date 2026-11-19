@@ -61,3 +61,10 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.
+
+
+## Public page frame
+
+Public pages share a 1136px content grid within the 1200px padded frame. Long copy uses a 720px reading measure aligned to the same left edge as the logo; compact screens use the shared 24px gutters (16px below 360px). PageShell owns page width and fixed-header clearance. Cards use surface and surfaceElevated, never the page root. Help and long-form reading surfaces may use the existing graphite reading tokens with a violet header; marketing and directories use the background token.
+
+Display headings use the bundled Geist variable font through next/font/local. Its SIL Open Font License is adjacent to the font files. Body text retains the system font. H1 is 44px/32px, H2 30px/24px and the home Display is 64px/40px, with 1.1 heading line-height. Action controls keep at least 44px touch targets. Use the shared brand pill recipes; only the page's primary action is filled.

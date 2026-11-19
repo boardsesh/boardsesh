@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "App de grimpe compatible avec Kilter, Tension et MoonBoard",
-      "description": "Partage une file en direct avec ton crew et suis tes croix sur chaque board. Compatible avec Kilter, Tension, MoonBoard et plus.",
-      "ogDescription": "Allume des blocs, fais la croix et grimpe avec ton crew. Compatible avec Kilter, Tension, MoonBoard et plus.",
-      "ogTitle": "Boardsesh : une app pour tes boards"
+      "title": "Votre session, bien organisée. | Boardsesh",
+      "description": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe. Gratuit. Compatible avec des boards comme Kilter, Tension et MoonBoard.",
+      "ogDescription": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe.",
+      "ogTitle": "Votre session, bien organisée."
     },
     "about": {
       "title": "Créée par des grimpeurs, ouverte à tous",
@@ -53,44 +53,30 @@
   },
   "home": {
     "hero": {
-      "title": "Tes boards. Une seule app.",
-      "eyebrow": "Compatible avec Kilter, Tension, MoonBoard et bien d’autres",
-      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
-      "subtitle": "Change de board sans changer d’app.",
+      "title": "Votre session, bien organisée.",
+      "eyebrow": "Gratuit. Compatible avec des boards comme Kilter, Tension et MoonBoard.",
+      "subtitle": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe.",
       "startClimbingAria": "Commencer à grimper dans l'appli",
-      "startClimbingWeb": "Commencer à grimper sur le web →",
-      "ctaInstallIos": "Télécharger sur l'App Store",
-      "ctaInstallAndroid": "Disponible sur Google Play",
+      "startClimbingWeb": "Ouvrir dans votre navigateur",
+      "ctaInstallIos": "App Store",
+      "ctaInstallAndroid": "Google Play",
       "ctaUpdate": "Mettre à jour l'appli",
+      "proof": "Ces 30 derniers jours, environ {{formattedClimbers}} grimpeurs ont utilisé Boardsesh pour allumer un bloc sur leur board {{formattedClimbs}} fois.",
       "tensionShotAlt": "Un bloc sur une board Tension dans Boardsesh",
       "moonboardShotAlt": "Un bloc sur une MoonBoard dans Boardsesh",
-      "proof": "{{formattedClimbers}} grimpeurs ont allumé {{formattedClimbs}} blocs sur de vraies boards ces 30 derniers jours.",
-      "proofNoCount": "Gratuit, open source, et financé par les grimpeurs qui l'utilisent."
+      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board"
     },
-    "onboardingHeader": "Faites-en votre app",
-    "cards": {
-      "auroraTitle": "Récupère ton carnet Kilter ou Tension",
-      "auroraDescription": "Lie ton compte une seule fois. Tes croix arrivent environ toutes les 12 heures.",
-      "playlistTitle": "Préparez une playlist",
-      "playlistDescription": "Alignez vos blocs avant d'arriver à la salle",
-      "bluetoothTitle": "Connectez votre board",
-      "bluetoothDescription": "Appairez en Bluetooth et allumez votre prochain bloc",
-      "gymTitle": "Trouve une salle près de chez toi",
-      "gymDescription": "Vois quels murs ont une board Kilter, une board Tension ou un MoonBoard"
-    },
+    "cards": {},
     "gymCard": {
       "ownerSubtitle": "La salle de votre crew, à portée de main",
       "manage": "Gérer",
       "viewPage": "Voir la page"
     },
     "gymSearch": {
-      "eyebrow": "Annuaire des salles",
       "title": "Trouve une board près de chez toi",
-      "lead_one": "{{formattedCount}} salle, mur de club ou garage a déjà une board référencée. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
-      "lead_other": "{{formattedCount}} salles, murs de club et garages ont déjà une board référencée. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
-      "leadNoCount": "Des salles, des murs de club et des garages avec une board au mur sont déjà référencés. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
-      "geoHint": "Localisation désactivée ? Tape une ville : mêmes résultats, sans demande d'autorisation.",
-      "browseAll": "Voir tout l'annuaire des salles"
+      "lead_one": "L’annuaire des boards répertorie {{formattedCount}} salles, clubs et murs à domicile.",
+      "lead_other": "L’annuaire des boards répertorie {{formattedCount}} salles, clubs et murs à domicile.",
+      "leadNoCount": "Des salles, des murs de club et des garages avec une board au mur sont déjà référencés. Cherche par nom ou par ville, ou laisse le navigateur te localiser."
     },
     "boards": {
       "title": "Boards populaires",
@@ -101,7 +87,7 @@
       "preview": "Aperçu de la board : {{board}}",
       "typeAngle": "{{board}} · {{angle}}°",
       "selectedClimb": "Bloc sélectionné : {{climb}}",
-      "open": "Ouvrir cette board"
+      "open": "Grimper sur cette board"
     },
     "recentBeta": {
       "title": "Beta fraîche",
@@ -114,8 +100,8 @@
         "spray": "Ton Spraywall aussi.",
         "wall": "Vois ce qu'il y a sur le mur.",
         "crew": "Ton crew. Une seule file.",
-        "workouts": "Donne un plan à ta séance.",
-        "island": "Pilote le mur depuis la Dynamic Island.",
+        "workouts": "Planifiez un entraînement, puis grimpez.",
+        "island": "Le prochain bloc, depuis votre écran verrouillé.",
         "log": "Garde la trace de chaque croix.",
         "outro": "Moins de téléphone. Plus de mur."
       },
@@ -124,7 +110,7 @@
       "play": "Lancer la démo"
     },
     "features": {
-      "title": "La soirée board, réglée",
+      "title": "À quoi ressemble une session",
       "lead": "Du premier bloc à la dernière croix, partage toute la séance.",
       "queue": {
         "title": "Ton crew. Une file en direct.",
@@ -141,18 +127,12 @@
         "body": "Suis tes croix et tes progrès sur chaque board.",
         "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
       },
-      "spray": {
-        "title": "Ton Spraywall aussi.",
-        "body": "Photographie n'importe quel Spraywall. Ouvre des blocs et fais la croix dessus.",
-        "shotAlt": "Un bloc mis en évidence sur la photo d'un Spraywall dans Boardsesh"
-      }
+      "spray": {}
     },
     "support": {
       "eyebrow": "Gratuit, et ça ne changera pas",
       "title": "Boardsesh tourne parce que des grimpeurs participent",
-      "p1": "Pas de pub, pas d'écran verrouillé, pas de deuxième catégorie. Tout Boardsesh reste ouvert à tout le monde, sponsor ou non, auto-hébergement compris.",
-      "p2": "Le temps qu'il faut pour le construire est payé par les gens qui s'en servent.",
-      "chipIn": "Participer",
+      "chipIn": "Contribuer",
       "source": "Lire le code",
       "otherWays": "Pas de budget ?"
     },
@@ -186,7 +166,7 @@
       "title": "Rejoignez la communauté",
       "body": "Que vous codiez, ouvriez des blocs ou que vous vouliez juste nous dire ce qui cloche, on vous écoute.",
       "discord": "Rejoins le crew sur Discord",
-      "support": "Soutenir Boardsesh"
+      "support": "Contribuer"
     },
     "legalLink": "Politique légale et de propriété intellectuelle",
     "footer": "Fait par des grimpeurs. Ouvert à tous.",
@@ -205,6 +185,10 @@
       "title": "La suite",
       "body": "Plus de boards, une meilleure pratique hors ligne et l’import d’historiques depuis d’autres applications. Suis la feuille de route et participe sur Discord.",
       "cta": "Lis la feuille de route"
+    },
+    "profile": {
+      "title": "Toutes tes boards. Un seul profil.",
+      "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
     }
   },
   "support": {
@@ -257,7 +241,7 @@
         "cta": "Parcourir les catalogues de langues →"
       },
       "patch": {
-        "title": "Proposer du code",
+        "title": "Corriger quelque chose dans le code",
         "body": "Toute l'app est publique : web, mobile, backend, et les données de board derrière.",
         "cta": "Voir comment c'est construit →"
       },

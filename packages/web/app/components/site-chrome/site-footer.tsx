@@ -1,109 +1,108 @@
 'use client';
 
-import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
-import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
 import React from 'react';
-import { useConsent } from '../consent/consent-provider';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { boardTypeLabel } from '@boardsesh/board-constants';
+import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
+import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
+import { useConsent } from '../consent/consent-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import CompactLanguageSwitcher from '@/app/components/i18n/compact-language-switcher';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
-import { themeTokens } from '@/app/theme/theme-config';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
 
-const FOOTER_START_CLIMBING_SX = brandCtaSx();
-
 const LINK_SX = {
   color: 'text.secondary',
-  textDecorationColor: 'currentcolor',
+  textDecoration: 'none',
   display: 'inline-flex',
   alignItems: 'center',
   minHeight: 44,
-  fontSize: themeTokens.typography.fontSize.base,
+  fontSize: 14,
   lineHeight: 1.5,
-  '&:hover': { color: 'text.primary' },
+  '&:hover, &:focus-visible': { color: 'text.primary', textDecoration: 'underline' },
 } as const;
+type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean };
 
-const GROUP_HEADING_SX = {
-  m: 0,
-  color: 'text.primary',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  fontSize: themeTokens.typography.fontSize.sm,
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
-} as const;
-
-/**
- * Site-wide footer, rendered in normal flow at the end of every page.
- *
- * It carries the internal links the deleted chrome used to hide behind drawers,
- * so every indexable surface ships crawlable anchors to the rest of the site,
- * and it re-hosts the locale switcher that used to live in the user drawer —
- * without it a four-locale site would have no way to change language.
- */
-export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?: boolean }) {
+export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
   const { t } = useTranslation('common');
   const { t: consentTranslation } = useTranslation('consent');
   const { openChoices } = useConsent();
   const pathname = usePathnameWithoutLocale();
-
-  // Kiosk TVs and iframe embeds render zero chrome.
-  if (isChromeLessPath(pathname)) {
-    return null;
-  }
-
-  // "Find a gym" leads because it is the only crawl path into the directory:
-  // `/gyms` is `noindex, follow` until the duplicate-gym queue drains and it is
-  // out of the sitemap on purpose, so these anchors are what a crawler follows
-  // to reach the per-board listings at all. The hrefs are the LITERAL routes,
-  // not `/gyms?board=kilter` — `/gyms/kilter` is a page with its own copy and
-  // its own canonical (see `app/gyms/page.tsx`), and the query form would point
-  // at a URL that self-canonicalises away.
-  const linkGroups: { id: string; heading: string; links: { href: WebsiteNavTarget; label: string }[] }[] = [
+  if (isChromeLessPath(pathname)) return null;
+  const groups: { id: string; heading: string; links: FooterLink[] }[] = [
     {
-      id: 'gyms',
-      heading: t('footer.groups.findAGym'),
+      id: 'climb',
+      heading: t('footer.journeys.climb'),
       links: [
-        { href: '/gyms/kilter', label: t('footer.links.gymsKilter') },
-        { href: '/gyms/tension', label: t('footer.links.gymsTension') },
-        { href: '/gyms/moonboard', label: t('footer.links.gymsMoonboard') },
-        { href: '/gyms', label: t('footer.links.gyms') },
+        { href: '/boards', label: t('footer.journeys.supportedBoards'), target: '/boards' },
+        { href: '/gyms', label: t('footer.links.gyms'), target: '/gyms' },
+        { href: '/playlists', label: t('footer.links.playlists'), target: '/playlists' },
+        { href: '/bring-your-logbook', label: t('footer.links.auroraMigration'), target: '/bring-your-logbook' },
       ],
     },
     {
-      id: 'explore',
-      heading: t('footer.groups.explore'),
+      id: 'walls',
+      heading: t('footer.journeys.walls'),
       links: [
-        { href: '/', label: t('footer.links.home') },
-        { href: '/about', label: t('footer.links.about') },
-        { href: '/support', label: t('footer.links.support') },
-        { href: '/help', label: t('footer.links.help') },
-        { href: '/playlists', label: t('footer.links.playlists') },
-        { href: '/bring-your-logbook', label: t('footer.links.auroraMigration') },
-        { href: '/docs', label: t('footer.links.docs') },
-        // The only crawl path into /build-plans, and it appears only when the
-        // `cnc-packs` flag is on — while it is off the route 404s, and a footer
-        // link to a 404 on every page of the site is a real SEO liability.
-        ...(showBuildPlans ? [{ href: '/build-plans' as const, label: t('footer.links.buildPlans') }] : []),
+        { href: '/spraywalls', label: t('footer.journeys.setupSpray'), target: '/spraywalls' },
+        { href: '/gyms?claim=1', label: t('footer.journeys.claimGym'), target: '/gyms' },
+        { href: '/for-gyms#partners', label: t('footer.journeys.partners'), target: '/for-gyms' },
       ],
     },
     {
-      id: 'small-print',
-      heading: t('footer.groups.smallPrint'),
+      id: 'project',
+      heading: t('footer.journeys.project'),
       links: [
-        { href: '/legal', label: t('footer.links.legal') },
-        { href: '/privacy', label: t('footer.links.privacy') },
+        { href: '/about', label: t('footer.links.about'), target: '/about' },
+        { href: '/support', label: t('footer.links.support'), target: '/support' },
+        {
+          href: 'https://github.com/boardsesh/boardsesh',
+          label: t('footer.journeys.source'),
+          target: 'source',
+          external: true,
+        },
+        {
+          href: 'https://github.com/boardsesh/boardsesh/issues',
+          label: t('footer.journeys.roadmap'),
+          target: 'roadmap',
+          external: true,
+        },
+        {
+          href: 'https://discord.gg/YXA8GsXfQK',
+          label: t('footer.journeys.discord'),
+          target: 'discord',
+          external: true,
+        },
+        { href: developerHref, label: t('footer.journeys.developers'), target: developerHref },
+      ],
+    },
+    {
+      id: 'help',
+      heading: t('footer.journeys.help'),
+      links: [
+        { href: '/help', label: t('footer.links.help'), target: '/help' },
+        { href: '/help/board-and-bluetooth', label: t('footer.journeys.bluetooth'), target: '/help' },
+        {
+          href: 'https://github.com/boardsesh/boardsesh/issues/new',
+          label: t('footer.journeys.reportBug'),
+          target: 'report-bug',
+          external: true,
+        },
+        { href: '/legal', label: t('footer.links.legal'), target: '/legal' },
+        { href: '/privacy', label: t('footer.links.privacy'), target: '/privacy' },
       ],
     },
   ];
-
+  const boards = SUPPORTED_BOARDS.filter((board) => board !== 'spray')
+    .map(boardTypeLabel)
+    .join(', ');
   return (
     <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>
@@ -117,58 +116,60 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
           >
             <BrandLockup />
           </MuiLink>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch', fontSize: 16, lineHeight: 1.6 }}>
+          <Typography variant="body2" color="text.secondary">
             {t('footer.tagline')}
           </Typography>
-          <StartClimbingButton
-            label={t('header.startClimbing')}
-            ariaLabel={t('ariaLabels.startClimbing')}
-            size="medium"
-            placement="footer"
-            sx={FOOTER_START_CLIMBING_SX}
-          />
+          {!pathname.startsWith('/auth') && (
+            <StartClimbingButton
+              label={t('footer.openBrowser')}
+              ariaLabel={t('ariaLabels.startClimbing')}
+              placement="footer"
+              variant="outlined"
+            />
+          )}
         </Box>
-
         <Box component="nav" aria-label={t('footer.navLabel')} className={styles.links}>
-          {linkGroups.map((group) => (
+          {groups.map((group) => (
             <Box key={group.id} className={styles.linkGroup}>
-              <Typography variant="subtitle2" component="h2" sx={GROUP_HEADING_SX}>
+              <Typography component="h2" variant="subtitle2" sx={{ fontWeight: 600 }}>
                 {group.heading}
               </Typography>
-              {group.id === 'small-print' && (
+              {group.links.map((link) => (
+                <MuiLink
+                  key={link.href}
+                  component={link.external ? 'a' : LocaleLink}
+                  href={link.href}
+                  target={link.external ? '_blank' : undefined}
+                  rel={link.external ? 'noopener noreferrer' : undefined}
+                  sx={LINK_SX}
+                  onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', link.target))}
+                >
+                  {link.label}
+                </MuiLink>
+              ))}
+              {group.id === 'help' && (
                 <MuiLink
                   component="button"
                   type="button"
+                  sx={LINK_SX}
                   onClick={() => {
                     trackWebsiteJourneyEvent(navLinkClicked('footer', 'privacy-choices'));
                     openChoices();
                   }}
-                  variant="body2"
-                  sx={LINK_SX}
                 >
                   {consentTranslation('privacyChoices')}
                 </MuiLink>
               )}
-              {group.links.map(({ href, label }) => (
-                <MuiLink
-                  key={href}
-                  component={LocaleLink}
-                  href={href}
-                  variant="body2"
-                  sx={LINK_SX}
-                  onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', href))}
-                >
-                  {label}
-                </MuiLink>
-              ))}
             </Box>
           ))}
         </Box>
       </Box>
-
       <Box className={styles.bottom}>
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 14, lineHeight: 1.6 }}>
-          {t('footer.trademarkNote')}
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 14, lineHeight: 1.6, maxWidth: '90ch' }}>
+          {t('footer.trademarkNote', { boards })}{' '}
+          <MuiLink component={LocaleLink} href="/legal#trademark-usage" sx={LINK_SX}>
+            {t('footer.links.legal')}
+          </MuiLink>
         </Typography>
         <CompactLanguageSwitcher />
       </Box>
