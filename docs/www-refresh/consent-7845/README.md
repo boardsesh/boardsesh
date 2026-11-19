@@ -54,6 +54,14 @@ The backup ref `codex/7845-consent-backup-20261119` preserves the pre-refresh ca
 - [x] Current six locales complete; existing regional/account authority retained.
 - [ ] Privacy owner approves the exact shortened disclosure and translations before shipping.
 
+## Post-publication policy-navigation correction
+
+Astra found that opening the policy from Details navigated beneath the persistent, focus-trapped dialog. Source verification confirmed that `ConsentBanner` lives in the shared site layout. The policy link now calls `closeChoices` through Next.js `onNavigate`; `LocaleLink` forwards that prop to NextLink. The installed Next.js implementation does not call this callback for modified/new-tab activations, so those keep the existing dialog open. No consent answer is written by navigation.
+
+The follow-up has **30 consent tests and 10 profile tests passing**. After committing the fix, removing only the navigation handler makes the new dialog/cookie/authorization guard fail; byte-exact restoration passes. A literal Simplified Chinese alternate was also added to the existing profile metadata expectation, fixing the independently confirmed CI failure without changing canonical, indexing or privacy assertions.
+
+A permanent browser guard now follows the policy link and requires the policy heading to be visible, the dialog absent and the consent cookie unset. **That new browser guard has not run yet**: it awaits the shared browser-QA slot. The six previously reported browser flows and these screenshots were observed before this navigation-only correction; the rendered notice layout and disclosure strings are unchanged. Independent reviewers must assess the published follow-up and the pending browser result before readiness.
+
 ## Merge order and wording reconciliation with #7870
 
 [#7870](https://github.com/boardsesh/boardsesh/pull/7870) remains a separate, open draft proposing worldwide opt-in, dismissal, and different disclosure copy. This PR keeps main's existing regional prompts, region defaults, GPC and saved/account authority. It does not add a third choice or change consent scope.
