@@ -186,7 +186,7 @@ export default function GymPlaceSearch({
       </Button>
       {/* Full-width below the search row, so the filter tiers get the measure
           they need while the text field and its button stay on one line. */}
-      <Box sx={{ flexBasis: '100%' }}>{children}</Box>
+      <Box sx={{ flex: '1 1 100%', minWidth: 0, width: '100%', maxWidth: '100%' }}>{children}</Box>
     </Box>
   );
 }

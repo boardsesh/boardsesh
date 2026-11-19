@@ -25,7 +25,7 @@ for (const pathname of PUBLIC_PAGES) {
   test(`public page fits a 390px phone: ${pathname}`, async ({ page }) => {
     const response = await page.goto(pathname, { waitUntil: 'domcontentloaded' });
     expect(response?.status()).toBeLessThan(400);
-    await expect(page.locator('h1').first()).toBeVisible();
+    await expect(page.locator('main h1').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 }

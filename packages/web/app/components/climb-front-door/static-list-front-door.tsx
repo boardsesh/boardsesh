@@ -1,5 +1,6 @@
 import { toBoardImageDetails } from '@/app/lib/board-image-details';
 import React from 'react';
+import { buildClimbThumbnailCrops } from '@/app/lib/climb-thumbnail-crop.server';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -195,6 +196,7 @@ export default async function StaticListFrontDoor({
       </Typography>
       <StaticClimbList
         climbs={climbs}
+        thumbnailCropsByClimb={buildClimbThumbnailCrops(climbs, () => boardDetails)}
         boardSlug={boardSlug}
         boardDetails={toBoardImageDetails(boardDetails)}
         virtualize={false}

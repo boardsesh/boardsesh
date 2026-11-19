@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
+import Skeleton from '@mui/material/Skeleton';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import MailOutlined from '@mui/icons-material/MailOutlined';
@@ -259,7 +260,24 @@ export default function AuthPageContent() {
   };
 
   if (status === 'loading') {
-    return null;
+    return (
+      <Box
+        component="main"
+        aria-busy="true"
+        sx={{
+          pt: 'calc(var(--global-header-height) + var(--spacing-8))',
+          px: 3,
+          minHeight: '100vh',
+          maxWidth: 448,
+          mx: 'auto',
+        }}
+      >
+        <Typography component="h1" variant="h4">
+          {t('login.header')}
+        </Typography>
+        <Skeleton variant="rounded" height={320} sx={{ mt: 3 }} />
+      </Box>
+    );
   }
 
   if (status === 'authenticated') {

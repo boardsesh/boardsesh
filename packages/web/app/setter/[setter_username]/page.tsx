@@ -1,3 +1,4 @@
+import { buildClimbThumbnailCrops } from '@/app/lib/climb-thumbnail-crop.server';
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -403,6 +404,10 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
         {links.fallbackBoardDetails ? (
           <StaticClimbList
             climbs={setterData.climbs}
+            thumbnailCropsByClimb={buildClimbThumbnailCrops(
+              setterData.climbs,
+              (climb) => links.boardDetailsByClimb[climb.uuid] ?? links.fallbackBoardDetails,
+            )}
             boardDetails={links.fallbackBoardDetails}
             boardDetailsByClimb={links.boardDetailsByClimb}
             unlinkedClimbUuids={links.unlinkedClimbUuids}

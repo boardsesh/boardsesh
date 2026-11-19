@@ -14,6 +14,7 @@ import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './static-climb-row.module.css';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 
 /**
  * One crawlable climb row. Ordinary discovery uses the canonical config-tuple
@@ -31,6 +32,7 @@ import type { BoardImageDetails, Climb } from '@/app/lib/types';
  */
 export type StaticClimbRowProps = {
   climb: Climb;
+  thumbnailCrop?: ClimbThumbnailCrop;
   boardDetails: BoardImageDetails;
   /** Keep named-wall discovery on that physical board, not a new config. */
   boardSlug?: string;
@@ -86,6 +88,7 @@ const StaticClimbRow = ({
   pathname,
   logbook,
   fetchPriority,
+  thumbnailCrop,
 }: StaticClimbRowProps) => {
   const href = useMemo(
     () =>
@@ -119,6 +122,7 @@ const StaticClimbRow = ({
           currentClimb={climb}
           pathname={pathname}
           fetchPriority={fetchPriority}
+          crop={thumbnailCrop}
         />
         <AscentStatus
           climbUuid={climb.uuid}

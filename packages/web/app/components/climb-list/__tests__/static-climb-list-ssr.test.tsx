@@ -173,3 +173,16 @@ describe('StaticClimbList server render', () => {
     expect(withRect).toBeGreaterThan(0);
   });
 });
+
+it('renders the supplied SSR crop in the first public row', () => {
+  const html = renderToString(
+    <StaticClimbList
+      climbs={[makeClimb(0)]}
+      boardDetails={makeBoardDetails()}
+      virtualize={false}
+      thumbnailCropsByClimb={{ CLIMB0: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } }}
+    />,
+  );
+  expect(html).toContain('data-testid="climb-thumbnail-crop"');
+  expect(html).toContain('href="/kilter/');
+});

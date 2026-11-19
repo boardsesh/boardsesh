@@ -146,7 +146,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "{{board}} bei {{gymName}}. Sieh dir an, was geschraubt ist, und trag deine Begehungen ein.",
     "ogDescriptionManyTypes": "{{boards}} bei {{gymName}}. Sieh dir an, was geschraubt ist, und trag deine Begehungen ein.",
-    "ogDescriptionNoBoards": "Hier sind noch keine Boards eingetragen. Du kletterst hier? Übernimm die Halle und trag sie ein."
+    "ogDescriptionNoBoards": "Hier sind noch keine Boards eingetragen. Du kletterst hier? Übernimm die Halle und trag sie ein.",
+    "openMaps": "{{gymName}} auf der Karte öffnen",
+    "mapsLocation": "Karte öffnen",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "Boulder ansehen",
+    "popularClimbHeading": "Der am häufigsten geloggte Boulder an diesem Board",
+    "popularClimbBody": "Aus öffentlichen Begehungen und Flashs, die hier geloggt wurden. Wiederholungen zählen mit."
   },
   "boardPoster": {
     "metaTitle": "QR-Poster für {{boardName}}",

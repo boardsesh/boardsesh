@@ -62,8 +62,20 @@ export default function GymDirectoryFilters({
   const narrowCount = countNarrowFilters(query);
 
   return (
-    <Box component="section" sx={{ mt: 1 }}>
-      <Box sx={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 1, pb: 1, '& > *': { flexShrink: 0 } }}>
+    <Box component="section" sx={{ mt: 1, minWidth: 0, maxWidth: '100%' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          gap: 1,
+          pb: 1,
+          '& > *': { flexShrink: 0 },
+        }}
+      >
         {FILTERABLE_BOARD_TYPES.map((boardType) => {
           const selected = query.boardTypes.includes(boardType);
           return (
@@ -220,7 +232,7 @@ function CheckboxChipGroup({
   options: ChipOption[];
 }) {
   return (
-    <Box component="fieldset" sx={{ border: 0, p: 0, m: 0 }}>
+    <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, minWidth: 0, maxWidth: '100%' }}>
       <Typography
         component="legend"
         variant="subtitle2"

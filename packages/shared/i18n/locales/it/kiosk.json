@@ -146,7 +146,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "Pannello {{board}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
     "ogDescriptionManyTypes": "Pannelli {{boards}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
-    "ogDescriptionNoBoards": "Ancora nessun pannello qui. Scali qui? Rivendica la palestra e aggiungili."
+    "ogDescriptionNoBoards": "Ancora nessun pannello qui. Scali qui? Rivendica la palestra e aggiungili.",
+    "openMaps": "Apri {{gymName}} sulla mappa",
+    "mapsLocation": "Apri la mappa",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "Guarda i blocchi",
+    "popularClimbHeading": "Il blocco più registrato su questo pannello",
+    "popularClimbBody": "Dalle ripetizioni e dai flash pubblici registrati qui. Contano anche le ripetizioni dello stesso blocco."
   },
   "boardPoster": {
     "metaTitle": "Poster QR per {{boardName}}",

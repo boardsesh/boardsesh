@@ -146,7 +146,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "Plafón {{board}} en {{gymName}}. Mira qué bloques hay y registra tus encadenes.",
     "ogDescriptionManyTypes": "Plafones {{boards}} en {{gymName}}. Mira qué bloques hay y registra tus encadenes.",
-    "ogDescriptionNoBoards": "Todavía no hay plafones en este rocódromo. ¿Escalas aquí? Reclama el rocódromo y añádelos."
+    "ogDescriptionNoBoards": "Todavía no hay plafones en este rocódromo. ¿Escalas aquí? Reclama el rocódromo y añádelos.",
+    "openMaps": "Abrir {{gymName}} en el mapa",
+    "mapsLocation": "Abrir mapa",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "Ver los bloques",
+    "popularClimbHeading": "El bloque más registrado en este plafón",
+    "popularClimbBody": "Según los encadenes y flashes públicos registrados aquí. Las repeticiones cuentan."
   },
   "boardPoster": {
     "metaTitle": "Póster QR de {{boardName}}",

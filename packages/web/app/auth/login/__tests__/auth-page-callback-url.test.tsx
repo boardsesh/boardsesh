@@ -31,6 +31,7 @@ vi.mock('next-auth/react', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
+  usePathname: () => '/auth/login',
   useSearchParams: () => navigationState.searchParams,
 }));
 
@@ -66,16 +67,16 @@ function callbackQuery(callbackUrl: string): string {
 function submitLogin() {
   fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'climber@example.com' } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter22' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Login' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 
 function submitRegister() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Create Account' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Create account' }));
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Crusher' } });
   fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'climber@example.com' } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2222' } });
   fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'hunter2222' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 }
 
 function stubSuccessfulRegistration() {
@@ -205,4 +206,11 @@ describe('AuthPageContent — callbackUrl redirect', () => {
       expect(socialLoginButtons.mock.lastCall?.[0].callbackUrl).toBe(returnUrl);
     });
   });
+});
+
+it('retains the sign-in main landmark while the session is loading', () => {
+  sessionState.status = 'loading';
+  render(<AuthPageContent />);
+  expect(screen.getByRole('main').getAttribute('aria-busy')).toBe('true');
+  expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
 });

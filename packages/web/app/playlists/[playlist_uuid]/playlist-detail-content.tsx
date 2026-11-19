@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 import { executeGraphQL, createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   type GetPlaylistQueryResponse,
@@ -89,6 +90,7 @@ const PLAYLIST_COLORS = [
 
 type PlaylistDetailContentProps = {
   playlistUuid: string;
+  thumbnailCropsByClimb?: Record<string, ClimbThumbnailCrop>;
   /** Base path for navigating back to the playlists library (e.g. "/b/my-kilter/40/playlists"). Defaults to "/playlists". */
   playlistsBasePath?: string;
   /** When set from a board slug route, auto-selects the matching board filter. */
@@ -105,6 +107,7 @@ type PlaylistDetailContentProps = {
 
 export default function PlaylistDetailContent({
   playlistUuid,
+  thumbnailCropsByClimb,
   playlistsBasePath = '/playlists',
   boardSlug,
   boardConfig,
@@ -285,6 +288,21 @@ export default function PlaylistDetailContent({
   // this screen uses web `Climb`. Runtime objects are the same flattened GraphQL
   // climbs, so cast once here.
   const allClimbs = sharedAllClimbs as unknown as Climb[];
+  const usableThumbnailCrops = useMemo(() => {
+    const initialByUuid = new Map(initialClimbs?.climbs.map((climb) => [climb.uuid, climb]));
+    return Object.fromEntries(
+      allClimbs.flatMap((climb) => {
+        const initial = initialByUuid.get(climb.uuid);
+        const crop = thumbnailCropsByClimb?.[climb.uuid];
+        return crop &&
+          initial?.frames === climb.frames &&
+          initial.boardType === climb.boardType &&
+          initial.layoutId === climb.layoutId
+          ? [[climb.uuid, crop]]
+          : [];
+      }),
+    );
+  }, [allClimbs, initialClimbs, thumbnailCropsByClimb]);
 
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -394,6 +412,7 @@ export default function PlaylistDetailContent({
   const climbList = (
     <MultiboardClimbList
       climbs={allClimbs}
+      thumbnailCropsByClimb={usableThumbnailCrops}
       isFetching={isFetchingClimbs}
       isLoading={isClimbsLoading}
       hasMore={hasNextPage ?? false}

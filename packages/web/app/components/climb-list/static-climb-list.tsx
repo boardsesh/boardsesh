@@ -12,6 +12,7 @@ import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 
 /**
  * The crawlable climb list: every row is a real `<a href>` to the canonical
@@ -33,6 +34,7 @@ import type { BoardImageDetails, Climb } from '@/app/lib/types';
  */
 export type StaticClimbListProps = {
   climbs: Climb[];
+  thumbnailCropsByClimb?: Record<string, ClimbThumbnailCrop>;
   /** Board used for any climb without an entry in `boardDetailsByClimb`. */
   boardDetails: BoardImageDetails;
   /** Explicit physical-board identity supplied by a named-board front door. */
@@ -106,6 +108,7 @@ const noop = () => {};
 /** Row props every row shares, whichever path renders it. */
 type SharedRowProps = {
   climbs: Climb[];
+  thumbnailCropsByClimb?: Record<string, ClimbThumbnailCrop>;
   boardSlug?: string;
   resolveBoardDetails: (climb: Climb) => BoardImageDetails;
   unlinkedClimbUuids?: ReadonlySet<string>;
@@ -118,6 +121,7 @@ type SharedRowProps = {
 
 export default function StaticClimbList({
   climbs,
+  thumbnailCropsByClimb,
   boardDetails,
   boardSlug,
   boardDetailsByClimb,
@@ -146,6 +150,7 @@ export default function StaticClimbList({
 
   const rowProps: SharedRowProps = {
     climbs,
+    thumbnailCropsByClimb,
     boardSlug,
     resolveBoardDetails,
     unlinkedClimbUuids,
@@ -201,6 +206,7 @@ export default function StaticClimbList({
  */
 function PlainRows({
   climbs,
+  thumbnailCropsByClimb,
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
@@ -226,6 +232,7 @@ function PlainRows({
           >
             <StaticClimbRow
               climb={climb}
+              thumbnailCrop={thumbnailCropsByClimb?.[climb.uuid]}
               boardSlug={boardSlug}
               boardDetails={resolveBoardDetails(climb)}
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
@@ -266,6 +273,7 @@ function InfiniteScrollSentinel({
 
 function VirtualizedRows({
   climbs,
+  thumbnailCropsByClimb,
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
@@ -359,6 +367,7 @@ function VirtualizedRows({
           >
             <StaticClimbRow
               climb={climb}
+              thumbnailCrop={thumbnailCropsByClimb?.[climb.uuid]}
               boardSlug={boardSlug}
               boardDetails={resolveBoardDetails(climb)}
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}

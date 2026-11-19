@@ -1,4 +1,6 @@
 import React from 'react';
+import { buildClimbThumbnailCrops } from '@/app/lib/climb-thumbnail-crop.server';
+import { getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -53,6 +55,9 @@ export default async function PlaylistDetailPage({ params }: { params: Promise<{
         initialMyBoards={initialMyBoards}
         initialPlaylist={initialPlaylist}
         initialClimbs={initialClimbs}
+        thumbnailCropsByClimb={buildClimbThumbnailCrops(initialClimbs?.climbs ?? [], (climb) =>
+          getBoardImageDetailsForPlaylist(climb.boardType ?? initialPlaylist?.boardType ?? '', climb.layoutId),
+        )}
       />
     </I18nProvider>
   );

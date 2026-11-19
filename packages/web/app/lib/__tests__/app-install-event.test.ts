@@ -88,6 +88,10 @@ describe('buildAppInstallClickProperties', () => {
       'bring-your-logbook',
       'join-page',
       'site-banner',
+      'setter',
+      'playlist',
+      'playlists',
+      'help-spray',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });
