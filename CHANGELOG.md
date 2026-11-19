@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Help improve Chinese climbing terms from the welcome, Account, or General settings. ([#7927](https://github.com/boardsesh/boardsesh/pull/7927))
 - Swiping between climbs keeps your wall still and fades the holds, even without the GPU board. ([#7835](https://github.com/boardsesh/boardsesh/pull/7835))
 - Use Boardsesh in Simplified Chinese. ([#7898](https://github.com/boardsesh/boardsesh/pull/7898))
   A Chinese welcome shows how to help improve climbing terms.

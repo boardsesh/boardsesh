@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-19T17:00:43.755Z",
+  "generatedAt": "2026-11-19T18:53:07.013Z",
   "entries": [
+    {
+      "prNumber": 7927,
+      "category": "new",
+      "title": "Help improve Chinese climbing terms from the welcome, Account, or General settings.",
+      "mergedAt": "2026-11-19T18:48:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7927"
+    },
     {
       "prNumber": 7910,
       "category": "improved",
