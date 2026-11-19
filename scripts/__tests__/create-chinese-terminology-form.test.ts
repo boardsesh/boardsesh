@@ -120,6 +120,16 @@ class FormDouble {
   getTitle() {
     return this.title;
   }
+  setTitle(title: string) {
+    if (this.harness.failFormTitle) {
+      this.harness.failFormTitle = false;
+      throw new Error('form title initialization failed');
+    }
+    this.harness.mutations++;
+    this.harness.formTitleWrites.push(title);
+    this.title = title;
+    return this;
+  }
   supportsAdvancedResponderPermissions() {
     return true;
   }
@@ -224,12 +234,16 @@ class FormDouble {
 class Harness {
   readonly properties = new Map<string, string>();
   readonly logs: string[] = [];
+  readonly formNames: string[] = [];
+  readonly formTitleWrites: string[] = [];
   form?: FormDouble;
+  initialVisibleTitle?: string;
   creates = 0;
   mutations = 0;
   released = 0;
   locked = false;
   failTitle = false;
+  failFormTitle = false;
   failAddBefore = false;
   failAddAfter = false;
   failSaveFormId = false;
@@ -247,7 +261,8 @@ class Harness {
         create: (title: string, published: boolean) => {
           expect(published).toBe(false);
           this.creates++;
-          this.form = new FormDouble(this, title);
+          this.formNames.push(title);
+          this.form = new FormDouble(this, this.initialVisibleTitle ?? title);
           return this.form;
         },
         openById: (id: string) => {
@@ -291,6 +306,75 @@ class Harness {
 }
 
 describe('Chinese terminology Google Form creation artifact (stand-in, not live Google proof)', () => {
+  it('explicitly initializes a new draft title when create returns a different visible title', () => {
+    const harness = new Harness();
+    harness.initialVisibleTitle = 'Untitled form';
+    expect(harness.run().creationComplete).toBe(true);
+    expect(harness.formNames).toEqual(['帮 Boardsesh 说好攀岩中文']);
+    expect(harness.formTitleWrites).toEqual(['帮 Boardsesh 说好攀岩中文']);
+    expect(harness.form!.getTitle()).toBe('帮 Boardsesh 说好攀岩中文');
+    expect(harness.questions()).toHaveLength(32);
+    expect(harness.form!.published).toBe(false);
+  });
+
+  it('recovers an empty saved draft title only with its explicit matching recovery ID', () => {
+    const harness = new Harness();
+    harness.initialVisibleTitle = 'Untitled form';
+    harness.failFormTitle = true;
+    expect(() => harness.run()).toThrow('form title initialization failed');
+    const checkpoint = harness.properties.get(stateKey);
+    expect(JSON.parse(checkpoint!) as SavedState).toMatchObject({
+      formId: 'owned-draft-id',
+      configured: false,
+      itemIds: [],
+      pending: null,
+      complete: false,
+    });
+    const mutations = harness.mutations;
+    expect(() => harness.run()).toThrow('actual "Untitled form"; expected "帮 Boardsesh 说好攀岩中文"');
+    expect(() => harness.run('another-form-id')).toThrow('Draft title mismatch');
+    expect(harness.properties.get(stateKey)).toBe(checkpoint);
+    expect(harness.mutations).toBe(mutations);
+    expect(harness.formTitleWrites).toEqual([]);
+    expect(harness.run('owned-draft-id').creationComplete).toBe(true);
+    expect(harness.creates).toBe(1);
+    expect(harness.form!.getId()).toBe('owned-draft-id');
+    expect(harness.formTitleWrites).toEqual(['帮 Boardsesh 说好攀岩中文']);
+    expect(harness.questions()).toHaveLength(32);
+  });
+
+  it('refuses explicit title recovery after the owner renames a partially configured draft', () => {
+    const harness = new Harness();
+    harness.failTitle = true;
+    expect(() => harness.run()).toThrow();
+    harness.form!.title = 'Owner-renamed draft';
+    const checkpoint = harness.properties.get(stateKey);
+    const mutations = harness.mutations;
+    expect(() => harness.run('owned-draft-id')).toThrow('actual "Owner-renamed draft"');
+    expect(harness.form!.getTitle()).toBe('Owner-renamed draft');
+    expect(harness.mutations).toBe(mutations);
+    expect(harness.properties.get(stateKey)).toBe(checkpoint);
+    expect(harness.formTitleWrites).toEqual(['帮 Boardsesh 说好攀岩中文']);
+  });
+
+  it('does not recover the title of a published or nonempty saved draft', () => {
+    const harness = new Harness();
+    harness.initialVisibleTitle = 'Untitled form';
+    harness.failFormTitle = true;
+    expect(() => harness.run()).toThrow('form title initialization failed');
+    harness.form!.published = true;
+    let mutations = harness.mutations;
+    expect(() => harness.run('owned-draft-id')).toThrow('Resume only an unpublished draft');
+    expect(harness.mutations).toBe(mutations);
+    harness.form!.published = false;
+    harness.form!.addTextItem().setTitle('Owner-added question');
+    mutations = harness.mutations;
+    expect(() => harness.run('owned-draft-id')).toThrow('Draft title mismatch');
+    expect(harness.mutations).toBe(mutations);
+    expect(harness.formTitleWrites).toEqual([]);
+    expect(harness.form!.items).toHaveLength(1);
+  });
+
   it('creates one unpublished draft with five sections and all 32 optional questions', () => {
     const harness = new Harness();
     const report = harness.run();

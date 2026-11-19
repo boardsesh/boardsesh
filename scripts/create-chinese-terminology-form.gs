@@ -259,9 +259,11 @@ function createChineseTerminologyForm() {
     if (state.version !== 1 || state.signature !== signature)
       throw new Error('Saved questionnaire differs. Keep the original script; do not clear its properties.');
     var form;
+    var createdHere = false;
     if (!state.formId) {
       if (firstCreation) {
         form = FormApp.create(CHINESE_TERMINOLOGY_TITLE, false);
+        createdHere = true;
         console.log('RECOVERY draft ID: ' + form.getId() + '\nDraft edit URL: ' + form.getEditUrl());
       } else {
         if (!CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID)
@@ -270,7 +272,7 @@ function createChineseTerminologyForm() {
           );
         form = FormApp.openById(CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID);
         if (
-          form.getTitle() !== CHINESE_TERMINOLOGY_TITLE ||
+          String(form.getTitle()) !== CHINESE_TERMINOLOGY_TITLE ||
           !form.supportsAdvancedResponderPermissions() ||
           form.isPublished() ||
           form.getItems().length
@@ -287,8 +289,31 @@ function createChineseTerminologyForm() {
     if (state.complete) return chineseTerminologyReport(form, true);
     if (!form.supportsAdvancedResponderPermissions() || form.isPublished())
       throw new Error('Resume only an unpublished draft that supports publishing. Nothing was added.');
-    if (form.getTitle() !== CHINESE_TERMINOLOGY_TITLE)
-      throw new Error('Draft title was edited. Review it manually; the script will not overwrite it.');
+    // Explicitly initialize the new draft title before checking resumed drafts.
+    // Its ID is already checkpointed, so a setter failure cannot create another form.
+    if (createdHere) form.setTitle(CHINESE_TERMINOLOGY_TITLE);
+    var actualTitle = String(form.getTitle());
+    if (actualTitle !== CHINESE_TERMINOLOGY_TITLE) {
+      if (
+        CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID === state.formId &&
+        state.configured === false &&
+        state.itemIds.length === 0 &&
+        state.pending === null &&
+        form.getItems().length === 0
+      ) {
+        // Explicit owner recovery only: never rename a configured or nonempty form.
+        form.setTitle(CHINESE_TERMINOLOGY_TITLE);
+        actualTitle = String(form.getTitle());
+      }
+      if (actualTitle !== CHINESE_TERMINOLOGY_TITLE)
+        throw new Error(
+          'Draft title mismatch: actual ' +
+            JSON.stringify(actualTitle) +
+            '; expected ' +
+            JSON.stringify(CHINESE_TERMINOLOGY_TITLE) +
+            '. Existing drafts are not renamed automatically. Review the heading manually, or use the matching CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID only for an empty, unconfigured, unpublished saved draft.',
+        );
+    }
     chineseTerminologyCheckPrefix(form.getItems(), state, plan);
     if (!state.configured) {
       form.setPublished(false);

@@ -70,7 +70,9 @@ copy source for an authorized browser agent creating the form in Google's UI.
 
 The script uses [FormApp.create(title, false)](https://developers.google.com/apps-script/reference/forms/form-app#create(String,Boolean))
 and [setPublished(false)](https://developers.google.com/apps-script/reference/forms/form#setPublished(Boolean))
-to leave an unpublished draft. It sets a progress bar and never publishes,
+to leave an unpublished draft. It explicitly initializes the new draft's visible
+heading with [setTitle](https://developers.google.com/apps-script/reference/forms/form#setTitle(String))
+before checking the title on resumed drafts. It sets a progress bar and never publishes,
 submits responses, reads responses, or grants Drive/responder permissions. The
 Forms service needs Forms authorization; no Drive service, external service,
 Google Cloud setup, or dependency installation is required. Disabling email and
@@ -87,9 +89,18 @@ Partial reruns append missing items and finish only blank or matching pending
 fields. Changed item IDs/types, added items, edited pending text, required
 questions, or changed privacy settings stop for owner review; nothing is deleted.
 
+If a saved draft stops with a title mismatch before adding any items, set
+`CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID` to that same saved draft ID and rerun.
+This explicitly restores the expected heading only when the draft is unpublished,
+empty, and not yet configured, with no completed or pending item checkpoints.
+Other existing drafts are never renamed automatically. A mismatch reports the
+actual and expected headings for owner review. Alternatively, set the large form
+heading to `帮 Boardsesh 说好攀岩中文` manually and rerun the same project. This
+title-only script fix preserves the existing questionnaire plan and checkpoints.
+
 Form creation and saving its ID span two services and cannot be atomic. A saved
 creation intent with no ID stops automatic recreation. Find the empty unpublished
-draft using the prior execution log or Google Forms, paste its ID into
+draft with the expected heading using the prior execution log or Google Forms, paste its ID into
 `CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID`, and rerun. If creation never reached Google,
 the owner may create a matching empty unpublished draft manually and use that ID.
 For an uncertain item append with no visible item, inspect the draft, add **one
