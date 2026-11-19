@@ -49,8 +49,12 @@ function options(overrides: Partial<UsePinnedPlaylistsOptions> = {}): UsePinnedP
   return { token: 'account-a', boardType: 'kilter', layoutId: 1, candidatePlaylists: [], ...overrides };
 }
 
-function wrapperFor(executeGraphQL: ExecutePlaylistsGraphQL, recents: RecentsStorageAdapter = noopRecentsAdapter) {
-  const adapter: PlaylistsAdapter = { executeGraphQL, recents };
+function wrapperFor(
+  executeGraphQL: ExecutePlaylistsGraphQL,
+  recents: RecentsStorageAdapter = noopRecentsAdapter,
+  isExpectedRequestError?: PlaylistsAdapter['isExpectedRequestError'],
+) {
+  const adapter: PlaylistsAdapter = { executeGraphQL, recents, isExpectedRequestError };
   return function Wrapper({ children }: { children: ReactNode }) {
     return <PlaylistsAdapterProvider value={adapter}>{children}</PlaylistsAdapterProvider>;
   };
@@ -223,6 +227,77 @@ describe('usePinnedPlaylists request ownership', () => {
     expect(result.current.pinned[0]?.uuid).toBe('recent');
     expect(result.current.source).toBe('recent');
     expect(consoleError).toHaveBeenCalledExactlyOnceWith('Failed to fetch pinned playlists:', pinnedError);
+  });
+
+  it.each(['offline_mode', 'device_offline', 'backend_unreachable'])(
+    'settles the recents fallback without error logging for an expected %s refusal',
+    async (reason) => {
+      const refusal = Object.assign(new Error('Request skipped'), { name: 'BackendUnavailableError', reason });
+      const recents = { getRecentPlaylists: async () => [recentEntry('recent')] };
+      const executeGraphQL = vi.fn().mockRejectedValue(refusal);
+      const isExpectedRequestError = vi.fn((error: unknown) => error === refusal);
+      const wrapper = wrapperFor(executeGraphQL as ExecutePlaylistsGraphQL, recents, isExpectedRequestError);
+      const { result } = renderHook(() => usePinnedPlaylists(options({ candidatePlaylists: [playlist('recent')] })), {
+        wrapper,
+      });
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.pinned[0]?.uuid).toBe('recent');
+      expect(result.current.source).toBe('recent');
+      expect(isExpectedRequestError).toHaveBeenCalledExactlyOnceWith(refusal);
+      expect(consoleError).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still logs unexpected request failures when the adapter supplies a classifier', async () => {
+    const requestError = new Error('Resolver failed');
+    const isExpectedRequestError = vi.fn(() => false);
+    const executeGraphQL = vi.fn().mockRejectedValue(requestError);
+    const wrapper = wrapperFor(executeGraphQL as ExecutePlaylistsGraphQL, noopRecentsAdapter, isExpectedRequestError);
+    const { result } = renderHook(() => usePinnedPlaylists(options()), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(isExpectedRequestError).toHaveBeenCalledExactlyOnceWith(requestError);
+    expect(consoleError).toHaveBeenCalledExactlyOnceWith('Failed to fetch pinned playlists:', requestError);
+  });
+
+  it('does not classify or suppress recents-storage failures', async () => {
+    const storageError = new Error('Storage unavailable');
+    const recents = { getRecentPlaylists: vi.fn().mockRejectedValue(storageError) };
+    const executeGraphQL = vi.fn().mockResolvedValue(pinnedResponse('current-pin'));
+    const isExpectedRequestError = vi.fn(() => true);
+    const wrapper = wrapperFor(executeGraphQL as ExecutePlaylistsGraphQL, recents, isExpectedRequestError);
+    const { result } = renderHook(() => usePinnedPlaylists(options()), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.pinned[0]?.uuid).toBe('current-pin');
+    expect(isExpectedRequestError).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledExactlyOnceWith('Failed to fetch recent playlists:', storageError);
+  });
+
+  it('updates the logging policy without refetching pins or recents', async () => {
+    const request = deferred<GetMyPinnedPlaylistsQueryResponse>();
+    const executeGraphQL = vi.fn().mockReturnValue(request.promise);
+    const recents = { getRecentPlaylists: vi.fn().mockResolvedValue([]) };
+    const previousClassifier = vi.fn(() => false);
+    const nextClassifier = vi.fn(() => true);
+    let adapter: PlaylistsAdapter = { executeGraphQL, recents, isExpectedRequestError: previousClassifier };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <PlaylistsAdapterProvider value={adapter}>{children}</PlaylistsAdapterProvider>
+    );
+    const { result, rerender } = renderHook(() => usePinnedPlaylists(options()), { wrapper });
+
+    adapter = { ...adapter, isExpectedRequestError: nextClassifier };
+    rerender();
+    const refusal = new Error('Request skipped');
+    await act(async () => request.reject(refusal));
+
+    expect(result.current.isLoading).toBe(false);
+    expect(executeGraphQL).toHaveBeenCalledTimes(1);
+    expect(recents.getRecentPlaylists).toHaveBeenCalledTimes(1);
+    expect(previousClassifier).not.toHaveBeenCalled();
+    expect(nextClassifier).toHaveBeenCalledExactlyOnceWith(refusal);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it('ignores pinned and recents failures after unmount', async () => {
