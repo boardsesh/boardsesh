@@ -836,14 +836,17 @@ internal object OverlayRenderer {
                 request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored,
                 controls.revealMode,weights),lookWords)
             session.view.swapLookDrawn(lookWords)
+            // CPU preparation (including first-use shader compilation) must not
+            // consume the GPU completion allowance before this frame is submitted.
+            val submittedAt = System.nanoTime()
             val frame =
-                session.ledger.submit(now, request.revision, request.generation) ?: return false
+                session.ledger.submit(submittedAt, request.revision, request.generation) ?: return false
             check(EGLExt.eglPresentationTimeANDROID(display, session.eglSurface, frame.timestamp)) {
                 "GPU frame timestamp failed"
             }
             val sync = GLES31.glFenceSync(GLES31.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
             check(sync != 0L) { "GPU completion fence unavailable" }
-            session.fences[frame.timestamp] = sync to now
+            session.fences[frame.timestamp] = sync to submittedAt
             OverlayPacketMetrics.gpuBegin()
             check(EGL14.eglSwapBuffers(display, session.eglSurface)) { "GPU swap failed" }
             poll(session, frame.timestamp)
