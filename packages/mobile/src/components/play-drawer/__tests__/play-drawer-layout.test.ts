@@ -230,8 +230,30 @@ describe('computeDrawerFirstScreenHeight', () => {
         sectionTopPadding: 12,
         sectionMargin: 8,
       }),
-    ).toBe(754);
+    ).toBe(720);
   });
+  it.each([
+    { viewport: 844, bottomInset: 0, firstSectionHeaderHeight: 52 },
+    { viewport: 915, bottomInset: 24, firstSectionHeaderHeight: 52 },
+    { viewport: 844, bottomInset: 34, firstSectionHeaderHeight: 70 },
+    { viewport: 568, bottomInset: 48, firstSectionHeaderHeight: 96 },
+  ])(
+    'keeps the first section header clear of the $bottomInset-point bottom inset',
+    ({ viewport, bottomInset, firstSectionHeaderHeight }) => {
+      const sectionTopPadding = 12;
+      const sectionMargin = 8;
+      const firstScreenHeight = computeDrawerFirstScreenHeight({
+        viewport,
+        bottomInset,
+        firstSectionHeaderHeight,
+        sectionTopPadding,
+        sectionMargin,
+      });
+      const headerBottom = firstScreenHeight + sectionTopPadding + firstSectionHeaderHeight;
+
+      expect(viewport - headerBottom).toBe(bottomInset + sectionMargin);
+    },
+  );
 });
 
 describe('shouldFitBoardToHeight (#6956)', () => {
