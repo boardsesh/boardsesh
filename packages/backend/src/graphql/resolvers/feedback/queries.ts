@@ -1,3 +1,5 @@
+import { captureException } from '@sentry/node';
+import { GraphQLError } from 'graphql';
 import type { AppFeedbackReport, AppFeedbackStatus, ConnectionContext } from '@boardsesh/shared-schema';
 import { and, count, desc, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -132,73 +134,94 @@ export const feedbackQueries = {
     await requireAdmin(ctx);
     const validated = validateInput(AdminAppFeedbackInputSchema, input ?? {}, 'input');
 
-    const limit = validated.limit ?? 50;
-    const offset = validated.offset ?? 0;
+    try {
+      const limit = validated.limit ?? 50;
+      const offset = validated.offset ?? 0;
 
-    const typeCondition =
-      validated.type === 'bugs'
-        ? inArray(feedback.source, BUG_SOURCES)
-        : validated.type === 'ratings'
-          ? inArray(feedback.source, RATING_SOURCES)
-          : validated.type === 'board_requests'
-            ? eq(feedback.source, 'board-request')
-            : undefined;
-    const platformCondition = validated.platform ? eq(feedback.platform, validated.platform) : undefined;
-    const searchCondition = validated.search ? ilike(feedback.comment, `%${escapeLike(validated.search)}%`) : undefined;
-    const reporterCondition = validated.reporterId ? eq(feedback.userId, validated.reporterId) : undefined;
-    const replyCondition = validated.needsReply != null ? eq(feedback.needsReply, validated.needsReply) : undefined;
-    const statusCondition = validated.status ? eq(feedback.status, validated.status) : undefined;
+      const typeCondition =
+        validated.type === 'bugs'
+          ? inArray(feedback.source, BUG_SOURCES)
+          : validated.type === 'ratings'
+            ? inArray(feedback.source, RATING_SOURCES)
+            : validated.type === 'board_requests'
+              ? eq(feedback.source, 'board-request')
+              : undefined;
+      const platformCondition = validated.platform ? eq(feedback.platform, validated.platform) : undefined;
+      const searchCondition = validated.search
+        ? ilike(feedback.comment, `%${escapeLike(validated.search)}%`)
+        : undefined;
+      const reporterCondition = validated.reporterId ? eq(feedback.userId, validated.reporterId) : undefined;
+      const replyCondition = validated.needsReply != null ? eq(feedback.needsReply, validated.needsReply) : undefined;
+      const statusCondition = validated.status ? eq(feedback.status, validated.status) : undefined;
 
-    const combine = (parts: Array<SQL | undefined>): SQL | undefined => {
-      const present = parts.filter((part): part is SQL => part !== undefined);
-      return present.length ? and(...present) : undefined;
-    };
+      const combine = (parts: Array<SQL | undefined>): SQL | undefined => {
+        const present = parts.filter((part): part is SQL => part !== undefined);
+        return present.length ? and(...present) : undefined;
+      };
 
-    // The list respects every filter; the status-tab counts respect everything
-    // except status (so each tab shows how many rows it would reveal).
-    const listWhere = combine([
-      typeCondition,
-      platformCondition,
-      searchCondition,
-      statusCondition,
-      reporterCondition,
-      replyCondition,
-    ]);
-    const countsWhere = combine([typeCondition, platformCondition, searchCondition, reporterCondition, replyCondition]);
+      // The list respects every filter; the status-tab counts respect everything
+      // except status (so each tab shows how many rows it would reveal).
+      const listWhere = combine([
+        typeCondition,
+        platformCondition,
+        searchCondition,
+        statusCondition,
+        reporterCondition,
+        replyCondition,
+      ]);
+      const countsWhere = combine([
+        typeCondition,
+        platformCondition,
+        searchCondition,
+        reporterCondition,
+        replyCondition,
+      ]);
 
-    // The page, the filtered total, and the per-status counts are independent
-    // reads — run them concurrently rather than paying three serial round-trips.
-    const [rows, totalRows, grouped] = await Promise.all([
-      db
-        .select(reportColumns)
-        .from(feedback)
-        .leftJoin(reporter, eq(feedback.userId, reporter.id))
-        .leftJoin(resolver, eq(feedback.resolvedBy, resolver.id))
-        .where(listWhere)
-        // Secondary sort on id keeps ordering (and offset pagination) stable when
-        // rows share a created_at.
-        .orderBy(desc(sql`coalesce(${feedback.lastMessageAt}, ${feedback.createdAt})`), desc(feedback.id))
-        .limit(limit + 1)
-        .offset(offset),
-      db.select({ value: count() }).from(feedback).where(listWhere),
-      db.select({ status: feedback.status, value: count() }).from(feedback).where(countsWhere).groupBy(feedback.status),
-    ]);
+      // The page, the filtered total, and the per-status counts are independent
+      // reads — run them concurrently rather than paying three serial round-trips.
+      const [rows, totalRows, grouped] = await Promise.all([
+        db
+          .select(reportColumns)
+          .from(feedback)
+          .leftJoin(reporter, eq(feedback.userId, reporter.id))
+          .leftJoin(resolver, eq(feedback.resolvedBy, resolver.id))
+          .where(listWhere)
+          // Secondary sort on id keeps ordering (and offset pagination) stable when
+          // rows share a created_at.
+          .orderBy(desc(sql`coalesce(${feedback.lastMessageAt}, ${feedback.createdAt})`), desc(feedback.id))
+          .limit(limit + 1)
+          .offset(offset),
+        db.select({ value: count() }).from(feedback).where(listWhere),
+        db
+          .select({ status: feedback.status, value: count() })
+          .from(feedback)
+          .where(countsWhere)
+          .groupBy(feedback.status),
+      ]);
 
-    const hasMore = rows.length > limit;
-    const reports = (hasMore ? rows.slice(0, limit) : rows).map(mapFeedbackRow);
-    const totalCount = Number(totalRows[0]?.value ?? 0);
-    const byStatus = new Map(grouped.map((entry) => [entry.status, Number(entry.value)]));
+      const hasMore = rows.length > limit;
+      const reports = (hasMore ? rows.slice(0, limit) : rows).map(mapFeedbackRow);
+      const totalCount = Number(totalRows[0]?.value ?? 0);
+      const byStatus = new Map(grouped.map((entry) => [entry.status, Number(entry.value)]));
 
-    return {
-      reports,
-      totalCount,
-      hasMore,
-      statusCounts: {
-        new: byStatus.get('new') ?? 0,
-        inProgress: byStatus.get('in_progress') ?? 0,
-        resolved: byStatus.get('resolved') ?? 0,
-        wontFix: byStatus.get('wont_fix') ?? 0,
-      },
-    };
+      return {
+        reports,
+        totalCount,
+        hasMore,
+        statusCounts: {
+          new: byStatus.get('new') ?? 0,
+          inProgress: byStatus.get('in_progress') ?? 0,
+          resolved: byStatus.get('resolved') ?? 0,
+          wontFix: byStatus.get('wont_fix') ?? 0,
+        },
+      };
+    } catch {
+      // A failed list or count can carry bound private search text. Report
+      // only a fixed diagnostic before Yoga's general database error mask.
+      captureException(new Error('Admin feedback read failed'));
+      throw new GraphQLError('Feedback reports are temporarily unavailable.', {
+        extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+      });
+    }
   },
 };

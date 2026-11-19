@@ -1,3 +1,4 @@
+import type { BoardRequestRole } from '@boardsesh/shared-schema';
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
@@ -365,6 +366,11 @@ function shouldSkipProductAnalytics(): boolean {
   );
 }
 const core = createAnalytics(getPosthog, { shouldSkip: shouldSkipProductAnalytics });
+
+/** The private request form measures role only, without campaign attribution. */
+export function trackBoardRequestSubmitted(role: BoardRequestRole): void {
+  core.track('Board Request Submitted', { role });
+}
 
 export function track(name: string, properties?: EventProperties): void {
   if (shouldSkipProductAnalytics()) return;

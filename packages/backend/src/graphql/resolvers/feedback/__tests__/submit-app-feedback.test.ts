@@ -362,11 +362,16 @@ describe('private board requests', () => {
   });
 
   it('limits anonymous submissions by client IP before any extra requests are stored', async () => {
-    for (let index = 0; index < 5; index++) await submit(request, ipPrefix + '4');
-    await expect(submit(request, ipPrefix + '4')).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
-    expect(Array.from(await db.execute(sql`SELECT id FROM app_feedback WHERE source = 'board-request'`))).toHaveLength(
-      5,
-    );
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 0, 1, 12, 0, 15));
+    try {
+      for (let index = 0; index < 5; index++) await submit(request, ipPrefix + '4');
+      await expect(submit(request, ipPrefix + '4')).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
+      expect(
+        Array.from(await db.execute(sql`SELECT id FROM app_feedback WHERE source = 'board-request'`)),
+      ).toHaveLength(5);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('sanitizes database errors before GraphQL or exception telemetry sees them', async () => {

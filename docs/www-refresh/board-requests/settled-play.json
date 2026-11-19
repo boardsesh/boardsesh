@@ -1,0 +1,28 @@
+[
+  {
+    "width": 390,
+    "playButton": {
+      "x": 301.578125,
+      "y": 474.859375,
+      "width": 51.421875,
+      "height": 51.421875
+    },
+    "realPointerClick": true,
+    "source": "/videos/home/showcase-9x16-lite.webm",
+    "seconds": 0.03676,
+    "paused": true
+  },
+  {
+    "width": 1440,
+    "playButton": {
+      "x": 995.046875,
+      "y": 442,
+      "width": 64,
+      "height": 64
+    },
+    "realPointerClick": true,
+    "source": "/videos/home/showcase-9x16-lite.webm",
+    "seconds": 0.026827,
+    "paused": true
+  }
+]

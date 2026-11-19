@@ -1,4 +1,5 @@
 import { GraphQLError, type ExecutionResult } from 'graphql';
+import { suppressTracing } from '@sentry/node';
 import type { Plugin } from 'graphql-yoga';
 
 const TOKEN_FIELDS = ['boardShareLinkPreview', 'redeemBoardShareLink'] as const;
@@ -18,12 +19,20 @@ export function isBoardRequestDocument(document: string): boolean {
   return document.includes('submitBoardRequest');
 }
 
+export function isAdminFeedbackDocument(document: string): boolean {
+  return document.includes('adminAppFeedback');
+}
+
+function isPrivateFeedbackDocument(document: string): boolean {
+  return isBoardRequestDocument(document) || isAdminFeedbackDocument(document);
+}
+
 function isBoardShareTokenDocument(document: string): boolean {
   return TOKEN_FIELDS.some((field) => document.includes(field));
 }
 
 export function isPrivateBoardDocument(document: string): boolean {
-  return isBoardRequestDocument(document) || isBoardShareTokenDocument(document);
+  return isPrivateFeedbackDocument(document) || isBoardShareTokenDocument(document);
 }
 
 /** Numbers only: they cannot carry the token, and clients act on them. */
@@ -47,6 +56,11 @@ export function sanitizePrivateBoardGraphqlError(error: GraphQLError, document?:
   // alias. Drop original errors, paths and source nodes even after execution.
   if (sourceBodies.some((source) => source !== undefined && isBoardRequestDocument(source))) {
     return new GraphQLError('Board request could not be processed', { extensions: safeExtensions(error.extensions) });
+  }
+  if (sourceBodies.some((source) => source !== undefined && isAdminFeedbackDocument(source))) {
+    return new GraphQLError('Feedback reports could not be processed', {
+      extensions: safeExtensions(error.extensions),
+    });
   }
   if (
     error.path !== undefined ||
@@ -72,6 +86,14 @@ export function sanitizePrivateBoardResult(result: ExecutionResult, document?: s
 /** HTTP parse/coercion failures also occur before any resolver-level masking. */
 export function privateBoardOperationPrivacyPlugin(): Plugin {
   return {
+    onParams({ params, paramsHandler, setParamsHandler }) {
+      // Yoga runs this handler before GraphQL parse, validation and execution.
+      // Suppress the private operation's spans before the SDK can attach its
+      // document or use the operation name in the enclosing HTTP transaction.
+      if (typeof params.query === 'string' && isPrivateFeedbackDocument(params.query)) {
+        setParamsHandler((payload) => suppressTracing(() => paramsHandler(payload)));
+      }
+    },
     onResultProcess: (payload) => {
       const { result } = payload;
       if (Symbol.asyncIterator in result) return;

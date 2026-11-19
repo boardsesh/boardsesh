@@ -6,7 +6,7 @@ import { ClientError } from 'graphql-request';
 import { SUBMIT_BOARD_REQUEST } from '@boardsesh/graphql/operations';
 import type { BoardRequestRole, SubmitBoardRequestInput } from '@boardsesh/shared-schema';
 import { executeGraphQL } from '@/app/lib/graphql/client';
-import { track } from '@/app/lib/analytics';
+import { trackBoardRequestSubmitted } from '@/app/lib/analytics';
 
 type BoardRequestLabels = {
   board: string;
@@ -59,7 +59,7 @@ export default function BoardRequestForm({ labels }: { labels: BoardRequestLabel
     setNote('');
     setConsent(false);
     setStatus('sent');
-    track('Board Request Submitted', { role });
+    trackBoardRequestSubmitted(role);
   };
 
   if (status === 'sent')

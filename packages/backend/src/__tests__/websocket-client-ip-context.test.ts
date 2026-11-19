@@ -364,6 +364,20 @@ describe('WebSocket connection context client IP', () => {
       serverErrors.mockRestore();
     }
   });
+  it('rejects private admin feedback search on WebSockets before document parsing', async () => {
+    const marker = 'private-admin-search-fixture';
+    const logged = vi.spyOn(logger, 'error');
+    try {
+      const response = await sendBoardShareOperation({
+        query: `query { adminAppFeedback(input: {search: "${marker}"`,
+      });
+      expect(response).toContain('Feedback reports could not be processed');
+      expect(response).not.toContain(marker);
+      expect(inspect(logged.mock.calls, { depth: 20 })).not.toContain(marker);
+    } finally {
+      logged.mockRestore();
+    }
+  });
   it.each([
     ['query', 'boardShareLinkPreview', '{ name }'],
     ['mutation', 'redeemBoardShareLink', '{ boardUuid slug }'],

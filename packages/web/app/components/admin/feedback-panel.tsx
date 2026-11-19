@@ -190,9 +190,10 @@ export default function FeedbackPanel() {
         setHasMore(data.hasMore);
         setTotalCount(data.totalCount);
         setCounts(data.statusCounts);
-      } catch (err) {
+      } catch {
         if (sequence !== requestSequence.current || currentToken.current !== token) return;
-        console.error('[FeedbackPanel] Failed to fetch feedback:', err);
+        // ClientError includes the admin's private search and response in its message.
+        console.error('[FeedbackPanel] Failed to fetch feedback');
         setErrorOffset(offset);
       } finally {
         if (sequence === requestSequence.current && currentToken.current === token) setLoading(false);
@@ -318,6 +319,7 @@ export default function FeedbackPanel() {
         {reporterInput && <Button onClick={() => setReporterInput('')}>{t('feedback.filters.clearReporter')}</Button>}
         <TextField
           size="small"
+          className="ph-no-capture ph-ignore-input rr-block sentry-block"
           placeholder={t('feedback.search.placeholder')}
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
