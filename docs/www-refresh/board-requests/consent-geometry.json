@@ -1,0 +1,458 @@
+[
+  {
+    "locale": "en-US",
+    "status": 200,
+    "cardTop": 465,
+    "cardHeight": 183,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 216.296875,
+      "x": 24,
+      "right": 366,
+      "height": 83.1875,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 366,
+        "height": 44,
+        "width": 342,
+        "unobscured": true
+      },
+      {
+        "y": 286.671875,
+        "bottom": 305.671875,
+        "x": 144.0625,
+        "right": 309.125,
+        "height": 19,
+        "width": 165.0625,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 325.859375,
+        "bottom": 373.859375,
+        "x": 24,
+        "right": 203.8125,
+        "height": 48,
+        "width": 179.8125,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 477,
+        "bottom": 521,
+        "x": 306.625,
+        "right": 362,
+        "height": 44,
+        "width": 55.375,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  },
+  {
+    "locale": "es",
+    "status": 200,
+    "cardTop": 444,
+    "cardHeight": 204,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 216.296875,
+      "x": 24,
+      "right": 366,
+      "height": 83.1875,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 366,
+        "height": 44,
+        "width": 342,
+        "unobscured": true
+      },
+      {
+        "y": 286.671875,
+        "bottom": 332.859375,
+        "x": 24,
+        "right": 350.3125,
+        "height": 46.1875,
+        "width": 326.3125,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 353.046875,
+        "bottom": 401.046875,
+        "x": 24,
+        "right": 253.59375,
+        "height": 48,
+        "width": 229.59375,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 456,
+        "bottom": 500,
+        "x": 298.359375,
+        "right": 362,
+        "height": 44,
+        "width": 63.640625,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  },
+  {
+    "locale": "fr",
+    "status": 200,
+    "cardTop": 444,
+    "cardHeight": 204,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 216.296875,
+      "x": 24,
+      "right": 366,
+      "height": 83.1875,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 366,
+        "height": 44,
+        "width": 342,
+        "unobscured": true
+      },
+      {
+        "y": 286.671875,
+        "bottom": 332.859375,
+        "x": 24,
+        "right": 358.578125,
+        "height": 46.1875,
+        "width": 334.578125,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 353.046875,
+        "bottom": 401.046875,
+        "x": 24,
+        "right": 243.796875,
+        "height": 48,
+        "width": 219.796875,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 456,
+        "bottom": 500,
+        "x": 306.625,
+        "right": 362,
+        "height": 44,
+        "width": 55.375,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  },
+  {
+    "locale": "de",
+    "status": 200,
+    "cardTop": 465,
+    "cardHeight": 183,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 257.890625,
+      "x": 24,
+      "right": 366,
+      "height": 124.78125,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 366,
+        "height": 44,
+        "width": 342,
+        "unobscured": true
+      },
+      {
+        "y": 328.265625,
+        "bottom": 374.453125,
+        "x": 24,
+        "right": 350.671875,
+        "height": 46.1875,
+        "width": 326.671875,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 394.640625,
+        "bottom": 442.640625,
+        "x": 24,
+        "right": 250.3125,
+        "height": 48,
+        "width": 226.3125,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 477,
+        "bottom": 521,
+        "x": 306.625,
+        "right": 362,
+        "height": 44,
+        "width": 55.375,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  },
+  {
+    "locale": "it",
+    "status": 200,
+    "cardTop": 444,
+    "cardHeight": 204,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 216.296875,
+      "x": 24,
+      "right": 366,
+      "height": 83.1875,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 366,
+        "height": 44,
+        "width": 342,
+        "unobscured": true
+      },
+      {
+        "y": 286.671875,
+        "bottom": 332.859375,
+        "x": 24,
+        "right": 276.359375,
+        "height": 46.1875,
+        "width": 252.359375,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 353.046875,
+        "bottom": 401.046875,
+        "x": 24,
+        "right": 228.734375,
+        "height": 48,
+        "width": 204.734375,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 456,
+        "bottom": 500,
+        "x": 301.65625,
+        "right": 362,
+        "height": 44,
+        "width": 60.34375,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  },
+  {
+    "locale": "zh-CN",
+    "status": 200,
+    "cardTop": 465,
+    "cardHeight": 183,
+    "heading": {
+      "y": 133.109375,
+      "bottom": 216.296875,
+      "x": 24,
+      "right": 366,
+      "height": 83.1875,
+      "width": 342,
+      "unobscured": true
+    },
+    "catalog": [
+      {
+        "y": 77.109375,
+        "bottom": 121.109375,
+        "x": 24,
+        "right": 337.96875,
+        "height": 44,
+        "width": 313.96875,
+        "unobscured": true
+      },
+      {
+        "y": 259.484375,
+        "bottom": 305.671875,
+        "x": 24,
+        "right": 364,
+        "height": 46.1875,
+        "width": 340,
+        "unobscured": true
+      }
+    ],
+    "heroInstall": [
+      {
+        "y": 325.859375,
+        "bottom": 373.859375,
+        "x": 24,
+        "right": 178,
+        "height": 48,
+        "width": 154,
+        "unobscured": true
+      }
+    ],
+    "choices": [
+      {
+        "y": 477,
+        "bottom": 521,
+        "x": 318,
+        "right": 362,
+        "height": 44,
+        "width": 44,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 28,
+        "right": 191,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      },
+      {
+        "y": 592,
+        "bottom": 636,
+        "x": 199,
+        "right": 362,
+        "height": 44,
+        "width": 163,
+        "unobscured": false
+      }
+    ],
+    "fits": true
+  }
+]
