@@ -31,7 +31,13 @@ test.describe('analytics privacy choices in a prompt region', () => {
     await expect(banner).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'No thanks', exact: true })).toBeVisible();
-    await expect(banner.getByRole('link', { name: 'Read our privacy policy' })).toHaveAttribute('href', '/privacy');
+    await banner.getByRole('button', { name: 'Details', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Privacy choices', exact: true });
+    await expect(dialog.getByRole('link', { name: 'Read our privacy policy' })).toHaveAttribute('href', '/privacy');
+    await expect(dialog).toContainText('Meta and Reddit');
+    expect((await context.cookies()).find((stored) => stored.name === 'boardsesh-consent')).toBeUndefined();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(banner).toBeVisible();
   });
   for (const [label, choice] of [
     ['Allow', 'granted'],
