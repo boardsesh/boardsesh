@@ -121,7 +121,7 @@ end
 # nil (fastlane 2.241.2, deliver/lib/deliver/options.rb). Its metadata step
 # leaves each setting alone only when the option is nil: false deletes the
 # version's phased release, and true creates one
-# (UploadMetadata#upload, "Update phased release" and "Update rating reset", in
+# (UploadMetadata#upload, "Update phased release", in
 # deliver/lib/deliver/upload_metadata.rb). An explicit nil falls back to that
 # false default (FastlaneCore::Configuration#fetch), so passing what is already
 # there keeps it. Rating reset requests have no public API relationship; the

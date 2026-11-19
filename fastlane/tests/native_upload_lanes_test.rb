@@ -536,7 +536,8 @@ class NativeUploadLanesTest < Minitest::Test
 
   # deliver only reaches its phased-release and rating-reset step when
   # skip_metadata is false (UploadMetadata#upload returns first thing
-  # otherwise). Every App Store upload either skips metadata or passes both.
+  # otherwise). Metadata uploads preserve the phased-release boolean and leave
+  # rating reset requests to the genuine nil configured in Deliverfile.
   def test_every_app_store_upload_leaves_version_settings_alone
     run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION")])
     write_default_screenshot_campaign
