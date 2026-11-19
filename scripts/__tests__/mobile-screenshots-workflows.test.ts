@@ -55,6 +55,7 @@ interface WorkflowJob {
   if?: string;
   environment?: string;
   'timeout-minutes'?: number;
+  'runs-on'?: string;
   permissions?: Record<string, string>;
   env?: Record<string, string>;
   strategy?: { 'max-parallel'?: number; matrix?: unknown; 'fail-fast'?: boolean };
@@ -270,6 +271,27 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       appLocales.includes(locale),
     );
     expect(devices.length * defaultStoreLocales.length).toBe(30);
+  });
+
+  it.each([
+    ['iphone-duo', 'xcode-27-xlarge'],
+    ['iphone-16-pro-max', 'xcode-27'],
+    ['iphone-16-pro', 'xcode-27'],
+    ['ipad-pro-13-inch-m5', 'xcode-27'],
+    ['ipad-pro-11-inch-m5', 'xcode-27'],
+  ])('runs %s captures on %s', (deviceSlug, expectedRunner) => {
+    const expression = workflow.jobs['ios-capture']['runs-on'];
+    expect(expression).toBeDefined();
+    const runner = runInNewContext(
+      flatten(expression)
+        .replace(/^\$\{\{\s*/, '')
+        .replace(/\s*\}\}$/, ''),
+      { matrix: { device: { slug: deviceSlug } } },
+    );
+    expect(runner).toBe(expectedRunner);
+    // The probe is always a Pro Max; CPPs never include the Duo.
+    expect(workflow.jobs.probe['runs-on']).toBe('xcode-27');
+    expect(workflow.jobs['cpp-capture']['runs-on']).toBe('xcode-27');
   });
 
   it.each<{ selection: string; locales: string; eventName?: string; uploadInput?: string }>([
