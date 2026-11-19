@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -61,7 +62,9 @@ export default function DevTranslationEditor({
   locale: Locale;
   allowedHostnames?: string[];
 }) {
-  const { t } = useTranslation('devTools');
+  const { t, i18n } = useTranslation('devTools');
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
   const [entries, setEntries] = useState<TranslationEntry[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -74,7 +77,7 @@ export default function DevTranslationEditor({
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<'conflict' | 'request' | null>(null);
-  const [reloadRequired, setReloadRequired] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const local = mounted && allowedHostnames.includes(window.location.hostname);
@@ -95,6 +98,16 @@ export default function DevTranslationEditor({
       .then(async (response) => {
         if (!response.ok) throw new Error('Catalog request failed');
         const result = (await response.json()) as { entries: TranslationEntry[] };
+        // An already-open dev tab can still hold older editor labels after HMR.
+        // Refresh this loaded bundle before showing the editing controls.
+        if (i18n.hasResourceBundle(locale, 'devTools')) {
+          for (const entry of result.entries) {
+            if (entry.namespace === 'devTools') {
+              i18n.addResource(locale, entry.namespace, entry.key, entry.text, { silent: true });
+            }
+          }
+          i18n.emit('languageChanged', i18n.language);
+        }
         setEntries(result.entries);
         setLoaded(true);
       })
@@ -102,7 +115,7 @@ export default function DevTranslationEditor({
         if (!controller.signal.aborted) setLoadError(true);
       });
     return () => controller.abort();
-  }, [enabled, locale, local]);
+  }, [enabled, locale, local, i18n]);
 
   useEffect(() => {
     if (!enabled || !loaded || open) return;
@@ -120,6 +133,7 @@ export default function DevTranslationEditor({
       setSelected(found.entries.length === 1 ? found.entries[0] : null);
       setDraft(found.entries.length === 1 ? found.entries[0].text : '');
       setSaveError(null);
+      setSaved(false);
       setOpen(true);
       setHovered(null);
     };
@@ -147,30 +161,72 @@ export default function DevTranslationEditor({
   // This component only mounts in development on explicitly allowed hosts.
   if (!local) return null;
   const valid = selected ? preservesTranslationFormat(selected.text, draft) : false;
+  const busy = saving || refreshing;
   const close = () => {
-    if (!saving) {
+    if (!busy) {
       setOpen(false);
       setSelected(null);
       setSaveError(null);
+      setSaved(false);
     }
   };
   const choose = (entry: TranslationEntry) => {
     setSelected(entry);
     setDraft(entry.text);
     setSaveError(null);
+    setSaved(false);
   };
   const browse = () => {
     setCandidates(null);
     setSearch('');
     setSelected(null);
     setSaveError(null);
+    setSaved(false);
     setOpen(true);
     setHovered(null);
   };
+  const applyEntry = (updated: TranslationEntry) => {
+    const replaceEntry = (entry: TranslationEntry) =>
+      entry.namespace === updated.namespace && entry.key === updated.key ? updated : entry;
+    setEntries((current) => current.map(replaceEntry));
+    setCandidates((current) => current?.map(replaceEntry) ?? null);
+    setSelected(updated);
+    // The browser singleton keeps its already-loaded bundles across RSC refreshes.
+    // Update that store and notify translated client components explicitly.
+    // An off-page namespace must remain unloaded: adding just one key would
+    // make the provider skip its full catalog on a later navigation.
+    if (i18n.hasResourceBundle(locale, updated.namespace)) {
+      i18n.addResource(locale, updated.namespace, updated.key, updated.text);
+      i18n.emit('languageChanged', i18n.language);
+    }
+    startRefresh(() => router.refresh());
+  };
+  const loadLatest = async () => {
+    if (!selected || busy) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const response = await fetch(`/api/internal/dev-translations?locale=${locale}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Catalog request failed');
+      const result = (await response.json()) as { entries: TranslationEntry[] };
+      const latest = result.entries.find(
+        (entry) => entry.namespace === selected.namespace && entry.key === selected.key,
+      );
+      if (!latest) throw new Error('Translation no longer exists');
+      setEntries(result.entries);
+      applyEntry(latest);
+      setSaveError(null);
+    } catch {
+      setSaveError('request');
+    } finally {
+      setSaving(false);
+    }
+  };
   const save = async () => {
-    if (!selected || !valid || saving) return;
+    if (!selected || !valid || busy) return;
     setSaving(true);
     setSaveError(null);
+    setSaved(false);
     try {
       const response = await fetch('/api/internal/dev-translations', {
         method: 'POST',
@@ -187,10 +243,8 @@ export default function DevTranslationEditor({
         setSaveError(response.status === 409 ? 'conflict' : 'request');
         return;
       }
-      // Recreate the browser singleton as well as the server-rendered copy.
-      // router.refresh alone leaves already-loaded client bundles unchanged.
-      setReloadRequired(true);
-      window.location.reload();
+      applyEntry({ ...selected, text: draft });
+      setSaved(true);
     } catch {
       setSaveError('request');
     } finally {
@@ -261,6 +315,7 @@ export default function DevTranslationEditor({
               setCandidates(hovered.entries);
               setSearch('');
               setSaveError(null);
+              setSaved(false);
               if (hovered.entries.length === 1) choose(hovered.entries[0]);
               else setSelected(null);
               setOpen(true);
@@ -291,8 +346,11 @@ export default function DevTranslationEditor({
                 <TextField
                   label={t('replacement')}
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  disabled={saving || reloadRequired}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    setSaved(false);
+                  }}
+                  disabled={saving}
                   multiline
                   minRows={3}
                   maxRows={12}
@@ -344,25 +402,41 @@ export default function DevTranslationEditor({
             {saveError && (
               <Alert severity="error">{saveError === 'conflict' ? t('conflict') : t('requestError')}</Alert>
             )}
+            {saved && (
+              <Alert severity="success" role="status">
+                {t('saved')}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           {selected && (
-            <Button disabled={saving || reloadRequired} onClick={() => setSelected(null)}>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setSelected(null);
+                setSaved(false);
+                setSaveError(null);
+              }}
+            >
               {t('back')}
             </Button>
           )}
-          <Button onClick={close} disabled={saving || reloadRequired}>
+          <Button onClick={close} disabled={busy}>
             {t('close')}
           </Button>
-          {saveError === 'conflict' && <Button onClick={() => window.location.reload()}>{t('reload')}</Button>}
+          {saveError === 'conflict' && (
+            <Button disabled={busy} onClick={() => void loadLatest()}>
+              {t('loadLatest')}
+            </Button>
+          )}
           {selected && (
             <Button
               variant="contained"
               onClick={() => void save()}
-              disabled={!valid || draft === selected.text || saving || reloadRequired}
+              disabled={!valid || draft === selected.text || busy}
             >
-              {saving ? t('saving') : t('saveAndReload')}
+              {busy ? t('saving') : t('save')}
             </Button>
           )}
         </DialogActions>
