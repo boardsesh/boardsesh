@@ -823,6 +823,8 @@ export type BoardDiscoveryBoard = {
   layoutId: Scalars['Int']['output'];
   locationName?: Maybe<Scalars['String']['output']>;
   name: Scalars['String']['output'];
+  /** Most publicly logged climb on this physical board, at its most-logged angle. Gym-scoped reads only; null without eligible records. */
+  popularClimb?: Maybe<BoardDiscoveryClimb>;
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
   slug: Scalars['String']['output'];
@@ -831,7 +833,7 @@ export type BoardDiscoveryBoard = {
   uuid: Scalars['ID']['output'];
 };
 
-/** A redacted snapshot of the last confirmed climb while its sender still holds the board. */
+/** A public climb preview without sender identity. See each field for its presence or logbook source. */
 export type BoardDiscoveryClimb = {
   __typename?: 'BoardDiscoveryClimb';
   angle: Scalars['Int']['output'];
@@ -15362,6 +15364,7 @@ export type BoardDiscoveryBoardResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  popularClimb?: Resolver<Maybe<ResolversTypes['BoardDiscoveryClimb']>, ParentType, ContextType>;
   setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

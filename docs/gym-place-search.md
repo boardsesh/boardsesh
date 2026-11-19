@@ -125,3 +125,22 @@ An imported source listing may be folded into the new gym only after explicit
 confirmation; the attachment input's optional fields preserve existing callers'
 behavior when omitted. Successful saves and associations invalidate the directory
 and facet-count caches through an authenticated action that checks gym edit access.
+
+
+## Public gym board previews
+
+A gym-scoped `boardDiscovery` read can include `popularClimb`, separate from
+the presence-only `currentClimb`. It counts publicly visible send and flash
+records on the exact physical installation; repeated sends count. The winning
+climb is ranked across angles, then shown at its most-logged angle. Ties use
+canonical climb UUID and angle in ascending order. This is “Most logged climb
+at this wall”, not a catalogue-wide popularity rank.
+
+Only published, listed, visible climbs that fit the installation's layout,
+size and hold sets qualify. Private ticks, detached Kilter records and hidden
+or inaccessible boards/climbs do not contribute. Missing Aurora hold-set provenance
+fails closed; MoonBoard retains its existing null-metadata exception. One grouped primary-database query covers the selected boards
+(at most 12); global discovery does not run it. There is no shared preview
+cache, so revocation applies on the next read. An unavailable optional preview
+returns null and leaves the board's link and metadata available. The payload
+contains no climber identity or individual tick data.
