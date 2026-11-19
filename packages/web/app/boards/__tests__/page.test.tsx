@@ -31,12 +31,13 @@ const { default: SupportedBoardsPage, generateMetadata } = await import('../page
 beforeEach(() => directory.fetch.mockReset().mockResolvedValue(12));
 
 describe('supported boards public entry', () => {
-  it('server-renders each catalog board with actual import choices and directory links', async () => {
+  it('server-renders each catalog board with its layouts and directory links', async () => {
     const html = renderToStaticMarkup(await SupportedBoardsPage());
     for (const brand of ['Kilter', 'Tension', 'MoonBoard', 'Decoy', 'Touchstone', 'Grasshopper', 'So iLL', 'Woods'])
       expect(html).toContain(brand);
-    expect(html).toContain('MoonBoard CSV');
-    expect(html).toContain('Aurora export file');
+    expect(html).toContain('Kilter Board Homewall');
+    expect(html).toContain('Tension Board 2 Mirror');
+    expect(html).toContain('Tension Board 2 Spray');
     expect(html).toContain('href="/gyms/kilter"');
     expect(html).toContain('href="/gyms/moonboard"');
     expect(html).toContain('href="/gyms?boardType=woods"');
@@ -51,7 +52,7 @@ describe('supported boards public entry', () => {
     const html = renderToStaticMarkup(await SupportedBoardsPage());
     expect(html).toContain('href="/gyms/kilter"');
     expect(html).not.toContain(' · 0');
-    expect(html).toContain('Light climbs from the iOS or Android app.');
+    expect(html).toContain('Kilter Board Original');
   });
 
   it('declares canonical, social and translated alternate metadata for the new search surface', async () => {
