@@ -19,8 +19,13 @@ A new version shipped to the App Store and Play Store.
 - Swiping between climbs now fades the wall button's lights in place, following your finger like the board does. ([#7884](https://github.com/boardsesh/boardsesh/pull/7884))
 - Plan a board workout with your AI assistant using your climbing history or a training screenshot. Download the local connector from GitHub Releases after it ships. ([#7840](https://github.com/boardsesh/boardsesh/pull/7840))
 
+### Improved
+
+- Bring your session recaps, recorded time and workouts into connected apps. ([#7910](https://github.com/boardsesh/boardsesh/pull/7910))
+
 ### Fixed
 
+- Keep your app connection link intact while sign-in finishes loading. ([#7911](https://github.com/boardsesh/boardsesh/pull/7911))
 - Share a session recap with your crew straight from its header. ([#7908](https://github.com/boardsesh/boardsesh/pull/7908))
 - Use Boardsesh in Simplified Chinese, with Chinese App Store and Google Play listings. ([#7902](https://github.com/boardsesh/boardsesh/pull/7902))
 - Connect to your crew's board when a crewmate cancels or loses their connection. ([#7897](https://github.com/boardsesh/boardsesh/pull/7897))

@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-19T11:33:26.256Z",
+  "generatedAt": "2026-11-19T17:00:43.755Z",
   "entries": [
+    {
+      "prNumber": 7910,
+      "category": "improved",
+      "title": "Bring your session recaps, recorded time and workouts into connected apps.",
+      "mergedAt": "2026-11-19T16:44:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7910"
+    },
+    {
+      "prNumber": 7911,
+      "category": "fixed",
+      "title": "Keep your app connection link intact while sign-in finishes loading.",
+      "mergedAt": "2026-11-19T13:37:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7911"
+    },
     {
       "prNumber": 7908,
       "category": "fixed",
