@@ -14,11 +14,14 @@ import {
   type Tick,
 } from '@boardsesh/public-api';
 import {
+  boardSessions,
+  boardSessionParticipants,
   boardseshTicks,
   contentPrivacy,
   userProfiles,
   logbookChangeWatermark,
   logbookChanges,
+  logbookSessionChanges,
   logbookSnapshots,
   oauthConnections,
 } from '@boardsesh/db/schema';
@@ -388,6 +391,132 @@ describe('the logbook routes', () => {
     throw new Error('The feed never finished');
   }
 
+  describe('completed session synchronization', () => {
+    const SESSION_SCOPES = [...LOGBOOK_SCOPES, 'sessions:read'];
+    async function historicalSession(ownerUserId: string, overrides: Partial<typeof boardSessions.$inferInsert> = {}) {
+      const [session] = await db
+        .insert(boardSessions)
+        .values({
+          id: randomUUID(),
+          boardPath: 'kilter/1/1/1/40',
+          createdByUserId: ownerUserId,
+          status: 'ended',
+          startedAt: new Date('2026-04-01T17:00:00Z'),
+          endedAt: new Date('2026-04-01T18:15:00Z'),
+          name: 'Old projects',
+          notes: 'Kept the heel on',
+          timezone: 'Europe/Amsterdam',
+          ...overrides,
+        })
+        .returning();
+      return session;
+    }
+
+    it('imports older completed sessions, including empty ones, with recorded duration and opaque references', async () => {
+      const { climber, token } = await connectedApp(SESSION_SCOPES);
+      const session = await historicalSession(climber.userId);
+      const empty = await historicalSession(climber.userId, { notes: 'No ticks this visit' });
+      const [tickId] = await insertTicks(climber.userId, 1, { sessionId: session.id });
+      const { copy, pages } = await sync(token, undefined, 1);
+      const sessions = pages.flatMap((page) =>
+        page.changes.flatMap((change) => (change.type === 'session' ? [change.session] : [])),
+      );
+      expect(sessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: session.exportId, notes: 'Kept the heel on', durationSeconds: 4500 }),
+          expect.objectContaining({ id: empty.exportId, notes: 'No ticks this visit' }),
+        ]),
+      );
+      expect(copy.get(tickId)?.sessionId).toBe(session.exportId);
+      expect(JSON.stringify(sessions)).not.toContain(session.id);
+    });
+
+    it('requires a full replacement after adding session consent and keeps older tokens tick-only', async () => {
+      const { client, climber, token } = await connectedApp();
+      const session = await historicalSession(climber.userId);
+      await insertTicks(climber.userId, 1, { sessionId: session.id });
+      const previous = await sync(token);
+      expect(previous.pages.flatMap((page) => page.changes).every((change) => change.type !== 'session')).toBe(true);
+      expect([...previous.copy.values()][0]?.sessionId).toBeNull();
+      const expanded = await environment.issueTokens(client, SESSION_SCOPES);
+      errorOf(await getChanges(apiHost, expanded.access_token, { cursor: previous.cursor }), 410, 'cursor_expired');
+      const replacement = await sync(expanded.access_token);
+      expect(
+        replacement.pages
+          .flatMap((page) => page.changes)
+          .some((change) => change.type === 'session' && change.session.id === session.exportId),
+      ).toBe(true);
+      const oldAgain = await sync(token, previous.cursor);
+      expect(oldAgain.pages.flatMap((page) => page.changes).every((change) => change.type !== 'session')).toBe(true);
+    });
+
+    it('exports recap edits and clears, then tombstones a session that becomes permanent', async () => {
+      const { climber, token } = await connectedApp(SESSION_SCOPES);
+      const session = await historicalSession(climber.userId);
+      let imported = await sync(token);
+      await db.update(boardSessions).set({ notes: null }).where(eq(boardSessions.id, session.id));
+      await waitForWritesToSettle();
+      imported = await sync(token, imported.cursor);
+      expect(imported.pages.flatMap((page) => page.changes)).toContainEqual(
+        expect.objectContaining({
+          type: 'session',
+          session: expect.objectContaining({ id: session.exportId, notes: null }),
+        }),
+      );
+      await db.update(boardSessions).set({ isPermanent: true }).where(eq(boardSessions.id, session.id));
+      // A later nonremoving tick hint must not erase the earlier removal flag.
+      await insertTicks(climber.userId, 1, { sessionId: session.id });
+      await waitForWritesToSettle();
+      const removed = await sync(token, imported.cursor);
+      expect(removed.pages.flatMap((page) => page.changes)).toContainEqual({
+        type: 'session.deleted',
+        id: session.exportId,
+      });
+    });
+
+    it('withholds another creator’s recap and denies session access proved only by a tick', async () => {
+      const owner = await connectedApp(SESSION_SCOPES);
+      const guest = await connectedApp(SESSION_SCOPES);
+      const stranger = await connectedApp(SESSION_SCOPES);
+      const session = await historicalSession(owner.climber.userId);
+      await db.insert(boardSessionParticipants).values({ sessionId: session.id, userId: guest.climber.userId });
+      await insertTicks(guest.climber.userId, 1, { sessionId: session.id });
+      const [forgedTick] = await insertTicks(stranger.climber.userId, 1, { sessionId: session.id });
+      const guestCopy = await sync(guest.token);
+      expect(guestCopy.pages.flatMap((page) => page.changes)).toContainEqual(
+        expect.objectContaining({
+          type: 'session',
+          session: expect.objectContaining({ id: session.exportId, title: null, notes: null, timezone: null }),
+        }),
+      );
+      const strangerCopy = await sync(stranger.token);
+      expect(strangerCopy.copy.get(forgedTick)?.sessionId).toBeNull();
+      expect(JSON.stringify(strangerCopy.pages)).not.toContain(session.exportId);
+      expect(strangerCopy.pages.flatMap((page) => page.changes).some((change) => change.type === 'session')).toBe(
+        false,
+      );
+      errorOf(
+        await apiHost.send('GET', `/v1/logbook/sessions/${session.exportId}`, { token: stranger.token }),
+        404,
+        'not_found',
+      );
+    });
+
+    it('does not export active or permanent sessions and does not invent missing duration', async () => {
+      const { climber, token } = await connectedApp(SESSION_SCOPES);
+      const active = await historicalSession(climber.userId, { status: 'active', endedAt: null });
+      const permanent = await historicalSession(climber.userId, { isPermanent: true });
+      const legacy = await historicalSession(climber.userId, { startedAt: null });
+      const imported = await sync(token);
+      const sessions = imported.pages.flatMap((page) =>
+        page.changes.flatMap((change) => (change.type === 'session' ? [change.session] : [])),
+      );
+      expect(sessions.map((session) => session.id)).not.toContain(active.exportId);
+      expect(sessions.map((session) => session.id)).not.toContain(permanent.exportId);
+      expect(sessions).toContainEqual(expect.objectContaining({ id: legacy.exportId, durationSeconds: null }));
+    });
+  });
+
   describe('a full sync and its catch-up', () => {
     it('downloads every visible tick through the snapshot, then ends on the feed with hasMore false', async () => {
       const { climber, token } = await connectedApp();
@@ -574,7 +703,9 @@ describe('the logbook routes', () => {
       const throughFirst = pageOf(await getChanges(apiHost, token, { cursor: caughtUp, limit: 1 }));
       const throughSecond = pageOf(await getChanges(apiHost, token, { cursor: throughFirst.cursor, limit: 1 }));
       const idsOf = (body: LogbookChangesResponse) =>
-        body.changes.map((change) => (change.type === 'tick' ? change.tick.id : change.id));
+        body.changes.map((change) =>
+          change.type === 'tick' ? change.tick.id : change.type === 'session' ? change.session.id : change.id,
+        );
       expect([...idsOf(throughFirst), ...idsOf(throughSecond)]).toEqual(added.slice(0, 2));
 
       // Every change up to the second tick's ages out, and a real prune runs.
@@ -586,6 +717,10 @@ describe('the logbook routes', () => {
         .update(logbookChanges)
         .set({ createdAt: sql`localtimestamp - interval '91 days'` })
         .where(lte(logbookChanges.seq, secondChange.seq));
+      await db
+        .update(logbookSessionChanges)
+        .set({ createdAt: sql`localtimestamp - interval '91 days'` })
+        .where(lte(logbookSessionChanges.seq, secondChange.seq));
       await waitForWritesToSettle();
       const pruned = await pruneLogbookChanges({
         read: (callback) => db.transaction(callback),
@@ -1127,6 +1262,7 @@ describe('the logbook routes', () => {
         '/v1/connection',
         '/v1/logbook/changes',
         '/v1/logbook/ticks/{id}',
+        '/v1/logbook/sessions/{id}',
         '/v1/workouts',
         '/v1/workouts/{id}',
       ]);

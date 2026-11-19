@@ -22,6 +22,7 @@
             "refreshUrl": "https://api.boardsesh.com/api/auth/oauth2/token",
             "scopes": {
               "logbook:read": "Every tick the climber has logged, on every board, including ones they keep private on Boardsesh.",
+              "sessions:read": "Completed sessions, including private recaps and the climber’s full workouts supplied by Boardsesh or other apps. Used with logbook:read.",
               "profile:read": "The climber's display name and avatar.",
               "workouts:read": "Read workouts your app created, including results.",
               "workouts:write": "Create and cancel workouts for the climber.",
@@ -129,6 +130,14 @@
           },
           "climb": {
             "$ref": "#/components/schemas/TickClimb"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Opaque completed session export id. Null without sessions:read, or when the session is ineligible. Never an invite id."
           },
           "createdAt": {
             "type": "string",
@@ -393,420 +402,326 @@
           "id": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
         }
       },
-      "UnknownLogbookChange": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Any other change type.",
-            "example": "tick.moved"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "description": "A change type added after your client was written. Skip it and continue.",
-        "example": {
-          "type": "tick.moved"
-        }
-      },
-      "MeResponse": {
+      "PartnerSession": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^usr_[0-9A-Za-z]+$",
-            "description": "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
-            "example": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6"
+            "format": "uuid",
+            "description": "Stable opaque export id. This cannot join a live session."
           },
-          "displayName": {
+          "title": {
             "type": [
               "string",
               "null"
-            ],
-            "description": "The climber's display name. Present only with `profile:read`; `null` when they have none.",
-            "example": "Alex"
+            ]
           },
-          "avatarUrl": {
+          "notes": {
             "type": [
               "string",
               "null"
-            ],
-            "format": "uri",
-            "description": "The climber's avatar. Present only with `profile:read`; `null` when they have none.",
-            "example": "https://images.example.com/alex.webp"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "additionalProperties": true,
-        "example": {
-          "id": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6",
-          "displayName": "Alex",
-          "avatarUrl": "https://images.example.com/alex.webp"
-        }
-      },
-      "ApiError": {
-        "type": "object",
-        "properties": {
-          "error": {
+            ]
+          },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
             "type": "string",
             "x-extensible-enum": [
-              "invalid_request",
-              "invalid_cursor",
-              "invalid_token",
-              "insufficient_scope",
-              "not_found",
-              "cursor_expired",
-              "rate_limited",
-              "server_error",
-              "invalid_block",
-              "idempotency_mismatch",
-              "workout_limit",
-              "conflict",
-              "payload_too_large"
+              "explicit",
+              "inferred"
             ],
-            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
-            "example": "invalid_cursor"
+            "description": "Whether the session was started or reconstructed from ticks. New origins may be added.",
+            "example": "explicit"
           },
-          "message": {
-            "type": "string",
-            "minLength": 1,
-            "description": "For a human reading logs.",
-            "example": "cursor is not a value this API issued"
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
-          "field": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Added for validation errors: the field that failed.",
-            "example": "limit"
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
-          "requestId": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
-            "example": "req_7Hc2Pb9Xw1Lm"
-          }
-        },
-        "required": [
-          "error",
-          "message",
-          "requestId"
-        ],
-        "additionalProperties": true,
-        "example": {
-          "error": "invalid_cursor",
-          "message": "cursor is not a value this API issued",
-          "requestId": "req_7Hc2Pb9Xw1Lm"
-        }
-      },
-      "LogbookChangesResponse": {
-        "type": "object",
-        "properties": {
-          "changes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TickChange"
-                },
-                {
-                  "$ref": "#/components/schemas/TickDeletedChange"
-                },
-                {
-                  "$ref": "#/components/schemas/UnknownLogbookChange"
-                }
-              ],
-              "description": "One feed entry. Apply entries in order and ignore types you do not know."
+          "durationSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Seconds between valid stored start and end bounds; null when either is missing or reversed. Never estimated from ticks."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BoardType"
+                  },
+                  {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "layout": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "size": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "angle": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
             },
-            "description": "Possibly empty, even while `hasMore` is true."
+            "required": [
+              "type",
+              "name",
+              "layout",
+              "size",
+              "angle"
+            ],
+            "additionalProperties": true
           },
-          "cursor": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Pass it as `cursor` on the next request. Opaque. Commit it together with the page you applied.",
-            "example": "c3.eyJraW5kIjo"
-          },
-          "hasMore": {
-            "type": "boolean",
-            "description": "Keep paging while true. Only `false` means a complete snapshot and its catch-up, or an incremental sync, is finished.",
-            "example": false
-          }
-        },
-        "required": [
-          "changes",
-          "cursor",
-          "hasMore"
-        ],
-        "additionalProperties": true,
-        "example": {
-          "changes": [
-            {
-              "type": "tick.deleted",
-              "id": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
-            }
-          ],
-          "cursor": "c3.eyJraW5kIjo",
-          "hasMore": false
-        }
-      },
-      "WorkoutCreated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^wk_[A-Za-z0-9_-]+$"
-          },
-          "externalRef": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/WorkoutStatus"
-          },
-          "launchUrl": {
+          "url": {
             "type": "string",
             "format": "uri"
           },
           "appUrl": {
             "type": "string"
           },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "blocks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkoutBlockSupport"
-            }
+          "workout": {
+            "$ref": "#/components/schemas/SessionWorkout"
           }
         },
         "required": [
           "id",
-          "externalRef",
-          "status",
-          "launchUrl",
+          "title",
+          "notes",
+          "goal",
+          "origin",
+          "startedAt",
+          "endedAt",
+          "durationSeconds",
+          "timezone",
+          "board",
+          "url",
           "appUrl",
-          "expiresAt",
-          "blocks"
+          "workout"
         ],
         "additionalProperties": true,
+        "description": "A completed non-permanent session the climber created or durably joined. Another creator’s title, recap, goal, timezone and private board label are null. Only the connected climber’s workout is included.",
         "example": {
-          "id": "wk_example",
-          "externalRef": "session_88213",
-          "status": "created",
-          "launchUrl": "https://www.boardsesh.com/w/wk_example",
-          "appUrl": "com.boardsesh.app://w/wk_example",
-          "expiresAt": "2026-12-01T00:00:00Z",
-          "blocks": [
-            {
-              "index": 0,
-              "type": "volume",
-              "support": "native"
-            }
-          ]
-        }
-      },
-      "WorkoutStatus": {
-        "type": "string",
-        "x-extensible-enum": [
-          "created",
-          "opened",
-          "started",
-          "completed",
-          "auto_closed",
-          "cancelled",
-          "expired",
-          "revoked"
-        ],
-        "description": "Workout lifecycle. New statuses may be added; treat unknown statuses as unfinished.",
-        "example": "created"
-      },
-      "WorkoutBlockSupport": {
-        "type": "object",
-        "properties": {
-          "index": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 11
+          "id": "44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+          "title": "Evening volume",
+          "notes": "Kept my feet quiet",
+          "goal": null,
+          "origin": "explicit",
+          "startedAt": "2025-04-03T18:00:00Z",
+          "endedAt": "2025-04-03T19:00:00Z",
+          "durationSeconds": 3600,
+          "timezone": "Europe/Amsterdam",
+          "board": {
+            "type": "kilter",
+            "name": null,
+            "layout": "Kilter Board Original",
+            "size": null,
+            "angle": 40
           },
-          "type": {
-            "type": "string",
-            "x-extensible-enum": [
-              "warmUp",
-              "volume",
-              "pyramid",
-              "ladder",
-              "gradeFocus",
-              "onTheMinute",
-              "fourByFour",
-              "limitBouldering",
-              "freeClimbing"
-            ],
-            "description": "Block type. New values may be added.",
-            "example": "volume"
-          },
-          "support": {
-            "type": "string",
-            "x-extensible-enum": [
-              "native",
-              "freeform"
-            ],
-            "description": "How the block runs. New values may be added.",
-            "example": "native"
-          }
-        },
-        "required": [
-          "index",
-          "type",
-          "support"
-        ],
-        "additionalProperties": true,
-        "example": {
-          "index": 0,
-          "type": "volume",
-          "support": "native"
-        }
-      },
-      "WorkoutConflict": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "x-extensible-enum": [
-              "invalid_request",
-              "invalid_cursor",
-              "invalid_token",
-              "insufficient_scope",
-              "not_found",
-              "cursor_expired",
-              "rate_limited",
-              "server_error",
-              "invalid_block",
-              "idempotency_mismatch",
-              "workout_limit",
-              "conflict",
-              "payload_too_large"
-            ],
-            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
-            "example": "invalid_cursor"
-          },
-          "message": {
-            "type": "string",
-            "minLength": 1,
-            "description": "For a human reading logs.",
-            "example": "cursor is not a value this API issued"
-          },
-          "field": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Added for validation errors: the field that failed.",
-            "example": "limit"
-          },
-          "requestId": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
-            "example": "req_7Hc2Pb9Xw1Lm"
-          },
-          "existing": {
-            "$ref": "#/components/schemas/WorkoutCreated"
-          }
-        },
-        "required": [
-          "error",
-          "message",
-          "requestId"
-        ],
-        "additionalProperties": true,
-        "example": {
-          "error": "conflict",
-          "message": "This reference already exists.",
-          "requestId": "req_example",
-          "existing": {
-            "id": "wk_example",
-            "externalRef": "session_88213",
-            "status": "created",
-            "launchUrl": "https://www.boardsesh.com/w/wk_example",
-            "appUrl": "com.boardsesh.app://w/wk_example",
-            "expiresAt": "2026-12-01T00:00:00Z",
-            "blocks": [
+          "url": "https://www.boardsesh.com/history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+          "appUrl": "com.boardsesh.app://history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+          "workout": {
+            "source": "boardsesh",
+            "title": null,
+            "notes": null,
+            "plannedBlocks": [],
+            "stages": [
               {
                 "index": 0,
-                "type": "volume",
-                "support": "native"
+                "kind": "volume",
+                "isCoolDown": false,
+                "targetGrade": {
+                  "v": 4,
+                  "font": "6B+",
+                  "label": "6b+/V4"
+                },
+                "pacing": {
+                  "mode": "afterTick",
+                  "restSeconds": 45
+                },
+                "climbs": [
+                  {
+                    "index": 0,
+                    "climbId": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+                    "name": "Slopey Business",
+                    "boardType": "kilter",
+                    "grade": {
+                      "v": 4,
+                      "font": "6B+",
+                      "label": "6b+/V4"
+                    },
+                    "angle": 40,
+                    "mirrored": false,
+                    "reps": [
+                      "send"
+                    ],
+                    "tickIds": [
+                      "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+                    ],
+                    "skipped": false
+                  }
+                ],
+                "tally": {
+                  "sent": 1,
+                  "attempts": 0,
+                  "skipped": 0,
+                  "climbs": 1
+                }
               }
-            ]
+            ],
+            "offPlanTickIds": []
           }
         }
       },
-      "CreateWorkout": {
-        "type": "object",
+      "SessionWorkout": {
+        "type": [
+          "object",
+          "null"
+        ],
         "properties": {
-          "externalRef": {
+          "source": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 200
+            "x-extensible-enum": [
+              "boardsesh",
+              "partner"
+            ],
+            "description": "Where this workout came from; new sources may be added.",
+            "example": "boardsesh"
           },
           "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "scheduledFor": {
-            "type": "string",
-            "format": "date"
-          },
-          "notes": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "preferredBoard": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "$ref": "#/components/schemas/BoardType"
-              },
-              "angle": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 90
-              }
-            },
-            "required": [
-              "type"
+            "type": [
+              "string",
+              "null"
             ]
           },
-          "blocks": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plannedBlocks": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/WorkoutBlock"
-            },
-            "minItems": 1,
-            "maxItems": 12
+            }
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionWorkoutStage"
+            }
+          },
+          "offPlanTickIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "required": [
-          "externalRef",
+          "source",
           "title",
-          "blocks"
+          "notes",
+          "plannedBlocks",
+          "stages",
+          "offPlanTickIds"
         ],
+        "additionalProperties": true,
+        "description": "The connected climber’s full stored workout and own results, including plans supplied by other apps. Internal plan, queue and integration identifiers are not exported.",
         "example": {
-          "externalRef": "session_88213",
-          "title": "Easy volume",
-          "blocks": [
+          "source": "boardsesh",
+          "title": null,
+          "notes": null,
+          "plannedBlocks": [],
+          "stages": [
             {
-              "type": "volume",
+              "index": 0,
+              "kind": "volume",
+              "isCoolDown": false,
               "targetGrade": {
-                "scale": "v",
-                "value": 3
+                "v": 4,
+                "font": "6B+",
+                "label": "6b+/V4"
               },
-              "climbCount": 8
+              "pacing": {
+                "mode": "afterTick",
+                "restSeconds": 45
+              },
+              "climbs": [
+                {
+                  "index": 0,
+                  "climbId": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+                  "name": "Slopey Business",
+                  "boardType": "kilter",
+                  "grade": {
+                    "v": 4,
+                    "font": "6B+",
+                    "label": "6b+/V4"
+                  },
+                  "angle": 40,
+                  "mirrored": false,
+                  "reps": [
+                    "send"
+                  ],
+                  "tickIds": [
+                    "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+                  ],
+                  "skipped": false
+                }
+              ],
+              "tally": {
+                "sent": 1,
+                "attempts": 0,
+                "skipped": 0,
+                "climbs": 1
+              }
             }
-          ]
+          ],
+          "offPlanTickIds": []
         }
       },
       "WorkoutBlock": {
@@ -1801,6 +1716,806 @@
           "climbCount": 8
         }
       },
+      "SessionWorkoutStage": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isCoolDown": {
+            "type": "boolean"
+          },
+          "targetGrade": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "pacing": {
+            "$ref": "#/components/schemas/SessionWorkoutPacing"
+          },
+          "climbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionWorkoutClimb"
+            }
+          },
+          "tally": {
+            "type": "object",
+            "properties": {
+              "sent": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "attempts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "climbs": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "sent",
+              "attempts",
+              "skipped",
+              "climbs"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "index",
+          "kind",
+          "isCoolDown",
+          "targetGrade",
+          "pacing",
+          "climbs",
+          "tally"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "index": 0,
+          "kind": "volume",
+          "isCoolDown": false,
+          "targetGrade": {
+            "v": 4,
+            "font": "6B+",
+            "label": "6b+/V4"
+          },
+          "pacing": {
+            "mode": "afterTick",
+            "restSeconds": 45
+          },
+          "climbs": [
+            {
+              "index": 0,
+              "climbId": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+              "name": "Slopey Business",
+              "boardType": "kilter",
+              "grade": {
+                "v": 4,
+                "font": "6B+",
+                "label": "6b+/V4"
+              },
+              "angle": 40,
+              "mirrored": false,
+              "reps": [
+                "send"
+              ],
+              "tickIds": [
+                "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+              ],
+              "skipped": false
+            }
+          ],
+          "tally": {
+            "sent": 1,
+            "attempts": 0,
+            "skipped": 0,
+            "climbs": 1
+          }
+        }
+      },
+      "SessionWorkoutPacing": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "x-extensible-enum": [
+              "onTheMinute",
+              "afterTick"
+            ],
+            "description": "Pacing mode; new modes may be added.",
+            "example": "afterTick"
+          },
+          "restSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "advanceOn": {
+            "type": "string"
+          },
+          "repsPerSet": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "restBetweenSetsSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "mode",
+          "restSeconds"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "mode": "afterTick",
+          "restSeconds": 45
+        }
+      },
+      "SessionWorkoutClimb": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "climbId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boardType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoardType"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "grade": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Grade"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "angle": {
+            "type": "integer"
+          },
+          "mirrored": {
+            "type": "boolean"
+          },
+          "reps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TickStatus"
+            }
+          },
+          "tickIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "skipped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "climbId",
+          "name",
+          "boardType",
+          "grade",
+          "angle",
+          "mirrored",
+          "reps",
+          "tickIds",
+          "skipped"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "index": 0,
+          "climbId": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+          "name": "Slopey Business",
+          "boardType": "kilter",
+          "grade": {
+            "v": 4,
+            "font": "6B+",
+            "label": "6b+/V4"
+          },
+          "angle": 40,
+          "mirrored": false,
+          "reps": [
+            "send"
+          ],
+          "tickIds": [
+            "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+          ],
+          "skipped": false
+        }
+      },
+      "SessionChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "session"
+            ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/PartnerSession"
+          }
+        },
+        "required": [
+          "type",
+          "session"
+        ],
+        "additionalProperties": true,
+        "description": "Upsert this session by id.",
+        "example": {
+          "type": "session",
+          "session": {
+            "id": "44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+            "title": "Evening volume",
+            "notes": "Kept my feet quiet",
+            "goal": null,
+            "origin": "explicit",
+            "startedAt": "2025-04-03T18:00:00Z",
+            "endedAt": "2025-04-03T19:00:00Z",
+            "durationSeconds": 3600,
+            "timezone": "Europe/Amsterdam",
+            "board": {
+              "type": "kilter",
+              "name": null,
+              "layout": "Kilter Board Original",
+              "size": null,
+              "angle": 40
+            },
+            "url": "https://www.boardsesh.com/history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+            "appUrl": "com.boardsesh.app://history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb",
+            "workout": {
+              "source": "boardsesh",
+              "title": null,
+              "notes": null,
+              "plannedBlocks": [],
+              "stages": [
+                {
+                  "index": 0,
+                  "kind": "volume",
+                  "isCoolDown": false,
+                  "targetGrade": {
+                    "v": 4,
+                    "font": "6B+",
+                    "label": "6b+/V4"
+                  },
+                  "pacing": {
+                    "mode": "afterTick",
+                    "restSeconds": 45
+                  },
+                  "climbs": [
+                    {
+                      "index": 0,
+                      "climbId": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+                      "name": "Slopey Business",
+                      "boardType": "kilter",
+                      "grade": {
+                        "v": 4,
+                        "font": "6B+",
+                        "label": "6b+/V4"
+                      },
+                      "angle": 40,
+                      "mirrored": false,
+                      "reps": [
+                        "send"
+                      ],
+                      "tickIds": [
+                        "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+                      ],
+                      "skipped": false
+                    }
+                  ],
+                  "tally": {
+                    "sent": 1,
+                    "attempts": 0,
+                    "skipped": 0,
+                    "climbs": 1
+                  }
+                }
+              ],
+              "offPlanTickIds": []
+            }
+          }
+        }
+      },
+      "SessionDeletedChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "session.deleted"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "additionalProperties": true,
+        "description": "Remove this session. It is deleted or no longer eligible for this climber.",
+        "example": {
+          "type": "session.deleted",
+          "id": "44a9e71a-2575-4cbb-8d1b-31b078242bcb"
+        }
+      },
+      "UnknownLogbookChange": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Any other change type.",
+            "example": "tick.moved"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "description": "A change type added after your client was written. Skip it and continue.",
+        "example": {
+          "type": "tick.moved"
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^usr_[0-9A-Za-z]+$",
+            "description": "The climber's id for your app: stable across reconnects, different for every app, and not the id Boardsesh uses anywhere else.",
+            "example": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The climber's display name. Present only with `profile:read`; `null` when they have none.",
+            "example": "Alex"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "The climber's avatar. Present only with `profile:read`; `null` when they have none.",
+            "example": "https://images.example.com/alex.webp"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6",
+          "displayName": "Alex",
+          "avatarUrl": "https://images.example.com/alex.webp"
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "x-extensible-enum": [
+              "invalid_request",
+              "invalid_cursor",
+              "invalid_token",
+              "insufficient_scope",
+              "not_found",
+              "cursor_expired",
+              "rate_limited",
+              "server_error",
+              "invalid_block",
+              "idempotency_mismatch",
+              "workout_limit",
+              "conflict",
+              "payload_too_large"
+            ],
+            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
+            "example": "invalid_cursor"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a human reading logs.",
+            "example": "cursor is not a value this API issued"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Added for validation errors: the field that failed.",
+            "example": "limit"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
+            "example": "req_7Hc2Pb9Xw1Lm"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "requestId"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "error": "invalid_cursor",
+          "message": "cursor is not a value this API issued",
+          "requestId": "req_7Hc2Pb9Xw1Lm"
+        }
+      },
+      "LogbookChangesResponse": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TickChange"
+                },
+                {
+                  "$ref": "#/components/schemas/TickDeletedChange"
+                },
+                {
+                  "$ref": "#/components/schemas/SessionChange"
+                },
+                {
+                  "$ref": "#/components/schemas/SessionDeletedChange"
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownLogbookChange"
+                }
+              ],
+              "description": "One feed entry. Apply entries in order and ignore types you do not know."
+            },
+            "description": "Possibly empty, even while `hasMore` is true."
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pass it as `cursor` on the next request. Opaque. Commit it together with the page you applied.",
+            "example": "c3.eyJraW5kIjo"
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Keep paging while true. Only `false` means a complete snapshot and its catch-up, or an incremental sync, is finished.",
+            "example": false
+          }
+        },
+        "required": [
+          "changes",
+          "cursor",
+          "hasMore"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "changes": [
+            {
+              "type": "tick.deleted",
+              "id": "9a1f7c3d-2b4e-4f6a-8c9d-1e2f3a4b5c6d"
+            }
+          ],
+          "cursor": "c3.eyJraW5kIjo",
+          "hasMore": false
+        }
+      },
+      "WorkoutCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^wk_[A-Za-z0-9_-]+$"
+          },
+          "externalRef": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkoutStatus"
+          },
+          "launchUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "appUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutBlockSupport"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "externalRef",
+          "status",
+          "launchUrl",
+          "appUrl",
+          "expiresAt",
+          "blocks"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "wk_example",
+          "externalRef": "session_88213",
+          "status": "created",
+          "launchUrl": "https://www.boardsesh.com/w/wk_example",
+          "appUrl": "com.boardsesh.app://w/wk_example",
+          "expiresAt": "2026-12-01T00:00:00Z",
+          "blocks": [
+            {
+              "index": 0,
+              "type": "volume",
+              "support": "native"
+            }
+          ]
+        }
+      },
+      "WorkoutStatus": {
+        "type": "string",
+        "x-extensible-enum": [
+          "created",
+          "opened",
+          "started",
+          "completed",
+          "auto_closed",
+          "cancelled",
+          "expired",
+          "revoked"
+        ],
+        "description": "Workout lifecycle. New statuses may be added; treat unknown statuses as unfinished.",
+        "example": "created"
+      },
+      "WorkoutBlockSupport": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11
+          },
+          "type": {
+            "type": "string",
+            "x-extensible-enum": [
+              "warmUp",
+              "volume",
+              "pyramid",
+              "ladder",
+              "gradeFocus",
+              "onTheMinute",
+              "fourByFour",
+              "limitBouldering",
+              "freeClimbing"
+            ],
+            "description": "Block type. New values may be added.",
+            "example": "volume"
+          },
+          "support": {
+            "type": "string",
+            "x-extensible-enum": [
+              "native",
+              "freeform"
+            ],
+            "description": "How the block runs. New values may be added.",
+            "example": "native"
+          }
+        },
+        "required": [
+          "index",
+          "type",
+          "support"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "index": 0,
+          "type": "volume",
+          "support": "native"
+        }
+      },
+      "WorkoutConflict": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "x-extensible-enum": [
+              "invalid_request",
+              "invalid_cursor",
+              "invalid_token",
+              "insufficient_scope",
+              "not_found",
+              "cursor_expired",
+              "rate_limited",
+              "server_error",
+              "invalid_block",
+              "idempotency_mismatch",
+              "workout_limit",
+              "conflict",
+              "payload_too_large"
+            ],
+            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
+            "example": "invalid_cursor"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a human reading logs.",
+            "example": "cursor is not a value this API issued"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Added for validation errors: the field that failed.",
+            "example": "limit"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
+            "example": "req_7Hc2Pb9Xw1Lm"
+          },
+          "existing": {
+            "$ref": "#/components/schemas/WorkoutCreated"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "requestId"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "error": "conflict",
+          "message": "This reference already exists.",
+          "requestId": "req_example",
+          "existing": {
+            "id": "wk_example",
+            "externalRef": "session_88213",
+            "status": "created",
+            "launchUrl": "https://www.boardsesh.com/w/wk_example",
+            "appUrl": "com.boardsesh.app://w/wk_example",
+            "expiresAt": "2026-12-01T00:00:00Z",
+            "blocks": [
+              {
+                "index": 0,
+                "type": "volume",
+                "support": "native"
+              }
+            ]
+          }
+        }
+      },
+      "CreateWorkout": {
+        "type": "object",
+        "properties": {
+          "externalRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "scheduledFor": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "preferredBoard": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/BoardType"
+              },
+              "angle": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 90
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutBlock"
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "required": [
+          "externalRef",
+          "title",
+          "blocks"
+        ],
+        "example": {
+          "externalRef": "session_88213",
+          "title": "Easy volume",
+          "blocks": [
+            {
+              "type": "volume",
+              "targetGrade": {
+                "scale": "v",
+                "value": 3
+              },
+              "climbCount": 8
+            }
+          ]
+        }
+      },
       "WorkoutList": {
         "type": "object",
         "properties": {
@@ -2100,6 +2815,14 @@
                 },
                 "climb": {
                   "$ref": "#/components/schemas/TickClimb"
+                },
+                "sessionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Opaque completed session export id. Null without sessions:read, or when the session is ineligible. Never an invite id."
                 },
                 "createdAt": {
                   "type": "string",
@@ -3155,6 +3878,314 @@
           },
           "404": {
             "description": "`not_found`: the tick was deleted or is not this climber's.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/logbook/sessions/{id}": {
+      "get": {
+        "operationId": "getLogbookSession",
+        "summary": "Read a completed session and the climber’s workout",
+        "description": "Uses the opaque session export id. Requires both logbook:read and sessions:read. Active sessions, permanent gym sessions and sessions the climber neither created nor durably joined are not available.",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "logbook:read",
+              "sessions:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The completed session and connected climber’s own workout.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing logbook:read or sessions:read.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found or not eligible for this climber.",
             "headers": {
               "Boardsesh-Request-Id": {
                 "schema": {

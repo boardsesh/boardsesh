@@ -172,6 +172,17 @@ describe('PartnerConsentContent', () => {
     expect(screen.getByText('You disconnected Sequence before. Choosing Allow connects it again.')).toBeTruthy();
   });
 
+  it('explicitly asks to share private session notes and workouts from other apps', async () => {
+    await renderReady(details({ scopes: [{ scope: 'sessions:read', includesOnlyMeTicks: false }] }));
+    expect(
+      screen.getByText(
+        'Read your completed sessions, private recap notes and full workouts, including workouts from other apps',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/can't change anything/)).toBeTruthy();
+    expect(screen.queryByText('Other access: sessions:read')).toBeNull();
+  });
+
   it('drops the "can\'t change anything" line when a scope it does not know is asked for', async () => {
     await renderReady(details({ scopes: [{ scope: 'future:write', includesOnlyMeTicks: false }] }));
     expect(screen.getByText('Other access: future:write')).toBeTruthy();

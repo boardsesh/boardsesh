@@ -606,7 +606,8 @@
         "offlineAccess": "Mantiene questo accesso finché non la scolleghi",
         "other": "Altro accesso: {{scope}}",
         "workoutsRead": "Leggere i risultati degli allenamenti di questa app",
-        "workoutsWrite": "Pianificare e annullare i tuoi allenamenti"
+        "workoutsWrite": "Pianificare e annullare i tuoi allenamenti",
+        "sessionsRead": "Legge le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app"
       },
       "disconnect": "Scollega",
       "disconnectA11y": "Scollega {{app}}",

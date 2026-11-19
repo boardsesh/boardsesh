@@ -36,6 +36,7 @@ anyone typing them over.
 | --- | --- | --- |
 | Connect a climber's Boardsesh account | OAuth, confidential app (they have a backend); `offline_access` for refresh tokens | 1 |
 | Board ticks in the Sequence logbook | `logbook:read`, `GET /v1/logbook/changes` | 1 |
+| Older sessions, recaps, recorded duration and full completed workouts | `logbook:read sessions:read`, session entities in the same complete feed | Session sync |
 | Hand over a planned session | `workouts:write`, `POST /v1/workouts`, launch links | 3 |
 | Results for the planned session | `workouts:read`, `GET /v1/workouts/{id}` | 3 |
 | Know when a session finished | Poll `started` workouts, or the `workout.completed` webhook | 3 (poll), 4 (webhook) |
@@ -60,6 +61,24 @@ the link back to the planned session.
 | `climb.board.type`, `angle` | Location, or a note |
 | `comment` | Notes |
 | Workout `results.session.notes` | Session notes |
+| Session entity `notes` | Session recap, including sessions older than the connection |
+| Session entity `durationSeconds` | Recorded session duration in seconds; preserve `null` |
+| Tick `sessionId` | Group ticks under the session entity; resolve references across pages |
+
+For session sync, Sequence requests `sessions:read` in addition to
+`logbook:read`, replaces its stored token pair after consent, and performs a
+full replacement import after the old cursor returns `410`. Store session
+upserts and deletions as well as ticks. Existing tick-only imports cannot
+recover a session's recap or recorded duration from tick timestamps alone.
+The feed includes completed non-permanent sessions only, and only the
+connected climber's workouts and ticks. Full workout details can originate
+in Boardsesh or another partner app; another session creator's private recap
+is withheld. Missing old timestamps or workout plans remain missing.
+
+Show a visible Boardsesh source credit on the main session view, for example
+"Recorded with Boardsesh" in a footer. We recommend an "Open in Boardsesh"
+action using the supplied history links; putting that action in an ellipsis
+menu is fine. The credit itself must remain visible without opening the menu.
 
 Count an interval-style exercise per `blockIndex` in the workout results.
 That works today for on-the-minute, which queues its climbs. A `fourByFour`
@@ -127,9 +146,10 @@ notice:
   is now the grade the climber gave, with the climb's community grade in
   `climb.grade`.
 - Gone: `restBeforeSeconds`, `totals`, `blocks[].done`, `round` (derivable or
-  never populated), `session.id` and `session.url` (a session link is an
-  invite), and `climbs[].url` (a deep link into web climb pages, which are
+  never populated), the internal session id and invite URL, and `climbs[].url` (a deep link into web climb pages, which are
   being retired; not something to put in a contract).
+  Session sync now provides separate opaque session ids and read-only
+  history links; these are not the removed invite identifiers.
 - No `workout.opened`, `workout.cancelled` or `workout.expired` events. A
   mid-session progress event stays on the "Later" list.
 - Unopened and opened-but-unstarted workouts both expire; disconnecting only

@@ -61,6 +61,7 @@ the scopes the climber saw on the consent screen.
 | Scope | Grants | Milestone |
 | --- | --- | --- |
 | `logbook:read` | Every tick the climber has logged on any board: date, climb, board type and layout, angle, status, attempts, grades, stars, their comment. Includes ticks whose Boardsesh audience is "only me" | 1 |
+| `sessions:read` | Together with `logbook:read`, completed non-permanent sessions, private recaps, recorded duration and the climber's full completed workouts, including workouts supplied by other partners | Session sync |
 | `profile:read` | The climber's display name and avatar URL | 1 |
 | `workouts:write` | Create and cancel planned workouts for the climber | 3 |
 | `workouts:read` | Read a workout the app created, with its results | 3 |
@@ -74,7 +75,7 @@ Not available, by design, at any milestone on this roadmap:
   community stats. A tick carries a summary of the climb it is on (id, name,
   grade, board) and nothing else. Apps that want a catalog use the public
   nightly snapshots ([board-snapshots-dataset.md](./board-snapshots-dataset.md)).
-- Board control, queues, party sessions, Bluetooth. Those are what LEGAL.md
+- Board control, queues, live party-session control, Bluetooth. Those are what LEGAL.md
   means by using Boardsesh "as its service", and they stay first-party.
 - Writing ticks. Possible later as `logbook:write`; nobody has asked yet.
 - Acting without a climber (client-credentials tokens). Nothing in the first
@@ -229,8 +230,8 @@ monthly resync is reconciliation, not a guarantee, and does nothing for an app
 that stops syncing before it runs.
 
 The public feed bootstraps from a complete, bounded snapshot of the climber's
-current public logbook, then reads a change log written by a trigger in the same
-transaction as every tick write, and only serves entries below the Postgres
+authorized logbook and completed sessions, then reads change logs written by
+triggers in the same transaction as every relevant write, and only serves entries below the Postgres
 transaction horizon, the oldest transaction still in flight. Nothing below the
 horizon can still commit, so the feed never moves past a change that could
 later appear. The protocol, its guarantees and its proof are in
@@ -2021,6 +2022,9 @@ memory.
 
 ### The routes, as built (L4)
 
+The completed-session extension below adds a second entity type while keeping
+the tick-only paths and cursor projection backward compatible.
+
 Code: `handlers/public-api/logbook.ts` (the routes), `logbook-cursor.ts` (the
 cursor), `services/logbook-tick-serializer.ts` (the tick) and
 `auth/partner/logbook-access.ts` (pools, admission, the page check). Tests:
@@ -2441,14 +2445,91 @@ a separate decision for the offline-sync owners.
 
 ---
 
+## Completed session sync
+
+The tick-only feed cannot carry a session recap or recorded duration, so the
+API also exports session entities. This includes sessions older than the
+partner connection. It does not depend on a partner having created a workout.
+
+### Permission and eligibility
+
+Session export requires the token's own `logbook:read sessions:read` scopes,
+not the union of scopes stored on its connection. `sessions:read` is separate
+because the old consent described ticks, not private session notes or full
+workout plans. Its consent copy explicitly includes completed workouts
+supplied by other apps. Existing app registrations may request the new scope,
+but existing grants and credentials do not acquire it automatically.
+
+Only `ended`, non-permanent sessions qualify. The connected climber must be
+the creator or a durable `board_session_participants` member. A tick's
+`session_id` is not proof of participation: tick writes can name an existing
+session without joining it. Inferred sessions qualify through their creator.
+Completed owned sessions with zero ticks are included. Do not synthesize
+daily-highlight entities or export permanent gym sessions.
+
+All ticks, workout results and plans belong to the connected climber. Another
+creator's title, goal, notes, timezone and private board label are redacted in
+shared sessions. Full stored workout details may originate in another partner
+app, but never include that app's credentials or private integration ids.
+The app-owned `/v1/workouts` API and its scopes retain their existing rules.
+
+Duration is whole seconds between valid stored start/end bounds, otherwise
+null. Do not estimate it from first and last ticks when a legacy session has
+missing bounds. Inferred sessions retain their origin and use their stored
+bounds. A missing historical workout plan remains missing.
+
+### One stream and complete replacement
+
+`session` and `session.deleted` join `tick` and `tick.deleted` in
+`GET /v1/logbook/changes`. `tick.sessionId` references an eligible session's
+separate opaque export id when both scopes are present, otherwise it is null.
+`GET /v1/logbook/sessions/{id}` applies the same authorization and redaction.
+References can cross page boundaries; clients must retain them while paging.
+
+The companion session-change log allocates from the existing change sequence.
+Both logs are read in `(txid, seq)` order below the transaction horizon, with
+one cursor, retention watermark and bootstrap handoff. Capture completion,
+session metadata, workout writes, tick edits and reassignment, participation
+changes, deletion and inferred merges in the writer's own transaction. Log old
+recipients as well as new ones so a loss of eligibility produces a tombstone.
+Webhook production and pruning cover both logs with the same atomicity rules.
+
+The bounded snapshot includes session identities alongside ticks; delivery
+rechecks eligibility and privacy. It must not serve a recap captured before
+access was removed. Bind cursors and snapshots to the token's session-access
+projection. A tick-only cursor used with newly granted session access answers
+`410`; a fresh replacement snapshot then includes all eligible older sessions.
+No global generation reset or historical change-log backfill is needed.
+
+Clients publish both replacement collections with their final cursor only
+after snapshot and catch-up finish. Existing tick-only tokens continue their
+existing projection; unknown change types remain additive. Preserve bounded
+reads, timeout behavior and admission controls for full workout payloads.
+
+### Safe history links and partner presentation
+
+The session export id is generated separately from `board_sessions.id` and
+cannot be used as an invite id. The exported HTTPS `/history/session/{id}`
+and corresponding app-scheme link authenticate the signed-in climber, check
+session eligibility and open read-only history. They never join a session.
+Only the first-party authenticated history resolver may return the internal
+navigation id. The web bridge is a `noindex, follow` utility route and is
+excluded from sitemaps.
+
+Partner session views must display a visible "Boardsesh" or "Recorded with
+Boardsesh" credit in the primary view. A footnote or footer is sufficient;
+placing the credit only inside a menu is not. An "Open in Boardsesh" action
+is recommended and may live in an ellipsis menu. Use the exported links,
+including the browser fallback, instead of constructing `/join/` URLs.
+
 ## Data boundaries and LEGAL.md
 
 Three kinds of data, three answers:
 
 | Kind | Examples | Through the API |
 | --- | --- | --- |
-| The climber's own activity | Ticks, their grades, stars, comments, workout results | Yes, with their consent, scoped |
-| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, only attached to a tick the climber logged, including a draft or unlisted climb someone else set |
+| The climber's own activity | Ticks, their grades, stars, comments, completed sessions and workout plans/results | Yes, with their consent, scoped; full session/workout sharing requires `sessions:read` |
+| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, attached to a tick or an authorized completed workout plan, with spray-wall privacy redaction |
 | Catalogs and community data | Hold positions, full climb lists, setter lists, stats, other climbers' ticks, beta videos | No. Catalogs are already public as nightly snapshots; the API is not a second, authenticated way to scrape them |
 
 What LEGAL.md implies:

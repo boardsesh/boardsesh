@@ -18,6 +18,7 @@ const API = 'https://api.boardsesh.com';
 const ISSUER = `${API}/api/auth`;
 const RESOURCE = `${API}/v1`;
 type Tick = { id: string; [field: string]: unknown };
+type Session = { id: string; [field: string]: unknown };
 type Tokens = { accessToken: string; refreshToken: string };
 export type SyncState = {
   version: 1;
@@ -25,6 +26,7 @@ export type SyncState = {
   subject: string;
   tokens: Tokens;
   ticks: Record<string, Tick>;
+  sessions: Record<string, Session>;
   cursor?: string;
   fullSyncRequired: boolean;
 };
@@ -78,12 +80,14 @@ export async function readState(file: string): Promise<SyncState> {
     typeof parsed.tokens.accessToken !== 'string' ||
     typeof parsed.tokens.refreshToken !== 'string' ||
     !record(parsed.ticks) ||
+    (parsed.sessions !== undefined && !record(parsed.sessions)) ||
     typeof parsed.fullSyncRequired !== 'boolean' ||
     (parsed.cursor !== undefined && typeof parsed.cursor !== 'string')
   ) {
     throw new Error('Unrecognized state file; keep the original and connect using a new file.');
   }
-  return parsed as SyncState;
+  // Older tick-only state files keep their published copy until a full import.
+  return { ...parsed, sessions: parsed.sessions ?? {} } as SyncState;
 }
 
 /** The whole command owns this lock, including refreshes, reconnects and file replacement. */
@@ -201,7 +205,7 @@ export async function apiRequest(file: string, state: SyncState, path: string, m
   throw new Error('Retry limit reached; keep the file and retry later.');
 }
 
-function applyChanges(ticks: Record<string, Tick>, changes: unknown[]): void {
+function applyChanges(ticks: Record<string, Tick>, sessions: Record<string, Session>, changes: unknown[]): void {
   for (const change of changes) {
     if (!record(change)) throw new Error('Invalid change entry.');
     if (change.type === 'tick') {
@@ -216,6 +220,17 @@ function applyChanges(ticks: Record<string, Tick>, changes: unknown[]): void {
     } else if (change.type === 'tick.deleted') {
       if (typeof change.id !== 'string') throw new Error('Invalid deletion entry.');
       delete ticks[change.id];
+    } else if (change.type === 'session') {
+      if (!record(change.session) || typeof change.session.id !== 'string') throw new Error('Invalid session entry.');
+      Object.defineProperty(sessions, change.session.id, {
+        value: change.session,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } else if (change.type === 'session.deleted') {
+      if (typeof change.id !== 'string') throw new Error('Invalid session deletion entry.');
+      delete sessions[change.id];
     }
     // Unknown change types are additive; ignore them and advance the cursor.
   }
@@ -229,6 +244,7 @@ export async function syncLogbook(file: string, state: SyncState): Promise<void>
       await writeState(file, state);
     }
     const replacement: Record<string, Tick> = {};
+    const replacementSessions: Record<string, Session> = {};
     let cursor = fullSync ? undefined : state.cursor;
     try {
       for (;;) {
@@ -244,7 +260,11 @@ export async function syncLogbook(file: string, state: SyncState): Promise<void>
         ) {
           throw new Error('Invalid changes response.');
         }
-        applyChanges(fullSync ? replacement : state.ticks, page.changes);
+        applyChanges(
+          fullSync ? replacement : state.ticks,
+          fullSync ? replacementSessions : state.sessions,
+          page.changes,
+        );
         cursor = page.cursor;
         if (!fullSync) {
           state.cursor = cursor;
@@ -254,6 +274,7 @@ export async function syncLogbook(file: string, state: SyncState): Promise<void>
       }
       if (fullSync) {
         state.ticks = replacement;
+        state.sessions = replacementSessions;
         state.cursor = cursor;
         state.fullSyncRequired = false;
         await writeState(file, state); // Publish the replacement and final cursor together.
@@ -329,7 +350,7 @@ async function connect(clientId: string): Promise<SyncState> {
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: 'logbook:read profile:read offline_access',
+    scope: 'logbook:read sessions:read profile:read offline_access',
     resource: RESOURCE,
     state: expectedState,
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
@@ -365,6 +386,7 @@ async function connect(clientId: string): Promise<SyncState> {
     subject: '',
     tokens: tokenPair(await exchanged.json()),
     ticks: {},
+    sessions: {},
     fullSyncRequired: true,
   };
 }
@@ -408,10 +430,13 @@ async function main(): Promise<void> {
           throw new Error('This file belongs to another app or climber. Connect with a different --file.');
         }
         state.ticks = previous.ticks; // Keep the last published copy until a full replacement finishes.
+        state.sessions = previous.sessions;
       }
       await writeState(file, state);
       await syncLogbook(file, state);
-      process.stdout.write(`Connected; ${Object.keys(state.ticks).length} ticks saved.\n`);
+      process.stdout.write(
+        `Connected; ${Object.keys(state.ticks).length} ticks and ${Object.keys(state.sessions).length} sessions saved.\n`,
+      );
       return;
     }
     const state = await readState(file);

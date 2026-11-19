@@ -60,6 +60,11 @@ import {
   readPendingAppWorkout,
   PENDING_APP_WORKOUT_MAX_AGE_MS,
 } from '../../lib/partner-workout-link';
+import {
+  PENDING_SESSION_HISTORY_KEY,
+  readPendingSessionHistory,
+  serializePendingSessionHistory,
+} from '../../lib/partner-session-history-link';
 
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 const LEGACY_PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
@@ -75,6 +80,64 @@ beforeEach(() => {
   clearBoardLinkReplay();
   // Each test is its own launch: the provider handles a launch URL once per process.
   resetHandledLaunchBoardUrlForTests();
+});
+
+describe('DeepLinkProvider — read-only session history', () => {
+  const exportId = '3c2d56f7-1f63-4c63-9c48-3c239b14727d';
+
+  it('preserves a signed-out launch and replays history after login', async () => {
+    linkState.initialUrl = `com.boardsesh.app://history/session/${exportId}`;
+    const signedOut = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() =>
+      expect(readPendingSessionHistory(store.get(PENDING_SESSION_HISTORY_KEY) ?? null)).toBe(exportId),
+    );
+    expect(navigateMock).not.toHaveBeenCalled();
+    signedOut.unmount();
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        pathname: '/history/session/[exportId]',
+        params: { exportId },
+      }),
+    );
+    expect(store.has(PENDING_SESSION_HISTORY_KEY)).toBe(false);
+  });
+
+  it('opens a warm history link without entering the join flow', async () => {
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    linkState.listener?.({ url: `https://www.boardsesh.com/history/session/${exportId}` });
+    expect(navigateMock).toHaveBeenCalledWith({
+      pathname: '/history/session/[exportId]',
+      params: { exportId },
+    });
+    expect(navigateMock.mock.calls.some(([destination]) => destination?.pathname === '/join/[sessionId]')).toBe(false);
+  });
+
+  it('does not reopen a consumed launch after signing out again', async () => {
+    linkState.initialUrl = `com.boardsesh.app://history/session/${exportId}`;
+    authState.isAuthenticated = true;
+    const signedIn = render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    signedIn.unmount();
+    authState.isAuthenticated = false;
+    navigateMock.mockClear();
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_SESSION_HISTORY_KEY)).toBe(false);
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('discards an expired history link at sign-in', async () => {
+    authState.isAuthenticated = true;
+    store.set(PENDING_SESSION_HISTORY_KEY, serializePendingSessionHistory(exportId, Date.now() - 25 * 60 * 60 * 1000));
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_SESSION_HISTORY_KEY)).toBe(false);
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('DeepLinkProvider — partner workout links', () => {

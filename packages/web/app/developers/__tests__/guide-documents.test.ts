@@ -39,6 +39,12 @@ describe('machine-readable developer guides', () => {
     const sync = guideDocument('sync', translator);
     expect(sync).toContain('one durable transaction');
     expect(sync).toContain('Persist a full-sync-required marker');
+    expect(sync).toContain('logbook:read sessions:read offline_access');
+    expect(sync).toContain('session.deleted');
+    expect(sync).toContain('including workouts supplied by other apps');
+    expect(sync).toContain('replace the stored token pair');
+    expect(sync).toContain('primary view must visibly credit Boardsesh');
+    expect(sync).toContain('action may live in an ellipsis menu');
     expect(MOCK_COMMAND).toContain('@stoplight/prism-cli@5.16.0');
   });
 

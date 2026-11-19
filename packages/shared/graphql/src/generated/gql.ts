@@ -91,6 +91,7 @@ type Documents = {
   '\n  mutation MarkNotificationRead($notificationUuid: ID!) {\n    markNotificationRead(notificationUuid: $notificationUuid)\n  }\n': typeof types.MarkNotificationReadDocument;
   '\n  mutation MarkGroupNotificationsRead($type: NotificationType!, $entityType: SocialEntityType, $entityId: String) {\n    markGroupNotificationsRead(type: $type, entityType: $entityType, entityId: $entityId)\n  }\n': typeof types.MarkGroupNotificationsReadDocument;
   '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n': typeof types.MarkAllNotificationsReadDocument;
+  '\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n': typeof types.ResolvePartnerSessionHistoryDocument;
   '\n  query SearchPlaces($query: String!) {\n    searchPlaces(query: $query) {\n      id\n      name\n      region\n      country\n      countryCode\n      latitude\n      longitude\n    }\n  }\n': typeof types.SearchPlacesDocument;
   '\n  fragment PlaylistFields on Playlist {\n    id\n    uuid\n    boardType\n    layoutId\n    name\n    description\n    isPublic\n    color\n    icon\n    createdAt\n    updatedAt\n    lastAccessedAt\n    climbCount\n    userRole\n    followerCount\n    isFollowedByMe\n    isPinnedByMe\n  }\n': typeof types.PlaylistFieldsFragmentDoc;
   '\n  \n  query GetUserPlaylists($input: GetUserPlaylistsInput!) {\n    userPlaylists(input: $input) {\n      ...PlaylistFields\n    }\n  }\n': typeof types.GetUserPlaylistsDocument;
@@ -365,6 +366,8 @@ const documents: Documents = {
     types.MarkGroupNotificationsReadDocument,
   '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n':
     types.MarkAllNotificationsReadDocument,
+  '\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n':
+    types.ResolvePartnerSessionHistoryDocument,
   '\n  query SearchPlaces($query: String!) {\n    searchPlaces(query: $query) {\n      id\n      name\n      region\n      country\n      countryCode\n      latitude\n      longitude\n    }\n  }\n':
     types.SearchPlacesDocument,
   '\n  fragment PlaylistFields on Playlist {\n    id\n    uuid\n    boardType\n    layoutId\n    name\n    description\n    isPublic\n    color\n    icon\n    createdAt\n    updatedAt\n    lastAccessedAt\n    climbCount\n    userRole\n    followerCount\n    isFollowedByMe\n    isPinnedByMe\n  }\n':
@@ -1081,6 +1084,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n',
 ): (typeof documents)['\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n',
+): (typeof documents)['\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

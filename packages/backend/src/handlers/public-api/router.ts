@@ -19,6 +19,7 @@ import {
   type PublicApiRequestRoute,
 } from './http';
 import { serveLogbookChanges, serveLogbookTick } from './logbook';
+import { serveLogbookSession } from './sessions';
 import { readWorkoutBody, serveWorkoutRoute, WorkoutBodyError } from './workouts';
 import {
   CHALLENGE_INVALID_TOKEN,
@@ -133,6 +134,8 @@ export function createPublicApiHandler({
         return serveLogbookChanges({ logbook: runtime.logbook, principal, requestId, releaseApiPermit }, req.url ?? '');
       case 'logbook-tick':
         return serveLogbookTick({ logbook: runtime.logbook, principal, requestId, releaseApiPermit }, route.tickId);
+      case 'logbook-session':
+        return serveLogbookSession(runtime, principal, route.sessionId, requestId);
       case 'openapi':
         throw new Error('The OpenAPI document is served without a token.');
     }

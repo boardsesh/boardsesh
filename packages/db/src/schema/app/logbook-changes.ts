@@ -1,4 +1,15 @@
-import { bigint, bigserial, customType, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  bigint,
+  bigserial,
+  customType,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -45,6 +56,29 @@ export const logbookChanges = pgTable(
     // For the 90-day retention job. BRIN because the table is append-only and
     // created_at follows insertion order, so it stays tiny.
     createdAtBrinIdx: index('logbook_changes_created_at_brin_idx').using('brin', table.createdAt),
+  }),
+);
+
+/** Session changes share the tick log's sequence, so both logs have one durable order. */
+export const logbookSessionChanges = pgTable(
+  'logbook_session_changes',
+  {
+    seq: bigint({ mode: 'bigint' })
+      .primaryKey()
+      .notNull()
+      .default(sql`nextval('public.logbook_changes_seq_seq'::regclass)`),
+    txid: xid8('txid')
+      .notNull()
+      .default(sql`pg_current_xact_id()`),
+    userId: text('user_id').notNull(),
+    // No FK: a deleted session still needs an addressable tombstone.
+    sessionExportId: uuid('session_export_id').notNull(),
+    removeIfMissing: boolean('remove_if_missing').default(false).notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userPositionIdx: index('logbook_session_changes_user_position_idx').on(table.userId, table.txid, table.seq),
+    globalPositionIdx: index('logbook_session_changes_global_position_idx').on(table.txid, table.seq),
   }),
 );
 

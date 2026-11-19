@@ -1,6 +1,11 @@
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { BackgroundJobTransaction } from '@boardsesh/db/queries';
-import { LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID, logbookChangeWatermark, logbookChanges } from '@boardsesh/db/schema';
+import {
+  LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID,
+  logbookChangeWatermark,
+  logbookChanges,
+  logbookSessionChanges,
+} from '@boardsesh/db/schema';
 import { positionIsBefore, type LogbookFeedPosition } from './logbook-feed';
 
 /**
@@ -130,16 +135,15 @@ async function walk(read: BatchRunner, afterSeq: bigint, limit: number): Promise
     await transaction.execute(
       sql`SELECT set_config('statement_timeout', ${WALK_STATEMENT_TIMEOUT}, true), set_config('idle_in_transaction_session_timeout', ${IDLE_IN_TRANSACTION_TIMEOUT}, true)`,
     );
-    return transaction
-      .select({
-        seq: sql<string>`${logbookChanges.seq}::text`,
-        expired: sql<boolean>`${expiredCondition}`,
-        settled: sql<boolean>`${settledCondition}`,
-      })
-      .from(logbookChanges)
-      .where(gt(logbookChanges.seq, afterSeq))
-      .orderBy(asc(logbookChanges.seq))
-      .limit(limit);
+    return transaction.execute<WalkedRow>(sql`
+      SELECT changes.seq::text AS seq,
+        changes.created_at < localtimestamp - make_interval(days => ${LOGBOOK_CHANGE_RETENTION_DAYS}::int) AS expired,
+        changes.txid < pg_snapshot_xmin(pg_current_snapshot()) AS settled
+      FROM (
+        SELECT seq, txid, created_at FROM public.logbook_changes WHERE seq > ${afterSeq}
+        UNION ALL
+        SELECT seq, txid, created_at FROM public.logbook_session_changes WHERE seq > ${afterSeq}
+      ) changes ORDER BY changes.seq LIMIT ${limit}`);
   });
 }
 
@@ -158,13 +162,29 @@ async function deleteBatch(transaction: BackgroundJobTransaction, seqs: bigint[]
     .from(logbookChanges)
     .where(and(inArray(logbookChanges.seq, seqs), expiredCondition, settledCondition))
     .for('update', { skipLocked: true });
-  const deleted = await transaction
+  const deletedTicks = await transaction
     .delete(logbookChanges)
     .where(inArray(logbookChanges.seq, claimable))
+    .returning({ txid: sql<string>`${logbookChanges.txid}::text`, seq: sql<string>`${logbookChanges.seq}::text` });
+  const claimableSessions = transaction
+    .select({ seq: logbookSessionChanges.seq })
+    .from(logbookSessionChanges)
+    .where(
+      and(
+        inArray(logbookSessionChanges.seq, seqs),
+        sql`${logbookSessionChanges.createdAt} < localtimestamp - make_interval(days => ${LOGBOOK_CHANGE_RETENTION_DAYS}::int)`,
+        sql`${logbookSessionChanges.txid} < pg_snapshot_xmin(pg_current_snapshot())`,
+      ),
+    )
+    .for('update', { skipLocked: true });
+  const deletedSessions = await transaction
+    .delete(logbookSessionChanges)
+    .where(inArray(logbookSessionChanges.seq, claimableSessions))
     .returning({
-      txid: sql<string>`${logbookChanges.txid}::text`,
-      seq: sql<string>`${logbookChanges.seq}::text`,
+      txid: sql<string>`${logbookSessionChanges.txid}::text`,
+      seq: sql<string>`${logbookSessionChanges.seq}::text`,
     });
+  const deleted = [...deletedTicks, ...deletedSessions];
   if (deleted.length === 0) return 0;
 
   const last = deleted.reduce((highest, row) => (positionIsBefore(highest, row) ? row : highest));

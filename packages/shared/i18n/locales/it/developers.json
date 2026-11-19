@@ -235,7 +235,7 @@
         "sync": "Scaricare tutto il diario una volta e poi chiedere solo ciò che è cambiato. Una modifica di solito compare entro un secondo.",
         "profile": "Leggere il suo nome visualizzato e il suo avatar, se chiedi quello scope.",
         "disconnect": "Il climber può scollegare la tua app in qualsiasi momento da Impostazioni, App collegate. La tua chiamata successiva fallisce e tu cancelli quello che avevi salvato.",
-        "notYet": "Oggi è attiva solo la lettura del diario. Allenamenti e webhook non sono ancora disponibili."
+        "notYet": "La sincronizzazione completa di sessioni e allenamenti richiede sessions:read. Non include video di beta né il controllo del pannello."
       }
     },
     "steps": {
@@ -254,7 +254,8 @@
       "items": {
         "logbook": "Ogni salita su ogni pannello, comprese quelle che il climber tiene private.",
         "profile": "Nome visualizzato e avatar.",
-        "offline": "Un refresh token, per continuare a leggere mentre il climber è assente. Da solo non apre alcun dato."
+        "offline": "Un refresh token, per continuare a leggere mentre il climber è assente. Da solo non apre alcun dato.",
+        "sessions": "Sessioni completate, note private del riepilogo, durata registrata e allenamenti completi, inclusi quelli di altre app. Richiede logbook:read."
       }
     },
     "rules": {
@@ -388,6 +389,14 @@
       "poll": {
         "title": "Sincronizza quando serve",
         "body": "Sincronizza quando la persona apre la tua app; in background, al massimo ogni 15 minuti per account. Rispetta Retry-After su 429 e 503 temporanei. I webhook facoltativi logbook.changed chiedono questa stessa sincronizzazione, senza sostituire il feed.\n\nMantieni private le salite private. Sulla Spraywall non pubblica di un’altra persona, nome del blocco e identità della Spraywall sono nascosti. Non costruire un catalogo né pubblicare bozze o blocchi non elencati di altri tracciatori partendo dal diario."
+      },
+      "sessions": {
+        "title": "Sincronizzare sessioni completate e allenamenti",
+        "body": "Richiedi logbook:read sessions:read offline_access per importare sessioni personali, dedotte e condivise a cui lo scalatore ha partecipato, una volta completate. Sono escluse le sessioni attive e quelle permanenti della palestra. I record includono riepilogo, orari di inizio e fine salvati, durationSeconds e il piano e i risultati completi dell’allenamento, inclusi quelli di altre app. Se gli orari registrati mancano o sono invertiti, la durata è null; non stimarla mai dalle salite. Il riepilogo e le etichette private di un altro creatore non vengono condivisi. Sono esclusi i link di beta e le posizioni delle prese.\n\nCrea o aggiorna le voci session tramite session.id, rimuovi le voci session.deleted tramite id e usa tick.sessionId per raggruppare i blocchi. I riferimenti possono arrivare in pagine diverse. GET /v1/logbook/sessions/{id} legge una sessione autorizzata. Mantieni entrambi i tipi di entità nella stessa copia sostitutiva e salvali insieme al cursore.\n\nI token esistenti limitati alle salite non ottengono questo accesso. Richiedi un nuovo consenso con sessions:read, sostituisci la coppia di token salvata e avvia un’importazione sostitutiva completa senza il vecchio cursore. Un cursore del livello di accesso precedente restituisce 410. La sostituzione include sessioni precedenti all’integrazione; i piani di allenamento o gli orari storici mancanti non possono essere ricostruiti."
+      },
+      "attribution": {
+        "title": "Citare Boardsesh e collegare la sessione",
+        "body": "La vista principale di ogni sessione importata deve citare Boardsesh in modo visibile. Basta “Boardsesh” o “Registrato con Boardsesh” in un piccolo piè di pagina o in una nota. Una citazione nascosta in un menu con i tre puntini non basta.\n\nConsigliamo anche un’azione “Apri in Boardsesh” che usi url o appUrl della sessione. Può trovarsi in un menu con i tre puntini e non deve essere l’azione principale. I link della cronologia richiedono l’accesso con un account che ha registrato la sessione o vi ha partecipato; aprono il dettaglio in sola lettura e non fanno mai partecipare a una sessione. Mantieni utilizzabile l’alternativa HTTPS senza l’app."
       }
     },
     "errors": {

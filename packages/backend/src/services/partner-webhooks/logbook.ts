@@ -1,11 +1,6 @@
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { oauthConnections } from '@boardsesh/db/schema/auth';
-import {
-  logbookChanges,
-  oauthClientWebhooks,
-  partnerWebhookDebounce,
-  partnerWebhookFeedState,
-} from '@boardsesh/db/schema/app';
+import { oauthClientWebhooks, partnerWebhookDebounce, partnerWebhookFeedState } from '@boardsesh/db/schema/app';
 import { db, type Database } from '../../db/client';
 import { readLogbookFeedState } from '../logbook-feed';
 import { enqueuePartnerWebhookEvent } from './events';
@@ -37,21 +32,15 @@ async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
       // On initialization, restore or pruning, notify every subscriber once and
       // resume at the horizon rather than spending days replaying retained history.
       const position = stale ? { txid: feed.horizon, seq: '0' } : { txid: cursor.txid, seq: cursor.seq };
-      const changes = await transaction
-        .select({
-          userId: logbookChanges.userId,
-          txid: sql<string>`${logbookChanges.txid}::text`,
-          seq: sql<string>`${logbookChanges.seq}::text`,
-        })
-        .from(logbookChanges)
-        .where(
-          and(
-            sql`${logbookChanges.txid} < ${feed.horizon}::xid8`,
-            sql`(${logbookChanges.txid}, ${logbookChanges.seq}) > (${position.txid}::xid8, ${position.seq}::bigint)`,
-          ),
-        )
-        .orderBy(asc(logbookChanges.txid), asc(logbookChanges.seq))
-        .limit(1000);
+      const changes = await transaction.execute<{ userId: string; txid: string; seq: string }>(sql`
+        SELECT changes.user_id AS "userId", changes.txid::text AS txid, changes.seq::text AS seq
+        FROM (
+          SELECT user_id, txid, seq FROM public.logbook_changes
+          WHERE txid < ${feed.horizon}::xid8 AND (txid,seq) > (${position.txid}::xid8,${position.seq}::bigint)
+          UNION ALL
+          SELECT user_id, txid, seq FROM public.logbook_session_changes
+          WHERE txid < ${feed.horizon}::xid8 AND (txid,seq) > (${position.txid}::xid8,${position.seq}::bigint)
+        ) changes ORDER BY changes.txid, changes.seq LIMIT 1000`);
       const changedUsers = [...new Set(changes.map((change) => change.userId))];
       if (stale || changedUsers.length > 0) {
         // INSERT SELECT marks every matching connection without fetching an unbounded roster.

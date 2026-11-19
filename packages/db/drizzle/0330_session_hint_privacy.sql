@@ -1,0 +1,1 @@
+ALTER TABLE "logbook_session_changes" ADD COLUMN "remove_if_missing" boolean DEFAULT false NOT NULL;

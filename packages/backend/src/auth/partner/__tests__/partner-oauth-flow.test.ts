@@ -71,6 +71,7 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
       // Discovery only publishes scopes whose routes exist.
       expect(metadata.scopes_supported).toEqual([
         'logbook:read',
+        'sessions:read',
         'profile:read',
         'workouts:read',
         'workouts:write',
@@ -162,6 +163,7 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
     });
     expect(PARTNER_SCOPES).toEqual([
       'logbook:read',
+      'sessions:read',
       'profile:read',
       'workouts:read',
       'workouts:write',

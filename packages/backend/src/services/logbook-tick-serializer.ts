@@ -1,10 +1,11 @@
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import { TickSchema, type Grade, type Tick } from '@boardsesh/public-api';
+import { TickSchema, type Grade, type Tick, type PartnerSession } from '@boardsesh/public-api';
 import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
 import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { boardClimbStats, boardClimbs, boardLayouts } from '@boardsesh/db/schema';
+import { boardClimbStats, boardClimbs, boardLayouts, boardSessions, boardseshTicks } from '@boardsesh/db/schema';
 import type { FeedTransaction, LogbookFeedTick } from './logbook-feed';
+import { eligiblePartnerSessionCondition, readPartnerSessions } from './public-api/sessions';
 
 /**
  * Turns the columns the feed and the snapshot store (`LogbookFeedTick`) into
@@ -41,7 +42,11 @@ export interface LogbookClimbMetadata {
   climbs: Map<string, LogbookClimbRecord>;
   /** `board_climb_stats.display_difficulty` at the tick's angle, on the difficulty-id scale. */
   communityDifficulty: Map<string, number | null>;
+  sessions?: Map<string, PartnerSession>;
+  tickSessionIds?: Map<string, string>;
 }
+
+export type LogbookMetadataTick = Pick<LogbookFeedTick, 'uuid' | 'boardType' | 'canonicalClimbUuid' | 'angle'>;
 
 const climbKey = (boardType: string, climbUuid: string) => `${boardType}\u0000${climbUuid}`;
 const angleKey = (boardType: string, climbUuid: string, angle: number) =>
@@ -73,10 +78,45 @@ function namesVisibleTo(userId: string): SQL<boolean> {
 export async function readLogbookClimbMetadata(
   transaction: FeedTransaction,
   userId: string,
-  ticks: readonly LogbookFeedTick[],
+  ticks: readonly LogbookMetadataTick[],
+  { includeSessions = false, sessionIds = [] }: { includeSessions?: boolean; sessionIds?: readonly string[] } = {},
 ): Promise<LogbookClimbMetadata> {
   const metadata: LogbookClimbMetadata = { climbs: new Map(), communityDifficulty: new Map() };
+  if (includeSessions) {
+    metadata.sessions = await readPartnerSessions(transaction, userId, sessionIds);
+    metadata.tickSessionIds = new Map();
+    if (ticks.length > 0) {
+      // Read current membership rather than stale snapshot JSON. A tick alone
+      // never grants access to the session it names.
+      const currentSessions = await transaction
+        .select({ tickUuid: boardseshTicks.uuid, sessionExportId: boardSessions.exportId })
+        .from(boardseshTicks)
+        .innerJoin(boardSessions, eq(boardSessions.id, boardseshTicks.sessionId))
+        .where(
+          and(
+            eq(boardseshTicks.userId, userId),
+            inArray(
+              boardseshTicks.uuid,
+              ticks.map((tick) => tick.uuid),
+            ),
+            eligiblePartnerSessionCondition(userId),
+          ),
+        );
+      for (const membership of currentSessions)
+        metadata.tickSessionIds.set(membership.tickUuid, membership.sessionExportId);
+    }
+  }
   if (ticks.length === 0) return metadata;
+  // Full workout plans can contain many more climbs than a tick page. Keep
+  // the tuple query comfortably below PostgreSQL's 65,535 bind-parameter cap.
+  if (ticks.length > 1000) {
+    for (let offset = 0; offset < ticks.length; offset += 1000) {
+      const chunk = await readLogbookClimbMetadata(transaction, userId, ticks.slice(offset, offset + 1000));
+      for (const [key, climb] of chunk.climbs) metadata.climbs.set(key, climb);
+      for (const [key, difficulty] of chunk.communityDifficulty) metadata.communityDifficulty.set(key, difficulty);
+    }
+    return metadata;
+  }
 
   const climbUuids = [...new Set(ticks.map((tick) => tick.canonicalClimbUuid))];
   const climbRows = await transaction
@@ -187,6 +227,7 @@ export function serializeLogbookTick(tick: LogbookFeedTick, metadata: LogbookCli
     grade: logbookGrade(tick.boardType, tick.difficulty),
     benchmark: tick.isBenchmark ?? false,
     comment: tick.comment?.trim() ? tick.comment : null,
+    sessionId: metadata.tickSessionIds?.get(tick.uuid) ?? null,
     climb: {
       id: tick.canonicalClimbUuid,
       name: namesVisible ? (climb?.name?.trim() ? climb.name : null) : null,

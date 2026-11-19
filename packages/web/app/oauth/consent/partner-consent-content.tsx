@@ -34,6 +34,7 @@ type ConsentFormView = Extract<PartnerConsentView, { kind: 'consent' }>;
 const READ_ONLY_SCOPES: ReadonlySet<string> = new Set([
   'profile:read',
   'logbook:read',
+  'sessions:read',
   'workouts:read',
   'offline_access',
 ]);
@@ -67,6 +68,8 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
         return t('consent.scopes.profileRead');
       case 'logbook:read':
         return t('consent.scopes.logbookRead');
+      case 'sessions:read':
+        return t('consent.scopes.sessionsRead');
       case 'offline_access':
         return t('consent.scopes.offlineAccess');
       case 'workouts:read':

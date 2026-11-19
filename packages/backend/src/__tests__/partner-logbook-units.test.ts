@@ -52,7 +52,12 @@ const SNAPSHOT_CURSOR: LogbookCursor = {
 };
 
 describe('the logbook cursor', () => {
-  it.each([CHANGES_CURSOR, SNAPSHOT_CURSOR])('round-trips a $kind cursor', (cursor) => {
+  it.each([
+    CHANGES_CURSOR,
+    SNAPSHOT_CURSOR,
+    { ...CHANGES_CURSOR, includesSessions: true },
+    { ...SNAPSHOT_CURSOR, includesSessions: true },
+  ])('round-trips a $kind cursor', (cursor) => {
     const encoded = encodeLogbookCursor(cursor, SECRETS);
     expect(encoded).toMatch(/^c3\.2\.[A-Za-z0-9_-]+$/);
     expect(decodeLogbookCursor(encoded, SECRETS)).toEqual({ status: 'ok', cursor });
@@ -186,6 +191,7 @@ describe('the tick serializer', () => {
       grade: { v: 4, font: '6B+', label: '6b+/V4' },
       benchmark: true,
       comment: 'Finally stuck the cross-through',
+      sessionId: null,
       climb: {
         id: 'climb-canonical',
         name: 'Slopey Business',

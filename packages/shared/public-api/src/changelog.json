@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "date": "2026-11-19",
+      "documentSha256": "1757eeb405d49cf2409bbf082dcd44182c5c1bb5c05db3950f9d846eb90512bd",
+      "changes": [
+        "Add sessions:read for completed session entities, including private recaps, recorded duration and the connected climber's full workouts from Boardsesh or other apps. Existing logbook-only tokens keep tick-only access.",
+        "Add session and session.deleted changes, opaque tick.sessionId references, GET /v1/logbook/sessions/{id}, and authenticated read-only history links. Adding session access requires a complete replacement sync, including sessions predating the integration."
+      ]
+    },
+    {
       "date": "2026-11-18",
       "documentSha256": "84b5c6f92fb2cf6c3060a97326fc9329b7b83fe58f89742430dc934307351c13",
       "changes": [

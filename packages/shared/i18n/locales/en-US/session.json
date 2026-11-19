@@ -1216,5 +1216,12 @@
     "resume": "Resume this workout",
     "privacyLoading": "Checking session privacy…",
     "budgetShortfall": "{{found}} of {{planned}} planned climbs fit the queue and workout limits."
+  },
+  "partnerHistory": {
+    "title": "Open your session",
+    "description": "Open a completed session you recorded or joined in Boardsesh.",
+    "unavailable": "This session isn’t available for this account. Sign in with the account that recorded or joined it.",
+    "loadError": "Couldn’t open this session. Try again.",
+    "retry": "Try again"
   }
 }

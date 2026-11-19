@@ -248,7 +248,27 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       AND has_table_privilege(${WEB_ROLE},trigger.tgrelid,'INSERT,UPDATE,DELETE')`;
   // Reviewed 0298 bodies write only logbook_changes and read ticks. No names-only
   // allowlist: drift in body, language, search_path or attachment fails closed.
-  const reviewedTriggers: Readonly<Record<string, { relation: string; sha256: string }>> = {
+  const reviewedTriggers: Readonly<Record<string, { relation: string | readonly string[]; sha256: string }>> = {
+    log_partner_session_from_session: {
+      relation: 'board_sessions',
+      sha256: '53477df49c5493dcd817d6a9e39925d9921a4810ef907fd7170e6d89fb5cc2ea',
+    },
+    log_partner_session_from_participant: {
+      relation: 'board_session_participants',
+      sha256: '7d54e376ddd7eb3fdd73a0338549eaad2b3c3063b1994eff0c91e3982f90fd6e',
+    },
+    log_partner_session_from_workout: {
+      relation: ['session_workouts', 'app_workouts'],
+      sha256: 'e5a2558e755b2f57b671098c963aaac41e8e269c6d09fc296e8660612f9f2e0a',
+    },
+    log_partner_session_from_tick: {
+      relation: 'boardsesh_ticks',
+      sha256: '4b549a86f70e61307fb20f238ca2f4bc936c71cc75937f1d4b0c93bb948f098f',
+    },
+    log_partner_session_from_alias: {
+      relation: 'board_climb_aliases',
+      sha256: '50fdf38e8303f988e50d49fd208ee2ce7996f956e30f878171b81ee2d13476e2',
+    },
     log_logbook_change_from_tick: {
       relation: 'boardsesh_ticks',
       sha256: '361b86ed76200a34a4950e9b882ba700f43396dfbb2a246d778ec146805ef068',
@@ -264,7 +284,7 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       !reviewed ||
       trigger.schema !== 'public' ||
       trigger.relationSchema !== 'public' ||
-      trigger.relation !== reviewed.relation ||
+      !(typeof reviewed.relation === 'string' ? [reviewed.relation] : reviewed.relation).includes(trigger.relation) ||
       trigger.language !== 'plpgsql' ||
       JSON.stringify(trigger.configuration) !== JSON.stringify(['search_path=public, pg_catalog']) ||
       createHash('sha256').update(trigger.source).digest('hex') !== reviewed.sha256
@@ -294,13 +314,13 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     SELECT NOT EXISTS (
       SELECT 1 FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
       LEFT JOIN pg_am method ON method.oid = relation.relam
-      WHERE namespace.nspname = 'public' AND relation.relname IN ('logbook_changes','boardsesh_ticks','board_climb_aliases')
+      WHERE namespace.nspname = 'public' AND relation.relname IN ('logbook_changes','boardsesh_ticks','board_climb_aliases','logbook_session_changes','board_sessions','board_session_participants','session_workouts','app_workouts')
         AND (relation.relkind <> 'r' OR relation.relrowsecurity OR relation.relforcerowsecurity OR relation.relispartition OR method.amname <> 'heap'
           OR EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid = relation.oid OR inhparent = relation.oid)
           OR EXISTS (SELECT 1 FROM pg_attribute attribute JOIN pg_type type ON type.oid = attribute.atttypid
             JOIN pg_namespace type_namespace ON type_namespace.oid = type.typnamespace
             WHERE attribute.attrelid = relation.oid AND attribute.attnum > 0 AND NOT attribute.attisdropped
-              AND ((type_namespace.nspname <> 'pg_catalog' AND NOT (type_namespace.nspname = 'public' AND type.typtype = 'e' AND type.typname IN ('tick_status','aurora_table_type','kilter_table_type','tick_origin'))) OR type.typtype = 'd' OR attribute.attgenerated <> ''))
+              AND ((type_namespace.nspname <> 'pg_catalog' AND NOT (type_namespace.nspname = 'public' AND type.typtype = 'e' AND type.typname IN ('tick_status','aurora_table_type','kilter_table_type','tick_origin','session_origin'))) OR type.typtype = 'd' OR attribute.attgenerated <> ''))
           OR EXISTS (SELECT 1 FROM pg_index index_row CROSS JOIN LATERAL unnest(index_row.indclass) class_oid
             JOIN pg_opclass class ON class.oid = class_oid JOIN pg_namespace class_namespace ON class_namespace.oid = class.opcnamespace
             WHERE index_row.indrelid = relation.oid AND class_namespace.nspname <> 'pg_catalog')
@@ -313,13 +333,13 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       JOIN pg_type left_type ON left_type.oid = operator.oprleft JOIN pg_type right_type ON right_type.oid = operator.oprright
       -- The SHA-pinned 0298 bodies use only these comparison operators.
       WHERE namespace.nspname = 'public' AND operator.oprname IN ('=','<>','!~~','~~')
-        AND left_type.oid IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN ('public.boardsesh_ticks'::regclass,'public.logbook_changes'::regclass,'public.board_climb_aliases'::regclass) AND attnum>0 AND NOT attisdropped)
-        AND right_type.oid IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN ('public.boardsesh_ticks'::regclass,'public.logbook_changes'::regclass,'public.board_climb_aliases'::regclass) AND attnum>0 AND NOT attisdropped)
+        AND left_type.oid IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN (to_regclass('public.boardsesh_ticks'),to_regclass('public.logbook_changes'),to_regclass('public.board_climb_aliases'),to_regclass('public.logbook_session_changes'),to_regclass('public.board_sessions'),to_regclass('public.board_session_participants'),to_regclass('public.session_workouts'),to_regclass('public.app_workouts')) AND attnum>0 AND NOT attisdropped)
+        AND right_type.oid IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN (to_regclass('public.boardsesh_ticks'),to_regclass('public.logbook_changes'),to_regclass('public.board_climb_aliases'),to_regclass('public.logbook_session_changes'),to_regclass('public.board_sessions'),to_regclass('public.board_session_participants'),to_regclass('public.session_workouts'),to_regclass('public.app_workouts')) AND attnum>0 AND NOT attisdropped)
     ) AND NOT EXISTS (
       SELECT 1 FROM pg_cast cast_row JOIN pg_proc routine ON routine.oid = cast_row.castfunc
       JOIN pg_namespace namespace ON namespace.oid = routine.pronamespace WHERE namespace.nspname <> 'pg_catalog'
-        AND cast_row.castsource IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN ('public.boardsesh_ticks'::regclass,'public.logbook_changes'::regclass,'public.board_climb_aliases'::regclass) AND attnum>0 AND NOT attisdropped)
-        AND cast_row.casttarget IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN ('public.boardsesh_ticks'::regclass,'public.logbook_changes'::regclass,'public.board_climb_aliases'::regclass) AND attnum>0 AND NOT attisdropped)
+        AND cast_row.castsource IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN (to_regclass('public.boardsesh_ticks'),to_regclass('public.logbook_changes'),to_regclass('public.board_climb_aliases'),to_regclass('public.logbook_session_changes'),to_regclass('public.board_sessions'),to_regclass('public.board_session_participants'),to_regclass('public.session_workouts'),to_regclass('public.app_workouts')) AND attnum>0 AND NOT attisdropped)
+        AND cast_row.casttarget IN (SELECT atttypid FROM pg_attribute WHERE attrelid IN (to_regclass('public.boardsesh_ticks'),to_regclass('public.logbook_changes'),to_regclass('public.board_climb_aliases'),to_regclass('public.logbook_session_changes'),to_regclass('public.board_sessions'),to_regclass('public.board_session_participants'),to_regclass('public.session_workouts'),to_regclass('public.app_workouts')) AND attnum>0 AND NOT attisdropped)
     ) AS safe,
     json_build_object(
       'columns',(SELECT json_agg(json_build_array(attribute.attname,format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,attribute.attidentity,attribute.attgenerated,pg_get_expr(default_row.adbin,default_row.adrelid)) ORDER BY attribute.attnum)
@@ -359,6 +379,52 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       JSON.stringify(closure.sink) !== JSON.stringify(historicalSink))
   )
     throw new Error('UNREVIEWED_LOGBOOK_SINK');
+  // The optional companion sink is absent in historical credential fixtures.
+  // Its shape and complete executable closure are pinned when it exists.
+  const [sessionSink] = await client<
+    { present: boolean; safe: boolean; columns: unknown; indexes: unknown; constraints: unknown }[]
+  >`
+    SELECT to_regclass('public.logbook_session_changes') IS NOT NULL AS present,
+      NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('public.logbook_session_changes') AND NOT tgisinternal AND tgenabled<>'D')
+      AND NOT EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class=to_regclass('public.logbook_session_changes') AND rulename<>'_RETURN')
+      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE confrelid=to_regclass('public.logbook_session_changes'))
+      AND NOT EXISTS (SELECT 1 FROM pg_depend dependency JOIN pg_proc routine ON routine.oid=dependency.refobjid
+        JOIN pg_namespace namespace ON namespace.oid=routine.pronamespace
+        WHERE dependency.refclassid='pg_proc'::regclass AND namespace.nspname<>'pg_catalog'
+          AND (dependency.objid IN (SELECT oid FROM pg_attrdef WHERE adrelid=to_regclass('public.logbook_session_changes'))
+            OR dependency.objid IN (SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('public.logbook_session_changes'))
+            OR dependency.objid IN (SELECT indexrelid FROM pg_index WHERE indrelid=to_regclass('public.logbook_session_changes')))) AS safe,
+      (SELECT json_agg(json_build_array(attribute.attname,format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,attribute.attidentity,attribute.attgenerated,pg_get_expr(default_row.adbin,default_row.adrelid)) ORDER BY attribute.attnum)
+        FROM pg_attribute attribute LEFT JOIN pg_attrdef default_row ON default_row.adrelid=attribute.attrelid AND default_row.adnum=attribute.attnum
+        WHERE attribute.attrelid=to_regclass('public.logbook_session_changes') AND attribute.attnum>0 AND NOT attribute.attisdropped) AS columns,
+      (SELECT json_agg(pg_get_indexdef(indexrelid) ORDER BY indexrelid::regclass::text) FROM pg_index WHERE indrelid=to_regclass('public.logbook_session_changes')) AS indexes,
+      (SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid=to_regclass('public.logbook_session_changes') AND contype<>'n') AS constraints`;
+  if (
+    sessionSink?.present &&
+    (!sessionSink.safe ||
+      JSON.stringify({
+        columns: sessionSink.columns,
+        indexes: sessionSink.indexes,
+        constraints: sessionSink.constraints,
+      }) !==
+        JSON.stringify({
+          columns: [
+            ['seq', 'bigint', true, '', '', "nextval('logbook_changes_seq_seq'::regclass)"],
+            ['txid', 'xid8', true, '', '', 'pg_current_xact_id()'],
+            ['user_id', 'text', true, '', '', null],
+            ['session_export_id', 'uuid', true, '', '', null],
+            ['created_at', 'timestamp without time zone', true, '', '', 'now()'],
+            ['remove_if_missing', 'boolean', true, '', '', 'false'],
+          ],
+          indexes: [
+            'CREATE INDEX logbook_session_changes_global_position_idx ON public.logbook_session_changes USING btree (txid, seq)',
+            'CREATE UNIQUE INDEX logbook_session_changes_pkey ON public.logbook_session_changes USING btree (seq)',
+            'CREATE INDEX logbook_session_changes_user_position_idx ON public.logbook_session_changes USING btree (user_id, txid, seq)',
+          ],
+          constraints: ['PRIMARY KEY (seq)'],
+        }))
+  )
+    throw new Error('UNREVIEWED_SESSION_LOGBOOK_SINK');
   const [paths] = await client<
     { cascade: boolean; routine: boolean; defaults: boolean; trigger: boolean; rule: boolean }[]
   >`

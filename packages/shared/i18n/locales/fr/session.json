@@ -1216,5 +1216,12 @@
     "resume": "Reprendre cet entraînement",
     "privacyLoading": "Vérification de la confidentialité de la séance…",
     "budgetShortfall": "{{found}} blocs sur les {{planned}} prévus respectent les limites de la file et de l’entraînement."
+  },
+  "partnerHistory": {
+    "title": "Ouvre ta séance",
+    "description": "Ouvre une séance terminée que tu as enregistrée ou rejointe dans Boardsesh.",
+    "unavailable": "Cette séance n’est pas disponible pour ce compte. Connecte-toi avec le compte qui l’a enregistrée ou rejointe.",
+    "loadError": "Impossible d’ouvrir cette séance. Réessaie.",
+    "retry": "Réessayer"
   }
 }

@@ -1,9 +1,17 @@
-import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, sum, type SQL } from 'drizzle-orm';
-import { boardClimbAliases, boardseshTicks, logbookSnapshotChunks, logbookSnapshots } from '@boardsesh/db/schema';
+import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import {
+  boardClimbAliases,
+  boardSessions,
+  boardseshTicks,
+  logbookSnapshotChunks,
+  logbookSnapshotSessionChunks,
+  logbookSnapshots,
+} from '@boardsesh/db/schema';
 import type { LogbookSnapshotChunkTick } from '@boardsesh/db/schema';
 import type { BackgroundJobTransaction } from '@boardsesh/db/queries';
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
+import { eligiblePartnerSessionCondition } from './public-api/sessions';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
   LOGBOOK_FEED_MAX_PAGE_SIZE,
@@ -15,6 +23,7 @@ import {
   positionIsBefore,
   readLogbookFeedState,
   ticksOf,
+  sessionsOf,
   type FeedTransaction,
   type LogbookFeedCursor,
   type LogbookFeedEntry,
@@ -116,6 +125,7 @@ export type LogbookSnapshotBinding = {
   userId: string;
   connectionId: string;
   connectionGeneration: number;
+  includesSessions?: boolean;
 };
 
 export type LogbookSnapshotCursor = { snapshotId: string; position: number };
@@ -184,6 +194,7 @@ function snapshotBelongsTo(binding: LogbookSnapshotBinding): SQL {
     eq(logbookSnapshots.userId, binding.userId),
     eq(logbookSnapshots.connectionId, binding.connectionId),
     eq(logbookSnapshots.connectionGeneration, binding.connectionGeneration),
+    eq(logbookSnapshots.includesSessions, binding.includesSessions ?? false),
   ) as SQL;
 }
 
@@ -220,7 +231,7 @@ async function takeBuildSlot(transaction: FeedTransaction): Promise<boolean> {
 
 async function storedTicksAcrossSnapshots(transaction: FeedTransaction): Promise<number> {
   const [{ storedTicks }] = await transaction
-    .select({ storedTicks: sum(logbookSnapshots.tickCount) })
+    .select({ storedTicks: sql<number>`sum(${logbookSnapshots.tickCount} + ${logbookSnapshots.sessionCount})` })
     .from(logbookSnapshots);
   return Number(storedTicks ?? 0);
 }
@@ -325,6 +336,7 @@ async function createOrJoinSnapshot(
         userId: binding.userId,
         connectionId: binding.connectionId,
         connectionGeneration: binding.connectionGeneration,
+        includesSessions: binding.includesSessions ?? false,
         feedGeneration: feedState.generation,
         horizonTxid: feedState.horizon,
         expiresAt: sql`now() + make_interval(secs => ${LOGBOOK_SNAPSHOT_BUILD_DEADLINE_SECONDS})`,
@@ -353,6 +365,10 @@ async function buildNextChunk(
     const [snapshot] = await transaction
       .select({
         tickCount: logbookSnapshots.tickCount,
+        ticksComplete: logbookSnapshots.ticksComplete,
+        sessionCount: logbookSnapshots.sessionCount,
+        sessionChunkCount: logbookSnapshots.sessionChunkCount,
+        nextSessionExportId: logbookSnapshots.nextSessionExportId,
         chunkCount: logbookSnapshots.chunkCount,
         nextUpdatedAt: logbookSnapshots.nextUpdatedAt,
         nextTickId: logbookSnapshots.nextTickId,
@@ -378,6 +394,48 @@ async function buildNextChunk(
     // build at the cap waits for the reclaim job rather than failing.
     if ((await storedTicksAcrossSnapshots(transaction)) >= maxStoredTicks) {
       return { progress: { status: 'building' }, copied: false };
+    }
+
+    if (snapshot.ticksComplete && binding.includesSessions) {
+      const rows = await transaction
+        .select({ exportId: boardSessions.exportId })
+        .from(boardSessions)
+        .where(
+          and(
+            eligiblePartnerSessionCondition(binding.userId),
+            snapshot.nextSessionExportId ? gt(boardSessions.exportId, snapshot.nextSessionExportId) : undefined,
+          ),
+        )
+        .orderBy(asc(boardSessions.exportId))
+        .limit(LOGBOOK_SNAPSHOT_CHUNK_TICKS);
+      const sessionCount = snapshot.sessionCount + rows.length;
+      if (sessionCount + snapshot.tickCount > maxTicks) {
+        await transaction
+          .update(logbookSnapshots)
+          .set({ status: 'too_large', expiresAt: sql`now() + make_interval(secs => ${LOGBOOK_SNAPSHOT_TTL_SECONDS})` })
+          .where(eq(logbookSnapshots.id, snapshotId));
+        return { progress: { status: 'too_large' }, copied: false };
+      }
+      if (rows.length > 0)
+        await transaction.insert(logbookSnapshotSessionChunks).values({
+          snapshotId,
+          chunkIndex: snapshot.sessionChunkCount,
+          sessionExportIds: rows.map((row) => row.exportId),
+        });
+      const complete = rows.length < LOGBOOK_SNAPSHOT_CHUNK_TICKS;
+      await transaction
+        .update(logbookSnapshots)
+        .set({
+          status: complete ? 'ready' : 'building',
+          sessionCount,
+          sessionChunkCount: snapshot.sessionChunkCount + (rows.length > 0 ? 1 : 0),
+          nextSessionExportId: rows.at(-1)?.exportId ?? snapshot.nextSessionExportId,
+          chunkTimeoutStreak: 0,
+          retryNotBefore: null,
+          ...(complete ? { expiresAt: sql`now() + make_interval(secs => ${LOGBOOK_SNAPSHOT_TTL_SECONDS})` } : {}),
+        })
+        .where(eq(logbookSnapshots.id, snapshotId));
+      return { progress: complete ? { status: 'ready' } : { status: 'building' }, copied: true };
     }
 
     const keyset =
@@ -419,12 +477,14 @@ async function buildNextChunk(
     }
 
     // A short chunk means the keyset ran off the end of the logbook.
-    const complete = rows.length < LOGBOOK_SNAPSHOT_CHUNK_TICKS;
+    const ticksComplete = rows.length < LOGBOOK_SNAPSHOT_CHUNK_TICKS;
+    const complete = ticksComplete && !binding.includesSessions;
     const lastRow = rows[rows.length - 1];
     await transaction
       .update(logbookSnapshots)
       .set({
         status: complete ? 'ready' : 'building',
+        ticksComplete,
         tickCount,
         chunkCount: rows.length > 0 ? snapshot.chunkCount + 1 : snapshot.chunkCount,
         nextUpdatedAt: lastRow ? lastRow.updatedAt : snapshot.nextUpdatedAt,
@@ -584,6 +644,7 @@ export async function readLogbookSnapshotPage(
           feedGeneration: logbookSnapshots.feedGeneration,
           horizonTxid: logbookSnapshots.horizonTxid,
           tickCount: logbookSnapshots.tickCount,
+          sessionCount: logbookSnapshots.sessionCount,
           retryAfterSeconds: secondsUntilExpiry,
         })
         .from(logbookSnapshots)
@@ -601,24 +662,54 @@ export async function readLogbookSnapshotPage(
       }
       if (snapshot.status === 'building') return { status: 'building' };
 
-      const start = Math.min(cursor.position, snapshot.tickCount);
-      const end = Math.min(start + limit, snapshot.tickCount);
-      const ticks = end > start ? await readTickRange(transaction, cursor.snapshotId, start, end) : [];
-
-      const entries = ticks.map((tick): LogbookFeedEntry => ({ type: 'tick', tick }));
-      await withinRead?.(transaction, ticksOf(entries));
+      const totalCount = snapshot.tickCount + snapshot.sessionCount;
+      const start = Math.min(cursor.position, totalCount);
+      const end = Math.min(start + limit, totalCount);
+      const tickEnd = Math.min(end, snapshot.tickCount);
+      const ticks = tickEnd > start ? await readTickRange(transaction, cursor.snapshotId, start, tickEnd) : [];
+      const sessionStart = Math.max(0, start - snapshot.tickCount);
+      const sessionEnd = Math.max(0, end - snapshot.tickCount);
+      const sessionIds =
+        sessionEnd > sessionStart
+          ? await readSessionRange(transaction, cursor.snapshotId, sessionStart, sessionEnd)
+          : [];
+      const entries: LogbookFeedEntry[] = [
+        ...ticks.map((tick): LogbookFeedEntry => ({ type: 'tick', tick })),
+        ...sessionIds.map((id): LogbookFeedEntry => ({ type: 'session', id })),
+      ];
+      await withinRead?.(transaction, ticksOf(entries), sessionsOf(entries));
       const next: Extract<LogbookSnapshotPage, { status: 'ok' }>['next'] =
-        end < snapshot.tickCount
+        end < totalCount
           ? { kind: 'snapshot', cursor: { snapshotId: cursor.snapshotId, position: end } }
-          : {
-              kind: 'changes',
-              cursor: { generation: snapshot.feedGeneration, txid: snapshot.horizonTxid, seq: '0' },
-            };
+          : { kind: 'changes', cursor: { generation: snapshot.feedGeneration, txid: snapshot.horizonTxid, seq: '0' } };
 
       return { status: 'ok', entries, next, hasMore: true };
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
+}
+
+/** Session identities `[start, end)`; content is never frozen into snapshot storage. */
+async function readSessionRange(
+  transaction: FeedTransaction,
+  snapshotId: string,
+  start: number,
+  end: number,
+): Promise<string[]> {
+  const firstChunk = Math.floor(start / LOGBOOK_SNAPSHOT_CHUNK_TICKS);
+  const lastChunk = Math.floor((end - 1) / LOGBOOK_SNAPSHOT_CHUNK_TICKS);
+  const chunks = await transaction
+    .select({ sessionExportIds: logbookSnapshotSessionChunks.sessionExportIds })
+    .from(logbookSnapshotSessionChunks)
+    .where(
+      and(
+        eq(logbookSnapshotSessionChunks.snapshotId, snapshotId),
+        sql`${logbookSnapshotSessionChunks.chunkIndex} BETWEEN ${firstChunk} AND ${lastChunk}`,
+      ),
+    )
+    .orderBy(asc(logbookSnapshotSessionChunks.chunkIndex));
+  const offset = start - firstChunk * LOGBOOK_SNAPSHOT_CHUNK_TICKS;
+  return chunks.flatMap((chunk) => chunk.sessionExportIds).slice(offset, offset + end - start);
 }
 
 /** Ticks `[start, end)` of the stream, from the one or two chunks that hold them. */
@@ -696,18 +787,45 @@ export async function reclaimExpiredLogbookSnapshots(
         .where(inArray(sql`(${logbookSnapshotChunks.snapshotId}, ${logbookSnapshotChunks.chunkIndex})`, chunksToDelete))
         .returning({ snapshotId: logbookSnapshotChunks.snapshotId });
 
+      const remainingChunkBudget = chunksPerBatch - deletedChunks.length;
+      const sessionChunksToDelete = transaction
+        .select({
+          snapshotId: logbookSnapshotSessionChunks.snapshotId,
+          chunkIndex: logbookSnapshotSessionChunks.chunkIndex,
+        })
+        .from(logbookSnapshotSessionChunks)
+        .where(inArray(logbookSnapshotSessionChunks.snapshotId, expiredIds))
+        .orderBy(asc(logbookSnapshotSessionChunks.snapshotId), asc(logbookSnapshotSessionChunks.chunkIndex))
+        .limit(remainingChunkBudget);
+      const deletedSessionChunks =
+        remainingChunkBudget > 0
+          ? await transaction
+              .delete(logbookSnapshotSessionChunks)
+              .where(
+                inArray(
+                  sql`(${logbookSnapshotSessionChunks.snapshotId}, ${logbookSnapshotSessionChunks.chunkIndex})`,
+                  sessionChunksToDelete,
+                ),
+              )
+              .returning({ snapshotId: logbookSnapshotSessionChunks.snapshotId })
+          : [];
+
       // A header goes only when none of its chunks are left, so a large
       // snapshot spans batches and an interrupted run loses nothing.
       const stillHolding = await transaction
         .selectDistinct({ snapshotId: logbookSnapshotChunks.snapshotId })
         .from(logbookSnapshotChunks)
         .where(inArray(logbookSnapshotChunks.snapshotId, expiredIds));
-      const unfinished = new Set(stillHolding.map((row) => row.snapshotId));
+      const stillHoldingSessions = await transaction
+        .selectDistinct({ snapshotId: logbookSnapshotSessionChunks.snapshotId })
+        .from(logbookSnapshotSessionChunks)
+        .where(inArray(logbookSnapshotSessionChunks.snapshotId, expiredIds));
+      const unfinished = new Set([...stillHolding, ...stillHoldingSessions].map((row) => row.snapshotId));
       const finishedIds = expiredIds.filter((id) => !unfinished.has(id));
       if (finishedIds.length > 0) {
         await transaction.delete(logbookSnapshots).where(inArray(logbookSnapshots.id, finishedIds));
       }
-      return { chunks: deletedChunks.length, snapshots: finishedIds.length };
+      return { chunks: deletedChunks.length + deletedSessionChunks.length, snapshots: finishedIds.length };
     });
 
     if (!removed) return { snapshotsRemoved, chunksRemoved, capped: false };

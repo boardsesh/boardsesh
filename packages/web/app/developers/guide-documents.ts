@@ -4,7 +4,7 @@ import { AUTHORIZE_SAMPLE, TOKEN_SAMPLE, SYNC_SAMPLE, OPENAPI_URL } from './deve
 
 export const GUIDE_SECTIONS = {
   auth: ['registration', 'authorize', 'credentials', 'disconnect'],
-  sync: ['snapshot', 'changes', 'recovery', 'poll'],
+  sync: ['snapshot', 'changes', 'sessions', 'recovery', 'poll', 'attribution'],
   errors: ['status', 'limits', 'versions'],
   reference: ['contract'],
   changelog: ['contract'],

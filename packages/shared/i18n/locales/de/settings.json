@@ -606,7 +606,8 @@
         "offlineAccess": "Behält diesen Zugriff, bis du die App trennst",
         "other": "Weiterer Zugriff: {{scope}}",
         "workoutsRead": "Ergebnisse der von dieser App geplanten Trainings lesen",
-        "workoutsWrite": "Trainings für dich planen und absagen"
+        "workoutsWrite": "Trainings für dich planen und absagen",
+        "sessionsRead": "Liest deine abgeschlossenen Sessions, privaten Rückblicknotizen und vollständigen Workouts, auch Workouts aus anderen Apps"
       },
       "disconnect": "Trennen",
       "disconnectA11y": "{{app}} trennen",

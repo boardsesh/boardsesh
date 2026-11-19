@@ -25,6 +25,13 @@ import {
   TickSchema,
   TickStatusSchema,
   UnknownLogbookChangeSchema,
+  PartnerSessionSchema,
+  SessionChangeSchema,
+  SessionDeletedChangeSchema,
+  SessionWorkoutSchema,
+  SessionWorkoutStageSchema,
+  SessionWorkoutPacingSchema,
+  SessionWorkoutClimbSchema,
 } from '../schemas';
 
 type Operation = {
@@ -62,6 +69,7 @@ describe('the OpenAPI routes', () => {
       'delete /v1/connection',
       'get /v1/logbook/changes',
       'get /v1/logbook/ticks/{id}',
+      'get /v1/logbook/sessions/{id}',
       'post /v1/workouts',
       'get /v1/workouts',
       'get /v1/workouts/{id}',
@@ -74,6 +82,7 @@ describe('the OpenAPI routes', () => {
     ['/v1/connection', 'delete', ['204', '401', '429', '5XX']],
     ['/v1/logbook/changes', 'get', ['200', '400', '401', '403', '410', '429', '5XX']],
     ['/v1/logbook/ticks/{id}', 'get', ['200', '401', '403', '404', '429', '5XX']],
+    ['/v1/logbook/sessions/{id}', 'get', ['200', '401', '403', '404', '429', '5XX']],
   ])('documents the responses of %s %s', (path, method, statuses) => {
     expect(Object.keys(paths[path][method].responses).sort()).toEqual([...statuses].sort());
   });
@@ -83,6 +92,7 @@ describe('the OpenAPI routes', () => {
     ['/v1/connection', 'delete', []],
     ['/v1/logbook/changes', 'get', ['logbook:read']],
     ['/v1/logbook/ticks/{id}', 'get', ['logbook:read']],
+    ['/v1/logbook/sessions/{id}', 'get', ['logbook:read', 'sessions:read']],
   ])('requires the right scope on %s %s', (path, method, scopes) => {
     expect(paths[path][method].security).toEqual([{ boardseshOAuth: scopes }]);
   });
@@ -127,6 +137,13 @@ describe('the OpenAPI schemas', () => {
     TickDeletedChange: TickDeletedChangeSchema,
     TickStatus: TickStatusSchema,
     UnknownLogbookChange: UnknownLogbookChangeSchema,
+    PartnerSession: PartnerSessionSchema,
+    SessionChange: SessionChangeSchema,
+    SessionDeletedChange: SessionDeletedChangeSchema,
+    SessionWorkout: SessionWorkoutSchema,
+    SessionWorkoutStage: SessionWorkoutStageSchema,
+    SessionWorkoutPacing: SessionWorkoutPacingSchema,
+    SessionWorkoutClimb: SessionWorkoutClimbSchema,
     CreateWorkout: CreateWorkoutSchema,
     Workout: WorkoutResponseSchema,
     WorkoutBlock: WorkoutBlockSchema,
@@ -168,6 +185,8 @@ describe('the OpenAPI schemas', () => {
     expect(changes.items.anyOf).toEqual([
       { $ref: '#/components/schemas/TickChange' },
       { $ref: '#/components/schemas/TickDeletedChange' },
+      { $ref: '#/components/schemas/SessionChange' },
+      { $ref: '#/components/schemas/SessionDeletedChange' },
       { $ref: '#/components/schemas/UnknownLogbookChange' },
     ]);
   });

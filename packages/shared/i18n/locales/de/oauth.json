@@ -68,7 +68,8 @@
       "offlineAccess": "Diesen Zugriff behalten, bis du die App trennst",
       "other": "Weiterer Zugriff: {{scope}}",
       "workoutsRead": "Ergebnisse der von dieser App geplanten Trainings lesen",
-      "workoutsWrite": "Trainings für dich planen und absagen"
+      "workoutsWrite": "Trainings für dich planen und absagen",
+      "sessionsRead": "Deine abgeschlossenen Sessions, privaten Rückblicknotizen und vollständigen Workouts lesen, auch Workouts aus anderen Apps"
     },
     "cannot": "Die App kann nichts in deinem Konto ändern und sieht nie dein Passwort.",
     "notReviewed": "Boardsesh hat diese App nicht geprüft. Verbinde nur Apps, denen du vertraust.",

@@ -1,5 +1,6 @@
 import {
   bigint,
+  boolean,
   index,
   integer,
   jsonb,
@@ -73,12 +74,17 @@ export const logbookSnapshots = pgTable(
       .notNull()
       .references(() => oauthConnections.id, { onDelete: 'cascade' }),
     connectionGeneration: integer('connection_generation').notNull(),
+    includesSessions: boolean('includes_sessions').default(false).notNull(),
     /** Feed generation when the snapshot started: every page and the final cursor carry it. */
     feedGeneration: uuid('feed_generation').notNull(),
     /** The hand-off point H: catch-up after this snapshot starts at change position `(H, 0)`. */
     horizonTxid: xid8('horizon_txid').notNull(),
     status: text('status').$type<LogbookSnapshotStatus>().notNull().default('building'),
     tickCount: integer('tick_count').notNull().default(0),
+    ticksComplete: boolean('ticks_complete').default(false).notNull(),
+    sessionCount: integer('session_count').default(0).notNull(),
+    sessionChunkCount: integer('session_chunk_count').default(0).notNull(),
+    nextSessionExportId: uuid('next_session_export_id'),
     chunkCount: integer('chunk_count').notNull().default(0),
     /** Keyset position of the next tick to copy; null until the first chunk is written. */
     nextUpdatedAt: timestamp('next_updated_at', { mode: 'string' }),
@@ -126,3 +132,16 @@ export const logbookSnapshotChunks = pgTable(
 
 export type LogbookSnapshot = typeof logbookSnapshots.$inferSelect;
 export type LogbookSnapshotChunk = typeof logbookSnapshotChunks.$inferSelect;
+
+/** Bounded session identity chunks; payloads and access are resolved again at delivery. */
+export const logbookSnapshotSessionChunks = pgTable(
+  'logbook_snapshot_session_chunks',
+  {
+    snapshotId: uuid('snapshot_id')
+      .notNull()
+      .references(() => logbookSnapshots.id, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    sessionExportIds: jsonb('session_export_ids').$type<string[]>().notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.snapshotId, table.chunkIndex] }) }),
+);

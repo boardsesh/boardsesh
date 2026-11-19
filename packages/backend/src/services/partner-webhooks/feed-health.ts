@@ -19,7 +19,10 @@ export async function reportPartnerFeedHealth(database: Database = db): Promise<
                       WHERE backend_xid IS NOT NULL
                         AND pid <> pg_backend_pid()), 0) AS oldest_write_seconds,
            pg_snapshot_xmin(pg_current_snapshot())::text AS horizon,
-           (SELECT txid::text FROM public.logbook_changes ORDER BY txid DESC, seq DESC LIMIT 1) AS latest_change_txid
+           (SELECT changes.txid::text FROM (
+             SELECT txid, seq FROM public.logbook_changes UNION ALL
+             SELECT txid, seq FROM public.logbook_session_changes
+           ) changes ORDER BY changes.txid DESC, changes.seq DESC LIMIT 1) AS latest_change_txid
   `,
   );
   if (!result) return;
