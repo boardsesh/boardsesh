@@ -31,9 +31,9 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_ROOT = resolve(REPO_ROOT, 'packages/mobile');
 const LOCALES_DIR = resolve(MOBILE_ROOT, 'locales');
 
-/** Language subtag of an app locale — 'en-US' -> 'en'. */
+/** iOS uses a script-specific localization for Simplified Chinese. */
 function languageSubtag(locale: string): string {
-  return locale.split('-')[0];
+  return locale === 'zh-CN' ? 'zh-Hans' : locale.split('-')[0];
 }
 
 function localeFileNames(): string[] {

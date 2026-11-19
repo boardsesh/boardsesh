@@ -1290,5 +1290,15 @@
     "removedMany": "{{count}} entries removed",
     "undo": "Undo",
     "cancelled": "Deletion cancelled. Your entry was kept."
+  },
+  "chineseTranslation": {
+    "title": "Help us speak climbing Chinese",
+    "body": "Welcome to Boardsesh in Simplified Chinese. We used AI to translate the app, and some climbing terms may sound unnatural.",
+    "terms": "What do you call a send, a flash, beta, or a Spraywall? Help us choose the words climbers actually use.",
+    "invitation": "Share your suggestions in our Google Form. It is optional, and you can find it again under Settings → General → Help translate.",
+    "openForm": "Help with climbing terms",
+    "continue": "Continue to Boardsesh",
+    "formPending": "Our terminology form is not ready yet. You can still help through Help translate in Settings → General.",
+    "formDescription": "Fill out our Google Form to help us choose natural Chinese climbing terms."
   }
 }

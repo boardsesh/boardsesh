@@ -7,6 +7,7 @@ import { ProfileHeaderShareProvider } from '../profile-header-bridge/profile-hea
 import PlaylistsAdapterProvider from './playlists-adapter-provider';
 import MarketingHeader from '../site-chrome/marketing-header';
 import SiteFooter from '../site-chrome/site-footer';
+import ChineseTranslationOnboarding from '../i18n/chinese-translation-onboarding';
 
 /**
  * Root chrome for www.
@@ -42,7 +43,9 @@ export default function SiteChrome({
           <MarketingHeader />
           {children}
           <SiteFooter developerHref={developerHref} />
-          <ConsentBanner />
+          <ConsentBanner>
+            {(consentRegion) => <ChineseTranslationOnboarding consentRegion={consentRegion} />}
+          </ConsentBanner>
         </PlaylistsAdapterProvider>
       </ProfileHeaderShareProvider>
     </StatsFilterBridgeProvider>

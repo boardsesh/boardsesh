@@ -1290,5 +1290,15 @@
     "removedMany": "{{count}} registros eliminados",
     "undo": "Deshacer",
     "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
+  },
+  "chineseTranslation": {
+    "title": "Ayúdanos con el chino de escalada",
+    "body": "Te damos la bienvenida a Boardsesh en chino simplificado. Usamos IA para traducir la app y algunos términos de escalada pueden sonar poco naturales.",
+    "terms": "¿Cómo llamas a un encadenamiento, un flash, la beta o un Spraywall? Ayúdanos a elegir las palabras que usan quienes escalan.",
+    "invitation": "Comparte tus sugerencias en nuestro formulario de Google. Es opcional y puedes volver a encontrarlo en Ajustes → General → Ayudar a traducir.",
+    "openForm": "Ayudar con los términos de escalada",
+    "continue": "Continuar a Boardsesh",
+    "formPending": "Nuestro formulario de terminología aún no está listo. Puedes colaborar desde Ayudar a traducir en Ajustes → General.",
+    "formDescription": "Rellena nuestro formulario de Google para ayudarnos a elegir términos de escalada naturales en chino."
   }
 }

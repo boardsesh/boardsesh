@@ -1,0 +1,126 @@
+{
+  "metadata": {
+    "signIn": {
+      "title": "登录以连接应用",
+      "description": "登录 Boardsesh，然后选择应用可以查看的内容。"
+    },
+    "consent": {
+      "title": "连接应用",
+      "description": "选择是否允许应用连接你的 Boardsesh 账号。"
+    }
+  },
+  "states": {
+    "invalidLink": {
+      "title": "这个链接无法使用",
+      "body": "请返回原来的应用，重新连接。"
+    },
+    "expired": {
+      "title": "这个链接已过期",
+      "body": "应用连接链接的有效期为 10 分钟。请返回应用，重新连接。"
+    },
+    "unavailable": {
+      "title": "暂时无法连接应用",
+      "body": "请稍后重试。你的 Boardsesh 账号不受影响。"
+    }
+  },
+  "signIn": {
+    "signedOut": {
+      "title": "登录以连接应用",
+      "body": "有应用希望连接你的 Boardsesh 账号。请先登录；在分享任何内容前，你可以查看它申请的访问权限。"
+    },
+    "stale": {
+      "title": "请重新登录以继续",
+      "body": "连接应用需要近期登录验证，因此请再登录一次。你的账号一切正常。",
+      "detail": "每隔 30 天或修改密码后，我们都会要求重新验证。"
+    },
+    "justSignedIn": {
+      "title": "即将完成",
+      "body": "如果你刚在过去一分钟内修改了密码，请等一分钟后重新登录。"
+    },
+    "signedInAs": "当前登录账号：{{account}}。",
+    "signOut": "不是你？退出登录",
+    "submit": "登录",
+    "errors": {
+      "invalidCredentials": "邮箱和密码不匹配。请重试。",
+      "unavailable": "暂时无法登录。请一分钟后重试。",
+      "accountNotLinked": "该账号属于另一个 Boardsesh 登录身份。请使用最初注册时的方式登录，或退出后重试。",
+      "linkRefused": "该账号尚未关联到你的 Boardsesh 登录身份。请使用密码或你平常使用的账号登录。",
+      "generic": "登录未完成。请重试。"
+    }
+  },
+  "consent": {
+    "loading": "正在检查应用申请的权限",
+    "sending": "正在发送你的选择",
+    "unnamedApp": "未命名应用",
+    "title": "将 {{app}} 连接到你的 Boardsesh 账号？",
+    "titleReconnect": "重新连接 {{app}}？",
+    "publisher": "由 {{publisher}} 开发",
+    "signedInAs": "当前登录账号：{{account}}。",
+    "signOut": "不是你？退出登录",
+    "reconnect": "你之前断开了 {{app}}。选择允许会重新连接。",
+    "canHeading": "{{app}} 将能够",
+    "scopes": {
+      "profileRead": "查看你的显示名称和头像",
+      "logbookRead": "查看你在所有训练板上的每条攀爬记录",
+      "logbookOnlyMe": "包括设为“仅自己可见”的攀爬记录",
+      "logbookUnlisted": "包括你记录过的其他定线员的不公开线路和草稿",
+      "logbookSpraywall": "他人设为私密或仅链接可见的喷点墙上的线路不会包含名称",
+      "offlineAccess": "保持这些访问权限，直到你断开连接",
+      "other": "其他权限：{{scope}}",
+      "workoutsRead": "读取该应用安排的训练结果",
+      "workoutsWrite": "为你安排和取消训练"
+    },
+    "cannot": "它不能更改你的账号内容，也永远无法看到你的密码。",
+    "notReviewed": "Boardsesh 尚未审核此应用。请只连接你信任的应用。",
+    "redirect": "选择后，你将返回 {{host}}。",
+    "links": {
+      "label": "关于 {{app}}",
+      "homepage": "网站",
+      "privacy": "隐私政策",
+      "terms": "条款",
+      "newTab": "（在新标签页打开）"
+    },
+    "allow": "允许",
+    "deny": "不允许",
+    "disconnect": "你可以随时在“设置 › 已连接应用”中断开连接。",
+    "backToApp": "返回 {{app}}",
+    "connected": {
+      "title": "{{app}} 已连接",
+      "body": "正在返回 {{app}}。如果没有自动跳转，请使用下方按钮。"
+    },
+    "declined": {
+      "title": "{{app}} 未连接",
+      "body": "未分享任何内容。正在返回 {{app}}。"
+    },
+    "appFull": {
+      "title": "{{app}} 暂时无法接受新连接",
+      "body": "该应用已达到连接上限，未分享任何内容。请稍后重试。"
+    },
+    "appNotReady": {
+      "title": "{{app}} 尚无法连接",
+      "body": "开发者尚未完成设置，未分享任何内容。"
+    },
+    "appError": {
+      "title": "{{app}} 连接失败",
+      "body": "未分享任何内容。请返回 {{app}} 重试。"
+    },
+    "appUnavailable": {
+      "title": "此应用无法连接",
+      "body": "该应用目前无法在 Boardsesh 上使用，未分享任何内容。"
+    },
+    "signInAgain": {
+      "title": "请重新登录以继续",
+      "body": "连接应用需要近期登录验证。你的账号一切正常。",
+      "button": "登录"
+    },
+    "busy": {
+      "title": "Boardsesh 正忙",
+      "body": "未分享任何内容。请一分钟后重试。"
+    },
+    "failed": {
+      "title": "操作未完成",
+      "body": "未分享任何内容。请重试，或返回应用重新连接。"
+    },
+    "tryAgain": "重试"
+  }
+}

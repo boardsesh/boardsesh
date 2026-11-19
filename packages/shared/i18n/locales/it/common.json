@@ -1290,5 +1290,15 @@
     "removedMany": "{{count}} voci rimosse",
     "undo": "Annulla",
     "cancelled": "Eliminazione annullata. La tua voce è stata mantenuta."
+  },
+  "chineseTranslation": {
+    "title": "Aiutaci con i termini di arrampicata in cinese",
+    "body": "Benvenuto su Boardsesh in cinese semplificato. Abbiamo usato l’IA per tradurre l’app e alcuni termini di arrampicata potrebbero suonare poco naturali.",
+    "terms": "Come chiami una ripetizione, un flash, una beta o una Spraywall? Aiutaci a scegliere le parole che usano davvero gli arrampicatori.",
+    "invitation": "Condividi i tuoi suggerimenti nel nostro modulo Google. È facoltativo e puoi ritrovarlo in Impostazioni → Generali → Aiuta a tradurre.",
+    "openForm": "Aiuta con i termini di arrampicata",
+    "continue": "Continua su Boardsesh",
+    "formPending": "Il nostro modulo sui termini di arrampicata non è ancora pronto. Puoi contribuire da Aiuta a tradurre in Impostazioni → Generali.",
+    "formDescription": "Compila il nostro modulo Google per aiutarci a scegliere termini di arrampicata naturali in cinese."
   }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_LOCALE } from '../config';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '../config';
 
 const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'locales');
 
@@ -10,7 +10,7 @@ const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'l
 // with the English catalog. Missing keys silently fall back to English at
 // runtime, ship untranslated copy to users, and spam Sentry with missing-key
 // warnings — fail the build here instead.
-const STRICTLY_ENFORCED_LOCALES = ['es', 'fr', 'de', 'it'] as const;
+const STRICTLY_ENFORCED_LOCALES = SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
 
 type Catalog = Record<string, unknown>;
 

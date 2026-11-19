@@ -25,6 +25,9 @@ describe('setRelativeTimeLocale', () => {
 
     setRelativeTimeLocale('fr');
     expect(formatTickRelativeTime(minutesAgo(6))).toBe('il y a 6 minutes');
+
+    setRelativeTimeLocale('zh-CN');
+    expect(formatTickRelativeTime(minutesAgo(6))).toBe('6 分钟前');
   });
 
   it('renders English for en-US', () => {

@@ -28,9 +28,12 @@ import { useConsent } from './consent-provider';
  * `enabled` is false on chrome-less pages (kiosks, embeds), which never ask and
  * must not write cookies.
  */
-export function useConsentRegionPrompt(enabled: boolean): boolean {
+export type ConsentRegionPromptState = { prompt: boolean; settled: boolean };
+
+export function useConsentRegionPromptState(enabled: boolean): ConsentRegionPromptState {
   const { snapshot } = useConsent();
   const [promptRegion, setPromptRegion] = useState(false);
+  const [regionChecked, setRegionChecked] = useState(false);
   // A boolean, not the record, is the effect's dependency: writing the region
   // default turns "no answer" into "region default", both true, so the effect
   // does not run again. It re-runs only when an answer appears or disappears
@@ -46,6 +49,7 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
       void answer
         .then(({ promptRequired, globalPrivacyControl }) => {
           if (cancelled || !isConsentRegionLookupCurrent(answer)) return;
+          setRegionChecked(true);
           const current = getWebConsentRecord();
           const regionDefaultAllowed = promptRequired === false && !globalPrivacyControl;
           setConsentRegionConfirmed(regionDefaultAllowed);
@@ -65,13 +69,17 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
         })
         .catch(() => {
           // Unreachable today (the lookup never rejects), but an unknown region asks.
-          if (!cancelled && isConsentRegionLookupCurrent(answer)) setPromptRegion(true);
+          if (!cancelled && isConsentRegionLookupCurrent(answer)) {
+            setRegionChecked(true);
+            setPromptRegion(true);
+          }
         });
     };
     const refresh = () => {
       const current = getWebConsentRecord();
       if (document.visibilityState === 'hidden' || (!isRegionDefaultConsent(current) && !needsPrompt(current))) return;
       if (!expireConsentRegionLookup()) return;
+      setRegionChecked(false);
       // Revoke capture synchronously, before the fresh request or React effects.
       setConsentRegionConfirmed(false);
       checkRegion();
@@ -88,5 +96,8 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
     };
   }, [regionCheckNeeded]);
 
-  return enabled && needsPrompt(snapshot.record) && promptRegion;
+  return {
+    prompt: enabled && needsPrompt(snapshot.record) && promptRegion,
+    settled: !regionCheckNeeded || regionChecked,
+  };
 }

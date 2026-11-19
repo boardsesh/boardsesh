@@ -25,6 +25,17 @@ export function detectDeviceLocale(): Locale {
   const deviceLocales = getLocales();
 
   for (const deviceLocale of deviceLocales) {
+    // zh-CN is our Simplified Chinese catalog. iOS usually reports zh-Hans-CN;
+    // do not silently replace a Traditional Chinese preference with Simplified.
+    if (deviceLocale.languageCode === 'zh') {
+      const tag = deviceLocale.languageTag.toLowerCase();
+      const traditional = deviceLocale.languageScriptCode === 'Hant' || tag.includes('-hant');
+      const simplified = deviceLocale.languageScriptCode === 'Hans' || tag.includes('-hans');
+      const traditionalRegion = /^zh-(tw|hk|mo)(-|$)/.test(tag);
+      if (traditional || (traditionalRegion && !simplified)) continue;
+      return 'zh-CN';
+    }
+
     // Try exact match first (e.g. "en-US")
     const exactTag = deviceLocale.languageTag as Locale;
     if ((SUPPORTED_LOCALES as readonly string[]).includes(exactTag)) {

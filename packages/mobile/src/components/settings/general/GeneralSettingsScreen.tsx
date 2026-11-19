@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { getChineseTerminologyFormUrl, isChineseTranslationLocale } from '@boardsesh/i18n';
 import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { MoreForm } from '../../MoreForm';
 import { buildOfflineModeRow } from '../../offline-mode-row';
@@ -34,6 +35,7 @@ import { buildGeneralModel } from './general-model';
 // We deep-link to the active language's folder so a community member lands on
 // the exact files to edit.
 const GITHUB_LOCALES_TREE_URL = 'https://github.com/boardsesh/boardsesh/tree/main/packages/shared/i18n/locales';
+const chineseTerminologyFormUrl = getChineseTerminologyFormUrl(process.env.EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL);
 
 export function GeneralSettingsScreen() {
   const { t } = useTranslation('common');
@@ -139,9 +141,14 @@ export function GeneralSettingsScreen() {
             setLocalePreference(language);
           },
           activeLocale,
+          chineseTerminologyFormAvailable: chineseTerminologyFormUrl !== null,
           onHelpTranslate: () => {
             hapticLight();
-            void openExternalUrl(`${GITHUB_LOCALES_TREE_URL}/${activeLocale}`, 'more-help-translate');
+            const url =
+              isChineseTranslationLocale(activeLocale) && chineseTerminologyFormUrl
+                ? chineseTerminologyFormUrl
+                : `${GITHUB_LOCALES_TREE_URL}/${activeLocale}`;
+            void openExternalUrl(url, 'more-help-translate');
           },
           offline: {
             offlineEnabled,

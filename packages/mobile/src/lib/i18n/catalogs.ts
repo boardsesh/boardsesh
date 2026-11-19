@@ -78,7 +78,36 @@ import auroraFr from '@boardsesh/i18n/locales/fr/aurora.json';
 import auroraDe from '@boardsesh/i18n/locales/de/aurora.json';
 import auroraIt from '@boardsesh/i18n/locales/it/aurora.json';
 
+import commonZh from '@boardsesh/i18n/locales/zh-CN/common.json';
+import consentZh from '@boardsesh/i18n/locales/zh-CN/consent.json';
+import authZh from '@boardsesh/i18n/locales/zh-CN/auth.json';
+import climbsZh from '@boardsesh/i18n/locales/zh-CN/climbs.json';
+import sessionZh from '@boardsesh/i18n/locales/zh-CN/session.json';
+import profileZh from '@boardsesh/i18n/locales/zh-CN/profile.json';
+import settingsZh from '@boardsesh/i18n/locales/zh-CN/settings.json';
+import playlistsZh from '@boardsesh/i18n/locales/zh-CN/playlists.json';
+import notificationsZh from '@boardsesh/i18n/locales/zh-CN/notifications.json';
+import feedZh from '@boardsesh/i18n/locales/zh-CN/feed.json';
+import youZh from '@boardsesh/i18n/locales/zh-CN/you.json';
+import boardsZh from '@boardsesh/i18n/locales/zh-CN/boards.json';
+import auroraZh from '@boardsesh/i18n/locales/zh-CN/aurora.json';
+
 export const resources = {
+  'zh-CN': {
+    common: commonZh,
+    consent: consentZh,
+    auth: authZh,
+    climbs: climbsZh,
+    session: sessionZh,
+    profile: profileZh,
+    settings: settingsZh,
+    playlists: playlistsZh,
+    notifications: notificationsZh,
+    feed: feedZh,
+    you: youZh,
+    boards: boardsZh,
+    aurora: auroraZh,
+  },
   'en-US': {
     common: commonEn,
     consent: consentEn,

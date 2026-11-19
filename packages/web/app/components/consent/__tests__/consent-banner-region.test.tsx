@@ -45,7 +45,7 @@ function consentCookie(): string | undefined {
   return cookies.startsWith('boardsesh-consent=') ? cookies.slice('boardsesh-consent='.length) : undefined;
 }
 
-async function renderBanner() {
+async function renderBanner(showReadiness = false) {
   const { ConsentProvider, useConsent } = await import('../consent-provider');
   const { default: ConsentBanner } = await import('../consent-banner');
   function OpenChoices() {
@@ -60,7 +60,15 @@ async function renderBanner() {
   return render(
     <ConsentProvider>
       <OpenChoices />
-      <ConsentBanner />
+      <ConsentBanner>
+        {showReadiness
+          ? ({ settled, prompt }) => (
+              <output data-testid="region-readiness">
+                {settled ? 'settled' : 'pending'}:{prompt ? 'prompt' : 'no-prompt'}
+              </output>
+            )
+          : undefined}
+      </ConsentBanner>
     </ConsentProvider>,
   );
 }
@@ -114,6 +122,46 @@ function regionLookups(): number {
 }
 
 describe('consent banner by region', () => {
+  it('shares refreshed region state with the welcome on foreground resume', async () => {
+    transport.region = false;
+    const view = await renderBanner(true);
+    await waitFor(() => expect(view.getByTestId('region-readiness').textContent).toBe('settled:no-prompt'));
+    let resolveRegion!: (promptRequired: boolean) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      resolveRegion = resolve;
+    });
+    fireEvent.focus(window);
+    await waitFor(() => expect(view.getByTestId('region-readiness').textContent).toBe('pending:no-prompt'));
+    await act(async () => resolveRegion(true));
+    await waitFor(() => expect(view.getByTestId('region-readiness').textContent).toBe('settled:prompt'));
+    expect(view.getByTestId('consent-banner')).toBeTruthy();
+    expect(regionLookups()).toBe(2);
+  });
+
+  it('reports pending until the shared region lookup resolves', async () => {
+    let resolveRegion!: (promptRequired: boolean) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      resolveRegion = resolve;
+    });
+    const view = await renderBanner(true);
+    expect(view.getByTestId('region-readiness').textContent).toBe('pending:no-prompt');
+    await act(async () => resolveRegion(true));
+    await waitFor(() => expect(view.getByTestId('region-readiness').textContent).toBe('settled:prompt'));
+    expect(regionLookups()).toBe(1);
+  });
+
+  it('settles without a prompt when the shared lookup permits it', async () => {
+    let resolveRegion!: (promptRequired: boolean) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      resolveRegion = resolve;
+    });
+    const view = await renderBanner(true);
+    expect(view.getByTestId('region-readiness').textContent).toBe('pending:no-prompt');
+    await act(async () => resolveRegion(false));
+    await waitFor(() => expect(view.getByTestId('region-readiness').textContent).toBe('settled:no-prompt'));
+    expect(regionLookups()).toBe(1);
+  });
+
   it('shows the banner to a visitor in a prompt region, and writes nothing', async () => {
     transport.region = true;
     const view = await renderBanner();

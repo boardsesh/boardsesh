@@ -1290,5 +1290,15 @@
     "removedMany": "{{count}} Einträge gelöscht",
     "undo": "Rückgängig",
     "cancelled": "Löschen abgebrochen. Dein Eintrag bleibt erhalten."
+  },
+  "chineseTranslation": {
+    "title": "Hilf uns mit chinesischen Kletterbegriffen",
+    "body": "Willkommen bei Boardsesh auf vereinfachtem Chinesisch. Wir haben die App mit KI übersetzt. Manche Kletterbegriffe klingen vielleicht noch ungewohnt.",
+    "terms": "Wie sagst du zu einer Begehung, einem Flash, einer Beta oder einer Spraywall? Hilf uns, die Wörter zu finden, die Kletternde wirklich benutzen.",
+    "invitation": "Teile deine Vorschläge in unserem Google-Formular. Das ist freiwillig. Du findest es auch unter Einstellungen → Allgemein → Beim Übersetzen helfen.",
+    "openForm": "Bei Kletterbegriffen helfen",
+    "continue": "Weiter zu Boardsesh",
+    "formPending": "Unser Formular für Kletterbegriffe ist noch nicht fertig. Du kannst über Beim Übersetzen helfen unter Einstellungen → Allgemein mitmachen.",
+    "formDescription": "Hilf uns im Google-Formular, natürliche chinesische Kletterbegriffe zu finden."
   }
 }

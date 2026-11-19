@@ -1,4 +1,5 @@
 'use client';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -14,16 +15,17 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { useConsent } from './consent-provider';
-import { useConsentRegionPrompt } from './use-consent-region-prompt';
+import { useConsentRegionPromptState, type ConsentRegionPromptState } from './use-consent-region-prompt';
 
-export default function ConsentBanner() {
+export default function ConsentBanner({ children }: { children?: (region: ConsentRegionPromptState) => ReactNode }) {
   const { t } = useTranslation('consent');
   const { decide, dialogOpen, closeChoices, syncFailed } = useConsent();
   const pathname = usePathnameWithoutLocale();
   const chromeLess = isChromeLessPath(pathname.toLowerCase());
   // The banner asks only in the prompt regions (or an unknown one). Privacy
   // choices in the footer and Settings open the dialog below for everyone.
-  const promptRegion = useConsentRegionPrompt(!chromeLess);
+  // The welcome consumes this same lookup state, including focus refreshes.
+  const region = useConsentRegionPromptState(!chromeLess);
   if (chromeLess) return null;
   const choose = (choice: 'granted' | 'denied') => {
     void decide(choice);
@@ -44,7 +46,7 @@ export default function ConsentBanner() {
   );
   return (
     <>
-      {promptRegion && (
+      {region.prompt && (
         <Box
           className="analytics-consent-banner"
           role="region"
@@ -98,6 +100,7 @@ export default function ConsentBanner() {
           </Button>
         </DialogActions>
       </Dialog>
+      {children?.(region)}
     </>
   );
 }

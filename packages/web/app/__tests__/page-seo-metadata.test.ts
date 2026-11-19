@@ -54,6 +54,7 @@ describe('page metadata exports', () => {
       fr: '/fr/about',
       de: '/de/about',
       it: '/it/about',
+      'zh-CN': '/zh-CN/about',
       'x-default': '/about',
     });
     expect(aboutMetadata.openGraph?.url).toBe('/about');

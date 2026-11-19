@@ -1,0 +1,614 @@
+{
+  "metadata": {
+    "admin": {
+      "title": "管理面板",
+      "description": "Boardsesh 管理面板"
+    },
+    "retention": {
+      "title": "留存率",
+      "description": "用户群组留存看板"
+    }
+  },
+  "title": "管理面板",
+  "auth": {
+    "signInRequired": "请登录以访问管理面板。",
+    "noAccess": "你没有管理员权限。",
+    "boardScopedNoAccess": "你的管理权限仅限一种训练板。这些工具需要全站管理权限。"
+  },
+  "tabs": {
+    "roles": "角色",
+    "settings": "设置",
+    "gyms": "岩馆"
+  },
+  "nav": {
+    "retention": "留存率看板",
+    "gymClaims": "岩馆认领",
+    "feedback": "问题报告",
+    "gymDuplicates": "重复岩馆",
+    "locationSync": "位置同步冻结",
+    "sprayWalls": "喷点墙训练数据",
+    "boards": "已注册训练板",
+    "buildPlans": "建造图纸包订单",
+    "partnerApps": "合作应用"
+  },
+  "buildPlans": {
+    "title": "建造图纸包订单",
+    "subtitle": "显示所有订单，包括免费预览，最新订单在前。查看生成器报错后，可将图纸包重新加入队列。",
+    "previewsLastHour_one": "当前已加载订单中，过去一小时生成了 {{count}} 份预览。",
+    "previewsLastHour_other": "当前已加载订单中，过去一小时生成了 {{count}} 份预览。",
+    "backToAdmin": "返回管理面板",
+    "statusFilter": {
+      "all": "全部"
+    },
+    "table": {
+      "licence": "许可",
+      "licensee": "被许可人",
+      "tier": "档位",
+      "wall": "岩墙",
+      "status": "状态",
+      "attempts": "尝试次数",
+      "created": "创建时间",
+      "actions": "操作"
+    },
+    "actions": {
+      "regenerate": "重新生成"
+    },
+    "confirm": {
+      "title": "重新生成此图纸包？",
+      "body": "{{licenceId}} 将沿用原许可编号重新生成，并替换买家下载的文件。买家已购买的许可保持有效。",
+      "cancel": "保持原样",
+      "confirm": "重新生成"
+    },
+    "snackbar": {
+      "regenerated": "已重新加入队列",
+      "regenerateFailed": "无法将图纸包重新加入队列"
+    },
+    "empty": "没有符合筛选条件的订单。",
+    "error": "无法加载订单。",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "unknown": "未提供"
+  },
+  "feedback": {
+    "title": "问题报告与反馈",
+    "subtitle": "来自应用的问题报告和评分。可筛选、查看报告者邮箱，并标记处理完成。",
+    "backToAdmin": "返回管理面板",
+    "type": {
+      "bugs": "问题",
+      "ratings": "评分",
+      "all": "全部",
+      "bug": "问题",
+      "rating": "评分"
+    },
+    "status": {
+      "new": "新报告",
+      "in_progress": "处理中",
+      "resolved": "已解决",
+      "wont_fix": "不予修复"
+    },
+    "statusFilter": {
+      "all": "全部"
+    },
+    "search": {
+      "placeholder": "搜索留言"
+    },
+    "table": {
+      "date": "日期",
+      "type": "类型",
+      "platform": "平台",
+      "comment": "留言",
+      "reporter": "报告者",
+      "status": "状态",
+      "github": "GitHub",
+      "actions": "操作"
+    },
+    "reporter": {
+      "anonymous": "匿名",
+      "copyEmail": "复制邮箱",
+      "consentYes": "同意联系",
+      "consentNo": "未同意联系"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "问题 #{{number}}"
+    },
+    "actions": {
+      "markDone": "标记完成"
+    },
+    "detail": {
+      "toggle": "展开或收起详情",
+      "comment": "留言",
+      "board": "训练板",
+      "climb": "线路",
+      "session": "攀爬活动",
+      "url": "URL",
+      "userAgent": "用户代理",
+      "screenshots": "截图",
+      "screenshotAlt": "截图 {{index}}",
+      "resolvedBy": "解决者",
+      "releaseChannel": "发布通道",
+      "releaseBranch": "运行分支",
+      "updateId": "更新 ID",
+      "runtimeVersion": "运行时",
+      "automaticCanary": "自动灰度测试",
+      "canaryYes": "是",
+      "canaryNo": "否",
+      "canaryUnknown": "未知",
+      "canaryCheckedAt": "灰度检查时间"
+    },
+    "empty": "没有符合筛选条件的反馈。",
+    "error": "无法加载反馈。",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "showing": "显示 {{shown}} 条，共 {{total}} 条",
+    "snackbar": {
+      "statusUpdated": "状态已更新",
+      "updateFailed": "无法更新状态",
+      "emailCopied": "邮箱已复制",
+      "copyFailed": "无法复制"
+    }
+  },
+  "retention": {
+    "heading": "用户留存率",
+    "subheading": "在第 W 周注册的用户中，有多少在第 N 天活跃，即经典的 Dn 留存率。分别统计攀爬记录和任意应用内活动。",
+    "definitions": "群组按注册周划分（UTC）。Dn 表示用户在注册 N 天后开始的 24 小时内有活动（因此 D7 指恰好第 7 天活跃，而非前 7 天内任意时间活跃）。攀爬记录指在 Boardsesh 至少记录一条线路（不计从 Aurora 导入的记录）。任意活动包括攀爬记录、发起或加入共同攀爬活动、收藏、创建或置顶线路集、关注用户/定线员/线路集、订阅新线路、评论、投票、提案投票或提交反馈。尚未达到统计窗口的群组显示 —。",
+    "back": "返回管理面板",
+    "table": {
+      "cohortWeek": "注册周",
+      "signups": "注册人数",
+      "groupTicks": "攀爬记录",
+      "groupAny": "任意活动",
+      "activated": "已激活",
+      "d1": "D1",
+      "d3": "D3",
+      "d7": "D7",
+      "d30": "D30",
+      "notReady": "—",
+      "empty": "暂无群组数据。"
+    },
+    "chart": {
+      "title": "各注册周的 D7 留存率",
+      "label": "攀爬记录",
+      "labelAny": "任意活动"
+    }
+  },
+  "roles": {
+    "heading": "社区角色",
+    "grant": "授予角色",
+    "table": {
+      "user": "用户",
+      "role": "角色",
+      "board": "训练板",
+      "grantedBy": "授予人",
+      "date": "日期",
+      "actions": "操作"
+    },
+    "labels": {
+      "admin": "管理员",
+      "leader": "社区负责人",
+      "tester": "测试者",
+      "global": "全局",
+      "fallbackUserInitial": "用",
+      "fallbackEmpty": "-"
+    },
+    "empty": "尚未分配角色",
+    "dialog": {
+      "title": "授予角色",
+      "search": {
+        "label": "搜索用户",
+        "placeholder": "输入姓名搜索…"
+      },
+      "fallbackUserInitial": "用",
+      "change": "更换",
+      "roleLabel": "角色",
+      "boardTypeLabel": "训练板类型（可选）",
+      "boardTypeOptions": {
+        "global": "全局（所有训练板）"
+      },
+      "roleOptions": {
+        "communityLeader": "社区负责人",
+        "admin": "管理员",
+        "tester": "测试者"
+      },
+      "cancel": "取消",
+      "submit": "授予"
+    },
+    "snackbar": {
+      "granted": "已授予角色",
+      "grantFailed": "授予角色失败",
+      "revoked": "已撤销角色",
+      "revokeFailed": "撤销角色失败"
+    }
+  },
+  "settings": {
+    "heading": "社区设置",
+    "scope": {
+      "label": "范围",
+      "options": {
+        "global": "全局",
+        "board": "训练板",
+        "climb": "线路"
+      },
+      "boardTypeLabel": "训练板类型",
+      "boardTypePlaceholder": "kilter, tension",
+      "climbUuidLabel": "线路 UUID",
+      "climbUuidPlaceholder": "线路 UUID"
+    },
+    "table": {
+      "setting": "设置项",
+      "description": "说明",
+      "value": "数值"
+    },
+    "rows": {
+      "approvalThreshold": {
+        "label": "通过阈值",
+        "description": "自动通过所需的加权票数"
+      },
+      "outlierMinAscents": {
+        "label": "异常检测最少完攀数",
+        "description": "进行异常检测所需的最少完攀次数"
+      },
+      "outlierGradeDiff": {
+        "label": "异常等级差",
+        "description": "判定异常的难度差阈值"
+      },
+      "adminVoteWeight": {
+        "label": "管理员投票权重",
+        "description": "管理员投票的权重倍数"
+      },
+      "leaderVoteWeight": {
+        "label": "社区负责人投票权重",
+        "description": "社区负责人投票的权重倍数"
+      }
+    },
+    "save": "保存全部",
+    "saving": "正在保存…",
+    "snackbar": {
+      "saved_one": "已保存 {{count}} 项设置",
+      "saved_other": "已保存 {{count}} 项设置",
+      "saveFailed": "保存设置失败"
+    }
+  },
+  "gymSettings": {
+    "heading": "岩馆设置",
+    "autoApprove": {
+      "label": "自动批准所有权认领",
+      "description": "未认领的岩馆由认领人直接接管。若岩馆已有所有者，认领申请仍需你审核。",
+      "queueNote": "已在队列中等待的认领仍会保留。"
+    },
+    "snackbar": {
+      "enabled": "已开启自动批准。",
+      "disabled": "已关闭自动批准。",
+      "saveFailed": "无法保存，请重试。",
+      "loadFailed": "无法加载岩馆设置。"
+    }
+  },
+  "gymClaims": {
+    "title": "岩馆认领",
+    "backToAdmin": "返回管理面板",
+    "heading": "待处理认领",
+    "empty": "暂无待处理认领",
+    "error": "无法加载认领，请重试。",
+    "retry": "重试",
+    "approve": "批准",
+    "deny": "拒绝",
+    "method": {
+      "domain": "域名",
+      "admin": "人工审核"
+    },
+    "snackbar": {
+      "approved": "认领已批准，所有权已转移",
+      "denied": "认领已拒绝",
+      "failed": "无法更新认领",
+      "superseded": "此岩馆在认领提交后已更换所有者。请拒绝认领，或使用下方的转移岩馆所有权。"
+    },
+    "table": {
+      "claimant": "认领人",
+      "gym": "岩馆",
+      "method": "方式",
+      "detail": "详情",
+      "date": "日期",
+      "actions": "操作"
+    },
+    "loadMore": "加载更多"
+  },
+  "gymOwnerReassign": {
+    "title": "转移岩馆所有权",
+    "intro": "岩馆出售、委员会成员离任或认领申请误批给他人时，可将岩馆转交给另一个账号。该岩馆记录的同步冻结状态保持原样，原所有者继续担任岩馆管理员。",
+    "form": {
+      "gymLabel": "岩馆",
+      "gymPlaceholder": "UUID、网址简称或名称",
+      "ownerLabel": "新所有者",
+      "ownerPlaceholder": "账号邮箱或用户 ID",
+      "submit": "查找",
+      "searching": "正在查找…"
+    },
+    "result": {
+      "gymHeading": "岩馆",
+      "ownerHeading": "新所有者",
+      "noGym": "没有找到匹配的岩馆。",
+      "noOwner": "没有找到匹配该邮箱或 ID 的账号。",
+      "currentOwner": "所有者为 {{owner}}",
+      "unknownOwner": "已不存在的账号",
+      "systemOwned": "未认领的岩馆",
+      "frozen": "同步已冻结",
+      "notFrozen": "同步未冻结",
+      "deleted": "这条岩馆记录已删除，无法转移所有权。",
+      "merged": "这条记录已并入另一家岩馆。请转移合并后保留的岩馆记录的所有权。",
+      "sameOwner": "该账号已拥有此岩馆。"
+    },
+    "actions": {
+      "reassign": "转移所有权"
+    },
+    "confirm": {
+      "title": "将此岩馆转给新所有者？",
+      "body": "{{gym}} 将从 {{from}} 转至 {{to}}。原所有者保留岩馆管理权限，新所有者获得完全控制权。",
+      "freezeNote": "转交后，这条岩馆记录会保持当前的同步状态：已冻结的仍然冻结，未冻结的仍可同步。",
+      "reasonLabel": "原因",
+      "reasonPlaceholder": "为什么要转移此岩馆？",
+      "reasonRemaining": "还需输入 {{count}} 个字符",
+      "reasonStored": "此原因将保存在审计记录中。",
+      "cancel": "取消",
+      "submit": "转移所有权",
+      "submitting": "正在转移…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} 已转交新所有者",
+      "failed": "无法转移所有权。请检查岩馆后重试。",
+      "ownerChanged": "确认窗口打开期间，此岩馆已更换所有者。请重新查找当前所有者。",
+      "newOwnerGone": "该账号已不存在。请查找其他账号。",
+      "merged": "这条记录已并入另一家岩馆。请转移合并后保留的岩馆记录的所有权。",
+      "gymGone": "此岩馆已无法转移。",
+      "ownerUnchanged": "该账号已拥有此岩馆。",
+      "lookupFailed": "无法查找，请重试。"
+    }
+  },
+  "locationSync": {
+    "title": "位置同步冻结",
+    "backToAdmin": "返回管理面板",
+    "intro": "只有在希望上游来源重新更新这条记录时，才解除对人工修改的保护。此操作不会立即同步。下次刷新时，匹配的来源可能覆盖现有信息，或恢复已删除的记录。",
+    "tabs": {
+      "label": "记录类型",
+      "gyms": "岩馆",
+      "boards": "训练板"
+    },
+    "search": {
+      "label": "搜索已冻结的记录",
+      "placeholder": "名称、网址简称或 UUID",
+      "submit": "搜索"
+    },
+    "summary": "已显示 {{shown}} 条，共有 {{total}} 条已冻结的记录",
+    "retry": "重试",
+    "error": "无法加载已冻结的记录。",
+    "empty": "没有符合搜索条件的已冻结记录。",
+    "loadMore": "加载更多",
+    "notAvailable": "这条记录",
+    "table": {
+      "listing": "记录",
+      "state": "状态",
+      "frozenAt": "冻结时间",
+      "sources": "同步来源",
+      "actions": "操作",
+      "noRecordedSources": "无来源记录"
+    },
+    "state": {
+      "deleted": "已删除",
+      "live": "正常显示",
+      "systemOwned": "系统所有",
+      "userOwned": "用户所有",
+      "ownerProtected": "所有权保护中"
+    },
+    "actions": {
+      "release": "解除冻结"
+    },
+    "confirm": {
+      "title": "解除此次同步冻结？",
+      "body": "下次匹配的位置同步将可再次更新 {{name}}。请查看提醒，并记录解除冻结的原因。",
+      "deletedWarning": "这条记录已删除。下次同步时，匹配的来源可能会将其恢复。",
+      "ownerProtectedWarning": "此岩馆已有用户所有者或已批准的认领。解除冻结后，所有权保护仍然生效。",
+      "noSourceWarning": "此岩馆目前未关联同步来源。解除冻结后，直到有来源与其匹配才会产生影响。",
+      "moonBoardWarning": "MoonBoard 位置同步需手动运行，并非定时执行。解除冻结后，上游更改会在下次有人运行 MoonBoard 位置同步时导入。",
+      "reasonLabel": "原因",
+      "reasonPlaceholder": "为什么应让上游数据重新接管？",
+      "reasonRemaining": "还需输入 {{count}} 个字符",
+      "reasonStored": "此原因将保存在审计日志中。",
+      "cancel": "取消",
+      "releasing": "正在解除…",
+      "release": "解除冻结"
+    },
+    "snackbar": {
+      "alreadyReleased": "冻结已解除",
+      "released": "同步冻结已解除",
+      "failed": "无法解除同步冻结。列表已刷新。"
+    }
+  },
+  "gymDuplicates": {
+    "title": "重复岩馆",
+    "backToAdmin": "返回管理面板",
+    "heading": "重复项审核队列",
+    "tabs": {
+      "duplicates": "重复项",
+      "orphans": "无来源列表检查"
+    },
+    "tier": {
+      "a": "完全匹配",
+      "b": "近似匹配"
+    },
+    "maxDistance": "相距不超过 {{meters}} 米",
+    "owner": {
+      "system": "系统",
+      "user": "用户所有"
+    },
+    "claim": {
+      "pending": "认领待处理",
+      "approved": "认领已批准"
+    },
+    "counts": "{{boards}} 块训练板 · {{follows}} 次关注 · {{members}} 位成员 · {{kiosks}} 个展示终端 · {{claims}} 次认领",
+    "orphanCounts": "{{boards}} 块训练板 · {{follows}} 次关注 · {{members}} 位成员 · {{kiosks}} 个展示终端",
+    "distance": "距离保留项 {{meters}} 米",
+    "merge": "合并",
+    "dismiss": "不是重复项",
+    "confirm": {
+      "title": "合并这些岩馆？",
+      "body": "将 {{count}} 家重复岩馆并入 {{canonical}}，并转移 {{boards}} 块训练板、{{follows}} 次关注、{{members}} 位成员、{{kiosks}} 个展示终端和 {{claims}} 次认领。此操作无法撤销。",
+      "cancel": "取消",
+      "confirm": "合并",
+      "overrideWarning": "请注意：你选择保留系统生成的岩馆记录。一家已有所有者或已被认领的岩馆将并入该记录。请确认应当保留的是系统记录，再继续操作。",
+      "confirmOverride": "仍然合并"
+    },
+    "kioskWarning": "展示终端“{{name}}”已从 /{{previous}} 移至 /{{next}}",
+    "snackbar": {
+      "merged": "岩馆已合并",
+      "mergeFailed": "无法合并岩馆",
+      "dismissed": "已标记为非重复项",
+      "dismissFailed": "无法忽略此组"
+    },
+    "empty": "没有需要审核的重复项",
+    "error": "无法加载重复项，请重试。",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "orphans": {
+      "summary": "{{count}} 家系统所有的岩馆没有位置同步来源",
+      "empty": "没有无来源岩馆",
+      "name": "岩馆",
+      "address": "地址",
+      "counts": "统计"
+    },
+    "ownerReports": {
+      "note": "所有者现在可以在岩馆页面报告重复项。这些报告暂时通过团队邮件送达，请在查看此队列时也留意收件箱。"
+    }
+  },
+  "sprayTraining": {
+    "title": "喷点墙训练数据",
+    "statusLabel": "审核状态",
+    "status": {
+      "unreviewed": "未审核（{{total}}）",
+      "approved": "已批准（{{total}}）",
+      "rejected": "已拒绝（{{total}}）"
+    },
+    "empty": "这里还没有内容",
+    "error": "无法加载队列，请重试。",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "card": {
+      "open": "审核喷点墙版本 {{version}}",
+      "holds": "岩点：{{total}}",
+      "edited": "已编辑：{{percent}}%",
+      "accepted": "未经检查直接接受：{{percent}}%",
+      "deleted": "已删除建议：{{total}}"
+    },
+    "kind": {
+      "manual": "手动标注",
+      "auto": "已检测，未审核",
+      "accepted": "未经检查直接接受",
+      "confirmed": "已确认不确定项",
+      "edited": "已编辑",
+      "deleted": "已删除建议",
+      "notShown": "从未显示"
+    },
+    "reason": {
+      "BAD_HOLDS": "岩点绘制有误",
+      "MISSING_HOLDS": "岩点缺失",
+      "PHOTO_QUALITY": "照片质量",
+      "NOT_A_WALL": "不是攀岩墙",
+      "PEOPLE_OR_PERSONAL_INFO": "包含人物或个人信息",
+      "DUPLICATE": "重复",
+      "OTHER": "其他"
+    },
+    "visibility": {
+      "PRIVATE": "可见性：私密",
+      "UNLISTED": "可见性：仅链接可见",
+      "PUBLIC": "可见性：公开"
+    },
+    "review": {
+      "title": "喷点墙版本 {{version}}",
+      "close": "关闭",
+      "previous": "上一面喷点墙",
+      "next": "下一面喷点墙",
+      "position": "第 {{current}} 项，共 {{total}} 项",
+      "photoAlt": "已标注岩点的喷点墙照片",
+      "noPhoto": "此照片已不可用。",
+      "photoLoading": "正在加载照片",
+      "loadingNext": "正在加载更多喷点墙",
+      "unmappable": "无法在照片上定位的岩点：{{total}}",
+      "model": "检测器：{{version}}",
+      "showMarks": "显示标注（H）",
+      "legend": "图例",
+      "reason": "拒绝原因",
+      "notes": "备注（可选）",
+      "approve": "批准（A）",
+      "reject": "拒绝（R）",
+      "backToUnreviewed": "恢复为未审核",
+      "shortcuts": "A 批准，R 拒绝，H 隐藏标注，左右方向键切换上一项和下一项。"
+    },
+    "snackbar": {
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "reset": "已放回未审核队列",
+      "failed": "无法保存审核结果",
+      "notEligible": "未保存。此喷点墙已不能用于训练数据。"
+    },
+    "backToAdmin": "返回管理面板",
+    "noAccess": "你的管理权限不包括喷点墙。此页面需要喷点墙或全站管理权限。"
+  },
+  "boards": {
+    "title": "已注册训练板",
+    "description": "查找和编辑已注册训练板，包括私密训练板和未关联岩馆的训练板。",
+    "backToAdmin": "返回管理面板",
+    "search": "搜索训练板",
+    "searchPlaceholder": "训练板名称、UUID、网址简称或岩馆",
+    "boardType": "训练板类型",
+    "allTypes": "全部类型",
+    "searchAction": "搜索",
+    "loading": "正在加载训练板",
+    "editLoadError": "无法加载此训练板以进行编辑。",
+    "retry": "重试",
+    "backToList": "全部训练板",
+    "loadError": "无法加载已注册训练板。",
+    "empty": "没有符合搜索条件的训练板。",
+    "owner": "所有者：{{name}}",
+    "systemOwner": "Boardsesh",
+    "noGym": "未关联岩馆",
+    "editNamed": "编辑 {{name}}",
+    "results_one": "{{count}} 块训练板",
+    "results_other": "{{count}} 块训练板",
+    "previous": "上一页",
+    "next": "下一页",
+    "visibility": {
+      "public": "公开",
+      "unlisted": "不公开列出",
+      "private": "私密"
+    }
+  },
+  "partnerApps": {
+    "title": "合作应用",
+    "description": "已注册应用、已连接攀岩者及连接上限。",
+    "limitsHelp": "上限适用于新连接。调低上限不会影响现有连接。设为零会禁止新连接。修改会连同你的管理员账号一起记录。",
+    "search": "搜索应用、发布者或开发者",
+    "searchAction": "搜索",
+    "app": "应用",
+    "developer": "开发者",
+    "connections": "连接",
+    "limits": "上限",
+    "actions": "操作",
+    "activeLimit": "最大有效连接数",
+    "dailyLimit": "每 24 小时最大新连接数",
+    "usage": "{{active}} 个有效连接 · 24 小时内新增 {{recent}} 个",
+    "invalidLimit": "请输入 0 到 2147483647 之间的整数。",
+    "save": "保存上限",
+    "saved": "上限已保存",
+    "saveError": "无法保存这些上限，请重试。",
+    "loading": "正在加载合作应用",
+    "loadError": "无法加载合作应用。",
+    "retry": "重试",
+    "empty": "没有符合搜索条件的应用。",
+    "total_one": "{{count}} 个已注册应用",
+    "total_other": "{{count}} 个已注册应用",
+    "previous": "上一页",
+    "next": "下一页",
+    "active": "有效",
+    "suspended": "已停用"
+  }
+}

@@ -35,6 +35,7 @@ import {
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { useOptionalTheme } from '../../providers/theme-provider';
 import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
+import { ChineseTranslationOnboarding } from './ChineseTranslationOnboarding';
 
 /**
  * How much FOREGROUND time the gate gets to reach a decision before it reports
@@ -199,10 +200,13 @@ export function OnboardingGate() {
   // back with a board bound. What keeps the two from overlapping is the route
   // guard (`onboarding` and `boards` are both blocked segments), not this flag.
   const [tourEvaluated, setTourEvaluated] = useState(false);
+  const [firstBoardPickerPresented, setFirstBoardPickerPresented] = useState(false);
   if (userId !== undefined && userId !== decidedForUserRef.current) {
     const switchedAccount = decidedForUserRef.current !== undefined;
     decidedForUserRef.current = userId;
     if (switchedAccount) {
+      setTourEvaluated(false);
+      setFirstBoardPickerPresented(false);
       decidedRef.current = false;
       triggerRef.current = 'account_switch';
       // `ms_since_mount` on the new account's decision counts from the switch,
@@ -295,6 +299,7 @@ export function OnboardingGate() {
     const markLookStepForNewAccount = isNewAccount(accountCreatedAtRef.current, nowMs()) && pickerEnabledRef.current;
     const decide = (decision: GateDecision) => {
       decided = true;
+      if (decision.outcome === 'presented') setFirstBoardPickerPresented(true);
       stopWatchdogRef.current?.();
       trackOnboardingGateEvaluated({
         ...decision,
@@ -542,5 +547,13 @@ export function OnboardingGate() {
   }, [ready, boardResolved, profileReady, flagsResolved, userId]);
 
   // The board-look step is evaluated and logged too, never presented (#5654).
-  return <BoardLookStepGate ready={ready} tourDecided={tourEvaluated} present={false} />;
+  return (
+    <>
+      <BoardLookStepGate ready={ready} tourDecided={tourEvaluated} present={false} />
+      <ChineseTranslationOnboarding
+        onboardingDecided={tourEvaluated}
+        firstBoardPickerPresented={firstBoardPickerPresented}
+      />
+    </>
+  );
 }
