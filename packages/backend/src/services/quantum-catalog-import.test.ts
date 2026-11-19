@@ -20,43 +20,93 @@ import {
 import { db, type Database } from '../db/client';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 import {
-  importValidatedQuantumSnapshot as importSnapshot,
-  QuantumHardwareFingerprintDriftError,
-  QuantumSnapshotRollbackError,
   QuantumRouteGeometryDriftError,
+  importPreparedEwallsCatalog,
+  EwallsCheckpointChangedError,
+  EwallsCatalogAuthorityChangedError,
 } from './quantum-catalog-import';
+import type { EwallsBootstrap, EwallsDelta } from '@boardsesh/quantum-sync';
+import { QUANTUM_HARDWARE_FINGERPRINT } from '@boardsesh/board-constants/quantum';
+import { prepareQuantumCatalog, type PreparedQuantumCatalog } from './quantum-catalog-mapping';
+import { loadEwallsCatalogState } from './ewalls-catalog-state';
 import { getQuantumCatalogAngles } from '../graphql/resolvers/board/queries';
-import { quantumCanonicalClimbUuid, computeQuantumHardwareFingerprint } from './quantum-catalog-mapping';
+import { quantumCanonicalClimbUuid } from './quantum-catalog-mapping';
 import {
   quantumCatalogFixture,
-  quantumFixtureDiodes,
+  importFixture,
   quantumSharedRouteFixture,
   type QuantumFixtureOptions,
 } from './__tests__/quantum-catalog-fixture';
 
-import { QUANTUM_CATALOG_CHECKPOINT } from './quantum-catalog-checkpoint';
-
+const FIXTURE_SCOPE = { board: '', forcedType: 'big' };
 async function catalogSyncStates() {
-  const rows = await db
-    .select({ metadata: boardSharedSyncs.metadata })
-    .from(boardSharedSyncs)
-    .where(and(eq(boardSharedSyncs.boardType, 'quantum'), eq(boardSharedSyncs.tableName, QUANTUM_CATALOG_CHECKPOINT)));
-  return rows.map((row) => row.metadata);
-}
-function importValidatedQuantumSnapshot(...args: Parameters<typeof importSnapshot>) {
-  const [snapshot, signal, options] = args;
-  return importSnapshot(snapshot, signal, {
-    ...options,
-    expectedHardwareFingerprint: computeQuantumHardwareFingerprint(
-      quantumCatalogFixture().rows.models,
-      quantumCatalogFixture().rows.diodes,
-    ),
-  });
+  const state = await loadEwallsCatalogState(db, FIXTURE_SCOPE, 'catalogue-service');
+  return state ? [state] : [];
 }
 
 const CATALOG_UUID = quantumCanonicalClimbUuid(9101, '11111111-1111-4111-8111-111111111111');
 const REPLACEMENT_UUID = quantumCanonicalClimbUuid(9101, '22222222-2222-4222-8222-222222222222');
 const IMPORTED_AT = new Date('2026-08-30T12:00:00.000Z');
+const SOURCE_ROUTE_ID = '11111111-1111-4111-8111-111111111111';
+
+function apiBatch(
+  forcedType: string,
+  checkpoint: string,
+  baseCheckpoint: string | null = null,
+  routes: { upsert: readonly { id: string }[]; deleted: readonly string[] } = {
+    upsert: [{ id: SOURCE_ROUTE_ID }],
+    deleted: [],
+  },
+): EwallsBootstrap | EwallsDelta {
+  const collections = {
+    routes,
+    scope: { board: '', forcedType },
+    checkpoint,
+    diodes: null,
+    account: {
+      ascents: { upsert: [], deleted: [] },
+      favorites: { upsert: [], deleted: [] },
+      projects: { upsert: [], deleted: [] },
+    },
+  };
+  return baseCheckpoint === null
+    ? { ...collections, kind: 'bootstrap', baseCheckpoint: null }
+    : { ...collections, kind: 'delta', baseCheckpoint };
+}
+
+function apiCatalog(empty = false, routeUuid = SOURCE_ROUTE_ID): PreparedQuantumCatalog {
+  const prepared = prepareQuantumCatalog(quantumSharedRouteFixture({ routeUuid }));
+  // Import transaction tests use the small canonical fixture; immutable-map
+  // conformance is exercised independently at the direct API mapping boundary.
+  return {
+    ...prepared,
+    hardwareFingerprint: QUANTUM_HARDWARE_FINGERPRINT,
+    climbs: empty ? [] : prepared.climbs,
+    holds: empty ? [] : prepared.holds,
+    stats: empty ? [] : prepared.stats,
+    aliases: empty
+      ? []
+      : [...prepared.aliases, { aliasUuid: routeUuid, canonicalUuid: quantumCanonicalClimbUuid(9101, routeUuid) }],
+  };
+}
+
+function importApi(
+  batch: EwallsBootstrap | EwallsDelta,
+  expectedCheckpoint: string | null,
+  empty = false,
+  routeUuid = SOURCE_ROUTE_ID,
+) {
+  return importPreparedEwallsCatalog(
+    {
+      batch,
+      expectedCheckpoint,
+      catalog: apiCatalog(empty, routeUuid),
+      upstreamAccountId: 'catalogue-service',
+      diodes: [{ id: 'fixture-diode', autocadId: 1 }],
+    },
+    { database: db },
+  );
+}
 
 /** Pause after the actual delist query, so a second connection can commit an app climb. */
 function afterQuery<Builder extends object>(builder: Builder, after: () => Promise<void>): Builder {
@@ -134,16 +184,157 @@ describe('Quantum catalog database import', () => {
     await db.delete(boardSharedSyncs).where(eq(boardSharedSyncs.boardType, 'quantum'));
   });
 
-  it('rejects first-bootstrap hardware drift before any catalog or checkpoint write', async () => {
-    const drifted = quantumCatalogFixture({
-      diodes: quantumFixtureDiodes().map((diode, index) => (index === 0 ? { ...diode, z: diode.z + 1 } : diode)),
-    });
-    await expect(importValidatedQuantumSnapshot(drifted, undefined, { database: db })).rejects.toBeInstanceOf(
-      QuantumHardwareFingerprintDriftError,
+  it.each(['account', 'board'] as const)('refuses a silent shared-catalogue %s rebind', async (changedBinding) => {
+    await importApi(apiBatch('big', 'original authority'), null);
+    const next = apiBatch('big', 'replacement authority', null, { upsert: [], deleted: [] });
+    const batch =
+      changedBinding === 'board' ? { ...next, scope: { ...next.scope, board: 'QB_different_board' } } : next;
+    const upstreamAccountId = changedBinding === 'account' ? 'another-account' : 'catalogue-service';
+    await expect(
+      importPreparedEwallsCatalog(
+        { batch, catalog: apiCatalog(true), diodes: [], upstreamAccountId, expectedCheckpoint: null },
+        { database: db },
+      ),
+    ).rejects.toBeInstanceOf(EwallsCatalogAuthorityChangedError);
+    expect((await loadEwallsCatalogState(db, { board: '', forcedType: 'big' }, 'catalogue-service'))?.checkpoint).toBe(
+      'original authority',
     );
-    expect(await catalogSyncStates()).toEqual([]);
-    expect(await db.select().from(boardClimbs).where(eq(boardClimbs.boardType, 'quantum'))).toEqual([]);
-    expect(await db.select().from(boardProducts).where(eq(boardProducts.boardType, 'quantum'))).toEqual([]);
+    expect(await loadEwallsCatalogState(db, batch.scope, upstreamAccountId)).toBeNull();
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
+      { isListed: true },
+    ]);
+  });
+
+  it('applies API scope membership and tombstones without delisting another model', async () => {
+    await importApi(apiBatch('big', 'XL opaque / one'), null);
+    await importApi(apiBatch('medium', 'L opaque / one'), null);
+    await importApi(apiBatch('big', 'XL opaque / two', null, { upsert: [], deleted: [] }), 'XL opaque / one', true);
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
+      { isListed: true },
+    ]);
+    await importApi(
+      apiBatch('medium', 'L opaque / two', 'L opaque / one', { upsert: [], deleted: [SOURCE_ROUTE_ID] }),
+      'L opaque / one',
+      true,
+    );
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
+      { isListed: false },
+    ]);
+    expect(
+      (await loadEwallsCatalogState(db, { board: '', forcedType: 'medium' }, 'catalogue-service'))?.routeIds,
+    ).toEqual([]);
+    expect(await db.select().from(boardClimbHolds).where(eq(boardClimbHolds.climbUuid, CATALOG_UUID))).not.toHaveLength(
+      0,
+    );
+  });
+
+  it('rejects an API batch acquired from a superseded opaque checkpoint', async () => {
+    await importApi(apiBatch('big', 'opaque : A'), null);
+    await importApi(apiBatch('big', 'opaque : B', 'opaque : A'), 'opaque : A');
+    await expect(importApi(apiBatch('big', 'opaque : C', 'opaque : A'), 'opaque : A')).rejects.toBeInstanceOf(
+      EwallsCheckpointChangedError,
+    );
+    expect((await loadEwallsCatalogState(db, { board: '', forcedType: 'big' }, 'catalogue-service'))?.checkpoint).toBe(
+      'opaque : B',
+    );
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
+      { isListed: true },
+    ]);
+  });
+
+  it('normalizes mixed-format membership and deletions across model scopes', async () => {
+    const sourceId = 'abcdefab-1234-4abc-8def-0123456789ab';
+    const canonicalId = quantumCanonicalClimbUuid(9101, sourceId);
+    await importApi(
+      apiBatch('big', 'XL1', null, { upsert: [{ id: sourceId.toUpperCase() }], deleted: [] }),
+      null,
+      false,
+      sourceId,
+    );
+    await importApi(
+      apiBatch('medium', 'L1', null, { upsert: [{ id: sourceId.replaceAll('-', '') }], deleted: [] }),
+      null,
+      false,
+      sourceId,
+    );
+    await importApi(apiBatch('big', 'XL2', 'XL1', { upsert: [], deleted: [sourceId] }), 'XL1', true, sourceId);
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, canonicalId))).resolves.toMatchObject([
+      { isListed: true },
+    ]);
+    await importApi(
+      apiBatch('medium', 'L2', 'L1', { upsert: [], deleted: [sourceId.toUpperCase().replaceAll('-', '')] }),
+      'L1',
+      true,
+      sourceId,
+    );
+    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, canonicalId))).resolves.toMatchObject([
+      { isListed: false },
+    ]);
+    expect(
+      (await loadEwallsCatalogState(db, { board: '', forcedType: 'medium' }, 'catalogue-service'))?.routeIds,
+    ).toEqual([]);
+  });
+
+  it('rolls back API data and checkpoint together when a source route changes its geometry', async () => {
+    await importApi(apiBatch('big', 'before'), null);
+    const prepared = apiCatalog();
+    const changed = { ...prepared, climbs: prepared.climbs.map((climb) => ({ ...climb, frames: 'p1000007r14' })) };
+    await expect(
+      importPreparedEwallsCatalog(
+        {
+          batch: apiBatch('big', 'after', 'before'),
+          expectedCheckpoint: 'before',
+          catalog: changed,
+          upstreamAccountId: 'catalogue-service',
+          diodes: [],
+        },
+        { database: db },
+      ),
+    ).rejects.toBeInstanceOf(QuantumRouteGeometryDriftError);
+    expect((await loadEwallsCatalogState(db, { board: '', forcedType: 'big' }, 'catalogue-service'))?.checkpoint).toBe(
+      'before',
+    );
+  });
+
+  it('keeps missing upstream statistics unknown, retains prior measurements, and accepts explicit zero', async () => {
+    async function apply(checkpoint: string, base: string | null, count: number | null, rating: number | null) {
+      const catalog = apiCatalog();
+      const stats = catalog.stats.map((row) => ({
+        ...row,
+        upstreamAscensionistCount: count,
+        ascensionistCount: count,
+        upstreamQualityAverage: rating,
+        qualityAverage: rating,
+      }));
+      await importPreparedEwallsCatalog({
+        batch: apiBatch('big', checkpoint, base),
+        expectedCheckpoint: base,
+        catalog: { ...catalog, stats },
+        upstreamAccountId: 'catalogue-service',
+        diodes: [{ id: 'fixture-diode' }],
+      });
+      const [stored] = await db.select().from(boardClimbStats).where(eq(boardClimbStats.climbUuid, CATALOG_UUID));
+      return stored;
+    }
+    expect(await apply('a', null, null, null)).toMatchObject({ ascensionistCount: null, qualityAverage: null });
+    expect(await apply('b', 'a', null, null)).toMatchObject({ ascensionistCount: null, qualityAverage: null });
+    await apply('c', 'b', 12, 4.5);
+    await db
+      .update(boardClimbStats)
+      .set({ boardseshAscensionistCount: 2, boardseshQualityCount: 2, boardseshQualitySum: 2 })
+      .where(eq(boardClimbStats.climbUuid, CATALOG_UUID));
+    expect(await apply('d', 'c', null, null)).toMatchObject({
+      upstreamAscensionistCount: 12,
+      ascensionistCount: 14,
+      upstreamQualityAverage: 4.5,
+      qualityAverage: 4,
+    });
+    expect(await apply('e', 'd', 0, null)).toMatchObject({
+      upstreamAscensionistCount: 0,
+      ascensionistCount: 2,
+      upstreamQualityAverage: 4.5,
+      qualityAverage: 1,
+    });
   });
 
   it('changes only the edited route and stats without rewriting immutable holds', async () => {
@@ -188,16 +379,15 @@ describe('Quantum catalog database import', () => {
           .orderBy(boardClimbStats.climbUuid),
       };
     }
-    await importValidatedQuantumSnapshot(snapshot, undefined, { now: () => IMPORTED_AT });
+    await importFixture(snapshot, { now: () => IMPORTED_AT });
     const initial = await rowVersions();
-    const identical = { ...snapshot, eventId: 'e'.repeat(64), manifestCreatedAt: snapshot.manifestCreatedAt + 1 };
-    await importValidatedQuantumSnapshot(identical, undefined, { now: () => new Date(IMPORTED_AT.getTime() + 60_000) });
+    const identical = { ...snapshot, checkpoint: 'second' };
+    await importFixture(identical, { now: () => new Date(IMPORTED_AT.getTime() + 60_000) });
     expect(await rowVersions()).toEqual(initial);
 
     const edited = {
       ...identical,
-      eventId: 'd'.repeat(64),
-      manifestCreatedAt: identical.manifestCreatedAt + 1,
+      checkpoint: 'third',
       rows: {
         ...identical.rows,
         routes: identical.rows.routes.map((route, index) =>
@@ -205,7 +395,7 @@ describe('Quantum catalog database import', () => {
         ),
       },
     };
-    await importValidatedQuantumSnapshot(edited, undefined, { now: () => new Date(IMPORTED_AT.getTime() + 120_000) });
+    await importFixture(edited, { now: () => new Date(IMPORTED_AT.getTime() + 120_000) });
     const changed = await rowVersions();
     expect(changed.holds).toEqual(initial.holds);
     expect(changed.climbs.find((climb) => climb.uuid === REPLACEMENT_UUID)).toEqual(
@@ -223,18 +413,18 @@ describe('Quantum catalog database import', () => {
   });
 
   it('stores one shared-family climb and preserves canonical identity when size membership changes', async () => {
-    await importValidatedQuantumSnapshot(quantumSharedRouteFixture(), undefined, { database: db });
+    await importFixture(quantumSharedRouteFixture(), { database: db });
     expect(await db.select().from(boardClimbs).where(eq(boardClimbs.boardType, 'quantum'))).toMatchObject([
       { uuid: CATALOG_UUID, compatibleSizeIds: [9201, 9202, 9203] },
     ]);
     expect(await db.select().from(boardClimbStats).where(eq(boardClimbStats.boardType, 'quantum'))).toHaveLength(1);
     expect(await db.select().from(boardClimbAliases).where(eq(boardClimbAliases.boardType, 'quantum'))).toHaveLength(4);
-    const next = quantumSharedRouteFixture({ eventId: 'e'.repeat(64), manifestCreatedAt: 1_800_000_001 });
+    const next = quantumSharedRouteFixture({ checkpoint: 'second' });
     const onlyMedium = {
       ...next,
       rows: { ...next.rows, routeModels: next.rows.routeModels.filter((row) => row.model === 'm') },
     };
-    await importValidatedQuantumSnapshot(onlyMedium, undefined, { database: db });
+    await importFixture(onlyMedium, { database: db });
     expect(await db.select().from(boardClimbs).where(eq(boardClimbs.boardType, 'quantum'))).toMatchObject([
       { uuid: CATALOG_UUID, compatibleSizeIds: [9203] },
     ]);
@@ -245,7 +435,7 @@ describe('Quantum catalog database import', () => {
   });
 
   it('rolls back a concurrent foreign alias without retargeting it', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     const foreignClimbUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     const sourceAliasUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const concurrentDatabase = databaseWithConcurrentClimb(async () => {
@@ -264,14 +454,12 @@ describe('Quantum catalog database import', () => {
       });
     });
     await expect(
-      importValidatedQuantumSnapshot(
+      importFixture(
         quantumCatalogFixture({
           appUuid: sourceAliasUuid,
           routeUuid: '22222222-2222-4222-8222-222222222222',
-          eventId: 'e'.repeat(64),
-          manifestCreatedAt: 1_800_000_001,
+          checkpoint: 'second',
         }),
-        undefined,
         { database: concurrentDatabase },
       ),
     ).rejects.toThrow(/existing climb alias/);
@@ -282,11 +470,11 @@ describe('Quantum catalog database import', () => {
         .where(and(eq(boardClimbAliases.boardType, 'quantum'), eq(boardClimbAliases.aliasUuid, sourceAliasUuid))),
     ).toMatchObject([{ canonicalUuid: foreignClimbUuid, source: 'foreign' }]);
     expect(await db.select().from(boardClimbs).where(eq(boardClimbs.uuid, REPLACEMENT_UUID))).toEqual([]);
-    expect(await catalogSyncStates()).toMatchObject([{ revisionId: 'f'.repeat(64) }]);
+    expect(await catalogSyncStates()).toMatchObject([{ checkpoint: 'first' }]);
   });
 
   it('transactionally upserts the canonical reference, geometry, climbs, metadata, and stats', async () => {
-    const result = await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, {
+    const result = await importFixture(quantumCatalogFixture(), {
       database: db,
       now: () => IMPORTED_AT,
     });
@@ -357,23 +545,20 @@ describe('Quantum catalog database import', () => {
     ]);
     await expect(catalogSyncStates()).resolves.toMatchObject([
       {
-        revisionId: 'f'.repeat(64),
-        revisionTimestamp: 1_800_000_000,
-        lastError: null,
+        checkpoint: 'first',
       },
     ]);
   });
 
   it('delists missing source routes without deleting them', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     const replacement = quantumCatalogFixture({
-      manifestCreatedAt: 1_800_000_001,
-      eventId: 'e'.repeat(64),
+      checkpoint: 'second',
       appUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       routeUuid: '22222222-2222-4222-8222-222222222222',
       routeName: 'Replacement route',
     });
-    await importValidatedQuantumSnapshot(replacement, undefined, { database: db });
+    await importFixture(replacement, { database: db });
 
     const climbs = await db
       .select({ uuid: boardClimbs.uuid, isListed: boardClimbs.isListed })
@@ -387,30 +572,8 @@ describe('Quantum catalog database import', () => {
     );
   });
 
-  it('returns an unchanged no-op for an already applied event and rejects rollback', async () => {
-    const current = quantumCatalogFixture({ manifestCreatedAt: 1_800_000_010, eventId: 'd'.repeat(64) });
-    await importValidatedQuantumSnapshot(current, undefined, { database: db });
-    await expect(importValidatedQuantumSnapshot(current, undefined, { database: db })).resolves.toMatchObject({
-      outcome: 'unchanged',
-      climbsUpserted: 0,
-    });
-
-    const stale = quantumCatalogFixture({
-      manifestCreatedAt: 1_800_000_009,
-      eventId: 'f'.repeat(64),
-      appUuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      routeUuid: '33333333-3333-4333-8333-333333333333',
-    });
-    await expect(importValidatedQuantumSnapshot(stale, undefined, { database: db })).rejects.toBeInstanceOf(
-      QuantumSnapshotRollbackError,
-    );
-    expect(
-      await db.select().from(boardClimbs).where(eq(boardClimbs.uuid, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')),
-    ).toHaveLength(0);
-  });
-
   it('preserves retained app climbs after account deletion and rejects their source UUID collisions', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     const retainedUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     await db.insert(boardClimbs).values({
       uuid: retainedUuid,
@@ -424,23 +587,17 @@ describe('Quantum catalog database import', () => {
       controllerRouteUuid: '44444444-4444-4444-8444-444444444444',
     });
     await db.insert(boardClimbStats).values({ boardType: 'quantum', climbUuid: retainedUuid, angle: 55 });
-    await importValidatedQuantumSnapshot(
-      quantumCatalogFixture({ manifestCreatedAt: 1_800_000_001, eventId: 'e'.repeat(64) }),
-      undefined,
-      { database: db },
-    );
+    await importFixture(quantumCatalogFixture({ checkpoint: 'second' }), { database: db });
     await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, retainedUuid))).resolves.toMatchObject([
       { name: 'Retained app climb', isListed: true, isBoardseshAuthored: true },
     ]);
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([{ angle: 40 }]);
     await expect(
-      importValidatedQuantumSnapshot(
+      importFixture(
         quantumCatalogFixture({
           appUuid: retainedUuid,
-          manifestCreatedAt: 1_800_000_002,
-          eventId: 'd'.repeat(64),
+          checkpoint: 'third',
         }),
-        undefined,
         { database: db },
       ),
     ).rejects.toThrow(/non-source climb/);
@@ -450,7 +607,7 @@ describe('Quantum catalog database import', () => {
   });
 
   it('rolls back when an app climb commits after ownership validation but before the upsert', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     const concurrentUuid = REPLACEMENT_UUID;
     const concurrentDatabase = databaseWithConcurrentClimb(async () => {
       await db.insert(boardClimbs).values({
@@ -472,14 +629,12 @@ describe('Quantum catalog database import', () => {
       });
     });
     await expect(
-      importValidatedQuantumSnapshot(
+      importFixture(
         quantumCatalogFixture({
           appUuid: concurrentUuid,
-          manifestCreatedAt: 1_800_000_001,
-          eventId: 'e'.repeat(64),
+          checkpoint: 'second',
           routeUuid: '22222222-2222-4222-8222-222222222222',
         }),
-        undefined,
         { database: concurrentDatabase },
       ),
     ).rejects.toThrow(/non-source climb/);
@@ -492,11 +647,11 @@ describe('Quantum catalog database import', () => {
     await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
       { isListed: true },
     ]);
-    await expect(catalogSyncStates()).resolves.toMatchObject([{ revisionId: 'f'.repeat(64) }]);
+    await expect(catalogSyncStates()).resolves.toMatchObject([{ checkpoint: 'first' }]);
   });
 
   it('backfills the exact Quantum model despite overlapping bounds and edge holds', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     await db
       .update(boardProductSizes)
       .set({ edgeLeft: -10000, edgeRight: 10000, edgeBottom: -10000, edgeTop: 10000 })
@@ -538,25 +693,6 @@ describe('Quantum catalog database import', () => {
     ]);
   });
 
-  it('fails closed on hardware fingerprint drift and leaves the catalog intact', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
-    const changedDiodes = quantumFixtureDiodes().map((diode, index) =>
-      index === 0 ? { ...diode, x: diode.x + 0.5 } : diode,
-    );
-    const drifted = quantumCatalogFixture({
-      manifestCreatedAt: 1_800_000_001,
-      eventId: 'e'.repeat(64),
-      diodes: changedDiodes,
-    });
-    await expect(importValidatedQuantumSnapshot(drifted, undefined, { database: db })).rejects.toBeInstanceOf(
-      QuantumHardwareFingerprintDriftError,
-    );
-    await expect(db.select().from(boardClimbs).where(eq(boardClimbs.boardType, 'quantum'))).resolves.toMatchObject([
-      { uuid: CATALOG_UUID, isListed: true },
-    ]);
-    await expect(catalogSyncStates()).resolves.toMatchObject([{ lastError: null }]);
-  });
-
   it.each([
     { label: 'holds', changes: { steps: [1, 3] } },
     { label: 'controller UUID', changes: { routeUuid: '33333333-3333-4333-8333-333333333333' } },
@@ -564,15 +700,13 @@ describe('Quantum catalog database import', () => {
   ] satisfies { label: string; changes: QuantumFixtureOptions }[])(
     'rejects changed source $label under an existing app UUID',
     async ({ changes }) => {
-      await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+      await importFixture(quantumCatalogFixture(), { database: db });
       await expect(
-        importValidatedQuantumSnapshot(
+        importFixture(
           quantumCatalogFixture({
             ...changes,
-            manifestCreatedAt: 1_800_000_001,
-            eventId: 'e'.repeat(64),
+            checkpoint: 'second',
           }),
-          undefined,
           { database: db },
         ),
       ).rejects.toBeInstanceOf(QuantumRouteGeometryDriftError);
@@ -585,32 +719,26 @@ describe('Quantum catalog database import', () => {
           isListed: true,
         },
       ]);
-      await expect(catalogSyncStates()).resolves.toMatchObject([
-        { revisionId: 'f'.repeat(64), lastError: expect.stringContaining('canonical holds') },
-      ]);
+      await expect(catalogSyncStates()).resolves.toMatchObject([{ checkpoint: 'first' }]);
     },
   );
 
   it('keeps a delisted route bound to its original geometry when reintroduced', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
-    await importValidatedQuantumSnapshot(
+    await importFixture(quantumCatalogFixture(), { database: db });
+    await importFixture(
       quantumCatalogFixture({
         appUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         routeUuid: '22222222-2222-4222-8222-222222222222',
-        manifestCreatedAt: 1_800_000_001,
-        eventId: 'e'.repeat(64),
+        checkpoint: 'second',
       }),
-      undefined,
       { database: db },
     );
     await expect(
-      importValidatedQuantumSnapshot(
+      importFixture(
         quantumCatalogFixture({
           steps: [1, 3],
-          manifestCreatedAt: 1_800_000_002,
-          eventId: 'd'.repeat(64),
+          checkpoint: 'third',
         }),
-        undefined,
         { database: db },
       ),
     ).rejects.toBeInstanceOf(QuantumRouteGeometryDriftError);
@@ -620,16 +748,14 @@ describe('Quantum catalog database import', () => {
     await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, REPLACEMENT_UUID))).resolves.toMatchObject([
       { isListed: true },
     ]);
-    await expect(catalogSyncStates()).resolves.toMatchObject([{ revisionId: 'e'.repeat(64) }]);
+    await expect(catalogSyncStates()).resolves.toMatchObject([{ checkpoint: 'second' }]);
 
-    await importValidatedQuantumSnapshot(
+    await importFixture(
       quantumCatalogFixture({
         routeName: 'Updated source name',
         grade: '[13,14]',
-        manifestCreatedAt: 1_800_000_003,
-        eventId: 'c'.repeat(64),
+        checkpoint: 'fourth',
       }),
-      undefined,
       { database: db },
     );
     await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, CATALOG_UUID))).resolves.toMatchObject([
@@ -638,7 +764,7 @@ describe('Quantum catalog database import', () => {
   });
 
   it('rejects a source geometry race at the guarded upsert and preserves the checkpoint', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await importFixture(quantumCatalogFixture(), { database: db });
     const concurrentUuid = REPLACEMENT_UUID;
     const concurrentDatabase = databaseWithConcurrentClimb(async () => {
       await db.insert(boardClimbs).values({
@@ -655,14 +781,12 @@ describe('Quantum catalog database import', () => {
       });
     });
     await expect(
-      importValidatedQuantumSnapshot(
+      importFixture(
         quantumCatalogFixture({
           appUuid: concurrentUuid,
           routeUuid: '22222222-2222-4222-8222-222222222222',
-          manifestCreatedAt: 1_800_000_001,
-          eventId: 'e'.repeat(64),
+          checkpoint: 'second',
         }),
-        undefined,
         { database: concurrentDatabase },
       ),
     ).rejects.toBeInstanceOf(QuantumRouteGeometryDriftError);
@@ -673,32 +797,7 @@ describe('Quantum catalog database import', () => {
         frames: 'p1000007r12',
       },
     ]);
-    await expect(catalogSyncStates()).resolves.toMatchObject([{ revisionId: 'f'.repeat(64) }]);
-  });
-
-  it('rejects a signed LED address remap before changing canonical geometry', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
-    const remapped = quantumFixtureDiodes().map((diode, index) =>
-      index === 0 ? { ...diode, autocadId: 1001 } : diode,
-    );
-    await expect(
-      importValidatedQuantumSnapshot(
-        quantumCatalogFixture({
-          diodes: remapped,
-          manifestCreatedAt: 1_800_000_001,
-          eventId: 'e'.repeat(64),
-        }),
-        undefined,
-        { database: db },
-      ),
-    ).rejects.toBeInstanceOf(QuantumHardwareFingerprintDriftError);
-    await expect(
-      db
-        .select()
-        .from(boardLeds)
-        .where(and(eq(boardLeds.boardType, 'quantum'), eq(boardLeds.id, 1000007))),
-    ).resolves.toMatchObject([{ position: 1 }]);
-    await expect(catalogSyncStates()).resolves.toMatchObject([{ revisionId: 'f'.repeat(64) }]);
+    await expect(catalogSyncStates()).resolves.toMatchObject([{ checkpoint: 'first' }]);
   });
 
   it('rejects an app UUID owned by another board instead of overwriting it', async () => {
@@ -711,9 +810,7 @@ describe('Quantum catalog database import', () => {
     });
 
     try {
-      await expect(
-        importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db }),
-      ).rejects.toThrow(/non-source climb/);
+      await expect(importFixture(quantumCatalogFixture(), { database: db })).rejects.toThrow(/non-source climb/);
       await expect(db.select().from(boardClimbs).where(eq(boardClimbs.uuid, collidingUuid))).resolves.toMatchObject([
         { boardType: 'kilter', name: 'Existing Kilter climb' },
       ]);
@@ -722,8 +819,8 @@ describe('Quantum catalog database import', () => {
     }
   });
 
-  it('derives Quantum angles only from signed-catalog rows', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+  it('derives Quantum angles only from catalog rows', async () => {
+    await importFixture(quantumCatalogFixture(), { database: db });
     const userClimbUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     await db.insert(boardClimbs).values({
       uuid: userClimbUuid,
@@ -743,8 +840,8 @@ describe('Quantum catalog database import', () => {
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([{ angle: 40 }]);
   });
 
-  it('ignores local off-angle tick stats and follows the next signed route angle', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+  it('ignores local off-angle tick stats and follows the next catalog route angle', async () => {
+    await importFixture(quantumCatalogFixture(), { database: db });
     // A local tick at another angle creates a stats row for the same source
     // climb; it does not extend the manufacturer's supported-angle catalog.
     await db.insert(boardClimbStats).values({
@@ -756,18 +853,15 @@ describe('Quantum catalog database import', () => {
     });
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([{ angle: 40 }]);
 
-    await importValidatedQuantumSnapshot(
+    await importFixture(
       quantumCatalogFixture({
         angle: 45,
-        eventId: 'e'.repeat(64),
-        manifestCreatedAt: 1_800_000_001,
+        checkpoint: 'second',
       }),
-      undefined,
       { database: db },
     );
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([{ angle: 45 }]);
-    // Keep existing per-angle observations intact; neither old upstream stats
-    // nor local tick history defines the current signed route's angle.
+    // Local history remains queryable after the source aggregate moves.
     await expect(
       db
         .select()
@@ -782,8 +876,72 @@ describe('Quantum catalog database import', () => {
     );
   });
 
-  it('excludes delisted signed-catalog routes from Quantum angles', async () => {
-    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+  it('retires obsolete route-level aggregates across known and unknown angles while keeping local history', async () => {
+    await importFixture(quantumCatalogFixture({ angle: 30 }));
+    const oldAngle = and(eq(boardClimbStats.climbUuid, CATALOG_UUID), eq(boardClimbStats.angle, 30));
+    await db
+      .update(boardClimbStats)
+      .set({ boardseshAscensionistCount: 2, boardseshQualitySum: 7, boardseshQualityCount: 2 })
+      .where(oldAngle);
+    await importFixture(quantumCatalogFixture({ angle: 40, checkpoint: 'moved' }));
+    async function row(angle: number) {
+      const [stored] = await db
+        .select()
+        .from(boardClimbStats)
+        .where(and(eq(boardClimbStats.climbUuid, CATALOG_UUID), eq(boardClimbStats.angle, angle)));
+      return stored;
+    }
+    const retired = await row(30);
+    expect(retired).toMatchObject({
+      upstreamAscensionistCount: null,
+      upstreamQualityAverage: null,
+      upstreamSyncedAt: null,
+      ascensionistCount: 2,
+      boardseshQualitySum: 7,
+      boardseshQualityCount: 2,
+      qualityAverage: 3.5,
+      difficultyAverage: null,
+      displayDifficulty: null,
+    });
+    expect(await row(40)).toMatchObject({
+      upstreamAscensionistCount: 12,
+      upstreamQualityAverage: 4.5,
+      displayDifficulty: 15,
+    });
+    const tickGrade = '2026-09-01T12:00:00';
+    await db
+      .update(boardClimbStats)
+      .set({ tickGradedAt: tickGrade, displayDifficulty: 18, difficultyAverage: 18.5 })
+      .where(and(eq(boardClimbStats.climbUuid, CATALOG_UUID), eq(boardClimbStats.angle, 40)));
+    const catalog = apiCatalog();
+    const batch = apiBatch('big', 'angle unknown', 'moved');
+    await importPreparedEwallsCatalog({
+      batch,
+      expectedCheckpoint: 'moved',
+      catalog: {
+        ...catalog,
+        climbs: prepareQuantumCatalog(quantumCatalogFixture()).climbs.map((climb) => ({ ...climb, angle: null })),
+        stats: [],
+        holds: [],
+      },
+      diodes: [],
+      upstreamAccountId: 'catalogue-service',
+    });
+    expect(await row(40)).toMatchObject({
+      upstreamAscensionistCount: null,
+      upstreamQualityAverage: null,
+      upstreamSyncedAt: null,
+      ascensionistCount: null,
+      qualityAverage: null,
+      displayDifficulty: 18,
+      difficultyAverage: 18.5,
+    });
+    expect((await row(40)).tickGradedAt).toBeTruthy();
+    expect(await row(30)).toEqual(retired);
+  });
+
+  it('excludes delisted catalog routes from Quantum angles', async () => {
+    await importFixture(quantumCatalogFixture(), { database: db });
     await db.update(boardClimbs).set({ isListed: false }).where(eq(boardClimbs.uuid, CATALOG_UUID));
 
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([]);

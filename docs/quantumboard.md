@@ -4,10 +4,11 @@ Quantum uses the same board, climb, hold, grade, and sync contracts as the other
 boards. Provider-specific acquisition, physical identity checks, drawing, and
 Bluetooth commands live behind adapters.
 
-The catalog snapshot is a temporary read-only bootstrap. Direct two-way eWalls
-integration is tracked in [#7921](https://github.com/boardsesh/boardsesh/issues/7921)
-under the [Quantum support epic](https://github.com/boardsesh/boardsesh/issues/7917).
-Do not treat CruxCoach infrastructure as the long-term vendor API.
+The catalogue comes directly from eWalls. The implementation follows the
+[Android 2.6.5 API and Bluetooth research](https://github.com/boardsesh/boardsesh/pull/7926).
+Personal account synchronization and outbound writes remain tracked in
+[#7921](https://github.com/boardsesh/boardsesh/issues/7921), under the
+[Quantum support epic](https://github.com/boardsesh/boardsesh/issues/7917).
 
 ## Board identity and immutable geometry
 
@@ -26,9 +27,10 @@ address, position, and hold type. Fitness is a separate layout. Belay is a fixed
 repeated XL arrangement with separate controller identities; it is not assumed
 to have mutable geometry.
 
-The version-one snapshot uses legacy model-local layout IDs 9102 and 9103 for L
-and M. The source adapter validates those raw identities before normalizing them
-to layout 9101. Callers do not interpret that source encoding.
+The checked-in geometry capture used model-local layout IDs for L and M. The
+generator normalizes those historical identities to layout 9101. Native API
+UUIDs remain source identities and are bound to the generated placements at the
+provider boundary; callers use the common layout and size contracts.
 
 Physical hold maps and per-size LED membership ship as generated board constants,
 following the existing generated catalog pattern. The source and provenance are
@@ -43,27 +45,49 @@ Mobile does not fetch a geometry API, hydrate a geometry registry, or store a
 separate geometry table in SQLite. Generic rendering and editor accessors return
 the same dimensions and hold-target shape for bundled boards. Personal spray-wall
 geometry keeps its existing runtime subscription behind the same adapter boundary.
-The angle-options source is separate from geometry: the temporary Quantum angle
+The angle-options source is separate from geometry: the Quantum angle
 query describes angles present in the catalog, not a verified hardware range.
 
 ## Catalog acquisition and trust
 
-The temporary transport discovers a Nostr event, verifies its BIP-340 signature
-against the pinned publisher, validates the manifest, and downloads the referenced
-SQLite snapshot through HTTPS/Blossom mirrors. The manifest SHA-256 and byte limits
-apply before schema and row validation. Decompression is bounded and temporary
-files are private and cleaned up on success, cancellation, or failure.
+`@boardsesh/quantum-sync` provides a typed client for
+`https://e-walls.eu/api/v1/board/routes-delta`. Bootstrap requests start at page 1
+with limit 500 and stage the entire result before import. The client checks
+`initialSync`, unique route IDs, consistent counts, page progress, resource
+bounds, and the exact final `totalCount`. An incomplete response is never
+published. Later requests pass the server's opaque `timestamp` as `lastFetch`.
+Routes use `changed`/`deleted` collections; tombstones carry object IDs. No
+Blossom, Nostr, SQLite-download, or third-party mirror path remains.
 
-The signer, event kind, manifest source, and `cruxcoach/quantum-db` tag are code
-constants. The source label `ewalls-authorized-snapshot` is the publisher's
-self-declaration. Its signature proves continuity with that publisher and data
-integrity, not independent authorization from Walltopia or eWalls.
+The scheduled shared-catalogue source requires backend-only configuration:
 
-Validation rejects malformed UUIDs, ambiguous schema, duplicate mappings,
-unknown model/diode references, invalid coordinates or roles, and aggregate
-resource-limit violations. L/M sharing is validated before a common layout is
-exposed. The bundled geometry fingerprint is a separate fixed contract from the
-catalog's signed publication revision.
+```text
+QUANTUM_API_TOKEN=<shared catalogue bearer credential>
+QUANTUM_API_ACCOUNT_ID=<verified upstream account ID>
+QUANTUM_API_CATALOG_VISIBILITY=public
+QUANTUM_API_BOARD_NAME=<optional advertised board name; empty uses type lookup>
+```
+
+Configure the public catalogue lens with Walltopia. Authentication alone does
+not establish that an account's data may be published. The worker verifies
+`users/current-user` against the pinned account and never borrows a climber's
+personal credential. Bearer credentials never enter checkpoint metadata, logs,
+or device sync. The client also exposes the documented email login; refresh
+semantics are unknown, so a 401 requires renewed credentials rather than an
+invented refresh flow.
+
+Diode UUIDs and binary `autocadId` addresses must match the fixed generated
+bindings. Light associations resolve through the API diode cache and retain
+explicit start/middle/finish roles. Invalid or ambiguous UUIDs, roles, models,
+addresses, or supplied physical fields refuse the batch before writes. UUID
+case and compact/dashed representations normalize before aliases, membership,
+or tombstones are compared. Native fit variants and exact physical diode
+membership jointly determine compatible sizes.
+
+API ascents, favorites, and projects stay separate from the shared catalogue.
+They are not published or converted into user ticks here. Backdated uploads,
+idempotency, and account-specific write authorization need the remaining vendor
+contract; this implementation does not automatically upload old ticks.
 
 Catalog routes can exceed Boardsesh's current activation cap. Import preserves
 all their holds for browsing and logging; it never truncates a route to fit a BLE
@@ -75,17 +99,20 @@ command.
 The importer writes the existing canonical board and climb tables transactionally.
 One standard-family climb can carry several compatible size IDs. Controller route
 UUID plus physical family determines a stable Boardsesh identity; existing climb
-aliases preserve the snapshot's model-specific app UUIDs.
+aliases preserve upstream route UUIDs.
 
 Known climb rules go into `characteristics`, and canonical grade, ascent, and
 rating fields use the existing stats system. Raw source fields that do not have
 those semantics use nullable generic `board_climbs.source_metadata`; no attributed
 user is fabricated to force anonymous tags into another table.
 
-The durable catalog checkpoint uses generic metadata on `board_shared_syncs`.
-Its synchronization timestamp remains a timestamp. The signed temporary source
-retains its real publication ordering; a content hash is not claimed to establish
-chronology for a future unsigned vendor API.
+The durable catalogue checkpoint uses generic metadata on `board_shared_syncs`.
+Its synchronization timestamp remains a timestamp; the separate server cursor
+stays opaque. Checkpoints and route membership are scoped by the upstream
+account, board name, and type. A stale batch cannot advance a checkpoint acquired
+from a superseded base. Tombstones and scope replacement unlist a route only
+after its final model membership is gone. Changing the configured catalogue
+account or board fails closed until an explicit complete catalogue rebind.
 
 Routine refresh uses the existing `quantum-catalog-sync` background-job family and
 six-hour schedule. Lifecycle, retries, deadlines, and attempt fencing reuse the
@@ -100,10 +127,15 @@ The importer cannot overwrite a Boardsesh-authored climb or steal an existing
 alias/controller identity. Conflict checks run before writes and remain guarded
 at the database boundary so a concurrent insert cannot bypass them. A failed
 import rolls back catalog and checkpoint changes together.
+Published route UUIDs also bind their layout, controller identity, and holds.
+An incompatible geometry change under the same UUID refuses the batch rather
+than silently changing the meaning of an active controller layer.
 
-New signed revisions update only changed climb and stats rows. Missing source
+API batches update only changed climb and stats rows. Missing source
 routes are unlisted once; immutable existing hold rows are retained. An unchanged
 route keeps its incremental-sync timestamp even when another route changes.
+If a source route's angle changes or becomes unknown, obsolete upstream stats
+are retired while local ascents, votes, grades, and historical rows are retained.
 Generic size backfills preserve the source's explicit model membership. Physical
 diode compatibility is inferred only for authored routes, so fitting a larger
 wall cannot silently broaden a source route's allowlist.
@@ -135,10 +167,20 @@ Open Graph images, and links. Issue-linked TODOs mark the temporary guards.
 ## Layer control and presence
 
 Boardsesh currently supports four simultaneous colored layers and caps activation
-at 92 distinct diode addresses. The 92-light cap is an application limit, not a
-verified manufacturer maximum. The provider and encoder both reject oversized
-activation before commands are issued. Commands must fit one acknowledged write;
-frames are not silently fragmented.
+at 92 distinct diode addresses. These are current application limits; the
+firmware's layer capacity and repeated-chunk behavior are unverified. The
+provider and encoder reject oversized activation before any command. Commands
+must fit one complete, mode-appropriate GATT write; frames are not silently
+fragmented. Persistent binary `QB_` boards use writes with response and `QBB_`
+boards use writes without response; both require separate roster confirmation.
+
+Discovery prefers the actual `fff0` service over `ffe0` and probes `fff5` for
+binary configuration. The older JSON protocol and unknown model types are
+explicitly unsupported. Finite activation durations set the explicit-duration
+flag; the board-default sentinel remains `ffff`. Scoped removal frames are 20
+bytes. Android tries MTUs 512, 247, and 185 and still checks actual write capacity.
+Whole notification values accept the documented reserved byte and trailers;
+oversized rosters cannot be truncated or reinterpreted as embedded packets.
 
 Current lighting uses an explicit layer choice. The familiar driving flow with
 one selected free color and a color indicator follows in

@@ -19,9 +19,25 @@ export type QuantumBundledGeometry = Readonly<{
   edgeTop: number;
   placements: readonly QuantumGeometryPlacement[];
 }>;
-type QuantumGeometryTables = { holes: Record<string, HoldTuple[]>; leds: Record<string, Record<number, number>> };
+/** Pinned upstream identity binding; coordinates remain in the source's units. */
+export type QuantumSourceDiodeBinding = Readonly<{
+  diodeUuid: string;
+  placementId: number;
+  autocadId: number;
+  idLedNode: string;
+  type: string;
+  x: number;
+  y: number;
+  z: number;
+}>;
+type QuantumGeometryTables = {
+  holes: Record<string, HoldTuple[]>;
+  leds: Record<string, Record<number, number>>;
+  sourceDiodes: Record<string, QuantumSourceDiodeBinding[]>;
+};
 let tables: QuantumGeometryTables | null = null;
 const geometryByConfig = new Map<string, QuantumBundledGeometry>();
+const sourceDiodesByConfig = new Map<string, readonly QuantumSourceDiodeBinding[]>();
 
 function getTables(): QuantumGeometryTables {
   if (tables) return tables;
@@ -41,8 +57,13 @@ function getTables(): QuantumGeometryTables {
     Object.freeze(holds);
   }
   for (const leds of Object.values(tables.leds)) Object.freeze(leds);
+  for (const diodes of Object.values(tables.sourceDiodes)) {
+    for (const diode of diodes) Object.freeze(diode);
+    Object.freeze(diodes);
+  }
   Object.freeze(tables.holes);
   Object.freeze(tables.leds);
+  Object.freeze(tables.sourceDiodes);
   return tables;
 }
 
@@ -52,6 +73,25 @@ export function getQuantumHolePlacements(): Record<string, HoldTuple[]> {
 }
 export function getQuantumLedPlacements(): Record<string, Record<number, number>> {
   return getTables().leds;
+}
+
+/** Resolve API diode UUIDs only through the fixed physical size's known map. */
+export function getQuantumSourceDiodeBindings(
+  layoutId: number,
+  sizeId: number,
+): readonly QuantumSourceDiodeBinding[] | null {
+  const key = `${layoutId}-${sizeId}`;
+  const cached = sourceDiodesByConfig.get(key);
+  if (cached) return cached;
+  const geometry = getQuantumBundledGeometry(layoutId, sizeId);
+  if (!geometry) return null;
+  const placements = new Set(geometry.placements.map((placement) => placement.placementId));
+  const bindings = Object.freeze(
+    (getTables().sourceDiodes[String(layoutId)] ?? []).filter((diode) => placements.has(diode.placementId)),
+  );
+  if (bindings.length !== geometry.placements.length) throw new Error('Incomplete Quantum source identity bindings');
+  sourceDiodesByConfig.set(key, bindings);
+  return bindings;
 }
 
 /** Fixed geometry is shipped with the app. No server, SQLite or registration

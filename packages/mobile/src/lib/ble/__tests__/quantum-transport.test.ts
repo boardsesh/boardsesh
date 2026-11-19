@@ -6,12 +6,7 @@ import {
   type QuantumBroadcast,
   type QuantumTime,
 } from '@boardsesh/ble-protocol/quantum';
-import {
-  QuantumBoardController,
-  QuantumBroadcastAssembler,
-  QuantumNotificationInbox,
-  type QuantumBluetoothTransport,
-} from '../quantum-transport';
+import { QuantumBoardController, QuantumNotificationInbox, type QuantumBluetoothTransport } from '../quantum-transport';
 
 const ROUTE = '10000000-0000-4000-8000-000000000001';
 const USER = '20000000-0000-4000-8000-000000000001';
@@ -39,31 +34,23 @@ const PLAYER: QuantumActivePlayer = {
   color: 0x00ffff,
 };
 
-describe('QuantumBroadcastAssembler', () => {
-  it('strictly reassembles a split FFF1 roster and drops leading garbage', () => {
-    const assembler = new QuantumBroadcastAssembler();
-    const frame = rosterFrame([PLAYER]);
-
-    expect(assembler.push(Uint8Array.of(0xff, 0x00, ...frame.slice(0, 3)))).toEqual([]);
-    const assembled = assembler.push(frame.slice(3));
-
-    expect(assembled).toHaveLength(1);
-    expect(assembled[0].frame).toEqual(frame);
-    expect(assembled[0].broadcast).toEqual({
-      type: 'roster',
-      command: QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      players: [PLAYER],
-    });
-  });
-
-  it('rejects a five-player header instead of buffering an unbounded frame', () => {
-    const assembler = new QuantumBroadcastAssembler();
-    expect(assembler.push(Uint8Array.of(1, QuantumCommand.REQUEST_USER_ROUTE_LIST, 5, 0))).toEqual([]);
-    expect(assembler.push(Uint8Array.of(1, QuantumCommand.TURN_OFF_ALL, 0, 0, 0, 0))).toHaveLength(1);
-  });
-});
-
 describe('QuantumNotificationInbox', () => {
+  it('consumes a full oversized roster without dispatching embedded packet markers', async () => {
+    const inbox = new QuantumNotificationInbox();
+    const listener = vi.fn();
+    inbox.subscribe(listener);
+    const frame = rosterFrame(Array.from({ length: 5 }, () => PLAYER));
+    frame.set([1, QuantumCommand.REQUEST_USER_ROUTE_LIST, 0, 0], 4);
+    frame[3] = 7;
+    inbox.markRosterRequest();
+    inbox.push(frame);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0].players).toHaveLength(5);
+    await expect(inbox.waitForRoster(100)).resolves.toEqual(frame);
+    const controller = new QuantumBoardController(new ScriptedTransport([frame]), { time: new InstantTime() });
+    await expect(controller.refresh()).rejects.toMatchObject({ code: 'board-full' });
+  });
+
   it('never satisfies a fresh route-list request with a stale notification', async () => {
     vi.useFakeTimers();
     try {
@@ -117,7 +104,7 @@ class ScriptedTransport implements QuantumBluetoothTransport {
     return () => this.broadcastListeners.delete(listener);
   }
 
-  writeWithResponse(frame: Uint8Array): Promise<void> {
+  writeFrame(frame: Uint8Array): Promise<void> {
     this.writes.push(frame.slice());
     return Promise.resolve();
   }

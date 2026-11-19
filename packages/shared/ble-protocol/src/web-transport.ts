@@ -33,6 +33,7 @@ import { MOONBOARD_DEVICE_NAME_PREFIXES } from '@boardsesh/board-constants/moonb
 
 export interface WebBluetoothCharacteristicProperties {
   readonly writeWithoutResponse: boolean;
+  readonly write?: boolean;
 }
 
 export interface WebBluetoothRemoteGATTCharacteristic {

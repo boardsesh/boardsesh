@@ -3,7 +3,6 @@ import {
   QuantumCommand,
   QuantumRosterTransactionMachine,
   parseQuantumBroadcast,
-  quantumBroadcastLength,
   type QuantumActivateTransaction,
   type QuantumActivePlayer,
   type QuantumBoardModelId,
@@ -16,7 +15,6 @@ import {
 } from '@boardsesh/ble-protocol/quantum';
 import type { DevicePickerFn } from './types';
 
-const MAX_QUANTUM_BROADCAST_BYTES = 4 + QUANTUM_MAX_PLAYERS * 37;
 const MAX_BUFFERED_NOTIFICATIONS = 16;
 
 export type QuantumControllerConnection = {
@@ -61,63 +59,12 @@ export class QuantumControllerModelMismatchError extends Error {
   }
 }
 
-export type QuantumAssembledBroadcast = {
+type QuantumNotificationRecord = {
+  sequence: number;
   frame: Uint8Array;
   broadcast: QuantumBroadcast;
 };
 
-/**
- * Strict notification reassembly for FFF1. Notifications can be split at ATT
- * boundaries even after a large MTU was negotiated. Unsupported commands and
- * malformed roster headers are discarded one byte at a time until the next
- * protocol marker, while incomplete supported broadcasts remain buffered.
- */
-export class QuantumBroadcastAssembler {
-  private buffered = new Uint8Array();
-
-  push(chunk: Uint8Array): QuantumAssembledBroadcast[] {
-    if (chunk.length === 0) return [];
-    const combined = new Uint8Array(this.buffered.length + chunk.length);
-    combined.set(this.buffered);
-    combined.set(chunk, this.buffered.length);
-    this.buffered = combined.slice(-MAX_QUANTUM_BROADCAST_BYTES * 2);
-
-    const broadcasts: QuantumAssembledBroadcast[] = [];
-    while (this.buffered.length > 0) {
-      if (this.buffered[0] !== 1) {
-        this.buffered = this.buffered.slice(1);
-        continue;
-      }
-      if (this.buffered.length < 2) break;
-
-      const rawCommand = this.buffered[1];
-      const rosterCommand =
-        rawCommand === QuantumCommand.ACTIVATE_WALL ||
-        rawCommand === QuantumCommand.BOARD_SWIPE ||
-        rawCommand === QuantumCommand.REQUEST_USER_ROUTE_LIST;
-      if (rosterCommand && this.buffered.length < 4) break;
-
-      const expectedLength = quantumBroadcastLength(this.buffered);
-      if (expectedLength === undefined || expectedLength > MAX_QUANTUM_BROADCAST_BYTES) {
-        this.buffered = this.buffered.slice(1);
-        continue;
-      }
-      if (this.buffered.length < expectedLength) break;
-
-      const frame = this.buffered.slice(0, expectedLength);
-      this.buffered = this.buffered.slice(expectedLength);
-      const parsed = parseQuantumBroadcast(frame);
-      if (parsed) broadcasts.push({ frame, broadcast: parsed });
-    }
-    return broadcasts;
-  }
-
-  reset(): void {
-    this.buffered = new Uint8Array();
-  }
-}
-
-type QuantumNotificationRecord = QuantumAssembledBroadcast & { sequence: number };
 type QuantumNotificationWaiter = {
   floor: number;
   timeoutId: ReturnType<typeof setTimeout>;
@@ -127,7 +74,6 @@ type QuantumNotificationWaiter = {
 /** Tracks the notification sequence at the instant command 0x47 is written, so
  * a fallback read can never accept a roster broadcast from an earlier request. */
 export class QuantumNotificationInbox {
-  private readonly assembler = new QuantumBroadcastAssembler();
   private readonly records: QuantumNotificationRecord[] = [];
   private readonly waiters = new Set<QuantumNotificationWaiter>();
   private readonly listeners = new Set<(broadcast: QuantumBroadcast) => void>();
@@ -138,20 +84,21 @@ export class QuantumNotificationInbox {
     this.rosterFloor = this.sequence;
   }
 
-  push(chunk: Uint8Array): void {
-    for (const assembled of this.assembler.push(chunk)) {
-      this.sequence += 1;
-      const record: QuantumNotificationRecord = { sequence: this.sequence, ...assembled };
-      this.records.push(record);
-      if (this.records.length > MAX_BUFFERED_NOTIFICATIONS) this.records.shift();
-      this.listeners.forEach((listener) => listener(assembled.broadcast));
-
-      for (const waiter of this.waiters) {
-        if (record.sequence <= waiter.floor || !this.isRosterResponse(record)) continue;
-        clearTimeout(waiter.timeoutId);
-        this.waiters.delete(waiter);
-        waiter.resolve(record.frame.slice());
-      }
+  push(value: Uint8Array): void {
+    // Each characteristic event carries one value. UUIDs and trailers can
+    // contain protocol markers, so never scan a payload for a second packet.
+    const broadcast = parseQuantumBroadcast(value);
+    if (!broadcast) return;
+    this.sequence += 1;
+    const record: QuantumNotificationRecord = { sequence: this.sequence, frame: value.slice(), broadcast };
+    this.records.push(record);
+    if (this.records.length > MAX_BUFFERED_NOTIFICATIONS) this.records.shift();
+    this.listeners.forEach((listener) => listener(broadcast));
+    for (const waiter of this.waiters) {
+      if (record.sequence <= waiter.floor || !this.isRosterResponse(record)) continue;
+      clearTimeout(waiter.timeoutId);
+      this.waiters.delete(waiter);
+      waiter.resolve(record.frame.slice());
     }
   }
 
@@ -186,7 +133,6 @@ export class QuantumNotificationInbox {
     this.records.length = 0;
     this.sequence = 0;
     this.rosterFloor = 0;
-    this.assembler.reset();
   }
 
   private isRosterResponse(record: QuantumNotificationRecord): boolean {
@@ -227,7 +173,8 @@ export class QuantumBoardController {
       clearSettleDelayMs: options.clearSettleDelayMs,
     });
     this.removeBroadcastListener = transport.onBroadcast((broadcast) => {
-      if (broadcast.type === 'roster') this.publish(broadcast.players, this.time.now());
+      if (broadcast.type === 'roster' && broadcast.players.length <= QUANTUM_MAX_PLAYERS)
+        this.publish(broadcast.players, this.time.now());
       if (broadcast.type === 'wall-cleared') this.publish([], this.time.now());
     });
   }

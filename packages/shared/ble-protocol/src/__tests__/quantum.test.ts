@@ -78,7 +78,7 @@ class ScriptedQuantumTransport implements QuantumRosterTransport {
     private readonly notifications: ScriptedRead[] = [],
   ) {}
 
-  async writeWithResponse(frame: Uint8Array): Promise<void> {
+  async writeFrame(frame: Uint8Array): Promise<void> {
     this.writes.push(frame.slice());
   }
 
@@ -117,8 +117,8 @@ class ManualQuantumTime implements QuantumTime {
 
 describe('Quantum BLE identity constants', () => {
   it('pins both services and every protocol characteristic', () => {
-    expect(QUANTUM_SERVICE_UUID).toBe('0000ffe0-0000-1000-8000-00805f9b34fb');
-    expect(QUANTUM_LEGACY_SERVICE_UUID).toBe('0000fff0-0000-1000-8000-00805f9b34fb');
+    expect(QUANTUM_SERVICE_UUID).toBe('0000fff0-0000-1000-8000-00805f9b34fb');
+    expect(QUANTUM_LEGACY_SERVICE_UUID).toBe('0000ffe0-0000-1000-8000-00805f9b34fb');
     expect(QUANTUM_NOTIFY_CHARACTERISTIC_UUID).toContain('fff1');
     expect(QUANTUM_WRITE_CHARACTERISTIC_UUID).toContain('fff2');
     expect(QUANTUM_STATE_CHARACTERISTIC_UUID).toContain('fff4');
@@ -128,7 +128,7 @@ describe('Quantum BLE identity constants', () => {
   it('recognizes only the observed case-sensitive name families with a 12-hex serial', () => {
     expect(parseQuantumDeviceSerial('QB_020000000001')).toBe('020000000001');
     expect(parseQuantumDeviceSerial('QBB_AABBCCDDEEFF')).toBe('AABBCCDDEEFF');
-    expect(parseQuantumDeviceSerial('eWalls_gym_a1b2c3d4e5f6')).toBe('a1b2c3d4e5f6');
+    expect(parseQuantumDeviceSerial('eWalls_gym_a1b2c3d4e5f6')).toBeUndefined();
     expect(parseQuantumDeviceSerial('qb_020000000001')).toBeUndefined();
     expect(parseQuantumDeviceSerial('QB_not-a-controller')).toBeUndefined();
   });
@@ -160,12 +160,28 @@ describe('Quantum command encoding', () => {
     expect(frame[0]).toBe(1);
     expect(frame[1]).toBe(QuantumCommand.TURN_OFF_BY_USER);
     expect(decodeQuantumUuid(frame, 2)).toBe(USER_ONE);
-    expect(frame[18]).toBe(0);
+    expect(frame).toHaveLength(20);
     expect(quantumFrameHasValidCrc(frame)).toBe(true);
 
     const routeFrame = encodeQuantumTurnOffRoute(ROUTE_ONE);
+    expect(routeFrame).toHaveLength(20);
     expect(routeFrame[1]).toBe(QuantumCommand.TURN_OFF_BY_ROUTE);
     expect(decodeQuantumUuid(routeFrame, 2)).toBe(ROUTE_ONE);
+  });
+
+  it('matches the documented one-minute activation fixture including duration flag and CRC', () => {
+    const request = {
+      routeId: '00112233-4455-6677-8899-aabbccddeeff',
+      userId: 'ffeeddcc-bbaa-9988-7766-554433221100',
+      color: 0x00ff00,
+      diodeIds: [1, 258],
+      durationSeconds: 60,
+    };
+    expect(Array.from(encodeQuantumActivation(request), (byte) => byte.toString(16).padStart(2, '0')).join('')).toBe(
+      '014100112233445566778899aabbccddeeffffeeddccbbaa9988776655443322110000ff00003c8004000101026eea',
+    );
+    expect(() => encodeQuantumActivation({ ...request, durationSeconds: 0 })).toThrow();
+    expect(encodeQuantumActivation({ ...request, swipe: true, animation: 3 })[39]).toBe(0x83);
   });
 
   it('lays out one atomic activation with big-endian duration and diode ids', () => {
@@ -247,14 +263,14 @@ describe('Quantum controller parsing', () => {
     });
   });
 
-  it('rejects malformed, oversized, reserved-byte, and unknown frames', () => {
+  it('accepts reserved bytes and trailers while rejecting truncated or unknown frames', () => {
     const valid = rosterFrame([player(ROUTE_ONE, USER_ONE, 0x00ff00)]);
     expect(parseQuantumBroadcast(valid.slice(0, -1))).toBeUndefined();
-    expect(parseQuantumBroadcast(Uint8Array.from([...valid, 0]))).toBeUndefined();
+    expect(parseQuantumBroadcast(Uint8Array.from([...valid, 0]))).toEqual(parseQuantumBroadcast(valid));
 
     const badReserved = valid.slice();
     badReserved[3] = 1;
-    expect(parseQuantumBroadcast(badReserved)).toBeUndefined();
+    expect(parseQuantumBroadcast(badReserved)).toEqual(parseQuantumBroadcast(valid));
     expect(parseQuantumBroadcast(Uint8Array.of(1, QuantumCommand.REQUEST_USER_ROUTE_LIST, 5, 0))).toBeUndefined();
     expect(parseQuantumBroadcast(Uint8Array.of(0, QuantumCommand.TURN_ON_ALL, 0xff))).toBeUndefined();
     expect(parseQuantumBroadcast(Uint8Array.of(1, 0x55, 0))).toBeUndefined();
@@ -298,6 +314,11 @@ describe('Quantum controller parsing', () => {
     }
 
     expect(parseQuantumControllerMetadata(new Uint8Array(40))).toBeUndefined();
+    const home = new Uint8Array(41);
+    home[34] = 5;
+    home[36] = 8;
+    home[38] = 12;
+    expect(parseQuantumControllerMetadata(home)).toBeUndefined();
     const unknown = new Uint8Array(41);
     unknown[34] = 99;
     expect(parseQuantumControllerMetadata(unknown)).toBeUndefined();
@@ -427,8 +448,8 @@ describe('Quantum roster transaction machine', () => {
     ]);
     const time = new ManualQuantumTime();
     const machine = new QuantumRosterTransactionMachine(transport, time);
-    const originalWrite = transport.writeWithResponse.bind(transport);
-    transport.writeWithResponse = async (frame) => {
+    const originalWrite = transport.writeFrame.bind(transport);
+    transport.writeFrame = async (frame) => {
       if (frame[1] === QuantumCommand.TURN_OFF_ALL) {
         expect(machine.state).toMatchObject({ operation: 'clear', phase: 'mutating' });
       }

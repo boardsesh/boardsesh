@@ -103,7 +103,7 @@ function sameSerial(first?: string, second?: string): boolean {
 }
 
 /** Quantum's GATT contract is intentionally separate from the Aurora/MoonBoard
- * adapter: every frame is one acknowledged write and must never pass through
+ * adapter: every frame is one mode-appropriate write and must never pass through
  * their chunking paths. This adapter is used on both iOS and Android. */
 export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
   private connectedDevice: Device | null = null;
@@ -118,6 +118,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
   private scanOwnership: QuantumPhysicalOwnership | null = null;
   private readonly activeTransactionIds = new Set<string>();
   private stateReadsEnabled = true;
+  private acknowledgedWrites = true;
   private connectionAttemptGeneration = 0;
   private pendingSelectionCancel: ((error: Error) => void) | null = null;
   private pendingConnectionDeviceId: string | null = null;
@@ -125,7 +126,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
   constructor(private readonly devicePicker: DevicePickerFn) {}
 
   get maximumWriteBytes(): number {
-    if (Platform.OS === 'ios') return IOS_ACKNOWLEDGED_WRITE_MAX_BYTES;
+    if (Platform.OS === 'ios' && this.acknowledgedWrites) return IOS_ACKNOWLEDGED_WRITE_MAX_BYTES;
     return quantumAttPayloadBytes(this.negotiatedMtu);
   }
 
@@ -309,19 +310,21 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     try {
       let deviceForDiscovery = connected;
       if (Platform.OS === 'android') {
-        try {
-          // Quantum's largest valid activation is 227 bytes. Android defaults to
-          // an ATT payload of 20, so 512 is a hard request there. iOS negotiates
-          // internally and ble-plx documents requestMTU as a no-op on that
-          // platform, so only Android performs this request.
-          deviceForDiscovery = await this.runGattWithTimeout(
-            'MTU request',
-            (transactionId) => connected.requestMTU(QUANTUM_REQUESTED_MTU, transactionId),
-            () => this.retireConnection('Quantum MTU request timed out'),
-          );
-          assertCurrentAttempt();
-        } catch (error) {
-          throw new Error('Quantum controller did not negotiate the required Android MTU', { cause: error });
+        for (const requestedMtu of [QUANTUM_REQUESTED_MTU, 247, 185]) {
+          try {
+            deviceForDiscovery = await this.runGattWithTimeout(
+              'MTU request',
+              (transactionId) => connected.requestMTU(requestedMtu, transactionId),
+              () => this.retireConnection('Quantum MTU request timed out'),
+            );
+            assertCurrentAttempt();
+            break;
+          } catch (error) {
+            assertCurrentAttempt();
+            if (error instanceof QuantumGattTimeoutError || requestedMtu === 185) {
+              throw new Error('Quantum controller did not negotiate the required Android MTU', { cause: error });
+            }
+          }
         }
       }
       this.negotiatedMtu = deviceForDiscovery.mtu || connected.mtu || DEFAULT_ATT_MTU;
@@ -338,9 +341,19 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
       );
       assertCurrentAttempt();
       if (!characteristics) {
-        throw new Error('Quantum controller characteristics FFF1/FFF2/FFF4/FFF5 were not found');
+        throw new Error(
+          'Quantum binary control requires FFF1/FFF2/FFF4/FFF5; legacy JSON controllers without FFF5 are unsupported',
+        );
       }
 
+      this.acknowledgedWrites = deviceName.startsWith('QB_');
+      if (
+        this.acknowledgedWrites
+          ? !characteristics.write.isWritableWithResponse
+          : !characteristics.write.isWritableWithoutResponse
+      ) {
+        throw new Error('Quantum FFF2 does not support the selected controller write mode');
+      }
       const metadataBytes = base64ToUint8Array(
         (
           await this.runGattWithTimeout(
@@ -362,7 +375,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
       this.connectedDevice = discoveredDevice;
       this.characteristics = characteristics;
       // `monitor(..., 'notification')` asks ble-plx to configure CCCD 0x2902
-      // and enable FFF1 notifications. Values pass through strict reassembly.
+      // and enable FFF1 notifications. Each event carries one controller value.
       this.notificationSubscription = characteristics.notify.monitor(
         (error, characteristic) => {
           if (connectionOwnership.isCurrent() && this.physicalOwnership === connectionOwnership)
@@ -440,7 +453,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     }
   }
 
-  writeWithResponse(frame: Uint8Array): Promise<void> {
+  writeFrame(frame: Uint8Array): Promise<void> {
     if (frame.length === 0 || frame.length > this.maximumWriteBytes) {
       return Promise.reject(
         new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${this.maximumWriteBytes}`),
@@ -455,11 +468,14 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
       if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) {
         this.notificationInbox.markRosterRequest();
       }
-      // Exactly one acknowledged GATT write. Do not split this frame.
+      // Both binary modes send one complete command and require separate roster confirmation.
       await this.runGattWithTimeout(
-        'acknowledged write',
-        (transactionId) => write.writeWithResponse(uint8ArrayToBase64(frame), transactionId),
-        () => this.retireConnection('Quantum acknowledged write timed out'),
+        this.acknowledgedWrites ? 'acknowledged write' : 'unacknowledged write',
+        (transactionId) =>
+          this.acknowledgedWrites
+            ? write.writeWithResponse(uint8ArrayToBase64(frame), transactionId)
+            : write.writeWithoutResponse(uint8ArrayToBase64(frame), transactionId),
+        () => this.retireConnection('Quantum controller write timed out'),
       );
     });
   }

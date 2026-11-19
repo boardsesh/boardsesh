@@ -13,6 +13,8 @@ import {
   QUANTUM_SET_ID,
   getQuantumBundledGeometry,
   getQuantumPlacementId,
+  getQuantumSourceDiodeBindings,
+  QUANTUM_MODEL_BY_EWALLS_TYPE,
 } from '../quantum';
 import { getBoardHolePlacements } from '../hole-placements';
 import { getLedPlacements } from '../led-placements';
@@ -26,6 +28,38 @@ const MODELS = [
 ] as const;
 
 describe('fixed Quantum model constants', () => {
+  it('binds the documented eWalls board types to the existing physical sizes', () => {
+    expect(QUANTUM_MODEL_BY_EWALLS_TYPE).toEqual({ big: 'xl', medium: 'l', small: 'm', xsmall: 's', belay: 'belay' });
+  });
+
+  it.each(MODELS)(
+    'pins every %s API diode UUID and wire address to a frozen physical placement',
+    (_, __, layoutId, sizeId) => {
+      const bindings = getQuantumSourceDiodeBindings(layoutId, sizeId)!;
+      const geometry = getQuantumBundledGeometry(layoutId, sizeId)!;
+      expect(bindings).toHaveLength(geometry.placements.length);
+      expect(getQuantumSourceDiodeBindings(layoutId, sizeId)).toBe(bindings);
+      for (const binding of bindings) {
+        const placement = geometry.placements.find((candidate) => candidate.placementId === binding.placementId)!;
+        expect(binding.diodeUuid).toMatch(/^[a-f0-9-]{36}$/);
+        expect(binding.autocadId).toBe(placement.ledPosition);
+        expect(Math.trunc(binding.x * 1000)).toBe(placement.x);
+        expect(Math.trunc(binding.y * 1000)).toBe(placement.y);
+        expect(Object.isFrozen(binding)).toBe(true);
+      }
+      expect(Object.isFrozen(bindings)).toBe(true);
+      expect(Reflect.set(bindings[0]!, 'autocadId', -1)).toBe(false);
+    },
+  );
+
+  it('shares upstream identity across standard sizes while keeping other families separate', () => {
+    const xl = getQuantumSourceDiodeBindings(9101, 9201)!;
+    const medium = getQuantumSourceDiodeBindings(9101, 9203)!;
+    const shared = medium[0]!;
+    expect(xl.find((diode) => diode.diodeUuid === shared.diodeUuid)).toBe(shared);
+    expect(getQuantumSourceDiodeBindings(9104, 9201)).toBeNull();
+  });
+
   it('shares standard topology while preserving each controller model', () => {
     expect(
       Object.entries(QUANTUM_MODELS).map(([key, model]) => [

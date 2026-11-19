@@ -30,7 +30,7 @@ function quantumColorHex(color: number): string {
 
 /** Build the only roster shape allowed to cross the party-presence boundary.
  * Foreign/unresolved players remain present, with null climb metadata, because
- * they still consume one of the controller's four physical slots. */
+ * they still consume one of the layers Boardsesh tracks. */
 export function sanitizeQuantumRosterForPresence(
   snapshot: QuantumRosterSnapshot,
   resolvedRoutes: ReadonlyMap<string, ResolvedQuantumRoutePresence>,

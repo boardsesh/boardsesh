@@ -4,8 +4,10 @@ export {
   getQuantumBundledGeometry,
   getQuantumHolePlacements,
   getQuantumLedPlacements,
+  getQuantumSourceDiodeBindings,
   type QuantumBundledGeometry,
   type QuantumGeometryPlacement,
+  type QuantumSourceDiodeBinding,
 } from './quantum-geometry-data';
 export {
   QUANTUM_GEOMETRY_SHA256,
@@ -33,6 +35,15 @@ export const QUANTUM_MODELS = {
 } as const;
 
 export type QuantumModelName = keyof typeof QUANTUM_MODELS;
+
+/** eWalls 2.6.5 board-picker identities; unrelated to diode type labels. */
+export const QUANTUM_MODEL_BY_EWALLS_TYPE = {
+  big: 'xl',
+  medium: 'l',
+  small: 'm',
+  xsmall: 's',
+  belay: 'belay',
+} as const satisfies Readonly<Record<string, QuantumModelName>>;
 
 export const QUANTUM_PRODUCT_IDS = { standard: 91, s: 94, belay: 95 } as const;
 

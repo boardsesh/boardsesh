@@ -6,8 +6,8 @@
  * MTU negotiation, characteristic subscription, and operation timeouts.
  */
 
-export const QUANTUM_SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
-export const QUANTUM_LEGACY_SERVICE_UUID = '0000fff0-0000-1000-8000-00805f9b34fb';
+export const QUANTUM_SERVICE_UUID = '0000fff0-0000-1000-8000-00805f9b34fb';
+export const QUANTUM_LEGACY_SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
 export const QUANTUM_SERVICE_UUIDS = [QUANTUM_SERVICE_UUID, QUANTUM_LEGACY_SERVICE_UUID] as const;
 export const QUANTUM_NOTIFY_CHARACTERISTIC_UUID = '0000fff1-0000-1000-8000-00805f9b34fb';
 export const QUANTUM_WRITE_CHARACTERISTIC_UUID = '0000fff2-0000-1000-8000-00805f9b34fb';
@@ -16,12 +16,13 @@ export const QUANTUM_METADATA_CHARACTERISTIC_UUID = '0000fff5-0000-1000-8000-008
 
 export const QUANTUM_REQUESTED_MTU = 512;
 export const QUANTUM_ATT_HEADER_BYTES = 3;
+/** Boardsesh supports four layers; firmware roster capacity is unknown. */
 export const QUANTUM_MAX_PLAYERS = 4;
 export const QUANTUM_MAX_DIODE_IDS = 92;
 export const QUANTUM_DEFAULT_ROUTE_DURATION_SECONDS = 0xffff;
 export const QUANTUM_ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
-export const QUANTUM_DEVICE_NAME_PREFIXES = ['eWalls_', 'QB_', 'QBB_'] as const;
+export const QUANTUM_DEVICE_NAME_PREFIXES = ['QB_', 'QBB_'] as const;
 
 export const QuantumCommand = {
   ACTIVATE_WALL: 0x41,
@@ -195,7 +196,7 @@ export function encodeQuantumActivation({
     throw new RangeError(`Quantum activation is limited to ${QUANTUM_MAX_DIODE_IDS} diodes`);
   }
 
-  assertIntegerInRange('Quantum duration', durationSeconds, 0, 0xffff);
+  assertIntegerInRange('Quantum duration', durationSeconds, 1, 0xffff);
   assertIntegerInRange('Quantum animation', animation, 0, 0xff);
   diodeIds.forEach((diodeId) => assertIntegerInRange('Quantum diode id', diodeId, 0, 0xffff));
 
@@ -210,7 +211,10 @@ export function encodeQuantumActivation({
     encodeQuantumUuid(userId),
     encodeRgb(color),
     encodeBigEndianUint16(durationSeconds),
-    Uint8Array.of(animation, diodeBytes.length),
+    Uint8Array.of(
+      durationSeconds === QUANTUM_DEFAULT_ROUTE_DURATION_SECONDS ? animation : animation | 0x80,
+      diodeBytes.length,
+    ),
     diodeBytes,
   );
 
@@ -218,17 +222,11 @@ export function encodeQuantumActivation({
 }
 
 export function encodeQuantumTurnOffRoute(routeId: string): Uint8Array {
-  return encodeQuantumCommand(
-    QuantumCommand.TURN_OFF_BY_ROUTE,
-    concatenateBytes(encodeQuantumUuid(routeId), Uint8Array.of(0)),
-  );
+  return encodeQuantumCommand(QuantumCommand.TURN_OFF_BY_ROUTE, encodeQuantumUuid(routeId));
 }
 
 export function encodeQuantumTurnOffUser(userId: string): Uint8Array {
-  return encodeQuantumCommand(
-    QuantumCommand.TURN_OFF_BY_USER,
-    concatenateBytes(encodeQuantumUuid(userId), Uint8Array.of(0)),
-  );
+  return encodeQuantumCommand(QuantumCommand.TURN_OFF_BY_USER, encodeQuantumUuid(userId));
 }
 
 export function encodeQuantumTurnOffAll(): Uint8Array {
@@ -310,7 +308,7 @@ export function quantumControllerFailureFromCode(code: number): QuantumControlle
 }
 
 /**
- * Returns the exact length of a supported controller broadcast once its header
+ * Returns the minimum length of a supported controller broadcast once its header
  * is complete. `undefined` means either an incomplete header or an unsupported
  * shape; callers must still use {@link parseQuantumBroadcast} before trusting it.
  */
@@ -326,7 +324,7 @@ export function quantumBroadcastLength(framePrefix: Uint8Array): number | undefi
     case QuantumCommand.REQUEST_USER_ROUTE_LIST: {
       if (framePrefix.length < 4) return undefined;
       const playerCount = framePrefix[2];
-      return playerCount <= QUANTUM_MAX_PLAYERS ? 4 + playerCount * QUANTUM_PLAYER_RECORD_BYTES : undefined;
+      return 4 + playerCount * QUANTUM_PLAYER_RECORD_BYTES;
     }
     case QuantumCommand.TURN_OFF_BY_USER:
       return 21;
@@ -341,7 +339,7 @@ export function quantumBroadcastLength(framePrefix: Uint8Array): number | undefi
 
 export function parseQuantumBroadcast(frame: Uint8Array): QuantumBroadcast | undefined {
   const expectedLength = quantumBroadcastLength(frame);
-  if (expectedLength === undefined || frame.length !== expectedLength) return undefined;
+  if (expectedLength === undefined || frame.length < expectedLength) return undefined;
 
   const rawCommand = frame[1];
   if ((rawCommand & 0x80) !== 0) {
@@ -359,7 +357,7 @@ export function parseQuantumBroadcast(frame: Uint8Array): QuantumBroadcast | und
     case QuantumCommand.BOARD_SWIPE:
     case QuantumCommand.REQUEST_USER_ROUTE_LIST: {
       const playerCount = frame[2];
-      if (frame[3] !== 0) return undefined;
+      // The reference decoder skips byte 3 and ignores trailing bytes.
 
       const players = Array.from({ length: playerCount }, (_, playerIndex): QuantumActivePlayer => {
         const offset = 4 + playerIndex * QUANTUM_PLAYER_RECORD_BYTES;
@@ -444,10 +442,10 @@ function confirmsForeignLayers(
 }
 
 export interface QuantumRosterTransport {
-  /** Largest complete value accepted by one write-with-response operation. */
+  /** Largest complete value accepted by one transport write in its negotiated mode. */
   readonly maximumWriteBytes: number;
-  /** Must issue exactly one acknowledged characteristic write for this frame. */
-  writeWithResponse(frame: Uint8Array): Promise<void>;
+  /** Issue one characteristic write in the mode selected for this binary connection. */
+  writeFrame(frame: Uint8Array): Promise<void>;
   /** Read one complete value from the state characteristic. */
   readState(): Promise<Uint8Array | undefined>;
   /** Optional notification fallback; the adapter owns its timeout mechanism. */
@@ -744,6 +742,12 @@ export class QuantumRosterTransactionMachine {
     if (broadcast?.type !== 'roster' || broadcast.command !== QuantumCommand.REQUEST_USER_ROUTE_LIST) {
       return undefined;
     }
+    if (broadcast.players.length > QUANTUM_MAX_PLAYERS) {
+      throw new QuantumRosterTransactionError(
+        'board-full',
+        'Quantum roster exceeds the four layers supported by Boardsesh',
+      );
+    }
     return broadcast.players;
   }
 
@@ -781,7 +785,7 @@ export class QuantumRosterTransactionMachine {
 
   private async writeAtomic(frame: Uint8Array): Promise<void> {
     this.assertFrameFits(frame);
-    await this.transport.writeWithResponse(frame.slice());
+    await this.transport.writeFrame(frame.slice());
   }
 
   private transition(phase: QuantumRosterPhase, operation: QuantumRosterOperation): void {

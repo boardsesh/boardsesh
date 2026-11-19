@@ -1,4 +1,16 @@
-import { and, eq, getTableColumns, inArray, not, notInArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  like,
+  not,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from 'drizzle-orm';
 import {
   boardSharedSyncs,
   boardClimbHolds,
@@ -17,17 +29,27 @@ import {
   boardSets,
 } from '@boardsesh/db/schema';
 import { blendedQualityAverageSql, quantumCatalogClimbCondition } from '@boardsesh/db/queries';
-import type { ValidatedQuantumSnapshot } from '@boardsesh/quantum-sync';
+import type { EwallsBootstrap, EwallsDelta, EwallsRecord } from '@boardsesh/quantum-sync';
 import { db, type Database } from '../db/client';
-import { prepareQuantumCatalog, QUANTUM_BOARD_TYPE, type PreparedQuantumCatalog } from './quantum-catalog-mapping';
-import { QUANTUM_CATALOG_CHECKPOINT, readQuantumCatalogSyncMetadata } from './quantum-catalog-checkpoint';
-import { QUANTUM_HARDWARE_FINGERPRINT } from '@boardsesh/board-constants/quantum';
-import { computeQuantumHardwareFingerprint } from './quantum-catalog-mapping';
+import { QUANTUM_BOARD_TYPE, type PreparedQuantumCatalog } from './quantum-catalog-mapping';
+import {
+  QUANTUM_HARDWARE_FINGERPRINT,
+  QUANTUM_MODEL_BY_EWALLS_TYPE,
+  QUANTUM_MODELS,
+} from '@boardsesh/board-constants/quantum';
+import { quantumCanonicalClimbUuid } from './quantum-catalog-mapping';
+import {
+  EWALLS_CATALOG_STATE_PREFIX,
+  ewallsCatalogStateKey,
+  loadEwallsCatalogState,
+  makeEwallsCatalogState,
+  readEwallsCatalogState,
+} from './ewalls-catalog-state';
+import { normalizeEwallsRouteId } from './ewalls-catalog-mapping';
 
 const QUANTUM_IMPORT_BATCH_SIZE = 500;
 const QUANTUM_IMPORT_LOCK_NAMESPACE = 0x5155_414e; // ASCII "QUAN"
 const QUANTUM_IMPORT_LOCK_KEY = 1;
-const MAX_STORED_ERROR_LENGTH = 4_000;
 
 export type QuantumCatalogTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -57,15 +79,6 @@ export class QuantumHardwareFingerprintDriftError extends Error {
   }
 }
 
-export class QuantumSnapshotRollbackError extends Error {
-  readonly code = 'QUANTUM_SNAPSHOT_ROLLBACK';
-
-  constructor() {
-    super('Quantum snapshot is older than the last successful signed catalog checkpoint.');
-    this.name = 'QuantumSnapshotRollbackError';
-  }
-}
-
 export class QuantumRouteGeometryDriftError extends Error {
   readonly code = 'QUANTUM_ROUTE_GEOMETRY_DRIFT';
 
@@ -78,162 +91,137 @@ export class QuantumRouteGeometryDriftError extends Error {
   }
 }
 
-export async function recordQuantumCatalogSyncAttempt(
-  database: Pick<Database, 'insert'>,
-  source: string,
-  attemptedAt: Date = new Date(),
-): Promise<void> {
-  await database
-    .insert(boardSharedSyncs)
-    .values({
-      boardType: QUANTUM_BOARD_TYPE,
-      tableName: QUANTUM_CATALOG_CHECKPOINT,
-      metadata: { source, lastAttemptAt: attemptedAt.toISOString() },
-    })
-    .onConflictDoUpdate({
-      target: [boardSharedSyncs.boardType, boardSharedSyncs.tableName],
-      set: { metadata: sql`COALESCE(${boardSharedSyncs.metadata}, '{}'::jsonb) || excluded.metadata` },
-    });
+export class EwallsCheckpointChangedError extends Error {
+  constructor() {
+    super(
+      'eWalls catalogue checkpoint changed during acquisition; discard this batch and retry from the current checkpoint.',
+    );
+    this.name = 'EwallsCheckpointChangedError';
+  }
 }
 
-export async function recordQuantumCatalogSyncFailure(
-  database: Pick<Database, 'insert'>,
-  source: string,
-  error: unknown,
-  failedAt: Date = new Date(),
-): Promise<void> {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  await database
-    .insert(boardSharedSyncs)
-    .values({
-      boardType: QUANTUM_BOARD_TYPE,
-      tableName: QUANTUM_CATALOG_CHECKPOINT,
-      metadata: {
-        source,
-        lastAttemptAt: failedAt.toISOString(),
-        lastError: errorMessage.slice(0, MAX_STORED_ERROR_LENGTH),
-      },
-    })
-    .onConflictDoUpdate({
-      target: [boardSharedSyncs.boardType, boardSharedSyncs.tableName],
-      set: { metadata: sql`COALESCE(${boardSharedSyncs.metadata}, '{}'::jsonb) || excluded.metadata` },
-    });
+export class EwallsCatalogAuthorityChangedError extends Error {
+  constructor() {
+    super(
+      'The eWalls shared-catalogue account or board binding changed; an explicit complete catalogue rebind is required.',
+    );
+    this.name = 'EwallsCatalogAuthorityChangedError';
+  }
 }
 
-/**
- * Apply one already-authenticated, fully validated snapshot. The attempt row is
- * written before the transaction so a rollback remains visible; every catalog
- * table and the success checkpoint commit atomically.
- */
-export async function importValidatedQuantumSnapshot(
-  snapshot: Readonly<ValidatedQuantumSnapshot>,
-  signal?: AbortSignal,
+/** Apply one complete, authenticated catalogue scope. Personal collections are
+ * intentionally absent from the projection and from shared checkpoints. */
+export async function importPreparedEwallsCatalog(
+  input: {
+    batch: EwallsBootstrap | EwallsDelta;
+    catalog: PreparedQuantumCatalog;
+    diodes: readonly EwallsRecord[];
+    upstreamAccountId: string;
+    expectedCheckpoint: string | null;
+  },
   options: {
     database?: Database;
-    now?: () => Date;
     transaction?: QuantumCatalogBatchRunner;
-    expectedHardwareFingerprint?: string;
+    signal?: AbortSignal;
+    now?: () => Date;
   } = {},
 ): Promise<QuantumCatalogImportResult> {
-  // Validate the immutable physical map before even constructing climb frames.
-  // Failed first bootstraps must leave no catalog or checkpoint rows behind.
-  const receivedHardwareFingerprint = computeQuantumHardwareFingerprint(snapshot.rows.models, snapshot.rows.diodes);
-  const expectedHardwareFingerprint = options.expectedHardwareFingerprint ?? QUANTUM_HARDWARE_FINGERPRINT;
-  if (receivedHardwareFingerprint !== expectedHardwareFingerprint) {
-    throw new QuantumHardwareFingerprintDriftError(expectedHardwareFingerprint, receivedHardwareFingerprint);
+  const { batch, catalog, upstreamAccountId } = input;
+  if (catalog.hardwareFingerprint !== QUANTUM_HARDWARE_FINGERPRINT) {
+    throw new QuantumHardwareFingerprintDriftError(QUANTUM_HARDWARE_FINGERPRINT, catalog.hardwareFingerprint);
   }
+  if (batch.kind === 'delta' && batch.baseCheckpoint !== input.expectedCheckpoint)
+    throw new EwallsCheckpointChangedError();
+  const modelKey = QUANTUM_MODEL_BY_EWALLS_TYPE[batch.scope.forcedType as keyof typeof QUANTUM_MODEL_BY_EWALLS_TYPE];
+  if (!modelKey) throw new Error('Unsupported eWalls catalogue type');
+  const layoutId = QUANTUM_MODELS[modelKey].layoutId;
+  if (catalog.climbs.some((climb) => climb.layoutId !== layoutId))
+    throw new Error('eWalls catalogue crosses physical families');
   const database = options.database ?? db;
+  const transactionRunner =
+    options.transaction ??
+    (<Result>(run: (transaction: QuantumCatalogTransaction) => Promise<Result>) => database.transaction(run));
   const importedAt = (options.now ?? (() => new Date()))();
-  const transactionRunner: QuantumCatalogBatchRunner = options.transaction ?? ((run) => database.transaction(run));
-  await transactionRunner((transaction) => recordQuantumCatalogSyncAttempt(transaction, snapshot.source, importedAt));
-
-  try {
-    throwIfAborted(signal);
-    const prepared = prepareQuantumCatalog(snapshot, importedAt);
-    return await transactionRunner(async (transaction) => {
-      // The lease is an operational optimisation, not fencing. This database
-      // lock is what serializes overlapping snapshot writers safely.
-      await transaction.execute(
-        sql`SELECT pg_advisory_xact_lock(${QUANTUM_IMPORT_LOCK_NAMESPACE}, ${QUANTUM_IMPORT_LOCK_KEY})`,
+  const stateKey = ewallsCatalogStateKey(batch.scope, upstreamAccountId);
+  const upserts = batch.routes.upsert.map((route) => normalizeEwallsRouteId(route.id));
+  const deletions = batch.routes.deleted.map(normalizeEwallsRouteId);
+  const upsertIds = new Set(upserts);
+  if (
+    upsertIds.size !== upserts.length ||
+    new Set(deletions).size !== deletions.length ||
+    deletions.some((routeId) => upsertIds.has(routeId))
+  ) {
+    throw new Error('Ambiguous normalized eWalls route identities');
+  }
+  return transactionRunner(async (transaction) => {
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(${QUANTUM_IMPORT_LOCK_NAMESPACE}, ${QUANTUM_IMPORT_LOCK_KEY})`,
+    );
+    throwIfAborted(options.signal);
+    const prior = await loadEwallsCatalogState(transaction, batch.scope, upstreamAccountId);
+    if ((prior?.checkpoint ?? null) !== input.expectedCheckpoint) throw new EwallsCheckpointChangedError();
+    const routeIds = new Set(batch.kind === 'bootstrap' ? [] : (prior?.routeIds ?? []));
+    for (const routeId of upserts) routeIds.add(routeId);
+    for (const routeId of deletions) routeIds.delete(routeId);
+    const scopeRows = await transaction
+      .select({ tableName: boardSharedSyncs.tableName, metadata: boardSharedSyncs.metadata })
+      .from(boardSharedSyncs)
+      .where(
+        and(
+          eq(boardSharedSyncs.boardType, QUANTUM_BOARD_TYPE),
+          like(boardSharedSyncs.tableName, `${EWALLS_CATALOG_STATE_PREFIX}%`),
+        ),
       );
-      throwIfAborted(signal);
-
-      const shouldApply = await checkQuantumCatalogCheckpoint(transaction, snapshot, prepared.hardwareFingerprint);
-      if (!shouldApply) {
-        await markQuantumCatalogSyncSuccess(transaction, snapshot, prepared.hardwareFingerprint, importedAt);
-        return Object.freeze({
-          outcome: 'unchanged' as const,
-          hardwareFingerprint: prepared.hardwareFingerprint,
-          modelsUpserted: 0,
-          diodesUpserted: 0,
-          climbsUpserted: 0,
-          holdsUpserted: 0,
-          statsUpserted: 0,
-        });
+    const retainedElsewhere = new Set<string>();
+    for (const row of scopeRows) {
+      if (row.tableName === stateKey) continue;
+      const other = readEwallsCatalogState(row.metadata);
+      if (other.upstreamAccountId !== upstreamAccountId || other.scope.board !== batch.scope.board) {
+        throw new EwallsCatalogAuthorityChangedError();
       }
-      await assertNoForeignClimbUuidCollisions(transaction, prepared, signal);
-      const existingClimbUuids = await assertExistingQuantumRouteGeometry(transaction, prepared, signal);
-      await upsertQuantumReferenceCatalog(transaction, prepared, signal);
-      await reconcileQuantumClimbs(transaction, prepared, existingClimbUuids, importedAt, signal);
-      await markQuantumCatalogSyncSuccess(transaction, snapshot, prepared.hardwareFingerprint, importedAt);
-
-      return Object.freeze({
-        outcome: 'applied' as const,
-        hardwareFingerprint: prepared.hardwareFingerprint,
-        modelsUpserted: prepared.layouts.length,
-        diodesUpserted: prepared.placements.length,
-        climbsUpserted: prepared.climbs.length,
-        holdsUpserted: prepared.holds.length,
-        statsUpserted: prepared.stats.length,
-      });
-    });
-  } catch (error) {
-    try {
-      await transactionRunner((transaction) =>
-        recordQuantumCatalogSyncFailure(transaction, snapshot.source, error, importedAt),
-      );
-    } catch {
-      // Never replace the catalog/import failure with telemetry-state failure.
+      const otherModelKey = QUANTUM_MODEL_BY_EWALLS_TYPE[other.scope.forcedType];
+      if (QUANTUM_MODELS[otherModelKey].layoutId !== layoutId) continue;
+      for (const routeId of other.routeIds) retainedElsewhere.add(routeId);
     }
-    throw error;
-  }
-}
-
-async function checkQuantumCatalogCheckpoint(
-  transaction: QuantumCatalogTransaction,
-  snapshot: Readonly<ValidatedQuantumSnapshot>,
-  receivedFingerprint: string,
-): Promise<boolean> {
-  const priorRows = await transaction
-    .select({ metadata: boardSharedSyncs.metadata })
-    .from(boardSharedSyncs)
-    .where(
-      and(
-        eq(boardSharedSyncs.boardType, QUANTUM_BOARD_TYPE),
-        eq(boardSharedSyncs.tableName, QUANTUM_CATALOG_CHECKPOINT),
-      ),
-    )
-    .for('update');
-  const priorStates = priorRows.map((row) => readQuantumCatalogSyncMetadata(row.metadata));
-  const expectedFingerprint = priorStates.find((state) => state.hardwareFingerprint)?.hardwareFingerprint;
-  if (expectedFingerprint && expectedFingerprint !== receivedFingerprint) {
-    throw new QuantumHardwareFingerprintDriftError(expectedFingerprint, receivedFingerprint);
-  }
-  const successfulStates = priorStates.filter(
-    (state) => state.lastSuccessAt && state.revisionTimestamp !== undefined && state.revisionId,
-  );
-  successfulStates.sort((left, right) => {
-    const createdAtOrder = (right.revisionTimestamp ?? -1) - (left.revisionTimestamp ?? -1);
-    if (createdAtOrder !== 0) return createdAtOrder;
-    return (right.revisionId ?? '').localeCompare(left.revisionId ?? '');
+    const removed = (prior?.routeIds ?? [])
+      .filter((routeId) => !routeIds.has(routeId) && !retainedElsewhere.has(routeId))
+      .map((routeId) => quantumCanonicalClimbUuid(layoutId, routeId));
+    await assertNoForeignClimbUuidCollisions(transaction, catalog, options.signal);
+    const existing = await assertExistingQuantumRouteGeometry(transaction, catalog, options.signal);
+    if (!prior) await upsertQuantumReferenceCatalog(transaction, catalog, options.signal);
+    await reconcileQuantumClimbs(transaction, catalog, existing, importedAt, removed, options.signal);
+    throwIfAborted(options.signal);
+    const metadata = makeEwallsCatalogState({
+      upstreamAccountId,
+      scope: batch.scope,
+      checkpoint: batch.checkpoint,
+      routeIds: [...routeIds],
+      diodes: input.diodes,
+      hardwareFingerprint: catalog.hardwareFingerprint,
+      importedAt,
+    });
+    await transaction
+      .insert(boardSharedSyncs)
+      .values({
+        boardType: QUANTUM_BOARD_TYPE,
+        tableName: stateKey,
+        lastSynchronizedAt: importedAt.toISOString(),
+        metadata,
+      })
+      .onConflictDoUpdate({
+        target: [boardSharedSyncs.boardType, boardSharedSyncs.tableName],
+        set: { lastSynchronizedAt: importedAt.toISOString(), metadata },
+      });
+    return Object.freeze({
+      outcome: 'applied',
+      hardwareFingerprint: catalog.hardwareFingerprint,
+      modelsUpserted: catalog.layouts.length,
+      diodesUpserted: catalog.placements.length,
+      climbsUpserted: catalog.climbs.length,
+      holdsUpserted: catalog.holds.length,
+      statsUpserted: catalog.stats.length,
+    });
   });
-  const checkpoint = successfulStates[0];
-  if (!checkpoint || checkpoint.revisionTimestamp === undefined || !checkpoint.revisionId) return true;
-  if (snapshot.manifestCreatedAt < checkpoint.revisionTimestamp) throw new QuantumSnapshotRollbackError();
-  if (snapshot.manifestCreatedAt > checkpoint.revisionTimestamp) return true;
-  const eventOrder = snapshot.eventId.localeCompare(checkpoint.revisionId);
-  if (eventOrder < 0) throw new QuantumSnapshotRollbackError();
-  return eventOrder > 0;
 }
 
 async function assertNoForeignClimbUuidCollisions(
@@ -474,10 +462,10 @@ async function reconcileQuantumClimbs(
   prepared: PreparedQuantumCatalog,
   existingClimbUuids: ReadonlySet<string>,
   importedAt: Date,
+  removedCanonicalUuids: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
-  // The signed snapshot is complete. Only missing, currently listed source rows
-  // need a tombstone; unchanged rows retain their incremental-sync timestamps.
+  // Only routes absent from every scope in this physical family are delisted.
   await transaction
     .update(boardClimbs)
     .set({ isListed: false, updatedAt: importedAt })
@@ -485,12 +473,7 @@ async function reconcileQuantumClimbs(
       and(
         quantumCatalogClimbCondition(),
         eq(boardClimbs.isListed, true),
-        prepared.climbs.length
-          ? notInArray(
-              boardClimbs.uuid,
-              prepared.climbs.map((climb) => climb.uuid),
-            )
-          : undefined,
+        inArray(boardClimbs.uuid, [...removedCanonicalUuids]),
       ),
     );
 
@@ -612,19 +595,57 @@ async function reconcileQuantumClimbs(
       await transaction.insert(boardClimbHolds).values([...holdBatch]);
     },
   );
-  const resolvedUpstreamAscensionistCount = sql`COALESCE(excluded.upstream_ascensionist_count, 0)`;
+  // eWalls supplies route-level aggregates at the current route angle. Retire
+  // earlier upstream contributions without disturbing local ticks or their grades.
+  await processBatches(prepared.climbs, async (climbs) => {
+    throwIfAborted(signal);
+    await transaction
+      .update(boardClimbStats)
+      .set({
+        upstreamAscensionistCount: null,
+        upstreamQualityAverage: null,
+        upstreamSyncedAt: null,
+        ascensionistCount: sql`${boardClimbStats.boardseshAscensionistCount}`,
+        qualityAverage: blendedQualityAverageSql({
+          upstreamQualityAverage: sql`NULL::double precision`,
+          upstreamAscensionistCount: sql`NULL::bigint`,
+          boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
+          boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+        }),
+        displayDifficulty: sql`CASE WHEN ${boardClimbStats.tickGradedAt} IS NOT NULL THEN ${boardClimbStats.displayDifficulty} END`,
+        difficultyAverage: sql`CASE WHEN ${boardClimbStats.tickGradedAt} IS NOT NULL THEN ${boardClimbStats.difficultyAverage} END`,
+        updatedAt: importedAt,
+      })
+      .from(boardClimbs)
+      .where(
+        and(
+          eq(boardClimbStats.boardType, QUANTUM_BOARD_TYPE),
+          eq(boardClimbStats.climbUuid, boardClimbs.uuid),
+          inArray(
+            boardClimbs.uuid,
+            climbs.map((climb) => climb.uuid),
+          ),
+          isNotNull(boardClimbStats.upstreamSyncedAt),
+          sql`${boardClimbStats.angle} IS DISTINCT FROM ${boardClimbs.angle}`,
+        ),
+      );
+  });
+  const resolvedUpstreamAscensionistCount = sql`COALESCE(excluded.upstream_ascensionist_count, ${boardClimbStats.upstreamAscensionistCount})`;
+  const resolvedUpstreamQuality = sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`;
   const blendedQuality = blendedQualityAverageSql({
-    upstreamQualityAverage: sql`excluded.upstream_quality_average`,
+    upstreamQualityAverage: resolvedUpstreamQuality,
     upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
     boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
     boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
   });
   const statSourceChanges = {
-    upstreamAscensionistCount: sql`excluded.upstream_ascensionist_count`,
-    ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-    displayDifficulty: sql`excluded.display_difficulty`,
-    difficultyAverage: sql`excluded.difficulty_average`,
-    upstreamQualityAverage: sql`excluded.upstream_quality_average`,
+    upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
+    ascensionistCount: sql`CASE WHEN ${resolvedUpstreamAscensionistCount} IS NULL THEN ${boardClimbStats.boardseshAscensionistCount}
+      ELSE ${resolvedUpstreamAscensionistCount} + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0) END`,
+    displayDifficulty: sql`COALESCE(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
+    tickGradedAt: sql`CASE WHEN excluded.display_difficulty IS NULL THEN ${boardClimbStats.tickGradedAt} END`,
+    difficultyAverage: sql`COALESCE(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+    upstreamQualityAverage: resolvedUpstreamQuality,
     qualityAverage: blendedQuality,
     qualityNormalized: sql`true`,
   };
@@ -643,36 +664,6 @@ async function reconcileQuantumClimbs(
         setWhere: changedColumns(getTableColumns(boardClimbStats), statSourceChanges),
       });
   });
-}
-
-async function markQuantumCatalogSyncSuccess(
-  transaction: QuantumCatalogTransaction,
-  snapshot: Readonly<ValidatedQuantumSnapshot>,
-  hardwareFingerprint: string,
-  importedAt: Date,
-): Promise<void> {
-  const metadata = {
-    source: snapshot.source,
-    revisionId: snapshot.eventId,
-    revisionTimestamp: snapshot.manifestCreatedAt,
-    contentFingerprint: snapshot.chunkSha256,
-    hardwareFingerprint,
-    lastAttemptAt: importedAt.toISOString(),
-    lastSuccessAt: importedAt.toISOString(),
-    lastError: null,
-  };
-  await transaction
-    .insert(boardSharedSyncs)
-    .values({
-      boardType: QUANTUM_BOARD_TYPE,
-      tableName: QUANTUM_CATALOG_CHECKPOINT,
-      lastSynchronizedAt: importedAt.toISOString(),
-      metadata,
-    })
-    .onConflictDoUpdate({
-      target: [boardSharedSyncs.boardType, boardSharedSyncs.tableName],
-      set: { lastSynchronizedAt: importedAt.toISOString(), metadata },
-    });
 }
 
 async function processBatches<Row>(rows: readonly Row[], processBatch: (batch: Row[]) => Promise<void>): Promise<void> {

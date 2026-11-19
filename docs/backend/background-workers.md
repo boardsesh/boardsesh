@@ -965,7 +965,7 @@ Kilter); MoonBoard's credentials are optional.
 | `provider-routine-cycle` | `*/5 * * * *` | `{ provider: 'aurora' }`, `{ provider: 'kilter' }` | Syncs the next due credentials of one provider |
 | `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter, least recently synced first | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
 | `kilter-catalog-sync` | `23 */6 * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
-| `quantum-catalog-sync` | `43 */6 * * *` | one | Verifies and imports the temporary pinned Quantum catalog snapshot |
+| `quantum-catalog-sync` | `43 */6 * * *` | one | Bootstraps and applies scoped catalogue deltas directly from eWalls |
 | `moonboard-locations-sync` | `41 3 * * *` | one | MoonBoard gyms and boards |
 | `climb-stats-self-heal` | `13 * * * *` | one | Re-derives stats rows a dropped or deferred recompute left behind |
 
@@ -1084,13 +1084,15 @@ options ever outgrow the budget. Both catalogs and the routine cycle can wait
 behind the same runs, so they carry the same deadline.
 
 `quantum-catalog-sync` owns the Quantum refresh schedule; there is no separate
-Quantum daemon. The acquisition package verifies the temporary publisher's
-pinned signature, artifact hash and bounded SQLite schema before the backend
-maps or writes catalog rows. Acquisition runs outside transactions; import
+Quantum daemon. The acquisition package reads the direct eWalls API through an
+explicitly configured shared-catalogue identity. Bounded bootstrap pagination
+must complete before publication; later reads use an opaque per-model server
+checkpoint. Acquisition runs outside transactions; import
 batches and the `board_shared_syncs.metadata` checkpoint use the job's attempt
 fence. Bundled hardware geometry must match before a catalog can be accepted.
-This bootstrap does not provide direct eWalls account or two-way synchronization;
-the source and its limits are described in [quantumboard.md](quantumboard.md).
+Personal account collections and outbound uploads are separate from this shared
+catalogue job. Credential configuration, scope rebinding, and remaining partner
+validation are described in [quantumboard.md](quantumboard.md).
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the
