@@ -414,6 +414,7 @@ const APP_STORE_LOCALES_BY_APP_LOCALE: Record<Locale, readonly string[]> = {
   fr: ['fr-FR'],
   de: ['de-DE'],
   it: ['it'],
+  'zh-CN': ['zh-Hans'],
 };
 
 /** Default / `--locales all` set. Excludes app locales without store screenshot folders yet. */

@@ -65,6 +65,15 @@ function findRow(input: GeneralModelInput, key: string): MoreRow {
 }
 
 describe('buildGeneralModel', () => {
+  it('describes the Chinese form only when that is the contribution destination', () => {
+    const chinese = makeInput({ activeLocale: 'zh-CN', chineseTerminologyFormAvailable: true });
+    const footer = (input: GeneralModelInput) =>
+      buildGeneralModel(input).sections.find((section) => section.key === 'languageContribute')?.footer;
+    expect(footer(chinese)).toBe('chineseTranslation.formDescription');
+    expect(footer({ ...chinese, chineseTerminologyFormAvailable: false })).toContain('contributeSubtitle');
+    expect(footer({ ...chinese, activeLocale: 'fr' })).toContain('contributeSubtitle');
+  });
+
   it('offers no Show support asks switch where the app never asks', () => {
     const keys = buildGeneralModel(makeInput()).sections.map((section) => section.key);
     expect(keys).not.toContain('supportAsks');
@@ -123,8 +132,9 @@ describe('buildGeneralModel', () => {
   it('offers System first, then every supported language in its own script', () => {
     const row = findRow(makeInput(), 'language');
     if (row.kind !== 'select') throw new Error('language is not a select');
-    expect(row.options.map((option) => option.key)).toEqual(['system', 'en-US', 'es', 'fr', 'de', 'it']);
+    expect(row.options.map((option) => option.key)).toEqual(['system', 'en-US', 'es', 'fr', 'de', 'it', 'zh-CN']);
     expect(row.options.find((option) => option.key === 'es')?.label).toBe('Español');
+    expect(row.options.find((option) => option.key === 'zh-CN')?.label).toBe('中文（简体）');
   });
 
   it('changes appearance and language to known options only', () => {

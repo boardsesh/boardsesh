@@ -12,6 +12,7 @@ export type GeneralModelInput = {
   onLanguageChange: (language: LocaleOverride) => void;
   /** The language the app is showing now ('system' resolved), for the Help translate footer. */
   activeLocale: Locale;
+  chineseTerminologyFormAvailable?: boolean;
   onHelpTranslate: () => void;
   /** What the phone keeps for when there's no signal. */
   offline: GeneralOfflineInput;
@@ -173,14 +174,17 @@ export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
       },
       {
         key: 'languageContribute',
-        footer: t('mobile.settings.language.contributeSubtitle', { language: LOCALE_LABELS[input.activeLocale] }),
+        footer:
+          input.activeLocale === 'zh-CN' && input.chineseTerminologyFormAvailable
+            ? t('chineseTranslation.formDescription')
+            : t('mobile.settings.language.contributeSubtitle', { language: LOCALE_LABELS[input.activeLocale] }),
         rows: [
           {
             kind: 'nav',
             key: 'helpTranslate',
             label: t('mobile.settings.language.contributeTitle'),
             icon: 'translate',
-            // Opens the catalog on GitHub, outside the app.
+            // Opens the contribution destination outside the app.
             external: true,
             onPress: input.onHelpTranslate,
           },

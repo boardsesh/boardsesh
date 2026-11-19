@@ -1290,5 +1290,15 @@
     "removedMany": "{{count}} entrées supprimées",
     "undo": "Annuler",
     "cancelled": "Suppression annulée. Ton entrée a été conservée."
+  },
+  "chineseTranslation": {
+    "title": "Aide-nous à parler escalade en chinois",
+    "body": "Bienvenue sur Boardsesh en chinois simplifié. Nous avons utilisé l’IA pour traduire l’app et certains termes d’escalade peuvent manquer de naturel.",
+    "terms": "Comment appelles-tu une croix, un flash, une méthode ou un Spraywall ? Aide-nous à choisir les mots que les grimpeurs utilisent.",
+    "invitation": "Partage tes suggestions dans notre formulaire Google. C’est facultatif. Tu peux le retrouver dans Réglages → Général → Aider à traduire.",
+    "openForm": "Aider avec les termes d’escalade",
+    "continue": "Continuer vers Boardsesh",
+    "formPending": "Notre formulaire de terminologie n’est pas encore prêt. Tu peux contribuer depuis Aider à traduire dans Réglages → Général.",
+    "formDescription": "Remplis notre formulaire Google pour nous aider à choisir des termes d’escalade naturels en chinois."
   }
 }

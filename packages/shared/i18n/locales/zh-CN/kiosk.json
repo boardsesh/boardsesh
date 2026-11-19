@@ -1,0 +1,534 @@
+{
+  "metadata": {
+    "title": "{{gymName}} · {{kioskName}} 展示终端",
+    "description": "{{gymName}} 岩墙实时画面，看看现在点亮了什么、谁正在完攀。",
+    "fallbackTitle": "岩馆展示终端",
+    "fallbackDescription": "攀岩馆训练板实时画面。"
+  },
+  "header": {
+    "reconnecting": "正在重新连接…"
+  },
+  "setup": {
+    "title": "此展示终端尚未设置",
+    "body": "在岩馆管理页面为此终端添加训练板，岩墙就会显示在这里。"
+  },
+  "retry": {
+    "title": "暂时无法连接 Boardsesh",
+    "body": "请稍等，此屏幕会自动重新连接。连接恢复后，岩墙画面就会回来。"
+  },
+  "board": {
+    "wallsOpen": "岩墙空闲中",
+    "lastLit": "上一条：{{name}}",
+    "litBy": "{{name}} 的选择",
+    "unnamedClimb": "未命名线路"
+  },
+  "installQr": {
+    "caption": "扫码记录这面墙的攀爬"
+  },
+  "leaderboard": {
+    "periodSession": "本次活动排行榜",
+    "periodLast24h": "过去 24 小时",
+    "periodWeek": "本周",
+    "periodMonth": "本月",
+    "allBoards": "所有训练板",
+    "anonymous": "匿名攀岩者",
+    "sends_one": "次完攀",
+    "sends_other": "次完攀",
+    "live": "实时",
+    "updatedAt": "更新于 {{time}}",
+    "emptyTitle": "还没有人登上榜单",
+    "emptyBody": "点亮线路并完成攀爬，排行榜从你开始。",
+    "unavailableTitle": "暂时无法获取排行榜",
+    "unavailableBody": "我们会继续尝试，排名将自动恢复。"
+  },
+  "attribution": {
+    "poweredBy": "技术支持"
+  },
+  "embed": {
+    "metadata": {
+      "boardTitle": "{{boardName}} · 训练板实时画面",
+      "boardDescription": "看看 {{boardName}} 现在点亮的线路。由 Boardsesh 提供支持。",
+      "boardFallbackTitle": "训练板实时画面",
+      "boardFallbackDescription": "攀岩训练板实时组件。由 Boardsesh 提供支持。",
+      "leaderboardTitle": "{{gymName}} · 排行榜",
+      "leaderboardDescription": "看看谁在 {{gymName}} 完攀。由 Boardsesh 提供支持。",
+      "leaderboardFallbackTitle": "岩馆排行榜",
+      "leaderboardFallbackDescription": "岩馆排行榜组件。由 Boardsesh 提供支持。"
+    },
+    "leaderboard": {
+      "errorTitle": "排行榜暂不可用",
+      "errorBody": "无法加载最新完攀。系统会自动重试。"
+    },
+    "boardButton": "嵌入此训练板",
+    "railButton": "嵌入排行榜",
+    "boardDialogTitle": "嵌入 {{name}}",
+    "railDialogTitle": "嵌入 {{name}} 排行榜",
+    "copy": "复制",
+    "copied": "已复制到剪贴板。",
+    "copyFailed": "无法复制，请选中代码后手动复制。",
+    "periodNote": "period 参数支持 day、week 或 month。",
+    "docsHint": "粘贴到任意 HTML 页面，即可持续显示实时内容。",
+    "close": "关闭",
+    "publicOnlyBoard": "仅公开训练板可嵌入。",
+    "publicOnlyGym": "仅公开岩馆可嵌入排行榜。"
+  },
+  "gymPage": {
+    "metaTitle": "{{gymName}} 攀岩馆",
+    "metaDescription": "在 Boardsesh 查看 {{gymName}} 的训练板与岩墙实时画面。",
+    "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "岩馆",
+    "manageGym": "管理岩馆",
+    "seeOnTheWall": "看看墙上正在攀什么",
+    "boardsHeading": "训练板",
+    "boardCount_one": "{{count}} 块训练板",
+    "boardCount_other": "{{count}} 块训练板",
+    "hoursHeading": "营业时间",
+    "hoursConfirmed": "确认于 {{date}}",
+    "visitWebsite": "访问网站",
+    "install": {
+      "heading": "下载应用，攀这面墙",
+      "body": "用手机点亮 {{gymName}} 的训练板，记录每次完攀。",
+      "googlePlay": "从 Google Play 下载",
+      "appStore": "从 App Store 下载"
+    },
+    "noBoardsYet": "这里尚未收录训练板。",
+    "explorePlaylists": "看看大家在建什么线路集",
+    "startDiscussion": "发起讨论",
+    "claimTitle": "这是你的岩馆吗？",
+    "claimBody": "认领后即可管理训练板、品牌形象以及岩墙屏幕展示内容。",
+    "claimCta": "认领此岩馆",
+    "claimCtaSignedOut": "登录并认领",
+    "claimPendingTitle": "你的认领正在审核",
+    "claimPendingBody": "我们正在核实你是否经营此岩馆。无论结果如何，通常都会在几天内通过邮件通知你。",
+    "claimPendingDomainTitle": "请查看邮箱",
+    "claimPendingDomainBody": "我们已向你的工作邮箱发送链接。点击后，岩馆就归你管理。",
+    "claimAuthTitle": "认领你的岩馆",
+    "claimAuthBody": "登录后会直接返回这里继续认领。",
+    "owner": {
+      "linkBoards": {
+        "title": "关联你的训练板",
+        "body": "攀岩者还看不到这里的岩墙。"
+      },
+      "addHours": {
+        "title": "添加营业时间",
+        "body": "攀岩者还无法确认今晚是否来得及攀爬。"
+      },
+      "addDescription": {
+        "title": "介绍来这里攀岩的体验",
+        "body": "用几句话说说岩墙、定线和氛围。"
+      },
+      "putOnTv": {
+        "title": "把岩墙画面放上电视",
+        "body": "将岩馆里的屏幕变成训练板实时展示屏。"
+      },
+      "addBranding": {
+        "title": "添加品牌形象",
+        "body": "添加标志和配色，让页面展现你的岩馆风格。"
+      }
+    },
+    "photoAlt": "{{gymName}} 的攀岩墙",
+    "poster": {
+      "metaTitle": "{{gymName}} 二维码海报",
+      "metaDescription": "可直接打印的二维码，攀岩者在墙边即可扫码。",
+      "heading": "扫码，点亮岩墙",
+      "pitch": "下载 Boardsesh，选择线路，面前训练板上的岩点就会亮起。攀爬后顺手记录每次完攀。",
+      "typedUrlLabel": "没有相机？输入此地址：",
+      "compatibility": "兼容 Kilter、Tension 和 MoonBoard。",
+      "independence": "Boardsesh 是独立应用，与 Aurora Climbing、Moon Climbing 或任何训练板制造商没有关联，也未获其认可。",
+      "printAction": "打印此海报",
+      "backToGym": "返回岩馆页面"
+    },
+    "sprayWallsHeading": "喷点墙",
+    "sprayWallCount_one": "{{count}} 面喷点墙",
+    "sprayWallCount_other": "{{count}} 面喷点墙",
+    "sprayWallsIntro": "这里收录了此岩馆喷点墙的每个岩点。打开一面墙，看看大家在上面定了哪些线路。",
+    "sprayWallPhotoAlt": "{{wallName}} 的照片",
+    "sprayWallMeta": "{{angle}}° · {{holds}} 个岩点",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "{{gymName}} 的 {{board}} 训练板。查看已定线路，记录你的完攀。",
+    "ogDescriptionManyTypes": "{{gymName}} 的 {{boards}} 训练板。查看已定线路，记录你的完攀。",
+    "ogDescriptionNoBoards": "这里尚未收录训练板。在这里攀岩？认领岩馆并添加训练板。",
+    "openMaps": "在地图中打开 {{gymName}}",
+    "mapsLocation": "打开地图",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "查看线路",
+    "popularClimbHeading": "这面墙记录最多的线路",
+    "popularClimbBody": "根据这里公开记录的完攀和一次完攀统计，包括重复完攀。"
+  },
+  "boardPoster": {
+    "metaTitle": "{{boardName}} 二维码海报",
+    "fallbackTitle": "二维码海报",
+    "metaDescription": "可直接打印的二维码。攀岩者扫码即可查看这里的线路并记录完攀。",
+    "scanStep": "用相机扫描二维码",
+    "openSource": "Boardsesh 免费且开源。",
+    "printedOn": "打印于 {{monthYear}}",
+    "layoutLabel": "海报布局",
+    "layouts": {
+      "photo": "照片海报",
+      "plain": "简洁海报",
+      "cards": "卡片"
+    },
+    "unlistedNotice": "扫描此码的任何人都能打开这面喷点墙。",
+    "spray": {
+      "headline": "这面喷点墙已加入 Boardsesh",
+      "pickStep": "在照片上选择线路",
+      "logStep": "记录完攀，或自己定线",
+      "justInstalled": "刚安装？再次扫码即可打开这面喷点墙。",
+      "backAction": "返回喷点墙"
+    },
+    "led": {
+      "headline": "这块训练板已加入 Boardsesh",
+      "pickStep": "选择线路并点亮",
+      "logStep": "爬完了？记下这次完攀",
+      "justInstalled": "刚安装？再次扫码即可打开这块训练板。",
+      "compatibility": "兼容 {{boardBrand}}。",
+      "backAction": "返回训练板"
+    }
+  },
+  "manage": {
+    "welcome": {
+      "title": "让岩墙实时展示",
+      "allDoneTitle": "准备就绪",
+      "allDoneBody": "你的岩馆已经设置完成，可以随时关闭此提示。",
+      "progress": "已完成 {{done}} 项，共 {{total}} 项",
+      "dismiss": "关闭",
+      "steps": {
+        "kiosk": {
+          "title": "放上电视",
+          "body": "为岩墙创建展示终端"
+        },
+        "branding": {
+          "title": "设置品牌形象",
+          "body": "添加标志和配色"
+        },
+        "boards": {
+          "title": "关联你的训练板",
+          "body": "连接岩馆内的岩墙"
+        },
+        "members": {
+          "title": "邀请伙伴",
+          "body": "添加协助管理的员工和定线员"
+        }
+      }
+    },
+    "title": "管理 {{gymName}}",
+    "backToGym": "返回岩馆页面",
+    "accessDenied": "你没有管理此岩馆的权限。",
+    "tabs": {
+      "kiosks": "展示终端",
+      "branding": "品牌形象",
+      "boards": "训练板",
+      "members": "成员",
+      "insights": "活动统计",
+      "overview": "概览",
+      "profile": "资料",
+      "comments": "评论"
+    },
+    "insights": {
+      "subtitle": "对比本周和上周的训练板使用情况。",
+      "uniqueClimbers": "攀岩者",
+      "ascents": "完攀",
+      "busiestDay": "最热闹的一天",
+      "byDay": "每日完攀",
+      "byDayAria": "一周内各天的完攀次数",
+      "topClimbs": "大家正在攻克的线路",
+      "noTopClimbs": "本周还没有完攀记录。",
+      "unnamedClimb": "未命名线路",
+      "ascentsCount_one": "{{count}} 次完攀",
+      "ascentsCount_other": "{{count}} 次完攀",
+      "deltaUp": "较上周 +{{count}}",
+      "deltaDown": "较上周 −{{count}}",
+      "deltaFlat": "与上周持平",
+      "loadError": "无法加载本周统计。",
+      "empty": {
+        "title": "本周暂无完攀",
+        "body": "该换线了吗？只要攀岩者在这里记录完攀，你就能看到谁来攀爬、正在攻克什么线路。"
+      }
+    },
+    "navGuard": {
+      "title": "放弃未保存的修改？",
+      "body": "此标签页有未保存的编辑，离开将丢弃这些修改。",
+      "discard": "放弃并离开",
+      "stay": "留在这里"
+    },
+    "slugGuard": {
+      "title": "为此岩馆设置网址",
+      "body": "展示终端和公开岩馆页面需要先设置简短网址，其他人才能打开。",
+      "label": "网址简称",
+      "helper": "boardsesh.com/gym/{{slug}}",
+      "placeholder": "your-gym",
+      "save": "保存网址简称",
+      "errorEmpty": "请输入网址简称。",
+      "errorInvalid": "只能使用小写字母、数字和连字符。",
+      "saved": "网址简称已保存。",
+      "saveFailed": "无法保存网址简称。"
+    },
+    "kiosks": {
+      "emptyTitle": "让屏幕展示你的岩墙",
+      "emptyBody": "展示终端可在任何电视浏览器中实时显示训练板当前点亮的线路。创建终端、分配训练板，再在屏幕上打开它的网址。",
+      "cta": "设置展示终端",
+      "heading": "展示终端",
+      "description": "在电视屏幕上实时显示岩墙。每个终端都有独立网址。",
+      "newKiosk": "新建展示终端",
+      "capReached": "每家岩馆最多可有 {{max}} 个展示终端。",
+      "needSlugHint": "请先在上方设置岩馆网址简称，电视才能打开展示终端网址。",
+      "loadError": "无法加载此岩馆的展示终端。",
+      "defaultBadge": "默认",
+      "boardCount_one": "{{count}} 块训练板",
+      "boardCount_other": "{{count}} 块训练板",
+      "railOn": "排行榜已开启",
+      "railOff": "无排行榜",
+      "openTv": "打开电视画面",
+      "openTvNeedsSlug": "请先设置岩馆网址简称（见上方横幅）。",
+      "urlPending": "网址：/kiosk/…/{{slug}}，需设置岩馆网址简称",
+      "edit": "编辑",
+      "delete": "删除",
+      "deleteTitle": "删除此展示终端？",
+      "deleteBody": "“{{name}}”将停止显示，正在展示它的电视会看到页面不存在提示。此操作无法撤销。",
+      "deleteBodyDefault": "“{{name}}”是默认终端。使用 /kiosk 短网址的电视会切换到下一个最早创建的终端；使用此终端独立网址的电视会看到页面不存在提示。此操作无法撤销。",
+      "deleteConfirm": "删除",
+      "cancel": "取消",
+      "deleted": "展示终端已删除。",
+      "deleteFailed": "无法删除展示终端。",
+      "liveness": {
+        "live": "在线",
+        "lastSeenMinutes_one": "{{count}} 分钟前在线",
+        "lastSeenMinutes_other": "{{count}} 分钟前在线",
+        "lastSeenHours_one": "{{count}} 小时前在线",
+        "lastSeenHours_other": "{{count}} 小时前在线",
+        "noSignalDays_one": "{{count}} 天无信号",
+        "noSignalDays_other": "{{count}} 天无信号",
+        "noSignalYet": "尚无信号",
+        "reinstall": "在电视上重新打开"
+      },
+      "reinstall": {
+        "title": "恢复此屏幕",
+        "body": "在电视浏览器中打开此网址即可恢复“{{name}}”，或用手机扫码后发送到电视。",
+        "scanHint": "扫码在手机上打开",
+        "openTv": "打开电视画面",
+        "close": "完成",
+        "noUrl": "请先设置岩馆网址简称，之后就能获得可在任何屏幕打开的终端链接。"
+      }
+    },
+    "boards": {
+      "heading": "此岩馆的训练板",
+      "description": "关联你拥有的训练板，让它们显示在岩馆页面和展示终端上。",
+      "addBoard": "添加训练板",
+      "empty": "尚未关联训练板。添加一块开始吧。",
+      "loadError": "无法加载此岩馆的训练板。",
+      "unlink": "取消关联",
+      "onlyOwnerCanUnlink": "只有训练板所有者才能取消关联",
+      "readOnlyHint": "只有岩馆所有者或管理员才能关联训练板。",
+      "unlinkTitle": "取消关联此训练板？",
+      "unlinkBody": "“{{name}}”将不再显示在此岩馆页面和展示终端上。你可以随时重新关联。",
+      "unlinkConfirm": "取消关联",
+      "cancel": "取消",
+      "linked": "训练板已关联。",
+      "linkFailed": "无法关联训练板。",
+      "unlinked": "已取消关联训练板。",
+      "unlinkFailed": "无法取消关联训练板。",
+      "visibility": {
+        "public": "公开",
+        "unlisted": "不公开列出",
+        "private": "私密"
+      },
+      "printPoster": "打印海报",
+      "addDialog": {
+        "title": "添加你拥有的训练板",
+        "body": "选择你拥有的一块训练板，关联到此岩馆。",
+        "empty": "你已没有可关联的训练板。",
+        "loading": "正在加载你的训练板…",
+        "link": "关联",
+        "close": "关闭"
+      },
+      "strays": {
+        "heading": "可能属于你的训练板",
+        "description": "这些训练板位于你的岩馆，或原本属于一条已合并的岩馆记录。请添加确实属于这里的训练板。",
+        "reasonMerged": "原属一条已合并的岩馆记录",
+        "reasonNearby": "距离 {{meters}} 米",
+        "reasonNearbyGeneric": "就在附近",
+        "onListing": "位于“{{name}}”",
+        "attach": "添加到岩馆",
+        "attached": "训练板已添加到你的岩馆。",
+        "attachFailed": "无法添加该训练板。",
+        "lastBoardNote": "这是原岩馆记录中的最后一块训练板",
+        "lastBoardTitle": "移走后，另一条岩馆记录将没有训练板",
+        "lastBoardBody": "“{{name}}”没有其他训练板。添加这块训练板后，该岩馆记录将并入你的岩馆。原有链接仍会指向这里，搜索结果中也不会再出现那条没有训练板的重复记录。",
+        "lastBoardConfirm": "添加并合并",
+        "empty": "目前没有待归属的训练板。岩馆附近的训练板都已列在你的岩馆资料中。",
+        "loadError": "无法检查待归属训练板。",
+        "retry": "重试"
+      },
+      "back": "全部训练板",
+      "editLoadError": "无法加载此训练板以进行编辑。"
+    },
+    "presets": {
+      "single": "单墙",
+      "dual": "双墙",
+      "triple": "三墙",
+      "quad": "四墙",
+      "none": "暂无训练板"
+    },
+    "createDialog": {
+      "title": "新建展示终端",
+      "body": "按屏幕位置命名，例如“前台电视”或“Kilter 角”。",
+      "nameLabel": "展示终端名称",
+      "namePlaceholder": "主岩墙电视",
+      "urlHint": "创建时会分配网址。",
+      "create": "创建展示终端",
+      "cancel": "取消",
+      "created": "展示终端已创建，网址以 /{{slug}} 结尾。",
+      "createFailed": "无法创建展示终端。"
+    },
+    "editor": {
+      "back": "全部展示终端",
+      "save": "保存布局",
+      "saved": "展示终端已保存。",
+      "saveFailed": "无法保存展示终端。",
+      "needSlug": "设置岩馆网址简称，即可获取此展示终端的网址",
+      "boardsHeading": "此屏幕上的训练板",
+      "boardsLoadError": "无法加载此岩馆的训练板。请重新加载页面后重试。",
+      "slotLabel": "位置 {{index}}",
+      "slotUnknownBoard": "此训练板已不在此岩馆，请移除。",
+      "addBoard": "添加训练板",
+      "addBoardHelper": "位置顺序即屏幕显示顺序。",
+      "addBoardNoneLeft": "此岩馆的所有训练板都已加入此终端。",
+      "addBoardFullHelper": "一个展示终端最多显示 {{max}} 块训练板。",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "removeSlot": "移除训练板",
+      "presetNoneHelper": "添加训练板后，这里会显示电视布局。",
+      "quadRailHint": "四块训练板加排行榜会比较拥挤。1080p 电视上每块板约占 740×420 像素，请检查从岩馆另一端是否仍看得清预览。",
+      "leaderboardHeading": "排行榜侧栏",
+      "railSwitch": "显示排行榜",
+      "railDisabledTooltip": "请先分配至少一块训练板，排行榜会统计此终端上训练板的完攀。",
+      "scopeLabel": "完攀排名范围",
+      "scopeAll": "终端上的所有训练板",
+      "periodLabel": "时间范围",
+      "period": {
+        "session": "本次活动",
+        "day": "过去 24 小时",
+        "week": "一周",
+        "month": "一个月"
+      },
+      "previewHeading": "实时预览",
+      "previewHint": "这里显示实际终端画面。完攀会实时出现，未保存的修改也会立即预览。",
+      "previewMissingBoard": "此训练板已不在此岩馆",
+      "previewUnavailable": "无法在这里显示 {{name}}",
+      "slotDuplicateError": "此训练板已在另一个位置。",
+      "scopeInvalidError": "请选择此终端中的一块训练板。",
+      "installQrHeading": "应用下载二维码",
+      "installQrSwitch": "在每块训练板上显示应用下载二维码",
+      "installQrHelper": "每块训练板显示二维码，攀岩者扫码即可下载 Boardsesh 并记录此墙的完攀。",
+      "discardTitle": "放弃修改？",
+      "discardBody": "布局修改尚未保存。",
+      "keepEditing": "继续编辑",
+      "discard": "放弃"
+    },
+    "overview": {
+      "quickLinksHeading": "管理你的岩馆",
+      "viewPublicPage": "查看公开页面",
+      "embedAction": "嵌入你的网站",
+      "printPoster": "打印海报",
+      "stats": {
+        "boards": "块训练板",
+        "members": "位成员",
+        "followers": "位关注者",
+        "kiosks": "个展示终端"
+      },
+      "quickLinks": {
+        "kiosks": {
+          "title": "放上电视",
+          "body": "为岩馆创建岩墙展示屏"
+        },
+        "branding": {
+          "title": "设置配色",
+          "body": "添加标志和品牌颜色"
+        },
+        "boards": {
+          "title": "关联你的训练板",
+          "body": "连接岩馆内的岩墙"
+        },
+        "members": {
+          "title": "邀请伙伴",
+          "body": "添加负责管理的员工和定线员"
+        },
+        "insights": {
+          "title": "查看本周活动",
+          "body": "谁来攀爬，哪些线路被完攀"
+        },
+        "profile": {
+          "title": "编辑资料",
+          "body": "名称、地址、网站和可见性"
+        }
+      }
+    },
+    "profile": {
+      "heading": "岩馆资料",
+      "description": "岩馆名称、地址，以及攀岩者在公开页面看到的内容。",
+      "photo": {
+        "heading": "岩馆照片",
+        "description": "选一张岩墙或训练板区域的照片，作为公开页面主图，也会随分享链接显示。",
+        "upload": "上传照片",
+        "replace": "替换照片",
+        "remove": "移除",
+        "currentAlt": "{{gymName}} 的照片",
+        "emptyPlaceholder": "暂无照片",
+        "formatsHint": "JPG、PNG 或 WebP，最大 {{maxMb}}MB。会缩放至 {{maxDimension}}px。请使用岩墙或训练板区域的实拍照片，不要使用 AI 生成图片。",
+        "unsupportedType": "请使用 JPG、PNG 或 WebP 图片。",
+        "tooLarge": "文件超过 {{maxMb}}MB，请选择较小的图片。",
+        "uploadTooLarge": "缩放后照片仍超过 {{maxMb}}MB，请选择另一张。",
+        "uploadFailed": "无法上传照片。",
+        "saveFailed": "无法保存照片。"
+      }
+    },
+    "comments": {
+      "intro": "无需离开管理台，即可回复岩馆的评论。",
+      "heading": "伙伴们在说什么"
+    }
+  },
+  "branding": {
+    "logo": {
+      "heading": "岩馆标志",
+      "description": "显示在展示终端顶部和嵌入组件中。透明 PNG 最适合深色电视屏幕。",
+      "upload": "上传标志",
+      "replace": "替换标志",
+      "remove": "移除",
+      "removed": "标志已移除。",
+      "uploaded": "标志已保存。",
+      "uploadFailed": "无法上传标志。",
+      "saveFailed": "无法保存标志。",
+      "tooLarge": "文件超过 10MB，请选择较小的图片。",
+      "uploadTooLarge": "文件超过 2MB，且这里无法压缩 GIF 动图，请选择较小的文件。",
+      "unsupportedType": "请使用 JPG、PNG、GIF 或 WebP 图片。",
+      "currentAlt": "{{gymName}} 标志",
+      "emptyPlaceholder": "暂无标志",
+      "formatsHint": "JPG、PNG、GIF 或 WebP。会缩放至 512px，并保留透明背景。"
+    },
+    "colors": {
+      "heading": "品牌颜色",
+      "description": "展示终端保持深色，这些颜色用于难度标签和高亮。",
+      "primary": "主色",
+      "accent": "强调色",
+      "invalidHex": "请使用 #RRGGBB 十六进制颜色值。",
+      "contrastWarning": "{{colors}}：在深色展示屏上难以看清（对比度低于 3:1）。终端会自动调亮至可读。",
+      "save": "保存配色",
+      "saved": "配色已保存。",
+      "saveFailed": "无法保存配色。",
+      "unsavedHint": "有未保存的修改"
+    },
+    "preview": {
+      "heading": "展示终端预览",
+      "sampleChip": "强调色示例",
+      "poweredByNote": "每个展示终端和嵌入组件都显示“由 Boardsesh 提供支持”标识，无法移除。"
+    },
+    "reset": {
+      "button": "恢复默认品牌设置",
+      "title": "重置品牌设置？",
+      "body": "清除标志和全部三种颜色。展示终端和嵌入组件将恢复 Boardsesh 外观。",
+      "confirm": "重置",
+      "cancel": "取消",
+      "done": "品牌设置已重置。"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "migration": {
+      "title": "导入你的 Kilter 或 Tension 攀爬日志",
+      "description": "关联 Kilter 或 Tension 账号，将完攀记录带到 Boardsesh；也可以导入旧版 Kilter 应用导出的文件。"
+    }
+  },
+  "migration": {
+    "title": "把攀爬日志带到 Boardsesh",
+    "lead": "你在 Kilter 和 Tension 的完攀记录可以一起带来。请选择与你的历史记录来源对应的方式。",
+    "account": {
+      "title": "你有 Kilter 或 Tension 账号",
+      "step1": "下载免费应用并登录。",
+      "step2": "点击头像，然后打开设置，再进入已关联应用。",
+      "step3": "点击“登录 Kilter”，或点击 Tension 卡片上的“关联”。",
+      "sync": "关联账号后，Boardsesh 会在后台检查新的完攀记录，所需时间可能不同。记录仅单向导入 Boardsesh；你在这里记录的内容不会传回它们的应用。",
+      "signIn": "登录"
+    },
+    "legacy": {
+      "title": "你用过旧版 Kilter 应用（Aurora）",
+      "request": "向 Aurora 申请导出文件",
+      "export": "你会收到一份文件，其中包含你的完攀记录、尝试记录和训练线路组。",
+      "support": "给 Aurora 客服发邮件",
+      "signIn": "在手机上登录 Boardsesh",
+      "upload": "上传文件",
+      "uploadInstructions": "在已关联应用中，打开 Kilter（Aurora）卡片，选择你的导出文件。"
+    },
+    "history": {
+      "title": "为什么有这个页面",
+      "body": "2026 年 3 月，旧版 Kilter 应用停止运行。没有导出历史记录的攀岩者无法再在该应用中查看这些记录。",
+      "article": "在 Climbing.com 阅读报道"
+    },
+    "install": "下载免费应用",
+    "logbookHelp": "更多攀爬日志帮助"
+  }
+}

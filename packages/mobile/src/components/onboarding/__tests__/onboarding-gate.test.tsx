@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../ChineseTranslationOnboarding', () => ({ ChineseTranslationOnboarding: () => null }));
 // Existing flow fixtures begin after the privacy choice has settled.
 vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

@@ -206,7 +206,7 @@ export const AUTOMATION_SIGNATURE_TOKENS = [
  * imports, because the Cloudflare apply script loads it directly. A test pins
  * the list to SUPPORTED_LOCALES.
  */
-export const LOCALE_PATH_SEGMENTS = ['es', 'fr', 'de', 'it'] as const;
+export const LOCALE_PATH_SEGMENTS = ['es', 'fr', 'de', 'it', 'zh-CN'] as const;
 
 function withLocaleForms(paths: readonly string[]): string[] {
   return paths.flatMap((path) => [path, ...LOCALE_PATH_SEGMENTS.map((localeSegment) => `/${localeSegment}${path}`)]);

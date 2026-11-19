@@ -1,0 +1,13 @@
+{
+  "ios": {
+    "NSHealthUpdateUsageDescription": "Boardsesh 会将你完成的攀爬活动作为体能训练存入 Apple 健康。",
+    "NSHealthShareUsageDescription": "Boardsesh 会读取你的体重来估算消耗的热量，并读取已保存的 Boardsesh 体能训练以避免重复记录。",
+    "NSBluetoothAlwaysUsageDescription": "Boardsesh 使用蓝牙连接你的 Kilter Board、Tension Board 或 MoonBoard，并点亮线路的岩点。不会通过蓝牙发送个人数据。",
+    "NSBluetoothPeripheralUsageDescription": "Boardsesh 使用蓝牙连接你的训练板并控制岩点的 LED 灯。",
+    "NSLocalNetworkUsageDescription": "Boardsesh 会连接你网络中的 LED 控制器，点亮你的喷点墙上的岩点。",
+    "NSLocationWhenInUseUsageDescription": "Boardsesh 使用你的位置信息来显示附近的训练板和岩馆，并将你添加的训练板标在地图上。",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh 使用你的位置信息来显示附近的训练板和岩馆，并将你添加的训练板标在地图上。",
+    "NSCameraUsageDescription": "Boardsesh 使用相机拍摄岩壁照片，让你在照片上定线。",
+    "NSPhotoLibraryUsageDescription": "Boardsesh 使用照片图库，让你选择头像、岩壁照片或反馈中附带的截图。"
+  }
+}

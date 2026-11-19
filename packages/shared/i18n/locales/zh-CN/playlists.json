@@ -1,0 +1,336 @@
+{
+  "metadata": {
+    "library": {
+      "title": "适用于 Kilter、Tension 和 MoonBoard 的攀爬线路集",
+      "description": "由攀爬者创建的公开线路集，以及 Boardsesh 每晚更新的推荐线路集。在应用中打开，开始攀爬。"
+    },
+    "detail": {
+      "fallbackTitle": "线路集",
+      "fallbackDescription": "查看此线路集在 Boardsesh 上的线路。",
+      "privateTitle": "私密线路集",
+      "privateDescription": "此线路集为私密。",
+      "generatedDescription_one": "{{name}} 中有 {{count}} 条 {{board}} 线路。在 Boardsesh 中打开线路集，开始攀爬。",
+      "generatedDescription_other": "{{name}} 中有 {{count}} 条 {{board}} 线路。在 Boardsesh 中打开线路集，开始攀爬。",
+      "ogAlt": "Boardsesh 上的 {{name}} 线路集",
+      "ogTitle": "{{name}} · {{board}} 线路集",
+      "ogTitleWithBand": "{{name}} · {{band}} {{board}} 线路集",
+      "ogDescriptionRange_one": "{{count}} 条 {{board}} 线路，难度 {{low}} 至 {{high}}。上墙试试。",
+      "ogDescriptionRange_other": "{{count}} 条 {{board}} 线路，难度 {{low}} 至 {{high}}。选一条，上墙试试。",
+      "ogDescriptionOneGrade_one": "{{count}} 条 {{grade}} 难度的 {{board}} 线路。上墙试试。",
+      "ogDescriptionOneGrade_other": "{{count}} 条 {{grade}} 难度的 {{board}} 线路。选一条，上墙试试。",
+      "ogDescriptionNoBand_one": "{{count}} 条 {{board}} 线路。上墙试试。",
+      "ogDescriptionNoBand_other": "{{count}} 条 {{board}} 线路。选一条，上墙试试。"
+    }
+  },
+  "library": {
+    "signInBanner": {
+      "title": "登录后使用你的线路库",
+      "description": "追踪完攀，管理线路集。",
+      "cta": "登录"
+    },
+    "sections": {
+      "pinned": "已固定",
+      "forYou": "为你推荐",
+      "community": "社区线路集"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "gradeBand": "难度 {{band}}",
+    "allPlaylists": {
+      "title": "我的线路集",
+      "seeAll": "查看全部",
+      "searchPlaceholder": "按标题筛选",
+      "clearSearch": "清除搜索",
+      "loadMoreError": "无法加载你的全部线路集。",
+      "noResults": "没有匹配“{{query}}”的线路集"
+    },
+    "community": {
+      "searchPlaceholder": "搜索线路集",
+      "madeByLabel": "创建者",
+      "madeBy": {
+        "everyone": "所有人",
+        "mine": "我的",
+        "following": "已关注"
+      },
+      "sortLabel": "排序",
+      "sort": {
+        "popular": "热门",
+        "recent": "新增"
+      },
+      "sizeLabel": "尺寸",
+      "size": {
+        "any": "不限大小",
+        "short": "小型",
+        "session": "攀爬活动",
+        "big": "大型"
+      },
+      "gradeLabel": "难度",
+      "gradeAny": "不限难度",
+      "gradeA11y": "难度范围：{{band}}",
+      "sizeBand": {
+        "upTo": "最多 {{max}} 条线路",
+        "range": "{{min}}–{{max}} 条线路",
+        "atLeast": "{{min}}+ 条线路"
+      },
+      "resultCount_one": "{{count}} 个线路集",
+      "resultCount_other": "{{count}} 个线路集",
+      "loadMoreError": "无法加载更多线路集。",
+      "errors": {
+        "loadTitle": "无法加载线路集",
+        "loadDescription": "请检查网络连接后重试。"
+      },
+      "empty": {
+        "title": "这里还没有线路集",
+        "description": "将你的线路集设为公开，伙伴就能在这里看到。"
+      },
+      "emptyFollowing": {
+        "title": "伙伴还没有线路集",
+        "description": "你关注的攀爬者还没有在此训练板上创建公开线路集。"
+      },
+      "noMatches": {
+        "title": "没有符合这些筛选条件的内容",
+        "description": "放宽一两个筛选条件，查看更多。",
+        "clearFilters": "清除筛选"
+      }
+    },
+    "pin": {
+      "pin": "固定",
+      "unpin": "取消固定",
+      "pinAriaLabel": "固定线路集",
+      "unpinAriaLabel": "取消固定线路集",
+      "pinFailed": "固定线路集失败",
+      "unpinFailed": "取消固定线路集失败"
+    },
+    "smart": {
+      "fiveStars": {
+        "title": "五星线路",
+        "description": "你评为五星的线路。"
+      },
+      "mostRepeated": {
+        "title": "重复最多",
+        "description": "你常常回来再爬的线路。"
+      },
+      "projects": {
+        "title": "攻克目标",
+        "description": "你尝试最多但尚未完攀的线路。"
+      },
+      "likedClimbs": {
+        "title": "已点赞线路",
+        "description": "所有你点过爱心的线路。",
+        "empty": {
+          "title": "还没有点赞",
+          "supporting": "在线路上点按爱心，即可收藏到这里。"
+        }
+      },
+      "crowdFavorites": {
+        "title": "大家喜爱的线路",
+        "description": "你训练板上完攀最多、你尚未完成的经典线路。"
+      },
+      "hiddenGems": {
+        "title": "宝藏线路",
+        "description": "你训练板上评分很高、尚未热门的线路。"
+      },
+      "atYourLevel": {
+        "title": "适合你的难度",
+        "description": "专为你的训练板推荐，与你难度接近的线路。"
+      },
+      "fresh": {
+        "title": "新线路",
+        "description": "值得关注的定线员为你的训练板设置的新线路。"
+      },
+      "notFound": {
+        "title": "未找到智能线路集",
+        "description": "此智能线路集不存在。"
+      },
+      "empty": "此智能线路集暂无线路。",
+      "createdClimbs": {
+        "title": "我的线路",
+        "description": "你在所有训练板上发布的线路。",
+        "empty": {
+          "title": "还没有已发布线路",
+          "supporting": "发布线路后就会显示在这里。草稿保留在编辑器中。"
+        }
+      }
+    },
+    "empty": {
+      "title": "还没有线路集",
+      "description": "将攻克目标和常爬线路保存到线路集，方便找到。",
+      "createCta": "创建线路集"
+    },
+    "createFab": {
+      "ariaLabel": "创建线路集"
+    },
+    "errors": {
+      "loadTitle": "无法加载线路库",
+      "loadDescription": "加载线路库时出错，请重试。",
+      "tryAgain": "重试"
+    }
+  },
+  "detail": {
+    "share": "分享线路集",
+    "actions": "线路集操作",
+    "activateAll": "开始攀爬",
+    "addToQueue": {
+      "action": "最后攀爬",
+      "actionCount_one": "将 {{count}} 条排在最后",
+      "actionCount_other": "将 {{count}} 条排在最后",
+      "subtitle": "排在队列其他线路之后",
+      "playNextAction": "下一条攀爬",
+      "playNextActionCount_one": "将 {{count}} 条排在下一条",
+      "playNextActionCount_other": "将 {{count}} 条排在下一条",
+      "playNextSubtitle": "排在队列其他线路之前",
+      "queueFull": "你的队列已达 {{max}} 条上限",
+      "nothingToAdd": "这里还没有适合你训练板的线路",
+      "alreadyAdding": "正在添加此线路集",
+      "failed": "无法添加到队列，请重试。"
+    },
+    "boardMismatch": {
+      "title": "切换到 {{board}} 以攀爬此线路集",
+      "subtitle": "这些是 {{board}} 线路。切换训练板后即可加入队列。",
+      "cta": "切换训练板"
+    },
+    "unrenderableClimb": {
+      "subtitle": "此线路缺少训练板数据。"
+    },
+    "menu": {
+      "addClimbs": "添加线路",
+      "editDetails": "编辑详情",
+      "editClimbs": "调整顺序与移除线路",
+      "delete": "删除"
+    },
+    "visibility": {
+      "public": "公开",
+      "private": "私密"
+    },
+    "shareText": "看看 Boardsesh 上的这个攀爬线路集",
+    "shareFallbackTitle": "线路集",
+    "shareSuccess": "链接已复制到剪贴板！",
+    "shareError": "分享失败",
+    "deleted": "线路集已删除",
+    "deleteFailed": "删除线路集失败",
+    "queueReplace": {
+      "title": "开始此线路集？",
+      "message_one": "从这里按顺序攀爬线路集。当前线路之后排队的那条线路将被移除。",
+      "message_other": "从这里按顺序攀爬线路集。当前线路之后排队的 {{count}} 条线路将被移除。",
+      "cancel": "取消",
+      "confirm": "开始线路集",
+      "loadFailed": "无法开始线路集，请重试。",
+      "trimmed": "已加载 {{loaded}}/{{total}} 条线路，你的队列最多容纳 {{max}} 条。",
+      "trimmedUnknownTotal": "已加载 {{loaded}} 条线路，你的队列最多容纳 {{max}} 条。",
+      "addInstead": "最后攀爬"
+    },
+    "deleteConfirm": {
+      "title": "删除线路集？",
+      "message": "将永久删除“{{name}}”及其收录的线路，此操作无法撤销。",
+      "confirm": "删除",
+      "cancel": "取消"
+    },
+    "discussion": "讨论",
+    "empty": "此线路集还没有线路",
+    "view": {
+      "status_one": "显示 {{shown}}/{{count}} 条线路",
+      "status_other": "显示 {{shown}}/{{count}} 条线路",
+      "clearFilters": "清除筛选",
+      "editNote": "编辑时按线路集顺序显示",
+      "namePlaceholder": "线路名称",
+      "empty": {
+        "noMatch": "这里没有符合这些筛选条件的线路。",
+        "allSent": "你已完攀此列表的所有线路，厉害！",
+        "noName": "此线路集中没有名为“{{name}}”的线路。",
+        "noBoardFit": "这些线路都不适合你的训练板。"
+      }
+    },
+    "climbCount_one": "{{count}} 条线路",
+    "climbCount_other": "{{count}} 条线路",
+    "openInApp": "在应用中攀爬此线路集",
+    "followerCount_one": "{{count}} 位关注者",
+    "followerCount_other": "{{count}} 位关注者",
+    "followFailed": "更新关注状态失败",
+    "errors": {
+      "notFoundTitle": "未找到线路集",
+      "notFoundDescription": "此线路集可能已删除，或你没有查看权限。",
+      "loadTitle": "无法加载线路集",
+      "loadDescription": "加载此线路集时出错，请重试。",
+      "tryAgain": "重试"
+    },
+    "setterPicker": {
+      "showClimbs": "显示线路",
+      "error": "无法加载此列表的定线员。"
+    },
+    "installHelper": "还没有应用？免费下载，在你的训练板上攀爬此列表。"
+  },
+  "editClimbs": {
+    "done": "完成",
+    "editDetailsAria": "编辑线路集详情",
+    "removeAria": "移除 {{name}}",
+    "dragHandleAria": "拖动以调整 {{name}} 的顺序",
+    "removeConfirm": {
+      "title": "移除线路？",
+      "message": "从此线路集移除“{{name}}”？",
+      "confirm": "移除",
+      "cancel": "取消"
+    },
+    "removeFailed": "无法移除线路",
+    "reorderFailed": "无法保存新顺序"
+  },
+  "edit": {
+    "title": "编辑线路集",
+    "fields": {
+      "name": "线路集名称",
+      "description": "描述",
+      "color": "颜色",
+      "icon": "图标",
+      "iconHint": "输入任意表情，或从下方选择",
+      "removeIcon": "移除",
+      "visibility": "可见性",
+      "publicHint": "任何拥有链接的人都能查看公开线路集",
+      "privateHint": "私密线路集仅你可见"
+    },
+    "actions": {
+      "save": "保存"
+    },
+    "validation": {
+      "nameRequired": "请输入线路集名称",
+      "nameTooLong": "名称不能超过 100 个字符",
+      "descriptionTooLong": "描述不能超过 500 个字符"
+    },
+    "messages": {
+      "updated": "线路集已更新",
+      "updateFailed": "更新线路集失败"
+    }
+  },
+  "create": {
+    "drawerTitle": "创建线路集",
+    "submit": "创建",
+    "fields": {
+      "name": "名称",
+      "namePlaceholder": "例如：高难度抠点",
+      "description": "描述",
+      "descriptionPlaceholder": "描述（选填）…",
+      "color": "颜色"
+    }
+  },
+  "bottomTabBar": {
+    "discover": "发现",
+    "selectBoardForPlaylist": "创建线路集前，请先选择训练板",
+    "createdPlaylistToast": "已创建线路集“{{name}}”",
+    "createPlaylistFailed": "创建线路集失败"
+  },
+  "directory": {
+    "h1": "值得挑战的线路集",
+    "lead_one": "在应用中打开，开始攀爬。共有 {{formattedCount}} 个公开线路集可选。",
+    "lead_other": "在应用中打开，开始攀爬。共有 {{formattedCount}} 个公开线路集可选。",
+    "leadNoCount": "在应用中打开，开始攀爬。",
+    "curated": {
+      "title": "每晚更新",
+      "lead": "根据大家的完攀，为每块训练板推荐热门线路、新线路和宝藏线路。"
+    },
+    "community": {
+      "title": "攀爬者收藏",
+      "lead": "按收藏人数排序。"
+    },
+    "empty": {
+      "title": "还没有公开线路集",
+      "body": "在应用中创建后，就会显示在这里。"
+    }
+  }
+}

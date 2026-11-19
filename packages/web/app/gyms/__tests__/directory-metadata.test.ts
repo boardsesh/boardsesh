@@ -81,6 +81,7 @@ describe('canonical matrix', () => {
       fr: '/fr/gyms/moonboard',
       de: '/de/gyms/moonboard',
       it: '/it/gyms/moonboard',
+      'zh-CN': '/zh-CN/gyms/moonboard',
       'x-default': '/gyms/moonboard',
     });
   });

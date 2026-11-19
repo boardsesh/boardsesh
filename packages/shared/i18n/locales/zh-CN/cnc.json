@@ -1,0 +1,489 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "家庭训练板建造图纸",
+      "description": "家庭攀岩墙 CNC 文件：按加工厂现有板材规格排布面板和钻孔位置。"
+    },
+    "orders": {
+      "title": "你的建造图纸",
+      "description": "查看你购买的每份建造图纸包及其当前进度。"
+    },
+    "order": {
+      "title": "建造图纸 {{licenceId}}",
+      "description": "一份 Boardsesh 建造图纸包的状态与下载。"
+    }
+  },
+  "hero": {
+    "title": "为家庭训练板准备的建造图纸",
+    "subtitle": "交给 CNC 加工厂的 DXF 文件。按加工厂已有板材规格排布面板和钻孔位置。",
+    "firstBoard": "兼容 Kilter Homewall、Kilter Original (OG) 和 Tension Board 2，包括 Mirror 与 Spray 布局。",
+    "included": {
+      "heading": "你将获得",
+      "dxf": "同时附有装配图，无需猜测即可对齐面板。",
+      "pdf": "可打印的 A3 或 Tabloid 图纸，在切割任何板材前即可查看排布。",
+      "bom": "订购材料前，先算清板材数量、面板尺寸及每个孔位。",
+      "licence": "以你的名字颁发，适用于一面墙，可长期保留。",
+      "dxfLabel": "每块面板一份 DXF",
+      "pdfLabel": "核对图纸",
+      "bomLabel": "切割清单",
+      "licenceLabel": "你的许可"
+    },
+    "trademarkNote": "Boardsesh 与 Aurora Climbing、Kilter 或任何训练板制造商没有关联。这些图纸用于建造可安装你自行购买的岩点和 LED 的岩墙。",
+    "cta": "配置你的岩墙"
+  },
+  "tiers": {
+    "heading": "选择许可",
+    "intro": "一份许可适用一面墙。第二面墙需要第二份许可。",
+    "personal": {
+      "name": "个人",
+      "blurb": "为自己建一面墙，放在车库、棚屋或空房间。"
+    },
+    "commercial": {
+      "name": "商业单次建造",
+      "blurb": "为一个客户或一家岩馆建一面墙。许可上会注明设施。"
+    },
+    "contact": {
+      "heading": "要建不止一面墙？",
+      "body": "十次建造包和 OEM 条款需联系我们协商，无法直接结账。请告诉我们你要建什么，我们会提供报价。",
+      "cta": "发邮件给我们",
+      "subject": "建造图纸：多次建造许可"
+    },
+    "licenceLink": "阅读许可",
+    "ordersLink": "你的建造图纸",
+    "perWall": "每面墙"
+  },
+  "configurator": {
+    "heading": "配置你的岩墙",
+    "intro": "下面每项都会影响切割结果。请选择加工厂采用的参数。",
+    "wall": {
+      "heading": "你的岩墙",
+      "help": "选择要建造的训练板和尺寸，之后的设置均以此为基础。"
+    },
+    "board": {
+      "label": "训练板",
+      "help": "选择面板要适配的训练板。",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · 布局 {{layoutId}}",
+      "kilterHomewall": "Kilter Homewall"
+    },
+    "size": {
+      "label": "岩墙尺寸",
+      "help": "选择要建造的 Kilter 尺寸，决定岩点网格和岩墙大小。"
+    },
+    "kicker": {
+      "help": "底部的面板，可用于 12 英尺高的岩墙。",
+      "include": "包含底部踢脚板",
+      "exclude": "无底部踢脚板"
+    },
+    "options": {
+      "heading": "制造参数",
+      "help": "默认值是我们采用的建造规格，可按加工厂要求调整。",
+      "sheetStock": {
+        "label": "板材尺寸",
+        "help": "选择加工厂使用的胶合板规格，面板会据此拆分。",
+        "values": {
+          "2440x1220": "2440 × 1220 毫米",
+          "3600x1220": "3600 × 1220 毫米"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "T 形螺母孔",
+        "help": "应匹配你购买的 T 形螺母筒径。12.5 毫米适用于常见 M10 规格。",
+        "values": {
+          "11_1": "11.1 毫米",
+          "12": "12 毫米",
+          "12_5": "12.5 毫米",
+          "13": "13 毫米"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "LED 孔",
+        "help": "应匹配安装在岩墙后方的 LED 套件。",
+        "values": {
+          "8": "8 毫米",
+          "10": "10 毫米",
+          "12_5": "12.5 毫米",
+          "12_7": "12.7 毫米"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "踢脚板与软垫的间隙",
+        "help": "踢脚板底部高出软垫的距离。",
+        "values": {
+          "50": "50 毫米",
+          "75": "75 毫米",
+          "100": "100 毫米"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "龙骨避让偏移",
+        "help": "横向移动岩点网格，避免孔位落在龙骨上。0 毫米会让孔位排列在岩墙上居中。",
+        "values": {
+          "0": "无",
+          "30": "30 毫米",
+          "60": "60 毫米"
+        }
+      },
+      "gridPitchMm": {
+        "label": "岩点间距",
+        "help": "公制建造使用 100 毫米；需要精确 4 英寸时使用 101.6 毫米。",
+        "values": {
+          "100": "100 毫米",
+          "101_6": "101.6 毫米（4 英寸）"
+        }
+      },
+      "dxfFlavour": {
+        "label": "DXF 格式",
+        "help": "R12 使用真实圆形，更多机床控制器能将其识别为钻孔点。",
+        "values": {
+          "R12_circles": "R12，圆形",
+          "R2010_polylines": "R2010，多段线"
+        }
+      },
+      "paper": {
+        "label": "打印图纸",
+        "help": "核对图纸的纸张尺寸。",
+        "values": {
+          "A3": "A3",
+          "A4": "A4",
+          "TABLOID": "Tabloid（11 × 17 英寸）",
+          "LETTER": "Letter（8.5 × 11 英寸）"
+        }
+      },
+      "supportStrips": {
+        "label": "接缝背衬条",
+        "help": "150 毫米宽的胶合板条支撑水平接缝，并留出孔位操作空间。",
+        "values": {
+          "false": "关闭",
+          "true": "开启"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "雕刻岩点编号",
+        "help": "在每个 T 形螺母旁铣刻 Kilter 岩点编号。",
+        "values": {
+          "false": "关闭",
+          "true": "开启"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "雕刻止转螺钉角度",
+        "help": "铣刻标记，显示每个止转螺钉的朝向。",
+        "values": {
+          "false": "关闭",
+          "true": "开启"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "TB2 尺寸制式",
+        "help": "公制：200 毫米主网格和 12 毫米 LED 孔。英制：7⅞ 英寸网格和 ½ 英寸孔。更改制式会清除已放置图案。",
+        "values": {
+          "metric": "公制",
+          "imperial": "英制"
+        }
+      },
+      "tb2Engraving": {
+        "label": "TB2 雕刻",
+        "help": "使用 Tension 安装图纸中的岩点编号和方向标记。",
+        "values": {
+          "none": "不雕刻",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "雕刻",
+      "help": "切割面板时，同时铣刻岩点编号和止转螺钉角度，两项默认开启。",
+      "note": "标记来自 Kilter 布局，安装岩点时就能派上用场：每个 T 形螺母旁的编号说明此处应安装哪个岩点，短线标记显示止转螺钉朝向。"
+    },
+    "artwork": {
+      "heading": "自定义文字与标志",
+      "help": "将你自己的文字铣刻在面板上，或上传标志。最多 {{count}} 项，购买前我们会逐一检查是否与孔位冲突。",
+      "add": "添加标签",
+      "remove": "移除",
+      "itemLabel": "标签 {{number}}",
+      "full": "此图纸包可容纳的 {{count}} 个标签已全部用完。",
+      "remaining_one": "还可添加 {{count}} 个标签。",
+      "remaining_other": "还可添加 {{count}} 个标签。",
+      "text": "文字内容",
+      "textHelp": "最多 {{max}} 个字符。按轮廓切割，在任何设备上效果一致。",
+      "font": "字体",
+      "fontHelp": "切割工具支持的字体。",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "切割方式",
+      "modes": {
+        "engrave": {
+          "label": "浅刻",
+          "help": "仅刻划表面，深度浅，保留面板完整强度。"
+        },
+        "pocket": {
+          "label": "凹铣",
+          "help": "将文字内部铣至一定深度，呈现明暗效果。"
+        },
+        "cut_through": {
+          "label": "镂空切穿",
+          "help": "完全切穿面板，需要与孔位保持更大距离，并会减少面板材料。"
+        }
+      },
+      "panel": "面板",
+      "panelHelp": "选择要铣刻在哪块板上。",
+      "panelLoading": "正在计算面板…",
+      "kickerPanel": "踢脚板",
+      "checking": "正在检查是否合适…",
+      "fits": "位置合适，避开了所有孔位和接缝。",
+      "doesNotFit": "当前位置无法加工。移动后我们会重新检查。",
+      "signInToCheck": "登录后，我们会检查标签与孔位网格是否冲突。",
+      "issues": {
+        "text": "请输入标签文字。",
+        "textTooLong": "文字超过 {{chars}} 个字符。",
+        "width": "宽度必须在 {{min}} 到 {{max}} 毫米之间。",
+        "rotation": "旋转角度必须在 -180° 到 180° 之间。"
+      },
+      "collisions": {
+        "off_panel": "此项超出面板，或距边缘过近。",
+        "keepout": "此项与 T 形螺母孔或 LED 孔重叠。",
+        "cut_through_keepout": "镂空切穿需要与孔位保持比当前位置更大的距离。",
+        "crosses_seam": "此项跨越两块面板，会被切成两半。",
+        "unknown": "此项无法在当前位置铣刻。"
+      },
+      "upload": {
+        "button": "上传标志",
+        "busy": "正在上传…",
+        "help": "SVG 格式，最大 5 MB。请先将描边转为轮廓，我们沿路径本身切割，不沿路径外围切割。",
+        "signIn": "登录以上传标志。",
+        "previewAlt": "你上传的标志",
+        "stored": "你上传的标志",
+        "errors": {
+          "tooLarge": "文件过大，最多支持 5 MB。",
+          "noFile": "未收到文件，请重新选择标志并上传。",
+          "unsupportedType": "无法将该文件识别为图形，请重新导出为普通 SVG。",
+          "unsafeDrawing": "图形包含无法加工的内容，例如脚本、外链字体或外部图片。请重新导出为普通 SVG。",
+          "noViewBox": "图形没有 viewBox，无法确定尺寸基准。请从编辑器重新导出。",
+          "tooComplex": "图形细节超出雕刻机处理能力，请简化路径后重试。",
+          "imageTooSmall": "图片太小，无法描摹，每边至少需要 64 像素。",
+          "imageTooLarge": "图片太大，无法描摹，每边最多支持 4096 像素。",
+          "unreadableImage": "无法打开图片，请重新导出为 PNG。",
+          "rateLimited": "上传次数过多，请几分钟后重试。",
+          "unavailable": "暂时无法上传，未收取任何费用，请稍后重试。",
+          "generic": "上传未完成，请重试。"
+        }
+      },
+      "editor": {
+        "canvasLabel": "你的岩墙。将标签拖到所需位置。",
+        "placeholder": "你的文字",
+        "keyboardHelp": "方向键每次移动 10 毫米，按住 Shift 时为 1 毫米。[ 和 ] 每次旋转 5°，加号和减号调整宽度。",
+        "resizeHandle": "拖动调整尺寸",
+        "rotateHandle": "拖动旋转",
+        "width": "宽度（毫米）",
+        "rotation": "旋转（度）",
+        "holesUnavailable": "登录以查看岩墙孔位网格。",
+        "offPanel": "超出面板，或距边缘过近。",
+        "holesInTheWay_one": "与 {{count}} 个孔重叠，请移开。",
+        "holesInTheWay_other": "与 {{count}} 个孔重叠，请移开。",
+        "crossesSeam": "跨越接缝，会被切成两半。",
+        "clear": "已避开此面板上的所有孔位和接缝。"
+      },
+      "blocksPreview": "请先将标签移到可加工的位置，再生成预览。"
+    },
+    "summary": {
+      "heading": "切割内容",
+      "wall": "岩墙",
+      "wallValue": "{{width}} × {{height}} 毫米",
+      "kickerHeight": "踢脚板高度",
+      "kickerHeightValue": "{{height}} 毫米",
+      "panels": "面板",
+      "panelsValue_one": "{{count}} 块面板",
+      "panelsValue_other": "{{count}} 块面板",
+      "sheets": "板材",
+      "sheetsValue_one": "{{count}} 张板材",
+      "sheetsValue_other": "{{count}} 张板材",
+      "tnuts": "需安装的 T 形螺母",
+      "leds": "需安装的 LED",
+      "warningsHeading": "请留意",
+      "unavailable": "暂时无法加载切割清单，你选择的配置仍然保留。",
+      "spareMounts": "备用安装孔",
+      "spareMountsHelp": "用于兼容 Homewall 布局的额外孔位。这些是钻孔，并非 OG 配置所需的额外硬件。",
+      "skippedSeamLeds": "装配后需钻的 LED 孔",
+      "skippedSeamLedsHelp": "这些孔位跨越面板接缝。请先连接面板，再按图纸包中的装配坐标和孔径钻孔。",
+      "seamNotches": "接缝处的 LED 孔",
+      "seamNotchesHelp": "这些 LED 孔位于面板接缝。两块面板各切出一个缺口，拼接后 LED 安装在缺口中。"
+    },
+    "licensee": {
+      "name": "许可持有人姓名",
+      "email": "邮箱",
+      "emailHelp": "图纸包完成后将发送到此邮箱。",
+      "siteName": "客户或岩馆名称",
+      "siteHelp": "本商业许可适用的唯一设施。",
+      "required": "购买前请填写。"
+    },
+    "licence": {
+      "accept": "我接受制造许可",
+      "link": "先阅读许可"
+    },
+    "preview": {
+      "heading": "你的预览",
+      "signedOut": "登录后我们会绘制你的岩墙。预览免费，无需填写银行卡。",
+      "idle": "我们会排布每张板材，并提供带水印的图纸。修改后可再次预览。",
+      "working": "正在绘制板材图纸，约需十五秒。",
+      "ready": "带水印的核对图纸。确认购买后即可获得供加工厂切割的 DXF 文件。",
+      "stale": "生成图纸后你修改了岩墙。请更新预览查看新图纸。",
+      "failed": "预览生成失败。未收取任何费用，请重试。",
+      "rateLimited": "本小时的免费预览次数已用完。已有预览可在你的建造图纸页查看，下个整点恢复。",
+      "download": "下载预览",
+      "downloading": "正在获取链接…",
+      "galleryLabel": "预览图纸",
+      "bomLabel": "这些板材的切割内容",
+      "panel": "面板 {{number}}",
+      "assembly": "装配",
+      "generated": "已生成预览"
+    },
+    "finalise": {
+      "heading": "许可持有人",
+      "help": "图纸包的每个文件都带有许可信息，泄露副本可据此追溯。",
+      "stale": "请先更新预览，生成这些图纸后岩墙已更改。"
+    },
+    "original": {
+      "drilling": "建议在每个 OG 螺钉固定脚点处开三个孔：中央开一个直径 13 毫米的孔，用于安装一个 LED；在中央孔正上方和正下方各 20 毫米处，各开一个 LED 孔。使用 OG 脚点时，中央孔不要安装 T 形螺母。",
+      "compatibility": "额外孔位覆盖完整的对应 Homewall 布局：7×10 或 8×12，以及较大 OG 岩墙上居中的 10×12 布局。",
+      "angleLabel": "雕刻岩点编号朝向标记",
+      "angleHelp": "使用 OG Number Angle 标记印刷岩点编号的朝向。缺少角度的岩点不作标记。",
+      "engraveHelp": "切割面板时同时雕刻岩点编号及其朝向标记，两项默认开启。",
+      "engraveNote": "OG 朝向标记依据岩点编号，而非止转螺钉。不会根据这些标记钻螺钉孔。"
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "已保存的配置不可用",
+      "sizeHelp": "以英尺表示高度 × 宽度。Tension 的命名将高度写在前面。",
+      "engraveHelp": "在同一面板上雕刻 Mirror、Spray 或两者。默认选择两种布局。",
+      "engraveNote": "Mirror 标签位于孔左侧，带一条方向短线；Spray 标签位于右侧，带两条短线。每块雕刻面板都附有图例。"
+    }
+  },
+  "cta": {
+    "preview": "获取免费预览",
+    "previewSignedOut": "登录获取免费预览",
+    "previewUpdate": "更新预览",
+    "previewing": "正在绘制预览…",
+    "previewRetry": "重试",
+    "finalise": "确认并购买",
+    "finalising": "正在打开结账…",
+    "free": "预览免费，无需银行卡。",
+    "signInTitle": "登录获取免费预览",
+    "signInBody": "预览需要保存在账号中。登录后会直接返回你的配置。"
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "此组合无法加工。请修改上方配置，我们会重新检查。",
+    "CNC_WORKER_UNAVAILABLE": "图纸生成器暂未响应。未收取任何费用，请一分钟后重试。",
+    "CNC_CHECKOUT_UNAVAILABLE": "暂时无法付款。未收取任何费用，请稍后重试。",
+    "generic": "操作未完成，未收取任何费用。",
+    "RATE_LIMITED": "本小时预览次数过多。未收取任何费用，下个整点可继续。"
+  },
+  "status": {
+    "pending_payment": "等待付款",
+    "queued": "队列中",
+    "generating": "正在生成加工文件",
+    "ready": "可以下载",
+    "failed": "生成失败",
+    "cancelled": "结账已过期",
+    "refunded": "已退款",
+    "preview_queued": "预览已排队",
+    "preview_generating": "正在绘制预览",
+    "preview_ready": "预览已就绪",
+    "preview_failed": "预览生成失败"
+  },
+  "orders": {
+    "heading": "你的建造图纸",
+    "intro": "你预览或购买的所有岩墙，最新的在前。无论此页面如何变化，许可始终归你所有。",
+    "configureAnother": "配置另一面墙",
+    "empty": "这里还没有岩墙。",
+    "emptyBody": "配置一面墙，我们会免费绘制每张板材的预览。确认购买前不会收费。",
+    "emptyCta": "配置岩墙",
+    "previewTier": "预览",
+    "orderedOn": "订购于 {{date}}",
+    "previewedOn": "预览于 {{date}}",
+    "view": "打开",
+    "viewOne": "打开建造图纸 {{licenceId}}",
+    "finalise": "确认购买",
+    "loadError": "无法加载你的建造图纸，请重新加载页面。"
+  },
+  "order": {
+    "back": "你的全部建造图纸",
+    "board": "岩墙",
+    "tier": "许可",
+    "placed": "开始时间",
+    "previewed": "预览生成时间",
+    "size": "图纸包大小",
+    "sizeValue": "{{megabytes}} MB",
+    "downloads": "下载次数",
+    "facts": {
+      "heading": "图纸说明"
+    },
+    "timeline": {
+      "heading": "当前进度",
+      "preview": "免费预览已绘制",
+      "finalised": "许可已署名并付款",
+      "building": "正在生成加工文件",
+      "ready": "可以下载"
+    },
+    "waiting": "生成图纸包约需两分钟，此页面会自动更新。",
+    "previewWaiting": "预览约需十五秒，此页面会自动更新。",
+    "preview": {
+      "heading": "你的免费预览",
+      "note": "带水印的核对图纸。确认购买后即可获得供加工厂切割的 DXF 文件。",
+      "drawing": "正在绘制板材图纸，完成后会立即显示在这里。",
+      "panel": "面板 {{number}}",
+      "assembly": "装配"
+    },
+    "finalise": "确认并购买",
+    "downloadPreview": "下载预览",
+    "download": "下载图纸包",
+    "downloading": "正在获取链接…",
+    "downloadError": "未能获取链接，请重试。",
+    "checkoutSuccess": "付款成功，正在生成你的加工文件。",
+    "checkoutCancelled": "结账已取消，未收取任何费用。",
+    "previewFailed": {
+      "heading": "此预览绘制失败",
+      "body": "未收取任何费用。请修改岩墙配置后重新预览，或联系我们检查。",
+      "contact": "发邮件给我们处理",
+      "subject": "建造图纸 {{licenceId}} 预览绘制失败"
+    },
+    "failed": {
+      "heading": "此图纸包生成失败",
+      "contact": "发邮件给我们处理",
+      "subject": "建造图纸 {{licenceId}} 生成失败"
+    },
+    "refunded": {
+      "heading": "已退款",
+      "body": "此订单已退款，下载已关闭。准备好建造时可再次购买。"
+    },
+    "notFound": {
+      "heading": "没有这份建造图纸",
+      "body": "该许可不存在，或属于另一个账号。"
+    },
+    "loadError": "无法加载此建造图纸，请重新加载页面。",
+    "downloadCard": {
+      "heading": "你的建造图纸包",
+      "note": "每块面板一份 DXF，加上装配图、打印图纸和许可，打包为一个 ZIP 文件。"
+    }
+  },
+  "flow": {
+    "heading": "使用流程",
+    "intro": "预览免费，确认购买前不收费。",
+    "configure": {
+      "title": "配置你的岩墙",
+      "body": "选择尺寸、加工厂使用的板材、孔径，以及希望铣刻在面板上的内容。"
+    },
+    "preview": {
+      "title": "获取免费预览",
+      "body": "我们会排布每张板材，并提供带水印的图纸。随时修改并重新预览。"
+    },
+    "finalise": {
+      "title": "确认购买，开始建造",
+      "body": "填写许可姓名并付款后，可直接加工的 DXF 文件和打印图纸会存入你的账号。"
+    }
+  }
+}

@@ -9,6 +9,7 @@ import 'dayjs/locale/de';
 import 'dayjs/locale/es';
 import 'dayjs/locale/fr';
 import 'dayjs/locale/it';
+import 'dayjs/locale/zh-cn';
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
@@ -21,6 +22,7 @@ const DAYJS_LOCALE_BY_APP_LOCALE: Record<string, string> = {
   es: 'es',
   fr: 'fr',
   it: 'it',
+  'zh-CN': 'zh-cn',
 };
 
 /**

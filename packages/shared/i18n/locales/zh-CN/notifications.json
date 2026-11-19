@@ -1,0 +1,70 @@
+{
+  "title": "通知",
+  "empty": "暂时没有通知",
+  "markAllRead": "全部标为已读",
+  "actorSummary": {
+    "fallback": "有人",
+    "secondaryFallback": "有人",
+    "two": "{{first}} 和 {{second}}",
+    "many": "{{first}} 和其他 {{count}} 人",
+    "manyOne": "{{first}} 和另外 1 人"
+  },
+  "items": {
+    "newFollower": "{{actor}} 开始关注你",
+    "followRequest": "{{actor}} 想关注你",
+    "commentReplyWithBody": "{{actor}} 回复：“{{body}}”",
+    "commentReply": "{{actor}} 回复了你的评论",
+    "commentOnTickWithBody": "{{actor}} 评论：“{{body}}”",
+    "commentOnTick": "{{actor}} 评论了你的完攀记录",
+    "commentOnClimbWithBody": "{{actor}} 评论了你的线路：“{{body}}”",
+    "commentOnClimb": "{{actor}} 评论了你的线路 {{climb}}",
+    "commentOnClimbGeneric": "{{actor}} 评论了你的线路",
+    "commentOnSessionWithBody": "{{actor}} 评论了你的攀爬活动：“{{body}}”",
+    "commentOnSession": "{{actor}} 评论了你的攀爬活动",
+    "commentOnPlaylistWithBody": "{{actor}} 评论了你的线路合集：“{{body}}”",
+    "commentOnPlaylist": "{{actor}} 评论了你的线路合集",
+    "commentOnBoardWithBody": "{{actor}} 评论了你的训练板：“{{body}}”",
+    "commentOnBoard": "{{actor}} 评论了你的训练板",
+    "commentOnSprayWallWithBody": "{{actor}} 评论了你的喷点墙：“{{body}}”",
+    "commentOnSprayWall": "{{actor}} 评论了你的喷点墙",
+    "commentOnGymWithBody": "{{actor}} 评论了你的岩馆：“{{body}}”",
+    "commentOnGym": "{{actor}} 评论了你的岩馆 {{gym}}",
+    "commentOnGymGeneric": "{{actor}} 评论了你的岩馆",
+    "voteOnTick": "{{actor}} 赞了你的完攀记录",
+    "voteOnComment": "{{actor}} 赞了你的评论",
+    "proposalCreated": "{{actor}} 创建了新提案",
+    "proposalApproved": "{{actor}} 的提案已通过",
+    "proposalRejected": "{{actor}} 的提案未通过",
+    "proposalVote": "{{actor}} 对你的提案投了票",
+    "proposalCreatedHide": "{{actor}} 举报了 {{climb}}",
+    "proposalApprovedHide": "伙伴们根据你的举报隐藏了 {{climb}}",
+    "proposalRejectedHide": "你对 {{climb}} 的举报已结案，该线路未被隐藏",
+    "proposalVoteHide": "{{actor}} 赞同你对 {{climb}} 的举报",
+    "proposalOnYourClimb": "{{actor}} 对你的线路 {{climb}} 发起了提案",
+    "proposalOnYourClimbGeneric": "{{actor}} 对你的线路发起了提案",
+    "proposalOnYourClimbHide": "{{actor}} 举报了你的线路 {{climb}}，建议将其移除",
+    "proposalOnYourClimbGrade": "{{actor}} 建议调整你的线路 {{climb}} 的难度等级",
+    "newClimb": "{{actor}} 创建了新线路",
+    "newClimbsSyncedSetter": "{{setter}} 设计了新线路",
+    "newClimbsSynced": "{{actor}} 设计了新线路",
+    "gymClaimApproved": "你现在可以管理 {{gym}}",
+    "gymClaimApprovedGeneric": "岩馆认领已通过，你现在是所有者了",
+    "default": "你有一条新通知",
+    "sprayWallReady": "{{wall}} 已准备好，请检查。",
+    "sprayWallReadyGeneric": "你的喷点墙照片已准备好，请检查。"
+  },
+  "followRequest": {
+    "approve": "同意",
+    "decline": "拒绝",
+    "approveLabel": "同意 {{actor}}",
+    "declineLabel": "拒绝 {{actor}}",
+    "failed": "无法处理此请求，请联网后重试。"
+  },
+  "errors": {
+    "load": "无法加载通知"
+  },
+  "push": {
+    "sprayWallTitle": "可以检查了",
+    "sprayWallBody": "{{wall}} 的照片已准备好，请检查岩点。"
+  }
+}

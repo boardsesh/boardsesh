@@ -1,0 +1,189 @@
+{
+  "metadata": {
+    "all": {
+      "title": "设有训练板的攀岩馆",
+      "description": "浏览设有 Kilter、MoonBoard 或 Tension 训练板的攀岩馆，了解每块训练板的设置角度。"
+    },
+    "kilter": {
+      "title": "设有 Kilter 训练板的攀岩馆",
+      "description": "想找附近的 Kilter 训练板？浏览配有 Kilter 训练板的攀岩馆及各块板的设置角度。"
+    },
+    "moonboard": {
+      "title": "设有 MoonBoard 的攀岩馆",
+      "description": "想找附近的 MoonBoard？浏览配有 MoonBoard 的攀岩馆及各块板的设置角度。"
+    },
+    "tension": {
+      "title": "设有 Tension 训练板的攀岩馆",
+      "description": "想找附近的 Tension 训练板？浏览配有 Tension 训练板的攀岩馆及各块板的设置角度。"
+    }
+  },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "攀岩馆"
+  },
+  "directory": {
+    "all": {
+      "h1": "设有训练板的攀岩馆",
+      "lead_one": "训练板目录中收录了 {{formattedCount}} 处攀岩馆、俱乐部岩墙或家庭岩墙。",
+      "lead_other": "训练板目录中收录了 {{formattedCount}} 处攀岩馆、俱乐部岩墙和家庭岩墙。",
+      "detail": "其中 {{kilterCount}} 处设有 Kilter，{{moonboardCount}} 处设有 MoonBoard，{{tensionCount}} 处设有 Tension，许多场地不止一种。请在下方选择训练板，或按名称搜索。"
+    },
+    "kilter": {
+      "h1": "设有 Kilter 训练板的攀岩馆",
+      "lead_one": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 Kilter 训练板。岩馆资料中标有训练板的角度，方便你判断它是否适合你正在攻克的线路。",
+      "lead_other": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 Kilter 训练板。每家岩馆的资料中都标有训练板的角度，方便你找到适合当前攻克线路的训练板。",
+      "detail": "这些岩馆由攀岩者自行收录，Boardsesh 与训练板制造商没有关联。你负责其中一家岩馆吗？认领该馆的资料，就能及时更新信息。"
+    },
+    "moonboard": {
+      "h1": "设有 MoonBoard 的攀岩馆",
+      "lead_one": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 MoonBoard。岩馆资料中标有训练板的角度，方便你判断它是否适合你正在攻克的线路。",
+      "lead_other": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 MoonBoard。每家岩馆的资料中都标有训练板的角度，方便你找到适合当前攻克线路的训练板。",
+      "detail": "这些岩馆由攀岩者自行收录，Boardsesh 与训练板制造商没有关联。你负责其中一家岩馆吗？认领该馆的资料，就能及时更新信息。"
+    },
+    "tension": {
+      "h1": "设有 Tension 训练板的攀岩馆",
+      "lead_one": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 Tension 训练板。岩馆资料中标有训练板的角度，方便你判断它是否适合你正在攻克的线路。",
+      "lead_other": "Boardsesh 上有 {{formattedCount}} 家岩馆设有 Tension 训练板。每家岩馆的资料中都标有训练板的角度，方便你找到适合当前攻克线路的训练板。",
+      "detail": "这些岩馆由攀岩者自行收录，Boardsesh 与训练板制造商没有关联。你负责其中一家岩馆吗？认领该馆的资料，就能及时更新信息。"
+    },
+    "source": "岩馆资料来自公开的训练板位置数据和攀岩者提供的信息。"
+  },
+  "facets": {
+    "all": "全部岩馆 · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}"
+  },
+  "filters": {
+    "moreLabel": "缩小范围",
+    "moreLabelActive": "缩小范围 · {{count}}",
+    "layoutHeading": "布局",
+    "layoutLocked": "先在上方选择一种训练板，即可查看布局。",
+    "sizeHeading": "尺寸",
+    "sizeLocked": "选择布局后，即可查看尺寸。",
+    "angleHeading": "角度",
+    "angleLocked": "先在上方选择一种训练板，即可查看角度。",
+    "angleOption": "{{angle}}°",
+    "angleHint": "显示岩馆记录的角度。多数岩墙可调角度，此数值仅代表最近一次设置。",
+    "multiBoardLabel": "仅显示设有两种或更多训练板的岩馆",
+    "submit": "显示岩馆",
+    "activeHeading": "筛选条件",
+    "clearAll": "清除全部筛选"
+  },
+  "search": {
+    "label": "搜索岩馆",
+    "placeholder": "岩馆名称或城镇",
+    "submit": "搜索"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} 家岩馆",
+    "heading_other": "{{formattedCount}} 家岩馆",
+    "emptyTitle": "暂时没有匹配结果",
+    "emptyBody": "试试更短的搜索词，或移除训练板筛选，浏览全部岩馆。",
+    "emptyClearSearch": "清除搜索",
+    "emptyBrowseAll": "浏览全部岩馆"
+  },
+  "error": {
+    "title": "暂时无法获取岩馆列表",
+    "body": "我们这边暂时出了问题。请一分钟后重新加载，或打开你熟悉的岩馆页面。",
+    "retry": "重新加载列表",
+    "home": "返回 Boardsesh"
+  },
+  "card": {
+    "claimed": "由该岩馆管理",
+    "unclaimed": "未认领",
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "距离 {{distance}} 公里"
+  },
+  "claim": {
+    "body": "这是你的岩馆吗？认领后，你可以设置攀岩者在这里看到的训练板、营业时间和链接。",
+    "action": "查找你的岩馆",
+    "topAction": "你负责其中一家岩馆吗？免费查找并认领该馆的资料。"
+  },
+  "nearMe": {
+    "cta": "使用我的位置",
+    "locating": "正在定位…",
+    "showAll": "显示全部岩馆",
+    "radiusLabel": "范围",
+    "radius": {
+      "10": "10 公里",
+      "25": "25 公里",
+      "50": "50 公里",
+      "100": "100 公里"
+    },
+    "loading": "正在查找附近的岩馆…",
+    "error": "未能完成搜索。请稍后重试。",
+    "empty": "此范围内没有标注地图位置的岩馆。请扩大范围，或按城镇搜索。",
+    "resultsHeading_one": "{{radius}} 公里内有 {{formattedCount}} 家岩馆",
+    "resultsHeading_other": "{{radius}} 公里内有 {{formattedCount}} 家岩馆",
+    "resultsHeadingCapped_one": "显示 {{radius}} 公里内 {{formattedCount}} 家岩馆中最近的一家",
+    "resultsHeadingCapped_other": "显示 {{radius}} 公里内 {{formattedCount}} 家岩馆中最近的 {{shown}} 家",
+    "pinlessNotice": "附近搜索仅显示标注了地图位置的岩馆，约三分之一的岩馆尚未标注。显示全部岩馆可恢复完整列表。",
+    "deniedBody": "浏览器未允许访问你的位置。请在搜索框输入城镇名称，此方法在任何浏览器都可使用。",
+    "unsupportedBody": "此浏览器不支持定位。请在搜索框输入城镇名称，此方法在任何浏览器都可使用。",
+    "unavailableBody": "无法确定你的位置。请重试，或在搜索框输入城镇名称。"
+  },
+  "map": {
+    "showMap": "显示地图",
+    "hideMap": "隐藏地图",
+    "regionLabel": "列表中岩馆的地图",
+    "pinnedPill_one": "共 {{total}} 家岩馆，{{pinned}} 家标注了地图位置",
+    "pinnedPill_other": "共 {{total}} 家岩馆，{{pinned}} 家标注了地图位置",
+    "clusterLabel_one": "{{count}} 家岩馆",
+    "clusterLabel_other": "{{count}} 家岩馆"
+  },
+  "pagination": {
+    "label": "目录分页",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} 页",
+    "current": "第 {{page}} 页，当前页"
+  },
+  "links": {
+    "heading": "更多浏览方式",
+    "all": "Boardsesh 上的全部岩馆",
+    "kilter": "设有 Kilter 训练板的岩馆",
+    "moonboard": "设有 MoonBoard 的岩馆",
+    "tension": "设有 Tension 训练板的岩馆"
+  },
+  "places": {
+    "loading": "正在查找城镇…",
+    "clear": "清除地点",
+    "open": "显示地点",
+    "close": "隐藏地点",
+    "hint": "请选择建议的城镇，或按名称搜索岩馆。",
+    "empty": "没有找到城镇。你仍可按名称搜索岩馆。",
+    "error": "地点建议暂不可用。你仍可按名称搜索岩馆。",
+    "attribution": "地名来自 GeoNames",
+    "area": "{{place}} 附近 {{radius}} 公里内的岩馆",
+    "selectedArea": "所选地点",
+    "pinlessNotice": "附近搜索结果仅包含标注了地图位置的岩馆。"
+  },
+  "install": {
+    "heading": "下载应用",
+    "body": "用手机点亮岩馆的训练板，记录每次完攀。"
+  },
+  "create": {
+    "action": "创建岩馆",
+    "title": "添加你的岩馆",
+    "description": "将岩馆标在地图上，再关联 Boardsesh 已收录的训练板。",
+    "details": "岩馆信息",
+    "boards": "现有训练板",
+    "continue": "保存并选择训练板",
+    "saved": "{{name}} 已保存。请在下方关联现有训练板，也可以稍后再来。",
+    "managerHint": "你将负责管理这家岩馆的资料。岩馆工作人员之后可以认领。",
+    "back": "编辑信息",
+    "finish": "查看岩馆",
+    "skip": "暂时跳过",
+    "locationMissing": "在岩馆信息中添加地图标记，即可查找附近的训练板。你仍可关联自己拥有的训练板。",
+    "loadMore": "加载更多训练板",
+    "loadError": "无法加载你的训练板。岩馆已保存，请重试。",
+    "retry": "重试",
+    "refreshError": "修改已保存，但岩馆目录尚未刷新。",
+    "refreshRetry": "刷新目录",
+    "moveTitle": "移动这块训练板？",
+    "moveBody": "将 {{board}} 从 {{source}} 移至此岩馆？如果原先导入的岩馆记录中不再有训练板，系统会将该记录并入此岩馆，并把原链接重定向到这里。",
+    "moveConfirm": "移动训练板",
+    "notListed": "未收录？添加你的岩馆"
+  }
+}

@@ -108,13 +108,14 @@ const cases: MetadataCase[] = [
 
 describe('hreflang returns for every sitemapped surface', () => {
   for (const testCase of cases) {
-    it(`${testCase.name} canonicalises per locale and advertises all six alternates`, async () => {
+    it(`${testCase.name} canonicalises per locale and advertises all locale alternates`, async () => {
       const expectedLanguages = {
         'en-US': testCase.basePath,
         es: `/es${testCase.basePath}`,
         fr: `/fr${testCase.basePath}`,
         de: `/de${testCase.basePath}`,
         it: `/it${testCase.basePath}`,
+        'zh-CN': `/zh-CN${testCase.basePath}`,
         'x-default': testCase.basePath,
       };
 

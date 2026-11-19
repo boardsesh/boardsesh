@@ -1,0 +1,443 @@
+{
+  "metadata": {
+    "title": "你的应用 | Boardsesh 开发者",
+    "description": "注册应用，在攀岩者授权后读取其 Boardsesh 攀爬日志。"
+  },
+  "page": {
+    "eyebrow": "Boardsesh 开发者",
+    "title": "你的应用",
+    "lead": "注册应用，让攀岩者将它连接到 Boardsesh 攀爬日志。只有攀岩者在授权页面批准后，才会分享内容。",
+    "register": "注册应用",
+    "limits": "每个账号最多 {{apps}} 个应用。每个新应用可连接 {{connections}} 位攀岩者，每天最多新增 {{perDay}} 位。"
+  },
+  "states": {
+    "loading": "正在加载你的应用…",
+    "empty": {
+      "title": "还没有应用",
+      "body": "注册应用即可获得客户端 ID。由服务器交换授权码的应用还会获得客户端密钥。",
+      "action": "注册第一个应用"
+    },
+    "notAvailable": { "title": "应用注册尚未开放", "body": "Boardsesh 尚未启用合作应用，请稍后再来。" },
+    "notAllowlisted": {
+      "title": "应用注册暂仅限受邀用户",
+      "body": "你的账号不在邀请名单中。请联系 Boardsesh 团队申请访问。"
+    },
+    "inviteCheckFailed": { "title": "无法核实你的邀请", "body": "Boardsesh 暂时无法访问邀请名单，请一分钟后重试。" },
+    "paused": { "title": "应用注册已暂停", "body": "Boardsesh 暂停了合作应用，请一分钟后重试。" },
+    "failed": { "title": "你的应用未能加载", "body": "请检查网络连接后重试。", "retry": "重试" }
+  },
+  "app": {
+    "publisher": "由 {{publisher}} 开发",
+    "noPublisher": "尚未设置发布者。编辑应用即可添加；在此之前，授权页面不会显示“开发者”一行。",
+    "clientId": "客户端 ID",
+    "kind": { "WEB": "网页应用", "NATIVE": "原生应用" },
+    "clientTypeTerm": "客户端类型",
+    "auth": {
+      "NONE": "公开客户端：无密钥，仅用 PKCE",
+      "CLIENT_SECRET_BASIC": "机密客户端：通过 HTTP Basic 请求头发送密钥",
+      "CLIENT_SECRET_POST": "机密客户端：通过表单正文发送密钥"
+    },
+    "redirectUris": "重定向 URI",
+    "homepage": "主页",
+    "privacyPolicy": "隐私政策",
+    "linksTerm": "链接",
+    "linksLabel": "{{app}} 的链接",
+    "connectionsTerm": "攀岩者",
+    "connections_one": "已连接 {{count}} 位攀岩者，上限 {{max}} 位",
+    "connections_other": "已连接 {{count}} 位攀岩者，上限 {{max}} 位",
+    "newPerDay": "每天最多新增 {{count}} 位攀岩者",
+    "registeredTerm": "注册时间",
+    "suspended": {
+      "title": "已被 Boardsesh 停用",
+      "body": "此应用无法获取令牌，也不能修改或删除。原因：{{reason}}",
+      "noReason": "此应用无法获取令牌，也不能修改或删除。"
+    },
+    "actions": { "label": "{{app}} 的操作", "edit": "编辑", "rotate": "新建密钥", "delete": "删除" }
+  },
+  "form": {
+    "createTitle": "注册应用",
+    "editTitle": "编辑 {{app}}",
+    "name": "应用名称",
+    "nameHelp": "攀岩者将在授权页面看到此名称。3 至 50 个字符。",
+    "publisher": "发布者",
+    "publisherHelp": "开发应用的个人或公司。授权页面会显示此开发者名称。",
+    "homepage": "主页 URL（可选）",
+    "privacyPolicy": "隐私政策 URL",
+    "urlHelp": "以 https:// 开头，链接会显示在授权页面。",
+    "applicationType": "登录后返回哪里",
+    "applicationTypeWeb": "网站",
+    "applicationTypeWebHelp": "只允许 https:// 重定向 URI。",
+    "applicationTypeNative": "手机、桌面或命令行应用",
+    "applicationTypeNativeHelp": "也允许使用任意端口的 http://127.0.0.1 或 http://[::1]，以及 com.example.app:/oauth/boardsesh 这类自定义协议。",
+    "clientType": "在哪里将授权码交换为令牌",
+    "clientTypeConfidential": "我的服务器上",
+    "clientTypeConfidentialHelp": "你会获得客户端密钥，仅应保存在服务器上。",
+    "clientTypePublic": "设备或浏览器中",
+    "clientTypePublicHelp": "没有密钥，由 PKCE 保护授权码。分发给用户的应用应使用此类型。",
+    "secretMethod": "服务器如何发送密钥",
+    "secretMethodBasic": "HTTP Basic 请求头（推荐）",
+    "secretMethodPost": "表单正文",
+    "redirectUris": "重定向 URI",
+    "redirectUrisHelp": "每行一个，最多 10 个。除回环地址端口外，必须精确匹配。",
+    "fixed": "注册时已固定：{{kind}}、{{auth}}。",
+    "required": "请填写此项。",
+    "cancel": "取消",
+    "create": "注册应用",
+    "creating": "正在注册…",
+    "save": "保存修改",
+    "saving": "正在保存…",
+    "refused": "Boardsesh 未保存此应用",
+    "readTerms": "阅读开发者条款（在新标签页打开）",
+    "acceptTerms": "我为此应用接受 Boardsesh 开发者条款",
+    "acceptTermsRequired": "请接受开发者条款以注册应用。"
+  },
+  "secret": {
+    "createdTitle": "{{app}} 已注册",
+    "rotatedTitle": "{{app}} 的新密钥",
+    "createdWarning": "请立即复制客户端密钥，Boardsesh 不会再次显示。",
+    "rotatedWarning": "旧密钥已失效。请立即复制新密钥，Boardsesh 不会再次显示。",
+    "lostHelp": "以后丢失了？可在应用卡片中新建密钥，旧密钥会立即失效。",
+    "publicNote": "这是公开客户端应用，没有密钥。每次授权都需发送 PKCE code challenge。",
+    "clientSecret": "客户端密钥",
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "无法复制，请选中文本后手动复制。",
+    "confirmSaved": "我已保存密钥",
+    "done": "完成"
+  },
+  "rotate": {
+    "title": "为 {{app}} 创建新密钥？",
+    "body": "确认后，当前密钥立即失效。在部署新密钥前，你服务器上的令牌请求将会失败。",
+    "confirm": "创建新密钥",
+    "working": "正在创建新密钥…"
+  },
+  "delete": {
+    "title": "删除 {{app}}？",
+    "connected_one": "已连接 {{count}} 位攀岩者。删除应用会立即断开连接，其令牌随之失效。",
+    "connected_other": "已连接 {{count}} 位攀岩者。删除应用会立即断开所有连接，其令牌随之失效。",
+    "noneConnected": "没有已连接的攀岩者。此应用正在进行的登录将失效。",
+    "permanent": "此操作无法撤销。",
+    "confirm": "删除应用",
+    "working": "正在删除…"
+  },
+  "toasts": { "saved": "修改已保存", "deleted": "{{app}} 已删除" },
+  "errors": {
+    "busy": "Boardsesh 正忙，请几秒后重试。",
+    "rateLimited": "一分钟内修改过多，请稍后重试。",
+    "gone": "此应用已不存在，列表已刷新。",
+    "suspended": "Boardsesh 已停用此应用，无法修改。",
+    "emailNotVerified": "注册应用前请先验证邮箱。",
+    "generic": "出了点问题，请重试。"
+  },
+  "signInAgain": {
+    "title": "请重新登录以进行此修改",
+    "body": "更改重定向 URI、创建新密钥或删除应用，需要最近 {{minutes}} 分钟内的登录验证，以防持有你会话的其他人接管应用。",
+    "next": "你将退出并重新登录，然后直接返回这里。之后请再次进行修改。",
+    "formKept": "编辑内容仍保留在此提示后方的表单中。重新登录会离开页面并清空这些内容，请先复制输入的重定向 URI。",
+    "button": "重新登录"
+  },
+  "terms": {
+    "metadata": {
+      "title": "开发者条款 | Boardsesh 开发者",
+      "description": "应用注册以连接 Boardsesh 账号时需要接受的条款。"
+    },
+    "title": "Boardsesh 开发者条款",
+    "version": "版本 {{version}}",
+    "intro": "本条款适用于注册通过 Boardsesh API 连接 Boardsesh 账号的任何应用的人。注册应用时，你代表自己及与你共同开发该应用的所有人接受本条款。",
+    "data": {
+      "title": "攀岩者的数据",
+      "items": {
+        "purpose": "仅将攀岩者分享的内容用于其连接应用时所需的功能。",
+        "noSale": "不得出售、出租，或为广告、用户画像或数据交易而与任何人分享。",
+        "setterClimbs": "攀爬记录包含对应线路，包括他人设置的草稿或不公开线路。这些详情仅供攀岩者查看自己的日志。不得发布、向他人展示，或据此建立线路列表。",
+        "delete": "攀岩者断开应用或提出要求时，应删除其 Boardsesh 数据，除非其要求保留。",
+        "privacyPolicy": "提供说明如何使用 Boardsesh 数据的隐私政策，并在应用注册中填写链接。攀岩者授权前可查看。",
+        "security": "将令牌和客户端密钥保存在服务器或设备的安全存储中，绝不放入 URL 或日志。若发现泄露或有人未经授权访问攀岩者数据，请在 72 小时内通过 legal@boardsesh.com 通知我们。"
+      }
+    },
+    "api": {
+      "title": "使用 API",
+      "items": {
+        "limits": "遵守速率限制，并按 Retry-After 指示的时长等待。",
+        "scopes": "只申请实际使用的权限范围。不得绕过权限、限制、停用措施或攀岩者的选择。",
+        "catalog": "不得通过 API 复制 Boardsesh 线路目录。如有此需求，请使用公开的每夜快照。",
+        "service": "训练板控制、攀爬活动和线路目录不属于此 API。若应用的账号、攀爬、训练板控制或活动依赖 Boardsesh 服务器运行，需取得我们书面许可；我们目前不提供此许可。"
+      }
+    },
+    "names": {
+      "title": "名称与商标",
+      "items": {
+        "worksWith": "请描述应用与 Boardsesh 兼容，例如“兼容 Boardsesh”或“导入你的 Boardsesh 攀爬日志”。不得暗示应用由 Boardsesh 开发、审核或认可。",
+        "ownName": "不得在应用名称、发布者名称或图标中使用 Boardsesh 或相似内容。",
+        "boardBrands": "Kilter、Tension、MoonBoard 及其他训练板名称归其各自所有者所有。仅可用于说明线路所在训练板，不得暗示制造商认可你的应用或 Boardsesh。"
+      }
+    },
+    "ours": {
+      "title": "Boardsesh 可以采取的措施",
+      "items": {
+        "suspend": "停用或删除违反条款、危及攀岩者或使服务过载的应用。停用时，管理台会显示原因。",
+        "changes": "按开发者文档中的版本规则修改 API，并修改本条款。管理台会显示新版本，你之后注册的应用将接受新版本。",
+        "asIs": "API 按现状提供，不保证始终可用或没有错误。"
+      }
+    },
+    "ending": {
+      "title": "终止使用",
+      "body": "你可随时在管理台删除应用，所有攀岩者的连接会立即终止。随后请删除持有的 Boardsesh 数据，除非攀岩者要求保留其数据。"
+    },
+    "contact": "条款相关问题：legal@boardsesh.com"
+  },
+  "docs": {
+    "metadata": {
+      "title": "使用 Boardsesh API 读取攀岩者日志",
+      "description": "注册应用，让攀岩者授权，然后读取日志：先完整下载，再获取增量变化。一页了解权限、限制与错误。"
+    },
+    "title": "将应用连接到攀岩者日志",
+    "lead": "攀岩者授权后，训练规划工具、日志应用或你自己的脚本即可读取其 Boardsesh 攀爬记录。他们可随时断开连接。",
+    "access": {
+      "invitation": {
+        "title": "注册需受邀",
+        "body": "测试期间注册需受邀。每个应用初始可同时连接 {{live}} 位攀岩者，每天新增 {{perDay}} 位。申请访问请发邮件至："
+      },
+      "open": {
+        "title": "注册你的应用",
+        "body": "登录、验证开发者邮箱并接受开发者条款，即可在管理台创建应用。你会获得客户端 ID；若由服务器交换授权码，还会获得客户端密钥。无需邀请。",
+        "action": "打开开发者管理台"
+      }
+    },
+    "can": {
+      "title": "应用可以做什么",
+      "items": {
+        "read": "读取攀岩者在所有训练板上的每条记录，包括在 Boardsesh 中设为私密的记录。",
+        "sync": "先完整下载一次日志，之后仅获取变化。修改通常会在一秒内出现。",
+        "profile": "申请相应权限后，可读取显示名称和头像。",
+        "disconnect": "攀岩者可随时在“设置 › 已连接应用”中断开连接。之后你的下次请求会失败，请删除已存储内容。",
+        "notYet": "目前仅开放日志读取，训练和 Webhook 尚不可用。"
+      }
+    },
+    "steps": {
+      "title": "使用流程",
+      "items": {
+        "register": "在开发者管理台注册应用，保存客户端 ID。",
+        "approve": "在系统浏览器中引导攀岩者打开授权 URL，登录并点击允许。",
+        "exchange": "将重定向 URI 收到的授权码交换为访问令牌和刷新令牌。",
+        "snapshot": "不带游标调用 changes 端点，逐页请求，直到 hasMore 为 false，即获得完整日志。",
+        "feed": "之后携带最后的游标调用，获取新增、编辑和删除的记录。"
+      }
+    },
+    "scopes": {
+      "title": "权限范围",
+      "lead": "只申请所需的最小权限集。授权页面会用通俗语言逐项说明。",
+      "items": {
+        "logbook": "所有训练板上的每条记录，包括攀岩者设为私密的记录。",
+        "profile": "显示名称和头像。",
+        "offline": "获取刷新令牌，在攀岩者离线时继续读取；此权限本身不开放任何数据。"
+      }
+    },
+    "rules": {
+      "title": "开发者容易遗漏的规则",
+      "items": {
+        "consent": "无客户端密钥的应用及所有原生应用，每次授权都会显示授权页面。prompt=none 不会返回授权码，而会返回 error=consent_required。请保留刷新令牌，避免再次授权。仅使用 https 重定向的机密网页应用会被记住。",
+        "redirect": "重定向 URI 必须精确匹配，每个应用最多 {{max}} 个。可使用 https、回环地址（http://127.0.0.1 或 http://[::1]，端口忽略）或含点号的私有协议。拒绝 http://localhost 和通配符。",
+        "redirectChange": "添加或替换重定向 URI 后，所有已授权攀岩者都需重新授权。移除 URI、修改名称或链接不会触发。已有令牌在再次要求攀岩者授权前仍可使用。",
+        "recentSignIn": "添加、替换或移除重定向 URI、轮换客户端密钥及删除应用，都需要最近 {{minutes}} 分钟内的登录验证。超过时限，管理台会要求重新登录。",
+        "notice": "重定向 URI 更改、密钥轮换、应用删除或账号注册新应用时，你会收到邮件。",
+        "pkce": "所有应用都必须使用 S256 PKCE。授权、交换授权码及刷新时均发送 resource=https://api.boardsesh.com/v1。不带此值签发的令牌会被 API 拒绝。",
+        "code": "授权码有效期 {{seconds}} 秒，仅能使用一次。重复提交还会使其已签发的令牌失效，因此请重新授权，不要重试交换。",
+        "tokens": "访问令牌有效一小时，刷新令牌有效 {{days}} 天，且每次使用都会更换。使用新访问令牌前先存储新的刷新令牌，绝不要为同一攀岩者并行刷新。",
+        "signin": "若攀岩者上次登录已超过 30 天，或发生在最近一次修改密码之前，需在授权页面前重新登录。",
+        "disconnect": "攀岩者断开连接、重置密码或删除账号后，API 返回 401 invalid_token，刷新返回 invalid_grant。请显示重新连接 Boardsesh 的提示，停止为该攀岩者请求，并删除存储内容。"
+      }
+    },
+    "requests": {
+      "title": "首次连接",
+      "lead": "请在系统浏览器中打开授权 URL，切勿使用嵌入式网页视图。替换为你自己的客户端 ID、重定向 URI、state 和授权码。",
+      "authorize": "引导攀岩者打开：",
+      "authorizeLabel": "授权请求",
+      "exchange": "重定向 URI 会收到授权码，请交换：",
+      "exchangeLabel": "令牌请求",
+      "exchangeResponseLabel": "令牌响应",
+      "sync": "然后读取日志。首次不传 cursor，并沿每次响应中的游标继续请求。攀岩者打开应用时同步；后台每位攀岩者最多每 15 分钟同步一次。",
+      "syncLabel": "日志变化请求与响应",
+      "confidential": "在服务器保存客户端密钥的机密应用，还需按注册方式在正文中发送 client_secret（client_secret_post），或使用 HTTP Basic（client_secret_basic）。公开应用只发送 client_id。"
+    },
+    "limits": {
+      "title": "限制",
+      "items": {
+        "api": "API：每位攀岩者每分钟 {{climber}} 次请求，每个应用每分钟 {{app}} 次。",
+        "token": "令牌端点：每位攀岩者每分钟 {{refresh}} 次刷新；每个应用与客户端 IP 组合每分钟 {{exchange}} 次授权码交换或撤销。",
+        "fullSync": "启动完整下载：每位攀岩者每分钟两次。下载返回带 Retry-After 的 503 时，至少等待所示时长。",
+        "page": "limit 范围为 1 到 200，默认 100。页面可能为空且仍有 hasMore: true。",
+        "history": "变化保留 90 天。更旧的游标返回 410 cursor_expired，请不带游标重新完整下载。",
+        "body": "请求正文超过 64 KB 时返回 413。",
+        "caps": "早期访问：每个开发者账号 {{apps}} 个应用；每个应用同时连接 {{live}} 位攀岩者，24 小时内新增 {{perDay}} 位。",
+        "headers": "每个响应都包含 Boardsesh-Request-Id 和 RateLimit 请求头。429 响应包含以秒计的 Retry-After。"
+      }
+    },
+    "errors": {
+      "title": "错误",
+      "lead": "错误以 JSON 返回，包含 error、message 和 requestId。先按 HTTP 状态分支处理；之后可能增加新错误码。",
+      "items": {
+        "invalidToken": "访问令牌已过期或被撤销。刷新一次后重试；若刷新失败，请让攀岩者重新连接。",
+        "insufficientScope": "令牌未包含此调用所需权限。",
+        "cursorExpired": "游标过旧或已失效。请不带游标重新完整下载。",
+        "rateLimited": "超出限制，请等待 Retry-After 所示秒数。",
+        "busy": "Boardsesh 正忙或暂时暂停应用访问。按 Retry-After 等待后重试，此情况并不表示攀岩者断开了连接。"
+      }
+    },
+    "versioning": {
+      "title": "版本",
+      "body": "版本位于路径中，即 /v1。v1 可直接增加字段、路由、权限和枚举值，不另通知；请读取已知内容并忽略其他内容。删除或重命名字段会发布 v2，v1 将至少继续运行六个月，并在每个响应包含 Sunset 请求头。",
+      "openapi": "所有路由的 OpenAPI 3.1 描述："
+    },
+    "related": {
+      "title": "继续阅读",
+      "items": {
+        "docs": "线路与难度的公开读取 API",
+        "privacy": "Boardsesh 如何处理你的数据",
+        "legal": "条款与商标使用",
+        "support": "咨询 Boardsesh 团队"
+      }
+    }
+  },
+  "emailVerification": {
+    "title": "验证开发者邮箱",
+    "lead": "注册应用前请确认邮箱。",
+    "description": "向 {{email}} 发送确认链接。每封新邮件会替换之前的链接。",
+    "send": "发送确认邮件",
+    "sending": "正在发送…",
+    "sent": "请查看邮箱。链接将在 30 分钟后过期。",
+    "failed": "邮件未能发送，请等一分钟后重试。",
+    "confirmDescription": "仅当你为当前登录账号申请过开发者邮件时，才确认。",
+    "signInHelp": "在新标签页登录后返回这里，请使用申请该邮件的同一账号。",
+    "signIn": "登录",
+    "confirm": "确认开发者邮箱",
+    "confirming": "正在确认…",
+    "verified": "开发者邮箱已验证，你可以注册应用了。",
+    "invalid": "链接已过期、被替换或属于其他账号。请从开发者管理台申请新邮件。",
+    "back": "打开开发者应用"
+  },
+  "guides": {
+    "labels": {
+      "home": "开发者概览",
+      "related": "继续阅读",
+      "markdown": "以 Markdown 阅读",
+      "openapi": "下载 OpenAPI 3.1",
+      "example": "下载日志同步示例",
+      "loading": "正在加载 API 参考…",
+      "invitation": "注册需受邀，请联系 support@boardsesh.com 申请访问。"
+    },
+    "auth": {
+      "title": "通过 OAuth 连接攀岩者",
+      "description": "注册应用，使用 PKCE 授权，并安全保存轮换凭证。",
+      "registration": {
+        "title": "注册你的应用",
+        "body": "在 /developers/apps 登录并验证邮箱，获取开发者访问权限。命令行工具、手机或桌面应用应注册公开原生应用；浏览器客户端应注册公开网页应用；由服务器交换授权码时应注册机密应用。密钥仅保存在该服务器。\n\n注册精确的重定向 URI。原生应用可使用 http://127.0.0.1:8765/oauth/boardsesh 或 http://[::1]:8765/oauth/boardsesh，匹配时忽略回环端口。允许 https URL 和带点号的私有协议。拒绝 localhost、通配符、片段、Boardsesh 域名和 Boardsesh 协议。每个账号可注册 10 个应用，每个应用最多 10 个重定向 URI。默认连接上限为 25 位活跃攀岩者，任意 24 小时内新增 20 个连接。提高上限请联系 support@boardsesh.com。"
+      },
+      "authorize": {
+        "title": "在系统浏览器中授权",
+        "body": "通过 https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth 发现端点。issuer 为 https://api.boardsesh.com/api/auth，resource 必须严格为 https://api.boardsesh.com/v1。授权、交换和刷新时均发送此 resource。\n\n生成随机 PKCE verifier 和 S256 challenge，并为 state 生成至少 128 位随机值。申请 logbook:read 和 offline_access；仅在需要名称和头像时添加 profile:read。在系统浏览器打开授权 URL。返回时先验证 state 和 iss，再交换授权码。授权码有效 60 秒，只能使用一次。交换结果不确定时，请重新授权。"
+      },
+      "credentials": {
+        "title": "先保存每次轮换的令牌，再使用",
+        "body": "访问令牌有效一小时，刷新令牌有效 90 天。每次刷新都会替换刷新令牌。同一攀岩者的刷新必须串行执行，并在使用访问令牌前将新令牌对持久保存。重放已用过的刷新令牌会使其整个令牌族失效。网络失败且结果未知时，绝不要重试刷新，应重新连接。\n\n遇到 401，刷新一次后重试；遇到 invalid_grant，应重新连接并停止使用该凭证请求。使用应用注册的认证方式：none、client_secret_post 或 client_secret_basic。浏览器客户端的 CORS 允许来源取自已注册 https 重定向地址；不要将凭证存入浏览器偏好设置。"
+      },
+      "disconnect": {
+        "title": "断开整个连接",
+        "body": "DELETE /v1/connection 无需额外权限。204 确认断开后，删除存储凭证和该攀岩者的数据副本，除非其要求保留。单独一个 401 不能证明之前的 DELETE 成功。刷新一次并重试；若凭证已不可用，请攀岩者在 Boardsesh 的已连接应用中检查。通过 OAuth revoke 端点撤销一个令牌，不会断开所有凭证族。修改密码和删除账号也会断开应用。"
+      }
+    },
+    "sync": {
+      "title": "同步完整攀爬日志",
+      "description": "下载完整快照，将变化与游标一起提交，并在过期后安全恢复。",
+      "snapshot": {
+        "title": "先建立替换副本",
+        "body": "不带游标的 GET /v1/logbook/changes 会启动完整快照，包括未修改的旧记录以及 API 推出前的记录。沿每个游标继续请求，直到 hasMore 为 false；最后一页快照会进入增量追赶阶段，仍有 hasMore: true。空页也可能有 hasMore: true。limit 默认 100，范围 1 到 200。\n\n另建一个替换副本。在同一个持久事务中发布新副本及最终游标，在此之前保留旧副本。首次同步中崩溃后，应丢弃未完成的替换副本，并不带游标重新开始。绝不要把快照页当作增量变化应用到旧的在线副本。"
+      },
+      "changes": {
+        "title": "将每页变化与游标一起应用",
+        "body": "拥有 logbook:read 时，按 tick.id 更新或插入 tick 条目，按 id 移除 tick.deleted 条目，即使之前未见过该记录。按顺序应用条目，忽略未知变化类型，并保留尚不理解的字段。每页修改和游标必须原子保存，同一攀岩者的同步必须串行执行。\n\n一条记录包含攀岩者自己的尝试次数、难度、星级和评论。目录难度可能在记录未变时改变。不要根据空的增量页面推断删除。GET /v1/me 返回的账号 ID 对你的应用在重新连接后保持稳定，但不同应用会获得不同 ID；请按应用和账号隔离副本。"
+      },
+      "recovery": {
+        "title": "遇到 410 时保留旧副本并恢复",
+        "body": "410 cursor_expired 要求完整替换，绝不能只对旧副本重置游标。下次请求前，先持久保存需要完整同步的标记。快照游标一小时后过期，且仅属于一个应用连接。增量保留由清理水位控制，不能仅按游标年龄判定过期。\n\n示例客户端将凭证、记录、游标和完整同步标记保存在一个私有 JSON 文件中。命令运行期间持有独占锁，以原子重命名写入替换内容，串行刷新，并对网络错误、429 和 5xx 进行退避重试。命令崩溃后，先确认它已停止，再移除遗留的 .lock 文件。"
+      },
+      "poll": {
+        "title": "在攀岩者需要时轮询",
+        "body": "攀岩者打开应用时同步。后台同步每位攀岩者最多每 15 分钟一次。遇到 429 和临时 503 响应时遵守 Retry-After。可选的 logbook.changed Webhook 用于通知你运行同样的同步，并不替代变化流。\n\n私密攀爬记录在你的应用中也必须保持私密。他人非公开喷点墙上的记录会隐藏线路名称和墙面身份。不得根据日志建立线路目录，或发布其他定线员的草稿及不公开线路。"
+      }
+    },
+    "errors": {
+      "title": "处理 API 故障与限制",
+      "description": "了解何时刷新、重建日志、等待或请攀岩者重新连接。",
+      "status": {
+        "title": "先按 HTTP 状态处理",
+        "body": "400 表示请求或游标格式错误。401 invalid_token 表示刷新一次后重试；刷新时的 invalid_grant 表示需要重新连接。403 insufficient_scope 表示需取得对应权限的授权。404 会隐藏属于其他应用或攀岩者的资源。409 表示冲突，包括复用 externalRef 或取消已开始训练。410 cursor_expired 表示需完整替换同步。413 表示正文超过 64 KB；422 表示验证失败或幂等不匹配。\n\n429 和 5xx 可重试。遵守 Retry-After，并使用有上限的指数退避。网络故障不能证明授权被撤销。v1 可能增加错误码和字段，请兼容未知项。错误包含 error、message 和 requestId；验证错误可能增加 field。OAuth 使用 error 和 error_description。"
+      },
+      "limits": {
+        "title": "读取响应头",
+        "body": "API 每个应用与攀岩者组合每分钟允许 120 次请求，每个应用允许 6,000 次。每个连接每分钟允许 10 次刷新。每个应用与客户端 IP 组合每分钟允许 60 次授权码交换和撤销。新应用默认允许 25 位活跃攀岩者，每滚动 24 小时新增 20 个连接。管理员可调整应用连接上限。\n\nRateLimit-Limit、RateLimit-Remaining 和 RateLimit-Reset 描述最严格的请求限制；Retry-After 给出需等待的秒数。Boardsesh-Request-Id 用于在支持日志中定位请求。绝不要向支持人员发送访问令牌、刷新令牌、授权码或客户端密钥。"
+      },
+      "versions": {
+        "title": "兼容新增变化",
+        "body": "v1 可以增加字段、路由、权限、事件类型和枚举值。请忽略不理解的内容。删除或重命名字段需要 v2；v1 会继续运行至少六个月，并附带 Sunset 请求头。每次契约变化都会记入开发者更新日志。\n\n可使用 OpenAPI 3.1 文档生成客户端或离线模拟 API。模拟仅演示响应格式，不证明 OAuth 安全性或真实游标语义。发布前，请使用自己的账号测试授权和同步。"
+      }
+    },
+    "reference": {
+      "title": "Boardsesh 合作应用 API 参考",
+      "description": "探索带权限范围的 REST API，并下载 OpenAPI 3.1 契约。",
+      "contract": {
+        "title": "使用已发布的契约",
+        "body": "API 主机为 https://api.boardsesh.com。/v1 下的调用使用面向 https://api.boardsesh.com/v1 资源的不透明 Bearer 令牌。OAuth 端点及其元数据独立于此 REST 契约。下方参考与后端使用同一份已提交的 OpenAPI 文档。\n\n可从文档生成客户端，或运行下方 Prism 模拟服务。所有响应示例仅供说明。模拟服务无法为应用授权、刷新令牌、维持快照或执行所有权校验。这些流程请用自己的账号测试。"
+      }
+    },
+    "changelog": {
+      "title": "Boardsesh API 更新日志",
+      "description": "查看版本化 API 契约的变化，最新条目在前。",
+      "contract": {
+        "title": "契约变化",
+        "body": "条目来自同一份已提交的更新日志，CI 会将其与生成的 OpenAPI 文档校验。新增字段和路由仍属于 v1，删除和重命名则需要新的主版本。更新客户端时请查看此页。"
+      }
+    }
+  },
+  "webhooks": {
+    "open": "Webhook",
+    "title": "{{app}} 的 Webhook",
+    "description": "日志变化、训练结束或连接终止时接收通知。通知不包含攀爬数据。",
+    "loading": "正在加载 Webhook 设置…",
+    "failed": "无法保存或加载 Webhook 设置，请重试。",
+    "retry": "重试",
+    "url": "HTTPS 端点 URL",
+    "urlHelp": "公开 HTTPS，端口 443。拒绝私有地址和重定向。",
+    "events": "通知事件",
+    "enabled": "启用投递",
+    "save": "保存 Webhook",
+    "saving": "正在保存…",
+    "saved": "Webhook 已保存。",
+    "testQueued": "测试投递已排队，刷新投递列表可查看结果。",
+    "secretOnce": "请立即复制密钥，此后不会再次显示。",
+    "secret": "Webhook 签名密钥",
+    "rotationHelp": "轮换后的 24 小时内，请求会携带两个密钥的签名。请在旧密钥过期前更新接收端。",
+    "rotate": "轮换签名密钥",
+    "test": "发送测试投递",
+    "disable": "停用投递",
+    "enable": "重新启用投递",
+    "deliveries": "最近投递",
+    "refresh": "刷新投递",
+    "noDeliveries": "暂无投递。",
+    "delivery": "{{event}} · {{status}} · {{attempts}} 次尝试 · HTTP {{code}}",
+    "noResponse": "无响应",
+    "close": "关闭",
+    "endpointGone": "此端点返回了 HTTP 410。请修复端点，再重新启用投递。",
+    "failuresDisabled": "连续失败后投递已停用。请修复端点后重新启用。",
+    "reauthBody": "更改 Webhook 设置或轮换密钥，需要最近 {{minutes}} 分钟内的登录验证。请重新登录，以保护通知投递地址。",
+    "reauthForm": "重新登录会离开此页面并清除未保存的 Webhook 修改。继续前请复制端点 URL。",
+    "deliveryStatus": {
+      "delivered": "已投递",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "retrying": "重试中",
+      "pending": "等待中"
+    },
+    "rotationAvailableAfter": "你可在 {{time}} 后再次轮换。"
+  }
+}
