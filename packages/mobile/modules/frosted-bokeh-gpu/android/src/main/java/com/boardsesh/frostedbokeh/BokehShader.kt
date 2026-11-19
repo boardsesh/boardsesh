@@ -20,7 +20,9 @@ internal class AgslBokehPainter : BokehPainter {
 
     override fun draw(canvas: Canvas, width: Int, height: Int, blobs: List<BokehBlob>, base: FloatArray,
                       blend: Float, density: Float, time: Float, drift: Float, swell: Float, breathing: Boolean) {
-        blobs.forEachIndexed { index, blob ->
+        // BokehMotion caps what it hands over; the uniform arrays hold no more.
+        val drawn = if (blobs.size > MAX_BLOBS) blobs.subList(0, MAX_BLOBS) else blobs
+        drawn.forEachIndexed { index, blob ->
             val offset = index * 4
             geometry[offset] = blob.x
             geometry[offset + 1] = blob.y
@@ -29,12 +31,13 @@ internal class AgslBokehPainter : BokehPainter {
             colors[offset] = blob.red
             colors[offset + 1] = blob.green
             colors[offset + 2] = blob.blue
-            colors[offset + 3] = 1f
+            // The light's breathing seed, so its phase follows the hold, not the slot.
+            colors[offset + 3] = blob.seed
         }
         shader.setFloatUniform("geometry", geometry)
         shader.setFloatUniform("colors", colors)
         shader.setFloatUniform("base", base)
-        shader.setIntUniform("count", blobs.size)
+        shader.setIntUniform("count", drawn.size)
         shader.setFloatUniform("blend", blend)
         shader.setFloatUniform("density", density)
         shader.setFloatUniform("time", time)
@@ -46,6 +49,7 @@ internal class AgslBokehPainter : BokehPainter {
 
     companion object {
         // Metal's BOKEH_FALLOFF and orbit, with a constant loop bound for AGSL.
+        // The orbit's phase is each light's seed, in its colour's alpha.
         // Inputs and blending stay in sRGB. Convert only the finished pixel to
         // Canvas's working color space (also correct on wide-gamut windows).
         internal const val SOURCE = """
@@ -83,7 +87,7 @@ internal class AgslBokehPainter : BokehPainter {
                         float4 blob = geometry[index];
                         float2 centre = blob.xy;
                         float peak = blob.w;
-                        float ordinal = float(index);
+                        float ordinal = colors[index].a;
                         if (motion > 0.5) {
                             float2 orbit = float2(sin(time * 0.55 + ordinal * 1.7), cos(time * 0.42 + ordinal * 2.3));
                             centre += orbit * (drift * inversesqrt(max(dot(orbit, orbit), 1.0)));

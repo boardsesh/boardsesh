@@ -6,7 +6,8 @@
 // command. With the look on, a supporting binary gets the look and seven-number
 // frames. Everywhere else (kill switch, Reduce Motion, older binaries) the
 // native view must get exactly what it got before the look existed: the frames
-// of the carousel with the shipped transition, and no look.
+// of the carousel with the shipped transition, and no look. Supporting binaries
+// receive an explicit null to clear a look that was already mounted.
 import { act, cleanup, render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +15,7 @@ import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardArtReadiness } from '../../../lib/board-render/ready-board-art';
 import type { BoardTransition } from '../board-transition';
+import type { BoardSwapFrame } from '../swap-look';
 import type { SwipePager } from '../use-swipe-pager';
 
 /**
@@ -246,7 +248,7 @@ function makePager() {
   } as unknown as SwipePager;
 }
 
-function mountCarousel(transition?: BoardTransition) {
+function mountCarousel(transition?: BoardTransition, swapFrameMirror?: SharedValue<BoardSwapFrame | null>) {
   const pager = makePager();
   const pageArt = runtime.makeShared<Readonly<Record<number, BoardArtReadiness>>>({});
   const element = (next?: BoardTransition) =>
@@ -263,6 +265,7 @@ function mountCarousel(transition?: BoardTransition) {
       zoomStyle: {},
       onUnavailable: () => {},
       transition: next,
+      swapFrameMirror,
     });
   const view = render(element(transition));
   return { pager, rerender: (next?: BoardTransition) => view.rerender(element(next)) };
@@ -370,7 +373,8 @@ describe('the player board’s swap look', () => {
     arrange();
     const player = sent();
     const shipped = sent(SHIPPED);
-    expect(player.swapLook).toBeUndefined();
+    if (controls.swapLookVersion >= 2) expect(player.swapLook).toBeNull();
+    else expect(player.swapLook).toBeUndefined();
     expect(player.commands).toEqual(shipped.commands);
     for (const command of player.commands) expect(command).toHaveLength(5);
   });
@@ -378,7 +382,7 @@ describe('the player board’s swap look', () => {
   it('on iOS holds the look until Differentiate Without Color reads off', () => {
     controls.differentiateWithoutColor = 'unknown';
     const player = sent();
-    expect(player.swapLook).toBeUndefined();
+    expect(player.swapLook).toBeNull();
     expect(player.commands).toEqual(sent(SHIPPED).commands);
   });
 
@@ -408,7 +412,7 @@ describe('the player board’s swap look', () => {
     controls.commands = [];
     const { pager, rerender } = mountCarousel();
     swipe(pager);
-    expect(controls.native?.swapLook).toBeUndefined();
+    expect(controls.native?.swapLook).toBeNull();
     controls.reduceMotion = false;
     act(() => rerender());
     expect(controls.native?.swapLook).toBeDefined();
@@ -432,7 +436,7 @@ describe('the player board’s swap look', () => {
     expect(controls.native?.swapLook).toBeDefined();
     controls.killed = true;
     act(() => rerender());
-    expect(controls.native?.swapLook).toBeUndefined();
+    expect(controls.native?.swapLook).toBeNull();
     controls.commands = [];
     swipe(pager);
     const afterKill = controls.commands;
@@ -446,5 +450,49 @@ describe('the player board’s swap look', () => {
     swipe(shipped.pager);
     expect(weightsShown(afterKill)).toEqual(weightsShown(controls.commands));
     for (const command of afterKill) expect(command).toHaveLength(5);
+  });
+});
+
+describe('the frost mirror (option I)', () => {
+  /** A mirror that records every value written to it. */
+  function recordingMirror() {
+    const written: (BoardSwapFrame | null)[] = [];
+    const mirror = {
+      get value() {
+        return written.at(-1) ?? null;
+      },
+      set value(next: BoardSwapFrame | null) {
+        written.push(next);
+      },
+    };
+    return { mirror: mirror as unknown as SharedValue<BoardSwapFrame | null>, written };
+  }
+
+  it('copies every frame the board draws, look codes included, for the wall button', () => {
+    runtime.reset();
+    controls.commands = [];
+    const { mirror, written } = recordingMirror();
+    const { pager } = mountCarousel(undefined, mirror);
+    swipe(pager);
+    // The board's own commands, without their sequence: the same frames, in order.
+    const boardFrames = controls.commands.map(([position, outgoing, incoming, shared, , out, into]) => [
+      position,
+      outgoing,
+      incoming,
+      shared,
+      out,
+      into,
+    ]);
+    expect(written.slice(-boardFrames.length)).toEqual(boardFrames);
+    cleanup();
+    expect(written.at(-1)).toBeNull();
+  });
+
+  it('writes null on a board that only wipes, so the frost runs its own release', () => {
+    runtime.reset();
+    controls.apiVersion = 5;
+    const { mirror, written } = recordingMirror();
+    mountCarousel(undefined, mirror);
+    expect(written).toEqual([null]);
   });
 });

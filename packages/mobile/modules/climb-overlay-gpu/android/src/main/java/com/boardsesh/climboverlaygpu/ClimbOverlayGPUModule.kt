@@ -28,18 +28,11 @@ class ClimbOverlayGPUModule : Module() {
             "apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION,
             "assetApiVersion" to 0,
             "swapCommandApi" to OverlaySwapCommand.API,
+            // Protocol support only; no EGL or shader compiler runs while reading constants.
+            "swapLookVersion" to OverlaySwapLook.VERSION,
         )
-        // The swap look: the version iOS reports when this phone builds the look's
-        // program, else 0. At 2 the app sends the look and seven-number swap frames
-        // (OverlaySwapLook, OverlaySwapCommand). JS reads it once, at import; the
-        // probe started below has normally finished by then (OverlaySwapLookProgram).
-        Constant("swapLookVersion") { OverlaySwapLookProgram.version() }
-        // How that probe ended ({ result, ms, failure? }): the board motion lab's
-        // status line and a Sentry breadcrumb say why the look is off. Android only.
-        Constant("swapLookProbe") { OverlaySwapLookProgram.constant() }
         OnCreate {
             application = appContext.reactContext?.applicationContext
-            OverlaySwapLookProgram.probe(application)
             application?.registerComponentCallbacks(callbacks)
         }
         OnDestroy {

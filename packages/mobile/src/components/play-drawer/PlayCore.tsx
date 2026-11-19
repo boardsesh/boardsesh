@@ -172,7 +172,11 @@ import {
   type KeepLightingPlan,
 } from '../../lib/keep-lighting';
 import { useAuth } from '../../providers/auth-provider';
-import { useBoardseshGradeEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
+import {
+  useBoardseshGradeEnabled,
+  useWallFrostMotionEnabled,
+  useWallSwipeToDriveEnabled,
+} from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useClimb, useGymBoards, useProfile } from '../../lib/graphql/hooks';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
@@ -224,11 +228,18 @@ import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
 import type { WallGlowInput } from './use-wall-glow';
+import type { BoardSwapFrame } from './swap-look';
+import type { WallControlSwap } from './WallControlButton';
+import { PLAYER_SWAP_LOOK_ENCODED } from './player-swap-look';
+import { readFrostedBokehSwapFrameApi } from '../../../modules/frosted-bokeh-gpu/src/swap-frame-api';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { buildWallGlowInput } from './wall-glow-input';
 import { wallControlFrostHasLeds, wallControlUsesFrost } from './wall-control-frost';
 import { boardHasLights, litByWallDevice } from '../../lib/boards/board-lighting';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
+/** Whether this binary's wall-button frost can follow the board's swap; read once. */
+const FROST_FOLLOWS_SWAP = readFrostedBokehSwapFrameApi() >= 1;
 /** A workout stage holds the top bar: the board's value names no list position then. */
 const NO_TRACK_LABEL: TrackLabelModel = { kind: 'hidden' };
 import { useWallHolderIdentity } from './use-wall-holder-name';
@@ -2855,6 +2866,58 @@ export function PlayCore({
     wallGlowFrames,
     isMirrored,
   ]);
+  // The frost follows the board's swap (option I): the board copies each swap
+  // frame here on the UI thread, and the button gets the neighbours' holds once
+  // per pair: only while the frost is up and moving (the flag, no Reduce
+  // Motion) on a binary whose frost can follow. Anywhere else nothing parses.
+  const frostSwapFrames = useSharedValue<BoardSwapFrame | null>(null);
+  const frostMotionOffered = useWallFrostMotionEnabled();
+  const reduceMotion = useReduceMotion();
+  const frostFollowsBoard = wallGlowShown && FROST_FOLLOWS_SWAP && frostMotionOffered && !reduceMotion;
+  const nextGlowFrames = frostFollowsBoard ? (nextPeekFrames ?? '') : '';
+  const previousGlowFrames = frostFollowsBoard ? (prevPeekFrames ?? '') : '';
+  const holdPlacements = boardRenderData?.holdsData ?? EMPTY_HOLD_PLACEMENTS;
+  const nextGlowParsed = useParseFrames(nextGlowFrames, boardName as BoardName, holdPlacements, isMirrored);
+  const previousGlowParsed = useParseFrames(previousGlowFrames, boardName as BoardName, holdPlacements, isMirrored);
+  const nextClimbUuid = nextHeaderClimb?.uuid ?? null;
+  const previousClimbUuid = previousHeaderClimb?.uuid ?? null;
+  const nextWallGlowInput = useMemo<WallGlowInput | null>(() => {
+    if (!nextGlowFrames || !boardRenderData) return null;
+    return buildWallGlowInput({
+      parsedHolds: nextGlowParsed,
+      roleColors: holdStateColours,
+      boardWidth: boardRenderData.boardWidth,
+      boardHeight: boardRenderData.boardHeight,
+      climbUuid: nextClimbUuid,
+      frames: nextGlowFrames,
+      mirrored: isMirrored,
+    });
+  }, [nextGlowFrames, boardRenderData, nextGlowParsed, holdStateColours, nextClimbUuid, isMirrored]);
+  const previousWallGlowInput = useMemo<WallGlowInput | null>(() => {
+    if (!previousGlowFrames || !boardRenderData) return null;
+    return buildWallGlowInput({
+      parsedHolds: previousGlowParsed,
+      roleColors: holdStateColours,
+      boardWidth: boardRenderData.boardWidth,
+      boardHeight: boardRenderData.boardHeight,
+      climbUuid: previousClimbUuid,
+      frames: previousGlowFrames,
+      mirrored: isMirrored,
+    });
+  }, [previousGlowFrames, boardRenderData, previousGlowParsed, holdStateColours, previousClimbUuid, isMirrored]);
+  const wallSwap = useMemo<WallControlSwap | undefined>(
+    () =>
+      frostFollowsBoard
+        ? {
+            frames: frostSwapFrames,
+            centerPage: swipeCenterPage,
+            previous: previousWallGlowInput,
+            next: nextWallGlowInput,
+            look: PLAYER_SWAP_LOOK_ENCODED,
+          }
+        : undefined,
+    [frostFollowsBoard, frostSwapFrames, swipeCenterPage, previousWallGlowInput, nextWallGlowInput],
+  );
   // View options draws its buttons preview for the board on screen.
   const buttonsPreviewBoard = useMemo(
     () => ({ supportsMirroring, angleAvailable, angle: activeAngle, showLightbulb: hasBluetooth }),
@@ -3106,6 +3169,7 @@ export function PlayCore({
       // The board control's one model and one handler, whichever view draws it.
       wallControl={wallControl}
       wallGlow={wallGlowShown ? wallGlowInput : null}
+      wallSwap={wallSwap}
       miniPlayerMirrors={miniPlayerMirrors}
       onWallControlPress={wallControlHandlers.press}
       onWallControlLongPress={wallControlHandlers.longPress}
@@ -3462,6 +3526,7 @@ export function PlayCore({
                                 pager={swipePager}
                                 centerPage={swipeCenterPage}
                                 dismissRef={dismissGestureRef}
+                                swapFrameMirror={frostFollowsBoard ? frostSwapFrames : undefined}
                               />
                             ) : (
                               <BoardRenderUnavailable

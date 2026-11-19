@@ -170,7 +170,7 @@ These native changes require a new store binary. An OTA cannot replace the nativ
 crash handler on an installed binary. The unwinder fix preserves the original
 failure; it does not resolve an application's underlying out-of-memory condition.
 
-Worklets 0.13.1 is a compatible patch for Reanimated 4.7.1 and React Native 0.88.1.
+Worklets 0.13.1 is a compatible patch for Reanimated 4.7.2 and React Native 0.88.1.
 It is explicitly excluded from Expo's exact 0.13.0 recommendation while the Expo
 58 native patch set stays coordinated. This patch updates Jest package resolution;
 it is not an out-of-memory fix.

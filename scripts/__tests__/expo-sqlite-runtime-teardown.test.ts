@@ -47,7 +47,12 @@ describe.skipIf(process.platform !== 'darwin')('Expo native runtime teardown', (
     const harness = fixture
       .replace(
         '// INSERT_APP_CONTEXT_METHODS',
-        ['public func destroy()', 'private func postAppContextDestroysOnce()', 'deinit {']
+        [
+          'internal var ownsRuntime = false',
+          'public func destroy()',
+          'private func postAppContextDestroysOnce()',
+          'deinit {',
+        ]
           .map((declaration) => swiftBlock(coreSource, declaration))
           .join('\n'),
       )
@@ -114,13 +119,15 @@ describe.skipIf(process.platform !== 'darwin')('Expo native runtime teardown', (
 
   it.each([
     'lifecycle',
+    'owned-runtime-deinit',
+    'external-runtime-deinit',
     'retained-context',
     'admitted-prepare',
     'same-queue',
     'other-module-queue',
     'init-close-lock-order',
     'concurrent-exec',
-  ])('%s closes abandoned writers without touching the next runtime', async (scenario) => {
+  ])('%s preserves runtime and database lifetime guarantees', async (scenario) => {
     const { stdout } = await executeFile(executable, [scenario, join(temporaryDirectory, `${scenario}.db`)], {
       timeout: 10_000,
       maxBuffer: 1024 * 1024,

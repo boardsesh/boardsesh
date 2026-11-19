@@ -1,5 +1,11 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import Animated, { runOnUI, useDerivedValue, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnUI,
+  useAnimatedReaction,
+  useDerivedValue,
+  type AnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { BoardImageNative } from '../BoardImageNative';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
@@ -8,7 +14,7 @@ import { CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useWallSwap } from './use-wall-swap';
 import { playerRevealMode } from './wall-swap';
-import { encodeSwapLook } from './swap-look';
+import { encodeSwapLook, type BoardSwapFrame } from './swap-look';
 import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 import { usePlayerBoardTransition } from './use-player-board-transition';
 
@@ -32,6 +38,12 @@ type Props = {
   transition?: BoardTransition;
   /** The board motion lab's status line; nothing in production passes one. */
   diagnostics?: BoardRenderDiagnostics;
+  /**
+   * Gets a copy of each wall-swap frame on the UI thread, for the wall button's
+   * frost to follow (option I), and null while this board draws no swap (the
+   * wipe) or once it unmounts. Nothing crosses to the JS thread.
+   */
+  swapFrameMirror?: SharedValue<BoardSwapFrame | null>;
 };
 
 /** One photograph and one native compositor; the header still rides the pager.
@@ -52,6 +64,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   onCurrentArtReadinessChange,
   transition: requestedTransition,
   diagnostics,
+  swapFrameMirror,
 }: Props) {
   const { anchorPage, translateX, slideWidth } = pager;
   const stationaryMotion = pager.stationaryMotion;
@@ -74,6 +87,20 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   // The wall swap keeps its own clock and weights; see wall-swap.ts.
   const revealMode = playerRevealMode(climbOverlayGpuApiVersion, boardTransition?.revealMode);
   const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap', boardTransition);
+  const mirrorsSwap = revealMode === 'swap';
+  useAnimatedReaction(
+    () => (swapFrameMirror ? (mirrorsSwap ? swapFrame.value : null) : undefined),
+    (frame) => {
+      if (swapFrameMirror && frame !== undefined) swapFrameMirror.value = frame;
+    },
+    [swapFrameMirror, mirrorsSwap, swapFrame],
+  );
+  useLayoutEffect(
+    () => () => {
+      if (swapFrameMirror) swapFrameMirror.value = null;
+    },
+    [swapFrameMirror],
+  );
   const reduceMotion = boardTransition?.reduceMotion;
   const look = boardTransition?.look;
   const swapLook = useMemo(() => (look ? encodeSwapLook(look) : undefined), [look]);

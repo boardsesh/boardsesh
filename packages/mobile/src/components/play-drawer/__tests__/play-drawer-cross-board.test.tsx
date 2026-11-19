@@ -115,6 +115,8 @@ const drawerSections = vi.hoisted(() => ({
   },
   ready: true,
 }));
+// The wall button's frost follows the board only without Reduce Motion (PlayCore); off here.
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('../../../lib/play-drawer-sections-preference', () => {
   const order = [
     'activeHolds',

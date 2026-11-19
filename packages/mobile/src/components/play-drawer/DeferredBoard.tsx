@@ -1,9 +1,11 @@
 import { memo, type ComponentType, type MutableRefObject, type RefObject } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { GestureType } from 'react-native-gesture-handler';
+import type { SharedValue } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SwipeBoardCarousel } from './SwipeBoardCarousel';
 import type { SwipePager } from './use-swipe-pager';
+import type { BoardSwapFrame } from './swap-look';
 import { useTheme } from '../../providers/theme-provider';
 import type { ReadyBoardArtIdentity, ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 
@@ -53,6 +55,8 @@ type DeferredBoardProps = {
   centerPage: number;
   /** RNGH ref to the drawer-dismiss Pan, forwarded to the zoomed-only board pan. */
   dismissRef?: MutableRefObject<GestureType | undefined>;
+  /** Where the board copies its wall-swap frames for the wall button's frost (`StationaryBoardCarousel`). */
+  swapFrameMirror?: SharedValue<BoardSwapFrame | null>;
 };
 
 /** The persistent current board mounts with the player, before JS layout callbacks. */

@@ -21,7 +21,19 @@ type GpuProps = {
   onRenderError?: () => void;
 };
 const gpu = vi.hoisted(() => ({ present: true, last: null as GpuProps | null }));
+// A binary from before the swap-frame API: the frost still glides (`glideMs`).
+// wall-glow-swap.test.tsx covers the newer binaries.
+vi.mock('react-native-reanimated', () => ({
+  default: { createAnimatedComponent: (component: unknown) => component, View: 'div' },
+  useAnimatedProps: (factory: () => unknown) => factory(),
+  useAnimatedStyle: (factory: () => unknown) => factory(),
+  useAnimatedRef: () => ({ current: null }),
+  useAnimatedReaction: () => undefined,
+  useSharedValue: (initial: unknown) => ({ value: initial }),
+  dispatchCommand: () => undefined,
+}));
 vi.mock('../../../../modules/frosted-bokeh-gpu/src/index', () => ({
+  frostedBokehSwapFrameApi: 0,
   get NativeFrostedBokehGPU() {
     return gpu.present
       ? (props: GpuProps) => {
@@ -215,6 +227,15 @@ describe('WallGlow, moving on the GPU', () => {
     // The fade, the frost and the grain stay React Native, over the shader.
     expect(view.getByTestId('wall-glow-label-fade')).toBeTruthy();
     expect(view.getByTestId('wall-glow-frost')).toBeTruthy();
+  });
+
+  it('sends an older binary none of the swap props, and no hold ids or seeds', () => {
+    render(createElement(WallGlow, { layer: layer(), width: 360, moving: true }));
+    const props = gpu.last as unknown as Record<string, unknown>;
+    for (const name of ['swapClimbs', 'swapLook', 'releaseMs', 'swapFrame', 'animatedProps']) {
+      expect(props[name]).toBeUndefined();
+    }
+    expect(gpu.last?.blobs.every((blob) => !('seed' in blob) && !('id' in blob))).toBe(true);
   });
 
   it('glides in the shader, so React Native runs no cross-fade of its own', () => {

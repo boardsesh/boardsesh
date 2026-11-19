@@ -234,7 +234,7 @@ install, since the device couldn't verify the manifest came from us.
    [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.21.7` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.21.10` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -248,22 +248,29 @@ install, since the device couldn't verify the manifest came from us.
 
 ## Expo SDK 58 native upgrade
 
-The release train uses Expo 58.0.21, React Native 0.88.1 and React 19.3.0.
-The October patch refresh follows Expo 58.0.21's bundled version map and keeps
-every Expo dependency exact-pinned. It also updates Screens to 4.30.1, Sentry to
-8.33.0 with CLI 3.8.2, and edge-to-edge to 1.8.2. React and ReactDOM remain on
-19.3.0, Gesture Handler on 3.3.0, Worklets on 0.13.0, DateTimePicker on 9.2.1,
-and safe-area-context on 5.10.1. Preserve the existing Expo exclusions and source
-builds. The RN scheduler, Screens, fingerprint, dev launcher, Updates, image, UI
-and modules-core patches are retained for the new versions. Both platforms need
-matching replacement native binaries before receiving bundles for these fingerprints.
+The release train uses Expo 58.0.26, React Native 0.88.1 and React 19.3.0.
+The November patch refresh follows Expo 58.0.26's bundled version map and keeps
+every Expo dependency exact-pinned. Modules Core advances to 58.1.0, Router to
+58.0.32, UI to 58.0.29, SQLite to 58.0.18, and fingerprint to 0.21.10. The root
+Expo CLI stays aligned at 58.1.21. Safe-area-context follows the bundled 5.11.1;
+the existing Reanimated and SVG exclusions allow compatible patches 4.7.2 and
+15.16.1. The isolated browser runtime also pins Reanimated 4.7.2.
 
-The modules-core patch also follows upstream's `AsyncFunctionDefinition` failure
-pattern: bind the existing `Exception` directly instead of casting it to `any Error`
-inside `switch consume result`. The redundant existential pattern crashes Swift
-6.4.2's SIL generation during Xcode 27.2 source builds. Preserve `consume` for the
-noncopyable success value and keep the runtime-teardown patch alongside this fix.
-The installed-source guard rejects the crashing pattern. Upstream reference:
+React and ReactDOM remain on 19.3.0, Gesture Handler on 3.3.0, Worklets on 0.13.1,
+and DateTimePicker on 9.2.1. React Native 0.88.1 remains the latest stable release
+at this refresh. Preserve the existing Expo exclusions and source builds. The RN
+scheduler, Screens, fingerprint, dev launcher, Updates, image, UI, SQLite and
+modules-core patches are retained for the new versions. Both platforms need
+matching replacement native binaries before receiving bundles for these fingerprints.
+On fresh native builds, check sheet rotation and tab safe areas, Android layout
+animations, SQLite close/reopen, and cold/warm app launch.
+
+Modules Core 58.1.0 supplies the `AsyncFunctionDefinition` compiler fix upstream:
+bind the existing `Exception` directly instead of casting it to `any Error` inside
+`switch consume result`. The redundant existential pattern crashes Swift 6.4.2's
+SIL generation during Xcode 27.2 source builds. The local patch retains runtime
+teardown and Android Fabric view commands; the installed-source guard still
+rejects the crashing compiler pattern. Upstream reference:
 [`AsyncFunctionDefinition.swift`](https://github.com/expo/expo/blob/sdk-58/packages/expo-modules-core/ios/Core/Functions/AsyncFunctionDefinition.swift).
 
 The iOS PR workflow creates a simulator owned by that CI run and attempt, using
@@ -479,7 +486,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.25.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.29.patch`.
 
 ### Invariant: an OTA can't claim a manifest flag the binary lacks
 
@@ -1761,7 +1768,7 @@ leaves the path untouched, over-triggering a build rather than hiding a native c
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
 for a genuine nested dependency. The exact-pinned patch
-`patches/@expo__fingerprint@0.21.7.patch` collapses
+`patches/@expo__fingerprint@0.21.10.patch` collapses
 `node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
 file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
 and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
@@ -2006,7 +2013,7 @@ publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish 
 
 #### The root fix: `commitTime` is the commit's date
 
-The rail above routes around the defect; `patches/expo-updates@58.0.19.patch` removes it (#5021).
+The rail above routes around the defect; `patches/expo-updates@58.0.22.patch` removes it (#5021).
 The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
 **HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
 — the semantics everyone already assumed. It required replacement native builds, because `patches/**` is a

@@ -1,5 +1,7 @@
 'use client';
 
+import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
+import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
 import React from 'react';
 import { useConsent } from '../consent/consent-provider';
 import Box from '@mui/material/Box';
@@ -64,7 +66,7 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
   // not `/gyms?board=kilter` — `/gyms/kilter` is a page with its own copy and
   // its own canonical (see `app/gyms/page.tsx`), and the query form would point
   // at a URL that self-canonicalises away.
-  const linkGroups: { id: string; heading: string; links: { href: string; label: string }[] }[] = [
+  const linkGroups: { id: string; heading: string; links: { href: WebsiteNavTarget; label: string }[] }[] = [
     {
       id: 'gyms',
       heading: t('footer.groups.findAGym'),
@@ -89,7 +91,7 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
         // The only crawl path into /build-plans, and it appears only when the
         // `cnc-packs` flag is on — while it is off the route 404s, and a footer
         // link to a 404 on every page of the site is a real SEO liability.
-        ...(showBuildPlans ? [{ href: '/build-plans', label: t('footer.links.buildPlans') }] : []),
+        ...(showBuildPlans ? [{ href: '/build-plans' as const, label: t('footer.links.buildPlans') }] : []),
       ],
     },
     {
@@ -106,7 +108,13 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
     <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>
         <Box className={styles.intro}>
-          <MuiLink component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} underline="none">
+          <MuiLink
+            component={LocaleLink}
+            href="/"
+            onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', '/'))}
+            aria-label={t('ariaLabels.home')}
+            underline="none"
+          >
             <BrandLockup />
           </MuiLink>
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch', fontSize: 16, lineHeight: 1.6 }}>
@@ -116,6 +124,7 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
             label={t('header.startClimbing')}
             ariaLabel={t('ariaLabels.startClimbing')}
             size="medium"
+            placement="footer"
             sx={FOOTER_START_CLIMBING_SX}
           />
         </Box>
@@ -127,12 +136,28 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
                 {group.heading}
               </Typography>
               {group.id === 'small-print' && (
-                <MuiLink component="button" type="button" onClick={openChoices} variant="body2" sx={LINK_SX}>
+                <MuiLink
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    trackWebsiteJourneyEvent(navLinkClicked('footer', 'privacy-choices'));
+                    openChoices();
+                  }}
+                  variant="body2"
+                  sx={LINK_SX}
+                >
                   {consentTranslation('privacyChoices')}
                 </MuiLink>
               )}
               {group.links.map(({ href, label }) => (
-                <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={LINK_SX}>
+                <MuiLink
+                  key={href}
+                  component={LocaleLink}
+                  href={href}
+                  variant="body2"
+                  sx={LINK_SX}
+                  onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', href))}
+                >
                   {label}
                 </MuiLink>
               ))}

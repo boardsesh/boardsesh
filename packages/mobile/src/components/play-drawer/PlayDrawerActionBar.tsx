@@ -9,7 +9,7 @@ import type { BusyWallQuestionModel } from './busy-wall-question';
 import { WorkoutOutcomeRow } from './WorkoutOutcomeRow';
 import { AnglePill } from './AnglePill';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
-import { WALL_CONTROL_HEIGHT, WallControlButton } from './WallControlButton';
+import { WALL_CONTROL_HEIGHT, WallControlButton, type WallControlSwap } from './WallControlButton';
 import { WallControlBulb } from './WallControlBulb';
 import { EMPTY_WALL_CONTROL, type WallControlModel } from './wall-control';
 import type { WallGlowInput } from './use-wall-glow';
@@ -80,6 +80,8 @@ type PlayDrawerActionBarProps = {
   boardControl?: PlayerBoardControl;
   /** The lit wall button's glow (F1b): the climb's lit holds, while it is lit. */
   wallGlow?: WallGlowInput | null;
+  /** The board's swap, for the wall button's moving frost to follow (`WallControlSwap`). */
+  wallSwap?: WallControlSwap;
   /**
    * The MiniPlayer beside the player stands in for its first row (#7000: the
    * open Duo's pane, a tablet's player route; `playerMirroredByMiniPlayer`).
@@ -193,6 +195,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onWallControlSwipeCancel,
   boardControl = 'wallButton',
   wallGlow = null,
+  wallSwap,
   miniPlayerMirrors = false,
   showLightbulb = true,
   hasWall = true,
@@ -388,6 +391,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <WallControlButton
             model={wallControl}
             glow={wallGlow}
+            swap={wallSwap}
             onPress={pressWallButton}
             onLongPress={holdWallButton}
             onDrive={driveWallButton}
@@ -423,6 +427,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               model={wallControl}
               compact
               glow={wallGlow}
+              swap={wallSwap}
               onPress={pressWallButton}
               onLongPress={holdWallButton}
               onDrive={driveWallButton}
@@ -542,6 +547,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                       // the bulb row's buttons it doesn't.
                       spansRow={wallControlSpansRow}
                       glow={wallGlow}
+                      swap={wallSwap}
                       onPress={pressWallButton}
                       onLongPress={holdWallButton}
                       onDrive={driveWallButton}

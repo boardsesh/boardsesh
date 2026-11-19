@@ -89,8 +89,10 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
   /**
    * `swapLookVersion` 2 (iOS and Android) only: the swap look (`encodeSwapLook`
    * in play-drawer/swap-look.ts). The player sends `PLAYER_SWAP_LOOK`'s; the
-   * board motion lab sends its variant's, again when a slider is released. Null
-   * or absent draws the API 7 swap; Reduce Motion turns it off natively, and on
+   * board motion lab sends its variant's, again when a slider is released. A look
+   * is an explicit request to lazily compile the optional Android shader on the
+   * render thread once this view is eligible. Null or absent draws the API 7
+   * swap; Reduce Motion turns it off natively, and on
    * iOS so does Differentiate Without Color.
    */
   swapLook?: readonly number[] | null;

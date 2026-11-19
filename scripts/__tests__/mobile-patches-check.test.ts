@@ -58,7 +58,7 @@ function makeEnv(opts: {
 }
 
 describe('the shipped expo-sqlite lifetime guards', () => {
-  const sqliteKey = 'expo-sqlite@58.0.14';
+  const sqliteKey = 'expo-sqlite@58.0.18';
   const sqliteRules = REAL_RULES.filter((rule) => rule.package === 'expo-sqlite');
   const helperSource = `
 beginAsyncOperation();
@@ -142,7 +142,7 @@ private func close(database: NativeDatabase) throws {
     },
   ];
 
-  function checkSqliteSources(overrides: Record<string, string> = {}, version = '58.0.14') {
+  function checkSqliteSources(overrides: Record<string, string> = {}, version = '58.0.18') {
     return checkPatchesApplied(
       sqliteRules,
       makeEnv({
@@ -232,7 +232,7 @@ private func postAppContextDestroysOnce() {
 }
 `;
 
-  function checkSource(installedSource: string, version = '58.0.28') {
+  function checkSource(installedSource: string, version = '58.1.0') {
     return checkPatchesApplied(
       [coreRule],
       makeEnv({
@@ -280,7 +280,7 @@ describe('the shipped Expo async-function Swift compiler guard', () => {
       [coreRule],
       makeEnv({
         patchedDependencies: { [coreRule.patchedKey]: `patches/${coreRule.patchedKey}.patch` },
-        versions: { 'expo-modules-core': '58.0.28' },
+        versions: { 'expo-modules-core': '58.1.0' },
         files: { [`expo-modules-core::${coreRule.file}`]: installedSource },
       }),
     );
@@ -1785,7 +1785,7 @@ describe('checkExpoUiAndroidPatchesBuildFromSource', () => {
     package: '@expo/ui',
     file: 'android/src/main/java/expo/modules/ui/LazyRowView.kt',
     sentinels: [],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   };
   const published: AndroidModuleConfig = { android: { publication: { repository: 'local-maven-repo' } } };
 

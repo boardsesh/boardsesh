@@ -19,16 +19,23 @@ final class AppContext {
     registryInitializations += 1
     return ModuleRegistry()
   }()
-  init(registerModules: Bool = true) {
+  init(registerModules: Bool = true, ownsRuntime: Bool = false) {
+    // Match AppContext.create(): ownership must be set before its runtime.
+    self.ownsRuntime = ownsRuntime
+    _runtime = 1
     if registerModules { _ = moduleRegistry }
   }
   var releasedRuntimeObjects = false
-  private var _runtime: Int? = 1 {
+  var onReleaseRuntimeObjects: (() -> Void)?
+  private var _runtime: Int? {
     didSet {
       if _runtime == nil && oldValue != nil { destroy() }
     }
   }
-  private func releaseRuntimeObjects() { releasedRuntimeObjects = true }
+  private func releaseRuntimeObjects() {
+    releasedRuntimeObjects = true
+    onReleaseRuntimeObjects?()
+  }
   // INSERT_APP_CONTEXT_METHODS
 }
 
@@ -152,6 +159,22 @@ if scenario == "lifecycle" {
   let neverRegistered = AppContext(registerModules: false)
   neverRegistered.destroy()
   precondition(neverRegistered.registryInitializations == 0)
+} else if scenario == "owned-runtime-deinit" || scenario == "external-runtime-deinit" {
+  let ownsRuntime = scenario == "owned-runtime-deinit"
+  var events: [String] = []
+  var context: AppContext? = AppContext(ownsRuntime: ownsRuntime)
+  context!.onReleaseRuntimeObjects = { events.append("released-runtime-objects") }
+  context!.moduleRegistry.callback = { events.append("app-context-destroyed") }
+  context = nil
+  // An owned runtime has no external lifecycle owner: ARC teardown must release
+  // its JS objects before notifying modules. The _runtime observer can reenter
+  // destroy(), but modules must receive their notification exactly once.
+  // React Native owns an external runtime, so AppContext's fallback deinit only
+  // notifies modules; it must not release that runtime's objects itself.
+  let expectedFirstEvent = ownsRuntime ? "released-runtime-objects" : "app-context-destroyed"
+  precondition(events.first == expectedFirstEvent, "AppContext deinit notified modules before releasing owned runtime objects")
+  precondition(events.contains("released-runtime-objects") == ownsRuntime, "AppContext deinit ignored runtime ownership")
+  precondition(events.filter { $0 == "app-context-destroyed" }.count == 1, "AppContext deinit delivered teardown twice")
 } else {
   let oldModule = SQLiteModule()
   let oldMain = oldModule.open(path, id: 1)

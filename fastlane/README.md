@@ -22,6 +22,95 @@ cd fastlane && bundle exec fastlane ios next_build_number
 cd fastlane && bundle exec fastlane android next_version_code
 ```
 
+## Pending release — 2.8.0
+
+The next feature release is **2.8.0**, replacing the unreleased 2.7.1 target.
+`packages/mobile/app.config.ts` is the marketing-version source for both stores;
+build numbers and Android versionCodes still come from the store queries below.
+Do not reuse a 2.7.1 binary for this release: the uploaded binary must report 2.8.0.
+
+The copy was reviewed against `main` at `2181f715fd` on 19 November 2026,
+using the last store-accepted native releases rather than the newer 2.7.1 tester
+builds. The platform baselines differ:
+
+| Platform | Accepted release tag | Source commit | Build |
+| --- | --- | --- | --- |
+| iOS | `release/ios-v2.7.0-e171c5f7e69a` | `7b8b3ffef6` | 13 |
+| Android | `release/android-v2.7.0-1e5c2708a946` | `38aa9d1897` | 2001566 |
+
+Apple notes live in all six `metadata/<locale>/release_notes.txt` files. Play
+notes live in all five `metadata/android/<locale>/changelogs/default.txt` files.
+Descriptions, Apple promotional text and Play short descriptions are refreshed
+in the same locales. Descriptions lead with cross-board climbing, shared sessions
+and training, with one compatibility list. Play notes lead with climber benefits. Names, subtitles, search keywords and URLs retain their
+existing positioning.
+
+| User-visible change | Merged evidence |
+| --- | --- |
+| WLED Spraywall setup, optional Bluetooth installation beta, brightness and Wi-Fi auto-off | #7341, #7377, #7468, #7472, #7454 |
+| Home: weekly climbing, climbs at your level, projects and last workout | #7714, #7754, #7759 |
+| Timed workouts for everyone, repeated pyramid descent, timer preferences | #7818, #7822, #7812 |
+| Nearby boards, gym walls, My climbs and Kilter Verified filtering | #7576, #7580, #7643, #7658, #7602, #7388 |
+| Shared link previews and playlist sharing | #7344, #7372, #7380, #7383, #7389, #7410, #7417 |
+| Refreshed layouts, text sizing and accessible climb transitions | #7603, #7622, #7635, #7711, #7720, #7726, #7833 |
+| Simpler Android interface, compact navigation, filter sheets and lock-screen controls | #7325, #7326, #7328, #7330, #7333, #7318, #7352 |
+| GPU-accelerated board rendering on supported boards and devices | #7542, #7556, #7566, #7568, #7644 |
+| Permissioned logbook access, workout handoff from training apps and developer documentation | #7406, #7697, #7776, #7823 |
+
+Keep these limits when revising the copy: WLED auto-off is Wi-Fi-only; Bluetooth
+firmware installation is an opt-in beta for matching controllers. Home sections
+remain customizable. GPU rendering is capability- and rollout-gated, so the
+listing describes supported boards and devices rather than promising every layout.
+The 2.8.0 integration copy includes opening workouts from compatible training
+apps and permissioned logbook access, as confirmed by the release owner on
+19 November 2026. Developer details link to https://www.boardsesh.com/developers/.
+No named third-party app or universal compatibility is promised. These metadata
+changes do not change deployment settings.
+
+**Native build requirement:** #7352 is already merged on `main`. Its Android
+lock-screen card uses a climb-coloured background, bulb and Next in the collapsed
+card, and a timed-drive ring. This feature is Android-only and requires a fresh
+native build. Select 2.8.0 binaries that include the reviewed changes above;
+rebasing this PR does not itself build or publish them.
+
+1. Merge the version and notes before selecting the final native builds.
+   Check the Main Native Release result for a validated 2.8.0 stamp. A version-only
+   change does not change the fingerprint; if no changed native snapshot is
+   waiting, it alone does not start new binaries. The next native change adopts
+   the raised version. For an immediate version-only rebuild, dispatch the native
+   workflows from `main` with `force_native=true` and leave `source_sha` blank.
+2. Confirm the exact 2.8.0 uploads and build tags before preparing store drafts.
+   If an older iOS version is still open, `ios draft_submission` defers rather
+   than renaming it. Inspect its state in App Store Connect and resolve the old
+   draft before rerunning Mobile Store Draft Submission; never attach a 2.7.1
+   build to the 2.8.0 version.
+3. Once the editable iOS version is 2.8.0, push the localized notes with the
+   guarded command below. This lane skips when there is no editable version and
+   refuses a different editable version. Read its result to confirm an upload.
+4. Audit the selected binary, localized notes and screenshots before the separate
+   manual public submission. Play notes travel with `android upload_beta`;
+   `android metadata` only changes listing text.
+
+```bash
+cd fastlane
+bundle exec fastlane ios metadata expected_version:2.8.0
+cd ..
+```
+
+Apple allows 4,000 characters per release note; Play allows 500. Validate every
+locale before uploading:
+
+```bash
+vp test run --project scripts scripts/store-metadata-limits.test.ts --reporter=agent
+```
+
+The automatic Mobile Store Metadata workflow writes the currently editable iOS
+version. Check its target after merging these notes, especially while an older
+draft remains open. The guarded command above and the 2.8.0 draft's metadata
+follow-up ensure the final notes belong to the intended release.
+See the [store release runbook](../docs/mobile-store-release.md) for exact-build
+selection, draft recovery, audits and manual submission.
+
 ## Native tester updates — `android upload_beta`, `ios testflight`
 
 Pushes to `main` and `release/next` automatically build a replacement when the

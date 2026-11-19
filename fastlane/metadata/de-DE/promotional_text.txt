@@ -1,1 +1,1 @@
-Kompatibel mit Kilter, Tension, MoonBoard und mehr. Ergänze deine Spraywall, teile eine Warteschlange mit deiner Crew und sammle deine Begehungen in einer App.
+Trainiere mit 4x4, nimm deine Projekte wieder auf und beleuchte deine Spraywall mit WLED. Ein Routenbuch für deine Boards, eine Warteschlange für deine Crew.

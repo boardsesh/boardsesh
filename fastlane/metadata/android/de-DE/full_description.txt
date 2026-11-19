@@ -1,34 +1,29 @@
-Suche dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, mehr Zeit an der Wand.
+Eine App für deine Boards. Beleuchte Boulder, teile eine Warteschlange mit deiner Crew und sammle deine Begehungen in einem Routenbuch.
 
-GRIFFE BELEUCHTEN
-Suche dir einen beliebigen Boulder, und Boardsesh beleuchtet die Griffe an der Wand über Bluetooth, auf Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper und So iLL. Volle LED-Steuerung auf allen acht, nicht nur Stöbern.
+Kompatibel mit Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper und So iLL sowie deiner Spraywall. Verbinde passende Controller über Bluetooth, um die Griffe zu beleuchten.
 
-EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
-Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Woods, Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
+KLETTERE MIT DEINER CREW
+Starte eine Session, lade deine Crew ein und teile eine Warteschlange, die alle steuern können. Der Board-Verlauf zeigt über Boardsesh beleuchtete Boulder und letzte Begehungen am physischen Board. Am Ende deiner Session bekommst du einen Rückblick.
+
+TRAINIERE AUF DEINE ART
+Kombiniere Warm-ups mit Volumen, Pyramide, Leiter, Grad-Fokus, 4x4, Am Limit oder Im Minutentakt. Schau dir Boulder und Pausen vorab an und beleuchte die Boulder dann nacheinander. Pyramiden können auf denselben Bouldern wieder absteigen.
+
+Öffne Workouts aus kompatiblen Trainings-Apps in Boardsesh und erlaube Apps, dein Routenbuch zu lesen. Infos für Entwickler*innen: https://www.boardsesh.com/developers/
 
 Auch deine Spraywall
-Eine Spraywall zu Hause oder in deiner Halle? Fotografier sie, und Boardsesh findet die Griffe. Korrigier, was fehlt, dann schraub Boulder, leg sie in die Warteschlange und trag Begehungen im selben Routenbuch ein wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben. Teile die Spraywall per Link, dann kann deine Crew darauf auch schrauben. Spraywall abgeschraubt? Setz sie mit einem neuen Foto zurück, und die alte Spraywall wird mit ihren Bouldern und Begehungen archiviert. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert, bereit zum Remixen.
+Fotografiere deine Spraywall, prüfe die vorgeschlagenen Griffe und definiere Boulder auf dem Foto. Teile sie mit deiner Crew, lege Boulder in die Warteschlange und logge Begehungen. Keine LEDs nötig. Setze die Spraywall mit einem neuen Foto zurück; ihre bisherigen Boulder und Begehungen bleiben archiviert.
 
-BOARD-VERLAUF
-Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
-Sieh die über Boardsesh beleuchteten Boulder an diesem Board: Name, wer sie beleuchtet und erstellt hat, Grad, Winkel und die letzten Begehungen.
+Mit WLED und LEDs zeichnest du die Lichter auf deinem Foto ein und speicherst die Einrichtung für deine Crew. Finde Controller im WLAN, stelle die Helligkeit ein und wähle die WLAN-Abschaltautomatik. Passende Controller mit Boardsesh-Bluetooth-Unterstützung beleuchten Boulder auch über Bluetooth; deren Installation bleibt eine freiwillige Beta für kompatible Controller.
 
-BLEIBT VERBUNDEN
-Boardsesh hält die Verbindung zu deinem Board im Hintergrund am Leben, damit die Griffe durch deine Versuche hindurch leuchten, auch wenn der Bildschirm aus ist oder du die App wechselst. Eine laufende Benachrichtigung legt Zurück und Weiter auf deinen Sperrbildschirm, damit du durch die Warteschlange gehst, ohne die App wieder zu öffnen. Kein Neuverbinden zwischen den Bouldern.
+WENIGER HANDY, MEHR KLETTERN
+Eine einfachere Android-Oberfläche und schlankere Navigation geben deinen Bouldern mehr Platz. Die Sperrbildschirmkarte zeigt Glühbirne und Weiter; ein Ring zeigt das zeitgesteuerte Beleuchten. Wähle Countdown-Vibrationen und Pausen auf dem Sperrbildschirm unter Einstellungen > Timer. GPU-beschleunigte Darstellung macht Übergänge auf unterstützten Boards und Geräten flüssiger.
 
-SESSIONS MIT DEINER CREW
-Starte eine Session, und ihr teilt euch als Crew eine Warteschlange, die alle steuern können. Jede*r kann den nächsten Boulder am Board beleuchten. Am Ende bekommst du einen Rückblick mit Auswertung: Begehungen und Versuche, Gradverteilung, deine schwerste Begehung und deinen Fortschritt über die Zeit.
+FINDE DEINEN NÄCHSTEN BOULDER
+Unter Start findest du deine Woche, Boulder auf deinem Niveau und Projekte für den nächsten Versuch. Wähle selbst die sichtbaren Bereiche. Finde Boards in der Nähe mit aktiviertem Standort, filtere Kilters verifizierte Boulder und finde deine eigenen unter Entdecken.
 
-BAU DIR EIN WORKOUT
-Wähle Volumen, Pyramide, Leiter oder Grad-Fokus, lege Zielgrad und Warm-up fest, sieh dir die Boulder vorab an, und beleuchte sie einzeln am Board.
+VERFOLGE DEINEN FORTSCHRITT
+Logge Begehungen, Flashes und Versuche, verfolge deinen Fortschritt über alle Boards und importiere deine Kilter- und Tension-Historie aus Aurora Climbing.
 
-VERFOLG DEIN KLETTERN
-Trage Begehungen, Flashes und Versuche ein, und sieh im Tab Fortschritt zu, wie Begehungen und Grade steigen. Hol dir deine bisherigen Kilter- und Tension-Boulder rüber, indem du dein Routenbuch aus Aurora Climbing importierst.
+Kostenlos, ohne Werbung, Open Source.
 
-FINDE MEHR ZUM KLETTERN
-Folge deiner Crew und Routenbauer*innen, suche nach Kletterer*innen, und pinne dir Playlists aus Entdecken.
-
-KOSTENLOS, KEINE WERBUNG, KEIN ABO
-Open Source auf GitHub.
-
-Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu den Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.
+Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.

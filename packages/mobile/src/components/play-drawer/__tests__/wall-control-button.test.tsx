@@ -127,9 +127,16 @@ vi.mock('../WallGlow', () => ({
   WallGlow: ({
     layer,
     moving,
+    swap,
   }: {
     layer: { blobs: unknown[]; blend: string; fade: number; motion?: boolean };
     moving?: boolean;
+    swap?: {
+      centerPage: number;
+      previous: { blobs: unknown[]; motion?: boolean } | null;
+      next: { blobs: unknown[]; motion?: boolean } | null;
+      look?: readonly number[];
+    };
   }) =>
     createElement('div', {
       'data-testid': 'wall-glow',
@@ -137,16 +144,22 @@ vi.mock('../WallGlow', () => ({
       'data-blend': layer.blend,
       'data-moving': String(Boolean(moving)),
       'data-motion-fade': String(Boolean(layer.motion)),
+      'data-swap': swap
+        ? `${swap.centerPage}|${swap.previous ? swap.previous.blobs.length : 'none'}|${swap.next ? swap.next.blobs.length : 'none'}|${swap.next?.motion ? 'motion' : 'still'}|${swap.look?.length ?? 0}`
+        : 'none',
     }),
 }));
 // The moving frost: the flag and whether this binary has the Metal view.
-const frostCtrl = vi.hoisted(() => ({ flag: true, available: true }));
+const frostCtrl = vi.hoisted(() => ({ flag: true, available: true, follows: true }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useWallFrostMotionEnabled: () => frostCtrl.flag,
 }));
 vi.mock('../../FrostedBokeh', () => ({
   get frostedBokehMotionAvailable() {
     return frostCtrl.available;
+  },
+  get frostedBokehFollowsSwap() {
+    return frostCtrl.available && frostCtrl.follows;
   },
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, androidRipple: () => undefined }));
@@ -246,7 +259,7 @@ function tickWindow(secondsLeft: number) {
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 import { act } from '@testing-library/react';
-import { WallControlButton } from '../WallControlButton';
+import { WallControlButton, type WallControlSwap } from '../WallControlButton';
 import type { WallGlowInput } from '../use-wall-glow';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from '../wall-control';
 
@@ -323,6 +336,7 @@ function renderButton(
     compact?: boolean;
     spansRow?: boolean;
     glow?: WallGlowInput | null;
+    swap?: WallControlSwap;
     sample?: boolean;
   } = {},
 ) {
@@ -338,6 +352,7 @@ function renderButton(
       compact: extra.compact,
       spansRow: extra.spansRow,
       glow: extra.glow,
+      swap: extra.swap,
       sample: extra.sample,
     }),
   );
@@ -656,6 +671,43 @@ describe('WallControlButton', () => {
       measure();
       expect(view.getByTestId('wall-glow').dataset).toMatchObject({ moving: 'false', motionFade: 'false' });
       Object.assign(frostCtrl, { flag: true, available: true });
+    });
+
+    describe('following the board swap (option I)', () => {
+      const NEXT_GLOW: WallGlowInput = {
+        key: 'climb-2|frames',
+        holds: [
+          { x: 20, y: 100, color: '#00DD00', id: 4 },
+          { x: 70, y: 30, color: '#FF0000', id: 5 },
+        ],
+        boardWidth: 100,
+        boardHeight: 120,
+      };
+      const swapFor = (): WallControlSwap => ({
+        frames: { value: null } as unknown as WallControlSwap['frames'],
+        centerPage: 7,
+        previous: null,
+        next: NEXT_GLOW,
+        look: [2, 0.25, 0.25, 0.4, 0.4, 0, 0, 0.4, 0.15, 0.05, 0.25, 0, 2, 0.35, 0],
+      });
+
+      it('hands the frost the pair, the neighbours drawn at the pill size with the same motion fade', () => {
+        const view = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW, swap: swapFor() });
+        measure();
+        expect(view.getByTestId('wall-glow').dataset.swap).toBe('7|none|2|motion|15');
+      });
+
+      it.each([
+        ['the binary still glides', { follows: false }, {}],
+        ['the flag is off', { flag: false }, {}],
+        ["it is the preview card's picture", {}, { sample: true }],
+      ] as const)('keeps the swap away from the frost when %s', (_case, ctrl, extra) => {
+        Object.assign(frostCtrl, ctrl);
+        const view = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW, swap: swapFor(), ...extra });
+        measure();
+        expect(view.getByTestId('wall-glow').dataset.swap).toBe('none');
+        Object.assign(frostCtrl, { flag: true, available: true, follows: true });
+      });
     });
 
     // #7017: the coloured look only while this climber drives the board.

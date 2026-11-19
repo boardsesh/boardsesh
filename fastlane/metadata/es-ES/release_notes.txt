@@ -1,47 +1,31 @@
-Boardsesh ya está disponible en italiano.
+Novedades de la versión 2.8.0
 
-SABE CUÁNDO ESTÁS ENCENDIENDO EL PLAFÓN
+MÁS FORMAS DE ENTRENAR
 
-Tocar un bloque lo muestra sin encenderlo. “Poner en el plafón” lo enciende y tienes el mando: tus siguientes bloques se encienden hasta que acabe el tiempo de Ajustes (al principio, 45 s). Desliza el botón a la izquierda para el mando sin fin; toca “Estás al mando del plafón” para parar.
+Crea entrenamientos de 4x4, Al límite y Al minuto, además de Volumen, Pirámide, Escalera y Grado fijo. Previsualiza los bloques y descansos antes de empezar. Las pirámides pueden bajar por los mismos bloques. Elige las vibraciones de la cuenta atrás y si mostrar el descanso en la pantalla de bloqueo desde Ajustes > Temporizadores.
 
-iPad y iPhone Duo: más espacio para el plafón
+RETOMA DONDE LO DEJASTE
 
-En iPad, tus bloques ocupan toda la pantalla y el bloque del muro queda en un minirreproductor abajo. Tócalo para abrir el reproductor. En horizontal, el plafón queda junto a la Cola, tu logbook y la beta. Fija un iPad junto a tu plafón y abre Pantalla de muro desde el minirreproductor para mostrar el bloque a pantalla completa, lo bastante grande para leerlo desde la colchoneta.
+Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para volver a intentar. Consulta tu último entrenamiento e inicia una sesión desde la tarjeta de Sesión. Personaliza las secciones que ves. Con la ubicación activada, el selector acerca los plafones cercanos y los de tu rocódromo. Encuentra tus propios bloques en Descubrir.
 
-Abre tu iPhone Duo y el plafón queda junto a tu lista. Monta un entrenamiento en un Duo abierto y ve los bloques previstos junto a tus fases.
+Ilumina tu Spraywall
 
-Elige dos columnas para la lista de Bloques cuando haya espacio en iPad. Elige los botones del minirreproductor en Opciones de vista, registra un encadene sin abrir el reproductor y accede a Favorito, Playlist y Compartir desde su menú en pantallas anchas.
+Conecta tu Spraywall a WLED por Wi-Fi. Marca agujeros, LED y cable en una foto ampliable, prueba cada presa y guarda la configuración para tu equipo. Busca controladores en tu Wi-Fi, ajusta el brillo y elige cuándo apagar automáticamente la iluminación por Wi-Fi.
 
-TU TEMPORIZADOR DE DESCANSO EN LA PANTALLA BLOQUEADA
+Los controladores compatibles con soporte Bluetooth de Boardsesh también pueden iluminar bloques por Bluetooth. La instalación de ese soporte sigue siendo una beta opcional para controladores compatibles, con comprobaciones de compatibilidad y consentimiento por separado.
 
-Tu cuenta atrás de descanso aparece en la pantalla bloqueada y en la Dynamic Island. Suena un tictac suave en los últimos segundos y un tono cuando acaba el descanso, incluso con el móvil en silencio.
+ENCUENTRA Y COMPARTE TU PRÓXIMO BLOQUE
 
-ENTRENAMIENTOS POR FASES
+Los bloques Verificados de Kilter tienen su propio filtro rápido junto a Grado. Comparte playlists, perfiles, sesiones, rocódromos y plafones con un bloque iluminado en la vista previa del enlace. Las cabeceras de las playlists ponen Compartir a mano.
 
-Monta una sesión con fases: calentamiento, luego una pirámide, luego volumen. Añade una fase a mitad de sesión, da a cada fase sus propios filtros de bloques y mira por dónde vas de un vistazo. Los entrenamientos eligen primero bloques que aún no has encadenado, pueden saltarse los que ya has encadenado o intentado, y pueden completarse con tus bloques Encadenados o Favoritos. Marca una caída o un encadene desde el minirreproductor. El resumen de la sesión reúne tus fases, repeticiones y resultados.
+MÁS FÁCIL DE LEER Y RECORRER
 
-REPRODUCE DESDE LA LISTA QUE TOCASTE
+El renderizado del plafón acelerado por GPU ofrece transiciones más fluidas entre bloques en plafones y dispositivos compatibles.
 
-El reproductor muestra desde qué lista escalas, y al deslizar te quedas en esa lista, desde tu logbook y tus sesiones hasta perfiles y bloques similares. Las playlists se reproducen sin tocar tu cola. Desliza un bloque en cualquier lista para ponerlo a continuación o al final.
+Los colores y diseños renovados dejan más espacio a tus bloques. El texto se adapta mejor al tamaño elegido en tu iPhone y VoiceOver anuncia el nuevo bloque tras deslizar. Las transiciones respetan Reducir movimiento. Los nombres largos vuelven a desplazarse y cambiar el filtro de grado mantiene la lista de Bloques en pantalla.
 
-MÁS OPCIONES A TU MEDIDA
+CONECTA CON APPS DE ENTRENAMIENTO
 
-- Ordena cualquier playlist por dificultad, últimos añadidos, valoración o al azar. Favoritos, Cinco estrellas, Proyectos y las páginas de setters también se ordenan y filtran.
-- Bloques tiene su propia pestaña. Tócala otra vez para Filtros y búsqueda por nombre. En iPhone, Filtros se abre a media altura y se parece a Ajustes de iOS.
-- Elige qué secciones aparecen en Inicio y en qué orden, y si la app abre en Inicio o en Bloques.
-- Ajustes se reduce a seis páginas, con tus temporizadores en un solo sitio.
-- Registra un encadene en un ángulo distinto al del muro.
-- Recibe avisos de comentarios en tus sesiones, bloques, playlists, plafones y rocódromos.
+Abre en Boardsesh entrenamientos de apps de terceros compatibles y permite que las apps lean tu logbook con tu autorización. Información para desarrolladores: https://www.boardsesh.com/developers/
 
-CORRECCIONES PARA TU PRÓXIMA SESIÓN
-
-- Tu logbook, tus favoritos y tus playlists funcionan sin cobertura, y los plafones descargados ya no se descargan de nuevo cada semana.
-- Los escaneos de plafones encuentran MoonBoards y cajas Kilter más nuevas, primero los más cercanos. Boardsesh pide Bluetooth en tu primer escaneo, no al abrir la app.
-- Deslizar hacia abajo vuelve a cerrar el reproductor. Las presas iluminadas siguen visibles mientras navegas.
-- En rocódromos con varios plafones, la conexión sigue al plafón del bloque actual. El botón indica si está encendido, conectando o apagado, también cuando tu crew lo apaga.
-- Los bloques en espejo conservan su orientación en tu logbook y en el historial de la cola.
-- Borra varias entradas del logbook seguidas, o las de un bloque agrupadas en un mismo día.
-- Los bloques que quitas de Favoritos salen de la lista al instante.
-- Mejor soporte de VoiceOver y de texto grande.
-
-Gratis, sin anuncios, código abierto.
+Gratis, sin anuncios y de código abierto.

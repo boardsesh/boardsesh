@@ -1,5 +1,6 @@
 /** Renderer-independent frosted bokeh, shared by native controls and server share cards. */
-export type BokehPoint = { x: number; y: number; color: string };
+/** `id` is the physical hold's id where the caller has one: it names a light across climbs. */
+export type BokehPoint = { x: number; y: number; color: string; id?: number };
 export type BokehBlob = BokehPoint & { r: number; peak: number };
 export type BokehSize = { w: number; h: number };
 export type BokehBlend = 'screen' | 'multiply' | 'normal';
@@ -15,13 +16,18 @@ export const FROST_ALPHA = 0.08;
 export const GRAIN_ALPHA = 0.06;
 /**
  * The moving frost (drawn on the GPU where the platform can): each light drifts
- * up to `BOKEH_DRIFT` points from its hold on its own slow orbit, swells by up
- * to `BOKEH_SWELL` of its peak, and slides to the next climb's hold over
- * `BOKEH_GLIDE_MS`. The native view takes these as props, so this is the one
- * place they are set; contrast checks read them through `motion`.
+ * up to `BOKEH_DRIFT` points from its hold on its own slow orbit and swells by
+ * up to `BOKEH_SWELL` of its peak. The native view takes these as props, so
+ * this is the one place they are set; contrast checks read them through
+ * `motion`. How the lights change climbs is in `swap.ts`.
  */
 export const BOKEH_DRIFT = 3.5;
 export const BOKEH_SWELL = 0.14;
+/**
+ * Binaries before the swap-frame API (`swapFrameApi`) slide each light to the
+ * next climb's light in the same slot over this long. Newer ones follow the
+ * board's swap instead (`swap.ts`); the app still sends this to the older ones.
+ */
 export const BOKEH_GLIDE_MS = 700;
 const MIN_DISC_RADIUS = 6;
 const MAX_DISC_RADIUS = 14;
@@ -98,6 +104,7 @@ export function buildBokehBlobs({
         x: along * positionScale,
         y: acrossFits ? offset + across * positionScale : (across / sourceAcross) * target.h,
         color: point.color,
+        ...(point.id !== undefined ? { id: point.id } : {}),
       };
     });
   const placed = thin(mapped, MAX_BOKEH_BLOBS);
@@ -219,3 +226,5 @@ export function bokehPixel(
   }
   return toHex(value);
 }
+
+export * from './swap';

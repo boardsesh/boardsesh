@@ -630,6 +630,35 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     );
   });
 
+  it('clears an already mounted look when its gate closes and restores it without a new board', () => {
+    controls.apiVersion = 7;
+    controls.swapCommandApi = 1;
+    controls.swapLookVersion = 2;
+    const look = [2, 1, 1, 0.4, 0.4, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0];
+    const transition = {
+      previousFrames: 'p4131r43',
+      nextFrames: 'p4306r43',
+      centerPage: 4,
+      pagePosition: { value: 4.25 } as SharedValue<number>,
+      revealMode: 'swap' as const,
+      swapFrame: { value: [4.25, 1, 0, 1] } as unknown as SharedValue<readonly [number, number, number, number]>,
+      swapLook: look,
+    };
+    const { rerender } = render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    const requestId = controls.props?.requestId;
+    expect(controls.props?.swapLook).toEqual(look);
+    // The remote kill switch removes the look from the transition. Send null
+    // explicitly: omitting an Expo prop can retain the previous native value.
+    rerender(<BoardImageNative {...BOARD} gpuTransition={{ ...transition, swapLook: undefined }} />);
+    expect(controls.props?.swapLook).toBeNull();
+    expect(controls.props?.requestId).toBe(requestId);
+    rerender(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.swapLook).toEqual(look);
+    expect(controls.props?.requestId).toBe(requestId);
+    rerender(<BoardImageNative {...BOARD} />);
+    expect(controls.props?.swapLook).toBeNull();
+  });
+
   it('sends the look under Reduce Motion too, so the native view can say it is off and why', () => {
     controls.apiVersion = 7;
     controls.swapCommandApi = 1;
