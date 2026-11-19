@@ -94,6 +94,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
   sources, \`ratings\` = prompt/drawer-feedback sources, \`all\` = everything.
   """
   enum AppFeedbackTypeFilter {
+    board_requests
     bugs
     ratings
     all
@@ -122,11 +123,27 @@ export const feedbackTypeDefs = /* GraphQL */ `
     userAgent: String
   }
 
+  enum BoardRequestRole {
+    climber
+    gym
+    maker
+  }
+
+  input SubmitBoardRequestInput {
+    boardName: String!
+    role: BoardRequestRole!
+    note: String
+    email: String
+    contactConsent: Boolean!
+  }
+
   """
   A single feedback row as seen by the admin dashboard, enriched with the
   reporter's identity and triage state.
   """
   type AppFeedbackReport {
+    boardRequestRole: BoardRequestRole
+    boardRequestEmail: String
     releaseContext: ReleaseContext
     id: ID!
     source: String!

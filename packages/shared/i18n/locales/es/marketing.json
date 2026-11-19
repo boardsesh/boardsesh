@@ -54,8 +54,8 @@
   "home": {
     "hero": {
       "title": "Tu sesión, bien organizada.",
-      "eyebrow": "Gratis. Compatible con plafones como Kilter, Tension y MoonBoard.",
-      "subtitle": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo.",
+      "eyebrow": "Compatible con Kilter, Tension, MoonBoard y cualquier Spraywall",
+      "subtitle": "Busca un bloque, ilumínalo en el plafón y comparte la cola con tu grupo desde vuestros móviles. ¿Tienes otro plafón?",
       "startClimbingAria": "Empieza a escalar en la app",
       "startClimbingWeb": "Ábrelo en el navegador",
       "ctaInstallIos": "App Store",
@@ -64,7 +64,8 @@
       "proof": "En los últimos 30 días, unos {{formattedClimbers}} escaladores usaron Boardsesh para iluminar un bloque en su plafón {{formattedClimbs}} veces.",
       "tensionShotAlt": "Un bloque en un plafón Tension en Boardsesh",
       "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh",
-      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón"
+      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
+      "boardsInvite": "Nos encantará añadirlo."
     },
     "cards": {},
     "gymCard": {
@@ -989,7 +990,8 @@
       "body1End": ".",
       "body2Start": "Boardsesh es código abierto. Puedes ver exactamente qué datos recoge la app y cómo se procesan leyendo el código fuente en ",
       "body2Link": "GitHub",
-      "body2End": "."
+      "body2End": ".",
+      "boardRequests": "Si solicitas un plafón, guardamos su nombre, tu función y las notas que incluyas en nuestro buzón privado. Si pides respuesta, también guardamos el correo que indiques para esa solicitud."
     },
     "choices": {
       "title": "Cookies y opciones de privacidad",

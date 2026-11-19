@@ -408,6 +408,8 @@ export type AppFeedbackReport = {
   angle?: Maybe<Scalars['Int']['output']>;
   appVersion?: Maybe<Scalars['String']['output']>;
   boardName?: Maybe<Scalars['String']['output']>;
+  boardRequestEmail?: Maybe<Scalars['String']['output']>;
+  boardRequestRole?: Maybe<BoardRequestRole>;
   comment?: Maybe<Scalars['String']['output']>;
   contactConsent?: Maybe<Scalars['Boolean']['output']>;
   context?: Maybe<AppFeedbackContext>;
@@ -467,7 +469,7 @@ export type AppFeedbackStatusCounts = {
  * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug
  * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
  */
-export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
+export type AppFeedbackTypeFilter = 'all' | 'board_requests' | 'bugs' | 'ratings';
 
 /** A partner workout delivered to the signed-in climber. Its session identifier never leaves the partner API. */
 export type AppWorkout = {
@@ -1143,6 +1145,8 @@ export type BoardQueuePreviewItem = {
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
 };
+
+export type BoardRequestRole = 'climber' | 'gym' | 'maker';
 
 /**
  * Auto-recorded board configuration that the current user was on the last time
@@ -5633,6 +5637,8 @@ export type Mutation = {
    * associated with the user.
    */
   submitAppFeedback: Scalars['Boolean']['output'];
+  /** Send an anonymous board suggestion to the private admin feedback inbox. */
+  submitBoardRequest: Scalars['Boolean']['output'];
   /**
    * Crowdsourced QA: file a verdict on a pull-request preview. Tester role
    * required; the PR must be open; a `declined` verdict needs a comment of
@@ -6585,6 +6591,11 @@ export type MutationSnapshotActiveUsersArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSubmitBoardRequestArgs = {
+  input: SubmitBoardRequestInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -12706,6 +12717,14 @@ export type SubmitAppFeedbackInput = {
   source: Scalars['String']['input'];
 };
 
+export type SubmitBoardRequestInput = {
+  boardName: Scalars['String']['input'];
+  contactConsent: Scalars['Boolean']['input'];
+  email?: InputMaybe<Scalars['String']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+  role: BoardRequestRole;
+};
+
 /**
  * Input for submitQaVerdict. Everything but the verdict is device context the
  * app fills in so the GitHub comment can say what was tested where.
@@ -13961,6 +13980,7 @@ export type ResolversTypes = ResolversObject<{
   BoardPresenceStats: ResolverTypeWrapper<BoardPresenceStats>;
   BoardQueuePreview: ResolverTypeWrapper<BoardQueuePreview>;
   BoardQueuePreviewItem: ResolverTypeWrapper<BoardQueuePreviewItem>;
+  BoardRequestRole: BoardRequestRole;
   BoardSerialConfig: ResolverTypeWrapper<BoardSerialConfig>;
   BoardShareLink: ResolverTypeWrapper<BoardShareLink>;
   BoardShareLinkPreview: ResolverTypeWrapper<BoardShareLinkPreview>;
@@ -14462,6 +14482,7 @@ export type ResolversTypes = ResolversObject<{
   StrayBoardReason: StrayBoardReason;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
+  SubmitBoardRequestInput: SubmitBoardRequestInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: ResolverTypeWrapper<{}>;
   SyncAudience: SyncAudience;
@@ -15028,6 +15049,7 @@ export type ResolversParentTypes = ResolversObject<{
   StrayBoard: StrayBoard;
   String: Scalars['String']['output'];
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
+  SubmitBoardRequestInput: SubmitBoardRequestInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: {};
   SyncClimbDocuments: SyncClimbDocuments;
@@ -15364,6 +15386,8 @@ export type AppFeedbackReportResolvers<
   angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   appVersion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardRequestEmail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardRequestRole?: Resolver<Maybe<ResolversTypes['BoardRequestRole']>, ParentType, ContextType>;
   comment?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   contactConsent?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   context?: Resolver<Maybe<ResolversTypes['AppFeedbackContext']>, ParentType, ContextType>;
@@ -18522,6 +18546,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationSubmitAppFeedbackArgs, 'input'>
+  >;
+  submitBoardRequest?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSubmitBoardRequestArgs, 'input'>
   >;
   submitQaVerdict?: Resolver<
     ResolversTypes['QaVerdict'],

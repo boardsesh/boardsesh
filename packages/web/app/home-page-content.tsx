@@ -82,6 +82,10 @@ export default function HomePageContent({
           </Typography>
           <Typography component="p" className={styles.heroLead}>
             {t('home.hero.subtitle')}
+            {i18n.language === 'zh-CN' ? '' : ' '}
+            <MuiLink component={LocaleLink} href="/boards">
+              {t('home.hero.boardsInvite')}
+            </MuiLink>
           </Typography>
           <Box className={styles.heroActions}>
             {install.stores.map((store, index) => (

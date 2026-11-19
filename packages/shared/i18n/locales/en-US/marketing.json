@@ -54,8 +54,8 @@
   "home": {
     "hero": {
       "title": "Board night, sorted.",
-      "eyebrow": "Free to use. Works with boards including Kilter, Tension and MoonBoard.",
-      "subtitle": "Pick a climb, light it on the wall and share one queue with your crew.",
+      "eyebrow": "Works with Kilter, Tension, MoonBoard and any spray wall",
+      "subtitle": "Find a climb, light it on the wall and queue up the whole crew from your own phones. Got another board?",
       "startClimbingAria": "Start climbing in the app",
       "startClimbingWeb": "Open it in your browser",
       "ctaInstallIos": "App Store",
@@ -64,7 +64,8 @@
       "proof": "In the last 30 days, about {{formattedClimbers}} climbers used Boardsesh to light a climb on their board {{formattedClimbs}} times.",
       "tensionShotAlt": "A climb on a Tension board in Boardsesh",
       "moonboardShotAlt": "A climb on a MoonBoard in Boardsesh",
-      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board"
+      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
+      "boardsInvite": "We’re happy to add it."
     },
     "cards": {},
     "gymCard": {
@@ -989,7 +990,8 @@
       "body1End": ".",
       "body2Start": "Boardsesh is open source. You can see exactly what data the app collects and how it is processed by reading the source code on ",
       "body2Link": "GitHub",
-      "body2End": "."
+      "body2End": ".",
+      "boardRequests": "If you request a board, we keep the board name, your role and any note in our private feedback inbox. If you ask for a reply, we also keep the email address you give us for that request."
     },
     "choices": {
       "title": "Cookies and privacy choices",

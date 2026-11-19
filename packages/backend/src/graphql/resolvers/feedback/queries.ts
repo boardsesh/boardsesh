@@ -76,6 +76,9 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
   return {
     id: String(row.id),
     source: row.source as AppFeedbackReport['source'],
+    boardRequestRole: row.source === 'board-request' ? (row.context?.boardRequest?.role ?? null) : null,
+    boardRequestEmail:
+      row.source === 'board-request' && row.contactConsent ? (row.context?.boardRequest?.email ?? null) : null,
     rating: row.rating,
     comment: row.comment,
     platform: row.platform as AppFeedbackReport['platform'],
@@ -95,7 +98,7 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
     reporter: row.reporterId
       ? { userId: row.reporterId, email: row.reporterEmail ?? null, name: row.reporterName ?? null }
       : null,
-    context: row.context ?? null,
+    context: row.source === 'board-request' ? null : (row.context ?? null),
     releaseContext: row.context?.releaseContext ?? null,
     // The dashboard renders the pictures; the keys stay server-side. An
     // unmintable key, or a media bucket with no public base, resolves to no
@@ -137,7 +140,9 @@ export const feedbackQueries = {
         ? inArray(feedback.source, BUG_SOURCES)
         : validated.type === 'ratings'
           ? inArray(feedback.source, RATING_SOURCES)
-          : undefined;
+          : validated.type === 'board_requests'
+            ? eq(feedback.source, 'board-request')
+            : undefined;
     const platformCondition = validated.platform ? eq(feedback.platform, validated.platform) : undefined;
     const searchCondition = validated.search ? ilike(feedback.comment, `%${escapeLike(validated.search)}%`) : undefined;
     const reporterCondition = validated.reporterId ? eq(feedback.userId, validated.reporterId) : undefined;

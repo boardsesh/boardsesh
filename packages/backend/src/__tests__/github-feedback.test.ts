@@ -206,6 +206,18 @@ describe('createFeedbackGithubIssue', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('refuses to publish a board request even when the GitHub mirror is configured', async () => {
+    const payload = bugPayload({
+      source: 'board-request',
+      boardName: 'Private fixture',
+      comment: 'Private note',
+      contactConsent: true,
+    });
+    expect(buildFeedbackIssue(payload)).toBeNull();
+    await expect(createFeedbackGithubIssue(payload)).resolves.toEqual({ status: 'skipped' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('skips a rating source even when configured', async () => {
     const result = await createFeedbackGithubIssue(bugPayload({ source: 'prompt', rating: 5, comment: null }));
     expect(result).toEqual({ status: 'skipped' });

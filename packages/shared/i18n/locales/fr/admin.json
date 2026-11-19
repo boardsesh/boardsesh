@@ -78,7 +78,9 @@
       "ratings": "Notes",
       "all": "Tous",
       "bug": "Bug",
-      "rating": "Note"
+      "rating": "Note",
+      "boardRequest": "Demande de board",
+      "boardRequests": "Demandes de boards"
     },
     "status": {
       "new": "Nouveau",
@@ -137,7 +139,8 @@
       "canaryYes": "Oui",
       "canaryNo": "Non",
       "canaryUnknown": "Inconnu",
-      "canaryCheckedAt": "Canary vérifié"
+      "canaryCheckedAt": "Canary vérifié",
+      "boardRequestRole": "Rôle"
     },
     "empty": "Aucun retour ne correspond à ces filtres.",
     "error": "Impossible de charger les retours.",
@@ -169,6 +172,11 @@
       "reporter": "ID du compte ayant signalé le bug",
       "needsReply": "Réponse attendue",
       "clearReporter": "Afficher tous les auteurs"
+    },
+    "boardRequestRoles": {
+      "climber": "Moi-même, en tant que grimpeur ou grimpeuse",
+      "gym": "Une salle d’escalade",
+      "maker": "Un fabricant de boards"
     }
   },
   "retention": {

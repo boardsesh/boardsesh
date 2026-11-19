@@ -12,9 +12,10 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
-import type { ReleaseContext } from '@boardsesh/shared-schema';
+import type { BoardRequestRole, ReleaseContext } from '@boardsesh/shared-schema';
 
 export type FeedbackContext = {
+  boardRequest?: { role: BoardRequestRole; email?: string };
   releaseContext?: ReleaseContext;
   climbUuid?: string;
   climbName?: string;
@@ -47,7 +48,8 @@ export const appFeedback = pgTable(
     sizeId: integer('size_id'),
     setIds: jsonb('set_ids').$type<number[]>(),
     angle: integer('angle'),
-    // Email follow-up consent. Private in-app support is available regardless.
+    // Email follow-up consent. Bugs use the signed-in reporter; board requests
+    // use their optional private reply address. Private in-app support is available regardless.
     contactConsent: boolean('contact_consent'),
     context: jsonb('context').$type<FeedbackContext>(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),

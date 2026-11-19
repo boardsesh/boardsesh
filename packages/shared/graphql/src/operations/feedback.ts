@@ -7,6 +7,12 @@ import type {
   UpdateAppFeedbackStatusInput,
 } from '@boardsesh/shared-schema';
 
+export const SUBMIT_BOARD_REQUEST = gql`
+  mutation SubmitBoardRequest($input: SubmitBoardRequestInput!) {
+    submitBoardRequest(input: $input)
+  }
+`;
+
 export const SUBMIT_APP_FEEDBACK = gql`
   mutation SubmitAppFeedback($input: SubmitAppFeedbackInput!) {
     submitAppFeedback(input: $input)
@@ -35,6 +41,8 @@ export const ADMIN_APP_FEEDBACK = gql`
       reports {
         id
         source
+        boardRequestRole
+        boardRequestEmail
         rating
         comment
         platform
@@ -93,6 +101,8 @@ export const UPDATE_APP_FEEDBACK_STATUS = gql`
     updateAppFeedbackStatus(input: $input) {
       id
       source
+      boardRequestRole
+      boardRequestEmail
       rating
       comment
       platform

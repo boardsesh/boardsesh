@@ -1,5 +1,14 @@
 import type { ReleaseContext, ReleaseContextInput } from './release-context';
 
+export type BoardRequestRole = 'climber' | 'gym' | 'maker';
+export type SubmitBoardRequestInput = {
+  boardName: string;
+  role: BoardRequestRole;
+  note?: string | null;
+  email?: string | null;
+  contactConsent: boolean;
+};
+
 export type AppFeedbackPlatform = 'ios' | 'android' | 'web';
 export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'drawer-bug';
 /**
@@ -66,7 +75,7 @@ export type SubmitAppFeedbackInput = {
 export type AppFeedbackStatus = 'new' | 'in_progress' | 'resolved' | 'wont_fix';
 
 /** Type filter for the admin list. */
-export type AppFeedbackTypeFilter = 'bugs' | 'ratings' | 'all';
+export type AppFeedbackTypeFilter = 'bugs' | 'ratings' | 'board_requests' | 'all';
 
 /** The reporter, resolved from `user_id`. All null for anonymous rows. */
 export type AppFeedbackReporter = {
@@ -90,7 +99,9 @@ export type AppFeedbackContext = {
 export type AppFeedbackReport = {
   releaseContext?: ReleaseContext | null;
   id: string;
-  source: AppFeedbackSource;
+  source: AppFeedbackSource | 'board-request';
+  boardRequestRole?: BoardRequestRole | null;
+  boardRequestEmail?: string | null;
   rating?: number | null;
   comment?: string | null;
   platform: AppFeedbackPlatform;

@@ -54,8 +54,8 @@
   "home": {
     "hero": {
       "title": "Deine Boardsession, gut organisiert.",
-      "eyebrow": "Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
-      "subtitle": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
+      "eyebrow": "Funktioniert mit Kilter, Tension, MoonBoard und jeder Spraywall",
+      "subtitle": "Such dir einen Boulder aus, beleuchte die Griffe und stell mit deiner Crew die Warteschlange über eure Handys zusammen. Du nutzt ein anderes Board?",
       "startClimbingAria": "In der App losklettern",
       "startClimbingWeb": "Im Browser öffnen",
       "ctaInstallIos": "App Store",
@@ -64,7 +64,8 @@
       "proof": "In den letzten 30 Tagen haben rund {{formattedClimbers}} Kletternde mit Boardsesh {{formattedClimbs}} Mal einen Boulder am Board beleuchtet.",
       "tensionShotAlt": "Ein Boulder an einem Tension Board in Boardsesh",
       "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh",
-      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board"
+      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
+      "boardsInvite": "Wir nehmen es gerne auf."
     },
     "cards": {},
     "gymCard": {
@@ -989,7 +990,8 @@
       "body1End": ".",
       "body2Start": "Boardsesh ist Open Source. Im Quellcode auf ",
       "body2Link": "GitHub",
-      "body2End": " siehst du genau, welche Daten die App erhebt und wie sie verarbeitet werden."
+      "body2End": " siehst du genau, welche Daten die App erhebt und wie sie verarbeitet werden.",
+      "boardRequests": "Wenn du ein Board vorschlägst, speichern wir seinen Namen, deine Rolle und deine optionalen Angaben in unserem privaten Postfach. Bittest du um eine Antwort, speichern wir auch die dafür angegebene E-Mail-Adresse."
     },
     "choices": {
       "title": "Cookies und Datenschutzwahl",

@@ -9,7 +9,7 @@ export type PageShellProps = {
   /** The page's one <h1>. Always renders as an h1 — `titleVariant` only scales it. */
   title: string;
   /** One sentence under the title. */
-  lead?: string;
+  lead?: React.ReactNode;
   /** Small uppercase kicker above the title (a section name, a board type). */
   eyebrow?: React.ReactNode;
   /** Breadcrumb trail, rendered above the header. Give it real <a> elements. */

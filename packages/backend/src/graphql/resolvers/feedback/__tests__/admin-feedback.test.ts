@@ -256,3 +256,36 @@ describe('updateAppFeedbackStatus', () => {
     ).rejects.toThrow(/not found/i);
   });
 });
+
+it('filters private board requests and releases a reply address only when the stored request has consent', async () => {
+  await db.execute(sql`INSERT INTO app_feedback (platform, source, board_name, contact_consent, context)
+    VALUES ('web','board-request','Reply fixture',true,'{"boardRequest":{"role":"maker","email":"ok@example.test"}}'),
+           ('web','board-request','Private fixture',false,'{"boardRequest":{"role":"climber","email":"hidden@example.test"}}')`);
+  await insertFeedback({ source: 'drawer-bug', comment: 'unrelated report' });
+  const input = { type: 'board_requests' };
+  await expect(feedbackQueries.adminAppFeedback(null, { input }, anonCtx())).rejects.toThrow(
+    /Authentication required/i,
+  );
+  await expect(feedbackQueries.adminAppFeedback(null, { input }, authCtx(NON_ADMIN))).rejects.toThrow(
+    /Admin role required/i,
+  );
+  const { reports } = await feedbackQueries.adminAppFeedback(null, { input }, authCtx(ADMIN));
+  expect(reports).toHaveLength(2);
+  expect(reports).toContainEqual(
+    expect.objectContaining({
+      boardName: 'Reply fixture',
+      boardRequestRole: 'maker',
+      boardRequestEmail: 'ok@example.test',
+      context: null,
+    }),
+  );
+  expect(reports).toContainEqual(
+    expect.objectContaining({
+      boardName: 'Private fixture',
+      boardRequestRole: 'climber',
+      boardRequestEmail: null,
+      context: null,
+    }),
+  );
+  expect(JSON.stringify(reports)).not.toContain('hidden@example.test');
+});
