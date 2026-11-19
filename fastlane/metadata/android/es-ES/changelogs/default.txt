@@ -1,6 +1,6 @@
-Novedades de 2.7:
-- Toca para ver sin encender. Poner en el plafón: tus bloques se encienden hasta que acabe el temporizador (45 s). Desliza a la izquierda: sin fin; toca para parar.
-- Italiano. Cuenta atrás y tono de descanso en la notificación.
-- Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
-- Ordena y filtra playlists, Favoritos y Proyectos.
-- Logbook, favoritos y playlists sin cobertura. Escanea MoonBoards.
+Novedades de 2.8.0:
+- 4x4, Al límite y Al minuto. Inicio: tu semana y proyectos.
+- Spraywall con WLED; apagado automático por Wi-Fi. Instalación Bluetooth en beta opcional para controladores compatibles.
+- Interfaz Android más sencilla, navegación compacta y controles renovados en la pantalla de bloqueo.
+- Renderizado GPU más fluido en plafones/dispositivos compatibles.
+- Abre entrenamientos de apps compatibles y autoriza la lectura de tu logbook: https://www.boardsesh.com/developers/

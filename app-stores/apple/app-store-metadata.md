@@ -149,58 +149,101 @@ metadata lanes do not upload or publish them.
 - Email: test@boardsesh.com
 - Password: test
 
-**Why this app needs to be native**
+**Native features**
 
-The core feature of Boardsesh is connecting to climbing board LED controllers via Bluetooth Low Energy (BLE). iOS Safari does not support the Web Bluetooth API (https://caniuse.com/web-bluetooth), which makes it impossible to control the board from a web browser on iPhone. This is the primary reason the app exists as a native iOS app. The web version at boardsesh.com works on Android and desktop browsers that support Web Bluetooth.
+Boardsesh uses native Bluetooth to light compatible climbing boards, supports
+Lock Screen controls through Live Activities, and can save climbing sessions to
+Apple Health with permission. The website at boardsesh.com provides marketing,
+account and public sharing pages; test climbing and shared sessions in the app.
 
 **Testing without a physical board**
 
-You do not need a climbing board to test the app. Here is what you can verify:
+1. Sign in with the demo account and choose a board in the board picker. Open
+   Climbs to browse and filter climbs; Kilter has a Verified quick filter.
+2. Open a climb to see its holds, then add it to the queue. Open the queue to
+   browse the selected climbs. No physical board is required for this.
+3. Open Session and build a workout. Choose 4x4, Limit Bouldering or On the Minute
+   to preview climbs and rests; Pyramid also offers Same climbs down.
+4. Open Home to see the sections available for the account. Weekly totals,
+   recommendations and projects depend on its climbing history. Customize Home
+   controls which sections appear. Discover includes My climbs.
+5. Open Settings > Timers to inspect countdown buzz and Lock Screen countdown
+   preferences.
 
-1. **Sign in**: Use the demo account above. You will see the board selection screen.
-2. **Browse climbs**: Select "Kilter Board" > pick any layout/size/angle combination. You will see a searchable list of thousands of community climbs with grade ratings and quality stars.
-3. **Search and filter**: Use the filter controls to narrow by grade range, minimum quality rating, and hold count.
-4. **View a climb**: Tap any climb to see the hold layout rendered on the board image. The colored circles show hand and foot positions.
-5. **Queue management**: Tap the "+" button on a climb to add it to your queue. Open the queue panel to see your list. You can reorder by dragging and remove by swiping.
-6. **Bluetooth pairing**: Go to the Bluetooth connection screen (gear icon or connection prompt). The app will request Bluetooth permission and scan for nearby BLE devices. Without a physical board, the scan will complete with no devices found. This is expected behavior.
-7. **Party Mode**: Start a party session from the queue panel. This creates a WebSocket-backed collaborative session. You can open a second browser tab at boardsesh.com, sign in with a different account, and join the same session to test real-time sync. Sessions are always live: any participant can set the next climb and it broadcasts to everyone instantly. There is no single "driver" and no voting step (the older driver/vote model is deprecated). Whoever is connected to the board over Bluetooth relays the lit climb to the wall.
-8. **Logbook**: After signing in, check the logbook/profile section to see logged climbs and stats.
+**Optional shared-session test:** on the first device, open Session and tap
+Start. Open Invite and share its link. On a second device, sign in with a
+different account and open that link in Boardsesh. Both participants can use
+the queue. End the session to see its recap. Skip this exercise if a second
+device and account are unavailable; the single-device checks above still work.
 
-**What the app does**
+**Hardware and permissions for 2.8.0**
 
-Boardsesh lights up climbs on LED boards (Kilter, Tension, MoonBoard and others) over Bluetooth. Two things set it apart from a single-board app, and they are distinct features:
+Bluetooth scanning needs permission and a nearby compatible controller. An empty
+scan without hardware is expected. Nearby-board discovery uses location only
+when permission is granted; boards can also be selected manually.
 
-- **Board history (board-linked, always on):** when you connect to a board, a live feed shows what is lit on that wall right now plus recent sends — who lit each climb, the grade, angle and setter. It is tied to the physical board, not to a session, and you do not start anything.
-- **Crew sessions (collaborative):** you start a session and everyone in it shares one queue that any participant can drive (no single driver). A session ends with a recap and feeds your logbook and progress tracking.
+Spraywalls can be used without LEDs: a photo highlights the climb's holds.
+Optional WLED lighting needs a configured controller on the same Wi-Fi network.
+The LED settings map holds to LEDs, find controllers on Wi-Fi, set brightness
+and choose a Wi-Fi automatic switch-off time. Saved setup is shared with climbers
+who can access the Spraywall. Compatible controllers with Boardsesh Bluetooth
+support can also light climbs over Bluetooth. Installing that support is a
+separate opt-in beta for matching hardware and requires explicit consent.
+Automatic switch-off is currently Wi-Fi-only.
 
-**Bluetooth**
+Board history belongs to the physical board and shows climbs lit through
+Boardsesh and recent activity. Crew sessions share a queue; any participant can
+control it. Ending a session produces a recap and updates climbing history.
+These are separate features.
 
-The app connects to climbing boards over Bluetooth Low Energy to light the holds. Data flows one way, phone to board; no personal data is sent over Bluetooth. It uses native CoreBluetooth (via react-native-ble-plx) and declares bluetooth-le / bluetooth-central so the connection survives the screen sleeping. Endpoints: API at boardsesh.com, Party Mode WebSocket at wss://backend.boardsesh.com.
+The app uses CoreBluetooth via react-native-ble-plx and the bluetooth-central
+background mode to maintain a board connection while the screen sleeps.
+Session traffic uses `wss://ws.boardsesh.com/graphql` (the production
+`EXPO_PUBLIC_WS_URL` in `.github/workflows/mobile-native-release.yml`).
 
 ## App Privacy - Data Collection Labels
 
-### Data Linked to You
+This is a source-backed submission inventory for 2.8.0, not a readback of the
+live App Store Connect labels. Reconcile the selected binary, enabled SDKs and
+current console answers before submission. Fastlane listing uploads do not
+update these answers.
 
-| Data Type        | Category         | Purpose                                                                             |
-| ---------------- | ---------------- | ----------------------------------------------------------------------------------- |
-| Email Address    | Contact Info     | Account creation and authentication                                                 |
-| Name / Username  | Contact Info     | Profile display, shown to other users in Party Mode and social features             |
-| Precise Location | Location         | Party session discovery (finding nearby sessions), only when user grants permission |
-| Fitness Activity | Health & Fitness | Climb ticks and logbook entries (sends, attempts, grades)                           |
+### Account-linked collection
 
-### Data Not Linked to You
+| Data Type | Category | Purpose and collection path |
+| --- | --- | --- |
+| Email Address, Name | Contact Info | Account management and profile display |
+| User ID | Identifiers | Authentication, ownership of saved content and account-linked analytics |
+| Precise Location | Location | Nearby board/session discovery when location permission is granted |
+| Fitness | Health & Fitness | Logged sends, attempts, grades, sessions and workout results |
+| Photos | User Content: Photos or Videos | Uploaded avatars, gym images, Spraywall photos and attached feedback screenshots; optional submissions |
+| Other User Content | User Content | Saved climb/session comments, notes and user-created climbing content |
+| Product Interaction | Usage Data | PostHog product events linked to the signed-in account when analytics is enabled |
+| Product Interaction | Usage Data | First-party daily activity records keyed by account and platform, independent of the Analytics setting; only aggregate counts leave this database |
 
-| Data Type  | Category    | Purpose                                                                        |
-| ---------- | ----------- | ------------------------------------------------------------------------------ |
-| Usage Data | Diagnostics | Vercel Analytics for page views and performance metrics, collected anonymously |
+Photo visibility depends on the surface: Spraywall originals are stored
+privately and served through authorized reads, while avatars and feedback
+screenshots have public delivery paths. Private storage and optional submission
+do not mean a photo is not collected.
 
-### Data Not Collected
+### Diagnostics and collection controls
 
-- Financial information
-- Contacts or address book
-- Browsing history
-- Purchases
-- Photos or videos
-- Health data (beyond fitness activity above)
-- Sensitive information
-- Advertising data
+| Collection path | Purpose | Identity handling and control |
+| --- | --- | --- |
+| PostHog product analytics | Analytics | Identifies the signed-in account. Analytics can be switched off in Settings; prompt regions require Allow, while other supported regions can default on. Session replay is a separate opt-in, off by default. |
+| Sentry crash and performance reports | App functionality: reliability | Runs independently of the Analytics setting. Native/JS privacy handling removes user identity and device IDs; verify the shipped SDK's remaining fields when selecting linked/not-linked answers. |
+| Observe and OTA health | App functionality: performance and update reliability | Runs independently of the Analytics setting. No account identity is assigned, but installation/session identifiers are retained; do not describe the whole diagnostics path as identifier-free. |
+| Apple Ads install attribution | Advertising or marketing measurement | Requires explicit Allow everywhere, including regions where product analytics defaults on; include its actual fields and use in the console review. |
+
+Use [Apple's collection, linkage and tracking definitions](https://developer.apple.com/app-store/app-privacy-details/)
+for the final answers. A lack of an account ID alone does not establish that
+install-linked diagnostics are unlinked, and optional collection is not an
+automatic disclosure exemption. Confirm any additional video, audio or document
+collection from the complete feature/SDK inventory rather than restoring the
+old blanket “not collected” list.
+
+Evidence: [media storage](../../docs/user-media-storage.md),
+[analytics choices and telemetry paths](../../docs/analytics-consent.md),
+[native PostHog identity](../../packages/mobile/src/lib/posthog-client.ts),
+[Sentry privacy handling](../../packages/mobile/src/lib/sentry.ts), and
+[stored comments](../../packages/backend/src/graphql/resolvers/social/comments.ts).

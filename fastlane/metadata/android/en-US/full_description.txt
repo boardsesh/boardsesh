@@ -1,34 +1,29 @@
-Search a climb, watch your wall light up. Less time on your phone, more time on the wall.
+One app for your boards. Light climbs, share a queue with your crew and keep your sends in one logbook.
 
-LIGHT THE HOLDS
-Search any climb and Boardsesh lights the holds on the wall over Bluetooth, on Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper and So iLL. Full LED control on all eight, not browse-only.
+Works with Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper and So iLL, plus your Spraywall. Connect to compatible controllers over Bluetooth to light the holds.
 
-ONE APP FOR EVERY BOARD YOU CLIMB
-Kilter, Tension and MoonBoard each ship their own app for their own board. Boardsesh works across all of them, plus Woods, Decoy, Touchstone, Grasshopper and So iLL, in one place. Your whole climbing history across every board lives here.
+CLIMB WITH YOUR CREW
+Start a session, invite your crew and share a queue everyone can control. Board history shows climbs lit through Boardsesh and recent sends on the physical board. End your session for a recap of your climbing.
+
+TRAIN YOUR WAY
+Build workouts with warm-ups, Volume, Pyramid, Ladder, Grade Focus, 4x4, Limit Bouldering or On the Minute. Preview climbs and rests, then work through them on the wall. Pyramids can repeat the same climbs on the way down.
+
+Open workouts from compatible training apps in Boardsesh and let apps read your logbook with your permission. Developer details: https://www.boardsesh.com/developers/
 
 Your Spraywall, too
-A home Spraywall, or a Spraywall at your gym? Photograph it and Boardsesh finds the holds. Fix what it missed, then set climbs, queue them and log sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo. Share the Spraywall by link and your crew can set on it too. Stripped the Spraywall? Reset it with a new photo, and the old Spraywall is archived with its climbs and sends. Swap a single hold and any climb that used it is flagged, ready to remix.
+Photograph your Spraywall, check the suggested holds and create climbs on the photo. Share it with your crew, queue climbs and log sends. No LEDs needed. Reset the Spraywall with a new photo while keeping its old climbs and sends archived.
 
-BOARD HISTORY
-Share a board and you lose track of the last climb fast, and someone always wipes it by accident.
-See climbs lit through Boardsesh on that board: the climb name, who lit it, who set it, grade and angle, and recent sends.
+With WLED and LEDs, map the lights on your photo and save the setup for your crew. Find controllers on Wi-Fi, set brightness and choose Wi-Fi auto-off. Compatible controllers with Boardsesh Bluetooth support can also light climbs over Bluetooth; installing that support is an opt-in beta for matching controllers.
 
-STAYS CONNECTED
-Boardsesh keeps the link to your board alive in the background, so the holds stay lit through your burns even when the screen is off or you switch apps. An ongoing notification puts Previous and Next on your lock screen, so you can move through the queue without reopening the app. No reconnecting between climbs.
+LESS PHONE, MORE CLIMBING
+A simpler Android interface and slimmer navigation keep climbs in focus. The lock-screen card puts the bulb and Next within reach; a ring shows timed driving. Set countdown buzzes and Lock Screen rest countdowns in Settings > Timers. GPU-accelerated rendering brings smoother climb transitions on supported boards and devices.
 
-SESSIONS WITH YOUR CREW
-Start a session and you and your crew can share one queue everyone can drive. Anyone can light the next climb on the wall. When you're done you get a recap and tracking: sends and attempts, grade spread, your hardest send, and progress over time.
+FIND YOUR NEXT CLIMB
+Home shows your week, climbs at your level and projects to try again. Choose which sections you see. Find nearby boards with location enabled, filter Kilter’s Verified climbs, and find your own climbs in Discover.
 
-BUILD A WORKOUT
-Pick Volume, Pyramid, Ladder or Grade Focus, set a target grade and warm-up, preview the climbs, then push them to the wall one at a time.
+TRACK YOUR PROGRESS
+Log sends, flashes and attempts, follow your progress across boards, and import your Kilter and Tension history from Aurora Climbing.
 
-TRACK YOUR CLIMBING
-Record sends, flashes and attempts, and watch your sends and grades climb on the Progress tab. Bring your past Kilter and Tension climbs across by importing your logbook from Aurora Climbing.
-
-FIND MORE TO CLIMB
-Follow your crew and setters, search climbers, and pin playlists from Discover.
-
-FREE, NO ADS, NO SUBSCRIPTIONS
-Open source on GitHub.
+Free, no ads, open source.
 
 Boardsesh is a community effort that works with these boards and is not affiliated with or endorsed by any board manufacturer.

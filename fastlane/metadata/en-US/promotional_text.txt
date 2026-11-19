@@ -1,1 +1,1 @@
-Works with Kilter, Tension, MoonBoard and more. Add your Spraywall, share a queue with your crew, and keep your sends in one logbook.
+Train with 4x4s, return to your projects and light your Spraywall with WLED. One logbook across your boards, one shared queue with your crew.
