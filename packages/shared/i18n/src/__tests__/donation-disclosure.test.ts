@@ -69,7 +69,7 @@ const RAIL_COUNT_WORDS: Record<string, RegExp> = {
 
 const SUPPORT_COPY_KEYS = [
   'support.hero.title',
-  'support.hero.subtitle',
+  'funding.body',
   'support.promise',
   'support.why.p1',
   'support.why.p2',
@@ -80,9 +80,6 @@ const SUPPORT_COPY_KEYS = [
   'support.oneTime.cta',
   // The monthly-first layout, shown once SUPPORT_MONTHLY_LINKS_* is set.
   'support.hero.ctaMonthly',
-  'support.promiseMonthly',
-  'support.why.p1Monthly',
-  'support.why.p2Monthly',
   'support.chooser.perMonth',
   'support.chooser.monthly',
   'support.chooser.once',
@@ -109,8 +106,6 @@ const SUPPORT_COPY_KEYS = [
   'support.otherWays.discord.cta',
   'support.honesty.p1',
   'support.honesty.p2',
-  'support.honesty.p1Monthly',
-  'support.honesty.p2Monthly',
   'support.thanks.body',
   // The homepage support block carries the same ask above the footer, so it
   // carries the same constraint. Its "not got money spare?" column reuses the
@@ -130,9 +125,9 @@ const SUPPORT_COPY_KEYS = [
 describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale) => {
   const catalog = loadMarketing(locale);
 
-  // Both layouts' small print: the fallback page and the monthly-first one.
-  it.each(['support.honesty.p1', 'support.honesty.p1Monthly'])('says donations are not tax-deductible (%s)', (key) => {
-    expect(readString(catalog, key)).toMatch(NOT_TAX_DEDUCTIBLE[locale]);
+  // Both layouts render the same small print.
+  it('says donations are not tax-deductible in the shared small print', () => {
+    expect(readString(catalog, 'support.honesty.p1')).toMatch(NOT_TAX_DEDUCTIBLE[locale]);
   });
 
   // A monthly button's label is the env's amount only ("A$5"); this template
