@@ -2,8 +2,9 @@ import { inspect } from 'node:util';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GraphQLError } from 'graphql';
 
-const { mockLogger, preview, redeem } = vi.hoisted(() => ({
+const { mockLogger, preview, redeem, submitBoardRequest } = vi.hoisted(() => ({
   mockLogger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  submitBoardRequest: vi.fn(() => true),
   preview: vi.fn(() => ({ name: 'Board preview' })),
   redeem: vi.fn(() => ({ boardUuid: 'board-id', slug: 'board-slug' })),
 }));
@@ -19,16 +20,20 @@ vi.mock('../graphql/index', async () => {
     schema: makeExecutableSchema({
       typeDefs: `
       type Query { health: Boolean! boardShareLinkPreview(token: String!): BoardShareLinkPreview }
-      type Mutation { redeemBoardShareLink(token: String!): BoardShareLinkRedemption! }
+      input BoardRequestInput { note: String email: String }
+      type Mutation { redeemBoardShareLink(token: String!): BoardShareLinkRedemption! submitBoardRequest(input: BoardRequestInput!): Boolean! }
       type BoardShareLinkPreview { name: String! }
       type BoardShareLinkRedemption { boardUuid: ID! slug: String! }
     `,
-      resolvers: { Query: { boardShareLinkPreview: preview }, Mutation: { redeemBoardShareLink: redeem } },
+      resolvers: {
+        Query: { boardShareLinkPreview: preview },
+        Mutation: { redeemBoardShareLink: redeem, submitBoardRequest },
+      },
     }),
   };
 });
 import { createYogaInstance } from '../graphql/yoga';
-import { sanitizeBoardShareGraphqlError } from '../graphql/board-share-token-privacy';
+import { sanitizePrivateBoardGraphqlError } from '../graphql/private-board-operation';
 
 const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
 const FIELDS = [
@@ -81,7 +86,7 @@ describe('board share tokens before HTTP resolver execution', () => {
       originalError: new Error(TOKEN),
       extensions: { code: 'UNAUTHENTICATED', token: TOKEN, retryAfterSeconds: 7, http },
     });
-    const sanitized = sanitizeBoardShareGraphqlError(original, 'mutation { redeemBoardShareLink }');
+    const sanitized = sanitizePrivateBoardGraphqlError(original, 'mutation { redeemBoardShareLink }');
     expect(sanitized.extensions).toEqual({ code: 'UNAUTHENTICATED', retryAfterSeconds: 7, http: { status: 401 } });
     expect(inspect(sanitized, { depth: 20 })).not.toContain(TOKEN);
   });
@@ -90,7 +95,7 @@ describe('board share tokens before HTTP resolver execution', () => {
     const masked = new GraphQLError('Something went wrong on our end. Please try again.', {
       extensions: { code: 'INTERNAL_SERVER_ERROR', http: { status: 503 } },
     });
-    expect(sanitizeBoardShareGraphqlError(masked, 'mutation { redeemBoardShareLink }').extensions).toEqual({
+    expect(sanitizePrivateBoardGraphqlError(masked, 'mutation { redeemBoardShareLink }').extensions).toEqual({
       code: 'INTERNAL_SERVER_ERROR',
       http: { status: 503 },
     });
@@ -100,7 +105,7 @@ describe('board share tokens before HTTP resolver execution', () => {
       path: ['redeemBoardShareLink'],
       extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 12 },
     });
-    expect(sanitizeBoardShareGraphqlError(thrown, 'mutation { redeemBoardShareLink }')).toBe(thrown);
+    expect(sanitizePrivateBoardGraphqlError(thrown, 'mutation { redeemBoardShareLink }')).toBe(thrown);
   });
   it('leaves ordinary GraphQL validation errors intact', async () => {
     const response = await request('{ missingField }');
@@ -149,5 +154,43 @@ describe("the share resolvers' own errors over HTTP", () => {
     const response = await send(redeemDocument, { token: TOKEN });
     expect(response.status).toBe(503);
     expect(((await response.json()) as ErrorBody).errors[0].extensions.code).toBe('INTERNAL_SERVER_ERROR');
+  });
+});
+
+describe('private board request transport', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const privateMarker = 'private-board-fixture@example.test';
+  const submitDocument = 'mutation Board($input: BoardRequestInput!) { submitBoardRequest(input: $input) }';
+  it.each([
+    [submitDocument, { input: { note: [privateMarker] } }],
+    ['mutation { submitBoardRequest(input: { email: ["' + privateMarker + '"] }) }', undefined],
+    ['mutation { submitBoardRequest(input: { note: "' + privateMarker + '"', undefined],
+  ])('keeps invalid private values out of HTTP errors and logger arguments', async (document, variables) => {
+    const response = await request(document, variables);
+    expect(response).toContain('Board request could not be processed');
+    expect(response).not.toContain(privateMarker);
+    expect(logs()).not.toContain(privateMarker);
+    expect(submitBoardRequest).not.toHaveBeenCalled();
+  });
+  it('keeps a safe retry delay and discards resolver errors, aliases and other extensions', async () => {
+    submitBoardRequest.mockImplementationOnce(() => {
+      throw new GraphQLError(privateMarker, {
+        extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 27, note: privateMarker },
+      });
+    });
+    const response = await request(
+      submitDocument.replace(' submitBoardRequest(', ' privateAlias: submitBoardRequest('),
+      {
+        input: { email: privateMarker },
+      },
+    );
+    const { errors } = JSON.parse(response);
+    expect(errors).toEqual([
+      {
+        message: 'Board request could not be processed',
+        extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 27 },
+      },
+    ]);
+    expect(logs()).not.toContain(privateMarker);
   });
 });

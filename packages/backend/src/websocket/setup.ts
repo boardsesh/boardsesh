@@ -43,10 +43,11 @@ import { logger } from '../utils/logger';
 import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } from '../services/user-activity';
 import { sanitizeAppleAdsGraphqlError } from '../graphql/apple-ads-token-privacy';
 import {
-  isBoardShareTokenDocument,
-  sanitizeBoardShareGraphqlError,
-  sanitizeBoardShareResult,
-} from '../graphql/board-share-token-privacy';
+  isPrivateBoardDocument,
+  isBoardRequestDocument,
+  sanitizePrivateBoardGraphqlError,
+  sanitizePrivateBoardResult,
+} from '../graphql/private-board-operation';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -625,6 +626,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           ];
         // Block this HTTP-only credential before parsing/coercing a document;
         // graphql-ws otherwise sends its original validation errors to clients.
+        if (isBoardRequestDocument(payload.query)) {
+          return [new GraphQLError('Board requests require HTTP')];
+        }
         if (payload.query.includes('exchangeAppleAdsAttribution')) {
           return [new GraphQLError('Apple Ads attribution requires HTTP')];
         }
@@ -642,8 +646,8 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           } catch (error: unknown) {
             // A thrown parse error escapes into graphql-ws' generic server
             // logger. Return a safe error before its token-bearing source does.
-            if (error instanceof GraphQLError && isBoardShareTokenDocument(payload.query)) {
-              return [sanitizeBoardShareGraphqlError(error, payload.query)];
+            if (error instanceof GraphQLError && isPrivateBoardDocument(payload.query)) {
+              return [sanitizePrivateBoardGraphqlError(error, payload.query)];
             }
             // graphql-ws prints a thrown error whole with console.error, and a
             // syntax error echoes client text. Rethrow it clipped: the socket still
@@ -660,10 +664,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       // within a second, and a read here would make every live update wait on the
       // primary.
       onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
-        sanitizeBoardShareResult(result, payload.query),
+        sanitizePrivateBoardResult(result, payload.query),
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {
         const safeErrors = errors.map((error) =>
-          sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
+          sanitizePrivateBoardGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
         );
         logger.error('GraphQL error:', safeErrors.map(clipGraphqlErrorForLog));
         // Only report errors that wrap an internal exception. GraphQLError

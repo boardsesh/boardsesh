@@ -342,6 +342,28 @@ describe('WebSocket connection context client IP', () => {
       loggedErrors.mockRestore();
     }
   });
+  it('rejects private board requests before WebSocket parsing or resolver execution', async () => {
+    const privateNote = 'board-request-private-fixture';
+    const logged = vi.spyOn(logger, 'error');
+    const serverErrors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const document of [
+        {
+          query: 'mutation Board($input: BoardRequestInput!) { submitBoardRequest(input: $input) }',
+          variables: { input: { note: privateNote } },
+        },
+        { query: `mutation { submitBoardRequest(input: {note: "${privateNote}"` },
+      ]) {
+        const response = await sendBoardShareOperation(document);
+        expect(response).toContain('Board request could not be processed');
+        expect(response).not.toContain(privateNote);
+      }
+      expect(inspect([logged.mock.calls, serverErrors.mock.calls], { depth: 20 })).not.toContain(privateNote);
+    } finally {
+      logged.mockRestore();
+      serverErrors.mockRestore();
+    }
+  });
   it.each([
     ['query', 'boardShareLinkPreview', '{ name }'],
     ['mutation', 'redeemBoardShareLink', '{ boardUuid slug }'],
