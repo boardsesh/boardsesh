@@ -1,0 +1,92 @@
+// Website journeys use bounded labels, never a full URL, board slug or account ID.
+import type { AnalyticsPropertyValue } from './client';
+import type { AnalyticsBoardType } from './board-type-property';
+
+export const WEBSITE_JOURNEY_EVENTS = {
+  WebAppOpened: 'Web App Opened',
+  CompatibilityBoardSelected: 'Compatibility Board Selected',
+  ImportPathChosen: 'Import Path Chosen',
+  SpraywallPathClicked: 'Spraywall Path Clicked',
+  NavLinkClicked: 'Nav Link Clicked',
+} as const;
+
+export const WEBSITE_JOURNEY_PLACEMENTS = [
+  'hero',
+  'header',
+  'header-menu',
+  'footer',
+  'setter',
+  'playlist',
+  'playlists',
+  'board-compat',
+  'home-chip',
+  'help-spray',
+  'logbook-import',
+  'bring-your-logbook',
+  'sticky-bar',
+  'about',
+  'support',
+  'climb-view',
+  'climb-list',
+  'spray-climb',
+  'spray-wall',
+  'gyms-directory',
+  'help',
+  'run-a-wall',
+] as const;
+
+export type WebsiteJourneyPlacement = (typeof WEBSITE_JOURNEY_PLACEMENTS)[number];
+export type WebsiteCompatibilityBoard = AnalyticsBoardType;
+export type WebsiteImportPath = 'account-link' | 'aurora-export';
+export type WebsiteNavArea = 'header' | 'header-menu' | 'footer';
+export type WebsiteNavTarget =
+  | '/'
+  | '/boards'
+  | '/spraywalls'
+  | '/run-a-wall'
+  | '/gyms'
+  | '/gyms/kilter'
+  | '/gyms/tension'
+  | '/gyms/moonboard'
+  | '/playlists'
+  | '/about'
+  | '/help'
+  | '/support'
+  | '/bring-your-logbook'
+  | '/docs'
+  | '/legal'
+  | '/privacy'
+  | '/build-plans'
+  | '/auth/login'
+  | '/settings'
+  | 'profile'
+  | 'app'
+  | 'privacy-choices';
+export type WebsiteJourneyEvent = {
+  name: (typeof WEBSITE_JOURNEY_EVENTS)[keyof typeof WEBSITE_JOURNEY_EVENTS];
+  properties: Record<string, AnalyticsPropertyValue>;
+};
+
+/** A click that opens the browser app, not evidence that it loaded or activated. */
+export function webAppOpened(placement: WebsiteJourneyPlacement): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.WebAppOpened, properties: { placement } };
+}
+
+export function compatibilityBoardSelected(
+  board: WebsiteCompatibilityBoard,
+  source: WebsiteJourneyPlacement,
+): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.CompatibilityBoardSelected, properties: { board, source } };
+}
+
+export function importPathChosen(source: WebsiteImportPath): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.ImportPathChosen, properties: { source } };
+}
+
+export function spraywallPathClicked(placement: WebsiteJourneyPlacement): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.SpraywallPathClicked, properties: { placement } };
+}
+
+export function navLinkClicked(area: WebsiteNavArea, target: WebsiteNavTarget): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.NavLinkClicked, properties: { area, target } };
+}

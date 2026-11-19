@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
+import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SiteFooter from '../site-footer';
 
@@ -64,8 +66,14 @@ const SITEMAP_PATHS = [
  */
 const FOOTER_PATHS = [...SITEMAP_PATHS, '/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard'];
 
+vi.mock('@/app/lib/website-journey-analytics', () => ({
+  trackWebsiteJourneyEvent: vi.fn(),
+  trackWebsiteJourneyLinkClick: vi.fn(),
+}));
+
 describe('SiteFooter', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockPathname = '/';
   });
 
@@ -144,6 +152,22 @@ describe('SiteFooter', () => {
       tFromCatalog('common', 'footer.groups.explore'),
       tFromCatalog('common', 'footer.groups.smallPrint'),
     ]);
+  });
+
+  it('reports the navigation destination and app handoff placement', () => {
+    const { container } = render(<SiteFooter />);
+    const helpLink = container.querySelector<HTMLAnchorElement>('nav a[href="/help"]');
+    expect(helpLink).toBeTruthy();
+    fireEvent.click(helpLink!);
+    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+      name: 'Nav Link Clicked',
+      properties: { area: 'footer', target: '/help' },
+    });
+    fireEvent.click(screen.getByLabelText('Start climbing in the app'));
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
+      name: 'Web App Opened',
+      properties: { placement: 'footer' },
+    });
   });
 
   it('hands off to the app', () => {
