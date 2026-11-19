@@ -101,6 +101,9 @@ patchedDependencies:
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.
 allowBuilds:
+  # v13 ships N-API prebuilds. pnpm 11 otherwise synthesizes an unnecessary
+  # node-gyp build during fetch, including in unrelated service images.
+  better-sqlite3: false
   # Downloads the platform sentry-cli binary. Native build phases invoke it.
   '@sentry/cli': true
   # Direct native image dependency used by web/backend/db/board rendering.
