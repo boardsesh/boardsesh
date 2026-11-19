@@ -1,0 +1,104 @@
+[
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 390,
+      "height": 664
+    },
+    "path": "/",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Board night, sorted."
+  },
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 390,
+      "height": 664
+    },
+    "path": "/boards",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Your board, on Boardsesh"
+  },
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 390,
+      "height": 664
+    },
+    "mockedSubmissionStates": [
+      {
+        "role": "climber",
+        "state": "RATE_LIMITED"
+      },
+      {
+        "role": "climber",
+        "state": "UNAVAILABLE"
+      },
+      {
+        "role": "climber",
+        "state": "success"
+      },
+      {
+        "role": "gym",
+        "state": "success"
+      },
+      {
+        "role": "maker",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "path": "/",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Board night, sorted."
+  },
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "path": "/boards",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Your board, on Boardsesh"
+  },
+  {
+    "phase": "after",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "mockedSubmissionStates": [
+      {
+        "role": "climber",
+        "state": "RATE_LIMITED"
+      },
+      {
+        "role": "climber",
+        "state": "UNAVAILABLE"
+      },
+      {
+        "role": "climber",
+        "state": "success"
+      },
+      {
+        "role": "gym",
+        "state": "success"
+      },
+      {
+        "role": "maker",
+        "state": "success"
+      }
+    ]
+  }
+]
