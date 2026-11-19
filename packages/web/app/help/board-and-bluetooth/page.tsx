@@ -21,7 +21,7 @@ export default async function HelpBoardAndBluetoothPage() {
     <I18nProvider
       locale={locale}
       namespaces={['marketing']}
-      resourceKeys={{ marketing: ['help.board', 'help.nav', 'help.install', 'home.hero'] }}
+      resourceKeys={{ marketing: ['help.board', 'help.clip', 'help.nav', 'help.install', 'home.hero'] }}
     >
       <BoardAndBluetoothContent />
     </I18nProvider>

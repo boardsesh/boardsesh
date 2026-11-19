@@ -21,7 +21,7 @@ export default async function HelpFindingClimbsPage() {
     <I18nProvider
       locale={locale}
       namespaces={['marketing']}
-      resourceKeys={{ marketing: ['help.climbs', 'help.nav', 'help.install', 'home.hero'] }}
+      resourceKeys={{ marketing: ['help.climbs', 'help.clip', 'help.nav', 'help.install', 'home.hero'] }}
     >
       <FindingClimbsContent />
     </I18nProvider>

@@ -21,7 +21,7 @@ export default async function HelpLogbookPage() {
     <I18nProvider
       locale={locale}
       namespaces={['marketing']}
-      resourceKeys={{ marketing: ['help.log', 'help.nav', 'help.install', 'home.hero'] }}
+      resourceKeys={{ marketing: ['help.log', 'help.clip', 'help.nav', 'help.install', 'home.hero'] }}
     >
       <LogbookContent />
     </I18nProvider>

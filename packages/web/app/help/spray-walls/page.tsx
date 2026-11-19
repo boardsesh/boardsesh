@@ -21,7 +21,7 @@ export default async function HelpSprayWallsPage() {
     <I18nProvider
       locale={locale}
       namespaces={['marketing']}
-      resourceKeys={{ marketing: ['help.spray', 'help.nav', 'help.install', 'home.hero'] }}
+      resourceKeys={{ marketing: ['help.spray', 'help.clip', 'help.nav', 'help.install', 'home.hero'] }}
     >
       <SprayWallsContent />
     </I18nProvider>
