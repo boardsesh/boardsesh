@@ -3,11 +3,15 @@ export function isChineseTranslationLocale(locale: string): boolean {
   return locale.toLowerCase() === 'zh-cn';
 }
 
-/** An unset form stays unavailable rather than sending climbers to a placeholder. */
+const DEFAULT_CHINESE_TERMINOLOGY_FORM_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform';
+
+/** Use the published form by default; an explicit blank or invalid override disables it. */
 export function getChineseTerminologyFormUrl(configuredUrl: string | undefined): string | null {
-  if (!configuredUrl?.trim()) return null;
+  const formUrl = configuredUrl === undefined ? DEFAULT_CHINESE_TERMINOLOGY_FORM_URL : configuredUrl;
+  if (!formUrl.trim()) return null;
   try {
-    const url = new URL(configuredUrl.trim());
+    const url = new URL(formUrl.trim());
     const isGoogleForm =
       (url.hostname === 'forms.gle' && url.pathname.length > 1) ||
       (url.hostname === 'docs.google.com' && url.pathname.startsWith('/forms/'));

@@ -155,16 +155,24 @@ included. Dismissal is stored on the device/browser. The mobile prompt waits for
 launch readiness and consent, and runs on tabs or General settings rather than
 over sign-in or board setup. Other locales never receive this prompt.
 
-While no form URL is configured, the welcome explicitly says the questionnaire
-is being prepared; it offers Continue and points to the existing Help translate
-action. It never opens a placeholder URL. Once a real form URL is configured,
-an independent dismissal key invites those early visitors once more. The app’s
-Settings → General → Help translate action then opens the form for Chinese users.
+The published [Chinese terminology questionnaire](https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform)
+is the shared default for native, Expo web, and www. It was checked anonymously:
+the public page loads with all 32 optional questions and the five intended board
+choices. No answers were submitted as part of that check.
 
-Set `EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL` for the native and Expo web bundle,
-and `NEXT_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL` for www, to the same Google Form
-respondent URL (`https://forms.gle/…` or `https://docs.google.com/forms/…`). Both are
-public build-time values; rebuild the corresponding bundles after setting them.
+The welcome offers the form, and its separate dismissal key invites people who
+previously saw the preparation message once more. Chinese users can also open
+the form through Settings → General → Help translate, or the account sheet's
+Help translate row beneath their profile. That row shares the support group
+with donations but remains visible independently of donation/storefront rules.
+Other languages keep their existing translation contribution flow.
+
+`EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL` for native/Expo web and
+`NEXT_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL` for www optionally override this default.
+An explicit empty or invalid override disables the form and shows the preparation
+message instead. These are public build-time values; ship an updated JS bundle
+or web deployment when changing them. The checked-in default needs no environment
+configuration and can reach existing native installs through an OTA.
 No responses or account details are sent automatically: opening and submitting
 the form are the climber’s choices. The native localization declaration belongs
 in the 2.8.0 binary; an OTA alone cannot add iOS permission translations.
