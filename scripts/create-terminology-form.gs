@@ -1,6 +1,6 @@
 /**
  * Copy this entire file into a standalone Google Apps Script project, then run
- * createChineseTerminologyForm. It creates an UNPUBLISHED draft, never publishes
+ * createTerminologyForm. It creates an UNPUBLISHED draft, never publishes
  * or grants responder/Drive permissions, and never reads or deletes responses.
  * The owner reviews and publishes in Google Forms, then tests signed-out access.
  *
@@ -12,18 +12,194 @@
  * APIs: https://developers.google.com/apps-script/reference/forms/form-app
  *       https://developers.google.com/apps-script/reference/forms/form
  */
-var CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID = '';
-var CHINESE_TERMINOLOGY_STATE_KEY = 'BOARDSESH_CHINESE_TERMINOLOGY_FORM_V1';
-var CHINESE_TERMINOLOGY_TITLE = '帮 Boardsesh 说好攀岩中文';
-var CHINESE_TERMINOLOGY_DESCRIPTION =
-  'Boardsesh 2.8.0 的简体中文翻译用到了 AI。我们想听听，你和岩友在岩馆里会怎么说。' +
-  '所有题目都可跳过，挑几个熟悉的词回答就好。直接用英文也欢迎。' +
-  '填写问卷完全自愿，不影响使用应用。\n\n' +
-  '请勿填写姓名、邮箱、手机号、账号、密码或他人的个人信息。';
-var CHINESE_TERMINOLOGY_CONFIRMATION = '谢谢！我们会参考你和其他岩友的说法，改进 Boardsesh 的简体中文翻译。';
+var TERMINOLOGY_FORM_LOCALE = 'zh-CN';
+var TERMINOLOGY_RECOVER_DRAFT_ID = '';
+var TERMINOLOGY_FORM_PROFILES = {
+  'zh-CN': {
+    title: '帮 Boardsesh 说好攀岩中文',
+    description:
+      'Boardsesh 2.8.0 的简体中文翻译用到了 AI。我们想听听，你和岩友在岩馆里会怎么说。' +
+      '所有题目都可跳过，挑几个熟悉的词回答就好。直接用英文也欢迎。' +
+      '填写问卷完全自愿，不影响使用应用。\n\n' +
+      '请勿填写姓名、邮箱、手机号、账号、密码或他人的个人信息。',
+    confirmation: '谢谢！我们会参考你和其他岩友的说法，改进 Boardsesh 的简体中文翻译。',
+    buildPlan: chineseTerminologyPlan_,
+  },
+};
+
+function createTerminologyForm() {
+  var locale = TERMINOLOGY_FORM_LOCALE;
+  if (typeof locale !== 'string' || !Object.prototype.hasOwnProperty.call(TERMINOLOGY_FORM_PROFILES, locale))
+    throw new Error('Unsupported terminology form locale: ' + JSON.stringify(locale));
+  var profile = TERMINOLOGY_FORM_PROFILES[locale];
+  var stateKey =
+    locale === 'zh-CN' ? 'BOARDSESH_CHINESE_TERMINOLOGY_FORM_V1' : 'BOARDSESH_TERMINOLOGY_FORM_V1_' + locale;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Another creation is running. Rerun later in this same project.');
+  try {
+    var properties = PropertiesService.getScriptProperties();
+    var saved = properties.getProperty(stateKey);
+    var state = saved ? JSON.parse(saved) : null;
+    var plan = profile.buildPlan();
+    var signature = terminologyFormSignature_(plan);
+    var firstCreation = !state;
+    if (!state) {
+      state = {
+        version: 1,
+        signature: signature,
+        formId: null,
+        configured: false,
+        itemIds: [],
+        pending: null,
+        complete: false,
+      };
+      // Write intent BEFORE creation. An uncertain result must never create a duplicate draft.
+      terminologyFormSave_(properties, stateKey, state);
+    }
+    if (state.version !== 1 || state.signature !== signature)
+      throw new Error('Saved questionnaire differs. Keep the original script; do not clear its properties.');
+    if (!state.configured && (state.pending || state.itemIds.length > 0))
+      throw new Error('Unconfigured draft has item checkpoints. Review the saved state; nothing was changed.');
+    var configuredAtStart = state.configured === true;
+    var form;
+    var createdHere = false;
+    if (!state.formId) {
+      if (firstCreation) {
+        form = FormApp.create(profile.title, false);
+        createdHere = true;
+        console.log('RECOVERY draft ID: ' + form.getId() + '\nDraft edit URL: ' + form.getEditUrl());
+      } else {
+        if (!TERMINOLOGY_RECOVER_DRAFT_ID)
+          throw new Error(
+            'Creation outcome is uncertain. Find the prior empty unpublished draft in the execution log / Google Forms, set TERMINOLOGY_RECOVER_DRAFT_ID, and rerun. Do not clear ScriptProperties.',
+          );
+        form = FormApp.openById(TERMINOLOGY_RECOVER_DRAFT_ID);
+        if (
+          String(form.getTitle()) !== profile.title ||
+          !form.supportsAdvancedResponderPermissions() ||
+          form.isPublished() ||
+          form.getItems().length
+        ) {
+          throw new Error('Recovery requires the matching EMPTY, UNPUBLISHED draft. Nothing was changed.');
+        }
+      }
+      state.formId = form.getId();
+      terminologyFormSave_(properties, stateKey, state);
+    } else {
+      form = FormApp.openById(state.formId);
+    }
+    // Completed reruns are read-only, including after the owner edits or publishes.
+    if (state.complete) return terminologyFormReport_(form, true);
+    if (!form.supportsAdvancedResponderPermissions() || form.isPublished())
+      throw new Error('Resume only an unpublished draft that supports publishing. Nothing was added.');
+    // Explicitly initialize the new draft title before checking resumed drafts.
+    // Its ID is already checkpointed, so a setter failure cannot create another form.
+    if (createdHere) form.setTitle(profile.title);
+    var actualTitle = String(form.getTitle());
+    if (actualTitle !== profile.title) {
+      if (
+        TERMINOLOGY_RECOVER_DRAFT_ID === state.formId &&
+        state.configured === false &&
+        state.itemIds.length === 0 &&
+        state.pending === null &&
+        form.getItems().length === 0
+      ) {
+        // Explicit owner recovery only: never rename a configured or nonempty form.
+        form.setTitle(profile.title);
+        actualTitle = String(form.getTitle());
+      }
+      if (actualTitle !== profile.title)
+        throw new Error(
+          'Draft title mismatch: actual ' +
+            JSON.stringify(actualTitle) +
+            '; expected ' +
+            JSON.stringify(profile.title) +
+            '. Existing drafts are not renamed automatically. Review the heading manually, or use the matching TERMINOLOGY_RECOVER_DRAFT_ID only for an empty, unconfigured, unpublished saved draft.',
+        );
+    }
+    terminologyFormCheckPrefix_(form.getItems(), state, plan);
+    if (!state.configured) {
+      form.setPublished(false);
+      form.setCollectEmail(false);
+      form.setLimitOneResponsePerUser(false);
+      form.setPublishingSummary(false);
+      form.setIsQuiz(false);
+      form.setShuffleQuestions(false);
+      form.setProgressBar(true);
+      form.setDescription(profile.description);
+      form.setConfirmationMessage(profile.confirmation);
+      state.configured = true;
+      terminologyFormSave_(properties, stateKey, state);
+    }
+    if (
+      form.collectsEmail() ||
+      form.hasLimitOneResponsePerUser() ||
+      form.isPublishingSummary() ||
+      form.isQuiz() ||
+      form.getShuffleQuestions() ||
+      !form.hasProgressBar()
+    ) {
+      throw new Error(
+        'Draft settings were changed. Review privacy / progress settings in Google Forms before resuming.',
+      );
+    }
+    var startedAt = Date.now();
+    while (state.itemIds.length < plan.length) {
+      var index = state.itemIds.length;
+      var definition = plan[index];
+      var items = form.getItems();
+      terminologyFormCheckPrefix_(items, state, plan);
+      var item;
+      var createdItemHere = false;
+      var knownPendingHere = false;
+      if (state.pending) {
+        if (items.length !== index + 1)
+          throw new Error(
+            'An item creation has an uncertain result. Inspect the draft; only if the next item is missing, add one blank ' +
+              definition.type +
+              ' item at the end and rerun. Do not clear ScriptProperties.',
+          );
+        item = items[index];
+        if (state.pending.id !== null && String(item.getId()) !== state.pending.id)
+          throw new Error('Pending item identity changed. Nothing was overwritten.');
+        knownPendingHere = state.pending.id !== null;
+      } else {
+        state.pending = { index: index, id: null };
+        terminologyFormSave_(properties, stateKey, state);
+        item = terminologyFormAdd_(form, definition.type);
+        createdItemHere = true;
+        state.pending.id = String(item.getId());
+        terminologyFormSave_(properties, stateKey, state);
+      }
+      // add* returns a concrete typed object; only generic Item has as* casts.
+      terminologyFormConfigureItem_(
+        form.getItemById(item.getId()),
+        definition,
+        createdItemHere,
+        configuredAtStart && knownPendingHere,
+      );
+      // Validate an unknown tail before recording ownership of its ID. A refused
+      // owner edit must remain unknown on every retry, never gain normalization rights.
+      if (state.pending.id === null) {
+        state.pending.id = String(item.getId());
+        terminologyFormSave_(properties, stateKey, state);
+      }
+      state.itemIds.push(String(item.getId()));
+      state.pending = null;
+      terminologyFormSave_(properties, stateKey, state);
+      if (Date.now() - startedAt > 240000) return terminologyFormReport_(form, false);
+    }
+    terminologyFormCheckPrefix_(form.getItems(), state, plan);
+    state.complete = true;
+    terminologyFormSave_(properties, stateKey, state);
+    return terminologyFormReport_(form, true);
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 /** 28 terminology topics, three background questions and one final comment. */
-function chineseTerminologyPlan() {
+function chineseTerminologyPlan_() {
   var plan = [];
   function section(key, title, help) {
     plan.push({ key: key, type: plan.length ? 'PAGE_BREAK' : 'SECTION_HEADER', title: title, help: help });
@@ -233,217 +409,11 @@ function chineseTerminologyPlan() {
   return plan;
 }
 
-function createChineseTerminologyForm() {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) throw new Error('Another creation is running. Rerun later in this same project.');
-  try {
-    var properties = PropertiesService.getScriptProperties();
-    var saved = properties.getProperty(CHINESE_TERMINOLOGY_STATE_KEY);
-    var state = saved ? JSON.parse(saved) : null;
-    var plan = chineseTerminologyPlan();
-    var signature = chineseTerminologySignature(plan);
-    var firstCreation = !state;
-    if (!state) {
-      state = {
-        version: 1,
-        signature: signature,
-        formId: null,
-        configured: false,
-        itemIds: [],
-        pending: null,
-        complete: false,
-      };
-      // Write intent BEFORE creation. An uncertain result must never create a duplicate draft.
-      chineseTerminologySave(properties, state);
-    }
-    if (state.version !== 1 || state.signature !== signature)
-      throw new Error('Saved questionnaire differs. Keep the original script; do not clear its properties.');
-    var form;
-    var createdHere = false;
-    if (!state.formId) {
-      if (firstCreation) {
-        form = FormApp.create(CHINESE_TERMINOLOGY_TITLE, false);
-        createdHere = true;
-        console.log('RECOVERY draft ID: ' + form.getId() + '\nDraft edit URL: ' + form.getEditUrl());
-      } else {
-        if (!CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID)
-          throw new Error(
-            'Creation outcome is uncertain. Find the prior empty unpublished draft in the execution log / Google Forms, set CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID, and rerun. Do not clear ScriptProperties.',
-          );
-        form = FormApp.openById(CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID);
-        if (
-          String(form.getTitle()) !== CHINESE_TERMINOLOGY_TITLE ||
-          !form.supportsAdvancedResponderPermissions() ||
-          form.isPublished() ||
-          form.getItems().length
-        ) {
-          throw new Error('Recovery requires the matching EMPTY, UNPUBLISHED draft. Nothing was changed.');
-        }
-      }
-      state.formId = form.getId();
-      chineseTerminologySave(properties, state);
-    } else {
-      form = FormApp.openById(state.formId);
-    }
-    // Completed reruns are read-only, including after the owner edits or publishes.
-    if (state.complete) return chineseTerminologyReport(form, true);
-    if (!form.supportsAdvancedResponderPermissions() || form.isPublished())
-      throw new Error('Resume only an unpublished draft that supports publishing. Nothing was added.');
-    // Explicitly initialize the new draft title before checking resumed drafts.
-    // Its ID is already checkpointed, so a setter failure cannot create another form.
-    if (createdHere) form.setTitle(CHINESE_TERMINOLOGY_TITLE);
-    var actualTitle = String(form.getTitle());
-    if (actualTitle !== CHINESE_TERMINOLOGY_TITLE) {
-      if (
-        CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID === state.formId &&
-        state.configured === false &&
-        state.itemIds.length === 0 &&
-        state.pending === null &&
-        form.getItems().length === 0
-      ) {
-        // Explicit owner recovery only: never rename a configured or nonempty form.
-        form.setTitle(CHINESE_TERMINOLOGY_TITLE);
-        actualTitle = String(form.getTitle());
-      }
-      if (actualTitle !== CHINESE_TERMINOLOGY_TITLE)
-        throw new Error(
-          'Draft title mismatch: actual ' +
-            JSON.stringify(actualTitle) +
-            '; expected ' +
-            JSON.stringify(CHINESE_TERMINOLOGY_TITLE) +
-            '. Existing drafts are not renamed automatically. Review the heading manually, or use the matching CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID only for an empty, unconfigured, unpublished saved draft.',
-        );
-    }
-    chineseTerminologyCheckPrefix(form.getItems(), state, plan);
-    if (!state.configured) {
-      form.setPublished(false);
-      form.setCollectEmail(false);
-      form.setLimitOneResponsePerUser(false);
-      form.setPublishingSummary(false);
-      form.setIsQuiz(false);
-      form.setShuffleQuestions(false);
-      form.setProgressBar(true);
-      form.setDescription(CHINESE_TERMINOLOGY_DESCRIPTION);
-      form.setConfirmationMessage(CHINESE_TERMINOLOGY_CONFIRMATION);
-      state.configured = true;
-      chineseTerminologySave(properties, state);
-    }
-    if (
-      form.collectsEmail() ||
-      form.hasLimitOneResponsePerUser() ||
-      form.isPublishingSummary() ||
-      form.isQuiz() ||
-      form.getShuffleQuestions() ||
-      !form.hasProgressBar()
-    ) {
-      throw new Error(
-        'Draft settings were changed. Review privacy / progress settings in Google Forms before resuming.',
-      );
-    }
-    var startedAt = Date.now();
-    while (state.itemIds.length < plan.length) {
-      var index = state.itemIds.length;
-      var definition = plan[index];
-      var items = form.getItems();
-      chineseTerminologyCheckPrefix(items, state, plan);
-      var item;
-      var createdItemHere = false;
-      if (state.pending) {
-        if (items.length !== index + 1)
-          throw new Error(
-            'An item creation has an uncertain result. Inspect the draft; only if the next item is missing, add one blank ' +
-              definition.type +
-              ' item at the end and rerun. Do not clear ScriptProperties.',
-          );
-        item = items[index];
-        if (state.pending.id !== null && String(item.getId()) !== state.pending.id)
-          throw new Error('Pending item identity changed. Nothing was overwritten.');
-        state.pending.id = String(item.getId());
-        chineseTerminologySave(properties, state);
-      } else {
-        state.pending = { index: index, id: null };
-        chineseTerminologySave(properties, state);
-        item = chineseTerminologyAdd(form, definition.type);
-        createdItemHere = true;
-        state.pending.id = String(item.getId());
-        chineseTerminologySave(properties, state);
-      }
-      // add* returns a concrete typed object; only generic Item has as* casts.
-      chineseTerminologyConfigureItem(form.getItemById(item.getId()), definition, createdItemHere);
-      state.itemIds.push(String(item.getId()));
-      state.pending = null;
-      chineseTerminologySave(properties, state);
-      if (Date.now() - startedAt > 240000) return chineseTerminologyReport(form, false);
-    }
-    chineseTerminologyCheckPrefix(form.getItems(), state, plan);
-    state.complete = true;
-    chineseTerminologySave(properties, state);
-    return chineseTerminologyReport(form, true);
-  } finally {
-    lock.releaseLock();
-  }
+function terminologyFormSave_(properties, stateKey, state) {
+  properties.setProperty(stateKey, JSON.stringify(state));
 }
 
-function chineseTerminologySave(properties, state) {
-  properties.setProperty(CHINESE_TERMINOLOGY_STATE_KEY, JSON.stringify(state));
-}
-
-/** Explicitly restore only the saved pending board checkbox, then resume its draft. */
-function repairChineseTerminologyCheckbox() {
-  var recoveryDraftId = CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID;
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) throw new Error('Another creation is running. Rerun later in this same project.');
-  try {
-    var saved = PropertiesService.getScriptProperties().getProperty(CHINESE_TERMINOLOGY_STATE_KEY);
-    if (!saved) throw new Error('No saved draft to repair. Use the original Apps Script project.');
-    var state = JSON.parse(saved);
-    var plan = chineseTerminologyPlan();
-    if (state.version !== 1 || state.signature !== chineseTerminologySignature(plan))
-      throw new Error('Saved questionnaire differs. Keep the original script; do not clear its properties.');
-    if (!recoveryDraftId || recoveryDraftId !== state.formId)
-      throw new Error('Set CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID to the saved draft ID before explicit repair.');
-    if (!state.complete) {
-      var form = FormApp.openById(state.formId);
-      if (!form.supportsAdvancedResponderPermissions() || form.isPublished())
-        throw new Error('Repair only an unpublished draft. Nothing was changed.');
-      if (String(form.getTitle()) !== CHINESE_TERMINOLOGY_TITLE || !state.configured)
-        throw new Error('Repair requires the configured draft with its expected heading. Nothing was changed.');
-      var items = form.getItems();
-      chineseTerminologyCheckPrefix(items, state, plan);
-      var definition = plan[state.itemIds.length];
-      if (
-        !state.pending ||
-        state.pending.id === null ||
-        !definition ||
-        definition.key !== 'boards' ||
-        definition.type !== 'CHECKBOX' ||
-        items.length !== state.itemIds.length + 1
-      ) {
-        throw new Error('Repair requires the saved pending board checkbox. Nothing was changed.');
-      }
-      var pendingItem = items[state.itemIds.length];
-      if (String(pendingItem.getId()) !== state.pending.id || pendingItem.getType() !== FormApp.ItemType.CHECKBOX)
-        throw new Error('Pending checkbox identity changed. Nothing was changed.');
-      var checkbox = pendingItem.asCheckboxItem();
-      if (
-        String(checkbox.getTitle()) !== definition.title ||
-        String(checkbox.getHelpText()) !== definition.help ||
-        checkbox.isRequired()
-      ) {
-        throw new Error('Pending checkbox wording or optional setting changed. Nothing was changed.');
-      }
-      checkbox.setChoiceValues(definition.choices);
-      checkbox.showOtherOption(false);
-      if (checkbox.hasOtherOption()) throw new Error('Could not disable the extra Other option. Rerun repair.');
-      console.log('Restored the five choices on the existing pending checkbox. Resuming the saved draft.');
-    }
-  } finally {
-    lock.releaseLock();
-  }
-  return createChineseTerminologyForm();
-}
-
-function chineseTerminologySignature(plan) {
+function terminologyFormSignature_(plan) {
   // Detect accidental questionnaire edits across partial runs, not a security hash.
   var text = JSON.stringify(plan);
   var hash = 2166136261;
@@ -451,7 +421,7 @@ function chineseTerminologySignature(plan) {
   return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
 }
 
-function chineseTerminologyCheckPrefix(items, state, plan) {
+function terminologyFormCheckPrefix_(items, state, plan) {
   var completed = state.itemIds.length;
   if (items.length < completed || items.length > completed + (state.pending ? 1 : 0))
     throw new Error('Draft items were added or removed outside this run. Nothing was deleted or overwritten.');
@@ -480,7 +450,7 @@ function chineseTerminologyCheckPrefix(items, state, plan) {
     throw new Error('Saved item checkpoint is inconsistent. Do not clear ScriptProperties.');
 }
 
-function chineseTerminologyAdd(form, type) {
+function terminologyFormAdd_(form, type) {
   if (type === 'TEXT') return form.addTextItem();
   if (type === 'CHECKBOX') return form.addCheckboxItem();
   if (type === 'PARAGRAPH_TEXT') return form.addParagraphTextItem();
@@ -489,7 +459,7 @@ function chineseTerminologyAdd(form, type) {
   throw new Error('Unknown questionnaire item type: ' + type);
 }
 
-function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) {
+function terminologyFormConfigureItem_(baseItem, definition, createdItemHere, knownPendingHere) {
   if (baseItem.getType() !== FormApp.ItemType[definition.type])
     throw new Error('Pending item has the wrong type. Nothing was overwritten.');
   var item = baseItem;
@@ -510,33 +480,43 @@ function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) 
     }
     return;
   }
-  var title = item.getTitle() || '';
-  var help = item.getHelpText() || '';
+  var title = String(item.getTitle() || '');
+  var help = String(item.getHelpText() || '');
   if ((title && title !== definition.title) || (help && help !== definition.help))
     throw new Error('Pending item was edited. Finish it manually; the script will not overwrite your wording.');
-  if (!title) item.setTitle(definition.title);
-  if (!help) item.setHelpText(definition.help);
-  if (definition.type === 'TEXT' || definition.type === 'CHECKBOX' || definition.type === 'PARAGRAPH_TEXT') {
-    if (item.isRequired()) throw new Error('A pending question was made required. Restore optional before resuming.');
-    item.setRequired(false);
-  }
+  var isQuestion = definition.type === 'TEXT' || definition.type === 'CHECKBOX' || definition.type === 'PARAGRAPH_TEXT';
+  if (isQuestion && item.isRequired())
+    throw new Error('A pending question was made required. Restore optional before resuming.');
+  var choices;
+  var normalizeChoices = false;
   if (definition.type === 'CHECKBOX') {
-    if (item.hasOtherOption())
-      throw new Error('Pending checkbox has an extra Other option. Run repairChineseTerminologyCheckbox to restore it.');
-    var choices = item.getChoices().map(function (choice) {
+    // The generator owns choices only until this known pending item is checkpointed
+    // complete. This also resumes older drafts without guessing localized defaults.
+    normalizeChoices = knownPendingHere && title === definition.title && help === definition.help;
+    choices = item.getChoices().map(function (choice) {
       return choice.getValue();
     });
-    if (choices.length && JSON.stringify(choices) !== JSON.stringify(definition.choices))
+    if (
+      !normalizeChoices &&
+      (item.hasOtherOption() || (choices.length && JSON.stringify(choices) !== JSON.stringify(definition.choices)))
+    )
       throw new Error(
-        'Pending checkbox choices differ. Keep this question and set its options exactly to ' +
-          JSON.stringify(definition.choices) +
-          ', then rerun, or run repairChineseTerminologyCheckbox with its matching recovery draft ID. No choices were overwritten.',
+        'Unknown pending checkbox choices differ. Review the existing question; no choices were overwritten and its ID was not adopted.',
       );
-    if (!choices.length) item.setChoiceValues(definition.choices);
+  }
+  // Validate every resumed field before making any changes or adopting an unknown ID.
+  if (!title) item.setTitle(definition.title);
+  if (!help) item.setHelpText(definition.help);
+  if (isQuestion) item.setRequired(false);
+  if (definition.type === 'CHECKBOX' && (normalizeChoices || !choices.length)) {
+    item.setChoiceValues(definition.choices);
+    item.showOtherOption(false);
+    if (item.hasOtherOption())
+      throw new Error('Could not disable the extra Other option. Rerun createTerminologyForm.');
   }
 }
 
-function chineseTerminologyReport(form, complete) {
+function terminologyFormReport_(form, complete) {
   var published = form.supportsAdvancedResponderPermissions() ? form.isPublished() : null;
   var result = {
     formId: form.getId(),
@@ -557,6 +537,6 @@ function chineseTerminologyReport(form, complete) {
       '\n' +
       result.accessCheck,
   );
-  if (!complete) console.log('Partial draft saved. Run createChineseTerminologyForm again in the same script project.');
+  if (!complete) console.log('Partial draft saved. Run createTerminologyForm again in the same script project.');
   return result;
 }

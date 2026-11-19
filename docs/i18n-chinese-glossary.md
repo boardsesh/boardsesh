@@ -51,75 +51,19 @@ means a list of records and is misleading in ownership or merge confirmations.
 | Multi-stage route | 连续线路 | One climb whose groups of lit holds change in sequence |
 | Imported Kilter circuit | 训练线路组 | A collection of several climbs, distinct from a multi-stage route |
 
-## Google Form draft
+## Google Form questionnaire
 
-No live Google Form or respondent URL has been created or verified by this change.
-The saved questionnaire below is ready for owner review. The single-file
-[`scripts/create-chinese-terminology-form.gs`](../scripts/create-chinese-terminology-form.gs)
-creates the same 32 optional questions in five sections: three background
-questions, 28 terminology topics, and one final comment. It can also serve as the
-copy source for an authorized browser agent creating the form in Google's UI.
+The shared [terminology form generator](../scripts/create-terminology-form.gs)
+contains the reviewed Chinese profile: 32 optional questions in five sections,
+with all 28 terminology topics below. Use `TERMINOLOGY_FORM_LOCALE = 'zh-CN'`
+and run **`createTerminologyForm`** in the same Apps Script project as the
+existing draft. This reuses its saved ID and resumes its pending checkbox with
+the five intended choices automatically.
 
-### Create and review the draft without a plugin
-
-1. Open [Google Apps Script](https://script.google.com/home/start) in the owner's account and create a standalone project.
-2. Replace the editor contents with the entire script, select `createChineseTerminologyForm`, and run it. Review and approve the Forms authorization for your own script.
-3. Open the execution log's **edit URL**. Review all five sections and 32 optional questions. The returned respondent URL is a **draft link**, not proof of public access.
-4. In Google Forms, confirm email collection, one-response restriction, response summaries, quiz mode, and shuffle are off. Publish with **Anyone with the link** only if the owner's account permits it.
-5. Test the respondent link in a signed-out/private browser: no sign-in requirement, no email collection, every question skippable, and no public response summary. Share or wire the URL only after this check passes.
-
-The script uses [FormApp.create(title, false)](https://developers.google.com/apps-script/reference/forms/form-app#create(String,Boolean))
-and [setPublished(false)](https://developers.google.com/apps-script/reference/forms/form#setPublished(Boolean))
-to leave an unpublished draft. It explicitly initializes the new draft's visible
-heading with [setTitle](https://developers.google.com/apps-script/reference/forms/form#setTitle(String))
-before checking the title on resumed drafts. It sets a progress bar and never publishes,
-submits responses, reads responses, or grants Drive/responder permissions. The
-Forms service needs Forms authorization; no Drive service, external service,
-Google Cloud setup, or dependency installation is required. Disabling email and
-one-response controls does **not** establish anonymous/public reachability:
-Workspace policy and modern responder access must be checked in Google's UI.
-The deprecated `setRequireLogin` API is deliberately not used.
-
-### Reruns and interrupted creation
-
-Rerun in the **same Apps Script project**. A script lock and ScriptProperties
-retain the draft ID and item checkpoints. Completed reruns only return URLs:
-they preserve owner edits, responses, and the current publication state.
-Partial reruns append missing items and finish only blank or matching pending
-fields. Changed item IDs/types, added items, edited pending text, required
-questions, or changed privacy settings stop for owner review; nothing is deleted.
-
-If a saved draft stops with a title mismatch before adding any items, set
-`CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID` to that same saved draft ID and rerun.
-This explicitly restores the expected heading only when the draft is unpublished,
-empty, and not yet configured, with no completed or pending item checkpoints.
-Other existing drafts are never renamed automatically. A mismatch reports the
-actual and expected headings for owner review. Alternatively, set the large form
-heading to `帮 Boardsesh 说好攀岩中文` manually and rerun the same project. This
-title-only script fix preserves the existing questionnaire plan and checkpoints.
-
-If a pending checkbox stops because its choices differ, keep that question and
-manually set its five options to `Kilter Board`, `Tension Board`, `MoonBoard`,
-`喷点墙 / Spraywall` (one option), and `其他`, then rerun the same project.
-Alternatively, set `CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID` to the saved draft ID
-and run **`repairChineseTerminologyCheckbox`**. This explicit repair restores
-only that saved pending question's five choices, disables the separate built-in
-Other option, and resumes creation. It verifies the draft, pending question ID,
-wording, and optional setting before changing anything. Completed reruns remain
-read-only. Running the normal creator alone preserves differing pending choices.
-Fresh items initialize their fields directly; resumed fields are protected
-because service defaults and owner edits cannot safely be distinguished.
-
-Form creation and saving its ID span two services and cannot be atomic. A saved
-creation intent with no ID stops automatic recreation. Find the empty unpublished
-draft with the expected heading using the prior execution log or Google Forms, paste its ID into
-`CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID`, and rerun. If creation never reached Google,
-the owner may create a matching empty unpublished draft manually and use that ID.
-For an uncertain item append with no visible item, inspect the draft, add **one
-blank item of the requested type only if it is missing**, and rerun. Never clear
-ScriptProperties to get past a recovery stop. Do not edit the questionnaire code
-while a draft is partially built. Tests use a FormApp stand-in; they are not live
-Google creation, authorization, publication, or signed-out access proof.
+The [form setup and language profile guide](i18n-terminology-forms.md) covers the
+single-script workflow, reruns, adding another language, and publishing/access
+checks. The generator leaves a draft; a public respondent URL still requires
+owner verification before it is configured in the app.
 
 ### Reviewed questionnaire copy
 
