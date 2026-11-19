@@ -247,6 +247,7 @@ authorization, retry safety, and conflict behavior.
 | Favorite / unfavorite | `GET board/route/favorite/<routeId>` / `GET board/route/unfavorite/<routeId>` | `F31130` |
 | Project / unproject | `GET board/route/project/<routeId>` / `GET board/route/unproject/<routeId>` | `F31131` |
 | Create a route | `POST board/route-setter/route` | `F31157 +0x435–0x440` |
+| Edit a route | `PATCH board/<routeId>` | `F31158 +0x383–0x3a1` |
 
 Paths are relative to `/api/v1/`. The favorite and project GETs **change user
 state**; do not use them as read-only probes or crawl them.
@@ -291,11 +292,151 @@ field. Its optimistic local record uses the current time, but that is not a
 submitted `createdAt`. Do not upload old Boardsesh ticks through this request
 and assume their original dates survive.
 
-The route-creation endpoint above is a confirmed path only; its complete
-publication body and validation rules are not documented here. Socket.IO
-constants establish a realtime client transport, not a durable incremental
-feed or a verified partner event schema. Use the traced HTTP delta path as
-the current sync starting point.
+### Route creation and editing
+
+The board route editor constructs the same body for creation and editing
+(`F33643 +0x16bf–0x1932`). This is a reconstruction of its serializer, not
+a complete server validation schema:
+
+```js
+{
+  campusing,
+  noKickplate,
+  noMatching,
+  noEdge,
+  name: routeName,
+  angle: routeParams.angle,
+  tips: routeTips,
+  tags: routeParams.tags ?? '',
+  grade: selectedGradePayloadValue,
+  draft: submitArgument,
+  diodes: selectedDiodes.map(({ id, step }) => ({ id, step })),
+  type: selectedBoardType,
+}
+```
+
+The four climbing-rule flags start as booleans in the editor (`F19200`).
+The grade is the option's payload value, as in ascent submissions. `draft`
+comes from the submit action. `type` uses the selected board type, with the
+client's big-board fallback. The diode mapper strips entries to **API diode
+`id` and `step`** (`F34502`): do not substitute `autocadId` or `idLedNode`,
+which serve different Bluetooth mappings. Step semantics still need the
+partner's schema.
+
+This base serializer does not add a board advertised name, `boardConfigId`,
+timestamp, external ID, or `clientId`. Local queue metadata is not necessarily
+part of the HTTP request. Confirm route ownership, publication permissions,
+draft visibility, and the acknowledged route ID before exporting Boardsesh
+climbs. Route creation and lighting the physical board are separate operations.
+A board route DELETE call was not established in the inspected paths.
+
+### Playlists and membership
+
+Playlists use `users/board-lists`, separately from catalog deltas:
+
+| Action | Request and body | Evidence |
+| --- | --- | --- |
+| Read lists / members | `GET users/board-lists` / `GET users/board-lists/<listId>` | `F33504`, `F30761`, `F35009` |
+| Create list | `POST users/board-lists`, `{name, iconName}` | `F2893`, `F19337`, `F33672 +0x20b–0x236` |
+| Edit list | `PATCH users/board-lists/<listId>`, `{name, iconName}` | `F33672 +0x257–0x29b` |
+| Delete list | `DELETE users/board-lists/<listId>` | `F34547 +0xf1–0x10d` |
+| Add route | `POST users/board-lists/<listId>`, `{route: routeId}` | `F31136 +0x93–0xc4` |
+| Remove member | `DELETE users/board-lists/item/<itemId>` | `F31137 +0x7e–0x96` |
+| Reorder lists | `PATCH users/board-lists/reorder`, `{ids: [listId, ...]}` | `F33508`, `F34345` |
+
+Create/edit trim the list name and send both `name` and `iconName`; an empty
+trimmed name is rejected by the UI. The default icon is
+`format-list-bulleted`. These are observed client choices, not proof of server
+validation limits. The detail reader expects an array and tolerates a route
+reference in `row.route.id`, `row.routeId`, or a string `row.route`
+(`F17743`, `F25502`). Preserve the member's item ID as well as its route ID:
+**removing membership takes the item ID**, not the route ID.
+
+Before a queued add, the app checks `listAlreadyHolds` with a GET; a read
+failure is treated as not found (`F31136`, `F30761`). That check cannot prove
+atomic uniqueness under concurrent adds or safe retry after a timeout.
+The reorder endpoint orders the user's **lists**, not climbs within a list.
+Neither a route-ordering API nor playlist deltas/tombstones was established;
+do not assume `board/routes-delta` includes playlists. Complete list and
+membership reads would need separate reconciliation and visibility guarantees.
+
+### What remains incomplete for two-way sync
+
+| Entity | Observed pull | Observed push | Unresolved contract |
+| --- | --- | --- | --- |
+| Personal ascents | Catalog delta includes ascent records; filter by connected user | Create with `POST board/log-ascent` | Full user history, edit/delete, original climb date, permanent-ID acknowledgement, deduplication |
+| Favorites / projects | Added/deleted collections in catalog delta | Separate add/remove state-changing GETs | Concurrent edits, retry behavior, account visibility |
+| Routes | Snapshot/delta, detail, and tombstone consumers | Create and PATCH edit | DELETE API, ownership/publication, revision conflicts, creation deduplication |
+| Playlists / members | Separate list and member GETs | List create/edit/delete, member add/remove, list reorder | Complete pagination/visibility, change feed, revisions, member ordering, duplicate-safe creation/add |
+
+The APK also contains `PATCH comments/<commentId>` with `{routeId, text}`
+and `DELETE comments/<commentId>` (`F33212`, `F33213`). Their traced caller
+belongs to the general route-details flow, which reads
+`log-ascent/by-route/<id>` without the `board/` prefix (`F33195`). They are
+**not verified Quantum ascent edit/delete endpoints**. Using a board ascent
+ID there would be a guess. Pull-side ascent tombstones establish a consumer
+for deletions, not permission or an endpoint to perform them.
+
+### Mutation acknowledgements and identity
+
+The traced ascent handler awaits the HTTP POST (`F31138`). The queue calls
+`handler.sync(payload, httpClient)` and, on success, removes the queue entry
+by its local queue ID (`F34666 +0x44e–0x47c`, `+0xeb–0x126`, `F34952`).
+These paths do not establish a response schema containing a permanent ascent
+ID or a guaranteed `clientId` echo in subsequent deltas. A successful local
+queue drain is therefore insufficient evidence for duplicate-free two-way
+sync. Confirm both the mutation acknowledgement and how it matches the
+eventual imported record. Never identify a repeated ascent solely by user,
+route, and date: multiple legitimate ascents can share those fields.
+
+## Realtime board state
+
+The app connects to the Socket.IO namespace `https://e-walls.eu/board`, using
+transport path `/api/socket.io/`, `auth: {token: jwt}`, and
+`transports: ['websocket']`. The token has no `Bearer ` prefix in this object.
+The normal connection disables Socket.IO's automatic reconnection and sets a
+20-second connection timeout (`F26742`). This is a Socket.IO connection, not
+a plain WebSocket endpoint accepting arbitrary JSON frames.
+
+| Event | Direction and observed meaning |
+| --- | --- |
+| `subscribe_board` | Client sends `{boardId}`; waits up to 15 seconds for matching `board_config` (`F35010`, `F34444`) |
+| `get_board_config` | Client sends `{boardId}`; receives board configuration (`F33592`) |
+| `unsubscribe_board` | Client sends the current `{boardId}`; no server acknowledgement callback is passed (`F33591`) |
+| `route_activity` | Server sends lighting activity; consumed fields include `activity`, `routeId`, `timestamp`, `boardId`, `userId`, `color` (`F26751`, `F19044`) |
+| `board_config`, `board_config_updated` | Configuration and `activePlayers` state; not a route catalog snapshot (`F26727`) |
+
+**`route_activity` is not an ascent or catalog change feed.** The traced
+consumer handles `activated` and `deactivated` by changing active-player
+lighting state (`F19044`, `F26726`). Deactivation does not mean deletion of a
+climb. The duplicate cache uses an in-memory key built from activity, route
+ID, and timestamp; it is not a persistent sync cursor (`F26751`, `F18765`).
+No route-created/updated/deleted or ascent-changed listener was found in this
+service's listener registration (`F18764`). This does not rule out partner
+events elsewhere on the server.
+
+Use REST deltas for the observed durable data path. On socket reconnect,
+resubscribe and refresh board configuration; no replay contract was found in
+these client paths. Board-control events may improve live presence in
+Boardsesh, but cannot replace logbook reconciliation.
+
+## Mapping pitfalls for two-way sync
+
+Preserve each grade's original representation and system alongside any
+Boardsesh-normalized grade. Grade options have distinct `ID`, `Label`, and
+`Value` fields; the submission helper selects `Value`, not `ID` (`F19207`,
+`F19209`). For example, shipped V0 has option ID `3` and the string Value
+`"[9,10]"`, representing multiple internal indices. Flattening this to a
+single number loses information. Boulder preference keys include `hueco`
+and `ebleau` (exact spelling); rope systems include `UIAA`, `French`, `US`,
+and `EWBANKS` (`F719`, `F720`).
+
+The angle helpers treat missing/invalid angles separately from actual
+angles and serialize the missing sentinel as `-1` (`F19068`, `F19069`). Do
+not import it as zero degrees. The shipped selection options are 25–60 in
+5-degree steps for `big`, 10–30 for `belay`, and 15–60 for other types
+(`F2837`, `F19066`). These are UI options; physical limits, degree orientation,
+and server validation still require partner confirmation.
 
 ## Proposed Boardsesh implementation
 
@@ -328,6 +469,30 @@ flowchart LR
    a send, attempt count, grade, angle, or timezone that the upstream row does
    not establish.
 
+### Bidirectional reconciliation contract
+
+Before enabling uploads, define these rules for each supported entity:
+
+| Concern | Proposed Boardsesh behavior |
+| --- | --- |
+| Stable identity | Store the connected account, board scope, entity kind, Boardsesh ID, remote ID, and originating operation ID. Playlist membership IDs are separate from route IDs. |
+| Durable outbound work | Commit the local edit and outbox operation together. Persist one operation ID and request payload across retries; never generate a new `clientId` for each attempt. |
+| Acknowledgement and echo | Record the remote identity from a documented acknowledgement or reconciliation lookup. Apply imported changes without automatically re-enqueuing them. Wait for an unambiguous mapping before marking an uncertain upload complete. |
+| Concurrent edits | Keep the last synchronized representation, compare local and remote edits against it, and merge only independent field changes. Surface conflicting changes until partner revision/precondition semantics are known. Do not choose a winner using device clocks. |
+| Deletions and visibility | Propagate deletion only for an explicitly supported operation and an owned, linked record. A missing item on one page, private item, or incomplete fetch is not a deletion. Keep tombstones and pending-operation state until reconciled. |
+
+An HTTP timeout can occur after a successful server commit. Until the partner
+provides idempotency or a reliable operation lookup, hold that upload in an
+uncertain state and reconcile it instead of automatically creating another
+ascent. Handle rate limits with the partner's retry contract; do not copy the
+first-party queue's retry behavior as a guarantee of safe replay.
+
+Start with approved new-ascent uploads and inbound reconciliation. Historical
+backfill must wait for preserved climb dates/timezones and duplicate handling.
+Enable ascent edits/deletes and playlist/route writes separately, as their
+authorization, identity, and conflict contracts are confirmed. Connection
+revocation must stop both imports and pending exports for that account.
+
 The existing [board account integration guide](integrations.md),
 [sync table manifest](sync-table-manifest.md), and
 [Bluetooth architecture](ui/12-bluetooth.md) describe the Boardsesh side.
@@ -339,8 +504,8 @@ No Quantum implementation or database migration is included in this research.
 | --- | --- |
 | Partner access | Authentication/scopes, credential renewal, test tenant, approved client headers, and allowed catalog visibility |
 | Sync correctness | Stable snapshot pagination, timestamp semantics and retention, deletion completeness, rate limits, and reset/rebootstrap rules |
-| Personal data | Complete per-user logbook export, ascent edit/delete semantics, timestamp/timezone and grade/angle definitions |
-| Writes | Idempotency guarantees, conflict handling, allowed route publication, and how duplicate ascents are resolved |
+| Personal data | Complete per-user logbook export, ascent edit/delete semantics, backdated climb timestamps/timezones, and grade/angle definitions |
+| Writes | Idempotency and `clientId` echo/lookup, permanent IDs in acknowledgements, revision preconditions, playlist membership identity, allowed route publication, and duplicate resolution |
 | Controller | Supported firmware/protocol versions, GATT permissions, notification framing, diode mapping, multi-climber conflict behavior, and real-device packet acceptance |
 
 The first partner test should use a dedicated account and board: compare a
