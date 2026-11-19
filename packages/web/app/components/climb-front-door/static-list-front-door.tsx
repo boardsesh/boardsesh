@@ -49,7 +49,6 @@ const containerSx = {
   paddingBlock: `${themeTokens.spacing[4]}px`,
   paddingInline: 'var(--page-gutter, var(--spacing-6))',
   '& > *': { maxWidth: 720, minWidth: 0 },
-  paddingTop: 'calc(var(--global-header-height) + var(--spacing-4))',
 };
 
 const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mt: 1, mb: 1 };

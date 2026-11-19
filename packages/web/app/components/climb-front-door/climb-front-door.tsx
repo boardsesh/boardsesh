@@ -71,7 +71,6 @@ const containerSx = {
   paddingBlock: `${themeTokens.spacing[4]}px`,
   paddingInline: 'var(--page-gutter, var(--spacing-6))',
   '& > *': { maxWidth: 720, minWidth: 0 },
-  paddingTop: 'calc(var(--global-header-height) + var(--spacing-4))',
 };
 
 // The board photo and the holds render are separate images on a themed board, so they stack
