@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import MuiDivider from '@mui/material/Divider';
 import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
@@ -89,6 +89,10 @@ function PartnerSignInForm({ view }: { view: SignInFormView }) {
   const urlError = useSignInErrorMessage(view.errorCode);
   const [serverError, setServerError] = useState<string | null>(urlError);
   const [submitting, setSubmitting] = useState(false);
+  // The signed request is in the URL. Before hydration, a native form submit
+  // would replace its query rather than run the handler that preserves it.
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => setInteractive(true), []);
 
   const updateField = (field: keyof LoginValues, value: string) => {
     setValues((previous) => ({ ...previous, [field]: value }));
@@ -128,16 +132,27 @@ function PartnerSignInForm({ view }: { view: SignInFormView }) {
     <Stack spacing={3}>
       <SignInIntro reason={view.reason} account={view.account} signOutPath={view.signOutPath} />
       <FormShell
+        component={interactive ? 'form' : 'div'}
         id={formId}
         onSubmit={(event) => {
           event.preventDefault();
-          void handleSubmit();
+          if (interactive) void handleSubmit();
         }}
         error={serverError}
         maxWidth={false}
       >
-        <PasswordSignInFields values={values} errors={errors} onFieldChange={updateField} />
-        <FormActions submitLabel={t('signIn.submit')} submitting={submitting} layout="stacked" />
+        <PasswordSignInFields
+          values={values}
+          errors={errors}
+          onFieldChange={updateField}
+          disabled={!interactive || submitting}
+        />
+        <FormActions
+          submitLabel={t('signIn.submit')}
+          submitting={submitting}
+          disabled={!interactive}
+          layout="stacked"
+        />
       </FormShell>
       <MuiDivider>
         <Typography variant="body2" component="span" color="text.secondary">
@@ -145,7 +160,7 @@ function PartnerSignInForm({ view }: { view: SignInFormView }) {
         </Typography>
       </MuiDivider>
       {/* NextAuth returns here after the provider, or, on a failure, to this page with ?error= (sign-in-failure-return.ts). */}
-      <SocialLoginButtons callbackUrl={view.returnPath} disabled={submitting} />
+      <SocialLoginButtons callbackUrl={view.returnPath} disabled={!interactive || submitting} />
     </Stack>
   );
 }

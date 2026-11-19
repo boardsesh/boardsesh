@@ -14,6 +14,8 @@ import type { LoginErrors, LoginValues } from './validate-fields';
 type PasswordSignInFieldsProps = {
   values: LoginValues;
   errors: LoginErrors;
+  /** Native disabled controls also prevent implicit submission before hydration. */
+  disabled?: boolean;
   /** Called on every edit; the form clears that field's error and any server error. */
   onFieldChange: (field: keyof LoginValues, value: string) => void;
 };
@@ -23,7 +25,7 @@ type PasswordSignInFieldsProps = {
  * forgot-password link. Shared by `/auth/login` and the partner app sign-in at
  * `/oauth/sign-in`; each owns its form, validation and submit.
  */
-export function PasswordSignInFields({ values, errors, onFieldChange }: PasswordSignInFieldsProps) {
+export function PasswordSignInFields({ values, errors, onFieldChange, disabled = false }: PasswordSignInFieldsProps) {
   const { t } = useTranslation('auth');
   return (
     <FormSection>
@@ -35,6 +37,7 @@ export function PasswordSignInFields({ values, errors, onFieldChange }: Password
             autoComplete="username"
             placeholder={t('login.placeholders.email')}
             fullWidth
+            disabled={disabled}
             value={values.email}
             onChange={(event) => onFieldChange('email', event.target.value)}
             error={Boolean(field.error)}
@@ -68,6 +71,7 @@ export function PasswordSignInFields({ values, errors, onFieldChange }: Password
             autoComplete="current-password"
             placeholder={t('login.placeholders.password')}
             fullWidth
+            disabled={disabled}
             value={values.password}
             onChange={(event) => onFieldChange('password', event.target.value)}
             error={Boolean(field.error)}

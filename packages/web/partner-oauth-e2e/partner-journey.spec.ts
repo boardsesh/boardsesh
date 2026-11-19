@@ -1,11 +1,15 @@
-import { once } from 'node:events';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { devices, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import * as oauth from 'oauth4webapi';
-import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { CREATE_OAUTH_CLIENT, SAVE_TICK } from '@boardsesh/graphql/operations';
 import { edgeFetch } from './edge';
+import {
+  firstPartyToken,
+  graphqlFromWww,
+  newVisitor,
+  signInOnLoginPage,
+  startLoopbackRedirect,
+  visitWithSignInReady,
+} from './helpers';
 import {
   API_HOST,
   E2E_DEVELOPER_TERMS_VERSION,
@@ -16,8 +20,6 @@ import {
   WWW_HOST,
   WWW_ORIGIN,
   readStack,
-  type PartnerOAuthStack,
-  type SeededAccount,
 } from './stack';
 
 /**
@@ -59,113 +61,13 @@ interface LogbookPage {
   hasMore: boolean;
 }
 
-function contextOptions(stack: PartnerOAuthStack) {
-  return {
-    ...devices['Desktop Chrome'],
-    ignoreHTTPSErrors: true,
-    // Loopback stays direct: that is where the app's redirect lands.
-    proxy: { server: stack.proxyServer, bypass: '127.0.0.1,localhost' },
-  };
-}
-
-async function newVisitor(
-  browser: Browser,
-  stack: PartnerOAuthStack,
-): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext(contextOptions(stack));
-  // Analytics declined up front, as the main e2e suite does, so no banner sits over a form.
-  await context.addCookies([
-    {
-      name: CONSENT_COOKIE_NAME,
-      value: serializeConsentCookieValue({
-        analytics: 'denied',
-        version: CONSENT_VERSION,
-        source: 'web',
-        decidedAt: new Date().toISOString(),
-      }),
-      url: WWW_ORIGIN,
-      sameSite: 'Lax',
-    },
-  ]);
-  const page = await context.newPage();
-  // A signed-in account with no analytics choice of its own is asked once, over
-  // whatever page is open. Decline it the way a climber would.
-  const consentPrompt = page.getByText('Help us improve Boardsesh?');
-  await page.addLocatorHandler(consentPrompt, async () => {
-    await page.getByRole('button', { name: 'No thanks', exact: true }).click();
-    await expect(consentPrompt).toBeHidden();
-  });
-  return { context, page };
-}
-
-/** The first-party token www hands its own pages for GraphQL (`useWsAuthToken`). */
-async function firstPartyToken(page: Page): Promise<string> {
-  const body = await page.evaluate(async () => {
-    const response = await fetch('/api/internal/ws-auth', { cache: 'no-store' });
-    return (await response.json()) as { token: string | null; authenticated: boolean };
-  });
-  expect(body.authenticated).toBe(true);
-  if (!body.token) throw new Error('www returned no token for a signed-in session.');
-  return body.token;
-}
-
-/** GraphQL from a www page to ws.boardsesh.com, the way the console and the logbook call it. */
-async function graphqlFromWww(page: Page, token: string, query: string, variables: Record<string, unknown>) {
-  return page.evaluate(
-    async ({ url, bearer, document, input }) => {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearer}` },
-        body: JSON.stringify({ query: document, variables: input }),
-      });
-      return {
-        status: response.status,
-        body: (await response.json()) as { data?: Record<string, unknown>; errors?: Array<{ message: string }> },
-      };
-    },
-    { url: GRAPHQL_URL, bearer: token, document: query, input: variables },
-  );
-}
-
-async function signInOnLoginPage(page: Page, account: SeededAccount): Promise<void> {
-  // A cheap landing page: the consent page without a signed link only shows a card.
-  await page.goto(`${WWW_ORIGIN}/auth/login?callbackUrl=${encodeURIComponent('/oauth/consent')}`);
-  await page.getByLabel('Email').fill(account.email);
-  await page.getByLabel('Password').fill(account.password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(`${WWW_ORIGIN}/oauth/consent`);
-}
-
-/** The app's loopback redirect: a one-shot local server, as a CLI tool would run. */
-async function startLoopbackRedirect(): Promise<{ server: Server; redirectUri: string; callback: Promise<URL> }> {
-  let deliver: (url: URL) => void = () => undefined;
-  const callback = new Promise<URL>((resolve) => {
-    deliver = resolve;
-  });
-  const server = createServer((incoming, outgoing) => {
-    const url = new URL(incoming.url ?? '/', `http://${incoming.headers.host}`);
-    if (url.pathname !== '/callback') {
-      outgoing.writeHead(404);
-      outgoing.end();
-      return;
-    }
-    outgoing.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    outgoing.end('<!doctype html><title>Crimp Notes</title><p>Connected. You can close this window.</p>');
-    deliver(url);
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const { port } = server.address() as AddressInfo;
-  return { server, redirectUri: `http://127.0.0.1:${port}/callback`, callback };
-}
-
 test.describe.configure({ mode: 'serial' });
 
 test('an app registers, connects a climber on www, syncs the logbook, refreshes and is disconnected', async ({
   browser,
 }) => {
   test.setTimeout(240_000);
-  const stack = readStack();
+  const stack = readStack(browser.browserType().name(), 'journey');
   const appFetch = edgeFetch(stack.appEdgePort, stack.certificatePem, [API_HOST, WS_HOST, WWW_HOST]);
   const viaEdge = { [oauth.customFetch]: appFetch };
 
@@ -236,7 +138,7 @@ test('an app registers, connects a climber on www, syncs the logbook, refreshes 
     // 3. The climber signs in on www and approves on the consent page.
     // -------------------------------------------------------------------
     const climber = await newVisitor(browser, stack);
-    await climber.page.goto(authorizeUrl.toString());
+    await visitWithSignInReady(climber.page, authorizeUrl.toString());
     await climber.page.waitForURL((url) => url.origin === WWW_ORIGIN && url.pathname === '/oauth/sign-in');
     await expect(climber.page.getByRole('heading', { name: 'Sign in to connect an app' })).toBeVisible();
     await climber.page.getByLabel('Email').fill(stack.climber.email);

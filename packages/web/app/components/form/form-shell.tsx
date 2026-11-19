@@ -8,6 +8,8 @@ import type { SxProps, Theme } from '@mui/material/styles';
 export type FormShellProps = {
   /** Submit handler wired to the underlying `<form>` element. */
   onSubmit: React.FormEventHandler<HTMLFormElement>;
+  /** Use a non-form container while a server-rendered form cannot handle submission yet. */
+  component?: 'form' | 'div';
   /** Error banner shown above the fields. Any truthy ReactNode renders an alert. */
   error?: React.ReactNode;
   /**
@@ -28,32 +30,38 @@ export type FormShellProps = {
  * `containerType: 'inline-size'` so nested `FormRow`s can use container queries to go
  * multi-column based on the form's own width rather than the viewport.
  */
-export function FormShell({ onSubmit, error, maxWidth = 640, children, sx, id }: FormShellProps) {
-  return (
-    <Box
-      component="form"
-      noValidate
-      onSubmit={onSubmit}
-      id={id}
-      sx={[
-        {
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 3,
-          width: '100%',
-          maxWidth: maxWidth === false ? 'none' : maxWidth,
-          mx: 'auto',
-          containerType: 'inline-size',
-        },
-        ...(Array.isArray(sx) ? sx : [sx]),
-      ]}
-    >
+export function FormShell({ onSubmit, component = 'form', error, maxWidth = 640, children, sx, id }: FormShellProps) {
+  const containerSx: SxProps<Theme> = [
+    {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 3,
+      width: '100%',
+      maxWidth: maxWidth === false ? 'none' : maxWidth,
+      mx: 'auto',
+      containerType: 'inline-size',
+    },
+    ...(Array.isArray(sx) ? sx : [sx]),
+  ];
+  const content = (
+    <>
       {error ? (
         <Alert severity="error" role="alert">
           {error}
         </Alert>
       ) : null}
       {children}
+    </>
+  );
+  // A div has no native submit behavior, including requestSubmit() from autofill.
+  // Keep form-only props on the branch with actual form semantics.
+  return component === 'form' ? (
+    <Box component="form" noValidate onSubmit={onSubmit} id={id} sx={containerSx}>
+      {content}
+    </Box>
+  ) : (
+    <Box component="div" id={id} sx={containerSx}>
+      {content}
     </Box>
   );
 }

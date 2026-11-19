@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import marketing from '../../packages/shared/i18n/locales/en-US/marketing.json';
 import {
   anchorAt as stageAnchorAt,
   backgroundAt,
@@ -326,14 +327,10 @@ describe('callout layout', () => {
 });
 
 describe('donation line', () => {
-  it("says who pays for Boardsesh in the homepage's words, and never claims tax relief or perks", () => {
-    const marketing = JSON.parse(
-      readFileSync(new URL('../../packages/shared/i18n/locales/en-US/marketing.json', import.meta.url), 'utf8'),
-    ) as unknown;
-    const proofNoCount = JSON.stringify(marketing).match(/"proofNoCount":"([^"]+)"/)?.[1] ?? '';
+  it('credits the climbers who fund Boardsesh, as the homepage does, and never claims tax relief or perks', () => {
     const donation = copy.outro.donation ?? '';
     expect(donation).toBe('Paid for by the climbers who use it.');
-    expect(proofNoCount.toLowerCase()).toContain(donation.replace(/\.$/, '').toLowerCase());
+    expect(marketing.funding.body).toContain('Climbers who can spare it chip in, and that pays for the servers');
     expect(donation).not.toMatch(/tax|deduct|perk|reward/i);
     expect(copy.outro.pill).toContain('iOS & Android');
   });

@@ -12,8 +12,8 @@ import { SEED_OUTPUT_PREFIX, type SeededAccount, type SeedResult } from './stack
  *   cleanup <ids>                      deletes those accounts, and by cascade everything they own
  *
  * The global setup chooses the ids, so it can clean up even after a seed that
- * failed halfway. A run killed outright never reaches its teardown, so `seed`
- * first removes this suite's accounts left from runs over an hour ago.
+ * failed halfway. Cleanup names only this invocation's exact account ids;
+ * it never sweeps accounts belonging to another concurrent or interrupted run.
  *
  * Refuses any database that is not on this machine or a private network.
  */
@@ -84,11 +84,6 @@ async function main(): Promise<void> {
     if (command === 'seed') {
       const [developerId, climberId] = userIds;
       if (!developerId || !climberId) throw new Error('seed needs a developer id and a climber id.');
-      await sql`
-        DELETE FROM users
-        WHERE id LIKE 'partner-e2e-%' AND email LIKE 'partner-e2e-%@example.invalid'
-          AND created_at < now() - interval '1 hour'
-      `;
       console.info(`${SEED_OUTPUT_PREFIX}${JSON.stringify(await seed(sql, developerId, climberId))}`);
     } else if (command === 'cleanup') {
       // The users rows cascade into credentials, ticks, the app, its connection and every token.

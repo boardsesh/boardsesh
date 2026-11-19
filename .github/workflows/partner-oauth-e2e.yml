@@ -68,8 +68,8 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Install Playwright chromium
-        run: vp exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium and WebKit
+        run: vp exec playwright install --with-deps chromium webkit
         working-directory: packages/web
 
       - name: Run the partner OAuth journey

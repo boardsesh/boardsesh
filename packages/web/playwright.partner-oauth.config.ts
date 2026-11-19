@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 /**
- * The partner OAuth journey (#6981 F18): one developer, one app, one climber,
+ * The partner OAuth journeys (#6981 F18): owned developers, apps and climbers,
  * on the real www pages and the real backend. The global setup starts both
  * servers against the dev database and puts an edge in front of them, so the
  * browser sees https://www.boardsesh.com and https://api.boardsesh.com.
@@ -14,9 +14,13 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './partner-oauth-e2e',
   globalSetup: require.resolve('./partner-oauth-e2e/global-setup'),
-  // The servers are shared and the journey is serial.
+  // The servers are shared and the journeys are serial.
   workers: 1,
   fullyParallel: false,
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    { name: 'webkit', use: { browserName: 'webkit' } },
+  ],
   retries: 0,
   forbidOnly: !!process.env.CI,
   timeout: 240_000,
@@ -26,7 +30,6 @@ export default defineConfig({
     : 'list',
   outputDir: 'test-results/partner-oauth/artifacts',
   use: {
-    browserName: 'chromium',
     // CI keeps the HTML report and server logs; a trace adds size, not signal.
     trace: process.env.CI ? 'off' : 'retain-on-failure',
     screenshot: 'only-on-failure',
