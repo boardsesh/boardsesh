@@ -8,10 +8,15 @@ import { GitHub, GroupOutlined, FavoriteBorderOutlined, ApiOutlined, RocketLaunc
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
-import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
+import TrustFaq from '@/app/components/marketing/trust-faq';
 import styles from './about.module.css';
+import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 
-export default function AboutContent() {
+export default function AboutContent({
+  developerDocsState = 'unavailable',
+}: {
+  developerDocsState?: DeveloperDocsState;
+}) {
   const { t } = useTranslation('marketing');
   return (
     <PageShell title={t('about.hero.title')} lead={t('about.hero.subtitle')} width="wide">
@@ -25,19 +30,6 @@ export default function AboutContent() {
             </MuiLink>
           </Prose>
         </PageSection>
-        <Box component="figure" className={styles.preview}>
-          <Typography component="figcaption" className={styles.caption}>
-            {t('about.profile.title')}
-          </Typography>
-          <MarketingPreviewSwitch />
-          <MarketingScreenshot
-            shot="profile"
-            alt={t('about.profile.shotAlt')}
-            preload
-            className={styles.screenshot}
-            sizes="(max-width: 760px) 240px, 280px"
-          />
-        </Box>
 
         {/* The feature list that was here repeated the landing page's own feature
             strip as bolded-label bullets. Who builds it, and what is coming, are
@@ -86,13 +78,22 @@ export default function AboutContent() {
 
         <PageSection title={t('about.api.title')} icon={<ApiOutlined />} className={styles.projectSection}>
           <Prose>{t('about.api.body')}</Prose>
-          <Prose>
-            <MuiLink component={LocaleLink} href="/docs">
-              {t('about.api.cta')}
-            </MuiLink>
-          </Prose>
+          <Prose>{t(`about.api.status.${developerDocsState}`)}</Prose>
+          {developerDocsState !== 'unavailable' ? (
+            <Prose>
+              <MuiLink component={LocaleLink} href="/developers">
+                {t('about.api.cta')}
+              </MuiLink>
+            </Prose>
+          ) : null}
         </PageSection>
       </Box>
+
+      <TrustFaq />
+
+      <PageSection title={t('funding.title')}>
+        <Prose>{t('funding.body')}</Prose>
+      </PageSection>
 
       <PageSection title={t('about.community.title')} icon={<FavoriteBorderOutlined />} className={styles.community}>
         <Prose>{t('about.community.body')}</Prose>

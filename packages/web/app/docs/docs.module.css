@@ -1,10 +1,8 @@
 /* Docs page styles */
 
 .docsContainer {
-  padding: 24px;
-  padding-top: calc(var(--global-header-height) + 24px);
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
 }
 
 .docsHeader {
@@ -106,4 +104,39 @@
 .swaggerNote {
   margin-top: 8px;
   margin-bottom: 0;
+}
+
+/* The page, tab panels and embedded references must be allowed to shrink on phones. */
+.docsContainer,
+.docsContainer > *,
+.docsContainer :global(.MuiTabs-root),
+.docsContainer :global(.MuiTabPanel-root),
+.docsContainer :global(.MuiCardContent-root),
+.docsContainer :global(.MuiAccordion-root),
+.docsContainer :global(.MuiAccordionSummary-content) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.docsContainer {
+  overflow-wrap: anywhere;
+}
+
+.docsContainer :global(.MuiTabs-root) {
+  margin-bottom: var(--spacing-6);
+}
+
+.docsContainer :global(.swagger-ui) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.docsContainer pre {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
+.docsContainer :global(.MuiAccordionSummary-content) {
+  overflow-wrap: anywhere;
 }

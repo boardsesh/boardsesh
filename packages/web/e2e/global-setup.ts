@@ -68,7 +68,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       await page.goto(`/auth/login?callbackUrl=${encodeURIComponent('/')}`, { waitUntil: 'domcontentloaded' });
       await page.getByLabel('Email').fill(TEST_USER_EMAIL);
       await page.getByLabel('Password').fill(TEST_USER_PASSWORD);
-      await page.getByRole('button', { name: 'Login' }).click();
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
       await page.waitForURL('/', { timeout: 20_000 });
     } catch (cause) {
       throw new SetupError(

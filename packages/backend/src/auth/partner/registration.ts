@@ -1,3 +1,5 @@
+import { rolesGrantAdmin } from '@boardsesh/community-roles';
+import { communityRoles } from '@boardsesh/db/schema';
 import { lockDeveloper, requireRecentSignIn } from './developer-change';
 import { hasVerifiedPartnerDeveloperEmail } from './developer-email';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -39,6 +41,16 @@ import {
 } from './registration-rules';
 import type { PartnerDatabase } from './tables';
 import { isPartnerDatabaseBusy, runInPartnerTransaction } from './transaction';
+
+/** Same global-admin predicate as requireAdmin; the request cannot supply this authority. */
+async function developerMayUseBoardseshBranding(database: PartnerDatabase, developerId: string): Promise<boolean> {
+  const roles = await database
+    .select({ role: communityRoles.role, boardType: communityRoles.boardType })
+    .from(communityRoles)
+    .where(eq(communityRoles.userId, developerId))
+    .for('share');
+  return rolesGrantAdmin(roles);
+}
 
 type OAuthClientRow = typeof oauthClient.$inferSelect;
 type OAuthAppPolicyRow = typeof oauthAppPolicy.$inferSelect;
@@ -389,10 +401,12 @@ export function createPartnerRegistration({
     },
 
     async createApp(database, developerId, rawInput, options) {
-      const input = normalizePartnerAppInput(rawInput, configuration.developerTermsVersion);
       const created = await inRegistrationTransaction(database, async (transaction) => {
         // Serializes this developer's registrations, so the app count below holds under a race.
         await lockDeveloper(transaction, developerId);
+        const input = normalizePartnerAppInput(rawInput, configuration.developerTermsVersion, {
+          allowBoardseshBranding: await developerMayUseBoardseshBranding(transaction, developerId),
+        });
         const [developer] = await transaction
           .select({ email: users.email, emailVerified: users.emailVerified })
           .from(users)
@@ -464,7 +478,9 @@ export function createPartnerRegistration({
       const { updated, notice } = await inRegistrationTransaction(database, async (transaction) => {
         await lockDeveloper(transaction, developerId);
         const { row } = await requireOwnedApp(transaction, developerId, clientId);
-        const patch = normalizePartnerAppPatch(rawPatch, row.applicationType === 'native' ? 'native' : 'web');
+        const patch = normalizePartnerAppPatch(rawPatch, row.applicationType === 'native' ? 'native' : 'web', {
+          allowBoardseshBranding: await developerMayUseBoardseshBranding(transaction, developerId),
+        });
         // Checked after the input, so a developer fixes the form before signing in again.
         const redirectChange = redirectUriChange(row.redirectUris, patch.redirectUris);
         const developer = redirectChange ? await requireRecentSignIn(transaction, developerId, signIn) : null;

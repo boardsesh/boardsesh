@@ -63,9 +63,14 @@ type ClimbFrontDoorProps = {
 };
 
 const containerSx = {
-  maxWidth: 900,
+  width: '100%',
+  boxSizing: 'border-box' as const,
+  minWidth: 0,
+  maxWidth: 1200,
   margin: '0 auto',
-  padding: `${themeTokens.spacing[4]}px`,
+  paddingBlock: `${themeTokens.spacing[4]}px`,
+  paddingInline: 'var(--page-gutter, var(--spacing-6))',
+  '& > *': { maxWidth: 720, minWidth: 0 },
 };
 
 // The board photo and the holds render are separate images on a themed board, so they stack
@@ -73,6 +78,7 @@ const containerSx = {
 // absolutely positioned images inside an aspect-ratio container hit iOS 18.x WebKit bugs.
 const boardArtSx = {
   display: 'grid',
+  maxWidth: 560,
   '& > img': { gridArea: '1 / 1' },
 };
 
@@ -98,7 +104,7 @@ const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibol
 // Shared by the "nothing here yet" and the "this did not load" lines. Same
 // muted weight for both: a degraded read is not an error the reader caused, and
 // shouting about a supplementary section would be louder than the climb.
-const emptySectionSx = { m: 0, color: 'var(--neutral-400)' };
+const emptySectionSx = { m: 0, color: 'var(--neutral-500)' };
 
 /**
  * The SSR climb page: everything a reader (or a crawler) needs about one climb,
@@ -175,8 +181,12 @@ export default async function ClimbFrontDoor({
           climbName,
           grade: climb.difficulty,
           setter: climb.setter_username,
-          quality: currentAngleStats.quality_average,
-          ascents: currentAngleStats.ascensionist_count,
+          quality: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
+            Number(currentAngleStats.quality_average),
+          ),
+          ascents: new Intl.NumberFormat(locale).format(Number(currentAngleStats.ascensionist_count)),
+          layoutName: boardDetails.layout_name || formatBoardDisplayName(boardDetails.board_name),
+          angle,
         })
       : null;
 
@@ -202,7 +212,27 @@ export default async function ClimbFrontDoor({
         />
       )}
 
-      <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
+      <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} angle={angle} />
+
+      <ClimbHandoffCta
+        pathname={handoffPath}
+        label={t('frontDoor.cta.climbThis')}
+        ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
+        helperText={t('frontDoor.cta.helper')}
+        surface="climb_front_door"
+        tree={tree}
+        boardName={boardDetails.board_name}
+        layoutId={boardDetails.layout_id}
+        angle={angle}
+        climbUuid={climb.uuid}
+        locale={locale}
+      >
+        <FrontDoorInstall
+          placement="climb-view"
+          helperText={t('frontDoor.install.helper')}
+          labels={storeButtonLabels}
+        />
+      </ClimbHandoffCta>
 
       {overlayUrl ? (
         <Box sx={boardArtSx}>
@@ -266,6 +296,7 @@ export default async function ClimbFrontDoor({
       ) : null}
 
       <ClimbHandoffCta
+        variant="outlined"
         pathname={handoffPath}
         label={t('frontDoor.cta.climbThis')}
         ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}

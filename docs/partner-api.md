@@ -75,6 +75,13 @@ then; try again in a minute.
 | Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code). Registration also records web versus native redirect behavior separately |
 | Redirect URIs | Up to 10, matched as exact strings. Allowed: any `https://` URL; and for a native app, loopback `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…` for tools running on the user's machine (the port is ignored when matching, so register it without one and pick any free port at runtime) and private-use schemes containing a dot, such as `com.example.app:/oauth/boardsesh`. Not allowed: other `http://` URLs including `http://localhost`, wildcards, fragments, user names or passwords, `boardsesh.com` hosts, and schemes containing `boardsesh`. Write each URI the way a URL parser prints it back (lower-case scheme and host, `https://example.com/` rather than `https://example.com`) |
 
+Boardsesh global admins can use Boardsesh app/publisher names, Boardsesh URLs,
+and Boardsesh reverse-domain native schemes when creating or editing their own registrations.
+This server-verified exception does not apply to ordinary developers, board-scoped
+admins, or community leaders. Other maker names remain reserved. URI safety,
+verified email, ownership, terms, scopes, PKCE, consent and recent-sign-in checks
+apply to admin registrations too.
+
 Adding a redirect URI, or replacing one, makes every climber who approved your
 app see the consent screen again at their next authorization. The tokens you
 already hold keep working. Removing a redirect URI, or editing the name,

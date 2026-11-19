@@ -8,7 +8,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     observedSerialNumber: String!
     candidates: [UserBoard!]!
   }
-  "A redacted snapshot of the last confirmed climb while its sender still holds the board."
+  "A public climb preview without sender identity. See each field for its presence or logbook source."
   type BoardDiscoveryClimb {
     uuid: ID!
     name: String
@@ -51,6 +51,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     uniqueClimbers: Int!
     "Null when there is no verified live holder, including unavailable Redis. Not a live subscription."
     currentClimb: BoardDiscoveryClimb
+    "Most publicly logged climb on this physical board, at its most-logged angle. Gym-scoped reads only; null without eligible records."
+    popularClimb: BoardDiscoveryClimb
   }
 
   input BoardDiscoveryInput {

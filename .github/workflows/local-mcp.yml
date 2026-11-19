@@ -1,0 +1,131 @@
+name: Local MCP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/mcp/**'
+      - 'packages/shared/public-api/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'vite.config.ts'
+      - '.github/workflows/local-mcp.yml'
+  pull_request:
+    paths:
+      - 'packages/mcp/**'
+      - 'packages/shared/public-api/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'vite.config.ts'
+      - '.github/workflows/local-mcp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp run typecheck:mcp
+      - run: vp test run --project mcp --reporter=agent
+      - run: vp run package:mcp
+      - run: vp exec node packages/mcp/scripts/smoke.mjs
+      - run: cp packages/mcp/scripts/smoke.mjs packages/mcp/artifacts/smoke.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-mcp-package
+          path: packages/mcp/artifacts/
+          retention-days: 7
+
+  desktop-install:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+          run-install: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: local-mcp-package
+          path: ${{ runner.temp }}/mcp-artifact
+      - name: Extract standalone package outside a repository
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { mkdirSync, copyFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { execFileSync } from 'node:child_process';
+          const root = join(process.env.RUNNER_TEMP, 'mcp-installed');
+          const artifact = join(process.env.RUNNER_TEMP, 'mcp-artifact');
+          const archives = readdirSync(artifact).filter((filename) => /^boardsesh-mcp-.*\.tgz$/.test(filename));
+          if (archives.length !== 1) throw new Error('Expected exactly one MCP package archive.');
+          mkdirSync(root, { recursive: true });
+          execFileSync('tar', ['-xzf', '-'], {
+            cwd: root,
+            input: readFileSync(join(artifact, archives[0])),
+          });
+          copyFileSync(join(artifact, 'smoke.mjs'), join(root, 'package', 'smoke.mjs'));
+          const manifestPath = join(root, 'package', 'package.json');
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          manifest.devDependencies = { '@modelcontextprotocol/client': '2.4.0' };
+          writeFileSync(manifestPath, JSON.stringify(manifest));
+          JS
+      - name: Install registry dependencies and exercise native SQLite over stdio
+        working-directory: ${{ runner.temp }}/mcp-installed/package
+        run: |
+          vp install --no-frozen-lockfile
+          vp exec node smoke.mjs .
+
+  windows-security:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+          run-install: false
+      - run: vp install --filter @boardsesh/mcp... --filter boardsesh-monorepo --frozen-lockfile
+      - name: Verify private Windows DACLs and local credential lifecycle
+        run: vp test run --config packages/mcp/vite.config.ts src/__tests__/windows-security.test.ts --reporter=agent
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'boardsesh/boardsesh'
+    needs: [package, desktop-install, windows-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: local-mcp-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: local-mcp-package
+          path: ${{ runner.temp }}/mcp-release
+      - name: Publish the tested archive after merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MCP_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/mcp-release
+        run: node packages/mcp/scripts/release.mjs

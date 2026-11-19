@@ -80,6 +80,16 @@ describe('store button (#6027)', () => {
   });
 });
 
+describe('claim search entry', () => {
+  it('passes the claim query to input focus and keeps the active facet', async () => {
+    const tree = JSON.stringify(
+      await renderGymDirectory('kilter', { searchParams: Promise.resolve({ claim: '1', q: 'Nine' }) }),
+    );
+    expect(tree).toContain('"focusSearch":true');
+    expect(tree).toContain('/gyms/kilter?q=Nine&claim=1#gym-directory-query');
+  });
+});
+
 describe('reachability', () => {
   it('offers gym creation in every directory header and empty state', async () => {
     for (const facet of ['all', 'kilter', 'moonboard', 'tension'] as const) {

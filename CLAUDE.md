@@ -34,6 +34,7 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
   /web/             # Next.js web application
   /mobile/          # React Native (Expo) mobile application
   /backend/         # WebSocket backend for party mode (graphql-ws)
+  /mcp/             # Local stdio training MCP, OAuth login and SQLite logbook cache
   /shared-schema/   # Shared GraphQL schema and TypeScript types
   /board-constants/ # Generated Aurora board catalogue (sizes, layouts, sets, holds), grade colours, difficulty bands
   /shared/
@@ -111,6 +112,8 @@ When the request references an issue ("fix issue #N", "this GH issue", a bug lin
 Ad-hoc edits and direct feature requests don't trigger this workflow. If the user opts out of a step, respect that for the current task only.
 
 ## Documentation
+
+- `docs/local-training-mcp.md` — local training MCP installation, OAuth, SQLite sync, workouts, and release workflow.
 
 - `docs/local-board-qa.md` — local-only connected-phone/ESP32 board driving, presence/history and shared-session QA, setup, recovery and evidence limits.
 - `docs/wall-devices.md` — for external device builders (laser projectors, custom LEDs): get a controller key, subscribe to `boardNowPlaying`, decode frames, fetch hold coordinates, and stay connected.

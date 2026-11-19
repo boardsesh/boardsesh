@@ -21,12 +21,12 @@ const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(va
 describe('per-facet copy', () => {
   it('resolves a real catalog string for every facet, not a bare key', () => {
     for (const facet of DIRECTORY_FACETS) {
-      expect(facetMetaTitle(t, facet)).not.toContain('metadata.');
-      expect(facetMetaDescription(t, facet)).not.toContain('metadata.');
-      expect(facetHeading(t, facet)).not.toContain('directory.');
-      expect(facetLead(t, facet, counts, formatNumber)).not.toContain('directory.');
-      expect(facetDetail(t, facet, counts, formatNumber)).not.toContain('directory.');
-      expect(facetChipLabel(t, facet, counts, formatNumber)).not.toContain('facets.');
+      expect(facetMetaTitle(t, facet)).not.toMatch(/^metadata\./);
+      expect(facetMetaDescription(t, facet)).not.toMatch(/^metadata\./);
+      expect(facetHeading(t, facet)).not.toMatch(/^directory\./);
+      expect(facetLead(t, facet, counts, formatNumber)).not.toMatch(/^directory\./);
+      expect(facetDetail(t, facet, counts, formatNumber)).not.toMatch(/^directory\./);
+      expect(facetChipLabel(t, facet, counts, formatNumber)).not.toMatch(/^facets\./);
       expect(facetLinkLabel(t, facet)).not.toContain('links.');
     }
   });

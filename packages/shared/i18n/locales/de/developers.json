@@ -220,7 +220,7 @@
     "access": {
       "invitation": {
         "title": "Die Registrierung läuft per Einladung",
-        "body": "Der frühe Zugang steht nur Entwickler-Konten offen, die das Boardsesh-Team hinzugefügt hat. Jede App kann {{live}} Kletterer*innen gleichzeitig verbunden haben und {{perDay}} neue in 24 Stunden. Um Zugang anzufragen, schreib an {{email}} und sag, was deine App macht."
+        "body": "Während der Tests ist die Registrierung nur auf Einladung möglich. Jede App startet mit Platz für {{live}} gleichzeitig verbundene Personen und {{perDay}} neue pro Tag. Für Zugang schreib an:"
       },
       "open": {
         "title": "Registriere deine App",

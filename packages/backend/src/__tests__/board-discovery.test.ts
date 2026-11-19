@@ -213,6 +213,7 @@ describe('physical board discovery', () => {
       locationName: null,
       uniqueClimbers: 0,
       currentClimb,
+      popularClimb: null,
     });
     expect(getDiscoveryClimb).toHaveBeenCalledWith(String(board.id));
     await db.update(userBoards).set({ hideLocation: true }).where(eq(userBoards.id, board.id));

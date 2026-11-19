@@ -1650,6 +1650,16 @@ fold only knows the lookalikes it lists and drops every other letter outside a-z
 written entirely in one of those scripts is allowed. Publisher names follow the
 same rules.
 
+A global Boardsesh admin may create or edit their own app using Boardsesh in
+its app/publisher name, `boardsesh.com` homepage/privacy/HTTPS redirect URLs, and
+Boardsesh reverse-domain native schemes (such as `com.boardsesh.app:/oauth/callback`). The registration
+service reads `community_roles` within its transaction and uses the shared global
+admin predicate; request fields cannot enable this exception. Board-scoped admins
+and community leaders do not qualify. Other maker names remain reserved, and
+all URI safety, verified-email, ownership, terms, recent-sign-in, consent, PKCE,
+scopes and launch-cap requirements remain in place. The exception is checked on
+every create/edit; it does not mark the app trusted or waive consent.
+
 **Admin commands** (`packages/backend/src/scripts/partner-app-admin.ts`). Each
 acts on exactly one id given on the command line and writes nothing without
 `--apply`; a dry run's transaction is read-only.

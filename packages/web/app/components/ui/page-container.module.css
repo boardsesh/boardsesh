@@ -1,7 +1,11 @@
 /* Playlist View Page Styles */
 
 .pageContainer {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 16px;
+  padding-top: calc(var(--global-header-height) + var(--spacing-4));
   min-height: 100vh;
   background-color: var(--neutral-50);
   max-width: 1400px;

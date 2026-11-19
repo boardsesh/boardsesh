@@ -13,7 +13,7 @@
       "step1": "Télécharge l’app gratuite et connecte-toi.",
       "step2": "Touche ton avatar, puis Paramètres, puis Applications connectées.",
       "step3": "Touche Se connecter à Kilter ou Lier sur la carte Tension.",
-      "sync": "Tes croix arrivent environ toutes les 12 heures. La synchro va dans un seul sens : ce que tu notes dans Boardsesh ne retourne pas dans leurs apps.",
+      "sync": "Après avoir lié ton compte, Boardsesh cherche de nouvelles croix en arrière-plan. Le délai varie. Les imports vont uniquement vers Boardsesh ; rien de ce que tu notes ici ne repart vers leurs applications.",
       "signIn": "Se connecter"
     },
     "legacy": {

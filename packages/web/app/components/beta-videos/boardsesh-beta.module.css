@@ -137,3 +137,26 @@
     width: 169px;
   }
 }
+
+.userChip[href] {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.textCard {
+  align-self: flex-start;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-md);
+  background: var(--semantic-surface);
+}
+
+.textLink {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--spacing-3);
+  color: var(--color-primary);
+}

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import { communityRoles } from '@boardsesh/db/schema';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
@@ -163,6 +164,174 @@ describe('partner app registration', () => {
     if (body.error === 'invalid_client') return false;
     throw new Error(`Unexpected token response ${JSON.stringify(body)}`);
   }
+
+  describe('Boardsesh branding for global admins', () => {
+    const brandedInput = {
+      ...NATIVE_PUBLIC_INPUT,
+      name: 'Boardsesh MCP',
+      publisherName: 'Boardsesh',
+      homepageUrl: 'https://www.boardsesh.com/',
+      privacyPolicyUrl: 'https://www.boardsesh.com/privacy',
+      redirectUris: ['http://127.0.0.1/oauth/boardsesh', 'com.boardsesh.mcp:/oauth/callback'],
+    };
+
+    async function createAdmin(verified = true): Promise<string> {
+      const developerId = await createDeveloper({ verified });
+      await db.insert(communityRoles).values({ userId: developerId, role: 'admin' });
+      return developerId;
+    }
+
+    it('creates and edits branded apps using the normal managed OAuth policy', async () => {
+      const developerId = await createAdmin();
+      const created = await register(developerId, brandedInput);
+      expect(created.clientSecret).toBeNull();
+      expect(created.app).toMatchObject({
+        name: 'Boardsesh MCP',
+        publisherName: 'Boardsesh',
+        homepageUrl: brandedInput.homepageUrl,
+        privacyPolicyUrl: brandedInput.privacyPolicyUrl,
+        redirectUris: brandedInput.redirectUris,
+      });
+      const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, created.app.clientId));
+      expect(row).toMatchObject({
+        userId: developerId,
+        skipConsent: false,
+        requirePKCE: true,
+        scopes: [...PARTNER_SCOPES],
+      });
+      expect(managedClientProblem(row, developerId)).toBeNull();
+      const updated = await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        created.app.clientId,
+        {
+          name: 'Boardsesh Training',
+          publisherName: 'Boardsesh Team',
+          homepageUrl: 'https://boardsesh.com/developers',
+          privacyPolicyUrl: 'https://boardsesh.com/privacy',
+          redirectUris: ['https://www.boardsesh.com/oauth/callback', 'com.boardsesh.app:/oauth/boardsesh'],
+        },
+        freshSignIn(),
+      );
+      expect(updated).toMatchObject({
+        name: 'Boardsesh Training',
+        publisherName: 'Boardsesh Team',
+        redirectUris: ['https://www.boardsesh.com/oauth/callback', 'com.boardsesh.app:/oauth/boardsesh'],
+      });
+      await db.delete(communityRoles).where(eq(communityRoles.userId, developerId));
+      expect(
+        (
+          await refusal(
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              created.app.clientId,
+              {
+                name: 'Boardsesh Again',
+                allowBoardseshBranding: true,
+                isAdmin: true,
+              },
+              undefined,
+            ),
+          )
+        ).reason,
+      ).toBe('invalid_input');
+    });
+
+    it('ignores forged privilege fields and board-scoped admin or community-leader roles', async () => {
+      for (const role of [null, 'admin', 'community_leader'] as const) {
+        const developerId = await createDeveloper();
+        if (role)
+          await db
+            .insert(communityRoles)
+            .values({ userId: developerId, role, boardType: role === 'admin' ? 'kilter' : null });
+        const privilege = {
+          isAdmin: true,
+          allowBoardseshBranding: true,
+          role: 'admin',
+          policy: { allowBoardseshBranding: true },
+        };
+        for (const patch of [
+          { name: 'Boardsesh MCP' },
+          { publisherName: 'Boardsesh' },
+          { homepageUrl: 'https://boardsesh.com/' },
+          { privacyPolicyUrl: 'https://boardsesh.com/privacy' },
+          { redirectUris: ['https://www.boardsesh.com/oauth/callback'] },
+          { redirectUris: ['com.boardsesh.app:/oauth/boardsesh'] },
+          { redirectUris: ['boardsesh://oauth/callback'] },
+        ]) {
+          expect(
+            (await refusal(register(developerId, { ...NATIVE_PUBLIC_INPUT, ...privilege, ...patch }))).reason,
+          ).toBe('invalid_input');
+        }
+        const created = await register(developerId, NATIVE_PUBLIC_INPUT);
+        expect(
+          (
+            await refusal(
+              runtime.registration.updateApp(
+                consoleDatabase,
+                developerId,
+                created.app.clientId,
+                {
+                  publisherName: 'Boardsesh',
+                  ...privilege,
+                },
+                undefined,
+              ),
+            )
+          ).reason,
+        ).toBe('invalid_input');
+      }
+    });
+
+    it('retains other maker restrictions, verified email, terms, ownership and recent sign-in', async () => {
+      const developerId = await createAdmin();
+      for (const patch of [
+        { name: 'Boardsesh Kilter' },
+        { publisherName: 'Aurora' },
+        { acceptedTermsVersion: 'old' },
+        { redirectUris: ['https://boardsesh.com/oauth#fragment'] },
+        { redirectUris: ['http://boardsesh.com/oauth'] },
+        { redirectUris: ['boardsesh://oauth/callback'] },
+        { homepageUrl: 'https://user:password@boardsesh.com/' },
+      ]) {
+        expect((await refusal(register(developerId, { ...brandedInput, ...patch }))).reason).toBe('invalid_input');
+      }
+      expect((await refusal(register(await createAdmin(false), brandedInput))).reason).toBe('email_not_verified');
+      const created = await register(developerId, brandedInput);
+      expect(
+        (
+          await refusal(
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              created.app.clientId,
+              {
+                redirectUris: ['https://boardsesh.com/oauth/callback'],
+              },
+              undefined,
+            ),
+          )
+        ).reason,
+      ).toBe('recent_sign_in_required');
+      const otherOwner = await register(await createDeveloper(), NATIVE_PUBLIC_INPUT);
+      expect(
+        (
+          await refusal(
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              otherOwner.app.clientId,
+              {
+                name: 'Boardsesh MCP',
+              },
+              undefined,
+            ),
+          )
+        ).reason,
+      ).toBe('not_found');
+    });
+  });
 
   describe('the managed registration body', () => {
     it('fixes consent, PKCE, the auth method, scopes and the resource, and writes the launch caps', async () => {

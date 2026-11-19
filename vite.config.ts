@@ -134,6 +134,7 @@ export default defineConfig({
     // Keep project Vite servers separate, matching the previous runner.
     sharedViteServer: false,
     projects: [
+      './packages/mcp/vite.config.ts',
       './packages/web/vite.config.ts',
       './packages/backend/vite.config.ts',
       './packages/backend/vite.serial.config.ts',
@@ -977,6 +978,13 @@ export default defineConfig({
       'typecheck:public-api': {
         command: 'pnpm --filter @boardsesh/public-api run typecheck',
       },
+      'typecheck:mcp': {
+        command: 'vp exec tsc --noEmit -p packages/mcp/tsconfig.json',
+      },
+      'package:mcp': {
+        command: 'node packages/mcp/scripts/package.mjs',
+        cache: false,
+      },
       'typecheck:analytics': {
         command: 'pnpm --filter @boardsesh/analytics run typecheck',
       },
@@ -1137,6 +1145,7 @@ export default defineConfig({
       typecheck: {
         command: 'true',
         dependsOn: [
+          'typecheck:mcp',
           'typecheck:scripts',
           'typecheck:pr-body',
           'build:shared',

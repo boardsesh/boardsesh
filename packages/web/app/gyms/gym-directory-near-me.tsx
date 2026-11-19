@@ -124,6 +124,20 @@ export default function GymDirectoryNearMe({
 
   const [nearMeOn, setNearMeOn] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  useEffect(() => {
+    const restoreView = () => setMapOpen(new URLSearchParams(window.location.search).get('view') === 'map');
+    restoreView();
+    window.addEventListener('popstate', restoreView);
+    return () => window.removeEventListener('popstate', restoreView);
+  }, []);
+  const toggleMap = () => {
+    const nextMapOpen = !mapOpen;
+    const nextUrl = new URL(window.location.href);
+    if (nextMapOpen) nextUrl.searchParams.set('view', 'map');
+    else nextUrl.searchParams.delete('view');
+    window.history.replaceState(window.history.state, '', nextUrl);
+    setMapOpen(nextMapOpen);
+  };
   const [radiusKm, setRadiusKm] = useState<NearMeRadiusKm>(DEFAULT_NEAR_ME_RADIUS_KM);
   // Resolved in an effect rather than at render: `navigator` does not exist
   // during SSR, and a render-time read would make the server and the first
@@ -275,7 +289,7 @@ export default function GymDirectoryNearMe({
             </Button>
           ) : (
             <Button
-              variant="contained"
+              variant="outlined"
               startIcon={<MyLocationOutlined />}
               onClick={handleUseMyLocation}
               disabled={loading || fallbackReason === 'unsupported'}
@@ -373,6 +387,14 @@ export default function GymDirectoryNearMe({
         )}
       </Box>
 
+      <Button
+        variant="outlined"
+        startIcon={<MapOutlined />}
+        onClick={toggleMap}
+        sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
+      >
+        {mapOpen ? t('map.hideMap') : t('map.showMap')}
+      </Button>
       <Box
         sx={{
           display: 'grid',
@@ -383,7 +405,7 @@ export default function GymDirectoryNearMe({
       >
         {/* The list column is FIRST in the DOM at every width. The map is never
             in front of it and never replaces it. */}
-        <Box>
+        <Box sx={{ display: mapOpen ? 'none' : 'block', [WIDE_LAYOUT]: { display: 'block' } }}>
           {showingNearMeResults ? (
             <NearMeResults
               gyms={nearMeGyms}
@@ -405,14 +427,7 @@ export default function GymDirectoryNearMe({
               before anyone asks for a map. The request carries the
               visitor's IP, and it becomes public traffic when #4382 drops the
               noindex. */}
-          <Button
-            variant="outlined"
-            startIcon={<MapOutlined />}
-            onClick={() => setMapOpen((open) => !open)}
-            sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
-          >
-            {mapOpen ? t('map.hideMap') : t('map.showMap')}
-          </Button>
+
           {/* `display: none` is what keeps the Leaflet bundle undownloaded and
               the tiles unrequested on a narrow screen with the map collapsed:
               the map's effect waits for its container to report a non-zero

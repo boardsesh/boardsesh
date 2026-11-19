@@ -220,7 +220,7 @@
     "access": {
       "invitation": {
         "title": "Registration is by invitation",
-        "body": "Early access is open only to developer accounts the Boardsesh team has added. Each app can have {{live}} climbers connected at once and {{perDay}} new ones in any 24 hours. To ask for access, write to {{email}} and say what your app does."
+        "body": "Registration is by invitation while we test it. Each app starts with room for {{live}} climbers connected at once and {{perDay}} new ones per day. To ask for access, email:"
       },
       "open": {
         "title": "Register your app",

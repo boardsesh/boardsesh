@@ -25,7 +25,7 @@ export async function signInOnWww(page: Page, account: SeededAccount): Promise<v
   await page.goto(`${WWW_ORIGIN}/auth/login?callbackUrl=${encodeURIComponent('/settings')}`);
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Password').fill(account.password);
-  await page.getByRole('button', { name: 'Login' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL(`${WWW_ORIGIN}/settings`);
 }
 

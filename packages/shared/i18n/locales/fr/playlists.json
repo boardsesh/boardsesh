@@ -255,7 +255,8 @@
     "setterPicker": {
       "showClimbs": "Voir les blocs",
       "error": "Impossible de charger les ouvreurs de cette liste."
-    }
+    },
+    "installHelper": "Pas encore l’app ? Installe-la gratuitement et grimpe cette playlist sur ta board."
   },
   "editClimbs": {
     "done": "Terminé",

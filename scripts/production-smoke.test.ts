@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
@@ -131,6 +132,16 @@ describe('www production smoke checks', () => {
     expect(
       WWW_CHECKS.filter((candidate) => candidate.timeoutMs !== undefined).map((candidate) => candidate.path),
     ).toEqual(['/sitemaps/climbs/1.xml.gz']);
+  });
+
+  it('rejects a rendered homepage whose compressed HTML exceeds the mobile budget', () => {
+    const excessPayload = Array.from({ length: 5000 }, (_, index) =>
+      createHash('sha256').update(String(index)).digest('hex'),
+    ).join('');
+    expect(
+      checkNamed('homepage').assert(response({ body: `<h1>Boardsesh</h1><script>${excessPayload}</script>` })),
+    ).toContain('homepage gzip HTML exceeds');
+    expect(checkNamed('homepage').assert(response())).toBeNull();
   });
 
   it('rejects a homepage that 200s with a spinner-only shell', () => {

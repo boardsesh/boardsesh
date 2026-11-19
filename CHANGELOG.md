@@ -4,6 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-19
+
+### New
+
+- Plan a board workout with your AI assistant using your climbing history or a training screenshot. Download the local connector from GitHub Releases after it ships. ([#7840](https://github.com/boardsesh/boardsesh/pull/7840))
+
+### Fixed
+
+- Open a shared climb or playlist and get straight to the app. Browse clearer gym listings and find board troubleshooting faster. ([#7882](https://github.com/boardsesh/boardsesh/pull/7882))
+- See who runs Boardsesh, how it stays free, and what happens when you link a board account. ([#7879](https://github.com/boardsesh/boardsesh/pull/7879))
+
 ## 2026-11-18
 
 ### App update
@@ -20,6 +31,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Bring your Kilter or Tension sends to Boardsesh with a guide to linking your account or importing an old Kilter export. ([#7874](https://github.com/boardsesh/boardsesh/pull/7874))
 - See how Climbdex and BoardLib helped get Boardsesh off the ground in Acknowledgements. ([#7836](https://github.com/boardsesh/boardsesh/pull/7836))
 - Swipe between climbs on Android with fewer accidental scrolls. ([#7813](https://github.com/boardsesh/boardsesh/pull/7813))
 - Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))

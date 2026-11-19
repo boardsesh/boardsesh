@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -25,10 +25,12 @@ export default function GymPlaceSearch({
   query,
   locale,
   children,
+  focusSearch = false,
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
+  focusSearch?: boolean;
   /**
    * The board filter panel, rendered INSIDE this form.
    *
@@ -42,6 +44,10 @@ export default function GymPlaceSearch({
 }) {
   const { t } = useTranslation('gyms');
   const router = useRouter();
+  const searchInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusSearch) searchInput.current?.focus();
+  }, [focusSearch]);
   const [input, setInput] = useState(query.place ?? query.query);
   const [edited, setEdited] = useState(false);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -107,6 +113,7 @@ export default function GymPlaceSearch({
     >
       <Box sx={{ flex: '1 1 260px', minWidth: 0 }}>
         <Autocomplete<PlaceSuggestion, false, false, true>
+          id="gym-directory-query"
           freeSolo
           options={suggestions}
           filterOptions={(options) => options}
@@ -132,6 +139,8 @@ export default function GymPlaceSearch({
           renderInput={(params) => (
             <TextField
               {...params}
+              autoFocus={focusSearch}
+              inputRef={searchInput}
               name={selectedPlace ? undefined : 'q'}
               type="search"
               size="small"
@@ -177,7 +186,7 @@ export default function GymPlaceSearch({
       </Button>
       {/* Full-width below the search row, so the filter tiers get the measure
           they need while the text field and its button stay on one line. */}
-      <Box sx={{ flexBasis: '100%' }}>{children}</Box>
+      <Box sx={{ flex: '1 1 100%', minWidth: 0, width: '100%', maxWidth: '100%' }}>{children}</Box>
     </Box>
   );
 }

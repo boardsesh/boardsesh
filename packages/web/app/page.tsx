@@ -53,7 +53,7 @@ export default async function Home() {
   const showSupportBanner = isSupportBannerWindow(new Date()) && hasMonthlyLinks(readSupportLinksConfig());
 
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['home', 'preview'] }}>
       {/* The hero's Next Image owns its responsive preload. Board and beta
           thumbnails now sit below the hero and must not compete with it. */}
       <SiteJsonLd />

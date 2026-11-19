@@ -1,6 +1,31 @@
-import { and, asc, countDistinct, desc, eq, exists, inArray, isNotNull, isNull, ne, or, type SQL } from 'drizzle-orm';
-import type { BoardDiscoveryBoard, ConnectionContext } from '@boardsesh/shared-schema';
-import { boardseshTicks, gyms, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import {
+  and,
+  asc,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import type { BoardDiscoveryBoard, BoardDiscoveryClimb, ConnectionContext } from '@boardsesh/shared-schema';
+import { boardClimbAliases, boardClimbs, boardseshTicks, gyms, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import {
+  contentVisibilityCondition,
+  holdIntegrityCondition,
+  playlistBoardScopeConditions,
+  publicClimbCondition,
+  resourceAccessCondition,
+  resourceLocationCondition,
+  retiredByResetCondition,
+  sprayClimbVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { pubsub } from '../../../pubsub';
 import { logger } from '../../../utils/logger';
@@ -38,6 +63,8 @@ function discoverableBoardConditions(gymUuid: string | undefined): SQL | undefin
     eq(userBoards.isPublic, true),
     eq(userBoards.isUnlisted, false),
     eq(userBoards.hideLocation, false),
+    resourceAccessCondition('board', userBoards.uuid, null, { allowUnlistedLink: false }),
+    resourceLocationCondition(userBoards.uuid, null),
     isNull(userBoards.deletedAt),
     isNull(userBoards.mergedIntoBoardUuid),
     isNotNull(userBoards.slug),
@@ -98,6 +125,111 @@ async function rankDiscoverableBoards(gymUuid: string | undefined): Promise<Rank
     .limit(BOARD_DISCOVERY_RANKING_SIZE);
 }
 
+type PreviewBoard = Pick<BoardDiscoveryBoard, 'boardType' | 'layoutId' | 'sizeId' | 'setIds'> & { boardId: number };
+
+/**
+ * Public send/flash records on these physical installations, never layout-wide
+ * popularity. One grouped query picks the climb with the most records across
+ * angles, then its most-logged angle. Repeat sends count; ties use canonical
+ * climb UUID and then angle. Eligibility is applied before either ranking.
+ *
+ * No shared cache: tick, climb, board and gym privacy changes must take effect
+ * on the next read. The caller supplies at most twelve already-selected boards.
+ */
+export async function loadPopularGymClimbs(
+  gymUuid: string,
+  boards: readonly PreviewBoard[],
+): Promise<Map<number, BoardDiscoveryClimb>> {
+  if (boards.length === 0 || boards.length > 12) return new Map();
+  const boardScopes = boards.flatMap((board) => {
+    const setTokens = board.setIds.split(',').map((token) => token.trim());
+    if (setTokens.length === 0 || setTokens.some((token) => !/^\d+$/.test(token))) return [];
+    const setIds = setTokens.map(Number);
+    if (setIds.some((setId) => !Number.isSafeInteger(setId))) return [];
+    return [
+      and(
+        eq(boardseshTicks.boardId, board.boardId),
+        eq(boardseshTicks.boardType, board.boardType),
+        eq(boardClimbs.boardType, board.boardType),
+        ...playlistBoardScopeConditions({
+          boardName: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds,
+        }),
+        ...retiredByResetCondition(board.boardType, {}),
+      )!,
+    ];
+  });
+  if (boardScopes.length === 0) return new Map();
+
+  const angleLogs = count(boardseshTicks.id);
+  // Aggregate/window composition has no Drizzle builder equivalent. All SQL
+  // identifiers come from the schema, not request strings.
+  const climbLogs = sql<number>`sum(count(${boardseshTicks.id})) over (partition by ${boardseshTicks.boardId}, ${boardClimbs.uuid})`;
+  const winners = await db
+    .selectDistinctOn([boardseshTicks.boardId], {
+      boardId: boardseshTicks.boardId,
+      uuid: boardClimbs.uuid,
+      name: boardClimbs.name,
+      frames: boardClimbs.frames,
+      angle: boardseshTicks.angle,
+    })
+    .from(boardseshTicks)
+    .innerJoin(userBoards, eq(userBoards.id, boardseshTicks.boardId))
+    .innerJoin(gyms, eq(gyms.id, userBoards.gymId))
+    .leftJoin(
+      boardClimbAliases,
+      and(
+        eq(boardClimbAliases.boardType, boardseshTicks.boardType),
+        eq(boardClimbAliases.aliasUuid, boardseshTicks.climbUuid),
+      ),
+    )
+    .innerJoin(
+      boardClimbs,
+      and(
+        eq(boardClimbs.boardType, boardseshTicks.boardType),
+        eq(boardClimbs.uuid, sql`COALESCE(${boardClimbAliases.canonicalUuid}, ${boardseshTicks.climbUuid})`),
+      ),
+    )
+    .where(
+      and(
+        discoverableBoardConditions(gymUuid),
+        or(...boardScopes),
+        inArray(boardseshTicks.status, ['send', 'flash']),
+        isNull(boardseshTicks.kilterDetachedAt),
+        contentVisibilityCondition('tick', boardseshTicks.uuid, boardseshTicks.userId, null),
+        publicClimbCondition(boardClimbs),
+        eq(boardClimbs.isHidden, false),
+        ...holdIntegrityCondition({ holdIntegrity: 'intact' }),
+        sprayClimbVisibilityCondition(boardClimbs, null),
+        or(eq(boardClimbs.boardType, 'moonboard'), isNotNull(boardClimbs.requiredSetIds)),
+        isNotNull(boardClimbs.frames),
+        ne(boardClimbs.frames, ''),
+      ),
+    )
+    .groupBy(boardseshTicks.boardId, boardClimbs.uuid, boardseshTicks.angle)
+    .orderBy(
+      asc(boardseshTicks.boardId),
+      desc(climbLogs),
+      asc(boardClimbs.uuid),
+      desc(angleLogs),
+      asc(boardseshTicks.angle),
+    );
+  const popularClimbs = new Map<number, BoardDiscoveryClimb>();
+  for (const winner of winners) {
+    if (winner.boardId !== null && winner.frames) {
+      popularClimbs.set(winner.boardId, {
+        uuid: winner.uuid,
+        name: winner.name,
+        frames: winner.frames,
+        angle: winner.angle,
+      });
+    }
+  }
+  return popularClimbs;
+}
+
 /** Anonymous discovery is deliberately stricter than owner-aware board search. */
 export const boardDiscoveryQueries = {
   boardDiscovery: async (
@@ -155,8 +287,21 @@ export const boardDiscoveryQueries = {
       return board ? [{ ...board, uniqueClimbers: ranked.uniqueClimbers }] : [];
     });
 
+    const selectedBoards = boards.slice(0, limit);
+    let popularClimbs = new Map<number, BoardDiscoveryClimb>();
+    if (gymUuid) {
+      try {
+        popularClimbs = await loadPopularGymClimbs(gymUuid, selectedBoards);
+      } catch (error) {
+        logger.warn('[BoardDiscovery] Popular climb preview unavailable', {
+          event: 'board_discovery.popular_preview_unavailable',
+          errorName: error instanceof Error ? error.name : 'unknown',
+        });
+      }
+    }
+
     return Promise.all(
-      boards.slice(0, limit).flatMap((board) => {
+      selectedBoards.flatMap((board) => {
         const gymSlug = board.gymSlug;
         if (!gymSlug) {
           logger.warn('[BoardDiscovery] Skipping board without a public gym slug', {
@@ -181,6 +326,7 @@ export const boardDiscoveryQueries = {
             locationName: board.locationName,
             uniqueClimbers: board.uniqueClimbers,
             currentClimb,
+            popularClimb: popularClimbs.get(board.boardId) ?? null,
           })),
         ];
       }),

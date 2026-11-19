@@ -19,7 +19,8 @@
     "refreshRetry": "Actualizar directorio",
     "moveTitle": "¿Mover este plafón?",
     "moveBody": "¿Mover {{board}} de {{source}} a este rocódromo? Si su antigua ficha importada queda vacía, se fusionará con este rocódromo y sus enlaces redirigirán aquí.",
-    "moveConfirm": "Mover plafón"
+    "moveConfirm": "Mover plafón",
+    "notListed": "¿No aparece? Añade tu rocódromo"
   },
   "metadata": {
     "all": {
@@ -46,8 +47,8 @@
   "directory": {
     "all": {
       "h1": "Rocódromos con plafones de entrenamiento",
-      "lead_one": "{{formattedCount}} rocódromo tiene un plafón listado en Boardsesh. La ficha muestra los plafones de su pared y el ángulo al que están montados, así sabes qué te vas a encontrar antes de cruzar la ciudad.",
-      "lead_other": "{{formattedCount}} rocódromos tienen un plafón listado en Boardsesh. Cada ficha muestra los plafones de la pared y el ángulo al que están montados, así sabes qué te vas a encontrar antes de cruzar la ciudad.",
+      "lead_one": "{{formattedCount}} rocódromo, muro de club o muro de casa figura en el directorio de plafones.",
+      "lead_other": "{{formattedCount}} rocódromos, muros de clubes y muros de casa figuran en el directorio de plafones.",
       "detail": "{{kilterCount}} tienen un plafón Kilter, {{moonboardCount}} un MoonBoard y {{tensionCount}} un plafón Tension, y muchos tienen más de uno. Elige un plafón abajo o busca por nombre."
     },
     "kilter": {
@@ -67,18 +68,16 @@
       "lead_one": "{{formattedCount}} rocódromo de Boardsesh tiene un plafón Tension en la pared. La ficha muestra el ángulo al que está montado, así ves si encaja con tu proyecto.",
       "lead_other": "{{formattedCount}} rocódromos de Boardsesh tienen un plafón Tension en la pared. Cada ficha muestra el ángulo al que está montado, así ves cuál encaja con tu proyecto.",
       "detail": "Son los propios escaladores quienes listan estos rocódromos, y Boardsesh no tiene relación con quienes fabrican los plafones. ¿Llevas uno de estos muros? Reclama la ficha y mantén los datos al día."
-    }
+    },
+    "source": "Las fichas proceden de datos públicos de ubicaciones de plafones y de escaladores."
   },
   "facets": {
-    "heading": "Explora por plafón",
     "all": "Todos los rocódromos · {{formattedCount}}",
     "kilter": "Kilter · {{formattedCount}}",
     "moonboard": "MoonBoard · {{formattedCount}}",
-    "tension": "Tension · {{formattedCount}}",
-    "countHint": "Los números cuentan rocódromos, no plafones: un rocódromo con tres muros Kilter cuenta una vez."
+    "tension": "Tension · {{formattedCount}}"
   },
   "filters": {
-    "boardHeading": "Plafón",
     "moreLabel": "Afina la búsqueda",
     "moreLabelActive": "Afina la búsqueda · {{count}}",
     "layoutHeading": "Disposición",
@@ -95,7 +94,6 @@
     "clearAll": "Quitar los filtros"
   },
   "search": {
-    "geoHint": "¿Ubicación desactivada? Escribe una ciudad. No hace falta dar permiso.",
     "label": "Buscar rocódromos",
     "placeholder": "Nombre del rocódromo o ciudad",
     "submit": "Buscar"
@@ -115,14 +113,15 @@
     "home": "Vuelve a Boardsesh"
   },
   "card": {
-    "claimed": "Reclamado",
+    "claimed": "Gestionado por el rocódromo",
     "unclaimed": "Sin reclamar",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km"
   },
   "claim": {
     "body": "¿Es tuyo este rocódromo? Reclámalo y decides qué plafones, horarios y enlaces ven aquí los escaladores.",
-    "action": "Busca tu rocódromo"
+    "action": "Busca tu rocódromo",
+    "topAction": "¿Gestionas uno de estos muros? Busca y reclama su ficha gratis."
   },
   "nearMe": {
     "cta": "Usar mi ubicación",

@@ -200,7 +200,7 @@ export default function VoteButton({
           disabled={isLoading}
           aria-label={isLiked ? t('vote.unlike') : t('vote.like')}
           sx={{
-            color: isLiked ? 'var(--color-error)' : 'var(--neutral-400)',
+            color: isLiked ? 'var(--color-error)' : 'var(--neutral-500)',
             p: 0.5,
           }}
         >
@@ -245,7 +245,9 @@ export default function VoteButton({
         disabled={isLoading}
         aria-label={t('vote.upvote')}
         sx={{
-          color: userVote === 1 ? 'var(--color-success)' : 'var(--neutral-400)',
+          minWidth: 44,
+          minHeight: 44,
+          color: userVote === 1 ? 'var(--color-success)' : 'var(--neutral-500)',
           p: 0.5,
         }}
       >
@@ -268,7 +270,9 @@ export default function VoteButton({
         disabled={isLoading}
         aria-label={t('vote.downvote')}
         sx={{
-          color: userVote === -1 ? 'var(--color-error)' : 'var(--neutral-400)',
+          minWidth: 44,
+          minHeight: 44,
+          color: userVote === -1 ? 'var(--color-error)' : 'var(--neutral-500)',
           p: 0.5,
         }}
       >

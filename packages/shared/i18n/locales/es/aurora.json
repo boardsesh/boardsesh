@@ -13,7 +13,7 @@
       "step1": "Descarga la app gratis e inicia sesión.",
       "step2": "Toca tu avatar, luego Ajustes y luego Aplicaciones conectadas.",
       "step3": "Toca Iniciar sesión en Kilter o Vincular en la tarjeta de Tension.",
-      "sync": "Tus encadenes llegan cada 12 horas más o menos. La sincronización va en un solo sentido: nada de lo que registres en Boardsesh vuelve a sus apps.",
+      "sync": "Tras vincular tu cuenta, Boardsesh busca nuevos encadenes en segundo plano. El tiempo puede variar. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps.",
       "signIn": "Iniciar sesión"
     },
     "legacy": {

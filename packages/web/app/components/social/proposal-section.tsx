@@ -48,8 +48,10 @@ export default function ProposalSection({
   const [communityStatus, setCommunityStatus] = useState<ClimbCommunityStatusType | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [acceptedProposals, setAcceptedProposals] = useState<Proposal[]>([]);
-  const [isAdminOrLeader, setIsAdminOrLeader] = useState(false);
-  const [showFreezeDialog, setShowFreezeDialog] = useState(false);
+  const [roleGrant, setRoleGrant] = useState<{ token: string; allowed: boolean } | null>(null);
+  const isAdminOrLeader = Boolean(token && roleGrant?.token === token && roleGrant.allowed);
+  const [freezeDialogToken, setFreezeDialogToken] = useState<string | null>(null);
+  const showFreezeDialog = Boolean(token && freezeDialogToken === token);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -83,7 +85,7 @@ export default function ProposalSection({
               (r.role === 'admin' || r.role === 'community_leader') &&
               (r.boardType === null || r.boardType === boardType),
           );
-          setIsAdminOrLeader(hasRole);
+          setRoleGrant({ token, allowed: hasRole });
         } catch {
           // Not authenticated or no roles
         }
@@ -150,29 +152,31 @@ export default function ProposalSection({
           {/* Section header with create button */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {isAdminOrLeader && (
+              {token && isAdminOrLeader && (
                 <Tooltip title={communityStatus?.isFrozen ? 'Unfreeze climb' : 'Freeze climb'}>
                   <IconButton
                     size="small"
-                    onClick={() => setShowFreezeDialog(true)}
+                    onClick={() => setFreezeDialogToken(token)}
                     sx={{
-                      color: communityStatus?.isFrozen ? 'var(--color-warning)' : themeTokens.neutral[400],
+                      color: communityStatus?.isFrozen ? 'var(--color-warning)' : themeTokens.neutral[500],
                     }}
                   >
                     <AcUnitIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               )}
-              <CreateProposalForm
-                climbUuid={climbUuid}
-                boardType={boardType}
-                angle={angle}
-                isFrozen={communityStatus?.isFrozen}
-                outlierWarning={communityStatus?.outlierAnalysis?.isOutlier}
-                currentClimbDifficulty={communityStatus?.communityGrade || currentClimbDifficulty}
-                boardName={boardName}
-                onCreated={handleProposalCreated}
-              />
+              {token && (
+                <CreateProposalForm
+                  climbUuid={climbUuid}
+                  boardType={boardType}
+                  angle={angle}
+                  isFrozen={communityStatus?.isFrozen}
+                  outlierWarning={communityStatus?.outlierAnalysis?.isOutlier}
+                  currentClimbDifficulty={communityStatus?.communityGrade || currentClimbDifficulty}
+                  boardName={boardName}
+                  onCreated={handleProposalCreated}
+                />
+              )}
             </Box>
           </Box>
 
@@ -188,7 +192,7 @@ export default function ProposalSection({
               />
             ))
           ) : (
-            <Typography variant="body2" sx={{ color: themeTokens.neutral[400], textAlign: 'center', py: 2 }}>
+            <Typography variant="body2" sx={{ color: themeTokens.neutral[500], textAlign: 'center', py: 2 }}>
               {t('proposalSection.noOpen')}
             </Typography>
           )}
@@ -237,10 +241,10 @@ export default function ProposalSection({
       {communityStatus?.isFrozen && <FreezeIndicator reason={communityStatus.freezeReason} />}
 
       {/* Section header */}
-      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: themeTokens.neutral[700], mb: 1.5 }}>
+      <Typography variant="subtitle2" component="h3" sx={{ fontWeight: 600, color: themeTokens.neutral[700], mb: 1.5 }}>
         {t('proposalSection.title')}
         {proposals.length > 0 && (
-          <Typography component="span" variant="caption" sx={{ ml: 0.5, color: themeTokens.neutral[400] }}>
+          <Typography component="span" variant="caption" sx={{ ml: 0.5, color: themeTokens.neutral[500] }}>
             ({proposals.length})
           </Typography>
         )}
@@ -250,10 +254,10 @@ export default function ProposalSection({
       <CollapsibleSection sections={sections} defaultActiveKey="open" />
 
       {/* Freeze dialog */}
-      {showFreezeDialog && communityStatus && (
+      {token && isAdminOrLeader && showFreezeDialog && communityStatus && (
         <FreezeClimbDialog
           open={showFreezeDialog}
-          onClose={() => setShowFreezeDialog(false)}
+          onClose={() => setFreezeDialogToken(null)}
           climbUuid={climbUuid}
           boardType={boardType}
           currentlyFrozen={communityStatus.isFrozen}

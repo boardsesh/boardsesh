@@ -255,7 +255,8 @@
     "setterPicker": {
       "showClimbs": "Show climbs",
       "error": "Couldn't load this list's setters."
-    }
+    },
+    "installHelper": "No app yet? Get it free and climb this list on your board."
   },
   "editClimbs": {
     "done": "Done",

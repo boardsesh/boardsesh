@@ -58,12 +58,12 @@ beforeEach(() => {
 describe('GymDirectoryCard', () => {
   it('labels a claimed gym', async () => {
     await renderCard({ gym: { isClaimed: true } });
-    expect(screen.getByText('Claimed')).toBeTruthy();
+    expect(screen.getByText('Run by this gym')).toBeTruthy();
   });
 
-  it('labels an unclaimed gym', async () => {
+  it('does not label an unclaimed gym as a defect', async () => {
     await renderCard({});
-    expect(screen.getByText('Unclaimed')).toBeTruthy();
+    expect(screen.queryByText('Unclaimed')).toBeNull();
   });
 
   it('links the gym name with a real href a crawler can follow', async () => {

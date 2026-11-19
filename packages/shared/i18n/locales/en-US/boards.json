@@ -857,7 +857,15 @@
       "boards": "boards",
       "members": "members",
       "followers": "followers",
-      "comments": "comments"
+      "comments": "comments",
+      "boards_one": "board",
+      "boards_other": "boards",
+      "members_one": "member",
+      "members_other": "members",
+      "followers_one": "follower",
+      "followers_other": "followers",
+      "comments_one": "comment",
+      "comments_other": "comments"
     },
     "delete": {
       "title": "Delete Gym",

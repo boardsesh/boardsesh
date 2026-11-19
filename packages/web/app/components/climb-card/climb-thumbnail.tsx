@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import Box from '@mui/material/Box';
+import { getClimbThumbnailCropPlacement, type ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
@@ -11,12 +13,13 @@ type ClimbThumbnailProps = {
   /** Callback for thumbnail presses when an active-climb/play-drawer flow is desired. */
   onClick?: () => void;
   maxHeight?: string;
+  crop?: ClimbThumbnailCrop;
   /** Set fetchpriority="high" for LCP-critical images */
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
 const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
-  ({ boardDetails, currentClimb, pathname: _pathname, onClick, maxHeight, fetchPriority }) => {
+  ({ boardDetails, currentClimb, pathname: _pathname, onClick, maxHeight, fetchPriority, crop }) => {
     const boardStyle = useMemo<React.CSSProperties>(
       () => ({
         aspectRatio: '5 / 7',
@@ -26,16 +29,42 @@ const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
       [maxHeight],
     );
 
-    const renderContent = currentClimb ? (
+    const art = currentClimb ? (
       <BoardImageLayers
         boardDetails={boardDetails}
         frames={currentClimb.frames}
         mirrored={!!currentClimb.mirrored}
         thumbnail
-        style={boardStyle}
+        style={
+          crop ? { aspectRatio: `${boardDetails.boardWidth} / ${boardDetails.boardHeight}`, width: '100%' } : boardStyle
+        }
         fetchPriority={fetchPriority}
       />
     ) : null;
+
+    const renderContent =
+      crop && currentClimb ? (
+        <Box
+          data-testid="climb-thumbnail-crop"
+          sx={{ position: 'relative', overflow: 'hidden', aspectRatio: '5 / 7', width: '100%' }}
+        >
+          <Box
+            sx={{
+              position: 'absolute',
+              ...getClimbThumbnailCropPlacement(
+                crop,
+                boardDetails.boardWidth,
+                boardDetails.boardHeight,
+                !!currentClimb.mirrored,
+              ),
+            }}
+          >
+            {art}
+          </Box>
+        </Box>
+      ) : (
+        art
+      );
 
     if (onClick && currentClimb) {
       return (
@@ -81,6 +110,7 @@ const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
       prev.pathname === next.pathname &&
       prev.onClick === next.onClick &&
       prev.maxHeight === next.maxHeight &&
+      prev.crop === next.crop &&
       prev.fetchPriority === next.fetchPriority
     );
   },

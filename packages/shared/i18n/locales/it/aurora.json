@@ -13,7 +13,7 @@
       "step1": "Scarica l’app gratuita e accedi.",
       "step2": "Tocca il tuo avatar, poi Impostazioni, poi App collegate.",
       "step3": "Tocca Accedi a Kilter oppure Collega sulla scheda Tension.",
-      "sync": "Le tue ripetizioni arrivano circa ogni 12 ore. La sincronizzazione va in una sola direzione: ciò che registri in Boardsesh resta in Boardsesh.",
+      "sync": "Dopo che colleghi l’account, Boardsesh cerca nuove ripetizioni in background. I tempi variano. Le importazioni vanno solo verso Boardsesh; nulla di ciò che registri qui torna alle loro app.",
       "signIn": "Accedi"
     },
     "legacy": {

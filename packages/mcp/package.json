@@ -1,0 +1,39 @@
+{
+  "name": "@boardsesh/mcp",
+  "version": "0.1.0",
+  "description": "Local climbing history and workout tools for MCP clients, using the Boardsesh partner API.",
+  "license": "Apache-2.0",
+  "bin": {
+    "boardsesh-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "drizzle",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "package": "node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "better-sqlite3": "13.2.0",
+    "drizzle-orm": "0.45.2",
+    "proper-lockfile": "4.1.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@boardsesh/public-api": "workspace:*",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/proper-lockfile": "4.1.4",
+    "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.2",
+    "typescript": "~7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

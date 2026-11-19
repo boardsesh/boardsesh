@@ -109,4 +109,21 @@ describe('place suggestions', () => {
     expect(screen.queryByRole('option')).toBeNull();
     expect(request).toHaveBeenCalledOnce();
   });
+  it('focuses a claim entry point and keeps a plain GET search usable', () => {
+    render(<GymPlaceSearch facet="kilter" query={parseDirectoryQuery('kilter', {})} locale="fr" focusSearch />);
+    const input = screen.getByRole('combobox');
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: 'My gym' } });
+    const form = screen.getByRole('search') as HTMLFormElement;
+    expect(form.method).toBe('get');
+    expect(form.getAttribute('action')).toBe('/fr/gyms/kilter');
+    expect(new FormData(form).get('q')).toBe('My gym');
+  });
+
+  it('focuses when a client navigation enters claim mode on an existing search', () => {
+    const props = { facet: 'all' as const, query: parseDirectoryQuery('all', {}), locale: 'en-US' as const };
+    const view = render(<GymPlaceSearch {...props} />);
+    view.rerender(<GymPlaceSearch {...props} focusSearch />);
+    expect(document.activeElement).toBe(screen.getByRole('combobox'));
+  });
 });

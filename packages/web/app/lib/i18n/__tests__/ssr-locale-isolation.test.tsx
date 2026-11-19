@@ -145,4 +145,37 @@ describe('I18nProvider server rendering', () => {
     expect(html).toContain('Hallo');
     expect(html).not.toContain('Bonjour');
   });
+  it('merges nested slices of the same namespace during server rendering', async () => {
+    function SliceProbe() {
+      const { t } = useTranslation('marketing');
+      return (
+        <span>
+          {t('home.title')}|{t('about.title')}
+        </span>
+      );
+    }
+    const html = await renderRequest(
+      <I18nProvider locale="de" resources={{ marketing: { home: { title: 'Startseite' } } }}>
+        <I18nProvider locale="de" resources={{ marketing: { about: { title: 'Über uns' } } }}>
+          <SliceProbe />
+        </I18nProvider>
+      </I18nProvider>,
+    );
+    expect(html.replaceAll('<!-- -->', '')).toContain('Startseite|Über uns');
+  });
+  it('keeps a child namespace slice out of its parent and siblings', async () => {
+    function ParentProbe() {
+      const { i18n } = useTranslation('marketing');
+      return <span>{String(i18n.exists('about.title', { ns: 'marketing' }))}</span>;
+    }
+    const html = await renderRequest(
+      <I18nProvider locale="de" resources={{ marketing: { home: { title: 'Startseite' } } }}>
+        <I18nProvider locale="de" resources={{ marketing: { about: { title: 'Über uns' } } }}>
+          <span>Child</span>
+        </I18nProvider>
+        <ParentProbe />
+      </I18nProvider>,
+    );
+    expect(html).toContain('<span>false</span>');
+  });
 });

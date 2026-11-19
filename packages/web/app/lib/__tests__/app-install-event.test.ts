@@ -84,6 +84,7 @@ describe('buildAppInstallClickProperties', () => {
       'climb-list',
       'spray-climb',
       'spray-wall',
+      'spraywalls',
       'gyms-directory',
       'bring-your-logbook',
       'join-page',
@@ -99,8 +100,8 @@ describe('buildAppInstallClickProperties', () => {
       'sticky-bar',
       'about',
       'support',
-      'spraywalls',
       'run-a-wall',
+      'auth-login',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });

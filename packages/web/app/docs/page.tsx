@@ -1,3 +1,4 @@
+import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -18,7 +19,7 @@ export default async function DocsPage() {
   const locale = await getLocale();
   return (
     <I18nProvider locale={locale} namespaces={['marketing']}>
-      <DocsClientPage />
+      <DocsClientPage developerDocsState={getDeveloperDocsState()} />
     </I18nProvider>
   );
 }

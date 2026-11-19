@@ -33,6 +33,8 @@ vi.mock('@/app/hooks/use-infinite-scroll', () => ({
 
 // Capture what the list asks the virtualizer for, and render a deterministic
 // window so the row-count assertions below don't depend on a real viewport.
+let windowStartIndex = 0;
+let windowEmpty = false;
 let lastVirtualizerOpts: {
   count: number;
   overscan: number;
@@ -49,16 +51,19 @@ vi.mock('@tanstack/react-virtual', () => ({
     initialRect?: { width: number; height: number };
   }) => {
     lastVirtualizerOpts = opts;
-    const itemCount = Math.min(opts.overscan + 7, opts.count);
+    const itemCount = windowEmpty ? 0 : Math.min(opts.overscan + 7, Math.max(0, opts.count - windowStartIndex));
     const estimatedSize = opts.estimateSize();
-    const items = Array.from({ length: itemCount }, (_, index) => ({
-      index,
-      key: opts.getItemKey ? opts.getItemKey(index) : `item-${index}`,
-      start: index * estimatedSize,
-      size: estimatedSize,
-      end: (index + 1) * estimatedSize,
-      lane: 0,
-    }));
+    const items = Array.from({ length: itemCount }, (_, offset) => {
+      const index = windowStartIndex + offset;
+      return {
+        index,
+        key: opts.getItemKey ? opts.getItemKey(index) : `item-${index}`,
+        start: index * estimatedSize,
+        size: estimatedSize,
+        end: (index + 1) * estimatedSize,
+        lane: 0,
+      };
+    });
     return {
       getVirtualItems: () => items,
       getTotalSize: () => opts.count * estimatedSize,
@@ -113,13 +118,15 @@ function renderList(overrides: Partial<React.ComponentProps<typeof StaticClimbLi
   return { ...render(<StaticClimbList {...props} />), props };
 }
 
-describe('StaticClimbList virtualization', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    lastVirtualizerOpts = null;
-    loadMoreSentinelProps = null;
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  lastVirtualizerOpts = null;
+  windowStartIndex = 0;
+  windowEmpty = false;
+  loadMoreSentinelProps = null;
+});
 
+describe('StaticClimbList virtualization', () => {
   it('asks the virtualizer for every climb', () => {
     renderList();
     expect(lastVirtualizerOpts?.count).toBe(100);
@@ -140,7 +147,7 @@ describe('StaticClimbList virtualization', () => {
     expect(lastVirtualizerOpts?.initialRect).toEqual({ width: 375, height: 812 });
   });
 
-  it('floors each measured row wrapper at the estimate so no row reflows on mount', () => {
+  it('keeps the existing minimum while responsive row content establishes its actual height', () => {
     const { container } = renderList();
     const firstRow = container.querySelector('[data-index="0"]');
     expect((firstRow as HTMLElement).style.minHeight).toBe(`${LIST_ROW_HEIGHT}px`);
@@ -201,4 +208,33 @@ describe('StaticClimbList virtualization', () => {
     renderList({ climbs: hundredClimbs.slice(0, 3), hasMore: true });
     expect(loadMoreSentinelProps).toEqual(expect.objectContaining({ hasMore: true, isFetching: false }));
   });
+});
+
+it('keeps a later virtual window in flow between the correct unmounted spacers', () => {
+  windowStartIndex = 23;
+  const { container } = renderList();
+  const rows = [...container.querySelectorAll<HTMLElement>('[data-index]')];
+  expect(rows[0].dataset.index).toBe('23');
+  expect(rows).toHaveLength(17);
+  for (const row of rows) {
+    expect(row.style.position).not.toBe('absolute');
+    expect(row.style.transform).toBe('');
+  }
+  expect(container.querySelector<HTMLElement>('[data-virtual-spacer="before"]')?.style.height).toBe(
+    `${23 * LIST_ROW_HEIGHT}px`,
+  );
+  expect(container.querySelector<HTMLElement>('[data-virtual-spacer="after"]')?.style.height).toBe(
+    `${60 * LIST_ROW_HEIGHT}px`,
+  );
+});
+
+it('retains full scroll space for a temporarily empty virtual window without paging', () => {
+  windowEmpty = true;
+  const onLoadMore = vi.fn();
+  const { container } = renderList({ hasMore: true, onLoadMore });
+  expect(container.querySelector('[data-index]')).toBeNull();
+  expect(container.querySelector<HTMLElement>('[data-virtual-spacer="after"]')?.style.height).toBe(
+    `${100 * LIST_ROW_HEIGHT}px`,
+  );
+  expect(onLoadMore).not.toHaveBeenCalled();
 });

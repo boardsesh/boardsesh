@@ -93,6 +93,7 @@
     },
     "noBoardsYet": "No boards listed here yet.",
     "explorePlaylists": "See what people are building",
+    "startDiscussion": "Start the discussion",
     "claimTitle": "Is this your gym?",
     "claimBody": "Claim it to run the boards, the branding, and what shows up on the wall.",
     "claimCta": "Claim this gym",
@@ -146,7 +147,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "{{board}} board at {{gymName}}. See what's set on it and log your sends.",
     "ogDescriptionManyTypes": "{{boards}} boards at {{gymName}}. See what's set on them and log your sends.",
-    "ogDescriptionNoBoards": "No boards listed here yet. Climb here? Claim the gym and add them."
+    "ogDescriptionNoBoards": "No boards listed here yet. Climb here? Claim the gym and add them.",
+    "openMaps": "Open {{gymName}} in maps",
+    "mapsLocation": "Open map",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "See the climbs",
+    "popularClimbHeading": "Most logged climb at this wall",
+    "popularClimbBody": "From public sends and flashes logged here. Repeat sends count."
   },
   "boardPoster": {
     "metaTitle": "QR poster for {{boardName}}",

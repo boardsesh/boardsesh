@@ -117,11 +117,11 @@ beforeEach(() => {
 });
 
 describe('PlaylistDetailContent app hand-off', () => {
-  it('renders exactly one link, pointed at the playlist on the app origin', () => {
+  it('renders a playlist hand-off and an attributed fallback for each store', () => {
     renderDetail();
 
     const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(1);
+    expect(links).toHaveLength(3);
     expect(links[0].getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
     expect(links[0].textContent).toContain(tFromCatalog('playlists', 'detail.openInApp'));
   });
@@ -129,7 +129,9 @@ describe('PlaylistDetailContent app hand-off', () => {
   it('links out for a private playlist too — the app resolves access, not this page', () => {
     renderDetail({ ...mockPlaylist, isPublic: false });
 
-    expect(screen.getByRole('link').getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
+    expect(screen.getByRole('link', { name: tFromCatalog('playlists', 'detail.openInApp') }).getAttribute('href')).toBe(
+      `${APP_URL}/discover/playlist-uuid-1`,
+    );
   });
 });
 

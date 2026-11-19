@@ -27,7 +27,7 @@
       "title": "Blocs créés"
     },
     "setter": {
-      "title": "{{name}} - Ouvreur",
+      "title": "Blocs ouverts par {{name}}",
       "description": "Blocs ouverts par {{name}} sur Boardsesh",
       "fallbackTitle": "Profil d'ouvreur",
       "fallbackDescription": "Profil d'ouvreur et ses blocs sur Boardsesh",
@@ -175,8 +175,8 @@
     "climb_one": "bloc",
     "climb_other": "blocs",
     "seoHeading": "Blocs ouverts par {{name}}",
-    "seoSummary_one": "{{name}} a un bloc sur Boardsesh, sur {{boards}}.",
-    "seoSummary_other": "{{name}} a {{count}} blocs sur Boardsesh, sur {{boards}}.",
+    "seoSummary_one": "{{name}} a ouvert {{formattedCount}} bloc sur {{boards}}.",
+    "seoSummary_other": "{{name}} a ouvert {{formattedCount}} blocs sur {{boards}}.",
     "climbsHeading": "Tous les blocs de {{name}}",
     "empty": "Aucun bloc sur cette page.",
     "browseBoard": "Voir tous les blocs de la board {{boardName}}",
@@ -186,6 +186,7 @@
       "previous": "Blocs précédents",
       "next": "Plus de blocs",
       "pageLabel": "Page {{page}}"
-    }
+    },
+    "installHelper": "Installe l’app gratuite et grimpe les blocs de {{name}} sur ta board."
   }
 }

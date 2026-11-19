@@ -10,6 +10,7 @@ import type { Gym } from '@boardsesh/shared-schema';
  */
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 vi.mock('next/navigation', () => ({
   notFound: () => {

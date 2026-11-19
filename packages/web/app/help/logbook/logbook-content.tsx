@@ -86,6 +86,7 @@ export default function LogbookContent() {
         }
       >
         <HelpSteps steps={[t('help.log.bring.step1'), t('help.log.bring.step2'), t('help.log.bring.step3')]} />
+        <Prose>{t('help.log.bring.credentials')}</Prose>
         <Prose>{t('help.log.bring.p1')}</Prose>
         {/* Sync direction. The app's "pending sync" label gets read as a push
             back to Kilter; there is none (kilter-sync push-back is stubbed). */}

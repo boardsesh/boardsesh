@@ -77,11 +77,9 @@ export default async function HomeGymSearch() {
   const facetCounts = facetCountsResult.ok ? facetCountsResult.counts : null;
 
   return (
-    // Its own provider, so the block is self-contained: the reused directory
-    // card and claim link read the `gyms` namespace, which the homepage does not
-    // mount. A nested provider seeds from the enclosing one, so `marketing`
-    // keeps resolving inside it.
-    <I18nProvider locale={locale} namespaces={['marketing', 'gyms']}>
+    // Only the search and near-me controls translate in the browser. Marketing
+    // and facet labels above are already resolved on the server.
+    <I18nProvider locale={locale} namespaces={['gyms']} resourceKeys={{ gyms: ['search', 'places', 'nearMe'] }}>
       <Box component="section" id="gyms" sx={{ scrollMarginTop: 'calc(var(--global-header-height) + 16px)' }}>
         <Typography
           variant="overline"

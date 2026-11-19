@@ -211,7 +211,8 @@
       "delete": "No se pudo eliminar el comentario",
       "reply": "No se pudo publicar la respuesta",
       "loadReplies": "No se pudieron cargar las respuestas"
-    }
+    },
+    "signInToSuggestGrade": "Inicia sesión para proponer un grado"
   },
   "vote": {
     "upvote": "Voto positivo",
@@ -267,7 +268,10 @@
     "unfollow": "Dejar de seguir"
   },
   "betaVideos": {
-    "empty": "Sin vídeos de beta todavía"
+    "empty": "Sin vídeos de beta todavía",
+    "openClimb": "Ver {{climb}} y su beta",
+    "openVideo": "Ver la beta de {{creator}} en {{platform}}",
+    "watchOn": "Ver beta en {{platform}}"
   },
   "board": {
     "resetZoom": "Restablecer zoom"

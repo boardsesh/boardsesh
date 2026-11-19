@@ -209,7 +209,13 @@ export default function GraphQLSchemaViewer() {
         />
       </div>
 
-      <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+      <Tabs
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        value={activeTab}
+        onChange={(_, v) => setActiveTab(v)}
+      >
         <Tab label={`Operations (${groupedSections.operations.length})`} value="operations" />
         <Tab label={`Types (${groupedSections.types.length})`} value="types" />
         <Tab label={`Inputs (${groupedSections.inputs.length})`} value="inputs" />

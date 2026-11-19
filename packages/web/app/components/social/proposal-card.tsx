@@ -234,7 +234,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           {/* Value change */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
             <Chip label={localProposal.currentValue} size="small" variant="outlined" sx={{ fontSize: 13 }} />
-            <ArrowForwardIcon sx={{ fontSize: 16, color: 'var(--neutral-400)' }} />
+            <ArrowForwardIcon sx={{ fontSize: 16, color: 'var(--neutral-500)' }} />
             <Chip
               label={localProposal.proposedValue}
               size="small"
@@ -263,7 +263,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           />
 
           {/* Vote buttons + admin actions */}
-          {localProposal.status === 'open' && (
+          {token && localProposal.status === 'open' && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
               <Tooltip title={t('feed:proposalCard.support')}>
                 <IconButton
@@ -271,7 +271,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
                   disabled={loading}
                   onClick={() => handleVote(1)}
                   sx={{
-                    color: localProposal.userVote === 1 ? 'var(--color-success)' : 'var(--neutral-400)',
+                    color: localProposal.userVote === 1 ? 'var(--color-success)' : 'var(--neutral-500)',
                   }}
                 >
                   {localProposal.userVote === 1 ? (
@@ -287,7 +287,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
                   disabled={loading}
                   onClick={() => handleVote(-1)}
                   sx={{
-                    color: localProposal.userVote === -1 ? 'var(--color-error)' : 'var(--neutral-400)',
+                    color: localProposal.userVote === -1 ? 'var(--color-error)' : 'var(--neutral-500)',
                   }}
                 >
                   {localProposal.userVote === -1 ? (
@@ -336,7 +336,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           )}
 
           {/* Admin delete for accepted proposals */}
-          {isAdminOrLeader && localProposal.status === 'approved' && (
+          {token && isAdminOrLeader && localProposal.status === 'approved' && (
             <Box sx={{ mt: 1.5 }}>
               <Button
                 size="small"
@@ -362,7 +362,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           </Box>
 
           {/* Timestamp */}
-          <Typography variant="caption" sx={{ color: 'var(--neutral-400)', mt: 1, display: 'block' }}>
+          <Typography variant="caption" sx={{ color: 'var(--neutral-500)', mt: 1, display: 'block' }}>
             {new Date(localProposal.createdAt).toLocaleDateString()}
           </Typography>
         </CardContent>

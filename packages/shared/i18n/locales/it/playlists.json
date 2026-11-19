@@ -255,7 +255,8 @@
     "setterPicker": {
       "showClimbs": "Mostra blocchi",
       "error": "Impossibile caricare i tracciatori di questa lista."
-    }
+    },
+    "installHelper": "Non hai ancora l’app? Scaricala gratis e scala questa playlist sul tuo pannello."
   },
   "editClimbs": {
     "done": "Fatto",

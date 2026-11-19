@@ -36,6 +36,7 @@ type ClimbHandoffCtaProps = {
    * component stays unaware of stores and its own event stays what it was.
    */
   children?: React.ReactNode;
+  variant?: 'contained' | 'outlined';
 };
 
 const wrapperSx = {
@@ -43,10 +44,10 @@ const wrapperSx = {
   flexDirection: 'column' as const,
   alignItems: 'flex-start',
   gap: `${themeTokens.spacing[2]}px`,
-  margin: `${themeTokens.spacing[6]}px 0`,
+  margin: `${themeTokens.spacing[3]}px 0`,
 };
 
-const helperSx = { color: 'var(--neutral-400)' };
+const helperSx = { color: 'var(--neutral-500)' };
 
 /**
  * The primary action on the front door: open this exact route in the app.
@@ -70,6 +71,7 @@ export default function ClimbHandoffCta({
   climbUuid,
   locale,
   children,
+  variant = 'contained',
 }: ClimbHandoffCtaProps) {
   const href = buildAppHandoffUrl(pathname);
 
@@ -126,7 +128,7 @@ export default function ClimbHandoffCta({
 
   return (
     <Box sx={wrapperSx}>
-      <Button component="a" href={href} variant="contained" size="large" aria-label={ariaLabel} onClick={handleClick}>
+      <Button component="a" href={href} variant={variant} size="large" aria-label={ariaLabel} onClick={handleClick}>
         {label}
       </Button>
       {helperText ? (

@@ -1,0 +1,1 @@
+CREATE INDEX `workout_drafts_cleanup` ON `workout_drafts` (`result`,`expires_at`,`id`);

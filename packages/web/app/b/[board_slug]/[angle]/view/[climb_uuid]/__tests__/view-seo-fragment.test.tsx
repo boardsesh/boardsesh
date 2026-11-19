@@ -330,7 +330,7 @@ describe('climb front door server HTML', () => {
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
     expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
     );
   });
 
@@ -401,7 +401,7 @@ describe('setter notes on the climb front door', () => {
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
     expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
     );
   });
 });

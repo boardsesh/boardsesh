@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -16,7 +17,7 @@ type ClimbFactsProps = {
 
 const dlSx = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
   gap: `${themeTokens.spacing[3]}px`,
   margin: `${themeTokens.spacing[4]}px 0`,
   padding: 0,
@@ -26,7 +27,7 @@ const dtSx = {
   fontSize: themeTokens.typography.fontSize.xs,
   textTransform: 'uppercase' as const,
   letterSpacing: '0.04em',
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
   margin: 0,
 };
 
@@ -34,14 +35,17 @@ const ddSx = {
   fontSize: themeTokens.typography.fontSize.base,
   fontWeight: themeTokens.typography.fontWeight.semibold,
   margin: 0,
+  overflowWrap: 'anywhere' as const,
 };
 
 /** Formats an FA timestamp for display; the raw column is a date string. */
-function formatFirstAscentDate(rawDate: string | null): string | null {
+function formatFirstAscentDate(rawDate: string | null, locale: string): string | null {
   if (!rawDate) return null;
   const parsed = new Date(rawDate);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    parsed,
+  );
 }
 
 /**
@@ -50,13 +54,13 @@ function formatFirstAscentDate(rawDate: string | null): string | null {
  * reads and none of it waits on a client fetch.
  */
 export default async function ClimbFacts({ climb, boardDetails, angle, currentAngleStats }: ClimbFactsProps) {
-  const { t } = await getServerTranslation('climbs');
+  const { t, locale } = await getServerTranslation('climbs');
 
   const setter = climb.setter_username?.trim();
   const quality = Number(climb.quality_average ?? 0);
   const faUsername = currentAngleStats?.fa_username?.trim();
-  const faDate = formatFirstAscentDate(currentAngleStats?.fa_at ?? null);
-  const boardLabel = [boardDetails.board_name, boardDetails.layout_name].filter(Boolean).join(' · ');
+  const faDate = formatFirstAscentDate(currentAngleStats?.fa_at ?? null, locale);
+  const boardLabel = climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name);
 
   return (
     <Box component="dl" sx={dlSx}>
@@ -65,7 +69,7 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
           {t('frontDoor.facts.grade')}
         </Box>
         <Box component="dd" sx={ddSx}>
-          {climb.difficulty || t('frontDoor.facts.unknown')}
+          {climb.difficulty ? climbGradeForSearch(climb.difficulty) : t('frontDoor.facts.unknown')}
         </Box>
       </div>
 
@@ -74,7 +78,7 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
           {t('frontDoor.facts.ascents')}
         </Box>
         <Box component="dd" sx={ddSx}>
-          {climb.ascensionist_count ?? 0}
+          {new Intl.NumberFormat(locale).format(climb.ascensionist_count ?? 0)}
         </Box>
       </div>
 

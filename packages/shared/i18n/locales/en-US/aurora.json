@@ -13,7 +13,7 @@
       "step1": "Get the free app and sign in.",
       "step2": "Tap your avatar, then Settings, then Connected apps.",
       "step3": "Tap Sign in to Kilter, or Link on the Tension card.",
-      "sync": "Your sends come across about every 12 hours. Sync runs one way: nothing you log in Boardsesh goes back to their apps.",
+      "sync": "After you link your account, Boardsesh checks for new sends in the background. Timing varies. Imports run one way into Boardsesh; nothing you log here goes back to their apps.",
       "signIn": "Sign in"
     },
     "legacy": {
