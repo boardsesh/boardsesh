@@ -28,9 +28,9 @@ index eb34427..28b0aa0 100644
 +// handler this helper created, so releasing one owner keeps the others tappable.
 +// A React-owned handler has no lease count and must never be detached here.
 +static char ExpoUITouchHandlerLeaseCountKey;
-
+ 
  @implementation ExpoUITouchHandlerHelper
-
+ 
  + (nullable UIGestureRecognizer *)createAndAttachTouchHandlerForView:(UIView *)view {
    for (UIGestureRecognizer *recognizer in [view.gestureRecognizers copy]) {
      if ([recognizer isKindOfClass:[RCTSurfaceTouchHandler class]]) {
@@ -49,7 +49,7 @@ index eb34427..28b0aa0 100644
    [touchHandler attachToView:view];
    return touchHandler;
  }
-
+ 
  + (void)detachTouchHandler:(UIGestureRecognizer *)touchHandler fromView:(UIView *)view {
 -  if ([touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]]) {
 -    [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
@@ -68,16 +68,16 @@ index eb34427..28b0aa0 100644
 +  objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 +  [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
  }
-
+ 
  @end
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
 index 2900e12..e426c5f 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { parseSnapPoint } from './types';
-
+ 
  export { useBottomSheet } from './context';
-
+ 
 +// `expand()` / `partialExpand()` / `hide()` are native AsyncFunctions on
 +// `ModalBottomSheetView`. Their handlers exist only while Compose content is
 +// registered. A lifecycle race (already dismissed, unmounted, or backgrounded
@@ -103,7 +103,7 @@ index 2900e12..e426c5f 100644
  ): string | undefined {
 @@ -125,13 +145,26 @@ export function BottomSheet(props: BottomSheetProps) {
    }, [fireCloseCallbacks]);
-
+ 
    const methods: BottomSheetMethods = useMemo(() => {
 -    const snapToIndex = (index: number) => {
 -      if (index === -1) {
@@ -145,7 +145,7 @@ index 2900e12..e426c5f 100644
        }
        onChangeRef.current?.(clampedIndex);
      };
-
+ 
 -    const close = () => {
 -      sheetRef.current?.hide().then(() => {
 -        setIsOpen(false);
@@ -154,11 +154,11 @@ index 2900e12..e426c5f 100644
 -      });
 -    };
 +    const close = hideSwallowingMissingNativeHandler;
-
+ 
      return {
        snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index ee198cf..4d108d7 100644
+index 0d94de9..3d1e58f 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
 @@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -175,7 +175,7 @@ index ee198cf..4d108d7 100644
    onDismissRef.current = onDismiss;
 +  const onFullyDismissedRef = useRef(onFullyDismissed);
 +  onFullyDismissedRef.current = onFullyDismissed;
-
+ 
    const detents = useMemo<PresentationDetent[]>(() => {
      if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
 @@ -126,6 +129,10 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -187,7 +187,7 @@ index ee198cf..4d108d7 100644
 +    // settle window before the native post-animation signal resolves it.
 +    onFullyDismissedRef.current?.();
    }, []);
-
+ 
    // Sync with external index prop changes
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
 index 51326fb..7674ed7 100644
@@ -196,7 +196,7 @@ index 51326fb..7674ed7 100644
 @@ -178,6 +178,12 @@ export interface BottomSheetProps {
     */
    onDismiss?: () => void;
-
+ 
 +  /**
 +   * Callback fired after the native dismiss animation has fully settled.
 +   * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
@@ -204,38 +204,39 @@ index 51326fb..7674ed7 100644
 +  onFullyDismissed?: () => void;
 +
    // --- Behavior ---
-
+ 
    /**
 diff --git a/android/src/main/java/expo/modules/ui/LazyRowView.kt b/android/src/main/java/expo/modules/ui/LazyRowView.kt
+index 3db48d8..9adfb95 100644
 --- a/android/src/main/java/expo/modules/ui/LazyRowView.kt
 +++ b/android/src/main/java/expo/modules/ui/LazyRowView.kt
-@@ -28,6 +28,7 @@
+@@ -28,6 +28,7 @@ data class LazyRowProps(
    val horizontalArrangement: MutableState<HorizontalArrangement?> = mutableStateOf(null),
    val verticalAlignment: MutableState<VerticalAlignment?> = mutableStateOf(null),
    val contentPadding: MutableState<ContentPadding?> = mutableStateOf(null),
 +  val initialScrollPosition: MutableState<LazyListScrollPosition?> = mutableStateOf(null),
    val modifiers: MutableState<ModifierList> = mutableStateOf(emptyList())
  ) : ComposeProps
-
-@@ -35,6 +36,7 @@
+ 
+@@ -35,6 +36,7 @@ data class LazyRowProps(
  class LazyRowView(context: Context, appContext: AppContext) :
    ExpoComposeView<LazyRowProps>(context, appContext) {
    override val props = LazyRowProps()
 +  val scrollController = LazyListScrollController()
-
+ 
    private val composableChildCount: MutableIntState = mutableIntStateOf(0)
-
-@@ -51,6 +53,7 @@
+ 
+@@ -51,6 +53,7 @@ class LazyRowView(context: Context, appContext: AppContext) :
    @Composable
    override fun ComposableScope.Content() {
      recomposeScope = currentRecomposeScope
 +    val listState = rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)
      val horizontalArrangement = props.horizontalArrangement.value?.toComposeArrangement() ?: Arrangement.Start
-
+ 
      val verticalAlignment = props.verticalAlignment.value?.toComposeAlignment() ?: Alignment.Top
-@@ -58,8 +61,10 @@
+@@ -58,8 +61,10 @@ class LazyRowView(context: Context, appContext: AppContext) :
      val padding = props.contentPadding.value
-
+ 
      LazyRow(
 +      state = listState,
        modifier = ModifierRegistry.applyModifiers(props.modifiers.value, appContext, this@Content, globalEventDispatcher)
@@ -246,35 +247,36 @@ diff --git a/android/src/main/java/expo/modules/ui/LazyRowView.kt b/android/src/
        verticalAlignment = verticalAlignment,
        contentPadding = PaddingValues(
 diff --git a/android/src/main/java/expo/modules/ui/LazyColumnView.kt b/android/src/main/java/expo/modules/ui/LazyColumnView.kt
+index 9e19dba..72dbb46 100644
 --- a/android/src/main/java/expo/modules/ui/LazyColumnView.kt
 +++ b/android/src/main/java/expo/modules/ui/LazyColumnView.kt
-@@ -39,6 +39,7 @@
+@@ -39,6 +39,7 @@ data class LazyColumnProps(
    val verticalArrangement: MutableState<VerticalArrangement?> = mutableStateOf(null),
    val horizontalAlignment: MutableState<HorizontalAlignment?> = mutableStateOf(null),
    val contentPadding: MutableState<ContentPadding?> = mutableStateOf(null),
 +  val initialScrollPosition: MutableState<LazyListScrollPosition?> = mutableStateOf(null),
    val modifiers: MutableState<ModifierList> = mutableStateOf(emptyList())
  ) : ComposeProps
-
-@@ -46,6 +47,7 @@
+ 
+@@ -46,6 +47,7 @@ data class LazyColumnProps(
  class LazyColumnView(context: Context, appContext: AppContext) :
    ExpoComposeView<LazyColumnProps>(context, appContext) {
    override val props = LazyColumnProps()
 +  val scrollController = LazyListScrollController()
-
+ 
    private val composableChildCount: MutableIntState = mutableIntStateOf(0)
-
-@@ -62,6 +64,7 @@
+ 
+@@ -62,6 +64,7 @@ class LazyColumnView(context: Context, appContext: AppContext) :
    @Composable
    override fun ComposableScope.Content() {
      recomposeScope = currentRecomposeScope
 +    val listState = rememberControlledLazyListState(scrollController, props.initialScrollPosition.value)
      val verticalArrangement = props.verticalArrangement.value?.toComposeArrangement() ?: Arrangement.Top
-
+ 
      val horizontalAlignment = props.horizontalAlignment.value?.toComposeAlignment() ?: Alignment.Start
-@@ -69,8 +72,10 @@
+@@ -69,8 +72,10 @@ class LazyColumnView(context: Context, appContext: AppContext) :
      val padding = props.contentPadding.value
-
+ 
      LazyColumn(
 +      state = listState,
        modifier = ModifierRegistry.applyModifiers(props.modifiers.value, appContext, this@Content, globalEventDispatcher)
@@ -285,9 +287,10 @@ diff --git a/android/src/main/java/expo/modules/ui/LazyColumnView.kt b/android/s
        horizontalAlignment = horizontalAlignment,
        contentPadding = PaddingValues(
 diff --git a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt b/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
+index 48a0fd7..5812f3d 100644
 --- a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
 +++ b/android/src/main/java/expo/modules/ui/ExpoUIModule.kt
-@@ -9,6 +9,7 @@
+@@ -9,6 +9,7 @@ import androidx.compose.material3.SwitchDefaults
  import androidx.compose.material3.ToggleButtonDefaults
  import androidx.compose.ui.graphics.toArgb
  import expo.modules.kotlin.exception.Exceptions
@@ -295,7 +298,7 @@ diff --git a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt b/android/src
  import expo.modules.kotlin.modules.Module
  import expo.modules.kotlin.modules.ModuleDefinition
  import expo.modules.ui.colors.MaterialColorsOptions
-@@ -208,8 +209,28 @@
+@@ -214,8 +215,28 @@ class ExpoUIModule : Module() {
      View(ImageView::class) {
        Events("onLoad", "onError")
      }
@@ -325,11 +328,12 @@ diff --git a/android/src/main/java/expo/modules/ui/ExpoUIModule.kt b/android/src
 +    }
      View(LazyItemsView::class) {
        Events("onWindowChange")
-
+ 
 diff --git a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt b/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
+index debff9b..34ed2ee 100644
 --- a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
 +++ b/android/src/main/java/expo/modules/ui/ModifierRegistry.kt
-@@ -71,6 +71,7 @@
+@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.Role
  import androidx.compose.ui.semantics.contentDescription
  import androidx.compose.ui.semantics.contentType
  import androidx.compose.ui.semantics.semantics
@@ -337,7 +341,7 @@ diff --git a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt b/android
  import androidx.compose.ui.unit.DpOffset
  import androidx.compose.ui.unit.dp
  import androidx.compose.ui.zIndex
-@@ -738,12 +739,14 @@
+@@ -738,12 +739,14 @@ object ModifierRegistry {
        val params = recordFromMap<SemanticsParams>(map, appContext)
        val type = params.contentType.toContentType()
        val description = params.contentDescription
@@ -354,9 +358,10 @@ diff --git a/android/src/main/java/expo/modules/ui/ModifierRegistry.kt b/android
        }
      }
 diff --git a/android/src/main/java/expo/modules/ui/SemanticsModifier.kt b/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
+index 6c36d1f..c157825 100644
 --- a/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
 +++ b/android/src/main/java/expo/modules/ui/SemanticsModifier.kt
-@@ -8,7 +8,8 @@
+@@ -8,7 +8,8 @@ import expo.modules.kotlin.types.OptimizedRecord
  @OptimizedRecord
  internal data class SemanticsParams(
    @Field val contentType: String? = null,
@@ -364,22 +369,23 @@ diff --git a/android/src/main/java/expo/modules/ui/SemanticsModifier.kt b/androi
 +  @Field val contentDescription: String? = null,
 +  @Field val selected: Boolean? = null
  ) : Record
-
+ 
  internal fun String?.toContentType(): ContentType? = when (this) {
 diff --git a/src/jetpack-compose/LazyRow/index.tsx b/src/jetpack-compose/LazyRow/index.tsx
+index d08e461..9688b77 100644
 --- a/src/jetpack-compose/LazyRow/index.tsx
 +++ b/src/jetpack-compose/LazyRow/index.tsx
 @@ -1,13 +1,19 @@
  import { requireNativeView } from 'expo';
-
+ 
  import type { ExpoModifier } from '../../types';
 -import { type ContentPadding } from '../LazyColumn';
 +import { type ContentPadding, type LazyListRef, type LazyListScrollPosition } from '../LazyColumn';
  import { createLazyItems } from '../LazyItems';
  import { createViewModifierEventListener } from '../modifiers/utils';
-
+ 
  export { LazyItems, type LazyItemsProps } from '../LazyItems';
-
+ 
 +export type LazyRowRef = LazyListRef;
 +
  export interface LazyRowProps {
@@ -391,12 +397,13 @@ diff --git a/src/jetpack-compose/LazyRow/index.tsx b/src/jetpack-compose/LazyRow
     * The content to display inside the lazy row.
     */
 diff --git a/src/jetpack-compose/LazyColumn/index.tsx b/src/jetpack-compose/LazyColumn/index.tsx
+index adb9383..0aa0b58 100644
 --- a/src/jetpack-compose/LazyColumn/index.tsx
 +++ b/src/jetpack-compose/LazyColumn/index.tsx
-@@ -28,7 +28,21 @@
+@@ -28,7 +28,21 @@ export type ContentPadding = {
    bottom?: number;
  };
-
+ 
 +/** Android lazy-list position, with the native scroll offset expressed in dp. */
 +export type LazyListScrollPosition = { index: number; offsetDp: number };
 +/** Request ids increase for each list instance; obsolete requests are ignored. */
@@ -416,6 +423,7 @@ diff --git a/src/jetpack-compose/LazyColumn/index.tsx b/src/jetpack-compose/Lazy
     * The content to display inside the lazy column.
     */
 diff --git a/build/jetpack-compose/LazyRow/index.d.ts b/build/jetpack-compose/LazyRow/index.d.ts
+index 58b065e..d042ada 100644
 --- a/build/jetpack-compose/LazyRow/index.d.ts
 +++ b/build/jetpack-compose/LazyRow/index.d.ts
 @@ -1,7 +1,13 @@
@@ -434,9 +442,10 @@ diff --git a/build/jetpack-compose/LazyRow/index.d.ts b/build/jetpack-compose/La
       * The content to display inside the lazy row.
       */
 diff --git a/build/jetpack-compose/LazyColumn/index.d.ts b/build/jetpack-compose/LazyColumn/index.d.ts
+index df811e8..eb1d25b 100644
 --- a/build/jetpack-compose/LazyColumn/index.d.ts
 +++ b/build/jetpack-compose/LazyColumn/index.d.ts
-@@ -21,7 +21,21 @@
+@@ -21,7 +21,21 @@ export type ContentPadding = {
       */
      bottom?: number;
  };
@@ -459,21 +468,23 @@ diff --git a/build/jetpack-compose/LazyColumn/index.d.ts b/build/jetpack-compose
       * The content to display inside the lazy column.
       */
 diff --git a/src/jetpack-compose/modifiers/index.ts b/src/jetpack-compose/modifiers/index.ts
+index 91a0e72..9e8854a 100644
 --- a/src/jetpack-compose/modifiers/index.ts
 +++ b/src/jetpack-compose/modifiers/index.ts
-@@ -488,6 +488,8 @@
+@@ -488,6 +488,8 @@ export type SemanticsConfig = {
     * content does not read well aloud, as with an abbreviation or a glyph.
     */
    contentDescription?: string;
 +  /** Whether TalkBack announces this item as selected. */
 +  selected?: boolean;
  };
-
+ 
  /**
 diff --git a/build/jetpack-compose/modifiers/index.d.ts b/build/jetpack-compose/modifiers/index.d.ts
+index 5a667d6..b43bd5e 100644
 --- a/build/jetpack-compose/modifiers/index.d.ts
 +++ b/build/jetpack-compose/modifiers/index.d.ts
-@@ -344,6 +344,8 @@
+@@ -344,6 +344,8 @@ export type SemanticsConfig = {
       * content does not read well aloud, as with an abbreviation or a glyph.
       */
      contentDescription?: string;
@@ -484,6 +495,7 @@ diff --git a/build/jetpack-compose/modifiers/index.d.ts b/build/jetpack-compose/
   * Applies semantic properties. Wraps `Modifier.semantics { ... }`.
 diff --git a/android/src/main/java/expo/modules/ui/LazyListScrollController.kt b/android/src/main/java/expo/modules/ui/LazyListScrollController.kt
 new file mode 100644
+index 0000000..43f8f6d
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/ui/LazyListScrollController.kt
 @@ -0,0 +1,193 @@
@@ -723,7 +735,7 @@ index 9ca0932..e1dd209 100644
 +import kotlinx.coroutines.flow.first
  import kotlinx.coroutines.withContext
  import kotlin.coroutines.cancellation.CancellationException
-
+ 
 @@ -44,6 +60,7 @@ data class ModalBottomSheetPropertiesRecord(
  data class ModalBottomSheetViewProps(
    val skipPartiallyExpanded: Boolean = false,
@@ -735,7 +747,7 @@ index 9ca0932..e1dd209 100644
 @@ -94,6 +111,227 @@ private fun ForwardKeyEventsToActivity(activity: Activity?) {
    }
  }
-
+ 
 +private data class SheetGestureCapture(
 +  val observer: SheetTouchObserverNode,
 +  val sheetState: SheetState,
@@ -968,7 +980,7 @@ index 9ca0932..e1dd209 100644
 +  val recoverSettledTouches = props.recoverSettledTouches && props.sheetGesturesEnabled
 +  RecoverSettledSheetTouches(sheetState, touchRecovery, recoverSettledTouches)
 +  RecoverCancelledSheetGesture(sheetState, touchRecovery, recoverSettledTouches)
-
+ 
    hide.handle {
      try {
        withContext(scope.coroutineContext) {

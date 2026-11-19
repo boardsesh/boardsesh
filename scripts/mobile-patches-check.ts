@@ -134,7 +134,7 @@ export const RULES: readonly PatchRule[] = [
       'hasPostedAppContextDestroys = true',
       'moduleRegistry.post(event: .appContextDestroys)',
     ],
-    patchedKey: 'expo-modules-core@58.0.28',
+    patchedKey: 'expo-modules-core@58.1.0',
   },
   {
     package: 'expo-modules-core',
@@ -148,7 +148,7 @@ export const RULES: readonly PatchRule[] = [
       'case .failure(let error):\n          promise.reject(error)',
     ],
     forbiddenSubstrings: ['case .failure(let error as any Error):'],
-    patchedKey: 'expo-modules-core@58.0.28',
+    patchedKey: 'expo-modules-core@58.1.0',
   },
   // #7737: Expo's Android view managers drop Fabric view commands. The Aura
   // overlay receives each wall-swap frame as a command from a UI-thread worklet.
@@ -159,7 +159,7 @@ export const RULES: readonly PatchRule[] = [
       'interface ExpoViewCommandReceiver {',
       'fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean',
     ],
-    patchedKey: 'expo-modules-core@58.0.28',
+    patchedKey: 'expo-modules-core@58.1.0',
   },
   ...(
     [
@@ -174,7 +174,7 @@ export const RULES: readonly PatchRule[] = [
       'receiver.receiveViewCommand(commandId, args?.toArrayList() ?: emptyList())',
       'super.receiveCommand(view, commandId, args)',
     ],
-    patchedKey: 'expo-modules-core@58.0.28',
+    patchedKey: 'expo-modules-core@58.1.0',
   })),
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
@@ -291,7 +291,7 @@ export const RULES: readonly PatchRule[] = [
       'closePromise',
       'finalizeStatementWithErrorPreservation',
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   })),
   // SDK 58 moved statements into their own native classes and fixes finalization
   // upstream. Keep asserting finalized-before-throw so an upgrade cannot lose it.
@@ -315,7 +315,7 @@ export const RULES: readonly PatchRule[] = [
         if (error != null) {
           throw SQLiteErrorException(error)`,
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   },
   {
     package: 'expo-sqlite',
@@ -330,7 +330,7 @@ export const RULES: readonly PatchRule[] = [
       if let message = result.message {
         throw SQLiteErrorException(message)`,
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   },
   {
     package: 'expo-sqlite',
@@ -345,7 +345,7 @@ export const RULES: readonly PatchRule[] = [
       'UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))',
       'databases.reversed().forEach { $0.statementLifecycleLock.unlock() }',
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   },
   {
     package: 'expo-sqlite',
@@ -355,7 +355,7 @@ export const RULES: readonly PatchRule[] = [
       'statementLifecycleLock.lock()',
       'defer { statementLifecycleLock.unlock() }',
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   },
   {
     package: 'expo-sqlite',
@@ -365,7 +365,7 @@ export const RULES: readonly PatchRule[] = [
       'private func close(database: NativeDatabase) throws {\n    database.statementLifecycleLock.lock()',
       'defer { database.statementLifecycleLock.unlock() }',
     ],
-    patchedKey: 'expo-sqlite@58.0.14',
+    patchedKey: 'expo-sqlite@58.0.18',
   },
   {
     package: 'react-native',
@@ -413,13 +413,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.21.7',
+    patchedKey: '@expo/fingerprint@0.21.10',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeIsolatedStoreModulePath'],
-    patchedKey: '@expo/fingerprint@0.21.7',
+    patchedKey: '@expo/fingerprint@0.21.10',
   },
   {
     package: 'react-native-screens',
@@ -570,7 +570,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   // Native Android filters keep the sheet and both scroll axes in one Compose
   // tree. Without these hooks an upgrade silently loses picker restoration,
@@ -597,7 +597,7 @@ export const RULES: readonly PatchRule[] = [
       'retainedState?.let { return it }',
       'controller.obtainState(initialPosition, density)',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   ...['LazyColumn', 'LazyRow'].map((kind): PatchRule => ({
     package: '@expo/ui',
@@ -607,7 +607,7 @@ export const RULES: readonly PatchRule[] = [
       'state = listState',
       '.then(scrollController.cancelScrollOnTouch())',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   })),
   {
     package: '@expo/ui',
@@ -620,19 +620,19 @@ export const RULES: readonly PatchRule[] = [
       'OnViewDestroys { view: LazyRowView ->',
       'OnViewDestroys { view: LazyColumnView ->',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   {
     package: '@expo/ui',
     file: 'android/src/main/java/expo/modules/ui/ModifierRegistry.kt',
     sentinels: ['val isSelected = params.selected', 'isSelected?.let { selected = it }'],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   {
     package: '@expo/ui',
     file: 'android/src/main/java/expo/modules/ui/SemanticsModifier.kt',
     sentinels: ['@Field val selected: Boolean? = null'],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   // Opt in only the Filters sheet: Foundation 1.12.1 can retain its animation
   // flag after a settled drag, which makes the parent consume every touch down.
@@ -745,7 +745,7 @@ export const RULES: readonly PatchRule[] = [
       'getDeclaredField(',
       'sheetGesturesEnabled = false',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   ...(
     ['src/jetpack-compose/ModalBottomSheet/index.tsx', 'build/jetpack-compose/ModalBottomSheet/index.js'] as const
@@ -753,7 +753,7 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/ui',
     file,
     sentinels: ['recoverSettledTouches: props.recoverSettledTouches ?? false'],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   })),
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -764,7 +764,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   // SwiftUI RNHostView owners can overlap for the same hosted React view.
   // The shared native handler must survive until every owner releases its lease;
@@ -788,7 +788,7 @@ export const RULES: readonly PatchRule[] = [
       'if (leaseCount.unsignedIntegerValue > 1)',
       '[(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];',
     ],
-    patchedKey: '@expo/ui@58.0.25',
+    patchedKey: '@expo/ui@58.0.29',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -829,7 +829,7 @@ export const RULES: readonly PatchRule[] = [
       'Math.min(committerTime, now)',
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
-    patchedKey: 'expo-updates@58.0.19',
+    patchedKey: 'expo-updates@58.0.22',
   },
 ];
 
@@ -840,7 +840,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@58.0.17':
+  'expo-dev-launcher@58.0.21':
     'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
     "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +

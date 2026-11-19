@@ -326,7 +326,7 @@ describe('runtime inputs', () => {
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
-      'patches/expo-updates@58.0.19.patch',
+      'patches/expo-updates@58.0.22.patch',
       'packages/mobile/app.config.ts',
       'packages/mobile/package.json',
       'packages/mobile/fingerprint.config.js',
