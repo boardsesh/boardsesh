@@ -7,13 +7,15 @@
 > What's New copy live in `name.txt`, `subtitle.txt`, `description.txt`,
 > `keywords.txt`, `promotional_text.txt`, and `release_notes.txt` respectively.
 > The listing is localized: `en-US` (default), `es-ES`, `es-MX`, `fr-FR`,
-> `de-DE`, and `it` each have their own folder under `fastlane/metadata/`.
+> `de-DE`, `it`, and `zh-Hans` each have their own folder under `fastlane/metadata/`.
 > `deliver` uploads every locale folder it finds. There's one Spanish app translation but no
 > universal App Store Spanish (unlike `en-US`, which covers every English
 > storefront), so the same `es` copy serves both `es-ES` (Spain) and `es-MX`
 > (Mexico/Latin America) — matching the two Spanish screenshot locales. German and
 > French each map to a single storefront locale. Italian uses `it` on Apple
-> and `it-IT` on Google Play.
+> and `it-IT` on Google Play. Simplified Chinese uses `zh-Hans` on Apple and
+> `zh-CN` on Google Play. Its listing text and 2.8.0 release notes are included;
+> Chinese screenshots use the separate capture-only workflow below.
 >
 > The "Languages" list Apple shows on the product page comes from the binary, not
 > from these folders: `ios.infoPlist.CFBundleLocalizations` plus the `locales` map

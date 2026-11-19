@@ -38,8 +38,11 @@ builds. The platform baselines differ:
 | iOS | `release/ios-v2.7.0-e171c5f7e69a` | `7b8b3ffef6` | 13 |
 | Android | `release/android-v2.7.0-1e5c2708a946` | `38aa9d1897` | 2001566 |
 
-Apple notes live in all six `metadata/<locale>/release_notes.txt` files. Play
-notes live in all five `metadata/android/<locale>/changelogs/default.txt` files.
+Apple notes live in all seven `metadata/<locale>/release_notes.txt` files. Play
+notes live in all six `metadata/android/<locale>/changelogs/default.txt` files.
+Simplified Chinese uses `zh-Hans` on Apple and `zh-CN` on Play, with complete
+listing text and a language announcement in the localized 2.8.0 notes. Chinese
+screenshots remain separate from the default upload matrix.
 Descriptions, Apple promotional text and Play short descriptions are refreshed
 in the same locales. Descriptions lead with cross-board climbing, shared sessions
 and training, with one compatibility list. Play notes lead with climber benefits. Names, subtitles, search keywords and URLs retain their

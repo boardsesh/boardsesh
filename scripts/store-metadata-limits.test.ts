@@ -71,9 +71,10 @@ function fileSet(root: string, locale: string): string[] {
 }
 
 describe('App Store listing copy', () => {
-  it('has listing text for every default screenshot locale', () => {
-    // Caption-only preview locales do not change the complete upload contract.
-    expect(appleLocales()).toEqual([...EXPECTED_APP_STORE_LOCALES].sort());
+  it('has listing text for every default screenshot locale and Simplified Chinese', () => {
+    // Chinese listing text ships independently of the default screenshot matrix.
+    // Keep its capture-only screenshots out of the complete upload contract.
+    expect(appleLocales()).toEqual([...EXPECTED_APP_STORE_LOCALES, 'zh-Hans'].sort());
   });
 
   // The length checks below skip a missing file, and nothing else guards Apple
@@ -210,8 +211,8 @@ describe('Spanish listing copy', () => {
 });
 
 describe('Play listing copy', () => {
-  it('has locale folders to check', () => {
-    expect(playLocales().length).toBeGreaterThan(0);
+  it('has listing text for every app language', () => {
+    expect(playLocales()).toEqual(['de-DE', 'en-US', 'es-ES', 'fr-FR', 'it-IT', 'zh-CN']);
   });
 
   it.each(playLocales())('gives %s the same file set as en-US', (locale) => {

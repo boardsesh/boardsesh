@@ -6,11 +6,12 @@
 > prose below — the App Name, Short Description, Full Description, and What's New
 > copy live in `title.txt`, `short_description.txt`, `full_description.txt`, and
 > `changelogs/default.txt` respectively. The listing is localized: `en-US`
-> (default), `es-ES`, `fr-FR`, `de-DE`, and `it-IT` each have their own folder under
+> (default), `es-ES`, `fr-FR`, `de-DE`, `it-IT`, and `zh-CN` each have their own folder under
 > `fastlane/metadata/android/`, and `supply` uploads every locale folder it finds.
 > The changelogs ride the AAB instead (`android-apk-rn.yml` stages every locale
 > into `whatsnew-<locale>`), because the `android metadata` lane runs with
 > `skip_upload_changelogs`. Italian listing text and release notes use `it-IT`;
+> Simplified Chinese uses `zh-CN`, including the 2.8.0 release notes;
 > the Android screenshot capture remains the existing English phone set.
 > This doc keeps the operational material that `supply` can't upload: the
 > feature-graphic brief, testing instructions, data-safety form, and the

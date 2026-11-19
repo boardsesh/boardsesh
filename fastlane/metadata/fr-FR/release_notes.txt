@@ -1,5 +1,7 @@
 Nouveautés de la version 2.8.0
 
+Boardsesh est maintenant disponible en chinois simplifié.
+
 PLUS DE FAÇONS DE T’ENTRAÎNER
 
 Crée des entraînements 4x4, À la limite et À la minute, en plus de Volume, Pyramide, Échelle et Cotation ciblée. Prévisualise les blocs et les repos avant de commencer. Les pyramides peuvent redescendre sur les mêmes blocs. Choisis les vibrations du décompte et l’affichage du repos sur l’écran verrouillé dans Paramètres > Minuteurs.

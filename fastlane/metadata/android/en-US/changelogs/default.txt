@@ -1,4 +1,5 @@
 New in 2.8.0:
+Now in Simplified Chinese.
 - 4x4, Limit Bouldering and On the Minute. Home shows your week and projects.
 - WLED Spraywall lighting; Wi-Fi auto-off. Bluetooth install is an opt-in beta for matching controllers.
 - Simpler Android UI, slimmer navigation and updated lock-screen board controls.

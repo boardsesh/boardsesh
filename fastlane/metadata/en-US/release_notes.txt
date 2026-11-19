@@ -1,5 +1,7 @@
 New in 2.8.0
 
+Boardsesh is now available in Simplified Chinese.
+
 MORE WAYS TO TRAIN
 
 Build 4x4, Limit Bouldering and On the Minute workouts alongside Volume, Pyramid, Ladder and Grade Focus. Preview your climbs and rests before starting. Pyramids can now come back down on the same climbs. Choose countdown buzzes and whether rest countdowns appear on your Lock Screen in Settings > Timers.
