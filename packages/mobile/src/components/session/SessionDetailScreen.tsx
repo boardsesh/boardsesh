@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { WEB_BASE_URL } from '../../lib/env';
 import { getSoleBoardType } from '../../lib/grade-label';
 import { useBulkVoteSummaries, useProfile, useSessionDetail } from '../../lib/graphql/hooks';
 import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
@@ -13,6 +14,7 @@ import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-p
 import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { SectionHeader } from '../SectionHeader';
+import { ShareIconButton } from '../ShareIconButton';
 import { CommentSheet } from '../you/CommentSheet';
 import { SessionAnalyticsSection } from './SessionAnalyticsSection';
 import { SessionBetaCarousel } from './SessionBetaCarousel';
@@ -129,12 +131,25 @@ export default function SessionDetailScreen() {
   // UIKit's header follows the loaded session name/date. Material's app bar names
   // the screen instead: the summary card right under it already leads with the name.
   const headerTitle = useVariantValue({ liquidGlass: title, material: '' }) || t('mobileDetail.title');
+  const canShare = !!session && !isPending;
   useEffect(() => {
     navigation.setOptions({
       headerShown: true,
       title: headerTitle,
+      headerRight: canShare
+        ? () => (
+            <ShareIconButton
+              appearance="nativeHeader"
+              url={`${WEB_BASE_URL}/session/${encodeURIComponent(sessionId)}`}
+              message={t('detail.shareText')}
+              accessibilityLabel={t('detail.share')}
+              copiedMessage={t('detail.shareSuccess')}
+              errorMessage={t('detail.shareError')}
+            />
+          )
+        : undefined,
     });
-  }, [navigation, headerTitle]);
+  }, [navigation, headerTitle, canShare, sessionId, t]);
 
   if (isPending || !session)
     return (

@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   cardProps: undefined as undefined | { onEditSession?: unknown; onOpenComments?: unknown },
   editSheetRendered: false,
   voteArgs: undefined as undefined | unknown[],
+  setOptions: vi.fn(),
+  isPending: false,
 }));
 
 vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({
@@ -35,7 +37,7 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ sessionId: mocks.routeId }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: mocks.setOptions }),
 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
@@ -55,6 +57,11 @@ vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
+vi.mock('../../../lib/env', () => ({ WEB_BASE_URL: 'https://staging.boardsesh.com' }));
+vi.mock('../../ShareIconButton', () => ({
+  ShareIconButton: (props: { url: string; accessibilityLabel: string }) =>
+    createElement('button', { 'aria-label': props.accessibilityLabel, 'data-url': props.url }),
+}));
 vi.mock('../../you/CommentSheet', () => ({ CommentSheet: () => null }));
 vi.mock('../SessionSummaryCard', () => ({
   SessionSummaryCard: (props: { onEditSession?: unknown; onOpenComments?: unknown }) => {
@@ -87,7 +94,7 @@ vi.mock('../workout/WorkoutClimbsListRows', () => ({
   WorkoutPlannedClimbRow: () => null,
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useSessionDetail: () => ({ data: mocks.session, isPending: false }),
+  useSessionDetail: () => ({ data: mocks.session, isPending: mocks.isPending }),
   useBulkVoteSummaries: (...args: unknown[]) => {
     mocks.voteArgs = args;
     return { data: [] };
@@ -111,6 +118,8 @@ beforeEach(() => {
   mocks.cardProps = undefined;
   mocks.editSheetRendered = false;
   mocks.voteArgs = undefined;
+  mocks.setOptions.mockReset();
+  mocks.isPending = false;
   mocks.session = {
     sessionId: 'session-1',
     sessionType: 'party',
@@ -162,5 +171,29 @@ describe('SessionDetailScreen social and edit actions (#5290)', () => {
     expect(mocks.cardProps?.onOpenComments).toBeUndefined();
     expect(mocks.editSheetRendered).toBe(false);
     expect(mocks.voteArgs).toEqual(['session', [], false]);
+  });
+});
+
+describe('SessionDetailScreen sharing', () => {
+  it.each(['session-1', 'daily:user-1:2026-09-06', 'daily:board:board-1:tick-1'])(
+    'shares the recap route for %s',
+    (sessionId) => {
+      mocks.routeId = sessionId;
+      render(createElement(SessionDetailScreen));
+
+      const options = mocks.setOptions.mock.lastCall?.[0] as { headerRight: () => ReactNode };
+      const { getByRole } = render(options.headerRight());
+      expect(getByRole('button', { name: 'detail.share' }).getAttribute('data-url')).toBe(
+        `https://staging.boardsesh.com/session/${encodeURIComponent(sessionId)}`,
+      );
+    },
+  );
+
+  it.each([true, false])('clears sharing when the session is unavailable (loading: %s)', (isPending) => {
+    mocks.session = null;
+    mocks.isPending = isPending;
+    render(createElement(SessionDetailScreen));
+
+    expect(mocks.setOptions.mock.lastCall?.[0]).toMatchObject({ headerRight: undefined });
   });
 });
