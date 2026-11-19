@@ -364,15 +364,23 @@ An iOS listing text push keeps the version's phased release and rating reset
 request as they are on App Store Connect (#7225). Every iOS push runs the same
 `ios metadata` lane: Mobile Store Metadata, the listing push in Mobile Store
 Draft Submission, and the combined Mobile Store Submission's "Push listing text
-and What's New" step. deliver's `phased_release` and `reset_ratings` options
-default to false, and false deletes a phased release or rating reset request
-the version already has, so the lane reads both first and passes those answers
-to deliver. If App Store Connect can't say whether one exists, the push fails
-instead of guessing; rerun it. The run summary says which way it went
-("Phased release: on for 2.7.0" or "Phased release: none on 2.7.0", and the
-same for "Rating reset"). The lane reads them before the upload, which takes
-minutes, so don't turn either on while a listing push is running, and check
-phased release is still on after the last push before release. The App Store
+and What's New" step. deliver's `phased_release` option defaults to false,
+which deletes an existing phased release, so the lane reads it first and passes
+that answer to deliver. If that supported API read fails, the push stops instead
+of guessing. The summary reports whether phased release was on or absent.
+The lane reads it before the upload, which takes
+minutes, so don't turn phased release on while a listing push is running, and check
+phased release is still on after the last push before release.
+
+Rating reset requests are left entirely untouched. Apple's public API does not
+expose Fastlane's `resetRatingsRequest` relationship, so the lane never reads,
+creates, or deletes one. `fastlane/Deliverfile` retains a genuine nil in its
+configuration options, which skips deliver's rating-reset block. A nil action
+argument falls back to false, and the ordinary `reset_ratings nil` DSL discards
+the key; neither preserves this policy. Any `DELIVER_RESET_RATINGS` environment
+override stops the metadata lane before authentication. The real pinned-gem
+contract test checks the official action's Deliverfile loading and zero rating
+reset calls while Chinese text uploads. The App Store
 screenshot upload and the draft lane's version-creation call
 (`ios draft_submission`) skip deliver's metadata step, so they never touch
 either setting.

@@ -1,0 +1,5 @@
+# Fastlane 2.241.2's public API-key client cannot read resetRatingsRequest.
+# A nil reaches UploadMetadata's do-not-touch branch only when retained in the
+# configuration-file options: a nil action argument falls back to false, and the
+# Deliverfile DSL drops `reset_ratings nil`. Use its exposed options hash instead.
+options[:reset_ratings] = nil
