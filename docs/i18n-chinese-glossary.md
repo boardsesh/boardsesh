@@ -101,6 +101,12 @@ title-only script fix preserves the existing questionnaire plan and checkpoints.
 If a pending checkbox stops because its choices differ, keep that question and
 manually set its five options to `Kilter Board`, `Tension Board`, `MoonBoard`,
 `喷点墙 / Spraywall` (one option), and `其他`, then rerun the same project.
+Alternatively, set `CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID` to the saved draft ID
+and run **`repairChineseTerminologyCheckbox`**. This explicit repair restores
+only that saved pending question's five choices, disables the separate built-in
+Other option, and resumes creation. It verifies the draft, pending question ID,
+wording, and optional setting before changing anything. Completed reruns remain
+read-only. Running the normal creator alone preserves differing pending choices.
 Fresh items initialize their fields directly; resumed fields are protected
 because service defaults and owner edits cannot safely be distinguished.
 

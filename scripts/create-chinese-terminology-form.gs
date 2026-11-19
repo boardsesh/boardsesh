@@ -388,6 +388,61 @@ function chineseTerminologySave(properties, state) {
   properties.setProperty(CHINESE_TERMINOLOGY_STATE_KEY, JSON.stringify(state));
 }
 
+/** Explicitly restore only the saved pending board checkbox, then resume its draft. */
+function repairChineseTerminologyCheckbox() {
+  var recoveryDraftId = CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Another creation is running. Rerun later in this same project.');
+  try {
+    var saved = PropertiesService.getScriptProperties().getProperty(CHINESE_TERMINOLOGY_STATE_KEY);
+    if (!saved) throw new Error('No saved draft to repair. Use the original Apps Script project.');
+    var state = JSON.parse(saved);
+    var plan = chineseTerminologyPlan();
+    if (state.version !== 1 || state.signature !== chineseTerminologySignature(plan))
+      throw new Error('Saved questionnaire differs. Keep the original script; do not clear its properties.');
+    if (!recoveryDraftId || recoveryDraftId !== state.formId)
+      throw new Error('Set CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID to the saved draft ID before explicit repair.');
+    if (!state.complete) {
+      var form = FormApp.openById(state.formId);
+      if (!form.supportsAdvancedResponderPermissions() || form.isPublished())
+        throw new Error('Repair only an unpublished draft. Nothing was changed.');
+      if (String(form.getTitle()) !== CHINESE_TERMINOLOGY_TITLE || !state.configured)
+        throw new Error('Repair requires the configured draft with its expected heading. Nothing was changed.');
+      var items = form.getItems();
+      chineseTerminologyCheckPrefix(items, state, plan);
+      var definition = plan[state.itemIds.length];
+      if (
+        !state.pending ||
+        state.pending.id === null ||
+        !definition ||
+        definition.key !== 'boards' ||
+        definition.type !== 'CHECKBOX' ||
+        items.length !== state.itemIds.length + 1
+      ) {
+        throw new Error('Repair requires the saved pending board checkbox. Nothing was changed.');
+      }
+      var pendingItem = items[state.itemIds.length];
+      if (String(pendingItem.getId()) !== state.pending.id || pendingItem.getType() !== FormApp.ItemType.CHECKBOX)
+        throw new Error('Pending checkbox identity changed. Nothing was changed.');
+      var checkbox = pendingItem.asCheckboxItem();
+      if (
+        String(checkbox.getTitle()) !== definition.title ||
+        String(checkbox.getHelpText()) !== definition.help ||
+        checkbox.isRequired()
+      ) {
+        throw new Error('Pending checkbox wording or optional setting changed. Nothing was changed.');
+      }
+      checkbox.setChoiceValues(definition.choices);
+      checkbox.showOtherOption(false);
+      if (checkbox.hasOtherOption()) throw new Error('Could not disable the extra Other option. Rerun repair.');
+      console.log('Restored the five choices on the existing pending checkbox. Resuming the saved draft.');
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return createChineseTerminologyForm();
+}
+
 function chineseTerminologySignature(plan) {
   // Detect accidental questionnaire edits across partial runs, not a security hash.
   var text = JSON.stringify(plan);
@@ -449,7 +504,10 @@ function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) 
     item.setHelpText(definition.help);
     if (definition.type === 'TEXT' || definition.type === 'CHECKBOX' || definition.type === 'PARAGRAPH_TEXT')
       item.setRequired(false);
-    if (definition.type === 'CHECKBOX') item.setChoiceValues(definition.choices);
+    if (definition.type === 'CHECKBOX') {
+      item.setChoiceValues(definition.choices);
+      item.showOtherOption(false);
+    }
     return;
   }
   var title = item.getTitle() || '';
@@ -463,6 +521,8 @@ function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) 
     item.setRequired(false);
   }
   if (definition.type === 'CHECKBOX') {
+    if (item.hasOtherOption())
+      throw new Error('Pending checkbox has an extra Other option. Run repairChineseTerminologyCheckbox to restore it.');
     var choices = item.getChoices().map(function (choice) {
       return choice.getValue();
     });
@@ -470,7 +530,7 @@ function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) 
       throw new Error(
         'Pending checkbox choices differ. Keep this question and set its options exactly to ' +
           JSON.stringify(definition.choices) +
-          ', then rerun. No choices were overwritten.',
+          ', then rerun, or run repairChineseTerminologyCheckbox with its matching recovery draft ID. No choices were overwritten.',
       );
     if (!choices.length) item.setChoiceValues(definition.choices);
   }

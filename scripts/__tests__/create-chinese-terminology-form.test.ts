@@ -28,6 +28,7 @@ class FormItem {
   help = '';
   required = false;
   choices: string[] = [];
+  otherOption = false;
   constructor(
     readonly harness: Harness,
     readonly id: number,
@@ -50,6 +51,14 @@ class FormItem {
   }
   getChoices() {
     return this.choices.map((choice) => ({ getValue: () => choice }));
+  }
+  hasOtherOption() {
+    return this.otherOption;
+  }
+  showOtherOption(enabled: boolean) {
+    this.harness.mutations++;
+    this.otherOption = enabled;
+    return this;
   }
   setTitle(title: string) {
     this.harness.mutations++;
@@ -213,7 +222,10 @@ class FormDouble {
     item.title = this.harness.initialItemTitle;
     item.help = this.harness.initialItemHelp;
     item.required = this.harness.initialItemRequired;
-    if (type === 'CHECKBOX') item.choices = [...this.harness.initialCheckboxChoices];
+    if (type === 'CHECKBOX') {
+      item.choices = [...this.harness.initialCheckboxChoices];
+      item.otherOption = this.harness.initialCheckboxOther;
+    }
     this.items.push(item);
     this.harness.mutations++;
     if (type === 'PARAGRAPH_TEXT' && this.harness.failAddAfter) {
@@ -250,6 +262,7 @@ class Harness {
   initialItemHelp = '';
   initialItemRequired = false;
   initialCheckboxChoices: string[] = [];
+  initialCheckboxOther = false;
   creates = 0;
   mutations = 0;
   released = 0;
@@ -261,7 +274,10 @@ class Harness {
   failAddAfter = false;
   failSaveFormId = false;
   failSaveItemId = false;
-  run(recoverId = ''): FormReport {
+  run(
+    recoverId = '',
+    entrypoint: 'createChineseTerminologyForm' | 'repairChineseTerminologyCheckbox' = 'createChineseTerminologyForm',
+  ): FormReport {
     const code = source.replace(
       "var CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID = '';",
       `var CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID = ${JSON.stringify(recoverId)};`,
@@ -302,16 +318,21 @@ class Harness {
       },
       LockService: {
         getScriptLock: () => ({
-          tryLock: () => !this.locked,
+          tryLock: () => {
+            if (this.locked) return false;
+            this.locked = true;
+            return true;
+          },
           releaseLock: () => {
             this.released++;
+            this.locked = false;
           },
         }),
       },
       console: { log: (message: string) => this.logs.push(message) },
     };
     runInNewContext(code, context);
-    return (context as unknown as { createChineseTerminologyForm(): FormReport }).createChineseTerminologyForm();
+    return (context as unknown as Record<typeof entrypoint, () => FormReport>)[entrypoint]();
   }
   questions() {
     return this.form!.items.filter((item) => ['TEXT', 'CHECKBOX', 'PARAGRAPH_TEXT'].includes(item.type));
@@ -319,12 +340,118 @@ class Harness {
 }
 
 describe('Chinese terminology Google Form creation artifact (stand-in, not live Google proof)', () => {
+  function pendingCheckboxDraft() {
+    const harness = new Harness();
+    harness.initialCheckboxChoices = ['Option 1'];
+    harness.failCheckboxChoices = true;
+    expect(() => harness.run()).toThrow('checkbox choice initialization failed');
+    const checkbox = harness.questions().find((item) => item.type === 'CHECKBOX')!;
+    return { harness, checkbox };
+  }
+
+  it('repairs the existing pending checkbox and releases its lock before resuming the same form', () => {
+    const { harness, checkbox } = pendingCheckboxDraft();
+    const checkboxId = checkbox.id;
+    harness.questions()[0].title = 'Keep earlier owner wording';
+    expect(() => harness.run()).toThrow('Pending checkbox choices differ');
+    expect(checkbox.choices).toEqual(['Option 1']);
+    const releases = harness.released;
+    expect(harness.run('owned-draft-id', 'repairChineseTerminologyCheckbox').creationComplete).toBe(true);
+    expect(harness.released - releases).toBe(2);
+    expect(harness.locked).toBe(false);
+    expect(harness.creates).toBe(1);
+    expect(harness.questions()).toHaveLength(32);
+    expect(harness.questions()[0].title).toBe('Keep earlier owner wording');
+    expect(harness.questions().find((item) => item.type === 'CHECKBOX')!.id).toBe(checkboxId);
+    expect(checkbox.choices).toEqual(['Kilter Board', 'Tension Board', 'MoonBoard', '喷点墙 / Spraywall', '其他']);
+  });
+
+  it('requires explicit repair for a built-in Other option even when all five literal choices match', () => {
+    const { harness, checkbox } = pendingCheckboxDraft();
+    checkbox.choices = ['Kilter Board', 'Tension Board', 'MoonBoard', '喷点墙 / Spraywall', '其他'];
+    checkbox.otherOption = true;
+    expect(() => harness.run()).toThrow('extra Other option');
+    expect(checkbox.choices).toEqual(['Kilter Board', 'Tension Board', 'MoonBoard', '喷点墙 / Spraywall', '其他']);
+    expect(checkbox.hasOtherOption()).toBe(true);
+    expect(harness.run('owned-draft-id', 'repairChineseTerminologyCheckbox').creationComplete).toBe(true);
+    expect(checkbox.hasOtherOption()).toBe(false);
+    expect(harness.questions()).toHaveLength(32);
+    expect(harness.creates).toBe(1);
+  });
+
+  it.each(['', 'another-form-id'])('rejects repair with missing or different recovery ID %j without writes', (id) => {
+    const { harness, checkbox } = pendingCheckboxDraft();
+    const checkpoint = harness.properties.get(stateKey);
+    const mutations = harness.mutations;
+    expect(() => harness.run(id, 'repairChineseTerminologyCheckbox')).toThrow('saved draft ID');
+    expect(harness.properties.get(stateKey)).toBe(checkpoint);
+    expect(harness.mutations).toBe(mutations);
+    expect(checkbox.choices).toEqual(['Option 1']);
+    expect(harness.creates).toBe(1);
+  });
+
+  it.each(['published', 'pending-id', 'pending-index', 'title', 'help', 'required'] as const)(
+    'refuses %s draft changes before any checkbox repair writes',
+    (change) => {
+      const { harness, checkbox } = pendingCheckboxDraft();
+      if (change === 'published') harness.form!.published = true;
+      if (change === 'title') checkbox.title = 'Owner-edited checkbox';
+      if (change === 'help') checkbox.help = 'Owner-edited help';
+      if (change === 'required') checkbox.required = true;
+      if (change === 'pending-id' || change === 'pending-index') {
+        const state = JSON.parse(harness.properties.get(stateKey)!) as SavedState;
+        if (change === 'pending-id') state.pending!.id = 'different-item-id';
+        else state.pending!.index++;
+        harness.properties.set(stateKey, JSON.stringify(state));
+      }
+      const checkpoint = harness.properties.get(stateKey);
+      const mutations = harness.mutations;
+      expect(() => harness.run('owned-draft-id', 'repairChineseTerminologyCheckbox')).toThrow();
+      expect(harness.mutations).toBe(mutations);
+      expect(harness.properties.get(stateKey)).toBe(checkpoint);
+      expect(checkbox.choices).toEqual(['Option 1']);
+      expect(harness.creates).toBe(1);
+    },
+  );
+
+  it('does not create a form when repair has no saved checkpoint', () => {
+    const harness = new Harness();
+    expect(() => harness.run('owned-draft-id', 'repairChineseTerminologyCheckbox')).toThrow('No saved draft');
+    expect(harness.mutations).toBe(0);
+    expect(harness.creates).toBe(0);
+    expect(harness.properties.size).toBe(0);
+  });
+
+  it('completed repair reruns require the exact ID and preserve published owner edits without writes', () => {
+    const harness = new Harness();
+    harness.run();
+    harness.form!.title = 'Owner-edited form';
+    harness.form!.published = true;
+    const checkbox = harness.questions().find((item) => item.type === 'CHECKBOX')!;
+    checkbox.choices = ['Owner choice'];
+    checkbox.otherOption = true;
+    const checkpoint = harness.properties.get(stateKey);
+    const mutations = harness.mutations;
+    expect(() => harness.run('', 'repairChineseTerminologyCheckbox')).toThrow('saved draft ID');
+    expect(harness.run('owned-draft-id', 'repairChineseTerminologyCheckbox')).toMatchObject({
+      creationComplete: true,
+      published: true,
+    });
+    expect(harness.mutations).toBe(mutations);
+    expect(harness.properties.get(stateKey)).toBe(checkpoint);
+    expect(checkbox.choices).toEqual(['Owner choice']);
+    expect(checkbox.hasOtherOption()).toBe(true);
+    expect(harness.form!.responses).toEqual(['existing response sentinel']);
+    expect(harness.creates).toBe(1);
+  });
+
   it('initializes fresh item fields despite arbitrary service-provided initial defaults', () => {
     const harness = new Harness();
     harness.initialItemTitle = 'arbitrary initial title';
     harness.initialItemHelp = 'arbitrary initial help';
     harness.initialItemRequired = true;
     harness.initialCheckboxChoices = ['arbitrary initial option', 'another initial option'];
+    harness.initialCheckboxOther = true;
     expect(harness.run().creationComplete).toBe(true);
     expect(harness.questions().find((item) => item.type === 'CHECKBOX')!.choices).toEqual([
       'Kilter Board',
@@ -334,6 +461,12 @@ describe('Chinese terminology Google Form creation artifact (stand-in, not live 
       '其他',
     ]);
     expect(harness.questions()).toHaveLength(32);
+    expect(
+      harness
+        .questions()
+        .find((item) => item.type === 'CHECKBOX')!
+        .hasOtherOption(),
+    ).toBe(false);
     expect(harness.questions().every((item) => !item.required)).toBe(true);
     expect(harness.form!.items.every((item) => item.title !== harness.initialItemTitle)).toBe(true);
     expect(harness.form!.items.every((item) => item.help !== harness.initialItemHelp)).toBe(true);
