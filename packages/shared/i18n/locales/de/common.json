@@ -948,7 +948,7 @@
     "turnOffAll": "Alle Lichter ausschalten",
     "lightAdjacentHolds": "Griff darüber beleuchten",
     "lightAdjacentHoldsHelp": "Lässt eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff leuchten. Erfordert einen MoonBoard-Controller mit der Zusatz-LED-Funktion.",
-    "spraywallLightAdjacentHoldsHelp": "Lässt eine gedimmte LED über jedem beleuchteten Griff leuchten, dem in der Spraywall-Einrichtung eine obere LED zugeordnet ist.",
+    "spraywallLightAdjacentHoldsHelp": "Beleuchtet die zugeordneten LEDs über jedem beleuchteten Griff weiß mit 25 % Helligkeit.",
     "disconnect": "Board trennen"
   },
   "bluetooth": {

@@ -286,6 +286,104 @@ describe('saving a wall’s LED setup', () => {
     });
   });
 
+  describe('durable nut and upper links across older apps', () => {
+    const leds = [
+      { id: 'a', x: 0.25, y: 0.5 },
+      { id: 'b', x: 0.75, y: 0.5 },
+    ];
+    const current = () =>
+      layout({
+        ledPositions: leds,
+        tnutLeds: [{ hole: { x: 0.25, y: 0.5 }, ledIds: ['a', 'b'], aboveLedIds: [] }],
+        holdAboveLeds: [{ holdId: 7, ledIds: ['b'] }],
+      });
+    const older = () => layout({ ledPositions: leds });
+    const storedLayout = async (uuid: string) => (await read(uuid, OWNER))?.setup?.layout as TnutLayout;
+
+    it('preserves modern role keys omitted by older clients, including empty lists', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: older() });
+      expect(await storedLayout(uuid)).toMatchObject({
+        tnutLeds: current().tnutLeds,
+        holdAboveLeds: current().holdAboveLeds,
+      });
+      await save(uuid, OWNER, { layout: { ...older(), tnutLeds: [], holdAboveLeds: [] } });
+      await save(uuid, OWNER, { layout: older() });
+      expect(await storedLayout(uuid)).toMatchObject({ tnutLeds: [], holdAboveLeds: [] });
+    });
+
+    it('accepts modern per-role resets and prunes missing LEDs and holes during old saves', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: { ...older(), ledPositions: leds.slice(1) } });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([
+        { hole: { x: 0.25, y: 0.5 }, ledIds: ['b'], aboveLedIds: [] },
+      ]);
+      await save(uuid, OWNER, { layout: { ...older(), ledPositions: leds.slice(1), holes: [{ x: 0.75, y: 0.5 }] } });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([]);
+      await save(uuid, OWNER, {
+        layout: { ...older(), tnutLeds: [{ hole: { x: 0.75, y: 0.5 }, aboveLedIds: ['a'] }], holdAboveLeds: [] },
+      });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([{ hole: { x: 0.75, y: 0.5 }, aboveLedIds: ['a'] }]);
+    });
+
+    it('does not revive links on replaced photos or rebuilt layouts reusing LED IDs', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: { ...older(), photoKey: 'replacement-photo' } });
+      expect(await storedLayout(uuid)).not.toHaveProperty('tnutLeds');
+      expect(await storedLayout(uuid)).not.toHaveProperty('holdAboveLeds');
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, {
+        layout: { ...older(), rows: 2, ledPositions: leds.map((led) => ({ ...led, x: led.x + 0.01 })) },
+      });
+      expect(await storedLayout(uuid)).not.toHaveProperty('tnutLeds');
+      expect(await storedLayout(uuid)).not.toHaveProperty('holdAboveLeds');
+    });
+
+    it('merges an older save after a concurrently committed modern role edit', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: older() });
+      const [board] = await db.select({ id: userBoards.id }).from(userBoards).where(eq(userBoards.uuid, uuid));
+      let pendingOlderSave: ReturnType<typeof save> | undefined;
+      try {
+        await db.transaction(async (transaction) => {
+          const [blocker] = await transaction.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+          await transaction
+            .select({ id: userBoards.id })
+            .from(userBoards)
+            .where(eq(userBoards.id, board.id))
+            .for('update');
+          await transaction
+            .update(sprayWallLedSetups)
+            .set({ layout: current() as unknown as Record<string, unknown> })
+            .where(eq(sprayWallLedSetups.boardId, board.id));
+          pendingOlderSave = save(uuid, OWNER, { layout: older() });
+          // Wait until the older writer reaches a database lock. Without the
+          // parent-row lock it reads the old layout before waiting on its upsert.
+          let waiting = false;
+          for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+            const rows = await db.execute<{ waiting: boolean }>(sql`
+              SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+                AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+                AND ${blocker.pid} = ANY(pg_blocking_pids(pid))) AS waiting
+            `);
+            waiting = rows[0]?.waiting === true;
+            if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          expect(waiting).toBe(true);
+        });
+      } finally {
+        await pendingOlderSave;
+      }
+      expect(await storedLayout(uuid)).toMatchObject({
+        tnutLeds: current().tnutLeds,
+        holdAboveLeds: current().holdAboveLeds,
+      });
+    });
+  });
+
   it('stores only what the layout reader keeps, and the normalised address', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, {

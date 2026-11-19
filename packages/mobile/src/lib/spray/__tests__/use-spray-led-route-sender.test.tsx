@@ -150,19 +150,22 @@ describe('spray route transport', () => {
     });
   }
 
-  it.each(['below', 'alternating'])('dims the separate upper LED for %s placement', async (ledPlacement) => {
-    mocks.layout.mockResolvedValue({ ...layout, ledPlacement });
-    upperMapping();
-    const { result } = renderHook(() => useUpperSender());
-    expect(await result.current.send('p7r1')).toBe(true);
-    expect(mocks.show).toHaveBeenCalledWith(
-      [2, 5],
-      [
-        { index: 2, color: [128, 64, 32] },
-        { index: 5, color: [32, 16, 8] },
-      ],
-    );
-  });
+  it.each(['below', 'alternating'])(
+    'lights the separate upper LED at 25% white for %s placement',
+    async (ledPlacement) => {
+      mocks.layout.mockResolvedValue({ ...layout, ledPlacement });
+      upperMapping();
+      const { result } = renderHook(() => useUpperSender());
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(mocks.show).toHaveBeenCalledWith(
+        [2, 5],
+        [
+          { index: 2, color: [128, 64, 32] },
+          { index: 5, color: [64, 64, 64] },
+        ],
+      );
+    },
+  );
 
   it.each(['center', 'sides'])('keeps upper lighting disabled for %s placement', async (ledPlacement) => {
     mocks.layout.mockResolvedValue({ ...layout, ledPlacement });
@@ -170,6 +173,33 @@ describe('spray route transport', () => {
     const { result } = renderHook(() => useUpperSender());
     expect(await result.current.send('p7r1')).toBe(true);
     expect(mocks.show).toHaveBeenCalledWith([2], [{ index: 2, color: [128, 64, 32] }]);
+  });
+
+  it('lights every manually assigned upper LED in white without changing the primary override', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [
+        {
+          holdId: 7,
+          holeIndices: [0],
+          ledIds: ['a'],
+          indices: [2],
+          aboveLedIds: ['b', 'c'],
+          aboveIndices: [5, 9],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useUpperSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith(
+      [2, 5, 9],
+      [
+        { index: 2, color: [128, 64, 32] },
+        { index: 5, color: [64, 64, 64] },
+        { index: 9, color: [64, 64, 64] },
+      ],
+    );
   });
 
   it('leaves upper references dark when the option is off', async () => {

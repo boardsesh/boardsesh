@@ -100,6 +100,16 @@ export {
   type TnutPoint,
 } from './tnut-layout';
 export { migrateTnutLayoutColumns } from './tnut-layout';
+export {
+  readTnutLedLinks,
+  setTnutLedLink,
+  clearTnutLedLink,
+  moveTnutLedLinks,
+  pruneTnutLedLinks,
+  keepLedLinksFromOlderApp,
+  type SprayLedLinkLayer,
+  type SprayTnutLedLink,
+} from './tnut-led-links';
 export { expandLedGrid, hasStaleLedGrid } from './expand-led-grid';
 export {
   MAX_HOLD_LED_LINKS,
@@ -123,6 +133,7 @@ export {
   bindLedPositionsToHoles,
   buildSprayLedMapping,
   findSprayHoldAtPoint,
+  migrateHoldLedLinksToTnuts,
   type SprayHoleLedMapping,
   type SprayHoldLedMapping,
   type SprayLedMapping,

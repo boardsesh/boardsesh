@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement, useState, type ReactElement, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import { DEFAULT_TNUT_CORNERS, type TnutLayout, type SprayLedLinkLayer } from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
@@ -12,15 +12,30 @@ const preview = vi.hoisted(() => ({
   stop: vi.fn(),
   show: vi.fn(),
 }));
-const canvas = vi.hoisted(() => ({ current: null as Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'> | null }));
+const canvas = vi.hoisted(() => ({
+  current: null as Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'> | null,
+  rail: null as ReactNode,
+}));
 vi.mock('../SprayPhotoStage', () => ({
-  SprayPhotoStage: ({ canvas: props }: { canvas: typeof canvas.current }) => {
+  SprayPhotoStage: ({
+    canvas: props,
+    fullScreenRail,
+  }: {
+    canvas: typeof canvas.current;
+    fullScreenRail: ReactNode;
+  }) => {
     canvas.current = props;
+    canvas.rail = fullScreenRail;
     return null;
   },
 }));
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null }));
-vi.mock('../SprayPointToolbar', () => ({ SprayPhotoToolButton: () => null, SprayUndoButton: () => null }));
+vi.mock('../SprayPointToolbar', () => ({
+  SprayPhotoToolButton: ({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) =>
+    createElement('button', { disabled, onClick: onPress }, label),
+  SprayUndoButton: ({ disabled, onPress }: { disabled: boolean; onPress: () => void }) =>
+    createElement('button', { disabled, onClick: onPress, 'data-icon': 'undo' }, 'sprayLedSetup.undo'),
+}));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
     options,
@@ -101,10 +116,12 @@ function Harness({
   start = initial,
   wallHolds = holds,
   wallSource = source,
+  layer = 'primary',
 }: {
   start?: TnutLayout;
   wallHolds?: typeof holds;
   wallSource?: SprayLookPreviewSource;
+  layer?: SprayLedLinkLayer;
 }) {
   const [layout, setLayout] = useState(start);
   return (
@@ -115,6 +132,7 @@ function Harness({
       source={wallSource}
       photoUri="file:///photo"
       width={400}
+      layer={layer}
       onChange={(update) => {
         changes.push(update);
         setLayout((previous) => ({ ...previous, ...update }));
@@ -142,6 +160,10 @@ function overlay() {
     holdRings: { id: number }[];
     unmappedHoldIds: number[];
     unmappedHoles: { id: string }[];
+    holes: { x: number; y: number }[];
+    mutedHoles: { x: number; y: number }[];
+    selectedHoles: { x: number; y: number }[];
+    associations: { from: { x: number; y: number }; to: { id: string } }[];
   }>;
   return element.props;
 }
@@ -209,14 +231,14 @@ describe('holds and LEDs step', () => {
     expect(screen.getByText('sprayLedSetup.holdLedsSelected:2')).toBeTruthy();
     // Picking a hold moves on to its LEDs: tapping LED c adds it to hold 10.
     tap(right);
-    expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 10, ledIds: ['a', 'b', 'c'] }] });
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: left, ledIds: ['a', 'b', 'c'] }] });
     expect(preview.show).toHaveBeenLastCalledWith([0, 1, 2]);
     expect(screen.getByText('sprayLedSetup.holdLedsSelectedManual:3')).toBeTruthy();
     // LED c left hold 20, which now has no LED.
     expect(overlay().unmappedHoldIds).toEqual([20]);
     // Tapping it again takes it away.
     tap(right);
-    expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 10, ledIds: ['a', 'b'] }] });
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: left, ledIds: ['a', 'b'] }] });
   });
 
   it('jumps to holds without LEDs, and undoes and resets hand-made links', () => {
@@ -227,7 +249,7 @@ describe('holds and LEDs step', () => {
     expect(overlay().selectedHoldIds).toEqual([20]);
     expect(preview.stop).toHaveBeenCalled();
     fireEvent.click(button('undo'));
-    expect(changes.at(-1)).toEqual({ holdLeds: [] });
+    expect(changes.at(-1)).toEqual({ holdLeds: [], holdAboveLeds: [], tnutLeds: [] });
     expect(overlay().unmappedHoldIds).toEqual([]);
     expect(button('undo').disabled).toBe(true);
     // Back on hold 10, a hand-made link can be given back to the automatic mapping.
@@ -235,10 +257,10 @@ describe('holds and LEDs step', () => {
     tap(left);
     expect(button('holdLedsReset').disabled).toBe(true);
     tap({ x: 0.19, y: 0.3 });
-    expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 10, ledIds: ['b'] }] });
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: left, ledIds: [] }] });
     expect(button('holdLedsReset').disabled).toBe(false);
     fireEvent.click(button('holdLedsReset'));
-    expect(changes.at(-1)).toEqual({ holdLeds: [] });
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [] });
     expect(overlay().selected).toEqual(['a', 'b']);
   });
 
@@ -289,7 +311,7 @@ describe('holds and LEDs step', () => {
     expect(screen.getByText('sprayLedSetup.holdLedsFreeLedSelected')).toBeTruthy();
     // Tapping hold 20 adds d to the LED it already had.
     tap(right);
-    expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 20, ledIds: ['c', 'd'] }] });
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: right, ledIds: ['c', 'd'] }] });
     expect(overlay().selectedHoldIds).toEqual([20]);
     expect(overlay().unmappedHoles).toEqual([]);
     expect(button('holdLedsNextFreeLed').disabled).toBe(true);
@@ -324,7 +346,8 @@ describe('holds and LEDs step', () => {
     expect(overlay().selected).toEqual(['d', 'e']);
 
     tap(right);
-    expect(changes).toEqual([{ holdLeds: [{ holdId: 20, ledIds: ['c', 'd', 'e'] }] }]);
+    expect(changes).toHaveLength(1);
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: right, ledIds: ['c', 'd', 'e'] }] });
     expect(overlay().unmappedHoles.map((led) => led.id)).toEqual(['f']);
   });
 
@@ -334,11 +357,9 @@ describe('holds and LEDs step', () => {
     expect(overlay().selected).toEqual(['d', 'e']);
     expect(preview.show).toHaveBeenLastCalledWith([3, 4]);
     tap(right);
-    expect(changes.at(-1)).toEqual({
-      holdLeds: [
-        { holdId: 10, ledIds: ['a', 'b', 'd'] },
-        { holdId: 20, ledIds: ['c', 'e'] },
-      ],
+    expect(changes.at(-1)).toMatchObject({
+      holdLeds: [{ holdId: 10, ledIds: ['a', 'b', 'd'] }],
+      tnutLeds: [{ hole: right, ledIds: ['c', 'e'] }],
     });
   });
 
@@ -349,5 +370,120 @@ describe('holds and LEDs step', () => {
     tap({ x: 0.8, y: 0.34 });
     expect(overlay().selectedHoldIds).toEqual([20]);
     expect(changes).toEqual([]);
+  });
+
+  it('keeps mounted nuts selectable and changes their hold with multiple LEDs', () => {
+    render(<Harness start={{ ...initial, ledPlacement: 'center' }} />);
+    fireEvent.click(button('holdLedsPickTnuts'));
+    expect(overlay().holes).toEqual([left, right]);
+    expect(overlay().mutedHoles).toEqual([left, right]);
+    tap(left);
+    expect(overlay().selectedHoles).toEqual([left]);
+    tap(right); // The LED overlaps another nut; the active target keeps the edit.
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: left, ledIds: ['a', 'b', 'c'] }] });
+    expect(overlay().selectedHoles).toEqual([left]);
+    expect(overlay().selected).toEqual(['a', 'b', 'c']);
+    fireEvent.click(button('holdLedsChooseTnut'));
+    tap(right);
+    expect(overlay().selectedHoles).toEqual([right]);
+    expect(overlay().selected).toEqual([]);
+    expect(button('holdLedsNextTnut').disabled).toBe(false);
+    tap({ x: 0.5, y: 0.9 });
+    expect(overlay().selectedHoles).toEqual([]);
+  });
+
+  it('counts and fixes empty nuts, including an unmounted nut', () => {
+    const emptyNut = { x: 0.5, y: 0.8 };
+    render(<Harness start={{ ...initial, holes: [...initial.holes, emptyNut] }} />);
+    fireEvent.click(button('holdLedsPickTnuts'));
+    expect(screen.getByText('sprayLedSetup.holdLedsTnutSummary:2/3')).toBeTruthy();
+    fireEvent.click(button('holdLedsNextTnut'));
+    expect(overlay().selectedHoles).toEqual([emptyNut]);
+    tap(right);
+    expect(changes.at(-1)).toMatchObject({ tnutLeds: [{ hole: emptyNut, ledIds: ['c'] }] });
+    expect(preview.show).toHaveBeenLastCalledWith([2]);
+  });
+
+  it('shows effective legacy links and edits, resets and undoes their nut migration atomically', () => {
+    const legacy = [{ holdId: 10, ledIds: ['a', 'b', 'c'] }];
+    render(<Harness start={{ ...initial, holdLeds: legacy }} />);
+    fireEvent.click(button('holdLedsPickTnuts'));
+    tap(left);
+    expect(overlay().selected).toEqual(['a', 'b', 'c']);
+    tap(right);
+    expect(changes.at(-1)).toEqual({ holdLeds: [], holdAboveLeds: [], tnutLeds: [{ hole: left, ledIds: ['a', 'b'] }] });
+    fireEvent.click(button('undo'));
+    expect(changes.at(-1)).toEqual({ holdLeds: legacy, holdAboveLeds: [], tnutLeds: [] });
+    expect(overlay().selected).toEqual(['a', 'b', 'c']);
+    fireEvent.click(button('holdLedsReset'));
+    expect(changes.at(-1)).toEqual({ holdLeds: [], holdAboveLeds: [], tnutLeds: [] });
+    expect(overlay().selected).toEqual(['a', 'b']);
+  });
+
+  it('edits and previews only upper LEDs, keeping primary links and paired units', () => {
+    render(
+      <Harness
+        layer="above"
+        start={{
+          ...initial,
+          ledPlacement: 'below',
+          ledGroups: [['a', 'b']],
+          tnutLeds: [
+            { hole: left, ledIds: ['c'], aboveLedIds: ['a', 'b'] },
+            { hole: right, ledIds: [], aboveLedIds: [] },
+          ],
+        }}
+      />,
+    );
+    tap(left);
+    expect(overlay().selected).toEqual(['a', 'b']);
+    expect(preview.show).toHaveBeenLastCalledWith([0, 1]);
+    tap({ x: 0.19, y: 0.3 });
+    expect(changes.at(-1)?.tnutLeds).toContainEqual({ hole: left, ledIds: ['c'], aboveLedIds: [] });
+    expect(overlay().selected).toEqual([]);
+    expect(preview.stop).toHaveBeenCalled();
+    expect(overlay().unmappedHoldIds).toEqual([10, 20]);
+    fireEvent.click(button('undo'));
+    expect(overlay().selected).toEqual(['a', 'b']);
+  });
+
+  it('keeps reverse pair selection in nut mode, using only free members on the active layer', () => {
+    render(
+      <Harness
+        layer="above"
+        start={{
+          ...pairAndSingle,
+          ledPlacement: 'below',
+          tnutLeds: [
+            { hole: left, ledIds: ['d', 'e'], aboveLedIds: ['a', 'b', 'c', 'd', 'f'] },
+            { hole: right, aboveLedIds: [] },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(button('holdLedsPickTnuts'));
+    fireEvent.click(button('holdLedsNextFreeTnutLed'));
+    expect(overlay().selected).toEqual(['d', 'e']);
+    expect(preview.show).toHaveBeenLastCalledWith([3, 4]);
+    tap(right);
+    expect(changes.at(-1)?.tnutLeds).toContainEqual({ hole: right, aboveLedIds: ['e'] });
+    expect(changes.at(-1)?.tnutLeds).toContainEqual({
+      hole: left,
+      ledIds: ['d', 'e'],
+      aboveLedIds: ['a', 'b', 'c', 'd', 'f'],
+    });
+  });
+
+  it('draws role links and exposes the same target, reverse picker and icon undo in fullscreen', () => {
+    render(<Harness />);
+    expect(overlay().associations.map((link) => link.to.id)).toEqual(['a', 'b', 'c']);
+    const rail = render(createElement('div', null, canvas.rail));
+    fireEvent.click(within(rail.container).getByText('sprayLedSetup.holdLedsPickTnuts'));
+    tap(left);
+    tap(right);
+    rail.rerender(createElement('div', null, canvas.rail));
+    expect(within(rail.container).getByText('sprayLedSetup.undo').getAttribute('data-icon')).toBe('undo');
+    fireEvent.click(within(rail.container).getByText('sprayLedSetup.undo'));
+    expect(changes.at(-1)?.tnutLeds).toEqual([]);
   });
 });

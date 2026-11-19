@@ -76,8 +76,13 @@ function layout(photoKey = 'photo-key'): TnutLayout {
   };
 }
 
-/** What the upload sends: `ledGroups` is always named, null for the default pairs. */
-const uploaded = (sent: TnutLayout) => ({ ...sent, ledGroups: sent.ledGroups ?? null });
+/** Modern uploads name all supported override lists, including explicit clears. */
+const uploaded = (sent: TnutLayout) => ({
+  ...sent,
+  ledGroups: sent.ledGroups ?? null,
+  tnutLeds: sent.tnutLeds ?? [],
+  holdAboveLeds: sent.holdAboveLeds ?? [],
+});
 
 /** The server's row: jsonb key order differs from what the reader builds. */
 const rowFor = (overrides: Record<string, unknown> = {}) => ({
@@ -589,6 +594,30 @@ describe('saving', () => {
     await saveLocally('layout', { ...layout(), ledGroups: [] });
     await settle();
     expect(saves()[1].layout).toHaveProperty('ledGroups', []);
+  });
+
+  it('sends persistent T-nut roles and upper hold links, and explicitly clears them', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    const assigned: TnutLayout = {
+      ...layout(),
+      ledPositions: [{ id: 'manual-0', x: 0.5, y: 0.6 }],
+      tnutLeds: [{ hole: { x: 0.5, y: 0.5 }, ledIds: ['manual-0'], aboveLedIds: [] }],
+      holdAboveLeds: [{ holdId: 11, ledIds: ['manual-0'] }],
+    };
+    await saveLocally('layout', assigned);
+    await settle();
+    expect(saves()[0].layout).toMatchObject({
+      tnutLeds: assigned.tnutLeds,
+      holdAboveLeds: assigned.holdAboveLeds,
+    });
+    await saveLocally('layout', { ...assigned, tnutLeds: [], holdAboveLeds: [] });
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('tnutLeds', []);
+    expect(saves()[1].layout).toHaveProperty('holdAboveLeds', []);
+    await saveLocally('layout', layout());
+    await settle();
+    expect(saves()[2].layout).toHaveProperty('tnutLeds', []);
+    expect(saves()[2].layout).toHaveProperty('holdAboveLeds', []);
   });
 
   it('coalesces step saves: one upload in flight, then only the newest', async () => {

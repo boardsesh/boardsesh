@@ -460,9 +460,14 @@ async function buildUploadInput(
     const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
     const layout = stored === null ? null : readTnutLayout(stored);
     if (!layout) throw new Error('Invalid saved T-nut layout');
-    // Always name `ledGroups`, null for the default pairs: a layout without the key
-    // reads as an app from before LED pairs, and the server would keep the old list.
-    input.layout = layout.ledGroups === undefined ? { ...layout, ledGroups: null } : layout;
+    // Name every supported override list, including an explicit clear. Missing
+    // keys identify an older app, whose upload must preserve newer assignments.
+    input.layout = {
+      ...layout,
+      ledGroups: layout.ledGroups ?? null,
+      tnutLeds: layout.tnutLeds ?? [],
+      holdAboveLeds: layout.holdAboveLeds ?? [],
+    };
   }
   return fields.length > 0 ? input : null;
 }
