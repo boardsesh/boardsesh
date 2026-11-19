@@ -356,11 +356,19 @@ describe('assertKnownBoardConfig', () => {
   it('validates only exact Quantum model pairs with the single canonical set', async () => {
     const selectSpy = vi.spyOn(db, 'select');
 
-    await expect(
-      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.xl.sizeId, String(QUANTUM_SET_ID)),
-    ).resolves.toBeUndefined();
+    for (const model of Object.values(QUANTUM_MODELS)) {
+      await expect(
+        assertKnownBoardConfig('quantum', model.layoutId, model.sizeId, String(QUANTUM_SET_ID)),
+      ).resolves.toBeUndefined();
+    }
     await expectUnknownBoardConfig(
-      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.s.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.s.layoutId, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', 9102, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
     );
     await expectUnknownBoardConfig(
       assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.xl.sizeId, '2'),
