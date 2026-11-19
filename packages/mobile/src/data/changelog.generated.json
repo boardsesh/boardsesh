@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-19T07:17:31.922Z",
+  "generatedAt": "2026-11-19T08:25:34.959Z",
   "entries": [
+    {
+      "prNumber": 7893,
+      "category": "fixed",
+      "title": "Climbs stay visible when your phone takes longer to prepare effects.",
+      "mergedAt": "2026-11-19T07:42:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7893"
+    },
     {
       "prNumber": 7889,
       "category": "fixed",
@@ -10052,6 +10059,28 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-19T07:42:05Z",
+      "sha": "d79ec9861277d6bde0421dc0f62e4041d4d6704b",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "4eaac430c2072cf62e97eebc92a802d5699990b8"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-11-19T06:28:43Z",
+      "sha": "6447380e39f6b459091cc82aab74021d0ca7d892",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "7b7e4735eabe4b59827b66663ff9a30ecd2227ca"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-18T08:35:00Z",

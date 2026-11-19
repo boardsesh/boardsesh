@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-19
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
 - Swiping between climbs now fades the wall button's lights in place, following your finger like the board does. ([#7884](https://github.com/boardsesh/boardsesh/pull/7884))
@@ -13,6 +17,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Climbs stay visible when your phone takes longer to prepare effects. ([#7893](https://github.com/boardsesh/boardsesh/pull/7893))
 - GPU drawing starts only when needed, and the wall button recovers if its glow cannot render. ([#7889](https://github.com/boardsesh/boardsesh/pull/7889))
 - Open a shared climb or playlist and get straight to the app. Browse clearer gym listings and find board troubleshooting faster. ([#7882](https://github.com/boardsesh/boardsesh/pull/7882))
 - See who runs Boardsesh, how it stays free, and what happens when you link a board account. ([#7879](https://github.com/boardsesh/boardsesh/pull/7879))
