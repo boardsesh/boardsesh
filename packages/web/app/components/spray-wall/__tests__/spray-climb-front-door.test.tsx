@@ -133,7 +133,7 @@ describe('SprayClimbFrontDoor', () => {
       '12.345 climber hanno registrato una ripetizione.',
       '0 climber hanno registrato una ripetizione.',
     ],
-    ['zh-CN', '由 marco 设定。', '已有 1 人记录了完攀。', '已有 12,345 人记录了完攀。', '已有 0 人记录了完攀。'],
+    ['zh-CN', '由 marco 设定。', '完攀记录人数：1。', '完攀记录人数：12,345。', '完攀记录人数：0。'],
   ] satisfies [Locale, string, string, string, string][];
 
   it.each(summaries)(
