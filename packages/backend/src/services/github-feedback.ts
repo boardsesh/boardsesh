@@ -29,7 +29,7 @@ const TITLE_LIMIT = 120;
  * same set this builder does — a report the builder would skip must not collect
  * screenshots the issue will never show.
  */
-export const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
+export const BUG_SOURCES: ReadonlySet<FeedbackIssuePayload['source']> = new Set(['shake-bug', 'drawer-bug']);
 
 export type FeedbackIssuePayload = {
   feedbackId: string | number | bigint;
@@ -37,7 +37,7 @@ export type FeedbackIssuePayload = {
   comment: string | null;
   platform: AppFeedbackPlatform;
   appVersion: string | null;
-  source: AppFeedbackSource;
+  source: AppFeedbackSource | 'board-request';
   boardName?: string | null;
   layoutId?: number | null;
   sizeId?: number | null;

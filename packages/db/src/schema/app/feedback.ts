@@ -1,8 +1,9 @@
 import { pgTable, text, integer, timestamp, bigserial, index, jsonb, boolean, pgEnum } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
-import type { ReleaseContext } from '@boardsesh/shared-schema';
+import type { BoardRequestRole, ReleaseContext } from '@boardsesh/shared-schema';
 
 export type FeedbackContext = {
+  boardRequest?: { role: BoardRequestRole; email?: string };
   releaseContext?: ReleaseContext;
   climbUuid?: string;
   climbName?: string;
@@ -35,9 +36,8 @@ export const appFeedback = pgTable(
     sizeId: integer('size_id'),
     setIds: jsonb('set_ids').$type<number[]>(),
     angle: integer('angle'),
-    // Whether the reporter opted in to follow-up contact. Only set for bug
-    // reports; null/false means "do not reach out". Resolve the reporter via
-    // this row's user_id when true.
+    // Follow-up permission. Bugs use the signed-in reporter; board requests
+    // use only their optional private reply address.
     contactConsent: boolean('contact_consent'),
     context: jsonb('context').$type<FeedbackContext>(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),

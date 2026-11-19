@@ -1,6 +1,6 @@
 {
   "boardsTitle": "Tu plafón, en Boardsesh",
-  "boardsLead": "Encuentra tu plafón y su layout, y busca un muro donde escalar.",
+  "boardsLead": "Estos son los plafones en los que puedes escalar hoy. ¿Tienes otro?",
   "boardsDescription": "Consulta los plafones y layouts compatibles y encuentra rocódromos donde escalar.",
   "findGyms": "Encuentra un rocódromo con {{board}}",
   "sprayLabel": "Spraywall",
@@ -49,5 +49,23 @@
   "previousLayouts": "Layouts anteriores de {{board}}",
   "nextLayouts": "Siguientes layouts de {{board}}",
   "boardLayoutAlt": "Layout {{layout}} de {{board}}",
-  "sprayGalleryAlt": "Spraywall con presas"
+  "sprayGalleryAlt": "Spraywall con presas",
+  "boardsInvite": "Dinos cuál",
+  "boardsAfterInvite": " y estaremos encantados de añadirlo.",
+  "boardRequest": {
+    "title": "Sugiere un plafón",
+    "private": "Tu solicitud llega en privado al equipo de Boardsesh. Puedes enviarla sin cuenta ni correo electrónico.",
+    "board": "Nombre del plafón o de la marca",
+    "role": "Soy…",
+    "climber": "Escalador/a",
+    "gym": "Representante de un rocódromo",
+    "maker": "Fabricante de plafones",
+    "note": "¿Algo más? (opcional)",
+    "consent": "Boardsesh puede escribirme sobre esta solicitud.",
+    "email": "Correo para la respuesta",
+    "send": "Enviar solicitud",
+    "sent": "Gracias. El equipo de Boardsesh ha recibido tu solicitud.",
+    "error": "No se ha podido enviar la solicitud. Inténtalo de nuevo.",
+    "rateLimited": "Demasiadas solicitudes. Espera un minuto y vuelve a intentarlo."
+  }
 }

@@ -40,7 +40,9 @@
       "ratings": "Valutazioni",
       "all": "Tutti",
       "bug": "Bug",
-      "rating": "Valutazione"
+      "rating": "Valutazione",
+      "boardRequest": "Richiesta di pannello",
+      "boardRequests": "Richieste di pannelli"
     },
     "status": {
       "new": "Nuova",
@@ -98,7 +100,8 @@
       "canaryYes": "Sì",
       "canaryNo": "No",
       "canaryUnknown": "Sconosciuto",
-      "canaryCheckedAt": "Canary verificato"
+      "canaryCheckedAt": "Canary verificato",
+      "boardRequestRole": "Ruolo"
     },
     "empty": "Nessun feedback corrisponde a questi filtri.",
     "error": "Impossibile caricare il feedback.",
@@ -110,6 +113,11 @@
       "updateFailed": "Impossibile aggiornare lo stato",
       "emailCopied": "Email copiata",
       "copyFailed": "Copia non riuscita"
+    },
+    "boardRequestRoles": {
+      "climber": "Climber",
+      "gym": "Rappresentante di una palestra",
+      "maker": "Produttore di pannelli"
     }
   },
   "retention": {

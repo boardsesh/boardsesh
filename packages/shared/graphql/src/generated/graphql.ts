@@ -345,6 +345,8 @@ export type AppFeedbackReport = {
   angle?: Maybe<Scalars['Int']['output']>;
   appVersion?: Maybe<Scalars['String']['output']>;
   boardName?: Maybe<Scalars['String']['output']>;
+  boardRequestEmail?: Maybe<Scalars['String']['output']>;
+  boardRequestRole?: Maybe<BoardRequestRole>;
   comment?: Maybe<Scalars['String']['output']>;
   contactConsent?: Maybe<Scalars['Boolean']['output']>;
   context?: Maybe<AppFeedbackContext>;
@@ -401,7 +403,7 @@ export type AppFeedbackStatusCounts = {
  * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug
  * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
  */
-export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
+export type AppFeedbackTypeFilter = 'all' | 'board_requests' | 'bugs' | 'ratings';
 
 /** A partner workout delivered to the signed-in climber. Its session identifier never leaves the partner API. */
 export type AppWorkout = {
@@ -1077,6 +1079,8 @@ export type BoardQueuePreviewItem = {
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
 };
+
+export type BoardRequestRole = 'climber' | 'gym' | 'maker';
 
 /**
  * Auto-recorded board configuration that the current user was on the last time
@@ -5551,6 +5555,8 @@ export type Mutation = {
    * associated with the user.
    */
   submitAppFeedback: Scalars['Boolean']['output'];
+  /** Send an anonymous board suggestion to the private admin feedback inbox. */
+  submitBoardRequest: Scalars['Boolean']['output'];
   /**
    * Crowdsourced QA: file a verdict on a pull-request preview. Tester role
    * required; the PR must be open; a `declined` verdict needs a comment of
@@ -6493,6 +6499,11 @@ export type MutationSnapshotActiveUsersArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSubmitBoardRequestArgs = {
+  input: SubmitBoardRequestInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -12529,6 +12540,14 @@ export type SubmitAppFeedbackInput = {
   source: Scalars['String']['input'];
 };
 
+export type SubmitBoardRequestInput = {
+  boardName: Scalars['String']['input'];
+  contactConsent: Scalars['Boolean']['input'];
+  email?: InputMaybe<Scalars['String']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+  role: BoardRequestRole;
+};
+
 /**
  * Input for submitQaVerdict. Everything but the verdict is device context the
  * app fills in so the GitHub comment can say what was tested where.
@@ -14916,6 +14935,12 @@ export type GetUserFavoriteClimbsQuery = {
   };
 };
 
+export type SubmitBoardRequestMutationVariables = Exact<{
+  input: SubmitBoardRequestInput;
+}>;
+
+export type SubmitBoardRequestMutation = { __typename?: 'Mutation'; submitBoardRequest: boolean };
+
 export type SubmitAppFeedbackMutationVariables = Exact<{
   input: SubmitAppFeedbackInput;
 }>;
@@ -14936,6 +14961,8 @@ export type AdminAppFeedbackQuery = {
       __typename?: 'AppFeedbackReport';
       id: string;
       source: string;
+      boardRequestRole?: BoardRequestRole | null;
+      boardRequestEmail?: string | null;
       rating?: number | null;
       comment?: string | null;
       platform: string;
@@ -14997,6 +15024,8 @@ export type UpdateAppFeedbackStatusMutation = {
     __typename?: 'AppFeedbackReport';
     id: string;
     source: string;
+    boardRequestRole?: BoardRequestRole | null;
+    boardRequestEmail?: string | null;
     rating?: number | null;
     comment?: string | null;
     platform: string;
@@ -21471,6 +21500,42 @@ export const GetUserFavoriteClimbsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUserFavoriteClimbsQuery, GetUserFavoriteClimbsQueryVariables>;
+export const SubmitBoardRequestDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SubmitBoardRequest' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SubmitBoardRequestInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'submitBoardRequest' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SubmitBoardRequestMutation, SubmitBoardRequestMutationVariables>;
 export const SubmitAppFeedbackDocument = {
   kind: 'Document',
   definitions: [
@@ -21545,6 +21610,8 @@ export const AdminAppFeedbackDocument = {
                     selections: [
                       { kind: 'Field', name: { kind: 'Name', value: 'id' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardRequestRole' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardRequestEmail' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'rating' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'platform' } },
@@ -21664,6 +21731,8 @@ export const UpdateAppFeedbackStatusDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'id' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardRequestRole' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardRequestEmail' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'rating' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'platform' } },

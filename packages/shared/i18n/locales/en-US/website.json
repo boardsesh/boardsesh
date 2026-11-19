@@ -1,6 +1,6 @@
 {
   "boardsTitle": "Your board, on Boardsesh",
-  "boardsLead": "Find your board and layout, then find a wall to climb on.",
+  "boardsLead": "Here are the boards you can climb on today. Got another board?",
   "boardsDescription": "See supported climbing boards and layouts, and find gyms with a wall you can climb on.",
   "findGyms": "Find a wall with {{board}}",
   "sprayLabel": "Spray wall",
@@ -49,5 +49,23 @@
   "previousLayouts": "Previous {{board}} layouts",
   "nextLayouts": "Next {{board}} layouts",
   "boardLayoutAlt": "{{layout}} on {{board}}",
-  "sprayGalleryAlt": "Spray wall with climbing holds"
+  "sprayGalleryAlt": "Spray wall with climbing holds",
+  "boardsInvite": "Tell us which one",
+  "boardsAfterInvite": " and we’re happy to add it.",
+  "boardRequest": {
+    "title": "Request a board",
+    "private": "Your request goes privately to the Boardsesh team. You can send it without an account or an email address.",
+    "board": "Board or brand name",
+    "role": "I’m a…",
+    "climber": "Climber",
+    "gym": "Gym representative",
+    "maker": "Board maker",
+    "note": "Anything else? (optional)",
+    "consent": "Boardsesh may email me about this request.",
+    "email": "Email for a reply",
+    "send": "Send board request",
+    "sent": "Thanks. The Boardsesh team has received your request.",
+    "error": "Your request couldn’t be sent. Try again.",
+    "rateLimited": "Too many requests. Wait a minute and try again."
+  }
 }

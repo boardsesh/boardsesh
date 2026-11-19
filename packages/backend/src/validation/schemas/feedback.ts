@@ -101,7 +101,18 @@ export type FeedbackContextInput = z.infer<typeof FeedbackContextInputSchema>;
 // --- Admin feedback dashboard ---------------------------------------------
 
 const FEEDBACK_STATUSES = ['new', 'in_progress', 'resolved', 'wont_fix'] as const;
-const FEEDBACK_TYPE_FILTERS = ['bugs', 'ratings', 'all'] as const;
+export const BoardRequestInputSchema = z
+  .object({
+    boardName: z.string().trim().min(1).max(100),
+    role: z.enum(['climber', 'gym', 'maker']),
+    note: z.string().trim().max(1000).nullish(),
+    email: z.string().trim().email().max(254).nullish(),
+    contactConsent: z.boolean(),
+  })
+  .strict()
+  .refine((input) => Boolean(input.email) === input.contactConsent);
+
+const FEEDBACK_TYPE_FILTERS = ['bugs', 'ratings', 'board_requests', 'all'] as const;
 
 export const AdminAppFeedbackInputSchema = z
   .object({

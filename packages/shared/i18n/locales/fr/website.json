@@ -1,6 +1,6 @@
 {
   "boardsTitle": "Ta board, sur Boardsesh",
-  "boardsLead": "Trouvez votre board et sa configuration, puis une salle où grimper.",
+  "boardsLead": "Voici les boards sur lesquelles tu peux grimper aujourd’hui. Tu en utilises une autre ?",
   "boardsDescription": "Consultez les boards et configurations compatibles et trouvez une salle où grimper.",
   "findGyms": "Trouver une salle avec {{board}}",
   "sprayLabel": "Spraywall",
@@ -49,5 +49,23 @@
   "previousLayouts": "Configurations précédentes de {{board}}",
   "nextLayouts": "Configurations suivantes de {{board}}",
   "boardLayoutAlt": "Disposition des prises {{layout}} sur {{board}}",
-  "sprayGalleryAlt": "Spraywall avec ses prises"
+  "sprayGalleryAlt": "Spraywall avec ses prises",
+  "boardsInvite": "Dis-nous laquelle",
+  "boardsAfterInvite": ", on sera ravis de l’ajouter.",
+  "boardRequest": {
+    "title": "Proposer une board",
+    "private": "Ta demande est transmise en privé à l’équipe de Boardsesh. Tu peux l’envoyer sans compte ni adresse e-mail.",
+    "board": "Nom de la board ou de la marque",
+    "role": "Je représente…",
+    "climber": "Moi-même, en tant que grimpeur ou grimpeuse",
+    "gym": "Une salle d’escalade",
+    "maker": "Un fabricant de boards",
+    "note": "Autre précision (facultatif)",
+    "consent": "Boardsesh peut m’écrire au sujet de cette demande.",
+    "email": "Adresse e-mail pour la réponse",
+    "send": "Transmettre la demande",
+    "sent": "Merci. L’équipe de Boardsesh a reçu ta demande.",
+    "error": "Ta demande n’a pas pu être transmise. Réessaie.",
+    "rateLimited": "Trop de demandes. Attends une minute avant de réessayer."
+  }
 }

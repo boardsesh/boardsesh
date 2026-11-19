@@ -78,7 +78,9 @@
       "ratings": "评分",
       "all": "全部",
       "bug": "问题",
-      "rating": "评分"
+      "rating": "评分",
+      "boardRequest": "训练板请求",
+      "boardRequests": "训练板请求"
     },
     "status": {
       "new": "新报告",
@@ -136,7 +138,8 @@
       "canaryYes": "是",
       "canaryNo": "否",
       "canaryUnknown": "未知",
-      "canaryCheckedAt": "灰度检查时间"
+      "canaryCheckedAt": "灰度检查时间",
+      "boardRequestRole": "身份类别"
     },
     "empty": "没有符合筛选条件的反馈。",
     "error": "无法加载反馈。",
@@ -148,6 +151,11 @@
       "updateFailed": "无法更新状态",
       "emailCopied": "邮箱已复制",
       "copyFailed": "无法复制"
+    },
+    "boardRequestRoles": {
+      "climber": "攀岩者",
+      "gym": "岩馆代表",
+      "maker": "训练板制造商"
     }
   },
   "retention": {

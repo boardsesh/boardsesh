@@ -191,6 +191,7 @@ export default async function PrivacyPolicyPage() {
       </PageSection>
 
       <PageSection title={t('privacy.contact.title')}>
+        <Prose>{t('privacy.contact.boardRequests')}</Prose>
         <Prose>
           {t('privacy.contact.body1Start')}
           <Link href="mailto:support@boardsesh.com">{t('privacy.contact.body1Email')}</Link>

@@ -291,3 +291,84 @@ describe('submitAppFeedback', () => {
     expect(createFeedbackGithubIssueMock).not.toHaveBeenCalled();
   });
 });
+
+describe('private board requests', () => {
+  const ipPrefix = `2001:db8:${crypto.randomUUID().slice(0, 4)}:${crypto.randomUUID().slice(0, 4)}::`;
+  const request = { boardName: ' Local fixture board ', role: 'gym', note: ' Private fixture ', contactConsent: false };
+  const submit = (input: unknown, clientIp: string) =>
+    feedbackMutations.submitBoardRequest(null, { input }, { ...anonCtx(), clientIp });
+
+  it('accepts a signed-out request and saves consented contact without mirroring or sending mail', async () => {
+    await expect(
+      submit({ ...request, contactConsent: true, email: 'fixture@example.test' }, ipPrefix + '2'),
+    ).resolves.toBe(true);
+    const result = await db.execute(
+      sql`SELECT board_name, source, comment, contact_consent, user_id, context, github_issue_url FROM app_feedback WHERE source = 'board-request'`,
+    );
+    expect(Array.from(result)).toEqual([
+      expect.objectContaining({
+        board_name: 'Local fixture board',
+        source: 'board-request',
+        comment: 'Private fixture',
+        contact_consent: true,
+        user_id: null,
+        context: { boardRequest: { role: 'gym', email: 'fixture@example.test' } },
+        github_issue_url: null,
+      }),
+    ]);
+    expect(createFeedbackGithubIssueMock).not.toHaveBeenCalled();
+    expect(sendBugReportIssueEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('stores no contact and no account id when a visitor submits without follow-up', async () => {
+    await expect(submit(request, ipPrefix + '3')).resolves.toBe(true);
+    const result = await db.execute(
+      sql`SELECT contact_consent, context, user_id FROM app_feedback WHERE source = 'board-request'`,
+    );
+    expect(Array.from(result)).toEqual([
+      { contact_consent: false, context: { boardRequest: { role: 'gym' } }, user_id: null },
+    ]);
+  });
+
+  it.each([
+    { boardName: ' ' },
+    { boardName: 'x'.repeat(101) },
+    { role: 'other' },
+    { note: 'x'.repeat(1001) },
+    { email: 'secret@example.test' },
+    { contactConsent: true },
+    { contactConsent: true, email: 'secret-invalid' },
+    { source: 'shake-bug' },
+  ])('rejects invalid inputs without echoing private values', async (invalid) => {
+    // Separate rate limit bucket for each invalid-input case.
+    const ctx = { ...anonCtx(), clientIp: undefined, connectionId: crypto.randomUUID() };
+    await expect(
+      feedbackMutations.submitBoardRequest(null, { input: { ...request, ...invalid } }, ctx),
+    ).rejects.toMatchObject({ message: 'Invalid board request.', extensions: { code: 'BAD_USER_INPUT' } });
+    expect(Array.from(await db.execute(sql`SELECT id FROM app_feedback WHERE source = 'board-request'`))).toHaveLength(
+      0,
+    );
+  });
+
+  it('limits anonymous submissions by client IP before any extra requests are stored', async () => {
+    for (let index = 0; index < 5; index++) await submit(request, ipPrefix + '4');
+    await expect(submit(request, ipPrefix + '4')).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
+    expect(Array.from(await db.execute(sql`SELECT id FROM app_feedback WHERE source = 'board-request'`))).toHaveLength(
+      5,
+    );
+  });
+
+  it('sanitizes database errors before GraphQL or exception telemetry sees them', async () => {
+    const insert = vi.spyOn(db, 'insert').mockImplementationOnce(() => {
+      throw new Error('driver parameters: private-note secret@example.test');
+    });
+    try {
+      await expect(submit(request, ipPrefix + '5')).rejects.toMatchObject({
+        message: 'Could not save board request.',
+        extensions: { code: 'BOARD_REQUEST_UNAVAILABLE' },
+      });
+    } finally {
+      insert.mockRestore();
+    }
+  });
+});
