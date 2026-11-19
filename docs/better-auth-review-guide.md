@@ -1,6 +1,16 @@
 # Better Auth implementation review guide
 
-This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-16. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). Every switch and the order to turn them on is in [better-auth-rollout.md](./better-auth-rollout.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and every child issue except BA-01 remain open.**
+This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-19. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). Every switch and the order to turn them on is in [better-auth-rollout.md](./better-auth-rollout.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and every child issue except BA-01 remain open.**
+
+The [acceptance ledger](./better-auth-implementation.md#acceptance-ledger)
+separates merged code, open PRs and remaining closure evidence for every child.
+Only BA-01 is closed because the later issues include deployment, restored-data
+rollback and real-device criteria. Partner Stage A allowlist is [recorded live
+since November 17](https://github.com/boardsesh/boardsesh/issues/7430#issuecomment-6950404188),
+with terms, API domain and developer gating merged. This does not activate the
+first-party authority. The Phase B browser stack is consolidated in open
+[#7880](https://github.com/boardsesh/boardsesh/pull/7880); references below to
+pre-B5 code remaining on main do not describe that unmerged PR's final tree.
 
 BA-05 was re-scoped on 2026-11-16 by [#7596](https://github.com/boardsesh/boardsesh/issues/7596). Its design is in [better-auth-browser-session.md](./better-auth-browser-session.md). Docs carrying a "Superseded by #7596" banner describe browser binding code that is being removed. Row #7299 below is where the publication decisions behind that design started.
 
@@ -9,6 +19,14 @@ BA-05 was re-scoped on 2026-11-16 by [#7596](https://github.com/boardsesh/boards
 The ten-plus stacked PRs this guide used to list (#7282 to #7316) were closed as superseded. Their code landed on main through the consolidated PRs #7323 and #7350, then #7437 to #7443, #7456 to #7459, #7462 to #7467, #7471 and #7482 to #7505. The proof branch PR #7280 and the catalog check #7321 merged on 2026-11-09. Read the slice notes below for design and measured evidence; each note's PR number and migration number is the one it had at the time and may differ from main (the foundation tables are in `0291`, the authority tables in `0306`). To review what is merged now, start from the switch table in the rollout doc and follow its links.
 
 Direction changed on 2026-11-16: [#7596](https://github.com/boardsesh/boardsesh/issues/7596) deletes the browser binding, renewal, expired-binding, proof-cookie, lease and coordinator design that the older browser notes describe. Its Phase A deleted the www code behind those notes and every readiness gate that returned `false`, and the notes that only described that code went with it. The backend binding core (`authority/browser-binding.ts`) and the shared `@boardsesh/auth-protocol/browser-binding-v1` module remain until B5, with the binding-table readers, the `private-browser-v1` database profile, `CURRENT_STORE_BROWSER_BINDING_MODE` and a dead `BrowserBackendConsumerError` branch in mobile error reporting; [What is removed, and why](./better-auth-browser-session.md#what-is-removed-and-why) explains each. Where a remaining note (`better-auth-renewed-web-lineage`, `better-auth-session-publication`, `better-auth-web-credential-proofs`) still describes that design, read it as history; [better-auth-browser-session.md](./better-auth-browser-session.md) is current.
+
+## Historical slice review snapshots
+
+The slice notes below record their checks before the review stacks were
+consolidated. Every "ready", "current-head" and feedback-monitoring statement
+in these snapshots describes that recorded review, not a live GitHub status.
+Their PRs may now be merged or closed. Use the acceptance ledger linked above
+for current open work and closure gates.
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
