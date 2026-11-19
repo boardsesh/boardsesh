@@ -28,7 +28,8 @@ export function buildWallGlowInput({
   for (const hold of parsedHolds) {
     if (seen.has(hold.id)) continue;
     seen.add(hold.id);
-    holds.push({ x: hold.cx, y: hold.cy, color: roleColors.get(hold.role) ?? hold.color });
+    // The hold id names the light across climbs, so the frost holds a hold lit in both.
+    holds.push({ x: hold.cx, y: hold.cy, color: roleColors.get(hold.role) ?? hold.color, id: hold.id });
   }
   return {
     key: `${climbUuid ?? ''}|${frames}|${mirrored ? 'm' : ''}|${[...roleColors.values()].join()}`,

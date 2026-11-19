@@ -1,5 +1,6 @@
 import React from 'react';
-import Button from '@mui/material/Button';
+import { importPathChosen } from '@boardsesh/analytics';
+import { WebsiteJourneyButton, WebsiteJourneyLink } from '@/app/components/marketing/website-journey-link';
 import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -30,16 +31,22 @@ export default async function BringYourLogbookPage() {
         <HelpSteps steps={[t('migration.account.step1'), t('migration.account.step2'), t('migration.account.step3')]} />
         <Prose>{t('migration.account.sync')}</Prose>
         <Stack direction="row">
-          <Button href="#get-the-app" variant="contained" sx={{ display: { xs: 'inline-flex', sm: 'none' } }}>
+          <WebsiteJourneyButton
+            event={importPathChosen('account-link')}
+            href="#get-the-app"
+            variant="contained"
+            sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+          >
             {t('migration.install')}
-          </Button>
-          <Button
+          </WebsiteJourneyButton>
+          <WebsiteJourneyButton
+            event={importPathChosen('account-link')}
             href={buildAppHandoffUrl('/auth/login')}
             variant="contained"
             sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
           >
             {t('migration.account.signIn')}
-          </Button>
+          </WebsiteJourneyButton>
         </Stack>
       </PageSection>
 
@@ -49,7 +56,9 @@ export default async function BringYourLogbookPage() {
             <>
               <strong>{t('migration.legacy.request')}</strong>
               <Prose>{t('migration.legacy.export')}</Prose>
-              <MuiLink href="mailto:support@auroraclimbing.com">{t('migration.legacy.support')}</MuiLink>
+              <WebsiteJourneyLink event={importPathChosen('aurora-export')} href="mailto:support@auroraclimbing.com">
+                {t('migration.legacy.support')}
+              </WebsiteJourneyLink>
             </>,
             t('migration.legacy.signIn'),
             <>

@@ -45,9 +45,10 @@ export const climbOverlaySwapCommandApi = readSwapCommandApi();
 
 /**
  * The native swap look (`swapLookVersion`): 2 on iOS and Android binaries that
- * draw it, 0 on older binaries, which would reject its longer swap frames. An
- * Android phone that cannot build the look's GLES program reports 0 too
- * (`OverlaySwapLookProgram.kt`), and keeps the shipped swap.
+ * implement it, 0 on older binaries, which would reject its longer swap frames.
+ * Current Android binaries compile lazily for an eligible mounted view and
+ * fall back to the base swap if the driver rejects the program. Earlier Android
+ * binaries probed at startup and may report 0 for an unsupported driver.
  * The player sends its look only from 2 (`play-drawer/player-swap-look.ts`).
  */
 function readSwapLookVersion(): number {
@@ -62,12 +63,13 @@ function readSwapLookVersion(): number {
 
 export const climbOverlaySwapLookVersion = readSwapLookVersion();
 
-/** How Android's swap look probe ended (`OverlaySwapLookProbe.kt`). */
+/** Historical startup-probe results from earlier Android binaries. */
 export type ClimbOverlaySwapLookProbeResult = 'built' | 'failed' | 'timeout' | 'cached-built' | 'cached-failed';
 
 /**
- * The module constant `swapLookProbe`: why `swapLookVersion` is what it is on
- * Android. `cached-*` answers come from an earlier launch on the same GPU
+ * Earlier Android binaries expose `swapLookProbe` to explain `swapLookVersion`.
+ * Current binaries compile lazily and omit this constant. `cached-*` answers
+ * come from an earlier launch on the same GPU
  * driver, app build and look source; a `timeout` is never stored, so the next
  * launch probes again.
  */
@@ -87,7 +89,7 @@ const SWAP_LOOK_PROBE_RESULTS: readonly ClimbOverlaySwapLookProbeResult[] = [
   'cached-failed',
 ];
 
-/** The constant's value, or null for anything else (iOS and older binaries have no probe). */
+/** The historical constant's value, or null for binaries without a startup probe. */
 export function parseSwapLookProbe(value: unknown): ClimbOverlaySwapLookProbe | null {
   if (typeof value !== 'object' || value === null) return null;
   const { result, ms, failure } = value as { result?: unknown; ms?: unknown; failure?: unknown };
@@ -109,5 +111,5 @@ function readSwapLookProbe(): ClimbOverlaySwapLookProbe | null {
   }
 }
 
-/** Android only: how the probe behind `climbOverlaySwapLookVersion` ended; null on iOS and older binaries. */
+/** Earlier Android binaries only; null on iOS and binaries with lazy shader compilation. */
 export const climbOverlaySwapLookProbe = readSwapLookProbe();

@@ -145,7 +145,7 @@ function VariantStack({ variants, compact = false }: { variants: readonly Varian
   );
 }
 
-/** A second climb, so the moving frost has somewhere to glide to. */
+/** A second climb, so the moving frost has somewhere to change to. */
 const GLOW_NEXT: WallGlowInput = {
   key: 'drive-mode-story-next',
   holds: [
@@ -162,7 +162,11 @@ const GLOW_NEXT: WallGlowInput = {
   boardHeight: 150,
 };
 
-/** Driving, with Next every 2.5 s: the lights breathe, then glide to the next climb. */
+/**
+ * Driving, with Next every 2.5 s: the lights breathe, then change climbs. With
+ * no board here, the frost runs its own release: the old lights go out, the
+ * next climb's fill in from the right edge.
+ */
 function MovingFrost() {
   const [next, setNext] = useState(false);
   useEffect(() => {
@@ -239,7 +243,7 @@ const stories: StoryModule = {
       render: () => <VariantStack compact variants={[HINTS[1], HINTS[2], DRAG[1]]} />,
     },
     movingFrost: {
-      name: 'Driving: the frost breathes and glides on Next',
+      name: 'Driving: the frost breathes and changes climbs on Next',
       render: () => <MovingFrost />,
     },
     tryIt: {

@@ -103,23 +103,16 @@ function initializeAndRetainDatabase(db: SQLiteDatabase): Promise<void> {
 /**
  * Opens the offline database and publishes it to everything below.
  *
- * **Nothing below this provider receives its parent's re-renders (#5654).**
- * `SQLiteProvider` is `memo()`'d with a comparator over its connection props
- * only (`databaseName`, `options`, `assetSource`, `directory`, `onInit`,
- * `onError`, `useSuspense`; expo-sqlite `build/hooks.js`). It never compares
- * `children`, and every prop passed here is stable, so it renders once and then
- * keeps serving the `children` it got the first time. In `app/_layout.tsx` that
- * is the whole app: a prop built from `RootLayout` state and passed to anything
- * inside this provider stays at its first-render value. That is how the four
- * launch gates' `ready={authReady && fontsReady}` stayed `false` from 2.2.0 on.
+ * Historically, SQLiteProvider's memo comparator ignored `children` (#5654).
+ * With stable connection props, it kept serving its first-render children, so
+ * the four launch gates' `ready={authReady && fontsReady}` stayed `false` from
+ * 2.2.0 on. Expo SQLite 58.0.18 compares children and forwards those updates.
  *
- * Share such state through a context provided ABOVE this component, as
- * `LaunchReadyProvider` does: a context value change reaches its consumers past
- * a memo. The alternative, handing `children` through a context here so they
- * re-render with the parent, was deliberately not taken in #5654. The tree has
- * run this way since July, and un-freezing all of it in one fleet-wide OTA is a
- * wider change than the four gates needed. `root-layout-memo-freeze-guard`
- * fails if `_layout.tsx` passes RootLayout state as a prop below this provider.
+ * Keep launch readiness in `LaunchReadyProvider` ABOVE this component: its
+ * context reaches consumers regardless of SQLiteProvider's memo behavior.
+ * The launch-ready regression covers both historical and current comparators;
+ * `root-layout-memo-freeze-guard` preserves this contract by rejecting RootLayout
+ * state passed as a prop below this provider.
  */
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   return (

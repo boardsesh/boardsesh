@@ -1,47 +1,31 @@
-Boardsesh gibt es jetzt auch auf Italienisch.
+Neu in 2.8.0
 
-SIEH, WANN DU DAS BOARD BELEUCHTEST
+MEHR MÖGLICHKEITEN ZU TRAINIEREN
 
-Antippen zeigt einen Boulder ohne Licht. „Am Board beleuchten“ beleuchtet ihn, und du steuerst das Board: Deine nächsten Boulder leuchten, bis die Zeit um ist (zuerst 45 s). Taste nach links wischen: ohne Ende; „Du steuerst das Board“ antippen stoppt.
+Erstelle Workouts mit 4x4, Am Limit und Im Minutentakt, zusätzlich zu Volumen, Pyramide, Leiter und Grad-Fokus. Schau dir Boulder und Pausen vor dem Start an. Pyramiden können auf denselben Bouldern wieder absteigen. Wähle unter Einstellungen > Timer, ob der Countdown vibriert und die Pause auf dem Sperrbildschirm erscheint.
 
-iPad und iPhone Duo: mehr Platz fürs Board
+MACH WEITER, WO DU AUFGEHÖRT HAST
 
-Auf dem iPad bekommen deine Boulder den ganzen Bildschirm, und der Boulder an der Wand sitzt unten in einem Mini-Player. Tippe darauf, um den Player zu öffnen. Im Querformat sitzt das Board neben Als Nächstes, deinem Routenbuch und der Beta. Montiere ein iPad am Board und öffne die Wandanzeige im Mini-Player: der Boulder im Vollbild, von der Matte aus lesbar.
+Unter Start findest du deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den nächsten Versuch. Sieh dein letztes Workout und starte eine Session über die Session-Karte. Wähle selbst, welche Bereiche du siehst. Mit aktiviertem Standort findest du in der Board-Auswahl Boards in der Nähe und die Boards deiner Halle. Deine eigenen Boulder findest du unter Entdecken.
 
-Öffne dein iPhone Duo, und das Board sitzt neben deiner Liste. Baue ein Workout auf einem geöffneten Duo und sieh die geplanten Boulder neben deinen Blöcken.
+Beleuchte deine Spraywall
 
-Wähle zwei Spalten für die Boulder-Liste, wenn auf dem iPad genug Platz ist. Wähle die Mini-Player-Tasten in den Ansichtsoptionen, trage eine Begehung ein, ohne den Player zu öffnen, und erreiche Favorit, Playlist und Teilen über sein Menü auf breiten Bildschirmen.
+Verbinde deine Spraywall per WLAN mit WLED. Zeichne Löcher, LEDs und Kabel auf einem zoombaren Foto ein, teste einzelne Griffe und speichere die Einrichtung für deine Crew. Finde Controller in deinem WLAN, stelle die Helligkeit ein und wähle eine automatische Abschaltzeit für die Beleuchtung über WLAN.
 
-DEIN PAUSEN-TIMER AUF DEM SPERRBILDSCHIRM
+Kompatible Controller mit Boardsesh-Bluetooth-Unterstützung können Boulder auch über Bluetooth beleuchten. Die Installation dieser Unterstützung bleibt eine freiwillige Beta für passende Controller, mit Kompatibilitätsprüfung und gesonderter Zustimmung.
 
-Dein Pausen-Countdown erscheint auf dem Sperrbildschirm und in der Dynamic Island. In den letzten Sekunden tickt es leise, und am Ende der Pause ertönt ein Ton, auch wenn dein Handy auf lautlos steht.
+FINDE UND TEILE DEINEN NÄCHSTEN BOULDER
 
-WORKOUTS IN BLÖCKEN
+Kilters verifizierte Boulder haben einen eigenen Schnellfilter neben Grad. Teile Playlists, Profile, Sessions, Hallen und Boards mit einem beleuchteten Boulder in der Linkvorschau. In Playlist-Kopfzeilen ist Teilen jetzt direkt erreichbar.
 
-Baue eine Session aus Blöcken: Aufwärmen, dann eine Pyramide, dann Volumen. Füge mitten in der Session einen Block hinzu, gib jedem Block eigene Boulder-Filter und sieh auf einen Blick, wo du stehst. Workouts wählen zuerst Boulder, die du noch nicht getoppt hast, können Getoppte und Versuchte überspringen und sich aus deinen getoppten oder gelikten Bouldern füllen. Markiere einen Sturz oder eine Begehung im Mini-Player. Der Session-Rückblick zeigt deine Blöcke, Wiederholungen und Ergebnisse zusammen.
+BESSER LESBAR, FLÜSSIGER BLÄTTERN
 
-ABSPIELEN AUS DER LISTE, DIE DU ANGETIPPT HAST
+GPU-beschleunigte Board-Darstellung macht die Übergänge zwischen Bouldern auf unterstützten Boards und Geräten flüssiger.
 
-Der Player zeigt deine Liste, und beim Wischen bleibst du darin: Routenbuch, Sessions, Profile oder ähnliche Boulder. Playlists laufen, ohne deine Warteschlange anzutasten. Wische in jeder Liste über einen Boulder, um ihn als Nächstes oder als Letztes zu spielen.
+Neue Farben und Layouts geben deinen Bouldern mehr Platz. Text folgt der auf deinem iPhone eingestellten Schriftgröße genauer, und VoiceOver liest nach dem Wischen den neuen Boulder vor. Übergänge beachten Bewegung reduzieren. Lange Bouldernamen scrollen wieder, und die Boulder-Liste bleibt nach einem Wechsel des Gradfilters sichtbar.
 
-MEHR NACH DEINEM GESCHMACK
+VERBINDE TRAININGS-APPS
 
-- Sortiere jede Playlist nach Schwierigkeit, zuletzt hinzugefügt, Bewertung oder zufällig. Gelikt, Fünf Sterne, Projekte und Seiten von Routenbauer*innen lassen sich auch sortieren und filtern.
-- Boulder hat einen eigenen Tab. Tippe erneut darauf für Filter und die Namenssuche. Auf dem iPhone öffnet sich Filter in halber Höhe und sieht aus wie die iOS-Einstellungen.
-- Wähle, welche Bereiche auf Start erscheinen und in welcher Reihenfolge, und ob die App auf Start oder auf Boulder öffnet.
-- Einstellungen hat nur noch sechs Seiten, mit deinen Timern an einem Ort.
-- Trage eine Begehung in einem anderen Winkel ein als dem an der Wand.
-- Lass dich über Kommentare zu deinen Sessions, Bouldern, Playlists, Boards und Hallen benachrichtigen.
-
-KORREKTUREN FÜR DEINE NÄCHSTE SESSION
-
-- Routenbuch, Likes und Playlists funktionieren ohne Empfang. Heruntergeladene Boards werden nicht mehr wöchentlich neu geladen.
-- Board-Scans finden MoonBoards und neuere Kilter-Boxen, die nächstgelegenen zuerst. Boardsesh fragt beim ersten Scan nach Bluetooth, nicht beim Start.
-- Nach unten wischen schließt den Player wieder. Beleuchtete Griffe bleiben beim Stöbern sichtbar.
-- In Hallen mit mehreren Boards folgt die Verbindung dem Board deines aktuellen Boulders. Die Taste zeigt den Lichtstatus, auch wenn deine Crew das Licht ausschaltet.
-- Gespiegelte Boulder behalten ihre Ausrichtung im Routenbuch und im Warteschlangenverlauf.
-- Lösche mehrere Routenbucheinträge nacheinander oder die Tageseinträge eines Boulders zusammen.
-- Boulder, die du entlikest, verschwinden sofort aus Gelikt.
-- Bessere Unterstützung für VoiceOver und große Schrift.
+Öffne Workouts aus kompatiblen Trainings-Apps anderer Anbieter in Boardsesh und erlaube Apps, dein Routenbuch zu lesen. Infos für Entwickler*innen: https://www.boardsesh.com/developers/
 
 Kostenlos, ohne Werbung, Open Source.

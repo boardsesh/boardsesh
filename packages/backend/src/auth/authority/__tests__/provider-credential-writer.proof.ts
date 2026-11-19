@@ -28,6 +28,12 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { createCredentialWriterEnvironment } from './fixtures/credential-writer-environment';
+import {
+  addUsersEmailCheck,
+  addUsersEmailKey,
+  dropUsersEmailCheck,
+  dropUsersEmailKey,
+} from './fixtures/users-email-0329-ddl';
 
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 const digest = () => randomBytes(32).toString('hex');
@@ -37,8 +43,8 @@ const qualify = (contract: CredentialWriterContract = 'private-provider-v1') =>
     expectedDatabase: environment.databaseName,
     contract,
   });
-async function drift(apply: string, restore: string | readonly string[], code: string) {
-  await environment.owner.unsafe(apply);
+async function drift(apply: string | readonly string[], restore: string | readonly string[], code: string) {
+  for (const statement of typeof apply === 'string' ? [apply] : apply) await environment.owner.unsafe(statement);
   try {
     await expect(qualify()).rejects.toMatchObject({ code });
   } finally {
@@ -308,6 +314,62 @@ describe('private-provider-v1 on the actual restricted credential LOGIN', () => 
       'REVOKE UPDATE ON public.app_workouts FROM boardsesh_identity_writer',
       'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
     );
+  });
+
+  it('pins the 0329 users email key and CHECK, refusing the 0312 users shape and unreviewed variants', async () => {
+    const [catalog] = await environment.owner<{ keyUsable: boolean; checkValidated: boolean }[]>`
+      SELECT (SELECT indisunique AND indisvalid FROM pg_index WHERE indexrelid='public.users_email_lower_key'::regclass) AS "keyUsable",
+        (SELECT convalidated FROM pg_constraint WHERE conrelid='public.users'::regclass AND conname='users_email_normalized') AS "checkValidated"`;
+    expect(catalog).toEqual({ keyUsable: true, checkValidated: true });
+    expect((await qualify()).contract).toBe('private-provider-v1');
+    const code = 'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE';
+    // The historical0312 users shape: a canonical profile never accepts both.
+    await drift([dropUsersEmailKey, dropUsersEmailCheck], [addUsersEmailKey, addUsersEmailCheck], code);
+    // The same index name without uniqueness.
+    await drift(
+      [dropUsersEmailKey, addUsersEmailKey.replace('UNIQUE ', '')],
+      [dropUsersEmailKey, addUsersEmailKey],
+      code,
+    );
+    // The same CHECK name with another stored-form expression.
+    await drift(
+      [
+        dropUsersEmailCheck,
+        'ALTER TABLE public.users ADD CONSTRAINT users_email_normalized CHECK (email = lower(email))',
+      ],
+      [dropUsersEmailCheck, addUsersEmailCheck],
+      code,
+    );
+    // The exact expression left NOT VALID: existing rows were never checked.
+    await drift(
+      [dropUsersEmailCheck, `${addUsersEmailCheck} NOT VALID`],
+      [dropUsersEmailCheck, addUsersEmailCheck],
+      code,
+    );
+  });
+
+  it('refuses an unusable post-migration email index with the same reviewed definition', async () => {
+    const firstUserId = randomUUID();
+    const secondUserId = randomUUID();
+    const address = `invalid-index-${randomUUID()}@example.invalid`;
+    expect((await qualify()).contract).toBe('private-provider-v1');
+    await environment.owner.unsafe(dropUsersEmailKey);
+    try {
+      await environment.owner`INSERT INTO users(id,email) VALUES(${firstUserId},${address}),(${secondUserId},${address})`;
+      await expect(
+        environment.owner.unsafe(addUsersEmailKey.replace('INDEX ', 'INDEX CONCURRENTLY ')),
+      ).rejects.toMatchObject({ code: '23505' });
+      const [index] = await environment.owner<{ definition: string; valid: boolean }[]>`
+        SELECT pg_get_indexdef(indexrelid) AS definition,indisvalid AS valid
+        FROM pg_index WHERE indexrelid='public.users_email_lower_key'::regclass`;
+      expect(index).toEqual({ definition: addUsersEmailKey, valid: false });
+      await expect(qualify()).rejects.toMatchObject({ code: 'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE' });
+    } finally {
+      await environment.owner.unsafe(dropUsersEmailKey);
+      await environment.owner`DELETE FROM users WHERE id IN (${firstUserId},${secondUserId})`;
+      await environment.owner.unsafe(addUsersEmailKey);
+    }
+    expect((await qualify()).contract).toBe('private-provider-v1');
   });
 
   it('requires explicit nongrantable direct revocation EXECUTE and refuses PUBLIC or overload alternatives', async () => {

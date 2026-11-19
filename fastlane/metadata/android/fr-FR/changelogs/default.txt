@@ -1,6 +1,6 @@
-Nouveautés de 2.7 :
-- Toucher affiche sans allumer. Allumer sur la board : tes choix s’allument jusqu’à la fin du minuteur (45 s). Balaye à gauche : sans limite ; touche pour arrêter.
-- Italien. Compte à rebours et son de repos dans la notification.
-- Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
-- Trie et filtre playlists, Aimées et Projets.
-- Carnet, likes et playlists hors ligne. Les scans trouvent les MoonBoards.
+Nouveau en 2.8.0 :
+- 4x4, À la limite, À la minute. Accueil : ta semaine et projets.
+- Spraywall avec WLED ; extinction automatique en Wi-Fi. Installation Bluetooth en bêta facultative pour contrôleurs compatibles.
+- Interface Android simplifiée, navigation compacte et commandes sur écran verrouillé revues.
+- Rendu GPU plus fluide sur boards/appareils compatibles.
+- Ouvre les entraînements d’applis compatibles et autorise la lecture du carnet : https://www.boardsesh.com/developers/

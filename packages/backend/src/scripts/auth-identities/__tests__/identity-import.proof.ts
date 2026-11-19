@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   accounts,
@@ -16,10 +16,17 @@ import {
   users,
 } from '@boardsesh/db/schema';
 import { fencePlan, readFenceCatalog, verifyFence } from '@boardsesh/db/auth-web-acl';
+import { qualifyCredentialWriter } from '@boardsesh/db/credential-writer-acl';
 import {
   createCredentialWriterEnvironment,
   ownedCredentialProofUrl,
 } from '../../../auth/authority/__tests__/fixtures/credential-writer-environment';
+import {
+  addUsersEmailCheck,
+  addUsersEmailKey,
+  dropUsersEmailCheck,
+  dropUsersEmailKey,
+} from '../../../auth/authority/__tests__/fixtures/users-email-0329-ddl';
 import { prepareProjectionUnderUsersTableLock } from '../../../auth/current-store/email-reservations';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../../auth/current-store/foundation-context';
 import {
@@ -35,6 +42,7 @@ import { mirrorIdentityIfEnabled } from '../../../auth/authority/sync-identity';
 import { closeCredentialDatabase } from '../../../auth/credential-database';
 import { identityRefusalCode, runImportIdentities } from '../../auth-import-identities';
 import { runReconcileIdentities } from '../../auth-reconcile-identities';
+import { runAuthAuthority } from '../../auth-authority';
 
 /**
  * The code gates stay open in this build (LEGACY_WEB_IDENTITY_WRITERS and the
@@ -72,10 +80,10 @@ vi.mock('../../../auth/authority/activation-gates', async (importOriginal) => {
  * code gates above are mocked. CI runs it straight after the bootstrap, before
  * any other proof connects, because a template copy needs the source to be idle.
  *
- * The duplicate-email pair and its mixed-case member only show that the import
- * keys on user IDs and ignores email: `activate` refuses that state
- * (EMAIL_COLLISIONS_REMAIN, NORMALIZED_EMAILS_REQUIRED), so production cannot
- * reach `enforced` with it.
+ * The canonical import uses normalized, distinct addresses after BA-02 cleanup.
+ * A separate pre-cleanup control removes the exact 0329 guards only in this
+ * owned copy, proves activation and writer qualification refuse, then restores
+ * the guards and requalifies before any import runs.
  */
 const canonical = ownedCredentialProofUrl();
 const copyName = `epic6975_identity_import_${randomUUID().replaceAll('-', '')}`;
@@ -138,14 +146,19 @@ const climbers: readonly Climber[] = [
     providers: [['google', '100000000000000000099']],
     deleting: true,
   },
-  // One address in two case spellings: a duplicate-email group BA-02 has not resolved yet.
+  // Two accounts retained by BA-02 cleanup: import preserves each stable UID.
   {
     id: 'ba04-e2e-g-duplicate',
-    email: 'Shared.Address@example.test',
+    email: 'shared.address.first@example.test',
     verified: at('2019-05-06T07:08:09.000Z'),
     password: 'first-of-two',
   },
-  { id: 'ba04-e2e-h-duplicate', email: 'shared.address@example.test', verified: null, password: 'second-of-two' },
+  {
+    id: 'ba04-e2e-h-duplicate',
+    email: 'shared.address.second@example.test',
+    verified: null,
+    password: 'second-of-two',
+  },
   // Facebook sign-in is retired; the stored identity must survive exactly, never remapped.
   {
     id: 'ba04-e2e-i-facebook',
@@ -319,6 +332,48 @@ afterAll(async () => {
 
 describe('identity mirror and import preconditions on the real journal', () => {
   let usersBefore: (typeof users.$inferSelect)[];
+
+  it('refuses pre-cleanup email state and requalifies only after restoring the canonical guards', async () => {
+    const expectedWriter = { expectedRole: 'boardsesh_identity_writer', expectedDatabase: copyName, contract } as const;
+    expect((await qualifyCredentialWriter(environment.writer, expectedWriter)).contract).toBe(contract);
+    const originalManifest = await manifest();
+    const unresolvedIds = [randomUUID(), randomUUID()] as const;
+    await environment.owner.unsafe(dropUsersEmailKey);
+    try {
+      await environment.owner.unsafe(dropUsersEmailCheck);
+      await environment.ownerDatabase.insert(users).values([
+        { id: unresolvedIds[0], email: 'Unresolved.Import@example.invalid' },
+        { id: unresolvedIds[1], email: 'unresolved.import@example.invalid' },
+      ]);
+      await expect(qualifyCredentialWriter(environment.writer, expectedWriter)).rejects.toMatchObject({
+        code: 'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE',
+      });
+      await environment.ownerDatabase
+        .update(authEmailProjection)
+        .set({ phase: 'prepared' })
+        .where(eq(authEmailProjection.projectionId, projectionId));
+      const activate = () =>
+        runAuthAuthority(['activate', '--confirm-host', host], { AUTH_OPERATOR_DATABASE_URL: copyUrl.toString() });
+      await expect(activate()).rejects.toThrow('EMAIL_COLLISIONS_REMAIN');
+      await environment.ownerDatabase
+        .update(users)
+        .set({ email: 'other.unresolved.import@example.invalid' })
+        .where(eq(users.id, unresolvedIds[1]));
+      await expect(activate()).rejects.toThrow('NORMALIZED_EMAILS_REQUIRED');
+    } finally {
+      await environment.ownerDatabase.delete(users).where(inArray(users.id, unresolvedIds));
+      await environment.owner.unsafe(addUsersEmailKey);
+      // DROP IF EXISTS also handles failure before the original CHECK was removed.
+      await environment.owner.unsafe(dropUsersEmailCheck);
+      await environment.owner.unsafe(addUsersEmailCheck);
+      await environment.ownerDatabase
+        .update(authEmailProjection)
+        .set({ phase: originalManifest.phase })
+        .where(eq(authEmailProjection.projectionId, projectionId));
+    }
+    expect(await manifest()).toEqual(originalManifest);
+    expect((await qualifyCredentialWriter(environment.writer, expectedWriter)).contract).toBe(contract);
+  });
 
   it('refuses on the open code gates even though every database precondition holds', async () => {
     usersBefore = await environment.ownerDatabase.select().from(users).orderBy(users.id);

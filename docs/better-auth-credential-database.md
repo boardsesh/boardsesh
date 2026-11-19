@@ -136,6 +136,23 @@ private web HTTP commands through `private-provider-v1` alongside the
 provider command proofs. Both JUnit artifacts are required. There is no generic
 migration cutoff, schema CHECK rewrite or permissive old-profile fallback.
 
+### users after 0329
+
+`0329_account_email_uniqueness` changes `users`, a relation every profile pins: it
+adds the unique index `users_email_lower_key` on `lower(email)` and the validated
+CHECK `users_email_normalized` (the stored email equals its trimmed, lowercased
+form). The canonical profiles (`private-provider-v1` and the profiles built on it)
+run against the full current journal, so they now take the `users` shape from its
+own reviewed receipt, `packages/db/src/credential-writer-users-0329.ts`. That is
+the same move 0313 made for the security-event CHECK. The historical web and
+browser profiles keep the original `users` shape, because their database stops at
+0312. No profile accepts both shapes. The proofs refuse the 0312 shape on the
+canonical database, the 0329 shape on the historical one, and three near misses:
+a non-unique index under the same name, another CHECK expression under the same
+name, and the exact CHECK left `NOT VALID`. A database that kept the check
+`NOT VALID` because of legacy rows (an old dev volume) cannot qualify a canonical
+profile until `VALIDATE CONSTRAINT` succeeds.
+
 The ordinary staged first-password path remains closed pending its separate
 account-bound existing-email confirmation and publication proof. Email
 confirmation itself must not create fresh provider reauthentication evidence.

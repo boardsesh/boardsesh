@@ -115,6 +115,16 @@
       "types": "./src/credential-writer-acl.ts",
       "import": "./src/credential-writer-acl.ts",
       "default": "./src/credential-writer-acl.ts"
+    },
+    "./errors": {
+      "types": "./src/errors.ts",
+      "import": "./src/errors.ts",
+      "default": "./src/errors.ts"
+    },
+    "./account-email-sql": {
+      "types": "./src/account-email-sql.ts",
+      "import": "./src/account-email-sql.ts",
+      "default": "./src/account-email-sql.ts"
     }
   },
   "scripts": {

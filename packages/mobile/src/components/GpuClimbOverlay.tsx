@@ -122,7 +122,7 @@ export function GpuClimbOverlay({
   onReset,
   onRelease,
 }: Props) {
-  // Once per process: why Android's probe left the swap look off, for any later error report.
+  // Earlier Android binaries only: retain their startup-probe diagnostic breadcrumb.
   useEffect(() => noteSwapLookProbe(climbOverlaySwapLookProbe), []);
   const systemReduceMotion = useReduceMotion();
   const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
@@ -289,9 +289,10 @@ export function GpuClimbOverlay({
           ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
           : {})}
         {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
-        {...(swapLook
+        {...(climbOverlaySwapLookVersion >= SWAP_LOOK_NATIVE_VERSION
           ? {
-              swapLook,
+              // Explicitly clear a previously mounted look when its gate closes.
+              swapLook: swapLook ?? null,
               swapLookStateEvents: onTransitionLook !== undefined,
               ...(onTransitionLook ? { onSwapLookState: swapLookState } : {}),
             }

@@ -178,9 +178,9 @@ internal object OverlayPacketArena {
                     packetStatus(output.status)
                     val description=PacketHeader.parse(output.json(maximum=65536),output.useBuffer(1){it.remaining()},output.useBuffer(2){it.remaining()})
                     // The swap look reads hold centres, roles and ids per frame; the descriptors leave the CPU at
-                    // upload, so plain arrays are kept, and only while the module offers the look.
-                    val lookScenes=if(!OverlaySwapLookProgram.offered)OverlaySwapLook.PacketScenes.NONE
-                        else output.useBuffer(1) { OverlaySwapLook.PacketScenes.decode(it,description) }
+                    // upload. Retain the small plain arrays even with the look off so
+                    // enabling it on an already prepared packet needs no geometry work.
+                    val lookScenes=output.useBuffer(1) { OverlaySwapLook.PacketScenes.decode(it,description) }
                     EncodedPacket(keys,records,pixelBytes,chunks,acquired,placement,output,description,lookScenes)
                 } catch(failure: Throwable) { acquired.values.forEach { it.close() };encoded?.close();chunks.close();throw failure }
             }

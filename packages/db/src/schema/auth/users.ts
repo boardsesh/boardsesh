@@ -1,22 +1,31 @@
-import { pgTable, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { sqlNormalizedAccountEmail } from '../../account-email-sql';
+import { pgTable, text, integer, timestamp, primaryKey, uniqueIndex, check } from 'drizzle-orm/pg-core';
 
 // Keep persisted account kinds owned by the database. NextAuth's adapter type
 // also imports Next.js globals, which must not leak into Node-only consumers.
 type AccountType = 'oauth' | 'email' | 'credentials';
 
 // NextAuth.js tables
-export const users = pgTable('users', {
-  id: text('id')
-    .notNull()
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: text('name'),
-  email: text('email').notNull(),
-  emailVerified: timestamp('emailVerified', { mode: 'date' }),
-  image: text('image'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: text('id')
+      .notNull()
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    name: text('name'),
+    email: text('email').notNull(),
+    emailVerified: timestamp('emailVerified', { mode: 'date' }),
+    image: text('image'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    emailLowerKey: uniqueIndex('users_email_lower_key').on(sql`lower(${table.email})`),
+    emailNormalized: check('users_email_normalized', sql`${table.email} = ${sqlNormalizedAccountEmail(table.email)}`),
+  }),
+);
 
 export const accounts = pgTable(
   'accounts',

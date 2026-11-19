@@ -3,6 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { qualifyCredentialWriter } from '@boardsesh/db/credential-writer-acl';
 import { fencePlan, readFenceCatalog, verifyFence } from '@boardsesh/db/auth-web-acl';
 import { createCredentialWriterEnvironment, ownedCredentialProofUrl } from './fixtures/credential-writer-environment';
+import {
+  addUsersEmailCheck,
+  addUsersEmailKey,
+  dropUsersEmailCheck,
+  dropUsersEmailKey,
+} from './fixtures/users-email-0329-ddl';
 
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 const qualify = () =>
@@ -44,6 +50,21 @@ describe('owned full-schema dedicated credential LOGIN qualification', () => {
         }),
       ).resolves.toEqual(receipt);
     });
+  });
+  it('keeps the historical0312 users shape and refuses the canonical0329 email key and CHECK', async () => {
+    const [catalog] = await environment.owner<{ emailObjects: number }[]>`
+      SELECT (SELECT count(*) FROM pg_index WHERE indrelid='public.users'::regclass AND indexrelid::regclass::text='users_email_lower_key')::integer
+        + (SELECT count(*) FROM pg_constraint WHERE conrelid='public.users'::regclass AND conname='users_email_normalized')::integer AS "emailObjects"`;
+    expect(catalog).toEqual({ emailObjects: 0 });
+    try {
+      await environment.owner.unsafe(addUsersEmailCheck);
+      await environment.owner.unsafe(addUsersEmailKey);
+      await expect(qualify()).rejects.toMatchObject({ code: 'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE' });
+    } finally {
+      await environment.owner.unsafe(dropUsersEmailKey);
+      await environment.owner.unsafe(dropUsersEmailCheck);
+    }
+    await expect(qualify()).resolves.toMatchObject({ contract: 'private-web-v1' });
   });
   it('refuses wrong database and privileged/wrong authenticated principals', async () => {
     await expect(

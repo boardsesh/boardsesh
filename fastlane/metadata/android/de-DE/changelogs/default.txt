@@ -1,6 +1,6 @@
-Neu in 2.7:
-- Antippen stöbert ohne Licht. Am Board beleuchten: deine Wahl leuchtet bis zum Timer (45 s). Taste nach links wischen: ohne Ende; antippen stoppt.
-- Jetzt auf Italienisch. Pausen-Countdown und Endton in der Benachrichtigung.
-- Workouts in Blöcken. Wischen bleibt in deiner Liste; als Nächstes oder Letztes spielen.
-- Playlists, Gelikt und Projekte sortieren/filtern.
-- Routenbuch, Likes und Playlists offline. Scans finden MoonBoards.
+Neu in 2.8.0:
+- 4x4, Am Limit, Im Minutentakt. Start: deine Woche und Projekte.
+- WLED-Spraywall mit WLAN-Abschaltautomatik. Bluetooth-Installation als freiwillige Beta für passende Controller.
+- Einfachere Android-Oberfläche, schlankere Navigation, neue Sperrbildschirmsteuerung.
+- Flüssigeres GPU-Rendering auf unterstützten Boards/Geräten.
+- Workouts kompatibler Apps öffnen, ihnen das Lesen deines Routenbuchs erlauben: https://www.boardsesh.com/developers/

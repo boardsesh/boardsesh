@@ -19,6 +19,7 @@ import {
 import { reconcileWebRuntimeAcl, quoteIdentifier } from '@boardsesh/db/auth-web-acl';
 import { runAuthAuthority } from '../../auth-authority';
 import { grantOwnedCredentialWriterCapabilities } from '../../../auth/authority/__tests__/fixtures/credential-writer-environment';
+import { addUsersEmailKey, dropUsersEmailKey } from '../../../auth/authority/__tests__/fixtures/users-email-0329-ddl';
 
 const WRITER_ROLE = 'boardsesh_identity_writer';
 // The current canonical journal's reviewed credential profile (CI's provider proofs use it too).
@@ -473,10 +474,20 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
   });
   it('activation rechecks users changed after preparation rather than trusting old counts', async () => {
     const identityIds = [randomUUID(), randomUUID()];
-    await drizzle(owner)
-      .insert(users)
-      .values(identityIds.map((id) => ({ id, email: 'collision-fence@example.invalid' })));
+    const [index] = await owner<{ definition: string; usable: boolean }[]>`
+      SELECT pg_get_indexdef(indexrelid) AS definition,
+        indisunique AND indisvalid AND indisready AND indislive AS usable
+      FROM pg_index WHERE indexrelid=to_regclass('public.users_email_lower_key')`;
+    // This database is suite-owned. Model the pre-cleanup state explicitly;
+    // canonical 0329 databases already prevent this collision at insertion.
+    if (index) {
+      expect(index).toEqual({ definition: addUsersEmailKey, usable: true });
+      await owner.unsafe(dropUsersEmailKey);
+    }
     try {
+      await drizzle(owner)
+        .insert(users)
+        .values(identityIds.map((id) => ({ id, email: 'collision-fence@example.invalid' })));
       await expect(runAuthAuthority(['activate', '--confirm-host', address.hostname], environment)).rejects.toThrow(
         'EMAIL_COLLISIONS_REMAIN',
       );
@@ -485,6 +496,14 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       });
     } finally {
       for (const id of identityIds) await drizzle(owner).delete(users).where(eq(users.id, id));
+      if (index) await owner.unsafe(addUsersEmailKey);
+    }
+    if (index) {
+      const [restored] = await owner<{ definition: string; usable: boolean }[]>`
+        SELECT pg_get_indexdef(indexrelid) AS definition,
+          indisunique AND indisvalid AND indisready AND indislive AS usable
+        FROM pg_index WHERE indexrelid='public.users_email_lower_key'::regclass`;
+      expect(restored).toEqual(index);
     }
   });
   it('reconciles as a restricted DDL owner without impersonating a separate helper owner', async () => {

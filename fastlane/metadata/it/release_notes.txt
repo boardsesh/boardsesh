@@ -1,47 +1,31 @@
-Boardsesh ora è disponibile in italiano.
+Novità della versione 2.8.0
 
-Sappi quando illumini il pannello
+Più modi per allenarti
 
-Toccare un blocco lo mostra senza illuminarlo. «Illumina il pannello» lo illumina e guidi tu il pannello: i blocchi successivi si illuminano finché non scade il tempo impostato (all’inizio 45 s). Scorri il pulsante a sinistra per guidare senza fine; tocca «Guidi tu il pannello» per fermarti.
+Crea allenamenti 4x4, Al limite e Al minuto, oltre a Volume, Piramide, Scala e Grado fisso. Guarda l’anteprima di blocchi e recuperi prima di iniziare. Le piramidi possono scendere sugli stessi blocchi. Scegli le vibrazioni del conto alla rovescia e se mostrare il recupero sulla schermata di blocco in Impostazioni > Timer.
 
-iPad e iPhone Duo: più spazio per il pannello
+Riprendi da dove eri rimasto
 
-Su iPad, i blocchi occupano tutto lo schermo e il blocco illuminato in parete resta in un mini player in basso. Toccalo per aprire il player. In orizzontale, il pannello affianca i prossimi blocchi, il diario e la beta. Fissa un iPad vicino al pannello e apri Schermo parete dal mini player: il blocco riempie lo schermo ed è leggibile dal materasso.
+Home riunisce la tua settimana di arrampicata, blocchi al tuo livello e progetti da riprovare. Guarda l’ultimo allenamento e avvia una session dalla scheda Session. Scegli quali sezioni vedere. Con la posizione attiva, il selettore ti avvicina i pannelli nelle vicinanze e quelli della tua palestra. Trova i tuoi blocchi in Scopri.
 
-Apri il tuo iPhone Duo e il pannello affianca la lista. Crea un allenamento con il Duo aperto e vedi i blocchi previsti accanto alle fasi.
+Illumina la tua Spraywall
 
-Scegli due colonne per la lista Blocchi quando c'è spazio su iPad. Scegli i pulsanti del mini player nelle opzioni di visualizzazione, registra una ripetizione senza aprire il player e accedi a Preferito, Playlist e Condividi dal suo menu sugli schermi larghi.
+Collega la tua Spraywall a WLED via Wi-Fi. Posiziona fori, LED e cavo su una foto ingrandibile, prova le singole prese e salva la configurazione per la crew. Trova i controller sul tuo Wi-Fi, regola la luminosità e scegli lo spegnimento automatico per l’illuminazione via Wi-Fi.
 
-Il timer di recupero sulla schermata di blocco
+I controller compatibili con il supporto Bluetooth di Boardsesh possono illuminare i blocchi anche via Bluetooth. L’installazione di questo supporto resta una beta facoltativa per controller compatibili, con verifica della compatibilità e consenso separato.
 
-Il conto alla rovescia del recupero compare sulla schermata di blocco e nella Dynamic Island. Negli ultimi secondi senti un ticchettio e alla fine un segnale acustico, anche con il telefono in silenzioso.
+Trova e condividi il prossimo blocco
 
-Allenamenti in fasi
+I blocchi Verificati di Kilter hanno un filtro rapido accanto a Grado. Condividi playlist, profili, session, palestre e pannelli con un blocco illuminato nell’anteprima del link. Condividi è a portata di mano nelle intestazioni delle playlist.
 
-Crea una session in più fasi: riscaldamento, poi piramide, poi volume. Aggiungi una fase durante la session, scegli filtri diversi per ogni fase e vedi subito a che punto sei. Gli allenamenti scelgono prima i blocchi che non hai chiuso, possono escludere quelli già chiusi o tentati e possono attingere a Chiusi o Blocchi che ti piacciono. Segna una caduta o una ripetizione dal mini player. Il riepilogo della session riunisce fasi, ripetizioni e risultati.
+Più leggibile, più fluido
 
-Scala dalla lista che hai toccato
+Il rendering del pannello accelerato dalla GPU rende più fluide le transizioni tra blocchi su pannelli e dispositivi supportati.
 
-Il player mostra da quale lista stai scalando e, quando scorri, rimani in quella lista: diario, session, profili o blocchi simili. Le playlist si riproducono senza modificare la coda. Scorri su un blocco in qualsiasi lista per metterlo subito dopo o in fondo.
+Colori e layout rinnovati lasciano più spazio ai blocchi. Il testo segue meglio la dimensione scelta sul tuo iPhone e VoiceOver annuncia il nuovo blocco dopo uno scorrimento. Le transizioni rispettano Riduci movimento. I nomi lunghi scorrono di nuovo e cambiare il filtro del grado mantiene l’elenco dei blocchi sullo schermo.
 
-Più modi per farla tua
+Collega le app di allenamento
 
-- Ordina le playlist per difficoltà, aggiunta più recente, valutazione o ordine casuale. Puoi ordinare e filtrare anche Blocchi che ti piacciono, Cinque stelle, Progetti e le pagine di chi traccia.
-- Blocchi ha una scheda dedicata. Toccala di nuovo per aprire Filtri e cercare per nome. Su iPhone, Filtri si apre a mezza altezza e riprende l'aspetto delle Impostazioni iOS.
-- Scegli quali sezioni mostrare in Home, in quale ordine e se aprire l'app su Home o Blocchi.
-- Le Impostazioni sono raccolte in sei pagine, con tutti i timer nello stesso posto.
-- Registra una ripetizione a un'inclinazione diversa da quella del pannello.
-- Ricevi notifiche sui commenti a session, blocchi, playlist, pannelli e palestre.
-
-Correzioni per la prossima session
-
-- Diario, Mi piace e playlist funzionano senza segnale. I pannelli scaricati non vengono più riscaricati ogni settimana.
-- La ricerca trova MoonBoard e centraline Kilter più recenti, iniziando da quelle più vicine. Boardsesh chiede il Bluetooth alla prima ricerca, non all'avvio.
-- Scorri verso il basso per chiudere il player. Le prese illuminate restano visibili mentre sfogli.
-- Nelle palestre con più pannelli, la connessione segue il pannello del blocco attuale. Il pulsante delle luci indica se è illuminato, in connessione o spento, anche quando qualcuno della crew lo spegne.
-- I blocchi specchiati mantengono l'orientamento nel diario e nella cronologia della coda.
-- Elimina più salite dal diario una dopo l'altra, oppure quelle di un blocco raggruppate nello stesso giorno.
-- Quando togli Mi piace a un blocco, sparisce subito da Blocchi che ti piacciono.
-- Migliore supporto per VoiceOver e testo grande.
+Apri in Boardsesh allenamenti da app di terze parti compatibili e autorizza le app a leggere il tuo diario. Dettagli per chi sviluppa: https://www.boardsesh.com/developers/
 
 Gratis, senza pubblicità, open source.

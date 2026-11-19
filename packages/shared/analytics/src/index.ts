@@ -231,3 +231,20 @@ export {
 // The `FEATURE_FLAG_OVERRIDES` syntax, read by www's server flags and by the
 // backend's developer-console check, so one env line means the same to both.
 export { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from './feature-flag-overrides';
+
+// Website journey clicks, with the same vocabulary for all public pages.
+export {
+  WEBSITE_JOURNEY_EVENTS,
+  WEBSITE_JOURNEY_PLACEMENTS,
+  webAppOpened,
+  compatibilityBoardSelected,
+  importPathChosen,
+  spraywallPathClicked,
+  navLinkClicked,
+  type WebsiteJourneyPlacement,
+  type WebsiteCompatibilityBoard,
+  type WebsiteImportPath,
+  type WebsiteNavArea,
+  type WebsiteNavTarget,
+  type WebsiteJourneyEvent,
+} from './website-journey-events';

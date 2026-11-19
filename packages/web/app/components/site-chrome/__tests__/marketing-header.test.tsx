@@ -3,6 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
+import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import MarketingHeader from '../marketing-header';
 import { APP_URL } from '@/app/lib/app-origin';
@@ -84,6 +86,11 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: vi.fn() }),
 }));
 
+vi.mock('@/app/lib/website-journey-analytics', () => ({
+  trackWebsiteJourneyEvent: vi.fn(),
+  trackWebsiteJourneyLinkClick: vi.fn(),
+}));
+
 describe('MarketingHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -114,6 +121,22 @@ describe('MarketingHeader', () => {
       ).toBeTruthy();
       unmount();
     }
+  });
+
+  it('reports the navigation destination and app handoff placement', () => {
+    const { container } = render(<MarketingHeader />);
+    const helpLink = container.querySelector<HTMLAnchorElement>('nav a[href="/help"]');
+    expect(helpLink).toBeTruthy();
+    fireEvent.click(helpLink!);
+    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+      name: 'Nav Link Clicked',
+      properties: { area: 'header', target: '/help' },
+    });
+    fireEvent.click(screen.getByLabelText('Start climbing in the app'));
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
+      name: 'Web App Opened',
+      properties: { placement: 'header' },
+    });
   });
 
   it('renders the brand link and the app hand-off, and no search field', () => {
