@@ -42,83 +42,143 @@ means a list of records and is misleading in ownership or merge confirmations.
 | Campus | 无脚攀爬 | Climbing without using feet |
 | Matching | 并手 | Placing both hands on the same hold |
 | Kickboard / kicker | 踢脚板 | The lower, usually vertical foot section |
+| Redpoint | 红点完攀 | A successful ascent after previous attempts |
+| Repeat | 重复完攀 | The same climber completes a previously completed climb again |
+| Consensus grade | 共识难度 | Community-assessed difficulty, distinct from the setter’s initial grade |
+| Crimp | 抠点 | A small edge hold, not a required finger posture |
+| Tall climbs | 高线路 | Climbs unavailable on a shorter board of the same layout; top-row use is not required |
+| Set angle | 设置角度 | The board angle at which a climb was set, distinct from the current climbing angle |
+| Multi-stage route | 连续线路 | One climb whose groups of lit holds change in sequence |
+| Imported Kilter circuit | 训练线路组 | A collection of several climbs, distinct from a multi-stage route |
 
 ## Google Form draft
 
-The form has deliberately not been created yet. The following copy and questions
-are ready to transfer into Google Forms after reviewing the translators’ choices.
-Ask people to answer only the terms they know. Keep terminology questions optional
-and avoid requiring a Google sign-in or collecting email addresses automatically.
+No live Google Form or respondent URL has been created or verified by this change.
+The saved questionnaire below is ready for owner review. The single-file
+[`scripts/create-chinese-terminology-form.gs`](../scripts/create-chinese-terminology-form.gs)
+creates the same 32 optional questions in five sections: three background
+questions, 28 terminology topics, and one final comment. It can also serve as the
+copy source for an authorized browser agent creating the form in Google's UI.
+
+### Create and review the draft without a plugin
+
+1. Open [Google Apps Script](https://script.google.com/home/start) in the owner's account and create a standalone project.
+2. Replace the editor contents with the entire script, select `createChineseTerminologyForm`, and run it. Review and approve the Forms authorization for your own script.
+3. Open the execution log's **edit URL**. Review all five sections and 32 optional questions. The returned respondent URL is a **draft link**, not proof of public access.
+4. In Google Forms, confirm email collection, one-response restriction, response summaries, quiz mode, and shuffle are off. Publish with **Anyone with the link** only if the owner's account permits it.
+5. Test the respondent link in a signed-out/private browser: no sign-in requirement, no email collection, every question skippable, and no public response summary. Share or wire the URL only after this check passes.
+
+The script uses [FormApp.create(title, false)](https://developers.google.com/apps-script/reference/forms/form-app#create(String,Boolean))
+and [setPublished(false)](https://developers.google.com/apps-script/reference/forms/form#setPublished(Boolean))
+to leave an unpublished draft. It sets a progress bar and never publishes,
+submits responses, reads responses, or grants Drive/responder permissions. The
+Forms service needs Forms authorization; no Drive service, external service,
+Google Cloud setup, or dependency installation is required. Disabling email and
+one-response controls does **not** establish anonymous/public reachability:
+Workspace policy and modern responder access must be checked in Google's UI.
+The deprecated `setRequireLogin` API is deliberately not used.
+
+### Reruns and interrupted creation
+
+Rerun in the **same Apps Script project**. A script lock and ScriptProperties
+retain the draft ID and item checkpoints. Completed reruns only return URLs:
+they preserve owner edits, responses, and the current publication state.
+Partial reruns append missing items and finish only blank or matching pending
+fields. Changed item IDs/types, added items, edited pending text, required
+questions, or changed privacy settings stop for owner review; nothing is deleted.
+
+Form creation and saving its ID span two services and cannot be atomic. A saved
+creation intent with no ID stops automatic recreation. Find the empty unpublished
+draft using the prior execution log or Google Forms, paste its ID into
+`CHINESE_TERMINOLOGY_RECOVER_DRAFT_ID`, and rerun. If creation never reached Google,
+the owner may create a matching empty unpublished draft manually and use that ID.
+For an uncertain item append with no visible item, inspect the draft, add **one
+blank item of the requested type only if it is missing**, and rerun. Never clear
+ScriptProperties to get past a recovery stop. Do not edit the questionnaire code
+while a draft is partially built. Tests use a FormApp stand-in; they are not live
+Google creation, authorization, publication, or signed-out access proof.
+
+### Reviewed questionnaire copy
 
 **Title:** 帮 Boardsesh 说好攀岩中文
 
-**Description:**
+**Description:** Boardsesh 2.8.0 的简体中文翻译用到了 AI。我们想听听，你和岩友在岩馆里会怎么说。所有题目都可跳过，挑几个熟悉的词回答就好。直接用英文也欢迎。填写问卷完全自愿，不影响使用应用。
 
-Boardsesh 2.8.0 有简体中文版了！我们借助 AI 翻译了应用，但攀岩术语还需要
-真正攀岩的人把关。你和岩友平时怎么说？请帮我们把中文改得更自然。
-不必每题都答，只填你熟悉的词就好。问卷完全自愿，不影响使用应用。
+请勿填写姓名、邮箱、手机号、账号、密码或他人的个人信息。
 
-### Questions 1–3: your climbing language
+Every answer below is optional. Term questions use paragraph responses; the two
+language-background answers use short text and the board question uses checkboxes.
+Candidate alternatives are discussion prompts, not endorsed translations.
 
-1. **你平时主要在哪个地区攀岩？** Short answer, optional. Example help:
-   中国大陆、新加坡、马来西亚或其他地区；不需要填写具体岩馆或住址。
-2. **你和岩友平时用哪种语言或中文说法交流？** Short answer, optional.
-   Help: 普通话、其他中文方言，或中英混用都可以。
-3. **你平时最常玩哪种训练板或岩壁？** Checkboxes: Kilter Board, Tension Board,
-   MoonBoard, 喷点墙 / Spraywall, 其他. Optional.
 
-### Questions 4 onward: terminology
+### 你平时怎么爬？
 
-Create one paragraph-response question for each row below. Use this instruction
-above the questions:
+这些背景问题也都可以跳过。不需要填写具体岩馆或住址。
 
-**请写出你和岩友真正会用的说法。如果平时直接说英文，也请告诉我们。
-如果中文在按钮里和聊天里有不同说法，可以分别举例。**
-
-These candidates come from the translator subagents’ uncertainty reports. The
-alternatives are discussion prompts, not endorsed translations. Include the
-English concept so respondents can correct the proposed Chinese without having
-to guess what it means.
-
-| Question title | Help text / UI context | Alternatives raised by translators |
+| Question title | Type | Help text |
 | --- | --- | --- |
-| “Send”：成功爬完一条线路，你会怎么说？ | 目前用「完攀」。例如攀爬记录里的完成状态。 | 完成、登顶、完攀 |
-| “Flash”：第一次尝试就完成线路，你会怎么说？ | 目前用「一次完攀」。与不看攀爬方法的 onsight 区分。 | 闪攀、一把过、Flash |
-| “Beta”：完成线路的动作或方法，你会怎么说？ | 目前用「攀爬方法」。例如线路下面的方法视频。 | 解法、动作、攀爬攻略、Beta |
-| “Project / projecting”：反复尝试、还想攻克的线路，你会怎么说？ | 目前用「攻克目标」。例如个人页面里还没完成的线路。 | 磕线、待攻克线路、项目 |
-| “Climb / boulder problem”：训练板上的一条题目，你会怎么说？ | 目前用「线路」。例如搜索线路、保存线路。 | 线路、抱石线路、题目 |
-| “Board”：Kilter、Tension 这类训练设备，你会怎么称呼？ | 目前用「训练板」。与一面普通岩壁区分。 | 攀岩训练板、岩板、Board |
-| “Spraywall”：岩点密集、可以自己编线路的岩壁，你会怎么称呼？ | 目前统一用「喷点墙」。 | 满点墙、密集岩点墙、自由岩点墙、Spraywall |
-| “Hold”：用手抓或用脚踩的岩点，你会怎么说？ | 目前用「岩点」。 | 岩点、支点、点 |
-| “Tick / logbook”：记录一次攀爬、查看历史，你会怎么说？ | 目前用「攀爬记录」。可能包含完攀和未完成的尝试。 | 打卡、攀爬记录、攀爬日志 |
-| “Session”：一次自己或和朋友一起的攀爬，你会怎么说？ | 目前用「攀爬活动」。例如活动历史和共同控制训练板。 | 一场攀爬、攀爬活动、训练、Session |
-| “Crew”：一起攀岩、共享队列的朋友，你会怎么称呼？ | 目前用「伙伴」。 | 岩友、伙伴、队友 |
-| “Benchmark”：用来参考难度的代表性线路，你会怎么说？ | 目前用「基准线路」。例如线路筛选条件。 | 标杆线路、基准线路、Benchmark |
-| “Campus”：只用手、不用脚爬线路，你会怎么说？ | 目前用「无脚攀爬」。例如线路规则。 | 无脚、纯手、Campus |
-| “Matching”：双手放在同一个岩点上，你会怎么说？ | 目前用「并手」。例如「禁止并手」规则。 | 双手同点、同点换手、并手 |
-| “Kickboard / kicker”：训练板底部的脚点区域，你会怎么说？ | 目前用「踢脚板」。例如是否允许使用底部脚点。 | 底脚板、底部脚板、底部踢脚板 |
-| “Volume”：岩壁上的大块立体造型，你会怎么说？ | 目前用「大体积岩点」。与小岩点和墙面区分。 | 造型块、体积块、Volume |
-| “Kiosk”：岩馆里让大家选线路、控制训练板的公共屏幕，你会怎么说？ | 目前用「展示终端」。与私人手机区分。 | 公共选线屏、岩馆终端、自助终端 |
-| “Set screw”：防止岩点转动的辅助螺钉，你会怎么说？ | 目前用「止转螺钉」。出现在训练板制作说明里。 | 防转螺钉、止转螺丝 |
-| “Drive the wall”：让新选的线路持续跟着亮起，你会怎么说？ | 目前用「控制岩壁」。强调控制期间选线会点亮，并不是开车。 | 连续点亮、自动跟随选线、控制训练板 |
-| “Playlist”：保存并整理一组线路，你会怎么称呼？ | 目前用「线路集」。例如创建线路集、加入线路集。 | 线路清单、攀爬清单、Playlist |
-| “Route / circuit”：训练板上有多个阶段的长线路，你会怎么说？ | 目前用「连续线路」。不是在说需要绳索的攀爬。 | 耐力线路、循环线路、连续线路 |
-| “T-nut”：训练板背面固定螺栓的螺母，你会怎么说？ | 目前用「T 形螺母」。例如制作图里的螺母孔径。 | 四爪螺母、爪母、T 形螺母 |
-| “Redpoint”：经过练习后成功完成线路，你会怎么说？ | 与第一次尝试就完成的 Flash 区分。 | 红点完攀、非首次完攀、Redpoint |
-| “Repeat”：再次完成以前已经完成过的线路，你会怎么说？ | 指同一个攀爬者再次完成，不是线路的总完攀人数。 | 复攀、重复完攀、Repeat |
-| “Consensus grade”：根据岩友的评价得出的难度，你会怎么说？ | 与定线员最初给出的难度区分。 | 共识难度、大家评出的难度 |
-| “Crimp”：需要用手指抠住的小边点，你会怎么说？ | 这里指岩点类型，不是要求你使用某一种手指姿势。 | 抠点、小边点、Crimp |
-| “Tall climbs”：训练板里较高的线路，你会怎么说？ | 这是线路筛选条件，不是在问攀爬者的身高。 | 到顶线路、高线路 |
-| “Set angle”：定线时使用的训练板角度，你会怎么说？ | 与你此刻正在攀爬的角度区分。 | 定线角度、设定角度 |
+| 你平时主要在哪个地区攀岩？ | 简答（可选） | 例如中国大陆、新加坡、马来西亚或其他地区；不需要填写具体岩馆或住址。 |
+| 你和岩友平时用哪些语言或方言交流？ | 简答（可选） | 普通话、其他中文方言，或中英混用都可以。 |
+| 你平时常爬哪些训练板或岩壁？（可多选） | 多选（可选） | 选你熟悉的就好，也可以跳过。 选项：Kilter Board、Tension Board、MoonBoard、喷点墙 / Spraywall、其他。 |
 
-### Final question
+### 攀爬和记录
 
-**还有哪些中文读起来不自然、容易误解，或你更习惯保留英文的词？**
-Paragraph, optional. Help: 可以写「应用里的原话 → 你建议的说法」，也可以说明
-是在什么页面看到的。请不要填写密码、账号信息或他人的个人信息。
+请写出你和岩友真正会用的说法。如果平时直接说英文，也请告诉我们。按钮和聊天里的说法不一样时，可以分别举例。
 
-**Confirmation message:** 谢谢你帮 Boardsesh 把中文说得更地道！我们会结合岩友的
-建议统一术语。现在可以回到应用继续攀爬了。
+| Question title | Type | Help text |
+| --- | --- | --- |
+| Send｜成功爬完一条线路，你会怎么说？ | 段落（可选） | 我们暂用「完攀」，例如攀爬记录里的完成状态。 可供比较的说法（不是标准答案）：完成、登顶、完攀。 |
+| Flash｜第一次尝试一条线路就完攀，你会怎么说？ | 段落（可选） | 我们暂用「一次完攀」。第一次上手前可以看过别人爬，也可以听过动作提示。 可供比较的说法（不是标准答案）：闪攀、一把过、Flash。 |
+| Redpoint｜一条线路之前试过，这次从头到尾爬成了，你会怎么说？ | 段落（可选） | 我们暂用「红点完攀」，与第一次尝试就完成的 Flash 区分。 可供比较的说法（不是标准答案）：红点完攀、非首次完攀、Redpoint。 |
+| Repeat｜以前爬成过的线路，这次又爬成了，你会怎么说？ | 段落（可选） | 我们暂用「重复完攀」。指同一个攀爬者再次完成，不是线路的总完攀人数。 可供比较的说法（不是标准答案）：复攀、重复完攀、Repeat。 |
+| Beta｜一条线路怎么爬、某个动作怎么做，你会用什么词来讲这些方法？ | 段落（可选） | 我们暂用「攀爬方法」，例如线路下面的方法视频。 可供比较的说法（不是标准答案）：解法、动作、攀爬攻略、Beta。 |
+| Project / projecting｜一条还没爬成、想继续试的线路，你会怎么叫？反复练这条线，你又会怎么说？ | 段落（可选） | 我们暂用「攻克目标」，例如个人页面里还没完成的线路。 可供比较的说法（不是标准答案）：磕线、待攻克线路、项目。 |
+| Tick / logbook｜记下一次攀爬（Tick），以及用来看这些记录的地方（Logbook），你分别怎么叫？ | 段落（可选） | 我们暂用「攀爬记录」，可能包含完攀和未完成的尝试。 可供比较的说法（不是标准答案）：打卡、攀爬记录、攀爬日志。 |
+| Session｜自己或和朋友从开始爬到收工的这段时间，你会怎么说？ | 段落（可选） | 我们暂用「攀爬活动」，例如活动历史和共同控制训练板。 可供比较的说法（不是标准答案）：一场攀爬、攀爬活动、训练、Session。 |
+| Crew｜平时和你一起爬、轮流选线路的这群人，你会怎么称呼？ | 段落（可选） | 我们暂用「伙伴」，例如一起攀岩、共享队列的朋友。 可供比较的说法（不是标准答案）：岩友、伙伴、队友。 |
+
+### 线路和难度
+
+只回答你熟悉的概念就好；候选说法都还需要岩友确认。
+
+| Question title | Type | Help text |
+| --- | --- | --- |
+| Climb / boulder problem｜训练板上单独编好的一条攀爬线路，你会怎么叫？ | 段落（可选） | 我们暂用「线路」，例如搜索线路、保存线路。 可供比较的说法（不是标准答案）：线路、抱石线路、题目。 |
+| Benchmark｜用来对照难度的代表性线路，你会怎么叫？ | 段落（可选） | 我们暂用「基准线路」，例如线路筛选条件。 可供比较的说法（不是标准答案）：标杆线路、基准线路、Benchmark。 |
+| Consensus grade｜岩友们给一条线路评出的总体难度，你会怎么说？ | 段落（可选） | 我们暂用「共识难度」，与定线员最初给出的难度区分。 可供比较的说法（不是标准答案）：共识难度、大家评出的难度。 |
+| Tall climbs｜有些线路换到同一布局的矮款训练板就爬不了。筛选这类线路时，你希望按钮上写什么？ | 段落（可选） | 我们暂用「高线路」。比如，一条线路用到了矮款训练板上没有的高处岩点；不要求用到最顶排，也不是指攀爬者身高。 可供比较的说法（不是标准答案）：到顶线路、高线路。 |
+| Set angle｜一条线路是在哪个训练板角度定出来的？你会怎么称呼这个角度？ | 段落（可选） | 我们暂用「设置角度」，与此刻正在攀爬的角度区分。 可供比较的说法（不是标准答案）：定线角度、设定角度。 |
+| Route / circuit｜训练板上按顺序换几组亮点、连起来爬的一条线路（Route），和 Kilter 里收在一组的多条线路（Circuit），你分别怎么叫？ | 段落（可选） | 前者暂用「连续线路」，后者暂用「训练线路组」。只熟悉其中一种也可以回答；不是在说需要绳索的攀爬。 可供比较的说法（不是标准答案）：耐力线路、连续线路、训练线路组、Circuit。 |
+| Playlist｜把多条线路保存到一起、排好顺序，你会怎么称呼这样的清单？ | 段落（可选） | 我们暂用「线路集」，例如创建线路集、加入线路集。 可供比较的说法（不是标准答案）：线路清单、攀爬清单、Playlist。 |
+
+### 岩点和动作
+
+描述你平时会怎么说即可，不需要选择候选词。
+
+| Question title | Type | Help text |
+| --- | --- | --- |
+| Hold｜岩壁上用手抓或用脚踩的点，你平时怎么叫？ | 段落（可选） | 我们暂用「岩点」。 可供比较的说法（不是标准答案）：岩点、支点、点。 |
+| Crimp｜岩点上只有一道窄边，手指只能扣住这道边。你会怎么叫这种点？ | 段落（可选） | 我们暂用「抠点」。这里指岩点类型，不是要求你使用某一种手指姿势。 可供比较的说法（不是标准答案）：抠点、小边点、Crimp。 |
+| Campus｜爬一条线路时只用手、不用脚，你会怎么说？ | 段落（可选） | 我们暂用「无脚攀爬」，例如线路规则。 可供比较的说法（不是标准答案）：无脚、纯手、Campus。 |
+| Matching｜两只手同时抓住同一个岩点，你会怎么说？ | 段落（可选） | 我们暂用「并手」，例如「禁止并手」规则。不是只把一只手换成另一只手。 可供比较的说法（不是标准答案）：双手同点、并手。 |
+
+### 训练板和岩壁
+
+制作和控制训练板的词也可以跳过，最后还可以补充其他建议。
+
+| Question title | Type | Help text |
+| --- | --- | --- |
+| Board｜Kilter、Tension 这类训练设备，你平时怎么叫？ | 段落（可选） | 我们暂用「训练板」，与一面普通岩壁区分。 可供比较的说法（不是标准答案）：攀岩训练板、岩板、Board。 |
+| Spraywall｜一面布满岩点、可以自己编线路的墙，你会怎么叫？ | 段落（可选） | 我们暂用「喷点墙」。 可供比较的说法（不是标准答案）：满点墙、密集岩点墙、自由岩点墙、Spraywall。 |
+| Kickboard / kicker｜训练板底部那块通常竖直、装有脚点的板，你会怎么叫？ | 段落（可选） | 我们暂用「踢脚板」，例如是否允许使用底部脚点。 可供比较的说法（不是标准答案）：底脚板、底部脚板、底部踢脚板。 |
+| Volume｜岩壁上凸出的一大块立体造型，有时上面还能再装岩点，你会怎么叫？ | 段落（可选） | 我们暂用「大体积岩点」，与小岩点和墙面区分。 可供比较的说法（不是标准答案）：造型块、体积块、Volume。 |
+| Kiosk｜岩馆里用来给大家显示当前线路和队列的公共屏幕，你会怎么叫？ | 段落（可选） | 我们暂用「展示终端」，与私人手机区分。 可供比较的说法（不是标准答案）：公共选线屏、岩馆终端、自助终端。 |
+| Drive the wall｜你在手机上选哪条线路，训练板就跟着点亮哪条。你会怎么称呼这种控制方式？ | 段落（可选） | 我们暂用「控制岩壁」。强调控制期间选线会点亮，并不是开车。 可供比较的说法（不是标准答案）：连续点亮、自动跟随选线、控制训练板。 |
+| Set screw｜除了固定岩点的主螺栓，还用一颗小螺钉防止岩点转动。你会怎么叫这颗小螺钉？ | 段落（可选） | 我们暂用「止转螺钉」，出现在训练板制作说明里。 可供比较的说法（不是标准答案）：防转螺钉、止转螺丝。 |
+| T-nut｜装在训练板背面、让岩点螺栓拧进去的螺母，你会怎么叫？ | 段落（可选） | 我们暂用「T 形螺母」，例如制作图里的螺母孔径。 可供比较的说法（不是标准答案）：四爪螺母、爪母、T 形螺母。 |
+| 还有哪些词读起来别扭、容易误解，或者你更习惯直接用英文？ | 段落（可选） | 可以写下应用里的原话、你会怎么说，以及在哪个页面看到的。请勿填写账号或个人联系方式。 |
+
+**Confirmation message:** 谢谢！我们会参考你和其他岩友的说法，改进 Boardsesh 的简体中文翻译。
 
 ## Welcome and form wiring
 
