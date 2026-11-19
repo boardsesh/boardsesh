@@ -303,6 +303,16 @@ describe('released clients against mounted native handlers, primary Postgres and
 
   for (const release of recordings.releases.filter((entry) => ['2.2.0', '2.3.0', '2.7.0'].includes(entry.version))) {
     it(`a lost successful refresh reply cannot reuse its consumed secret: ${release.tag}`, async () => {
+      // Released sign-out sends revoke without awaiting it. A previous case's
+      // revoke must not hold this case's owner lock while it tries to sign in.
+      const lostReplyOwnerId = randomUUID();
+      const lostReplyEmail = `lost-reply-${lostReplyOwnerId}@example.test`;
+      await fixture.db
+        .insert(users)
+        .values({ id: lostReplyOwnerId, email: lostReplyEmail, name: 'Synthetic lost reply' });
+      await fixture.db
+        .insert(userCredentials)
+        .values({ userId: lostReplyOwnerId, passwordHash: await hash(password, 4) });
       let dropReply = true;
       let discardedPair: Pair | undefined;
       let forcedSignOuts = 0;
@@ -313,20 +323,29 @@ describe('released clients against mounted native handlers, primary Postgres and
           const response = await fixture.network(input, init);
           if (path === '/auth/native/refresh' && dropReply) {
             dropReply = false;
-            expect(response.status).toBe(200);
             discardedPair = (await response.json()) as Pair;
             throw new TypeError('Synthetic response lost after committed rotation');
           }
           return response;
         },
       });
-      await callRecorded(client.auth, 'signInWithCredentials', email, password);
+      expect(await callRecorded(client.auth, 'signInWithCredentials', lostReplyEmail, password)).toMatchObject({
+        success: true,
+      });
       const originalRefresh = await callRecorded(client.store, 'getRefreshToken');
+      expect(originalRefresh).toMatch(/^[a-f0-9]{64}$/);
       await callRecorded(client.interceptor, 'setOnForcedSignOut', () => {
         forcedSignOuts += 1;
       });
       const lost = await callRecorded(client.interceptor, 'deduplicatedRefresh');
-      expect(typeof lost === 'boolean' ? lost : (lost as { status: string }).status === 'refreshed').toBe(false);
+      if (typeof lost === 'boolean') expect(lost).toBe(false);
+      else expect(lost).toMatchObject({ status: 'unavailable' });
+      // Assertions inside io.fetch are caught by the recorded client's transport
+      // boundary. Inspect captured replies here so a failed setup cannot pass.
+      expect(
+        fixture.responses.filter((reply) => reply.path === '/auth/native/refresh').map((reply) => reply.status),
+      ).toEqual([200]);
+      expect(discardedPair?.refreshToken).toMatch(/^[a-f0-9]{64}$/);
       expect(discardedPair?.refreshToken).not.toBe(originalRefresh);
       expect(await callRecorded(client.store, 'getRefreshToken')).toBe(originalRefresh);
       expect(forcedSignOuts).toBe(0);
@@ -336,6 +355,12 @@ describe('released clients against mounted native handlers, primary Postgres and
         'https://fixture.test/protected',
       )) as Response;
       expect(retry.status).toBe(401);
+      expect(
+        fixture.responses.filter((reply) => reply.path === '/auth/native/refresh').map((reply) => reply.status),
+      ).toEqual([200, 401]);
+      expect(
+        fixture.requests.filter((request) => request.path === '/auth/native/refresh').map((request) => request.body),
+      ).toEqual([{ refreshToken: originalRefresh }, { refreshToken: originalRefresh }]);
       expect(forcedSignOuts).toBe(1);
       expect(await callRecorded(client.store, 'getAuthToken')).toBeNull();
       expect(await callRecorded(client.store, 'getRefreshToken')).toBeNull();
