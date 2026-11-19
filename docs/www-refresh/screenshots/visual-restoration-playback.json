@@ -84,11 +84,7 @@
   {
     "locale": "es",
     "path": "/",
-    "shots": [
-      "tension",
-      "moonboard",
-      "kilter"
-    ],
+    "shots": ["tension", "moonboard", "kilter"],
     "videoCount": 0
   },
   {
@@ -102,11 +98,7 @@
   {
     "locale": "fr",
     "path": "/",
-    "shots": [
-      "tension",
-      "moonboard",
-      "kilter"
-    ],
+    "shots": ["tension", "moonboard", "kilter"],
     "videoCount": 0
   },
   {
@@ -120,11 +112,7 @@
   {
     "locale": "de",
     "path": "/",
-    "shots": [
-      "tension",
-      "moonboard",
-      "kilter"
-    ],
+    "shots": ["tension", "moonboard", "kilter"],
     "videoCount": 0
   },
   {
@@ -138,11 +126,7 @@
   {
     "locale": "it",
     "path": "/",
-    "shots": [
-      "tension",
-      "moonboard",
-      "kilter"
-    ],
+    "shots": ["tension", "moonboard", "kilter"],
     "videoCount": 0
   },
   {
