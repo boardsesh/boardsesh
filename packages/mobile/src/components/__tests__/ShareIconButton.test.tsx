@@ -22,6 +22,17 @@ vi.mock('../GlassIconButton', () => ({
   GlassIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
 }));
+vi.mock('../ChromeIconButton', () => ({
+  ChromeIconButton: ({
+    onPress,
+    accessibilityLabel,
+    appearance,
+  }: {
+    onPress: () => void;
+    accessibilityLabel: string;
+    appearance: string;
+  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, 'data-appearance': appearance }),
+}));
 
 import { ShareIconButton } from '../ShareIconButton';
 
@@ -62,6 +73,23 @@ afterEach(() => {
 });
 
 describe('ShareIconButton', () => {
+  it('shares from a bare native header button without a tracking callback', () => {
+    const { getByRole } = render(
+      <ShareIconButton
+        appearance="nativeHeader"
+        url={URL_TO_SHARE}
+        message="Check this out"
+        accessibilityLabel="Share"
+        copiedMessage="copied"
+        errorMessage="failed"
+      />,
+    );
+    const button = getByRole('button', { name: 'Share' });
+    expect(button.getAttribute('data-appearance')).toBe('bare');
+    fireEvent.click(button);
+    expect(mocks.share).toHaveBeenCalledWith({ message: 'Check this out', url: URL_TO_SHARE });
+  });
+
   it('warms the page and its card before the sheet opens, when it is given one', () => {
     tapShare('https://ws.boardsesh.com/og/playlist?uuid=abc');
 

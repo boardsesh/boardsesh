@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Share, type ColorValue } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { GlassIconButton } from './GlassIconButton';
+import { ChromeIconButton } from './ChromeIconButton';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { hapticSelection } from '../lib/haptics';
@@ -15,7 +16,9 @@ type ShareIconButtonProps = {
   copiedMessage: string;
   errorMessage: string;
   /** Runs on the tap: the share is tracked as an intent, like `ClimbShared`. */
-  onShare: () => void;
+  onShare?: () => void;
+  /** Native headers already supply the button's background. */
+  appearance?: 'floating' | 'nativeHeader';
   /**
    * The backend share card behind `url`, warmed before the sheet opens so a chat
    * app's unfurler finds it rendered. Omit for a link with no card.
@@ -32,6 +35,7 @@ export function ShareIconButton({
   copiedMessage,
   errorMessage,
   onShare,
+  appearance = 'floating',
   prewarmOgImageUrl,
   iconColor,
 }: ShareIconButtonProps) {
@@ -40,7 +44,7 @@ export function ShareIconButton({
 
   const handlePress = useCallback(() => {
     hapticSelection();
-    onShare();
+    onShare?.();
     // Fire-and-forget, the way a climb share does: it never delays the sheet.
     if (prewarmOgImageUrl) void prewarmShareCaches(url, prewarmOgImageUrl);
 
@@ -72,6 +76,19 @@ export function ShareIconButton({
       },
     );
   }, [copiedMessage, errorMessage, message, onShare, prewarmOgImageUrl, showToast, url]);
+
+  if (appearance === 'nativeHeader') {
+    return (
+      <ChromeIconButton
+        icon="share"
+        role="action"
+        appearance="bare"
+        color={iconColor}
+        onPress={handlePress}
+        accessibilityLabel={accessibilityLabel}
+      />
+    );
+  }
 
   return (
     <GlassIconButton
