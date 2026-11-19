@@ -193,7 +193,8 @@ These are separate features.
 
 The app uses CoreBluetooth via react-native-ble-plx and the bluetooth-central
 background mode to maintain a board connection while the screen sleeps.
-Session traffic uses the backend at `wss://backend.boardsesh.com`.
+Session traffic uses `wss://ws.boardsesh.com/graphql` (the production
+`EXPO_PUBLIC_WS_URL` in `.github/workflows/mobile-native-release.yml`).
 
 ## App Privacy - Data Collection Labels
 
