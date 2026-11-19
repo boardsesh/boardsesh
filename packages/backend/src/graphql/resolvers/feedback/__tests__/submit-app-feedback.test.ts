@@ -12,8 +12,9 @@
  * matching resolvers/feedback/__tests__/admin-feedback.test.ts.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import { redisClientManager } from '../../../../redis/client';
 import type { ConnectionContext, ReleaseContext } from '@boardsesh/shared-schema';
 import type { FeedbackIssuePayload } from '../../../../services/github-feedback';
 
@@ -293,6 +294,16 @@ describe('submitAppFeedback', () => {
 });
 
 describe('private board requests', () => {
+  let ownsRedisConnection = false;
+  beforeAll(async () => {
+    if (!redisClientManager.isRedisConfigured() || redisClientManager.isRedisConnected()) return;
+    ownsRedisConnection = await redisClientManager.connect();
+    expect(ownsRedisConnection).toBe(true);
+  });
+  afterAll(async () => {
+    if (ownsRedisConnection) await redisClientManager.disconnect();
+  });
+
   const ipPrefix = `2001:db8:${crypto.randomUUID().slice(0, 4)}:${crypto.randomUUID().slice(0, 4)}::`;
   const request = { boardName: ' Local fixture board ', role: 'gym', note: ' Private fixture ', contactConsent: false };
   const submit = (input: unknown, clientIp: string) =>
