@@ -12,7 +12,7 @@ package com.boardsesh.climboverlaygpu
  *   [OverlaySwapLook.GLES_BINDING] (a literal here, kept in step by a unit
  *   test, so the shader stays checkable with only the generated layout). A
  *   phone that cannot compile or link it draws every frame with the base
- *   program and reports `swapLookVersion` 0 ([OverlaySwapLookProgram]).
+ *   program; the view reports the look unavailable ([OverlaySwapLookProgram]).
  *
  * [lookFragment] is a second copy of [fragment], kept honest by markers that
  * `OverlayShaderTest` reads: every line only the look has sits between a

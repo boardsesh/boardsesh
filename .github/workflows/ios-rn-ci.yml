@@ -407,6 +407,15 @@ jobs:
             -o "$RUNNER_TEMP/aura-swap-look-tests"
           vp exec "$RUNNER_TEMP/aura-swap-look-tests"
 
+      - name: Test bokeh asynchronous initialization and GPU failure recovery
+        run: |
+          vp exec swiftc -swift-version 5 \
+            -module-cache-path "$RUNNER_TEMP/bokeh-module-cache" \
+            packages/mobile/modules/frosted-bokeh-gpu/ios/BokehRenderLifecycle.swift \
+            packages/mobile/modules/frosted-bokeh-gpu/ios/tests/BokehRenderLifecycleTests.swift \
+            -o "$RUNNER_TEMP/bokeh-lifecycle-tests"
+          vp exec "$RUNNER_TEMP/bokeh-lifecycle-tests"
+
       - name: Test Aura JNI empty buffer ownership
         run: |
           vp exec c++ -std=c++17 \

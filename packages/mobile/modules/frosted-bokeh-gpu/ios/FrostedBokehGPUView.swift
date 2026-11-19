@@ -68,10 +68,10 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   private var lastFrameAt: CFTimeInterval = -1
   private var inBackground = UIApplication.shared.applicationState == .background
   private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-  private var reportedError = false
+  private var lifecycle = BokehRenderLifecycle()
+  private var propsApplied = false
 
   required init(appContext: AppContext? = nil) {
-    BokehRenderer.warmUp()
     mtkView = MTKView(frame: .zero, device: BokehRenderer.device)
     super.init(appContext: appContext)
     clipsToBounds = true
@@ -93,6 +93,10 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     center.addObserver(self, selector: #selector(didEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
     center.addObserver(self, selector: #selector(willEnterForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
     center.addObserver(self, selector: #selector(powerStateDidChange), name: .NSProcessInfoPowerStateDidChange, object: nil)
+    BokehRenderer.resources.load { [weak self] in
+      guard let self, self.propsApplied else { return }
+      self.applyProps()
+    }
   }
 
   override func layoutSubviews() {
@@ -107,6 +111,7 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     super.didMoveToWindow()
     // The trait collection's scale can read 0 before the view joins a window.
     updateScale()
+    if propsApplied { applyProps() }
     updateLoop(now: CACurrentMediaTime())
     mtkView.setNeedsDisplay()
   }
@@ -117,7 +122,13 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   }
 
   func applyProps() {
-    if BokehRenderer.pipeline == nil {
+    propsApplied = true
+    updateLoop(now: CACurrentMediaTime())
+    guard !lifecycle.failed else { return }
+    // The base colour behind this transparent surface remains visible while
+    // compilation runs. Never read a lazy pipeline initializer on the UI thread.
+    guard let prepared = BokehRenderer.resources.result else { return }
+    guard case .success = prepared else {
       reportRenderError("pipeline")
       return
     }
@@ -210,8 +221,9 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   }
 
   private func updateLoop(now: CFTimeInterval) {
+    lifecycle.setActive(window != nil && !inBackground)
     let moving = moving(at: now)
-    let running = window != nil && !inBackground && (breathing || moving)
+    let running = propsApplied && lifecycle.active && !lifecycle.failed && BokehRenderer.ready && (breathing || moving)
     mtkView.preferredFramesPerSecond = moving ? Self.movingFramesPerSecond : Self.breathingFramesPerSecond
     mtkView.enableSetNeedsDisplay = !running
     mtkView.isPaused = !running
@@ -224,6 +236,7 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
 
   @objc private func willEnterForeground() {
     inBackground = false
+    if propsApplied { applyProps() }
     updateLoop(now: CACurrentMediaTime())
     mtkView.setNeedsDisplay()
   }
@@ -238,9 +251,9 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     }
   }
 
-  private func reportRenderError(_ reason: String) {
-    guard !reportedError else { return }
-    reportedError = true
+  private func reportRenderError(_ reason: String, generation: UInt64? = nil) {
+    guard lifecycle.fail(generation: generation ?? lifecycle.generation) else { return }
+    updateLoop(now: CACurrentMediaTime())
     onRenderError(["reason": reason])
   }
 
@@ -253,7 +266,7 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   func draw(in view: MTKView) {
     // Metal refuses GPU work from a backgrounded app, and asking for a drawable
     // there can block the main thread. willEnterForeground redraws.
-    guard !inBackground else { return }
+    guard propsApplied, lifecycle.active, !lifecycle.failed, BokehRenderer.ready else { return }
     let now = CACurrentMediaTime()
     var frame = motion.lights(now).map {
       GPUBlob(pos: SIMD2($0.x, $0.y), r: $0.r, peak: $0.peak, color: SIMD4($0.red, $0.green, $0.blue, $0.seed))
@@ -276,7 +289,10 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
       motion: breathing ? 1 : 0,
       swell: swell
     )
-    if !BokehRenderer.draw(in: view, uniforms: &uniforms, blobs: frame) {
+    let generation = lifecycle.generation
+    if !BokehRenderer.draw(in: view, uniforms: &uniforms, blobs: frame, onFailure: { [weak self] in
+      self?.reportRenderError("gpu-command", generation: generation)
+    }) {
       reportRenderError("draw")
     }
     updateLoop(now: now)
@@ -298,51 +314,44 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   }
 }
 
-/// The shared device, queue and pipeline. The shader compiles from source once
-/// per launch (a few milliseconds), so no metallib has to survive CocoaPods
-/// packaging.
+/// Shared resources compile once on the preparation queue. Main-thread callers
+/// only read a published result, including while the compiler is still busy.
 enum BokehRenderer {
   /// `MAX_GPU_BOKEH_LIGHTS` in `@boardsesh/frosted-bokeh`: two climbs of `MAX_BOKEH_BLOBS`.
   static let maxBlobs = BokehMotion.maxLights
 
   static let device = MTLCreateSystemDefaultDevice()
-  private static let queue = device?.makeCommandQueue()
+  struct Resources {
+    let pipeline: MTLRenderPipelineState
+    let queue: MTLCommandQueue
+  }
+  private enum PreparationFailure: Error { case unavailable }
 
-  private static let warmUpOnce: Void = {
-    DispatchQueue.global(qos: .userInitiated).async { _ = pipeline }
-  }()
-
-  /// Compiles the shader on a background queue, so the first frame on the
-  /// main thread finds it ready instead of compiling it there.
-  static func warmUp() {
-    _ = warmUpOnce
+  static let resources = BokehAsyncResource<Resources> {
+    guard let device, let queue = device.makeCommandQueue() else { throw PreparationFailure.unavailable }
+    let library = try device.makeLibrary(source: bokehShaderSource, options: nil)
+    let descriptor = MTLRenderPipelineDescriptor()
+    descriptor.vertexFunction = library.makeFunction(name: "bokehVertex")
+    descriptor.fragmentFunction = library.makeFunction(name: "bokehFragment")
+    descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+    return Resources(pipeline: try device.makeRenderPipelineState(descriptor: descriptor), queue: queue)
   }
 
-  static let pipeline: MTLRenderPipelineState? = {
-    guard let device else { return nil }
-    do {
-      let library = try device.makeLibrary(source: bokehShaderSource, options: nil)
-      let descriptor = MTLRenderPipelineDescriptor()
-      descriptor.vertexFunction = library.makeFunction(name: "bokehVertex")
-      descriptor.fragmentFunction = library.makeFunction(name: "bokehFragment")
-      descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-      return try device.makeRenderPipelineState(descriptor: descriptor)
-    } catch {
-      NSLog("[FrostedBokehGPU] shader compile failed: \(error)")
-      return nil
-    }
-  }()
+  static var ready: Bool {
+    if case .success? = resources.result { return true }
+    return false
+  }
 
   /// False when the frame could not be encoded at all. A missing drawable is
   /// not an error: the next frame tries again.
-  static func draw(in view: MTKView, uniforms: inout GPUUniforms, blobs: [GPUBlob]) -> Bool {
-    guard let pipeline, let queue else { return false }
+  static func draw(in view: MTKView, uniforms: inout GPUUniforms, blobs: [GPUBlob], onFailure: @escaping () -> Void) -> Bool {
+    guard case .success(let prepared)? = resources.result else { return false }
     guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else { return true }
     guard
-      let commands = queue.makeCommandBuffer(),
+      let commands = prepared.queue.makeCommandBuffer(),
       let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
     else { return false }
-    encoder.setRenderPipelineState(pipeline)
+    encoder.setRenderPipelineState(prepared.pipeline)
     encoder.setFragmentBytes(&uniforms, length: MemoryLayout<GPUUniforms>.stride, index: 0)
     blobs.withUnsafeBytes { bytes in
       if let address = bytes.baseAddress {
@@ -351,6 +360,10 @@ enum BokehRenderer {
     }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
+    commands.addCompletedHandler { completed in
+      guard completed.status == .error else { return }
+      DispatchQueue.main.async(execute: onFailure)
+    }
     commands.present(drawable)
     commands.commit()
     return true

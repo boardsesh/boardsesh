@@ -164,14 +164,9 @@ internal object OverlayRenderer {
     private var initialized = false
     private var program = 0
     private var uniformBuffer = 0
-    /**
-     * The swap look's program ([OverlaySwapLookProgram]): 0 until this context
-     * builds it, and 0 for good in this context if that fails, which leaves
-     * every frame on [program].
-     */
-    private var lookProgram = 0
-    /** This context has tried to build [lookProgram]; it tries once. */
-    private var lookProgramTried = false
+    /** A per-context lazy compiler gate; no optional shader work before a view requests it. */
+    private val lookProgramState = SwapLookProgramState()
+    private val lookProgram get() = lookProgramState.program
     /** The look program's uniform block ([OverlaySwapLook.GLES_BYTES]), bound only by a draw with the look. */
     private var lookBuffer = 0
     private val lookBytes = directBytes(OverlaySwapLook.GLES_BYTES)
@@ -324,38 +319,27 @@ internal object OverlayRenderer {
         }
         uniformBuffer = buffer(directBytes(OverlayPacketLayout.UNIFORM_BYTES), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
-        // After the base program is whole, so the look can never fail it.
-        if (OverlaySwapLookProgram.offered) lookProgramReady()
     }
 
-    /**
-     * Whether this context has the swap look's program, building it the first
-     * time it is asked: at initialization when the module offered the look, else
-     * on the first frame that wants it. A failure is logged once per process and
-     * leaves every frame on the base program; it is not a GPU failure. A program
-     * that does not compile or link here also drops the probe's stored answer.
-     */
-    private fun lookProgramReady(): Boolean {
-        if (lookProgramTried) return lookProgram != 0
-        lookProgramTried = true
+    /** Render thread only; the lazy gate invokes this at most once per context. */
+    private fun buildLookProgram(): Int {
         val built = OverlaySwapLookProgram.build()
         var failure = built.failure
-        if (failure != null) OverlaySwapLookProgram.rendererBuildFailed()
         if (failure == null) {
             try {
                 lookBuffer = buffer(directBytes(OverlaySwapLook.GLES_BYTES), GLES31.GL_UNIFORM_BUFFER, GLES31.GL_DYNAMIC_DRAW)
-                lookProgram = built.program
+                return built.program
             } catch (error: Exception) {
                 GLES31.glDeleteProgram(built.program)
                 for (attempt in 0 until 8) if (GLES31.glGetError() == GLES31.GL_NO_ERROR) break
                 failure = "look buffer: $error"
             }
         }
-        if (failure != null && !lookFailureLogged) {
+        if (!lookFailureLogged) {
             lookFailureLogged = true
             Log.w("BoardseshClimbGPU", "Swap look program unavailable in this GPU context; drawing without the look: $failure")
         }
-        return lookProgram != 0
+        return 0
     }
 
     private fun park() {
@@ -837,19 +821,15 @@ internal object OverlayRenderer {
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
             if (!carrying && !eligible(session, request)) return false
-            // The swap look replaces the per-side weights only in swap mode, on its own
-            // program (OverlaySwapLook.frame); without it the base program draws.
-            // lookProgramReady() normally answers from initialization, which built
-            // the program because the module had already offered the look. It
-            // compiles here instead, on the render thread inside this frame, only if
-            // this context initialized before JS read `swapLookVersion` (`offered`
-            // was still false then). That is rare: JS reads the constant when
-            // gpu-native-capability.ts loads, before any GPU board mounts, and a
-            // context starts with a mounted view's first preparation; a frame with
-            // a look means JS has read it. It costs one compile per context, at most.
-            val lookWanted = swap && controls.look != null
-            val lookReady = lookWanted && lookProgramReady()
-            if (lookWanted) session.view.swapLookShader(lookReady)
+            // The mounted view's prop is the request. Recheck activity here so a
+            // queued draw cannot start the optional compiler after a pause/detach.
+            // All compilation stays on this worker; module imports never wait for it.
+            val stillEligible = eligible(session, request) || carryOver(session, request, controls)
+            val lookReady = lookProgramState.resolve(
+                stillEligible, swap, controls.look != null, controls.reduced, ::buildLookProgram,
+            ) != 0
+            if (swap && controls.look != null && !controls.reduced && stillEligible)
+                session.view.swapLookShader(lookReady)
             val lookWords = if (lookReady) OverlaySwapLook.frame(controls, selection, weights, packet.lookScenes, packet.header, lookFrame) else 0
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
             encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
@@ -1059,8 +1039,7 @@ internal object OverlayRenderer {
         display = EGL14.EGL_NO_DISPLAY
         program = 0
         uniformBuffer = 0
-        lookProgram = 0
-        lookProgramTried = false
+        lookProgramState.reset()
         lookBuffer = 0
         initialized = false
         OverlayPacketMetrics.gpuReset()

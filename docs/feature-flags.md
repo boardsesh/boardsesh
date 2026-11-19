@@ -259,6 +259,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   `docs/board-motion-lab.md`). It ships at 100% with no A/B test. On, the board
   swaps climbs exactly as before, the shipped wall swap, and the change reaches
   an open board at once, so it is also the QA switch for comparing the two.
+  Current Android binaries compile the optional shader only when an active, visible
+  view requests this look; module startup and capability reads do no GPU work.
+  A kill already applied prevents that compilation, but cannot cancel driver work
+  that has already started. Earlier binaries retain their startup probe.
   Binaries without `swapLookVersion` 2, Reduce Motion and (on iOS)
   Differentiate Without Color get the shipped swap whatever it says.
   `picker-auto-scan-kill` is a kill switch (read through
