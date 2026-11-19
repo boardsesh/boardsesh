@@ -67,12 +67,21 @@ export default async function SprayClimbFrontDoor({
   artUrl,
   angle,
 }: SprayClimbFrontDoorProps) {
-  const [{ t }, storeButtonLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);
+  const [{ t, locale }, storeButtonLabels] = await Promise.all([
+    getServerTranslation('climbs'),
+    getStoreButtonLabels(),
+  ]);
 
   const climbName = resolveClimbDisplayName(climb.name, 'spray');
   const wallName = wallData.wall.name;
   const grade = climb.difficulty || t('spray.unknownGrade');
   const setter = climb.setter_username;
+  // The stats bigint can arrive as a string. i18next selects plurals only for numeric counts.
+  const senderCount = Number(climb.ascensionist_count ?? 0);
+  const senders = t('spray.sendersLine', {
+    count: senderCount,
+    formattedCount: new Intl.NumberFormat(locale).format(senderCount),
+  });
   // The setter's own words: the one piece of genuinely unique prose on the
   // page. User-written, so it renders verbatim and never through `t()`.
   const setterNotes = getDisplayDescription(climb.description);
@@ -123,9 +132,7 @@ export default async function SprayClimbFrontDoor({
       )}
 
       <Typography variant="body1" sx={{ mt: 2 }}>
-        {setter
-          ? t('spray.setterLine', { setter, ascents: climb.ascensionist_count ?? 0 })
-          : t('spray.ascentsLine', { ascents: climb.ascensionist_count ?? 0 })}
+        {setter ? t('spray.setterLine', { setter, senders }) : senders}
       </Typography>
 
       {setterNotes ? (
