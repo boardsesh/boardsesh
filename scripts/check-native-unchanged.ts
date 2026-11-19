@@ -50,6 +50,10 @@ export const NATIVE_CHANGE_ALLOWLIST: Readonly<Record<string, string>> = Object.
     'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
   'packages/shared/i18n/locales/it/settings.json':
     'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/zh-CN/auth.json':
+    'Adds Simplified Chinese messages for www reauthentication and first-password confirmation; native screens use none of the new keys.',
+  'packages/shared/i18n/locales/zh-CN/settings.json':
+    'Adds Simplified Chinese messages for www sign-in methods and password setup; native screens use none of the new keys.',
 });
 
 const AUTH_PROTOCOL_ROOT = 'packages/shared/auth-protocol/';
