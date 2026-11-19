@@ -20,7 +20,18 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
-  default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
+  default: ({ href, children, onNavigate }: { href: string; children?: React.ReactNode; onNavigate?: () => void }) => (
+    <a
+      href={href}
+      onClick={(event) => {
+        // Exercise the Next navigation callback without navigating JSDOM.
+        event.preventDefault();
+        onNavigate?.();
+      }}
+    >
+      {children}
+    </a>
+  ),
 }));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: null }) }));
 vi.mock('@/app/lib/graphql/client', () => ({
@@ -189,6 +200,18 @@ describe('consent banner by region', () => {
     await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
     expect(view.getByTestId('consent-banner')).toBeTruthy();
     expect(consentCookie()).toBeUndefined();
+  });
+
+  it('closes Details for policy navigation without answering consent', async () => {
+    const view = await renderBanner();
+    const banner = await view.findByTestId('consent-banner');
+    fireEvent.click(within(banner).getByRole('button', { name: 'details' }));
+    const dialog = await view.findByRole('dialog', { name: 'privacyChoices' });
+    fireEvent.click(within(dialog).getByRole('link', { name: 'privacyLink' }));
+    await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+    expect(consentCookie()).toBeUndefined();
+    expect(await sendsAnalytics()).toBe(false);
+    expect(view.getByTestId('consent-banner')).toBeTruthy();
   });
 
   it('gives both answers the same button treatment', async () => {
