@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-19T09:55:14.625Z",
+  "generatedAt": "2026-11-19T11:33:26.256Z",
   "entries": [
+    {
+      "prNumber": 7908,
+      "category": "fixed",
+      "title": "Share a session recap with your crew straight from its header.",
+      "mergedAt": "2026-11-19T11:22:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7908"
+    },
     {
       "prNumber": 7835,
       "category": "new",
@@ -10101,9 +10108,11 @@
       "date": "2026-11-19T08:54:22Z",
       "sha": "df198e6c0d55441d20592293b0a6e509017eba9b",
       "platforms": [
+        "android",
         "ios"
       ],
       "fingerprints": {
+        "android": "a27a9ee50f6d0891d7599e318f6bc4906f6e5917",
         "ios": "61f1155f027ce2f81524c6c7c9000c9cdde48523"
       }
     },

@@ -21,6 +21,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Share a session recap with your crew straight from its header. ([#7908](https://github.com/boardsesh/boardsesh/pull/7908))
 - Use Boardsesh in Simplified Chinese, with Chinese App Store and Google Play listings. ([#7902](https://github.com/boardsesh/boardsesh/pull/7902))
 - Connect to your crew's board when a crewmate cancels or loses their connection. ([#7897](https://github.com/boardsesh/boardsesh/pull/7897))
   Keep virtual-wall control while session history catches up.
