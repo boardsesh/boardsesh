@@ -1,4 +1,6 @@
 import React from 'react';
+import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { cachedCommunityPlaylists } from '@/app/lib/graphql/server-cached-client';
@@ -68,6 +70,12 @@ export default async function PlaylistsPage() {
     <I18nProvider locale={locale} namespaces={['playlists']}>
       {lcpPreloadUrl && <link rel="preload" as="image" href={lcpPreloadUrl} fetchPriority="high" />}
       <PageShell width="wide" title={t('directory.h1')} lead={lead}>
+        <FrontDoorInstall
+          placement="playlists"
+          helperText={t('detail.installHelper')}
+          labels={await getStoreButtonLabels()}
+          appearance="brand"
+        />
         {/* The generated cohort lists lead, and the heading says they are
             generated. They are the best content on the page — 50 climbs each,
             rebuilt nightly — and under the old climb-count sort they ranked

@@ -5,6 +5,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
 
 import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
 import { useTranslation } from 'react-i18next';
@@ -51,9 +52,14 @@ type ProvidersConfig = {
 type SocialLoginButtonsProps = {
   callbackUrl?: string;
   disabled?: boolean;
+  showDivider?: boolean;
 };
 
-export default function SocialLoginButtons({ callbackUrl = '/', disabled = false }: SocialLoginButtonsProps) {
+export default function SocialLoginButtons({
+  callbackUrl = '/',
+  disabled = false,
+  showDivider = false,
+}: SocialLoginButtonsProps) {
   const { t } = useTranslation('auth');
   const [providers, setProviders] = useState<ProvidersConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +162,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {showDivider && <Divider>{t('login.divider')}</Divider>}
       {failed && <Alert severity="error">{t('nativeStart.oauthError')}</Alert>}
       {providers.google && (
         <Button

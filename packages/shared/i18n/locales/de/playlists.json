@@ -255,7 +255,8 @@
     "setterPicker": {
       "showClimbs": "Boulder anzeigen",
       "error": "Die Setter dieser Liste konnten nicht geladen werden."
-    }
+    },
+    "installHelper": "Noch keine App? Hol sie dir kostenlos und klettere diese Playlist auf deinem Board."
   },
   "editClimbs": {
     "done": "Fertig",

@@ -275,7 +275,7 @@ export default function CommentItem({
                   <IconButton
                     size="small"
                     onClick={() => setIsEditing(true)}
-                    sx={{ color: 'var(--neutral-400)' }}
+                    sx={{ color: 'var(--neutral-500)' }}
                     aria-label={t('comment.delete.editAria')}
                   >
                     <EditOutlined sx={{ fontSize: 16 }} />
@@ -290,7 +290,7 @@ export default function CommentItem({
                   >
                     <IconButton
                       size="small"
-                      sx={{ color: 'var(--neutral-400)' }}
+                      sx={{ color: 'var(--neutral-500)' }}
                       aria-label={t('comment.delete.deleteAria')}
                     >
                       <DeleteOutlined sx={{ fontSize: 16 }} />

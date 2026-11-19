@@ -14,11 +14,13 @@ import type { SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 
 export type SortBy = 'popular' | 'new';
 
 type MultiboardClimbListProps = {
   climbs: Climb[];
+  thumbnailCropsByClimb?: Record<string, ClimbThumbnailCrop>;
   isFetching: boolean;
   isLoading: boolean;
   hasMore: boolean;
@@ -47,6 +49,7 @@ type MultiboardClimbListProps = {
 
 export default function MultiboardClimbList({
   climbs,
+  thumbnailCropsByClimb,
   isFetching,
   isLoading,
   hasMore,
@@ -137,6 +140,7 @@ export default function MultiboardClimbList({
     climbListContent = (
       <StaticClimbList
         climbs={climbs}
+        thumbnailCropsByClimb={selectedBoard ? undefined : thumbnailCropsByClimb}
         boardDetails={defaultBoardDetails}
         boardDetailsByClimb={boardDetailsByClimb}
         isFetching={isFetching}

@@ -34,13 +34,13 @@
       "ogDescription": "Elige uno, enciéndelo y registra el encadene."
     },
     "view": {
-      "title": "{{climbName}} - {{grade}}",
-      "description": "{{climbName}} - {{grade}} de {{setter}}. Calidad: {{quality}}/5. Encadenes: {{ascents}}",
+      "title": "{{climbName}}, {{grade}} en {{boardName}} a {{angle}}°",
+      "description": "{{climbName}} es un {{grade}} en {{layoutName}} a {{angle}}°, de {{setter}}. {{ascents}} encadenes, valoración {{quality}} de 5. Ilumínalo en tu plafón con Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} en plafón {{boardName}}",
       "fallbackTitle": "Bloque",
       "fallbackDescription": "Mira los detalles del bloque y vídeos de beta",
       "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Bloque {{boardName}} {{layoutName}}",
+      "seoSummary": "Bloque de {{layoutName}} a {{angle}}°",
       "seoSetterSuffix": " creado por {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} encadenes registrados"
     }
@@ -60,7 +60,8 @@
       },
       "install": {
         "helper": "¿Aún no tienes la app? Descárgala y enciende estos bloques en tu plafón."
-      }
+      },
+      "climbsHeading": "Más escalados a {{angle}}°"
     }
   },
   "header": {},
@@ -964,7 +965,8 @@
     "angles": {
       "heading": "El mismo bloque en otros ángulos",
       "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — estás aquí"
+      "current": "{{angle}}° · {{grade}} — estás aquí",
+      "all": "Todos los ángulos"
     },
     "beta": {
       "heading": "Vídeos de beta",
@@ -979,9 +981,9 @@
       "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…"
     },
     "cta": {
-      "climbThis": "Escala este bloque",
+      "climbThis": "Iluminar este bloque",
       "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
-      "helper": "Abre la app, ilumina las presas y registra el encadene."
+      "helper": "Se abre en la app, listo para iluminarlo en tu plafón."
     },
     "install": {
       "helper": "¿Aún no tienes la app? Descárgala y enciende este bloque en tu plafón."
@@ -993,7 +995,7 @@
     "heading": "{{climbName}} — {{grade}}",
     "summary": "En {{wallName}}, un Spraywall a {{angle}}° con {{holdCount}} presas.",
     "setterLine": "Equipado por {{setter}}. {{ascents}} ascensiones registradas.",
-    "ascentsLine": "{{ascents}} ascensiones registradas.",
+    "ascentsLine": "{{ascents}} encadenes registrados.",
     "setterNotesHeading": "Notas del equipador",
     "keepLookingHeading": "Sigue buscando",
     "setterLink": "Más bloques de {{setter}}",

@@ -9,8 +9,8 @@
  *    puts the landmark on the page content component. Two nested `<main>`s is
  *    invalid HTML and two landmarks for one region.
  *  - **No horizontal padding.** The front doors already inset themselves by
- *    `spacing[4]`; the shell's old `spacing[2]` on top of that was a leftover
- *    from the pivot and made a 24px gutter on a phone.
+ *    the shared responsive `--page-gutter` token; shell padding would add
+ *    another inset and move their headings out of line with the site header.
  *
  * `minHeight: 100dvh` stays. The site header is `position: fixed` and
  * `box-sizing` is border-box, so the padding-top sits INSIDE the 100dvh: the

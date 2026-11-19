@@ -12,7 +12,9 @@ import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
+import styles from './static-climb-row.module.css';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 
 /**
  * One crawlable climb row. Ordinary discovery uses the canonical config-tuple
@@ -30,6 +32,7 @@ import type { BoardImageDetails, Climb } from '@/app/lib/types';
  */
 export type StaticClimbRowProps = {
   climb: Climb;
+  thumbnailCrop?: ClimbThumbnailCrop;
   boardDetails: BoardImageDetails;
   /** Keep named-wall discovery on that physical board, not a new config. */
   boardSlug?: string;
@@ -47,10 +50,8 @@ export type StaticClimbRowProps = {
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
-// Reproduces climb-list-item's row geometry exactly: 64px thumbnail at
-// aspect-ratio 5/7 ≈ 89.6px, plus 2 × 8px padding and a 1px border ≈ 106.6px,
-// which is the LIST_ROW_HEIGHT (107) the virtualizer estimates with. A row that
-// measures anything else reflows every row beneath it on mount (issue #3086).
+// The 72px/88px responsive preview determines the natural row height. The
+// virtual window keeps adjacent rows in normal flow until it can measure them.
 const rowLinkSx = {
   display: 'block',
   color: 'inherit',
@@ -71,7 +72,6 @@ const rowSx = {
 } as const;
 
 const thumbnailSx = {
-  width: `${themeTokens.spacing[16]}px`,
   flexShrink: 0,
   position: 'relative',
 } as const;
@@ -86,6 +86,7 @@ const StaticClimbRow = ({
   pathname,
   logbook,
   fetchPriority,
+  thumbnailCrop,
 }: StaticClimbRowProps) => {
   const href = useMemo(
     () =>
@@ -113,12 +114,13 @@ const StaticClimbRow = ({
 
   const rowBody = (
     <Box sx={rowSx}>
-      <Box sx={thumbnailSx} data-testid="climb-thumbnail">
+      <Box sx={thumbnailSx} className={styles.thumbnail} data-testid="climb-thumbnail">
         <ClimbThumbnail
           boardDetails={boardDetails}
           currentClimb={climb}
           pathname={pathname}
           fetchPriority={fetchPriority}
+          crop={thumbnailCrop}
         />
         <AscentStatus
           climbUuid={climb.uuid}
@@ -138,6 +140,7 @@ const StaticClimbRow = ({
         <ClimbTitle
           climb={climb}
           gradePosition="right"
+          ellipsis
           showSetterInfo
           showGradeWhileLoading
           titleFontSize={themeTokens.typography.fontSize.xl}

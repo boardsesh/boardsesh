@@ -1,3 +1,4 @@
+import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -8,6 +9,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 type ClimbViewSeoFragmentProps = {
   climb: Climb;
   boardDetails: BoardRouteIdentity;
+  angle?: number;
 };
 
 const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 };
@@ -29,19 +31,24 @@ const summarySx = { m: 0, mb: 2, maxWidth: '68ch' };
  * This is the page's ONLY `<h1>`. Every other front-door section heading is an
  * `<h2>`.
  */
-export default async function ClimbViewSeoFragment({ climb, boardDetails }: ClimbViewSeoFragmentProps) {
-  const { t } = await getServerTranslation('climbs');
-  const grade = climb.difficulty ?? '';
+export default async function ClimbViewSeoFragment({ climb, boardDetails, angle }: ClimbViewSeoFragmentProps) {
+  const { t, locale } = await getServerTranslation('climbs');
+  const grade = climbGradeForSearch(climb.difficulty ?? '');
   const setter = climb.setter_username ?? '';
-  const layoutName = boardDetails.layout_name ?? '';
+  const layoutName = climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name);
   const ascents = climb.ascensionist_count ?? 0;
 
   // Draft climbs can have a null difficulty — fall back to the bare name so we
   // don't render "{climbName} — " with a dangling em dash.
   const heading = grade ? t('metadata.view.seoHeading', { climbName: climb.name, grade }) : climb.name;
-  const summary = t('metadata.view.seoSummary', { boardName: boardDetails.board_name, layoutName });
+  const summary = t('metadata.view.seoSummary', {
+    boardName: boardDetails.board_name,
+    layoutName,
+    angle: angle ?? climb.angle,
+  });
   const setterSuffix = setter ? t('metadata.view.seoSetterSuffix', { setter }) : '';
-  const ascentsSuffix = ascents > 0 ? t('metadata.view.seoAscentsSuffix', { ascents }) : '';
+  const ascentsSuffix =
+    ascents > 0 ? t('metadata.view.seoAscentsSuffix', { ascents: new Intl.NumberFormat(locale).format(ascents) }) : '';
 
   return (
     <Box component="header">

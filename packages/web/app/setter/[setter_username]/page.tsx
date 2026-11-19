@@ -1,3 +1,4 @@
+import { buildClimbThumbnailCrops } from '@/app/lib/climb-thumbnail-crop.server';
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -6,6 +7,8 @@ import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import Image from 'next/image';
 import { PersonOutlined } from '@mui/icons-material';
+import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
@@ -31,15 +34,13 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { getSetterPageView, setterPageHasCrawlableClimb, type SetterPageView } from './setter-page-view';
 import SetterFollowIsland from './setter-follow-island';
 import SetterJsonLd from './setter-json-ld';
-import SetterSeoFragment from './setter-seo-fragment';
+import { PageShell } from '@/app/components/ui/page-shell';
 import SetterShareButton from './setter-share-button';
 
 type SetterPageProps = {
   params: Promise<{ setter_username: string }>;
   searchParams: Promise<ListPageSearchParams>;
 };
-
-const containerSx = { maxWidth: 900, margin: '0 auto', padding: `${themeTokens.spacing[4]}px` };
 
 const actionsSx = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
 
@@ -67,7 +68,7 @@ const metaSx = {
   display: 'flex',
   gap: `${themeTokens.spacing[3]}px`,
   flexWrap: 'wrap',
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
 };
 
 const chipsSx = { display: 'flex', gap: `${themeTokens.spacing[2]}px`, flexWrap: 'wrap', my: 1 };
@@ -340,7 +341,23 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'common', 'climbs', 'settings']}>
-      <Box component="main" sx={containerSx}>
+      <PageShell
+        title={t('setter.seoHeading', { name: setterData.displayName })}
+        lead={t('setter.seoSummary', {
+          count: setterData.climbCount,
+          formattedCount: new Intl.NumberFormat(locale).format(setterData.climbCount),
+          name: setterData.displayName,
+          boards: new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+            setterData.boardTypes.map(boardTypeLabel),
+          ),
+        })}
+        breadcrumb={
+          <Box sx={actionsSx}>
+            <BackButton fallbackUrl="/" />
+            <SetterShareButton username={username} displayName={setterData.displayName} />
+          </Box>
+        }
+      >
         <SetterJsonLd
           username={username}
           displayName={setterData.displayName}
@@ -348,17 +365,6 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           boardDetailsByClimb={links.boardDetailsByClimb}
           unlinkedClimbUuids={links.unlinkedClimbUuids}
           page={page}
-        />
-
-        <Box sx={actionsSx}>
-          <BackButton fallbackUrl="/" />
-          <SetterShareButton username={username} displayName={setterData.displayName} />
-        </Box>
-
-        <SetterSeoFragment
-          displayName={setterData.displayName}
-          boardTypes={setterData.boardTypes}
-          climbCount={setterData.climbCount}
         />
 
         <Box sx={heroSx}>
@@ -384,13 +390,24 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           </Box>
         </Box>
 
-        <Typography variant="h5" component="h2">
+        <FrontDoorInstall
+          placement="setter"
+          helperText={t('setter.installHelper', { name: setterData.displayName })}
+          labels={await getStoreButtonLabels()}
+          appearance="brand"
+        />
+
+        <Typography variant="h5" component="h2" sx={{ mt: 4 }}>
           {t('setter.climbsHeading', { name: setterData.displayName })}
         </Typography>
 
         {links.fallbackBoardDetails ? (
           <StaticClimbList
             climbs={setterData.climbs}
+            thumbnailCropsByClimb={buildClimbThumbnailCrops(
+              setterData.climbs,
+              (climb) => links.boardDetailsByClimb[climb.uuid] ?? links.fallbackBoardDetails,
+            )}
             boardDetails={links.fallbackBoardDetails}
             boardDetailsByClimb={links.boardDetailsByClimb}
             unlinkedClimbUuids={links.unlinkedClimbUuids}
@@ -433,7 +450,7 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           )}
           <LocaleLink href="/playlists">{t('setter.browsePlaylists')}</LocaleLink>
         </Box>
-      </Box>
+      </PageShell>
     </I18nProvider>
   );
 }

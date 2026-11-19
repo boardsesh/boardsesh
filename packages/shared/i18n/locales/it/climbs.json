@@ -34,15 +34,15 @@
       "ogDescription": "Scegline uno, illuminalo in parete e registra la ripetizione."
     },
     "view": {
-      "title": "{{climbName}} - {{grade}}",
-      "description": "{{climbName}} - {{grade}} di {{setter}}. Qualità: {{quality}}/5. Salite: {{ascents}}",
+      "title": "{{climbName}}, {{grade}} su {{boardName}} a {{angle}}°",
+      "description": "{{climbName}} è un {{grade}} su {{layoutName}} a {{angle}}°, tracciato da {{setter}}. {{ascents}} ripetizioni, valutazione {{quality}} su 5. Illuminalo sul tuo pannello con Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sul pannello {{boardName}}",
       "fallbackTitle": "Blocco",
       "fallbackDescription": "Guarda i dettagli del blocco e i video della beta",
       "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Blocco {{boardName}} {{layoutName}}",
+      "seoSummary": "Blocco su {{layoutName}} a {{angle}}°",
       "seoSetterSuffix": " tracciato da {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} salite registrate"
+      "seoAscentsSuffix": ". {{ascents}} ripetizioni registrate"
     }
   },
   "list": {
@@ -60,7 +60,8 @@
       },
       "install": {
         "helper": "Non hai ancora l'app? Scaricala e illumina questi blocchi sul tuo pannello."
-      }
+      },
+      "climbsHeading": "I più scalati a {{angle}}°"
     }
   },
   "header": {},
@@ -964,7 +965,8 @@
     "angles": {
       "heading": "Stesso blocco, altre inclinazioni",
       "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — sei qui"
+      "current": "{{angle}}° · {{grade}} — sei qui",
+      "all": "Tutte le inclinazioni"
     },
     "beta": {
       "heading": "Video della beta",
@@ -979,9 +981,9 @@
       "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…"
     },
     "cta": {
-      "climbThis": "Prova questo blocco",
+      "climbThis": "Illumina questo blocco",
       "ariaLabel": "Apri {{climbName}} nell'app Boardsesh",
-      "helper": "Apre l'app, illumina le prese, registra la ripetizione."
+      "helper": "Lo apre nell’app, pronto da illuminare sul tuo pannello."
     },
     "install": {
       "helper": "Non hai ancora l'app? Scaricala e illumina questo blocco sul tuo pannello."
@@ -993,7 +995,7 @@
     "heading": "{{climbName}} — {{grade}}",
     "summary": "Su {{wallName}}, una Spraywall a {{angle}}° con {{holdCount}} prese.",
     "setterLine": "Tracciato da {{setter}}. {{ascents}} salite registrate.",
-    "ascentsLine": "{{ascents}} salite registrate.",
+    "ascentsLine": "{{ascents}} ripetizioni registrate.",
     "setterNotesHeading": "Note del tracciatore",
     "keepLookingHeading": "Continua a cercare",
     "setterLink": "Altri blocchi di {{setter}}",

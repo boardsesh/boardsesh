@@ -34,15 +34,15 @@
       "ogDescription": "Choisis-en un, allume-le et fais la croix."
     },
     "view": {
-      "title": "{{climbName}} - {{grade}}",
-      "description": "{{climbName}} - {{grade}} par {{setter}}. Qualité : {{quality}}/5. Enchaînements : {{ascents}}",
+      "title": "{{climbName}}, {{grade}} sur {{boardName}} à {{angle}}°",
+      "description": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}. {{ascents}} croix, note de {{quality}} sur 5. Allume-le sur ta board avec Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sur la board {{boardName}}",
       "fallbackTitle": "Bloc",
       "fallbackDescription": "Voir les détails du bloc et les vidéos de beta",
       "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Bloc {{boardName}} {{layoutName}}",
+      "seoSummary": "Bloc sur {{layoutName}} à {{angle}}°",
       "seoSetterSuffix": " ouvert par {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} enchaînements enregistrés"
+      "seoAscentsSuffix": ". {{ascents}} croix enregistrées"
     }
   },
   "list": {
@@ -60,7 +60,8 @@
       },
       "install": {
         "helper": "Pas encore l’app ? Installe-la et allume ces blocs sur ta board."
-      }
+      },
+      "climbsHeading": "Les plus grimpés à {{angle}}°"
     }
   },
   "header": {},
@@ -964,7 +965,8 @@
     "angles": {
       "heading": "Le même bloc à d’autres inclinaisons",
       "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — vous y êtes"
+      "current": "{{angle}}° · {{grade}} — vous y êtes",
+      "all": "Tous les angles"
     },
     "beta": {
       "heading": "Vidéos de beta",
@@ -979,9 +981,9 @@
       "unavailable": "Les blocs similaires n’ont pas chargé. Rechargement en cours…"
     },
     "cta": {
-      "climbThis": "Grimper ce bloc",
+      "climbThis": "Allumer ce bloc",
       "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
-      "helper": "Ouvre l’app, allume les prises, enregistre la croix."
+      "helper": "L’ouvre dans l’app, prêt à être allumé sur ta board."
     },
     "install": {
       "helper": "Pas encore l’app ? Installe-la et allume ce bloc sur ta board."

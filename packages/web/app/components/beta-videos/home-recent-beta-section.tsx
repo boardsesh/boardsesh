@@ -29,7 +29,7 @@ type RecentBetaResponse = {
 export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentBetaSectionProps) {
   const { t } = useTranslation('marketing');
 
-  const { data: rows = [] } = useQuery<RecentBetaLinkRow[]>({
+  const { data: rows } = useQuery<RecentBetaLinkRow[]>({
     queryKey: ['recentBetaLinks'],
     queryFn: async () => {
       const client = createGraphQLHttpClient();
@@ -46,6 +46,7 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
     const hrefByLink = new Map<string, string | null>();
     for (const row of rows) {
       const link = mapBetaLinkRow(row.betaLink);
+      if (!link.thumbnail) continue;
       mapped.push(link);
       nameByLink.set(link.link, row.climbName);
       const href =
@@ -69,6 +70,9 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
     <Box component="section" sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
       <Typography variant="h3" component="h2" className={sectionHeadingTypeClassName}>
         {t('home.recentBeta.title')}
+      </Typography>
+      <Typography component="p" variant="body1" color="text.secondary">
+        {t('home.recentBeta.lead')}
       </Typography>
       <BoardseshBetaList
         links={links}

@@ -10,7 +10,7 @@ import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
-import MuiDivider from '@mui/material/Divider';
+import Skeleton from '@mui/material/Skeleton';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import MailOutlined from '@mui/icons-material/MailOutlined';
@@ -21,7 +21,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import Logo from '@/app/components/brand/logo';
-import BackButton from '@/app/components/back-button';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import SocialLoginButtons from '@/app/components/auth/social-login-buttons';
 import { FormShell, FormSection, FormField, FormActions, focusFirstInvalidAfterRender } from '@/app/components/form';
 import {
@@ -36,7 +36,6 @@ import {
 import { PasswordSignInFields } from '@/app/components/auth/password-sign-in-fields';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { themeTokens } from '@/app/theme/theme-config';
 import { track, setPersonProperties } from '@/app/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { authMethodFromError, safeAuthError } from './auth-error-classification';
@@ -44,6 +43,7 @@ import { safeCallbackUrl } from '../signout/safe-callback-url';
 
 export default function AuthPageContent() {
   const { t } = useTranslation('auth');
+  const { t: tMarketing } = useTranslation('marketing');
   const { status } = useSession();
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
@@ -260,7 +260,24 @@ export default function AuthPageContent() {
   };
 
   if (status === 'loading') {
-    return null;
+    return (
+      <Box
+        component="main"
+        aria-busy="true"
+        sx={{
+          pt: 'calc(var(--global-header-height) + var(--spacing-8))',
+          px: 3,
+          minHeight: '100vh',
+          maxWidth: 448,
+          mx: 'auto',
+        }}
+      >
+        <Typography component="h1" variant="h4">
+          {t('login.header')}
+        </Typography>
+        <Skeleton variant="rounded" height={320} sx={{ mt: 3 }} />
+      </Box>
+    );
   }
 
   if (status === 'authenticated') {
@@ -270,38 +287,23 @@ export default function AuthPageContent() {
   return (
     <Box sx={{ minHeight: '100vh', background: 'var(--semantic-background)' }}>
       <Box
-        component="header"
-        sx={{
-          background: 'var(--semantic-surface)',
-          padding: '0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          boxShadow: themeTokens.shadows.xs,
-          height: 64,
-        }}
-      >
-        <BackButton />
-        <Logo size="sm" showText={false} />
-        <Typography variant="h4" sx={{ margin: 0, flex: 1 }}>
-          {t('login.header')}
-        </Typography>
-      </Box>
-
-      <Box
         component="main"
         sx={{
           padding: '24px',
           display: 'flex',
           justifyContent: 'center',
-          alignItems: 'flex-start',
-          paddingTop: '48px',
+          paddingTop: 'calc(var(--global-header-height) + var(--spacing-8))',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
         <Card sx={{ width: '100%', maxWidth: 400 }}>
           <CardContent>
             <Stack spacing={1} sx={{ width: '100%', textAlign: 'center', marginBottom: 3 }}>
               <Logo size="md" />
+              <Typography component="h1" variant="h4">
+                {t('login.header')}
+              </Typography>
               <Typography variant="body2" component="span" color="text.secondary">
                 {t('login.subtitle')}
               </Typography>
@@ -472,15 +474,22 @@ export default function AuthPageContent() {
               </FormShell>
             </TabPanel>
 
-            <MuiDivider>
-              <Typography variant="body2" component="span" color="text.secondary">
-                {t('login.divider')}
-              </Typography>
-            </MuiDivider>
-
-            <SocialLoginButtons callbackUrl={callbackUrl} />
+            <SocialLoginButtons callbackUrl={callbackUrl} showDivider />
           </CardContent>
         </Card>
+        <Box sx={{ mt: 3, textAlign: 'center', maxWidth: 400 }}>
+          <Typography component="p" variant="body2" sx={{ mb: 2 }}>
+            {t('login.appHelper')}
+          </Typography>
+          <StoreInstallButtons
+            placement="auth-login"
+            labels={{
+              ios: tMarketing('home.hero.ctaInstallIos'),
+              android: tMarketing('home.hero.ctaInstallAndroid'),
+              update: tMarketing('home.hero.ctaUpdate'),
+            }}
+          />
+        </Box>
       </Box>
     </Box>
   );

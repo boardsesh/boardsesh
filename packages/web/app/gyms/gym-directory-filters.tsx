@@ -8,6 +8,7 @@ import MuiLink from '@mui/material/Link';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { buildAngleOptions, buildLayoutOptions, buildSizeOptions } from '@boardsesh/gym-filters';
 import type { TFunction } from 'i18next';
+import type { FacetCounts } from './directory-data';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -46,10 +47,14 @@ export default function GymDirectoryFilters({
   facet,
   query,
   t,
+  facetCounts,
+  locale,
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   t: TFunction<'gyms'>;
+  facetCounts?: FacetCounts;
+  locale?: string;
 }) {
   const layoutOptions = buildLayoutOptions(query);
   const sizeOptions = buildSizeOptions(query);
@@ -57,15 +62,20 @@ export default function GymDirectoryFilters({
   const narrowCount = countNarrowFilters(query);
 
   return (
-    <Box component="section" sx={{ mt: 3 }}>
-      <Typography
-        variant="subtitle2"
-        component="h2"
-        sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
+    <Box component="section" sx={{ mt: 1, minWidth: 0, maxWidth: '100%' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          gap: 1,
+          pb: 1,
+          '& > *': { flexShrink: 0 },
+        }}
       >
-        {t('filters.boardHeading')}
-      </Typography>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
         {FILTERABLE_BOARD_TYPES.map((boardType) => {
           const selected = query.boardTypes.includes(boardType);
           return (
@@ -75,7 +85,11 @@ export default function GymDirectoryFilters({
               component={LocaleLink}
               href={buildBoardTypeToggleHref(facet, query, boardType)}
               aria-pressed={selected}
-              label={boardTypeLabel(boardType)}
+              label={
+                facetCounts && (boardType === 'kilter' || boardType === 'moonboard' || boardType === 'tension')
+                  ? `${boardTypeLabel(boardType)} · ${new Intl.NumberFormat(locale).format(facetCounts[boardType])}`
+                  : boardTypeLabel(boardType)
+              }
               variant="outlined"
               sx={filterChipSx({ selected })}
             />
@@ -91,7 +105,7 @@ export default function GymDirectoryFilters({
         // owns it from then on with no JavaScript involved.
         open={narrowCount > 0 || undefined}
         sx={{
-          mt: 3,
+          mt: 1,
           '& > summary': {
             cursor: 'pointer',
             minHeight: 44,
@@ -154,7 +168,7 @@ export default function GymDirectoryFilters({
           </Box>
 
           <Box>
-            <Button type="submit" variant="contained" color="primaryFill" sx={{ minHeight: 44 }}>
+            <Button type="submit" variant="outlined" sx={{ minHeight: 44 }}>
               {t('filters.submit')}
             </Button>
           </Box>
@@ -218,7 +232,7 @@ function CheckboxChipGroup({
   options: ChipOption[];
 }) {
   return (
-    <Box component="fieldset" sx={{ border: 0, p: 0, m: 0 }}>
+    <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, minWidth: 0, maxWidth: '100%' }}>
       <Typography
         component="legend"
         variant="subtitle2"

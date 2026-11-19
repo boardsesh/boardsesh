@@ -27,7 +27,7 @@
       "title": "Bloques creados"
     },
     "setter": {
-      "title": "{{name}} - Aperturista",
+      "title": "Bloques de {{name}}",
       "description": "Bloques creados por {{name}} en Boardsesh",
       "fallbackTitle": "Perfil de aperturista",
       "fallbackDescription": "Mira el perfil del aperturista y sus bloques en Boardsesh",
@@ -175,8 +175,8 @@
     "climb_one": "bloque",
     "climb_other": "bloques",
     "seoHeading": "Bloques abiertos por {{name}}",
-    "seoSummary_one": "{{name}} tiene un bloque en Boardsesh, en {{boards}}.",
-    "seoSummary_other": "{{name}} tiene {{count}} bloques en Boardsesh, en {{boards}}.",
+    "seoSummary_one": "{{name}} ha creado {{formattedCount}} bloque en {{boards}}.",
+    "seoSummary_other": "{{name}} ha creado {{formattedCount}} bloques en {{boards}}.",
     "climbsHeading": "Todos los bloques de {{name}}",
     "empty": "No hay bloques en esta página.",
     "browseBoard": "Ver todos los bloques del plafón {{boardName}}",
@@ -186,6 +186,7 @@
       "previous": "Bloques anteriores",
       "next": "Más bloques",
       "pageLabel": "Página {{page}}"
-    }
+    },
+    "installHelper": "Descarga la app gratis y escala los bloques de {{name}} en tu plafón."
   }
 }

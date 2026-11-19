@@ -3,7 +3,8 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
+import UiLabel from '../ui-label';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpPageShell from '../help-page-shell';
@@ -41,13 +42,28 @@ export default function BoardAndBluetoothContent() {
       breadcrumb={<HelpBreadcrumb current={t('help.board.breadcrumb')} />}
       jumpLabel={t('help.nav.jump')}
       jumpLinks={[
+        { id: 'failed', label: t('help.board.failed.title') },
         { id: 'connect', label: t('help.board.connect.title') },
         { id: 'driving', label: t('help.board.driving.title') },
         { id: 'board-history', label: t('help.board.history.title') },
         { id: 'hold-the-lightbulb', label: t('help.board.controls.title') },
-        { id: 'failed', label: t('help.board.failed.title') },
       ]}
     >
+      <Box component="span" id="two-boards" />
+      <Box component="span" id="listed-twice" />
+      <HelpBand id="failed" title={t('help.board.failed.title')} lead={t('help.board.failed.lead')}>
+        <ProseList>
+          <li>{t('help.board.failed.fix1')}</li>
+          <li>{t('help.board.failed.fix2')}</li>
+          <li>{t('help.board.failed.fix3')}</li>
+          <li>{t('help.board.failed.fix4')}</li>
+          <li>{t('help.board.failed.fix5')}</li>
+        </ProseList>
+        <Prose>{t('help.board.failed.twoBoards')}</Prose>
+        <Prose>{t('help.board.failed.duplicate')}</Prose>
+        <Prose>{t('help.board.failed.duplicateYourBoards')}</Prose>
+      </HelpBand>
+
       <HelpBand
         id="connect"
         title={t('help.board.connect.title')}
@@ -80,6 +96,14 @@ export default function BoardAndBluetoothContent() {
           />
         }
       >
+        <Prose>
+          <Trans
+            t={t}
+            i18nKey="help.board.driving.stop"
+            components={{ label: <UiLabel /> }}
+            values={{ drivingLabel: t('help.board.driving.states.openLabel') }}
+          />
+        </Prose>
         <Prose>{t('help.board.driving.looking')}</Prose>
         <Prose>{t('help.board.driving.waysIntro')}</Prose>
         <ProseList ordered>
@@ -164,26 +188,29 @@ export default function BoardAndBluetoothContent() {
         </ProseList>
       </HelpBand>
 
-      <HelpBand
-        continues
-        secondaryMedia
-        media={
-          <HelpScreenshot
-            shot="board-lighting"
-            alt={t('help.board.controls.lightingShotAlt')}
-            caption={t('help.board.controls.lightingShotCaption')}
-          />
-        }
-      >
-        <Prose>{t('help.board.controls.settingsIntro')}</Prose>
-        <ProseList>
-          <li>{t('help.board.controls.setting1')}</li>
-          <li>{t('help.board.controls.setting2')}</li>
-          <li>{t('help.board.controls.setting3')}</li>
-          <li>{t('help.board.controls.setting4')}</li>
-        </ProseList>
-        <Prose>{t('help.board.controls.bulb')}</Prose>
-      </HelpBand>
+      <Box component="details" sx={{ '& > summary': { minHeight: 44, cursor: 'pointer', p: 2 } }}>
+        <Box component="summary">{t('help.board.controls.settingsIntro')}</Box>
+        <HelpBand
+          continues
+          secondaryMedia
+          media={
+            <HelpScreenshot
+              shot="board-lighting"
+              alt={t('help.board.controls.lightingShotAlt')}
+              caption={t('help.board.controls.lightingShotCaption')}
+            />
+          }
+        >
+          <Prose>{t('help.board.controls.settingsIntro')}</Prose>
+          <ProseList>
+            <li>{t('help.board.controls.setting1')}</li>
+            <li>{t('help.board.controls.setting2')}</li>
+            <li>{t('help.board.controls.setting3')}</li>
+            <li>{t('help.board.controls.setting4')}</li>
+          </ProseList>
+          <Prose>{t('help.board.controls.bulb')}</Prose>
+        </HelpBand>
+      </Box>
 
       <HelpBand id="someone-else" title={t('help.board.control.title')} lead={t('help.board.control.lead')}>
         <Prose>{t('help.board.control.p1')}</Prose>
@@ -199,21 +226,6 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.board.liveActivity.p1')}</Prose>
         <Prose>{t('help.board.liveActivity.p2')}</Prose>
         <Prose>{t('help.board.liveActivity.p3')}</Prose>
-      </HelpBand>
-
-      <Box component="span" id="two-boards" />
-      <Box component="span" id="listed-twice" />
-      <HelpBand id="failed" title={t('help.board.failed.title')} lead={t('help.board.failed.lead')}>
-        <ProseList>
-          <li>{t('help.board.failed.fix1')}</li>
-          <li>{t('help.board.failed.fix2')}</li>
-          <li>{t('help.board.failed.fix3')}</li>
-          <li>{t('help.board.failed.fix4')}</li>
-          <li>{t('help.board.failed.fix5')}</li>
-        </ProseList>
-        <Prose>{t('help.board.failed.twoBoards')}</Prose>
-        <Prose>{t('help.board.failed.duplicate')}</Prose>
-        <Prose>{t('help.board.failed.duplicateYourBoards')}</Prose>
       </HelpBand>
 
       <HelpInstallSection />

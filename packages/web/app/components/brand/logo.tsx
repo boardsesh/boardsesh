@@ -50,7 +50,7 @@ const Logo = ({ size = 'md', showText = true, linkToHome = true }: LogoProps) =>
           }}
         >
           {/* i18n-ignore-next-line -- brand name, not translated */}
-          boardsesh
+          Boardsesh
         </span>
       )}
     </div>

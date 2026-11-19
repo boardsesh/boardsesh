@@ -93,6 +93,7 @@
     },
     "noBoardsYet": "Ancora nessun pannello elencato qui.",
     "explorePlaylists": "Guarda cosa stanno creando gli altri",
+    "startDiscussion": "Inizia la discussione",
     "claimTitle": "È la tua palestra?",
     "claimBody": "Rivendicala per gestire i pannelli, il brand e ciò che compare in parete.",
     "claimCta": "Rivendica questa palestra",
@@ -146,7 +147,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "Pannello {{board}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
     "ogDescriptionManyTypes": "Pannelli {{boards}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
-    "ogDescriptionNoBoards": "Ancora nessun pannello qui. Scali qui? Rivendica la palestra e aggiungili."
+    "ogDescriptionNoBoards": "Ancora nessun pannello qui. Scali qui? Rivendica la palestra e aggiungili.",
+    "openMaps": "Apri {{gymName}} sulla mappa",
+    "mapsLocation": "Apri la mappa",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "Guarda i blocchi",
+    "popularClimbHeading": "Il blocco più registrato su questo pannello",
+    "popularClimbBody": "Dalle ripetizioni e dai flash pubblici registrati qui. Contano anche le ripetizioni dello stesso blocco."
   },
   "boardPoster": {
     "metaTitle": "Poster QR per {{boardName}}",

@@ -26,9 +26,10 @@ type CommentSectionProps = {
   entityType: SocialEntityType;
   entityId: string;
   title?: string;
+  headingComponent?: 'h2' | 'h3';
 };
 
-export default function CommentSection({ entityType, entityId, title }: CommentSectionProps) {
+export default function CommentSection({ entityType, entityId, title, headingComponent = 'h2' }: CommentSectionProps) {
   const { t } = useTranslation('common');
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: session } = useSession();
@@ -101,7 +102,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
 
   return (
     <Box>
-      <MuiTypography variant="h6" sx={{ mb: 2 }}>
+      <MuiTypography variant="h6" component={headingComponent} sx={{ mb: 2 }}>
         {resolvedTitle}
       </MuiTypography>
 

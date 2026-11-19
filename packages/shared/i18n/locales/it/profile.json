@@ -27,7 +27,7 @@
       "title": "Blocchi creati"
     },
     "setter": {
-      "title": "{{name}} - Tracciatore",
+      "title": "Blocchi tracciati da {{name}}",
       "description": "Blocchi creati da {{name}} su Boardsesh",
       "fallbackTitle": "Profilo del tracciatore",
       "fallbackDescription": "Guarda il profilo e i blocchi del tracciatore su Boardsesh",
@@ -175,8 +175,8 @@
     "climb_one": "blocco",
     "climb_other": "blocchi",
     "seoHeading": "Blocchi tracciati da {{name}}",
-    "seoSummary_one": "{{name}} ha un blocco su Boardsesh, per {{boards}}.",
-    "seoSummary_other": "{{name}} ha {{count}} blocchi su Boardsesh, per {{boards}}.",
+    "seoSummary_one": "{{name}} ha tracciato {{formattedCount}} blocco su {{boards}}.",
+    "seoSummary_other": "{{name}} ha tracciato {{formattedCount}} blocchi su {{boards}}.",
     "climbsHeading": "Tutti i blocchi di {{name}}",
     "empty": "Nessun blocco in questa pagina.",
     "browseBoard": "Guarda tutti i blocchi su {{boardName}}",
@@ -186,6 +186,7 @@
       "previous": "Blocchi precedenti",
       "next": "Altri blocchi",
       "pageLabel": "Pagina {{page}}"
-    }
+    },
+    "installHelper": "Scarica l’app gratuita e scala i blocchi di {{name}} sul tuo pannello."
   }
 }

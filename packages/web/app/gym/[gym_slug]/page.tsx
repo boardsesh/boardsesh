@@ -25,6 +25,12 @@ import {
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
 import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
+import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
+import GymPopularClimbPreview, {
+  type GymPopularPreviewBoard,
+} from '@/app/components/gym-entity/gym-popular-climb-preview';
+import { gymMapsUrl } from '@/app/lib/gym-maps-url';
+import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
@@ -319,12 +325,19 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, allBoards, gymSprayWalls] = await Promise.all([
+  const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
     fetchGymSprayWalls(gym.uuid, token),
+    getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
   ]);
   const sprayWalls = gymSprayWalls ?? [];
+  const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
+    (board) =>
+      board.popularClimb?.frames &&
+      board.boardType !== 'spray' &&
+      allBoards.some((visibleBoard) => visibleBoard.uuid === board.uuid),
+  );
 
   // Spray walls come back in `gymBoards` too — they are ordinary `user_boards`
   // rows under the ninth board type — and they get their own section below, with
@@ -356,6 +369,7 @@ export default async function GymPage(props: GymRouteProps) {
   // Render-side XSS guard: only http(s) URLs become clickable (legacy rows may
   // predate the backend's GymWebsiteSchema scheme check).
   const websiteHref = safeExternalHref(gym.website);
+  const mapsHref = gymMapsUrl(gym);
 
   // Free-text hours, so nothing structured goes into the JSON-LD below —
   // schema.org's openingHoursSpecification wants a machine-readable model and
@@ -440,7 +454,7 @@ export default async function GymPage(props: GymRouteProps) {
       >
         <Box className={styles.identity}>
           <Box className={styles.summary}>
-            {(logoSrc || gym.address) && (
+            {(logoSrc || gym.address || mapsHref) && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 3 }}>
                 {logoSrc && (
                   <Box
@@ -458,13 +472,23 @@ export default async function GymPage(props: GymRouteProps) {
                     }}
                   />
                 )}
-                {gym.address && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <LocationOnOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
-                    <Typography variant="body1" color="text.secondary">
-                      {gym.address}
-                    </Typography>
-                  </Box>
+                {mapsHref && (
+                  <MuiLink
+                    href={mapsHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={t('gymPage.openMaps', { gymName: gym.name })}
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      minHeight: 44,
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    <LocationOnOutlined sx={{ fontSize: 18 }} />
+                    {gym.address?.trim() || t('gymPage.mapsLocation')}
+                  </MuiLink>
                 )}
               </Box>
             )}
@@ -476,26 +500,34 @@ export default async function GymPage(props: GymRouteProps) {
             )}
 
             <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
-              <GymStatChip
-                icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
-                value={gym.boardCount}
-                label={tBoards('gymEntity.stats.boards')}
-              />
-              <GymStatChip
-                icon={<PersonOutlined sx={{ fontSize: 18 }} />}
-                value={gym.memberCount}
-                label={tBoards('gymEntity.stats.members')}
-              />
-              <GymStatChip
-                icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
-                value={gym.followerCount}
-                label={tBoards('gymEntity.stats.followers')}
-              />
-              <GymStatChip
-                icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
-                value={gym.commentCount}
-                label={tBoards('gymEntity.stats.comments')}
-              />
+              {gym.boardCount > 0 && (
+                <GymStatChip
+                  icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.boardCount}
+                  label={tBoards('gymEntity.stats.boards', { count: gym.boardCount })}
+                />
+              )}
+              {gym.memberCount > 0 && (
+                <GymStatChip
+                  icon={<PersonOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.memberCount}
+                  label={tBoards('gymEntity.stats.members', { count: gym.memberCount })}
+                />
+              )}
+              {gym.followerCount > 0 && (
+                <GymStatChip
+                  icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.followerCount}
+                  label={tBoards('gymEntity.stats.followers', { count: gym.followerCount })}
+                />
+              )}
+              {gym.commentCount > 0 && (
+                <GymStatChip
+                  icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.commentCount}
+                  label={tBoards('gymEntity.stats.comments', { count: gym.commentCount })}
+                />
+              )}
             </Box>
 
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
@@ -516,6 +548,79 @@ export default async function GymPage(props: GymRouteProps) {
               )}
               {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
             </Box>
+
+            <Box component="section" className={styles.boards} sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <FitnessCenterOutlined sx={{ fontSize: 20, color: themeTokens.neutral[400] }} />
+                <Typography
+                  variant="h5"
+                  component="h2"
+                  sx={{
+                    fontSize: { xs: 28, md: 32 },
+                    lineHeight: 1.25,
+                    fontWeight: themeTokens.typography.fontWeight.semibold,
+                  }}
+                >
+                  {t('gymPage.boardsHeading')}
+                </Typography>
+                {boards.length > 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    {t('gymPage.boardCount', { count: boards.length })}
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Together with the breadcrumb above, this keeps the page at ≥2
+            crawlable internal links even for a gym with no boards or kiosk. */}
+              {boards.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('gymPage.noBoardsYet')}
+                </Typography>
+              ) : (
+                <Box
+                  component="ul"
+                  sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
+                >
+                  {boards.map((board, boardIndex) => (
+                    <Box component="li" key={board.uuid}>
+                      <MuiLink
+                        component={LocaleLink}
+                        href={`/b/${board.slug}`}
+                        underline="hover"
+                        sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                      >
+                        <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+                          {stripGymNamePrefix(board.name, gym.name)}
+                        </Typography>
+                        <Typography component="span" variant="body2" color="text.secondary">
+                          {boardSubtitles[boardIndex].includes(`${board.angle}°`)
+                            ? boardSubtitles[boardIndex]
+                            : t('gymPage.boardAngle', {
+                                configuration: boardSubtitles[boardIndex],
+                                angle: board.angle,
+                              })}
+                        </Typography>
+                      </MuiLink>
+                      <MuiLink
+                        component={LocaleLink}
+                        href={constructBoardSlugListUrl(encodeURIComponent(board.slug), board.angle)}
+                        sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, ml: 2 }}
+                      >
+                        {t('gymPage.seeClimbs')}
+                      </MuiLink>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+
+            {previewBoard && (
+              <GymPopularClimbPreview
+                board={previewBoard}
+                heading={t('gymPage.popularClimbHeading')}
+                description={t('gymPage.popularClimbBody')}
+              />
+            )}
 
             {/* The install CTA a poster scan lands on. `gym.slug || gym_slug` is the
             canonical slug: a merged twin's URL 308s onto `gym.slug` above, and a
@@ -567,57 +672,6 @@ export default async function GymPage(props: GymRouteProps) {
 
         <Box className={styles.layout}>
           <Box component="section" className={styles.boards}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-              <FitnessCenterOutlined sx={{ fontSize: 20, color: themeTokens.neutral[400] }} />
-              <Typography
-                variant="h5"
-                component="h2"
-                sx={{
-                  fontSize: { xs: 28, md: 32 },
-                  lineHeight: 1.25,
-                  fontWeight: themeTokens.typography.fontWeight.semibold,
-                }}
-              >
-                {t('gymPage.boardsHeading')}
-              </Typography>
-              {boards.length > 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  {t('gymPage.boardCount', { count: boards.length })}
-                </Typography>
-              )}
-            </Box>
-
-            {/* Together with the breadcrumb above, this keeps the page at ≥2
-            crawlable internal links even for a gym with no boards or kiosk. */}
-            {boards.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('gymPage.noBoardsYet')}
-              </Typography>
-            ) : (
-              <Box
-                component="ul"
-                sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
-              >
-                {boards.map((board, boardIndex) => (
-                  <Box component="li" key={board.uuid}>
-                    <MuiLink
-                      component={LocaleLink}
-                      href={`/b/${board.slug}`}
-                      underline="hover"
-                      sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
-                    >
-                      <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                        {stripGymNamePrefix(board.name, gym.name)}
-                      </Typography>
-                      <Typography component="span" variant="body2" color="text.secondary">
-                        {boardSubtitles[boardIndex]}
-                      </Typography>
-                    </MuiLink>
-                  </Box>
-                ))}
-              </Box>
-            )}
-
             {sprayWalls.length > 0 && (
               <>
                 <Divider sx={{ my: 4 }} />
@@ -778,7 +832,16 @@ export default async function GymPage(props: GymRouteProps) {
 
         <Divider sx={{ my: 4 }} />
 
-        <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+        {gym.commentCount > 0 ? (
+          <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+        ) : (
+          <Box component="details">
+            <Box component="summary" sx={{ minHeight: 44, cursor: 'pointer' }}>
+              {t('gymPage.startDiscussion')}
+            </Box>
+            <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+          </Box>
+        )}
 
         <Box sx={{ mt: 4 }}>
           <MuiLink component={LocaleLink} href="/playlists" underline="hover" sx={{ color: 'var(--color-primary)' }}>

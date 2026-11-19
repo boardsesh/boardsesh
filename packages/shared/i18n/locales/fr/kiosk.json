@@ -93,6 +93,7 @@
     },
     "noBoardsYet": "Aucune board ici pour l'instant.",
     "explorePlaylists": "Découvre les playlists des grimpeurs",
+    "startDiscussion": "Lancer la discussion",
     "claimTitle": "C'est ta salle ?",
     "claimBody": "Revendique-la pour gérer les boards, l'identité visuelle et ce qui s'affiche sur le mur.",
     "claimCta": "Revendiquer cette salle",
@@ -146,7 +147,13 @@
     "ogTitle": "{{gymName}} · {{boards}}",
     "ogDescriptionOneType": "Board {{board}} à {{gymName}}. Découvre les blocs ouverts dessus et fais la croix.",
     "ogDescriptionManyTypes": "Boards {{boards}} à {{gymName}}. Découvre les blocs ouverts et fais la croix.",
-    "ogDescriptionNoBoards": "Aucune board listée ici pour l'instant. Tu grimpes ici ? Revendique la salle et ajoute-les."
+    "ogDescriptionNoBoards": "Aucune board listée ici pour l'instant. Tu grimpes ici ? Revendique la salle et ajoute-les.",
+    "openMaps": "Ouvrir {{gymName}} sur la carte",
+    "mapsLocation": "Ouvrir la carte",
+    "boardAngle": "{{configuration}} · {{angle}}°",
+    "seeClimbs": "Voir les blocs",
+    "popularClimbHeading": "Le bloc le plus noté sur ce pan",
+    "popularClimbBody": "D’après les croix et les flashs publics notés ici. Les répétitions comptent."
   },
   "boardPoster": {
     "metaTitle": "Affiche QR pour {{boardName}}",

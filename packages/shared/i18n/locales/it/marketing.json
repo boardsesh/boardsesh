@@ -104,7 +104,8 @@
       "open": "Apri questo pannello"
     },
     "recentBeta": {
-      "title": "Beta fresche"
+      "title": "Beta fresche",
+      "lead": "Guarda il blocco e la sua beta: video appena collegati dagli scalatori."
     },
     "showcase": {
       "videoLabel": "Demo: tutti i pannelli in un'app, compresa una Spraywall, poi una coda condivisa con la crew, un piano di allenamento e una ripetizione registrata.",
@@ -443,7 +444,8 @@
         },
         "statesEyebrow": "Leggi il pulsante del pannello",
         "statesTitle": "I tre stati del pulsante del pannello",
-        "endsTitle": "Una guida finisce quando"
+        "endsTitle": "Una guida finisce quando",
+        "stop": "Tocca <label>{{drivingLabel}}</label> per smettere di controllarla."
       },
       "history": {
         "title": "Cosa c'è ora in parete",
@@ -485,7 +487,7 @@
         "p3": "Android mostra gli stessi controlli in una notifica. Bloccare lo schermo non disconnette mai il pannello."
       },
       "failed": {
-        "title": "Il pannello non si connette?",
+        "title": "Il pannello non si illumina?",
         "lead": "L'avviso Impossibile connettersi indica il problema.",
         "fix1": "Pannello non trovato. Controlla che sia acceso e che tu sia vicino. Se un altro telefono è connesso, disconnettilo prima da lì.",
         "fix2": "Impossibile connettersi. Avvicinati e riprova.",
@@ -858,6 +860,15 @@
         "title": "Continua",
         "logbook": "Registra le tue ripetizioni",
         "sessions": "Arrampicala con la tua crew"
+      },
+      "visibility": {
+        "title": "Chi vede la tua Spraywall",
+        "body": "Scegli la visibilità privata, solo con link o pubblica quando pubblichi. Aiuta a riconoscere le prese è attivo per le nuove Spraywall; puoi disattivarlo. Usiamo queste foto solo per migliorare il riconoscimento delle prese e non condividiamo mai la raccolta di addestramento. Modifica entrambe le opzioni nel menu di modifica della Spraywall."
+      },
+      "installHelper": "Le Spraywall si configurano nell’app. È gratis.",
+      "tools": {
+        "tool": "Strumento",
+        "action": "Cosa fa"
       }
     }
   },

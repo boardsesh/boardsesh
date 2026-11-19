@@ -9,6 +9,7 @@ import type { Gym } from '@boardsesh/shared-schema';
 // whole "counts" half rests on one unasserted line of JSX.
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 class NotFoundSignal extends Error {}
 class RedirectSignal extends Error {}

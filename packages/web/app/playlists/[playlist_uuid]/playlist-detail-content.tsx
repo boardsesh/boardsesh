@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@/app/lib/types';
+import type { ClimbThumbnailCrop } from '@/app/lib/climb-thumbnail-crop';
 import { executeGraphQL, createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   type GetPlaylistQueryResponse,
@@ -59,6 +60,7 @@ import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import BackButton from '@/app/components/back-button';
 import CommentSection from '@/app/components/social/comment-section';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
@@ -68,6 +70,7 @@ import { findMatchingBoard, type BoardConfig } from '@/app/lib/find-matching-boa
 import { ssrSeedMatchesQueryKey } from '@/app/lib/graphql/ssr-query-seed';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import styles from '@/app/components/ui/page-container.module.css';
+import { PageShell } from '@/app/components/ui/page-shell';
 
 // Validate hex color format
 const isValidHexColor = (color: string): boolean => {
@@ -87,6 +90,7 @@ const PLAYLIST_COLORS = [
 
 type PlaylistDetailContentProps = {
   playlistUuid: string;
+  thumbnailCropsByClimb?: Record<string, ClimbThumbnailCrop>;
   /** Base path for navigating back to the playlists library (e.g. "/b/my-kilter/40/playlists"). Defaults to "/playlists". */
   playlistsBasePath?: string;
   /** When set from a board slug route, auto-selects the matching board filter. */
@@ -103,6 +107,7 @@ type PlaylistDetailContentProps = {
 
 export default function PlaylistDetailContent({
   playlistUuid,
+  thumbnailCropsByClimb,
   playlistsBasePath = '/playlists',
   boardSlug,
   boardConfig,
@@ -113,6 +118,7 @@ export default function PlaylistDetailContent({
   const router = useLocaleRouter();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('playlists');
+  const { t: tMarketing } = useTranslation('marketing');
   const [playlist, setPlaylist] = useState<Playlist | null>(initialPlaylist ?? null);
   const [loading, setLoading] = useState(!initialPlaylist);
   const [error, setError] = useState<string | null>(null);
@@ -282,6 +288,21 @@ export default function PlaylistDetailContent({
   // this screen uses web `Climb`. Runtime objects are the same flattened GraphQL
   // climbs, so cast once here.
   const allClimbs = sharedAllClimbs as unknown as Climb[];
+  const usableThumbnailCrops = useMemo(() => {
+    const initialByUuid = new Map(initialClimbs?.climbs.map((climb) => [climb.uuid, climb]));
+    return Object.fromEntries(
+      allClimbs.flatMap((climb) => {
+        const initial = initialByUuid.get(climb.uuid);
+        const crop = thumbnailCropsByClimb?.[climb.uuid];
+        return crop &&
+          initial?.frames === climb.frames &&
+          initial.boardType === climb.boardType &&
+          initial.layoutId === climb.layoutId
+          ? [[climb.uuid, crop]]
+          : [];
+      }),
+    );
+  }, [allClimbs, initialClimbs, thumbnailCropsByClimb]);
 
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -391,6 +412,7 @@ export default function PlaylistDetailContent({
   const climbList = (
     <MultiboardClimbList
       climbs={allClimbs}
+      thumbnailCropsByClimb={usableThumbnailCrops}
       isFetching={isFetchingClimbs}
       isLoading={isClimbsLoading}
       hasMore={hasNextPage ?? false}
@@ -402,12 +424,7 @@ export default function PlaylistDetailContent({
   );
 
   return (
-    <>
-      {/* Back Button */}
-      <div className={styles.actionsSection}>
-        <BackButton fallbackUrl={playlistsBasePath} />
-      </div>
-
+    <PageShell title={playlist.name} breadcrumb={<BackButton fallbackUrl={playlistsBasePath} />}>
       {/* Main Content */}
       <div className={styles.contentWrapper}>
         {/* Hero Card */}
@@ -422,18 +439,6 @@ export default function PlaylistDetailContent({
               />
             </div>
             <div className={styles.heroInfo}>
-              {/* The page's only `h1`, and `variant="h5"` keeps it looking
-                  exactly as it did — the name was an `h2` under no `h1` at
-                  all, so every playlist page shipped a heading outline with
-                  no top. Adding a heading here means checking this stays the
-                  one `h1` on the page. */}
-              <Typography
-                variant="h5"
-                component="h1"
-                className={`${styles.heroName} ${playlist.isPublic ? styles.heroNameWithShare : ''}`}
-              >
-                {playlist.name}
-              </Typography>
               <div className={styles.heroMeta}>
                 <span className={styles.heroMetaItem}>{t('detail.climbCount', { count: playlist.climbCount })}</span>
                 <span className={styles.heroMetaItem}>
@@ -494,6 +499,20 @@ export default function PlaylistDetailContent({
               >
                 {t('detail.openInApp')}
               </MuiButton>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                {t('detail.installHelper')}
+              </Typography>
+              <StoreInstallButtons
+                placement="playlist"
+                sharedHtml
+                align="start"
+                appearance="plain"
+                labels={{
+                  ios: tMarketing('home.hero.ctaInstallIos'),
+                  android: tMarketing('home.hero.ctaInstallAndroid'),
+                  update: tMarketing('home.hero.ctaUpdate'),
+                }}
+              />
             </div>
           </div>
 
@@ -564,6 +583,6 @@ export default function PlaylistDetailContent({
           </div>
         )}
       </div>
-    </>
+    </PageShell>
   );
 }

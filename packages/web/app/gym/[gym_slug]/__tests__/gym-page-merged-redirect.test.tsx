@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { Gym } from '@boardsesh/shared-schema';
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 // Next's real `permanentRedirect` throws NEXT_REDIRECT and nothing after it
 // runs. A plain spy would let the page fall through into rendering, so the

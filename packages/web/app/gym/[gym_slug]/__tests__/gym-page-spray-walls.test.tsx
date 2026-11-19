@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import React from 'react';
+import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import type { Gym } from '@boardsesh/shared-schema';
 
 /**
@@ -17,6 +18,7 @@ import type { Gym } from '@boardsesh/shared-schema';
  */
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 class NotFoundSignal extends Error {}
 class RedirectSignal extends Error {}
@@ -155,6 +157,7 @@ const renderPage = (slug: string) =>
 
 beforeEach(() => {
   executeAuthenticatedGraphQL.mockReset();
+  vi.mocked(getBoardDiscovery).mockResolvedValue([]);
 });
 
 describe("a gym page's spray walls", () => {
@@ -221,5 +224,21 @@ describe("a gym page's spray walls", () => {
     expect(linkHrefs(tree).filter((href) => href === '/b/slug-The Cave')).toHaveLength(1);
     expect(allText(tree)).not.toContain('gymPage.sprayWallsHeading');
     consoleError.mockRestore();
+  });
+});
+
+describe('gym front door essentials', () => {
+  it('places board climb links and a map before the install offer', async () => {
+    respondWith({
+      gym: gym('essentials', { address: '12 Main St', latitude: 0, longitude: 20 }),
+      boards: [{ uuid: 'board-rail', slug: 'kilter-rail', name: 'Kilter', boardType: 'kilter', angle: 40 }],
+    });
+    const tree = await renderPage('essentials');
+    const texts = allText(tree);
+    expect(texts.indexOf('gymPage.boardsHeading')).toBeLessThan(texts.indexOf('gymPage.install.heading'));
+    expect(linkHrefs(tree)).toContain('/b/kilter-rail/40/list');
+    expect(linkHrefs(tree).some((href) => new URL(href, 'https://example.com').hostname === 'www.google.com')).toBe(
+      true,
+    );
   });
 });

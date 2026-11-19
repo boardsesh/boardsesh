@@ -1,3 +1,5 @@
+import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import React from 'react';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import type { BoardRouteParametersWithUuid, Climb, ParsedBoardRouteParametersWithUuid } from '@/app/lib/types';
@@ -85,10 +87,12 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     );
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
-    const climbGrade = currentClimb.difficulty || 'Unknown Grade';
+    const climbGrade = climbGradeForSearch(currentClimb.difficulty || '');
     const setter = currentClimb.setter_username || 'Unknown Setter';
-    const quality = currentClimb.quality_average || 0;
-    const ascents = currentClimb.ascensionist_count || 0;
+    const quality = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
+      Number(currentClimb.quality_average || 0),
+    );
+    const ascents = new Intl.NumberFormat(locale).format(currentClimb.ascensionist_count || 0);
     // ONE builder, shared with `/b/{slug}/{angle}/view` — that is what makes
     // the two trees' canonicals provably identical (A1).
     const canonicalAngle = selectCanonicalClimbAngle({
@@ -115,8 +119,21 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const isHiddenClimb = currentClimb.is_hidden === true;
 
     return createBoardContentPageMetadata({
-      title: t('metadata.view.title', { climbName, grade: climbGrade }),
-      description: t('metadata.view.description', { climbName, grade: climbGrade, setter, quality, ascents }),
+      title: t('metadata.view.title', {
+        climbName,
+        grade: climbGrade,
+        boardName: boardTypeLabel(boardDetails.board_name),
+        angle: parsedParams.angle,
+      }),
+      description: t('metadata.view.description', {
+        climbName,
+        grade: climbGrade,
+        setter,
+        quality,
+        ascents,
+        layoutName: climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name),
+        angle: parsedParams.angle,
+      }),
       path: climbUrl,
       locale,
       imagePath: ogImagePath,

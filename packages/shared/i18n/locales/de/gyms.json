@@ -19,7 +19,8 @@
     "refreshRetry": "Verzeichnis aktualisieren",
     "moveTitle": "Dieses Board verschieben?",
     "moveBody": "{{board}} von {{source}} zu dieser Halle verschieben? Wenn der bisherige importierte Eintrag dadurch leer wird, wird er mit dieser Halle zusammengeführt und seine Links leiten hierher weiter.",
-    "moveConfirm": "Board verschieben"
+    "moveConfirm": "Board verschieben",
+    "notListed": "Nicht dabei? Füge deine Halle hinzu"
   },
   "metadata": {
     "all": {
@@ -46,8 +47,8 @@
   "directory": {
     "all": {
       "h1": "Kletterhallen mit Trainingsboards",
-      "lead_one": "{{formattedCount}} Halle hat ein Board auf Boardsesh eingetragen. Der Eintrag zeigt die Boards an der Wand und den Winkel, auf den sie eingestellt sind, damit du weißt, was dich erwartet, bevor du losfährst.",
-      "lead_other": "{{formattedCount}} Hallen haben ein Board auf Boardsesh eingetragen. Jeder Eintrag zeigt die Boards an der Wand und den Winkel, auf den sie eingestellt sind, damit du weißt, was dich erwartet, bevor du losfährst.",
+      "lead_one": "{{formattedCount}} Halle, Vereinswand oder Heimwand steht im Board-Verzeichnis.",
+      "lead_other": "{{formattedCount}} Hallen, Vereinswände und Heimwände stehen im Board-Verzeichnis.",
       "detail": "{{kilterCount}} davon haben ein Kilter Board, {{moonboardCount}} ein MoonBoard und {{tensionCount}} ein Tension Board, viele sogar mehrere. Wähl unten ein Board oder such nach dem Namen."
     },
     "kilter": {
@@ -67,18 +68,16 @@
       "lead_one": "{{formattedCount}} Halle auf Boardsesh hat ein Tension Board an der Wand. Der Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du siehst, ob es zu deinem Projekt passt.",
       "lead_other": "{{formattedCount}} Hallen auf Boardsesh haben ein Tension Board an der Wand. Jeder Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du die Halle findest, die zu deinem Projekt passt.",
       "detail": "Diese Hallen tragen Kletterer*innen selbst ein, und Boardsesh gehört zu keinem Board-Hersteller. Betreibst du eine dieser Wände? Übernimm den Eintrag und halt die Angaben aktuell."
-    }
+    },
+    "source": "Einträge stammen aus öffentlichen Board-Standortdaten und von Kletternden."
   },
   "facets": {
-    "heading": "Nach Board stöbern",
     "all": "Alle Hallen · {{formattedCount}}",
     "kilter": "Kilter · {{formattedCount}}",
     "moonboard": "MoonBoard · {{formattedCount}}",
-    "tension": "Tension · {{formattedCount}}",
-    "countHint": "Die Zahlen zählen Hallen, nicht Boards: Eine Halle mit drei Kilter-Wänden zählt einmal."
+    "tension": "Tension · {{formattedCount}}"
   },
   "filters": {
-    "boardHeading": "Board",
     "moreLabel": "Genauer suchen",
     "moreLabelActive": "Genauer suchen · {{count}}",
     "layoutHeading": "Layout",
@@ -95,7 +94,6 @@
     "clearAll": "Filter zurücksetzen"
   },
   "search": {
-    "geoHint": "Standort deaktiviert? Gib einen Ort ein. Keine Berechtigung nötig.",
     "label": "Hallen suchen",
     "placeholder": "Name der Halle oder Ort",
     "submit": "Suchen"
@@ -115,14 +113,15 @@
     "home": "Zurück zu Boardsesh"
   },
   "card": {
-    "claimed": "Beansprucht",
+    "claimed": "Von der Halle gepflegt",
     "unclaimed": "Nicht beansprucht",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km entfernt"
   },
   "claim": {
     "body": "Ist das deine Halle? Beanspruche sie und du legst fest, welche Boards, Zeiten und Links hier stehen.",
-    "action": "Finde deine Halle"
+    "action": "Finde deine Halle",
+    "topAction": "Betreibst du eine dieser Wände? Finde und übernimm deinen Eintrag kostenlos."
   },
   "nearMe": {
     "cta": "Meinen Standort nutzen",

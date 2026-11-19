@@ -1,3 +1,4 @@
+vi.mock('server-only', () => ({}));
 import React from 'react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';

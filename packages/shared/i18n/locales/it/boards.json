@@ -857,7 +857,15 @@
       "boards": "pannelli",
       "members": "membri",
       "followers": "follower",
-      "comments": "commenti"
+      "comments": "commenti",
+      "boards_one": "pannello",
+      "boards_other": "pannelli",
+      "members_one": "membro",
+      "members_other": "membri",
+      "followers_one": "follower",
+      "followers_other": "follower",
+      "comments_one": "commento",
+      "comments_other": "commenti"
     },
     "delete": {
       "title": "Elimina palestra",

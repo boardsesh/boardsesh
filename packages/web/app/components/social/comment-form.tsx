@@ -79,7 +79,7 @@ export default function CommentForm({
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           {showCounter && (
-            <MuiTypography variant="caption" sx={{ color: isOverLimit ? 'var(--color-error)' : 'var(--neutral-400)' }}>
+            <MuiTypography variant="caption" sx={{ color: isOverLimit ? 'var(--color-error)' : 'var(--neutral-500)' }}>
               {body.length}/{MAX_BODY_LENGTH}
             </MuiTypography>
           )}

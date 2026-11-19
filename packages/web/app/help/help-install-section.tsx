@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import MarketingInstallLinks from '@/app/components/marketing/marketing-install-links';
+import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import HelpBand from './help-band';
 
 /**
@@ -14,12 +15,22 @@ import HelpBand from './help-band';
  * find their way back to /help to get one. Same `help` placement as the hub,
  * so the pathname on the click is what tells the pages apart.
  */
-export default function HelpInstallSection({ media }: { media?: React.ReactNode }) {
+export default function HelpInstallSection({
+  media,
+  placement = 'help',
+  id = 'get-the-app',
+  helperText,
+}: {
+  media?: React.ReactNode;
+  placement?: AppInstallPlacement;
+  id?: string;
+  helperText?: string;
+}) {
   const { t } = useTranslation('marketing');
 
   return (
-    <HelpBand id="get-the-app" title={t('help.install.title')} lead={t('help.install.intro')} media={media}>
-      <MarketingInstallLinks placement="help" align="start" />
+    <HelpBand id={id} title={t('help.install.title')} lead={helperText ?? t('help.install.intro')} media={media}>
+      <MarketingInstallLinks placement={placement} align="start" />
     </HelpBand>
   );
 }

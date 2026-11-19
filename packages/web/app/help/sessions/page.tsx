@@ -18,7 +18,11 @@ export async function generateMetadata() {
 export default async function HelpSessionsPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider
+      locale={locale}
+      namespaces={['marketing']}
+      resourceKeys={{ marketing: ['help.crew', 'help.nav', 'help.install', 'home.hero'] }}
+    >
       <SessionsContent />
     </I18nProvider>
   );

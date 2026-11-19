@@ -24,8 +24,8 @@
   "directory": {
     "all": {
       "h1": "Climbing gyms with training boards",
-      "lead_one": "{{formattedCount}} gym has a board listed on Boardsesh. The listing shows the boards on its wall and the angle they are set at, so you know what you are walking into before you drive across town.",
-      "lead_other": "{{formattedCount}} gyms have a board listed on Boardsesh. Every listing shows the boards on the wall and the angle they are set at, so you know what you are walking into before you drive across town.",
+      "lead_one": "{{formattedCount}} gym, club wall or home wall is listed in the board directory.",
+      "lead_other": "{{formattedCount}} gyms, club walls and home walls are listed in the board directory.",
       "detail": "{{kilterCount}} of them run a Kilter board, {{moonboardCount}} a MoonBoard and {{tensionCount}} a Tension board, and plenty run more than one. Pick a board below, or search by name."
     },
     "kilter": {
@@ -45,18 +45,16 @@
       "lead_one": "{{formattedCount}} gym on Boardsesh has a Tension board on the wall. The listing shows the angle it is set at, so you can tell whether it matches the project you are on.",
       "lead_other": "{{formattedCount}} gyms on Boardsesh have a Tension board on the wall. Every listing shows the angle it is set at, so you can tell which one matches the project you are on.",
       "detail": "Climbers list these gyms themselves, and Boardsesh is not affiliated with the people who make the boards. Run one of these walls? Claim the listing and keep the details straight."
-    }
+    },
+    "source": "Listings come from public board-location data and climbers."
   },
   "facets": {
-    "heading": "Browse by board",
     "all": "All gyms · {{formattedCount}}",
     "kilter": "Kilter · {{formattedCount}}",
     "moonboard": "MoonBoard · {{formattedCount}}",
-    "tension": "Tension · {{formattedCount}}",
-    "countHint": "The numbers count gyms, not boards: a gym with three Kilter walls counts once."
+    "tension": "Tension · {{formattedCount}}"
   },
   "filters": {
-    "boardHeading": "Board",
     "moreLabel": "Narrow it down",
     "moreLabelActive": "Narrow it down · {{count}}",
     "layoutHeading": "Layout",
@@ -73,7 +71,6 @@
     "clearAll": "Clear all filters"
   },
   "search": {
-    "geoHint": "Location off? Type a town instead. No permission needed.",
     "label": "Search gyms",
     "placeholder": "Gym name or town",
     "submit": "Search"
@@ -93,14 +90,15 @@
     "home": "Back to Boardsesh"
   },
   "card": {
-    "claimed": "Claimed",
+    "claimed": "Run by this gym",
     "unclaimed": "Unclaimed",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km away"
   },
   "claim": {
     "body": "Is this your gym? Claim it and you set the boards, hours and links climbers see here.",
-    "action": "Find your gym"
+    "action": "Find your gym",
+    "topAction": "Run one of these walls? Find and claim your listing, free."
   },
   "nearMe": {
     "cta": "Use my location",
@@ -185,6 +183,7 @@
     "refreshRetry": "Refresh directory",
     "moveTitle": "Move this board?",
     "moveBody": "Move {{board}} from {{source}} to this gym? If its old imported listing is left empty, it will be merged into this gym and its links will redirect here.",
-    "moveConfirm": "Move board"
+    "moveConfirm": "Move board",
+    "notListed": "Not listed? Add your gym"
   }
 }

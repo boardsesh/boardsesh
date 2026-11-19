@@ -104,7 +104,8 @@
       "open": "Ouvrir cette board"
     },
     "recentBeta": {
-      "title": "Beta fraîche"
+      "title": "Beta fraîche",
+      "lead": "Découvre le bloc et sa beta : des vidéos que les grimpeurs viennent de lier."
     },
     "showcase": {
       "videoLabel": "Démo : toutes les boards dans une appli, y compris un Spraywall, puis une file de groupe, un plan de séance et une croix notée.",
@@ -443,7 +444,8 @@
         },
         "statesEyebrow": "Lire le bouton du mur",
         "statesTitle": "Les trois états du bouton du mur",
-        "endsTitle": "Un pilotage s'arrête quand"
+        "endsTitle": "Un pilotage s'arrête quand",
+        "stop": "Appuie sur <label>{{drivingLabel}}</label> pour arrêter de le piloter."
       },
       "history": {
         "title": "Ce qui est au mur maintenant",
@@ -485,7 +487,7 @@
         "p3": "Android affiche les mêmes commandes dans une notification. Verrouiller l'écran ne déconnecte jamais la board."
       },
       "failed": {
-        "title": "La board ne se connecte pas ?",
+        "title": "La board ne s’allume pas ?",
         "lead": "L'alerte Connexion impossible nomme le problème.",
         "fix1": "Board introuvable. Vérifie qu'elle est allumée et que tu es à proximité. Si un autre téléphone y est connecté, déconnecte-le d'abord.",
         "fix2": "Connexion impossible. Rapproche-toi et réessaie.",
@@ -858,6 +860,15 @@
         "title": "Et ensuite",
         "logbook": "Enregistre tes croix",
         "sessions": "Grimpe-le avec ta crew"
+      },
+      "visibility": {
+        "title": "Qui voit ton Spraywall",
+        "body": "Choisis Privé, Par lien ou Public au moment de publier. Aider à détecter les prises est activé pour les nouveaux Spraywalls ; tu peux le désactiver. Nous utilisons ces photos uniquement pour améliorer la détection des prises et ne partageons jamais la collection d’entraînement. Modifie ces choix dans Modifier la board."
+      },
+      "installHelper": "Les Spraywalls se configurent dans l’app. C’est gratuit.",
+      "tools": {
+        "tool": "Outil",
+        "action": "Son rôle"
       }
     }
   },

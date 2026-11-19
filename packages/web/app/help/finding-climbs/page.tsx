@@ -18,7 +18,11 @@ export async function generateMetadata() {
 export default async function HelpFindingClimbsPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider
+      locale={locale}
+      namespaces={['marketing']}
+      resourceKeys={{ marketing: ['help.climbs', 'help.clip', 'help.nav', 'help.install', 'home.hero'] }}
+    >
       <FindingClimbsContent />
     </I18nProvider>
   );

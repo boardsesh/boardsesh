@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Instagram from '@mui/icons-material/Instagram';
 import { track } from '@/app/lib/analytics';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
@@ -46,6 +47,7 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
   source = 'drawer',
   priority = false,
 }) => {
+  const { t } = useTranslation('common');
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   // A cached failure can finish before hydration attaches onError. Inspect the
   // actual image when React attaches it so SSR failures get the same fallback.
@@ -71,17 +73,41 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
     (link.foreign_username ? ` by ${link.foreign_username}` : '') +
     (climbLabel ? ` for ${climbLabel}` : '');
 
-  return (
-    <article className={styles.card}>
-      <div className={styles.thumbnailWrapper}>
+  const opensClimb = source === 'home' && Boolean(climbHrefEffective);
+  const mainHref = opensClimb && climbHrefEffective ? climbHrefEffective : link.link;
+  if (!thumbnailSrc) {
+    if (source === 'home') return null;
+    return (
+      <article className={`${styles.card} ${styles.textCard}`}>
         <a
           href={link.link}
           target="_blank"
           rel="noopener noreferrer"
-          className={styles.bodyLink}
-          aria-label={ariaLabel}
+          className={styles.textLink}
           onClick={() =>
-            track('Beta Video Link Clicked', {
+            track('Beta Video Link Clicked', { platform: analyticsPlatform, climbUuid: link.climb_uuid, source })
+          }
+        >
+          {link.foreign_username
+            ? t('betaVideos.openVideo', { creator: link.foreign_username, platform: displayPlatform })
+            : t('betaVideos.watchOn', { platform: displayPlatform })}
+        </a>
+      </article>
+    );
+  }
+
+  return (
+    <article className={styles.card}>
+      <div className={styles.thumbnailWrapper}>
+        <LocaleLink
+          href={mainHref}
+          prefetch={false}
+          target={opensClimb ? undefined : '_blank'}
+          rel={opensClimb ? undefined : 'noopener noreferrer'}
+          className={styles.bodyLink}
+          aria-label={opensClimb ? t('betaVideos.openClimb', { climb: climbLabel }) : ariaLabel}
+          onClick={() =>
+            track(opensClimb ? 'Beta Video Climb Clicked' : 'Beta Video Link Clicked', {
               platform: analyticsPlatform,
               climbUuid: link.climb_uuid,
               source,
@@ -108,9 +134,21 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
           <span className={styles.platformBadge} aria-label={`From ${displayPlatform}`}>
             <PlatformIcon sx={{ fontSize: 12 }} />
           </span>
-          {link.foreign_username && <span className={styles.userChip}>@{link.foreign_username}</span>}
-        </a>
-        {climbLabel &&
+          {!opensClimb && link.foreign_username && <span className={styles.userChip}>@{link.foreign_username}</span>}
+        </LocaleLink>
+        {opensClimb && link.foreign_username && (
+          <a
+            href={link.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.userChip}
+            aria-label={t('betaVideos.openVideo', { creator: link.foreign_username, platform: displayPlatform })}
+          >
+            @{link.foreign_username}
+          </a>
+        )}
+        {source !== 'home' &&
+          climbLabel &&
           (climbHrefEffective ? (
             <LocaleLink
               href={climbHrefEffective}
