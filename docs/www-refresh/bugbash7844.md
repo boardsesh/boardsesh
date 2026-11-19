@@ -72,3 +72,5 @@ Focused verification passes 49 tests across five files, including fresh About re
 The visual revision integrated onto main at 88cb8be7c0 passes all 65 required repository typecheck/build tasks. Astra independently verified both the merge resolutions and preservation of all newer main work. The remaining instrumentation PR #7878 retains all install placements and needs its own refreshed current-head CI before owner merge.
 
 Final visual application source `6189e0f108` passes 65 repository checks and 262 focused/locale tests. The compiled homepage fixture passes at 37,281 gzip bytes. Both new guards fail on deliberate missing-resource/old-centering variants and pass after source restoration. Two pointer cases and twenty public-phone cases pass separately; the gallery records the actual scopes and source.
+
+Final full-width import band at `d459e124e9b49b1b416c466bcd1726c0b3902292` also passes all 65 repository tasks, 17 Home tests and four layout checks. The compiled homepage remains below budget at 37,286 gzip bytes. Actual phone reading order, desktop link placement and German tablet wrapping pass independent Astra review.
