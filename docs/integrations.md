@@ -18,6 +18,10 @@ models:
 v1 exports explicit (party/recorded) sessions only. `integration_exports.
 session_type` already accommodates inferred solo sessions for later.
 
+The proposed [Quantum and eWalls integration](./quantum-integration.md) covers
+vendor catalog ingestion and board control, with CruxCoach as a reference.
+It distinguishes those capabilities from future eWalls account synchronization.
+
 ## Code map
 
 | Piece                              | Location                                                                                                             |
