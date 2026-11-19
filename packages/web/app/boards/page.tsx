@@ -59,7 +59,7 @@ export default async function SupportedBoardsPage() {
   const numberFormat = new Intl.NumberFormat(locale);
   return (
     <PageShell title={t('boardsTitle')} lead={t('boardsLead')} width="wide">
-      <Box component="ul" sx={{ listStyle: 'none', p: 0, my: 4, borderTop: '1px solid var(--separator)' }}>
+      <Box component="ul" role="list" sx={{ listStyle: 'none', p: 0, my: 4, borderTop: '1px solid var(--separator)' }}>
         {SUPPORTED_BOARDS.map((board) => (
           <Box component="li" id={board} key={board} sx={boardRowSx}>
             <Typography component="h2" variant="h5" sx={boardHeadingSx}>
@@ -72,6 +72,7 @@ export default async function SupportedBoardsPage() {
             ) : (
               <Box
                 component="ul"
+                role="list"
                 sx={{ listStyle: 'none', p: 0, m: 0, color: 'text.secondary', overflowWrap: 'anywhere' }}
               >
                 {getBoardLayouts(board).map((layout) => (
