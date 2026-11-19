@@ -1,5 +1,7 @@
 Neu in 2.8.0
 
+Boardsesh ist jetzt auch auf vereinfachtem Chinesisch verfügbar.
+
 MEHR MÖGLICHKEITEN ZU TRAINIEREN
 
 Erstelle Workouts mit 4x4, Am Limit und Im Minutentakt, zusätzlich zu Volumen, Pyramide, Leiter und Grad-Fokus. Schau dir Boulder und Pausen vor dem Start an. Pyramiden können auf denselben Bouldern wieder absteigen. Wähle unter Einstellungen > Timer, ob der Countdown vibriert und die Pause auf dem Sperrbildschirm erscheint.

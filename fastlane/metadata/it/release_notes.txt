@@ -1,5 +1,7 @@
 Novità della versione 2.8.0
 
+Boardsesh è ora disponibile in cinese semplificato.
+
 Più modi per allenarti
 
 Crea allenamenti 4x4, Al limite e Al minuto, oltre a Volume, Piramide, Scala e Grado fisso. Guarda l’anteprima di blocchi e recuperi prima di iniziare. Le piramidi possono scendere sugli stessi blocchi. Scegli le vibrazioni del conto alla rovescia e se mostrare il recupero sulla schermata di blocco in Impostazioni > Timer.

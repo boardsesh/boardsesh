@@ -1,6 +1,7 @@
 Novedades de 2.8.0:
+Ahora en chino simplificado.
 - 4x4, Al límite y Al minuto. Inicio: tu semana y proyectos.
 - Spraywall con WLED; apagado automático por Wi-Fi. Instalación Bluetooth en beta opcional para controladores compatibles.
 - Interfaz Android más sencilla, navegación compacta y controles renovados en la pantalla de bloqueo.
-- Renderizado GPU más fluido en plafones/dispositivos compatibles.
+- GPU más fluida en plafones compatibles.
 - Abre entrenamientos de apps compatibles y autoriza la lectura de tu logbook: https://www.boardsesh.com/developers/
