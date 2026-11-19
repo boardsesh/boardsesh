@@ -6,9 +6,9 @@ Erstelle Workouts mit 4x4, Am Limit und Im Minutentakt, zusätzlich zu Volumen, 
 
 MACH WEITER, WO DU AUFGEHÖRT HAST
 
-Home vereint deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den nächsten Versuch. Sieh dein letztes Workout und starte eine Session über die Session-Karte. Wähle selbst, welche Bereiche du siehst. Mit aktiviertem Standort findest du in der Board-Auswahl Boards in der Nähe und die Boards deiner Halle. Deine eigenen Boulder findest du unter Entdecken.
+Unter Start findest du deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den nächsten Versuch. Sieh dein letztes Workout und starte eine Session über die Session-Karte. Wähle selbst, welche Bereiche du siehst. Mit aktiviertem Standort findest du in der Board-Auswahl Boards in der Nähe und die Boards deiner Halle. Deine eigenen Boulder findest du unter Entdecken.
 
-BELEUCHTE DEINE Spraywall
+Beleuchte deine Spraywall
 
 Verbinde deine Spraywall per WLAN mit WLED. Zeichne Löcher, LEDs und Kabel auf einem zoombaren Foto ein, teste einzelne Griffe und speichere die Einrichtung für deine Crew. Finde Controller in deinem WLAN, stelle die Helligkeit ein und wähle eine automatische Abschaltzeit für die Beleuchtung über WLAN.
 
@@ -26,6 +26,6 @@ Neue Farben und Layouts geben deinen Bouldern mehr Platz. Text folgt der auf dei
 
 VERBINDE TRAININGS-APPS
 
-Neu: Unterstützung für Integrationen mit Trainings-Apps anderer Anbieter. Infos für Entwickler*innen: https://www.boardsesh.com/developers/
+Öffne Workouts aus kompatiblen Trainings-Apps anderer Anbieter in Boardsesh und erlaube Apps, dein Routenbuch zu lesen. Infos für Entwickler*innen: https://www.boardsesh.com/developers/
 
 Kostenlos, ohne Werbung, Open Source.

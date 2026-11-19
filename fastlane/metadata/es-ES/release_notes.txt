@@ -8,7 +8,7 @@ RETOMA DONDE LO DEJASTE
 
 Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para volver a intentar. Consulta tu último entrenamiento e inicia una sesión desde la tarjeta de Sesión. Personaliza las secciones que ves. Con la ubicación activada, el selector acerca los plafones cercanos y los de tu rocódromo. Encuentra tus propios bloques en Descubrir.
 
-ILUMINA TU Spraywall
+Ilumina tu Spraywall
 
 Conecta tu Spraywall a WLED por Wi-Fi. Marca agujeros, LED y cable en una foto ampliable, prueba cada presa y guarda la configuración para tu equipo. Busca controladores en tu Wi-Fi, ajusta el brillo y elige cuándo apagar automáticamente la iluminación por Wi-Fi.
 
@@ -26,6 +26,6 @@ Los colores y diseños renovados dejan más espacio a tus bloques. El texto se a
 
 CONECTA CON APPS DE ENTRENAMIENTO
 
-Nuevo soporte para integraciones con apps de entrenamiento de terceros. Información para desarrolladores: https://www.boardsesh.com/developers/
+Abre en Boardsesh entrenamientos de apps de terceros compatibles y permite que las apps lean tu logbook con tu autorización. Información para desarrolladores: https://www.boardsesh.com/developers/
 
 Gratis, sin anuncios y de código abierto.

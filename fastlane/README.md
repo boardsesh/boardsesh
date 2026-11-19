@@ -41,7 +41,8 @@ builds. The platform baselines differ:
 Apple notes live in all six `metadata/<locale>/release_notes.txt` files. Play
 notes live in all five `metadata/android/<locale>/changelogs/default.txt` files.
 Descriptions, Apple promotional text and Play short descriptions are refreshed
-in the same locales. Names, subtitles, search keywords and URLs retain their
+in the same locales. Descriptions lead with cross-board climbing, shared sessions
+and training, with one compatibility list. Play notes lead with climber benefits. Names, subtitles, search keywords and URLs retain their
 existing positioning.
 
 | User-visible change | Merged evidence |
@@ -54,16 +55,17 @@ existing positioning.
 | Refreshed layouts, text sizing and accessible climb transitions | #7603, #7622, #7635, #7711, #7720, #7726, #7833 |
 | Simpler Android interface, compact navigation, filter sheets and lock-screen controls | #7325, #7326, #7328, #7330, #7333, #7318, #7352 |
 | GPU-accelerated board rendering on supported boards and devices | #7542, #7556, #7566, #7568, #7644 |
-| Third-party training app integration support and developer documentation | #7406, #7697, #7776, #7823 |
+| Permissioned logbook access, workout handoff from training apps and developer documentation | #7406, #7697, #7776, #7823 |
 
 Keep these limits when revising the copy: WLED auto-off is Wi-Fi-only; Bluetooth
 firmware installation is an opt-in beta for matching controllers. Home sections
 remain customizable. GPU rendering is capability- and rollout-gated, so the
 listing describes supported boards and devices rather than promising every layout.
-Training app integration support links to https://www.boardsesh.com/developers/;
-it does not promise a named third-party app is already connected. Integration
-activation still follows the backend mode and mobile workout gates; these copy
-changes do not alter deployment settings.
+The 2.8.0 integration copy includes opening workouts from compatible training
+apps and permissioned logbook access, as confirmed by the release owner on
+19 November 2026. Developer details link to https://www.boardsesh.com/developers/.
+No named third-party app or universal compatibility is promised. These metadata
+changes do not change deployment settings.
 
 **Native build requirement:** #7352 is already merged on `main`. Its Android
 lock-screen card uses a climb-coloured background, bulb and Next in the collapsed

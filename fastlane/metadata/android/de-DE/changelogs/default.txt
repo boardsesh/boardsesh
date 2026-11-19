@@ -1,6 +1,6 @@
 Neu in 2.8.0:
-- Einfachere Android-Oberfläche, schlankere Navigation und neue Sperrbildschirmsteuerung.
-- GPU-Darstellung auf unterstützten Boards und Geräten.
-- Trainings-App-Integrationen: https://www.boardsesh.com/developers/
-- 4x4, Am Limit, Im Minutentakt. Home: deine Woche und Projekte.
-- WLED-Spraywall-Beleuchtung mit WLAN-Abschaltautomatik. Bluetooth-Installation bleibt freiwillige Beta für passende Controller.
+- 4x4, Am Limit, Im Minutentakt. Start: deine Woche und Projekte.
+- WLED-Spraywall mit WLAN-Abschaltautomatik. Bluetooth-Installation als freiwillige Beta für passende Controller.
+- Einfachere Android-Oberfläche, schlankere Navigation, neue Sperrbildschirmsteuerung.
+- Flüssigeres GPU-Rendering auf unterstützten Boards/Geräten.
+- Workouts kompatibler Apps öffnen, ihnen das Lesen deines Routenbuchs erlauben: https://www.boardsesh.com/developers/

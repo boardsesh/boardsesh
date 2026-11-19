@@ -1,6 +1,6 @@
 New in 2.8.0:
+- 4x4, Limit Bouldering and On the Minute. Home shows your week and projects.
+- WLED Spraywall lighting; Wi-Fi auto-off. Bluetooth install is an opt-in beta for matching controllers.
 - Simpler Android UI, slimmer navigation and updated lock-screen board controls.
-- GPU-accelerated rendering on supported boards and devices.
-- Third-party training app integrations: https://www.boardsesh.com/developers/
-- 4x4, Limit Bouldering and On the Minute workouts. Home shows your week and projects.
-- WLED Spraywall lighting with Wi-Fi auto-off. Bluetooth installation stays an opt-in beta for matching controllers.
+- Smoother GPU rendering on supported boards/devices.
+- Open workouts from compatible training apps and share your logbook with permission: https://www.boardsesh.com/developers/

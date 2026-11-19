@@ -6,9 +6,9 @@ Crée des entraînements 4x4, À la limite et À la minute, en plus de Volume, P
 
 REPRENDS LÀ OÙ TU EN ÉTAIS
 
-L’accueil réunit ta semaine de grimpe, des blocs à ton niveau et des projets à réessayer. Consulte ton dernier entraînement et lance une séance depuis la carte Séance. Choisis les sections que tu vois. Avec la localisation activée, le sélecteur rapproche les boards à proximité et celles de ta salle. Retrouve tes propres blocs dans Découvrir.
+L’accueil réunit ta semaine de grimpe, des blocs à ton niveau et des projets à réessayer. Consulte ton dernier entraînement et lance une séance depuis la carte Session. Choisis les sections que tu vois. Avec la localisation activée, le sélecteur rapproche les boards à proximité et celles de ta salle. Retrouve tes propres blocs dans Découvrir.
 
-ALLUME TON Spraywall
+Allume ton Spraywall
 
 Connecte ton Spraywall à WLED en Wi-Fi. Place les trous, les LED et le câble sur une photo zoomable, teste chaque prise et garde la configuration pour ton crew. Trouve les contrôleurs sur ton Wi-Fi, règle la luminosité et choisis une extinction automatique pour l’éclairage en Wi-Fi.
 
@@ -26,6 +26,6 @@ Les couleurs et les mises en page renouvelées laissent plus de place à tes blo
 
 CONNECTE TES APPLIS D’ENTRAÎNEMENT
 
-Ajout du support des intégrations avec des applis d’entraînement tierces. Informations pour les développeurs : https://www.boardsesh.com/developers/
+Ouvre dans Boardsesh les entraînements d’applis tierces compatibles et autorise les applis à lire ton carnet. Informations pour les développeurs : https://www.boardsesh.com/developers/
 
 Gratuit, sans pub, open source.

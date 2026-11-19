@@ -1,6 +1,6 @@
 Novedades de 2.8.0:
-- Interfaz Android más sencilla, navegación compacta y controles renovados en la pantalla de bloqueo.
-- Renderizado GPU en plafones y dispositivos compatibles.
-- Integraciones con apps de entrenamiento: https://www.boardsesh.com/developers/
 - 4x4, Al límite y Al minuto. Inicio: tu semana y proyectos.
-- Iluminación WLED para tu Spraywall con apagado automático por Wi-Fi. Instalación Bluetooth en beta opcional para controladores compatibles.
+- Spraywall con WLED; apagado automático por Wi-Fi. Instalación Bluetooth en beta opcional para controladores compatibles.
+- Interfaz Android más sencilla, navegación compacta y controles renovados en la pantalla de bloqueo.
+- Renderizado GPU más fluido en plafones/dispositivos compatibles.
+- Abre entrenamientos de apps compatibles y autoriza la lectura de tu logbook: https://www.boardsesh.com/developers/

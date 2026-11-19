@@ -188,8 +188,14 @@ Internal reference for QA and closed testing tracks. Not a Play Store field.
    phone. The ongoing card shows the climb's colours, bulb and Next controls;
    timed driving adds a remaining-time ring. Without hardware, an empty
    Bluetooth scan is expected.
-5. Join a shared session from a second signed-in device running Boardsesh.
-   Both participants can use the queue. End the session to see its recap.
+5. Open Settings > Timers to inspect countdown buzz and Lock Screen countdown
+   preferences.
+
+**Optional shared-session test:** on the first device, open Session and tap
+Start. Open Invite and share its link. On a second device, sign in with a
+different account and open that link in Boardsesh. Both participants can use
+the queue. End the session to see its recap. Skip this exercise if a second
+device and account are unavailable; the single-device checks above still work.
 
 **Spraywall lighting in 2.8.0**
 
@@ -208,30 +214,56 @@ countdowns.
 
 ## Data Safety Form
 
-**Does your app collect or share any of the required user data types?** Yes
+This is a source-backed submission inventory for 2.8.0, not a readback of the
+live Play Console answers. Reconcile it with the selected binary, SDKs and all
+versions still covered by the form before submission. Fastlane listing uploads
+do not update Data safety answers.
 
-**Is all of the user data collected by your app encrypted in transit?** Yes
+**Does the app collect user data?** Yes. Account deletion is available in the
+app. Verify the console's deletion URL and encryption-in-transit answer against
+the enabled collection paths, including SDKs.
 
-**Do you provide a way for users to request that their data is deleted?** Yes
+### Collection inventory
 
-### Data Collected
+The control column describes each path. Rows sharing a Play data type must be
+considered together when choosing that type's required/optional answer.
 
-| Data type                      | Collected | Shared | Purpose                            | Optional                     |
-| ------------------------------ | --------- | ------ | ---------------------------------- | ---------------------------- |
-| Email address                  | Yes       | No     | Account management                 | No (required for account)    |
-| Name                           | Yes       | No     | App functionality, personalization | No (required for profile)    |
-| Approximate location           | Yes       | No     | App functionality                  | Yes                          |
-| Precise location               | Yes       | No     | App functionality                  | Yes                          |
-| Health info - Fitness activity | Yes       | No     | App functionality                  | Yes                          |
-| App interactions               | Yes       | No     | Analytics                          | No (collected automatically) |
-| Crash logs                     | Yes       | No     | Analytics                          | No (collected automatically) |
+| Data type | Purpose and collection path | User control |
+| --- | --- | --- |
+| Email address, Name, User IDs | Account management, profile display and ownership of saved content | Provided or created when using an account |
+| Approximate/Precise location | Nearby board/session discovery | Location permission; include any SDK-derived coarse location in the final inventory |
+| Health and fitness: Fitness info | Sends, attempts, grades, sessions and workout results | Optional logging and workout use |
+| Photos | Avatars, gym images, Spraywall photos and feedback screenshots | Optional upload; photo visibility depends on the surface |
+| Other user-generated content | Climb/session comments, notes and user-created climbing content | Optional submission |
+| App interactions: product analytics | PostHog product events linked to the signed-in account | Analytics setting; Allow in prompt regions, with opt-out region defaults elsewhere. Replay has a separate opt-in. |
+| App interactions: daily activity | First-party account/platform activity records for service usage counts | Independent of the Analytics setting; only aggregate counts are exported |
+| Crash logs and Diagnostics | Sentry crash/performance reports, Observe and OTA reliability signals | Independent of the Analytics setting; Sentry redacts identity, while Observe/OTA retain installation/session identifiers |
+| Device or other IDs | PostHog identifiers and functional installation/session identifiers | Product-analytics identifiers follow its setting; functional identifiers do not |
+| Install attribution | Play install-referrer measurement and associated analytics | Explicit Allow required everywhere; a regional analytics default is insufficient |
 
-### Data NOT Collected
+Do not mark all App interactions optional just because PostHog product capture
+has an opt-out: the first-party daily activity path continues. Likewise,
+installation identifiers are distinct from advertising identifiers. Map the
+actual SDK/attribution fields to the console's data types rather than declaring
+all identifiers absent.
 
-- Financial info (no payments in app)
-- Messages or chat content (Party Mode is queue-based, not chat)
-- Photos, videos, or audio
-- Files or documents
-- Calendar or contacts
-- Device identifiers for advertising
-- Browsing history
+### Sharing and final console reconciliation
+
+Public profiles, photos and comments have user-facing audiences. Connected
+training apps receive only the data the climber authorizes; logbook access and
+workout handoff are part of 2.8.0. Check each transfer against
+[Google's sharing definitions and exceptions](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en),
+including service-provider processing and user-initiated transfers. The old
+blanket “Shared: No” column is not a verified assessment of these paths.
+
+Use the same guidance for required/optional answers across the versions covered
+by the form. Uploads are collection even when optional. Do not carry forward
+the old photo/comment exclusions, or infer that video, audio or documents are
+absent without completing that part of the feature/SDK inventory.
+
+Evidence: [media storage](../../docs/user-media-storage.md),
+[analytics choices and telemetry paths](../../docs/analytics-consent.md),
+[native PostHog identity](../../packages/mobile/src/lib/posthog-client.ts),
+[Sentry privacy handling](../../packages/mobile/src/lib/sentry.ts),
+[stored comments](../../packages/backend/src/graphql/resolvers/social/comments.ts),
+and [integration data boundaries](../../docs/integration-platform.md).

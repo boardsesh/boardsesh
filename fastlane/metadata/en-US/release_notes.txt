@@ -26,6 +26,6 @@ Refreshed colours and layouts give your climbs more room. Text follows your iPho
 
 CONNECT WITH TRAINING APPS
 
-Added support for third-party training app integrations. Developer details: https://www.boardsesh.com/developers/
+Open workouts from compatible third-party training apps in Boardsesh and let apps read your logbook with your permission. Developer details: https://www.boardsesh.com/developers/
 
 Free, no ads, open source.

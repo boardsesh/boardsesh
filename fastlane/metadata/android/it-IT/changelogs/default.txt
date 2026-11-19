@@ -1,6 +1,6 @@
 Novità di 2.8.0:
+- 4x4, Al limite e Al minuto. Home: settimana e progetti.
+- Spraywall con WLED; spegnimento automatico via Wi-Fi. Installazione Bluetooth in beta facoltativa per controller compatibili.
 - Interfaccia Android più semplice, navigazione compatta e comandi rinnovati sulla schermata di blocco.
-- Rendering GPU su pannelli e dispositivi supportati.
-- Integrazioni con app di allenamento: https://www.boardsesh.com/developers/
-- 4x4, Al limite, Al minuto. Home: settimana e progetti.
-- Spraywall con WLED e spegnimento automatico via Wi-Fi. Installazione Bluetooth in beta facoltativa per controller compatibili.
+- Rendering GPU più fluido su pannelli/dispositivi supportati.
+- Apri allenamenti da app compatibili e autorizza la lettura del diario: https://www.boardsesh.com/developers/

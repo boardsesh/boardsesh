@@ -168,8 +168,13 @@ account and public sharing pages; test climbing and shared sessions in the app.
    recommendations and projects depend on its climbing history. Customize Home
    controls which sections appear. Discover includes My climbs.
 5. Open Settings > Timers to inspect countdown buzz and Lock Screen countdown
-   preferences. To test a shared session, join it from a second signed-in device
-   running Boardsesh.
+   preferences.
+
+**Optional shared-session test:** on the first device, open Session and tap
+Start. Open Invite and share its link. On a second device, sign in with a
+different account and open that link in Boardsesh. Both participants can use
+the queue. End the session to see its recap. Skip this exercise if a second
+device and account are unavailable; the single-device checks above still work.
 
 **Hardware and permissions for 2.8.0**
 
@@ -198,28 +203,47 @@ Session traffic uses `wss://ws.boardsesh.com/graphql` (the production
 
 ## App Privacy - Data Collection Labels
 
-### Data Linked to You
+This is a source-backed submission inventory for 2.8.0, not a readback of the
+live App Store Connect labels. Reconcile the selected binary, enabled SDKs and
+current console answers before submission. Fastlane listing uploads do not
+update these answers.
 
-| Data Type        | Category         | Purpose                                                                             |
-| ---------------- | ---------------- | ----------------------------------------------------------------------------------- |
-| Email Address    | Contact Info     | Account creation and authentication                                                 |
-| Name / Username  | Contact Info     | Profile display, shown to other users in Party Mode and social features             |
-| Precise Location | Location         | Party session discovery (finding nearby sessions), only when user grants permission |
-| Fitness Activity | Health & Fitness | Climb ticks and logbook entries (sends, attempts, grades)                           |
+### Account-linked collection
 
-### Data Not Linked to You
+| Data Type | Category | Purpose and collection path |
+| --- | --- | --- |
+| Email Address, Name | Contact Info | Account management and profile display |
+| User ID | Identifiers | Authentication, ownership of saved content and account-linked analytics |
+| Precise Location | Location | Nearby board/session discovery when location permission is granted |
+| Fitness | Health & Fitness | Logged sends, attempts, grades, sessions and workout results |
+| Photos | User Content: Photos or Videos | Uploaded avatars, gym images, Spraywall photos and attached feedback screenshots; optional submissions |
+| Other User Content | User Content | Saved climb/session comments, notes and user-created climbing content |
+| Product Interaction | Usage Data | PostHog product events linked to the signed-in account when analytics is enabled |
+| Product Interaction | Usage Data | First-party daily activity records keyed by account and platform, independent of the Analytics setting; only aggregate counts leave this database |
 
-| Data Type  | Category    | Purpose                                                                        |
-| ---------- | ----------- | ------------------------------------------------------------------------------ |
-| Usage Data | Diagnostics | Vercel Analytics for page views and performance metrics, collected anonymously |
+Photo visibility depends on the surface: Spraywall originals are stored
+privately and served through authorized reads, while avatars and feedback
+screenshots have public delivery paths. Private storage and optional submission
+do not mean a photo is not collected.
 
-### Data Not Collected
+### Diagnostics and collection controls
 
-- Financial information
-- Contacts or address book
-- Browsing history
-- Purchases
-- Photos or videos
-- Health data (beyond fitness activity above)
-- Sensitive information
-- Advertising data
+| Collection path | Purpose | Identity handling and control |
+| --- | --- | --- |
+| PostHog product analytics | Analytics | Identifies the signed-in account. Analytics can be switched off in Settings; prompt regions require Allow, while other supported regions can default on. Session replay is a separate opt-in, off by default. |
+| Sentry crash and performance reports | App functionality: reliability | Runs independently of the Analytics setting. Native/JS privacy handling removes user identity and device IDs; verify the shipped SDK's remaining fields when selecting linked/not-linked answers. |
+| Observe and OTA health | App functionality: performance and update reliability | Runs independently of the Analytics setting. No account identity is assigned, but installation/session identifiers are retained; do not describe the whole diagnostics path as identifier-free. |
+| Apple Ads install attribution | Advertising or marketing measurement | Requires explicit Allow everywhere, including regions where product analytics defaults on; include its actual fields and use in the console review. |
+
+Use [Apple's collection, linkage and tracking definitions](https://developer.apple.com/app-store/app-privacy-details/)
+for the final answers. A lack of an account ID alone does not establish that
+install-linked diagnostics are unlinked, and optional collection is not an
+automatic disclosure exemption. Confirm any additional video, audio or document
+collection from the complete feature/SDK inventory rather than restoring the
+old blanket “not collected” list.
+
+Evidence: [media storage](../../docs/user-media-storage.md),
+[analytics choices and telemetry paths](../../docs/analytics-consent.md),
+[native PostHog identity](../../packages/mobile/src/lib/posthog-client.ts),
+[Sentry privacy handling](../../packages/mobile/src/lib/sentry.ts), and
+[stored comments](../../packages/backend/src/graphql/resolvers/social/comments.ts).

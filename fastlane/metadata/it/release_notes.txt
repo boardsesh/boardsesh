@@ -26,6 +26,6 @@ Colori e layout rinnovati lasciano più spazio ai blocchi. Il testo segue meglio
 
 Collega le app di allenamento
 
-Aggiunto il supporto per integrazioni con app di allenamento di terze parti. Dettagli per chi sviluppa: https://www.boardsesh.com/developers/
+Apri in Boardsesh allenamenti da app di terze parti compatibili e autorizza le app a leggere il tuo diario. Dettagli per chi sviluppa: https://www.boardsesh.com/developers/
 
 Gratis, senza pubblicità, open source.

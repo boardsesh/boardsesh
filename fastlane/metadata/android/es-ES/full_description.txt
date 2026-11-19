@@ -1,42 +1,29 @@
-Busca un bloque y mira cómo se enciende tu muro. Menos tiempo en el móvil, más tiempo en el muro.
+Una app para tus plafones. Ilumina bloques, comparte cola con tu equipo y guarda tus encadenes en un solo logbook.
 
-ILUMINA LAS PRESAS
-Busca cualquier bloque y Boardsesh enciende las presas del muro por Bluetooth, en Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper y So iLL. Control total de los LED en los ocho, no solo para mirar.
+Compatible con Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper y So iLL, además de tu Spraywall. Conecta controladores compatibles por Bluetooth para iluminar las presas.
 
-UNA APP PARA CADA PLAFÓN QUE ESCALAS
-Kilter, Tension y MoonBoard traen cada uno su propia app para su propio plafón. Boardsesh funciona con todos ellos, más Woods, Decoy, Touchstone, Grasshopper y So iLL, en un solo sitio. Todo tu historial de escalada en cada plafón vive aquí.
+ESCALA CON TU EQUIPO
+Inicia una sesión, invita a tu equipo y comparte una cola que todo el equipo puede controlar. El historial del plafón muestra los bloques iluminados con Boardsesh y los encadenes recientes en ese plafón físico. Al terminar la sesión, recibe un resumen de tu escalada.
+
+ENTRENA A TU MANERA
+Combina calentamientos con Volumen, Pirámide, Escalera, Grado fijo, 4x4, Al límite o Al minuto. Previsualiza bloques y descansos, y luego ilumínalos de uno en uno. Las pirámides pueden bajar por los mismos bloques.
+
+Abre en Boardsesh entrenamientos de apps compatibles y permite que las apps lean tu logbook con tu autorización. Información para desarrolladores: https://www.boardsesh.com/developers/
 
 Tu Spraywall, también
-¿Un Spraywall en casa o en tu rocódromo? Fotografíalo y Boardsesh sugiere presas a partir de la foto. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el Spraywall por enlace y tu crew también podrá montar en él. ¿Has desmontado el Spraywall? Resetéalo con una foto nueva y el Spraywall anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
+Fotografía tu Spraywall, comprueba las presas sugeridas y crea bloques en la foto. Compártelo con tu equipo, añade bloques a la cola y registra encadenes. No hacen falta LED. Resetea el Spraywall con una nueva foto y conserva archivados los bloques y encadenes anteriores.
 
-ILUMINA TU Spraywall
-¿Tienes LED y un controlador WLED? Márcalos en la foto de tu Spraywall, prueba las presas y guarda la configuración para tu equipo. Busca WLED en tu Wi-Fi, ajusta el brillo y elige un apagado automático para la iluminación por Wi-Fi. Los controladores compatibles con soporte Bluetooth de Boardsesh también iluminan por Bluetooth; instalar ese soporte es una beta opcional para controladores compatibles.
+Con WLED y LED, sitúa las luces en tu foto y guarda la configuración para tu equipo. Busca controladores por Wi-Fi, ajusta el brillo y elige el apagado automático por Wi-Fi. Los controladores compatibles con soporte Bluetooth de Boardsesh también iluminan bloques por Bluetooth; instalar ese soporte es una beta opcional para controladores compatibles.
 
-HISTORIAL DEL MURO
-Si compartes muro, enseguida pierdes la cuenta de el último bloque, y siempre hay alguien que lo borra sin querer.
-Consulta los bloques iluminados con Boardsesh en ese plafón: el nombre, quién lo iluminó, quién lo montó, el grado y el ángulo, y los encadenes recientes.
+MENOS MÓVIL, MÁS ESCALADA
+Una interfaz Android más sencilla y una navegación más compacta dan protagonismo a los bloques. La tarjeta de la pantalla de bloqueo pone a mano la bombilla y Siguiente; un anillo muestra el control temporizado. Configura las vibraciones de la cuenta atrás y el descanso en la pantalla de bloqueo en Ajustes > Temporizadores. El renderizado acelerado por GPU ofrece transiciones más fluidas en plafones y dispositivos compatibles.
 
-INTERFAZ ANDROID RENOVADA
-Una navegación más compacta y una interfaz más sencilla dejan el protagonismo a tus bloques.
+ENCUENTRA TU PRÓXIMO BLOQUE
+Inicio muestra tu semana, bloques de tu nivel y proyectos para reintentar. Elige las secciones que ves. Encuentra plafones cercanos con la ubicación activada, filtra los bloques Verificados de Kilter y busca tus propios bloques en Descubrir.
 
-SIGUE CONECTADO
-Boardsesh mantiene la conexión con tu plafón en segundo plano, incluso con la pantalla apagada o al cambiar de app. Una tarjeta con los colores del bloque pone la bombilla y Siguiente en la pantalla de bloqueo sin desplegarla. Un anillo muestra el tiempo restante del control temporizado.
+SIGUE TU PROGRESO
+Registra encadenes, flashes e intentos, sigue tu progreso entre plafones e importa tu historial de Kilter y Tension desde Aurora Climbing.
 
-SESIONES CON TU EQUIPO
-Abre una sesión y tú y tu equipo compartís una cola que cualquiera puede llevar. Cualquiera enciende el siguiente bloque en el muro. Al terminar te llevas un resumen y el seguimiento: encadenes e intentos, reparto de grados, tu bloque más duro y el progreso a lo largo del tiempo.
+Gratis, sin anuncios y de código abierto.
 
-MÓNTATE UN ENTRENAMIENTO
-Combina calentamientos con Volumen, Pirámide, Escalera, Grado fijo, 4x4, Al límite o Al minuto. Elige grados y descansos, previsualiza los bloques e ilumínalos de uno en uno. Las pirámides pueden bajar por los mismos bloques. Elige las vibraciones de la cuenta atrás y el descanso en la pantalla de bloqueo en Ajustes > Temporizadores.
-
-REGISTRA TU ESCALADA
-Apunta encadenes, flashes e intentos, y mira cómo suben tus encadenes y grados en la pestaña Progreso. Trae tus bloques antiguos de Kilter y Tension importando tu logbook desde Aurora Climbing.
-
-ENCUENTRA MÁS PARA ESCALAR
-Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para reintentar. Con la ubicación activada, encuentra plafones cercanos y los de tu rocódromo. Filtra los bloques Verificados de Kilter, busca tus bloques en Descubrir y comparte playlists con tu equipo.
-
-GRATIS, SIN ANUNCIOS, SIN SUSCRIPCIONES
-Código abierto en GitHub.
-
-El renderizado acelerado por GPU ofrece transiciones más fluidas en plafones y dispositivos compatibles. Las apps de entrenamiento pueden integrarse con Boardsesh: https://www.boardsesh.com/developers/
-
-Boardsesh es un proyecto comunitario que funciona con estos plafones y no está afiliado ni respaldado por ningún fabricante de plafones.
+Boardsesh es un proyecto comunitario compatible con estos plafones. No está afiliado ni respaldado por ningún fabricante.
