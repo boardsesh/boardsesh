@@ -3,6 +3,8 @@ interface DatabasePoolClosures {
   readonly read: () => Promise<void>;
   readonly primary: () => Promise<void>;
   readonly admission: () => Promise<void>;
+  /** The password guess counter's own pool (#7656); absent where none is opened. */
+  readonly guessLimit?: () => Promise<void>;
 }
 
 /** Each owner gets a cleanup attempt. Admission stays available until the others settle. */
@@ -11,6 +13,7 @@ export async function closeDatabasePools(closures: DatabasePoolClosures): Promis
     Promise.resolve().then(closures.credential),
     Promise.resolve().then(closures.read),
     Promise.resolve().then(closures.primary),
+    Promise.resolve().then(closures.guessLimit),
   ]);
   try {
     await closures.admission();

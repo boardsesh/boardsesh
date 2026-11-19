@@ -45,6 +45,7 @@ import {
   type PasswordLoginAttempt,
   type PasswordLoginLimiter,
 } from '../auth/current-store/password-login-limits';
+import { passwordGuessLimiter, type PasswordGuessAdmission } from '../auth/password-guess-limit';
 import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 import { sendJson } from './http-utils';
@@ -191,6 +192,7 @@ export async function handleCurrentStoreWebAuth(
     }
   }
   let passwordAttempt: PasswordLoginAttempt | undefined;
+  let guess: Extract<PasswordGuessAdmission, { outcome: 'proceed' }> | undefined;
   // A sign-in still waiting for its compare when the web server gives up is dropped unrun.
   const callerGone = new AbortController();
   response.once('close', () => {
@@ -205,6 +207,20 @@ export async function handleCurrentStoreWebAuth(
       // The per-client limit, shared through Redis. A sign-in with no public
       // client address takes the per-process budget instead (180 a minute).
       passwordAttempt = await limits.admit({ clientAddress: command.clientAddress });
+      // The per-account guess limit (#7656), after the per-client one. Its
+      // refusal is the same rate_limited reply, for a known or unknown address.
+      let admission: PasswordGuessAdmission;
+      try {
+        admission = await passwordGuessLimiter().admit({
+          email: command.payload.email,
+          deviceToken: command.deviceToken,
+        });
+      } catch {
+        // The limiter fails open by itself; this only guards a programming error, as native does.
+        admission = { outcome: 'proceed', settle: async () => {} };
+      }
+      if (admission.outcome === 'refused') throw new RateLimitError(admission.retryAfterSeconds);
+      guess = admission;
     } else {
       // Process-wide backstop behind the web route's per-client limits, which do
       // the real work: the backend only ever sees the web server as its peer.
@@ -233,10 +249,23 @@ export async function handleCurrentStoreWebAuth(
     if (!(result.operation === 'password' && result.outcome === 'invalid_credentials')) {
       await passwordAttempt?.giveBack();
     }
+    if (result.operation === 'password') {
+      const settling = guess;
+      // Settled once: a failure after this point must not give back a rejected guess.
+      guess = undefined;
+      await settling?.settle(
+        result.outcome === 'invalid_credentials'
+          ? 'rejected'
+          : result.outcome === 'authenticated'
+            ? 'accepted'
+            : 'no_verdict',
+      );
+    }
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {
     // No verdict was reached, so the attempt is not counted.
     await passwordAttempt?.giveBack();
+    await guess?.settle('no_verdict');
     // Nobody is left to answer.
     if (error instanceof PasswordCompareAbortedError) return;
     if (error instanceof PasswordComparesSaturatedError) {

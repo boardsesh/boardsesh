@@ -698,6 +698,7 @@ is 2 × its size (two backend replicas) and 4 × its size while an old fleet dra
 | pool | connections per replica | opens | budget row |
 | --- | --- | --- | --- |
 | `auth/admission-pool.ts` (`boardsesh-auth-admission`) | 2 | first admission read | "backend admission pool" |
+| `auth/password-guess-pool.ts` (`boardsesh-auth-guess-limit`) | 1 (`AUTH_ACCOUNT_GUESS_LIMIT_POOL_MAX`, 1 to 4) | first password guess reserve; never while `AUTH_ACCOUNT_GUESS_LIMIT_MODE=off` | "backend guess-limit pool" (2 steady, 4 draining at size 1) |
 
 ## Where the retry is wired
 
@@ -772,14 +773,20 @@ the detector holds 3 + 3 there.)
 | backend partner OAuth pool, 2 replicas   |                       2 x 3 |          2 x 3 |                      2 x 3 |
 | backend logbook snapshot pool, 2 replicas |                      2 x 2 |          2 x 2 |                      2 x 2 |
 | backend pg-boss, 2 replicas              |                       2 x 2 |          2 x 2 |                      2 x 2 |
+| backend guess-limit pool, 2 replicas (only with `AUTH_ACCOUNT_GUESS_LIMIT_MODE` on) | 2 x 1 | 2 x 1 | 2 x 1 |
 | web postgres.js (explicit env)           |                          10 |             4 |                         4 |
 | hold detector                            |                           8 |             8 |                         8 |
 | sync daemons, about 3                    |                       3 x 5 |          3 x 5 |                      3 x 3 |
 | background workers, 4 roles              |                   4 x (2+1) |      4 x (2+1) |                  4 x (2+1) |
 | `boardsesh_readonly` (role cap)          |                         <=5 |           <=5 |                       <=5 |
 | migrator, during a deploy                |                           1 |             1 |                         1 |
-| **steady ceiling (one migrator counted)**|                     **<=79** |       **<=73** |                   **<=67** |
-| **+ old backend fleet draining (15 s)**  |                    **<=107** |      **<=101** |                   **<=95** |
+| **steady ceiling (one migrator counted)**|                     **<=81** |       **<=75** |                   **<=69** |
+| **+ old backend fleet draining (15 s)**  |                    **<=111** |      **<=105** |                   **<=99** |
+
+The totals count every pool on. Each mode left `off` takes its pool out: the
+guess-limit pool is 2 steady and 4 draining (it opens only while
+`AUTH_ACCOUNT_GUESS_LIMIT_MODE` is not `off`, at its default size of 1), the two
+partner pools 10 and 20.
 
 The code-only budget uses the unchanged web setting of 10. Both caps are
 operator steps, and each is one variable:
@@ -831,10 +838,20 @@ never waits for a build permit (it answers an empty page instead), and a start o
 page read waits at most 1 s in a queue of 8, then answers `503`.
 
 With partner OAuth on, the two pools add 10 at steady state and 20 while a fleet
-drains, so with the mode `off` every total above is that much lower: 69 and 87 at
-code defaults. The table above already counts the auth admission pool (2 per
-replica, #7381), so the drain is 107 at code defaults, 101 with the web cap to 4
-and 95 with the daemon cap to 3.
+drains, so with the mode `off` every total above is that much lower: 71 and 91 at
+code defaults with the guess limit on, 69 and 87 with it off. The table above
+already counts the auth admission pool (2 per replica, #7381), so with the guess
+limit off the drain is 107 at code defaults, 101 with the web cap to 4 and 95 with
+the daemon cap to 3; with it on, 111, 105 and 99.
+
+**The guess limit with partner OAuth on.** Even with both caps, turning
+`AUTH_ACCOUNT_GUESS_LIMIT_MODE` on puts the drain at 99, two over the 97
+application slots. A refused guess-limit connection only fails open, but the next
+refused connection could be an admission one, and that fails a sign-in. So with
+partner OAuth on, turn the guess limit on only after raising `max_connections`
+or taking one of the reductions below; with partner OAuth off the drain is 79 with
+both caps, well inside. Size 1 is deliberately the floor: `POOL_MAX` above 1 adds
+4 more to the drain per extra connection.
 
 Against the 97 application slots, and an admission connection refused with
 `53300` is not retried. Before leaving mode `off`, do one of these: apply both

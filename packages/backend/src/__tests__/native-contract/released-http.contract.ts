@@ -37,6 +37,7 @@ let fixture: Awaited<ReturnType<typeof createNativeHttpFixture>>;
 const ownerId = randomUUID();
 const email = `native-contract-${ownerId}@example.test`;
 const password = 'synthetic-contract-password';
+const GUESS_EMAIL_KEY = 'native-contract-only-synthetic-guess-email-key';
 interface Pair {
   jwt: string;
   refreshToken: string;
@@ -137,6 +138,59 @@ describe('released clients against mounted native handlers, primary Postgres and
       expect(replay.status).toBe(401);
       expect(await replay.json()).toMatchObject({ error: 'Invalid refresh token' });
     });
+  }
+
+  // The per-account guess limit (#7656) in each mode. Enforce is built directly:
+  // its code gate keeps the environment from reaching it.
+  for (const release of recordings.releases) {
+    for (const mode of ['off', 'observe', 'enforce'] as const) {
+      it(`credentials sign-in with the account guess limit ${mode}: ${release.tag}`, async () => {
+        const guessLimit = await import('../../auth/password-guess-limit');
+        guessLimit.__setPasswordGuessLimiterForTests(
+          guessLimit.createPasswordGuessLimiter({
+            mode,
+            store: () => fixture.db,
+            // Counting, not fail-open, is under test: a slow CI runner must not miss the deadline.
+            deadlineMs: 5_000,
+            environment: { ...process.env, AUTH_ACCOUNT_GUESS_LIMIT_EMAIL_KEY: GUESS_EMAIL_KEY },
+          }),
+        );
+        try {
+          const client = await createReleasedClient(release, { fetch: fixture.network });
+          expect(await callRecorded(client.auth, 'signInWithCredentials', email, password)).toMatchObject({
+            success: true,
+          });
+          await expectDeviceTokens('/auth/native/credentials', ownerId, 1);
+          // A second account, guessed at from new devices until its email is at the cap.
+          const targetId = randomUUID();
+          const targetEmail = `guess-target-${targetId}@example.test`;
+          await fixture.db.insert(users).values({ id: targetId, email: targetEmail, name: 'Synthetic target' });
+          await fixture.db.insert(userCredentials).values({ userId: targetId, passwordHash: await hash(password, 4) });
+          for (let attempt = 0; attempt < 10; attempt += 1) {
+            fixture.native.__resetNativeAuthStateForTests();
+            expect(
+              (await fixture.post('/auth/native/credentials', { email: targetEmail, password: 'wrong' })).status,
+            ).toBe(401);
+          }
+          fixture.native.__resetNativeAuthStateForTests();
+          const atCap = await callRecorded(client.auth, 'signInWithCredentials', targetEmail, password);
+          const reply = fixture.responses.at(-1);
+          if (mode === 'enforce') {
+            // The released app parses the refusal it already knows from the per-address limit.
+            expect(reply?.status).toBe(429);
+            expect(reply?.body).toEqual({
+              error: expect.stringMatching(/^Rate limit exceeded\. Try again in \d+ seconds\.$/),
+            });
+            expect(atCap).toMatchObject({ success: false });
+          } else {
+            expect(reply?.status).toBe(200);
+            expect(atCap).toMatchObject({ success: true });
+          }
+        } finally {
+          guessLimit.__setPasswordGuessLimiterForTests(undefined);
+        }
+      });
+    }
   }
 
   for (const release of recordings.releases) {

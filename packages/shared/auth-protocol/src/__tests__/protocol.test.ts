@@ -157,6 +157,20 @@ describe('versioned four-command private contract', () => {
     });
     expect(authCommandReplyStatus(reply)).toBe(status);
   });
+  it('preserves a daily password refusal without widening unrelated command replies', () => {
+    const limited = {
+      protocolVersion: 2,
+      operation: 'password',
+      requestId,
+      outcome: 'error',
+      code: 'rate_limited',
+      retryAfterSeconds: 86_400,
+    };
+    expect(passwordReplySchema.parse(limited)).toMatchObject({ retryAfterSeconds: 86_400 });
+    expect(authCommandReplyStatus(passwordReplySchema.parse(limited))).toBe(429);
+    expect(passwordReplySchema.safeParse({ ...limited, retryAfterSeconds: 86_401 }).success).toBe(false);
+    expect(registerReplySchema.safeParse({ ...limited, operation: 'register' }).success).toBe(false);
+  });
   it('rejects reflected free-form validation errors', () => {
     expect(
       registerReplySchema.safeParse({

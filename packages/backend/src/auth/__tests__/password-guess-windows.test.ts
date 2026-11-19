@@ -362,18 +362,19 @@ describe('password guess windows (#7656)', () => {
       expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-host');
     });
 
-    it('answers unavailable within the 250 ms deadline when the store hangs', async () => {
+    it('answers unavailable within the 250 ms deadline when no connection comes free', async () => {
       vi.spyOn(logger, 'warn').mockImplementation(() => logger);
       const hung = { transaction: () => new Promise(() => {}) } as unknown as PasswordGuessStore;
       const startedAt = Date.now();
+      // The transaction never began, so this reads as a pool wait, not a slow statement.
       expect(await reservePasswordGuess(hung, freshEmailSubject())).toEqual({
         outcome: 'unavailable',
-        reason: 'deadline',
+        reason: 'pool_wait',
       });
       const elapsed = Date.now() - startedAt;
       expect(elapsed).toBeGreaterThanOrEqual(240);
       expect(elapsed).toBeLessThan(1_000);
-      expect(passwordGuessMetrics().unavailable.reserve.deadline).toBe(1);
+      expect(passwordGuessMetrics().unavailable.reserve.pool_wait).toBe(1);
     });
 
     it('leaves nothing counted when a locked row makes a real reservation miss the deadline', async () => {
@@ -405,7 +406,9 @@ describe('password guess windows (#7656)', () => {
       const startedAt = Date.now();
       const result = await reservePasswordGuess(db, subject, { now: MORNING });
       expect(Date.now() - startedAt).toBeLessThan(1_000);
-      expect(result).toEqual({ outcome: 'unavailable', reason: 'deadline' });
+      // Postgres's lock timeout ends before the caller's deadline, so contention reads as contention.
+      expect(result).toEqual({ outcome: 'unavailable', reason: 'lock_wait' });
+      expect(passwordGuessMetrics().unavailable.reserve.lock_wait).toBe(1);
       release();
       await holder;
       // Postgres cancelled the waiting statement, or the late reservation was given back.

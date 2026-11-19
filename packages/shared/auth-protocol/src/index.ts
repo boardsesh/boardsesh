@@ -99,6 +99,13 @@ export const passwordCommandSchema = z
      * without it.
      */
     webSession: webSessionRequestSchema.optional(),
+    /**
+     * The browser's device token (#7656), from its HttpOnly cookie, as the web
+     * received it. The backend verifies it for the accounts the email names; a
+     * valid one charges the account's device bucket instead of the email's.
+     */
+    deviceToken: z.string().min(1).max(256).optional(),
+
     payload: z.object({ email: z.string().min(1), password: z.string().min(1) }).strict(),
   })
   .strict();
@@ -208,7 +215,15 @@ function transportErrorReplySchema<const Operation extends keyof typeof AUTH_COM
   return z.discriminatedUnion('code', [
     z.object({ ...base, code: z.literal('replayed') }).strict(),
     z
-      .object({ ...base, code: z.literal('rate_limited'), retryAfterSeconds: z.number().int().min(1).max(3600) })
+      .object({
+        ...base,
+        code: z.literal('rate_limited'),
+        retryAfterSeconds: z
+          .number()
+          .int()
+          .min(1)
+          .max(operation === 'password' ? 86_400 : 3_600),
+      })
       .strict(),
     z.object({ ...base, code: z.literal('unavailable') }).strict(),
   ]);
@@ -418,3 +433,4 @@ export function authCommandReplyStatus(reply: AuthCommandReply): number {
 }
 
 export * from './location-sync-v1';
+export * from './guess-limit-v1';

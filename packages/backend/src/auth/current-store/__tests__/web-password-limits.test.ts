@@ -43,6 +43,9 @@ import {
   UNATTRIBUTED_PASSWORD_LOGIN_BUDGET,
   type PasswordLoginRedis,
 } from '../password-login-limits';
+import { DEVICE_TOKEN_SECRET_ENV, mintDeviceToken } from '@boardsesh/auth-protocol/device-token';
+import { __setPasswordGuessLimiterForTests, createPasswordGuessLimiter } from '../../password-guess-limit';
+import { PASSWORD_GUESS_EMAIL_KEY_ENV } from '../../password-guess-windows';
 
 const comparison = vi.hoisted(() => ({
   /** Submitted passwords, in the order their compares started. */
@@ -567,6 +570,88 @@ describe('staged web sign-in limits', () => {
       expect((await group).result).toBe('authenticated');
       expect(comparison.started.filter((password) => password === 'shared-right')).toHaveLength(3);
       expect(comparison.maxInFlight).toBe(1);
+    });
+  });
+
+  describe('per-account guess limit (#7656)', () => {
+    const deviceSecret = randomBytes(32).toString('hex');
+    const guessEnvironment = {
+      [PASSWORD_GUESS_EMAIL_KEY_ENV]: randomBytes(32).toString('hex'),
+      [DEVICE_TOKEN_SECRET_ENV]: deviceSecret,
+    };
+    /** Mid-hour, so a run never straddles an hour edge. */
+    const midHour = () => new Date('2026-11-17T10:15:00.000Z');
+
+    async function signInWithDevice(email: string, password: string, clientAddress: string, deviceToken?: string) {
+      const command: PasswordCommand = {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        clientAddress,
+        ...(deviceToken ? { deviceToken } : {}),
+        payload: { email, password },
+      };
+      const response = await fetch(`${instanceA}${AUTH_COMMAND_PATHS.password}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${rpcSecret}`, 'content-type': 'application/json' },
+        body: JSON.stringify(command),
+        signal: AbortSignal.timeout(8000),
+      });
+      const reply = passwordReplySchema.parse(await response.json());
+      return {
+        status: response.status,
+        retryAfter: response.headers.get('retry-after'),
+        result: reply.outcome === 'error' ? reply.code : reply.outcome,
+      };
+    }
+
+    afterAll(() => __setPasswordGuessLimiterForTests(undefined));
+
+    it('enforce: refuses the 11th guess at one account from new clients, and lets the owner device through', async () => {
+      __setPasswordGuessLimiterForTests(
+        createPasswordGuessLimiter({
+          mode: 'enforce',
+          store: () => db,
+          environment: guessEnvironment,
+          now: midHour,
+          deadlineMs: 5_000,
+        }),
+      );
+      const owner = await seed();
+      const unknown = `${randomUUID()}@example.test`;
+      for (const email of [owner.email, unknown]) {
+        const results = [];
+        for (let attempt = 0; attempt < 12; attempt += 1)
+          results.push(await signInWithDevice(email, WRONG_PASSWORD, nextClient()));
+        expect(results.slice(0, 10).map(({ result }) => result)).toEqual(Array(10).fill('invalid_credentials'));
+        expect(results.slice(10)).toEqual([
+          { status: 429, retryAfter: expect.any(String), result: 'rate_limited' },
+          { status: 429, retryAfter: expect.any(String), result: 'rate_limited' },
+        ]);
+      }
+      const { token } = await mintDeviceToken({ userId: owner.id, secret: deviceSecret });
+      expect(await signInWithDevice(owner.email, RIGHT_PASSWORD, nextClient(), token)).toMatchObject({
+        status: 200,
+        result: 'authenticated',
+      });
+      expect((await signInWithDevice(owner.email, RIGHT_PASSWORD, nextClient())).result).toBe('rate_limited');
+    });
+
+    it('observe: refuses nobody', async () => {
+      __setPasswordGuessLimiterForTests(
+        createPasswordGuessLimiter({
+          mode: 'observe',
+          store: () => db,
+          environment: guessEnvironment,
+          now: midHour,
+          deadlineMs: 5_000,
+        }),
+      );
+      const owner = await seed();
+      for (let attempt = 0; attempt < 12; attempt += 1)
+        expect((await signInWithDevice(owner.email, WRONG_PASSWORD, nextClient())).result).toBe('invalid_credentials');
+      expect((await signInWithDevice(owner.email, RIGHT_PASSWORD, nextClient())).result).toBe('authenticated');
     });
   });
 });

@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { assertLocalOnly, type Environment } from '../../partner-oauth-e2e/server-environment';
 import { probe, startProcess, stopProcess, waitUntil, type ManagedProcess } from './processes';
 import { WS_HOST, WWW_HOST } from './stack';
@@ -64,6 +66,14 @@ export class ServerSet {
   }
 
   async start(overrides: EnvironmentOverrides = {}): Promise<void> {
+    for (const spec of this.specs) {
+      // `next dev` keeps a Turbopack cache on disk (turbopackFileSystemCacheForDev, on by default in
+      // Next 16) and writes it while it runs. A dev server stopped by a restart can leave it half
+      // written, and the next one then answered 404 for routes that exist (/auth/login,
+      // /api/auth/session) after its first recompile (run 44314377751). Each dev start begins cold.
+      if (spec.name === 'web' && spec.args.includes('dev'))
+        rmSync(join(spec.cwd, '.next', 'dev'), { recursive: true, force: true });
+    }
     this.running = this.specs.map((spec) => {
       const environment = withOverrides(spec.environment, overrides);
       // The same guard the first start went through: an override cannot point a server off this machine.

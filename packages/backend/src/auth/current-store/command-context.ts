@@ -15,7 +15,8 @@ import {
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
 
-const WEB_AUTH_COMMAND_IDENTIFIER_PREFIX = 'ba03-web-auth:';
+/** Replay records; `deleteExpiredCommandClaims` removes them once expired. */
+export const WEB_AUTH_COMMAND_IDENTIFIER_PREFIX = 'ba03-web-auth:';
 // One run a minute covers 5,000 commands; each backend process accepts at most 960.
 const EXPIRED_COMMAND_CLAIMS_PER_RUN = 5_000;
 

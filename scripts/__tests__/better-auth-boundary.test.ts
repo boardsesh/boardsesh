@@ -445,7 +445,8 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   // Per-account password guess counter (#7656): no identity, credential or user
   // id, only rejected-password counts by keyed digest. Fails open in 250 ms, so
   // it must never wait on the authority gate.
-  'packages/backend/src/auth/password-guess-windows.ts': { writes: 4 },
+  // The fifth write is a give-back replay record in verificationTokens, which the existing cleanup removes.
+  'packages/backend/src/auth/password-guess-windows.ts': { writes: 5 },
   // Documented legacy branches of the worker jobs; their staged modes go through the backend.
   'packages/db/src/jobs/system-user.ts': { writes: 1 },
   'packages/location-sync/src/upsert.ts': { writes: 1 },

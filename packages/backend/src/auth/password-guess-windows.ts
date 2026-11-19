@@ -1,8 +1,11 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { and, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   authPasswordGuessWindows,
+  userCredentials,
+  users,
+  verificationTokens,
   type PasswordGuessSubjectKind,
   type PasswordGuessWindowKind,
 } from '@boardsesh/db/schema/auth';
@@ -12,11 +15,12 @@ import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { normalizeAccountEmail } from './normalize-email';
 import { DELETED_EMAIL_KEY_ENV } from './current-store/authority-configuration';
+import { WEB_AUTH_COMMAND_IDENTIFIER_PREFIX } from './current-store/command-context';
 
 /**
- * Per-account password guess limit (#7656): the counter and nothing else. No
- * sign-in consults it yet; a later change wires it into the compare sites
- * behind `AUTH_ACCOUNT_GUESS_LIMIT_MODE`.
+ * Per-account password guess limit (#7656): the counter and nothing else. The
+ * compare sites reach it through `password-guess-limit.ts`, behind
+ * `AUTH_ACCOUNT_GUESS_LIMIT_MODE`.
  *
  * Every function here fails open. If the store errors or does not answer in
  * 250 ms the result says `unavailable`, a metric and a rate-limited warning
@@ -66,8 +70,15 @@ export interface ReservedPasswordGuess {
   readonly windows: readonly { readonly kind: PasswordGuessWindowKind; readonly start: Date }[];
 }
 
-/** Why a call proceeded without the counter. */
-export type PasswordGuessUnavailableReason = 'not_configured' | 'store_error' | 'deadline';
+/**
+ * Why a call proceeded without the counter. Kept apart so an alert can tell
+ * contention from an outage:
+ * - `lock_wait`: Postgres gave up waiting for another attempt's row lock (a burst at one subject).
+ * - `pool_wait`: no connection came free before the deadline (a busy or unreachable pool).
+ * - `deadline`: the statement itself ran out of time.
+ * - `store_error`: the store answered with an error (an outage, a missing table).
+ */
+export type PasswordGuessUnavailableReason = 'not_configured' | 'store_error' | 'deadline' | 'lock_wait' | 'pool_wait';
 
 export type PasswordGuessReservation =
   | { readonly outcome: 'reserved'; readonly reservation: ReservedPasswordGuess }
@@ -91,7 +102,7 @@ export interface PasswordGuessMetrics {
 }
 
 function emptyCounts(): Record<PasswordGuessOperation, Record<PasswordGuessUnavailableReason, number>> {
-  const reasons = () => ({ not_configured: 0, store_error: 0, deadline: 0 });
+  const reasons = () => ({ not_configured: 0, store_error: 0, deadline: 0, lock_wait: 0, pool_wait: 0 });
   return { reserve: reasons(), give_back: reasons(), clear: reasons(), prune: reasons() };
 }
 
@@ -132,6 +143,8 @@ function recordUnavailable(operation: PasswordGuessOperation, reason: PasswordGu
     type: 'password_guess_metrics',
     reserveStoreError: sinceLastWarning.reserve.store_error,
     reserveDeadline: sinceLastWarning.reserve.deadline,
+    reserveLockWait: sinceLastWarning.reserve.lock_wait,
+    reservePoolWait: sinceLastWarning.reserve.pool_wait,
     giveBackStoreError: sinceLastWarning.give_back.store_error,
     giveBackDeadline: sinceLastWarning.give_back.deadline,
     clearStoreError: sinceLastWarning.clear.store_error,
@@ -230,7 +243,17 @@ class DeadlinePassed extends Error {
   }
 }
 
-type Deadlined<Result> = { readonly kind: 'settled'; readonly value: Result } | { readonly kind: 'late' };
+type Deadlined<Result> =
+  | { readonly kind: 'settled'; readonly value: Result }
+  /** `started`: the transaction had a connection and had begun its work. */
+  | { readonly kind: 'late'; readonly started: boolean };
+
+/**
+ * Postgres's lock timeout ends this much before the caller's deadline, so a
+ * statement stuck behind another attempt's row lock fails as a lock wait
+ * (`55P03`) rather than surfacing as a generic missed deadline.
+ */
+const LOCK_WAIT_MARGIN_MS = 40;
 
 /**
  * Runs one transaction under the deadline. Postgres is told the same deadline
@@ -246,18 +269,21 @@ async function runWithDeadline<Result>(
   onLate: (value: Result) => void,
 ): Promise<Deadlined<Result>> {
   const startedAt = Date.now();
+  let started = false;
   const run = store.transaction(async (transaction) => {
     const remaining = deadlineMs - (Date.now() - startedAt);
     if (remaining <= 0) throw new DeadlinePassed();
-    const budget = String(Math.max(1, Math.ceil(remaining)));
+    started = true;
+    const statementBudget = String(Math.max(1, Math.ceil(remaining)));
+    const lockBudget = String(Math.max(1, Math.ceil(remaining) - LOCK_WAIT_MARGIN_MS));
     await transaction.execute(
-      sql`SELECT set_config('statement_timeout', ${budget}, true), set_config('lock_timeout', ${budget}, true)`,
+      sql`SELECT set_config('statement_timeout', ${statementBudget}, true), set_config('lock_timeout', ${lockBudget}, true)`,
     );
     return work(transaction);
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<Deadlined<Result>>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: 'late' }), deadlineMs);
+    timer = setTimeout(() => resolve({ kind: 'late', started }), deadlineMs);
   });
   try {
     const outcome = await Promise.race([
@@ -333,8 +359,9 @@ export async function reservePasswordGuess(
       () => void giveBackPasswordGuess(store, reservation),
     );
     if (outcome.kind === 'late') {
-      recordUnavailable('reserve', 'deadline');
-      return { outcome: 'unavailable', reason: 'deadline' };
+      const reason = outcome.started ? 'deadline' : 'pool_wait';
+      recordUnavailable('reserve', reason);
+      return { outcome: 'unavailable', reason };
     }
     return { outcome: 'reserved', reservation };
   } catch (error) {
@@ -342,9 +369,55 @@ export async function reservePasswordGuess(
       return { outcome: 'refused', retryAfterSeconds: error.retryAfterSeconds, window: error.window };
     }
     // A database error can carry bound values; only the category is recorded.
-    const reason = error instanceof DeadlinePassed || isPostgresTimeout(error) ? 'deadline' : 'store_error';
+    const reason = unavailableReason(error);
     recordUnavailable('reserve', reason);
     return { outcome: 'unavailable', reason };
+  }
+}
+
+/** An account a typed email may sign in to, and when its password last changed. */
+export interface PasswordGuessAccount {
+  readonly userId: string;
+  /** Null for an account with no password. */
+  readonly passwordChangedAt: Date | null;
+}
+
+/** More accounts than password sign-in ever compares for one address (it stops at 8). */
+const MAX_ACCOUNTS_PER_EMAIL = 9;
+
+/**
+ * The accounts a typed email names, for checking a presented device token
+ * against. Runs under the same deadline as a reserve; `unavailable` means the
+ * caller cannot tell whether the device is recognised. An unknown address
+ * answers an empty list, after the same single read.
+ */
+export async function readPasswordGuessAccounts(
+  store: PasswordGuessStore,
+  email: string,
+  options: { readonly deadlineMs?: number } = {},
+): Promise<readonly PasswordGuessAccount[] | 'unavailable'> {
+  const normalizedEmail = normalizeAccountEmail(email);
+  try {
+    const outcome = await runWithDeadline(
+      store,
+      options.deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS,
+      (transaction) =>
+        transaction
+          .select({ userId: users.id, passwordChangedAt: userCredentials.updatedAt })
+          .from(users)
+          .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+          .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+          .limit(MAX_ACCOUNTS_PER_EMAIL),
+      () => {},
+    );
+    if (outcome.kind === 'late') {
+      recordUnavailable('reserve', outcome.started ? 'deadline' : 'pool_wait');
+      return 'unavailable';
+    }
+    return outcome.value;
+  } catch (error) {
+    recordUnavailable('reserve', unavailableReason(error));
+    return 'unavailable';
   }
 }
 
@@ -381,30 +454,63 @@ function writeGiveBack(
   reservation: ReservedPasswordGuess,
   deadlineMs: number | undefined,
 ): Promise<PasswordGuessWriteResult> {
-  const { subject, windows } = reservation;
   return runWrite(
     'give_back',
     store,
     deadlineMs,
-    async (transaction) => {
-      for (const window of windows) {
-        await transaction
-          .update(authPasswordGuessWindows)
-          .set({ failures: sql`${authPasswordGuessWindows.failures} - 1` })
-          .where(
-            and(
-              eq(authPasswordGuessWindows.subjectKind, subject.kind),
-              eq(authPasswordGuessWindows.subjectKey, subject.key),
-              eq(authPasswordGuessWindows.windowKind, window.kind),
-              eq(authPasswordGuessWindows.windowStart, window.start),
-              gt(authPasswordGuessWindows.failures, 0),
-            ),
-          );
-      }
-    },
+    (transaction) => uncount(transaction, reservation),
     // A give-back that commits after its caller was told `unavailable` still counts as done.
     () => giveBacks.set(reservation, 'done'),
   );
+}
+
+async function uncount(transaction: PasswordGuessTransaction, reservation: ReservedPasswordGuess): Promise<void> {
+  const { subject, windows } = reservation;
+  for (const window of windows) {
+    await transaction
+      .update(authPasswordGuessWindows)
+      .set({ failures: sql`${authPasswordGuessWindows.failures} - 1` })
+      .where(
+        and(
+          eq(authPasswordGuessWindows.subjectKind, subject.kind),
+          eq(authPasswordGuessWindows.subjectKey, subject.key),
+          eq(authPasswordGuessWindows.windowKind, window.kind),
+          eq(authPasswordGuessWindows.windowStart, window.start),
+          gt(authPasswordGuessWindows.failures, 0),
+        ),
+      );
+  }
+}
+
+/** A replay record outlives every window a reservation can count in (a day). */
+const GIVE_BACK_CLAIM_LIFETIME_MS = 2 * DAY_MS;
+
+/**
+ * Gives back a reservation another request made, at most once per
+ * `reservationId` (the id its reserve handed out). The claim and the uncount
+ * commit together, so a retried, replayed or concurrent give-back of the same
+ * reservation uncounts nothing more. The claim is a replay record the existing
+ * cleanup removes after it expires.
+ */
+export async function giveBackPasswordGuessOnce(
+  store: PasswordGuessStore,
+  reservation: ReservedPasswordGuess,
+  reservationId: string,
+  options: { readonly deadlineMs?: number } = {},
+): Promise<PasswordGuessWriteResult> {
+  const claimHash = createHash('sha256').update(`password-guess-give-back-v1\0${reservationId}`).digest('hex');
+  return runWrite('give_back', store, options.deadlineMs, async (transaction) => {
+    const claimed = await transaction
+      .insert(verificationTokens)
+      .values({
+        identifier: `${WEB_AUTH_COMMAND_IDENTIFIER_PREFIX}${claimHash}`,
+        token: claimHash,
+        expires: new Date(Date.now() + GIVE_BACK_CLAIM_LIFETIME_MS),
+      })
+      .onConflictDoNothing()
+      .returning({ token: verificationTokens.token });
+    if (claimed.length === 1) await uncount(transaction, reservation);
+  });
 }
 
 /**
@@ -512,21 +618,24 @@ async function runWrite(
   try {
     const outcome = await runWithDeadline(store, deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS, work, onLate);
     if (outcome.kind === 'late') {
-      recordUnavailable(operation, 'deadline');
+      recordUnavailable(operation, outcome.started ? 'deadline' : 'pool_wait');
       return 'unavailable';
     }
     return 'done';
   } catch (error) {
-    recordUnavailable(
-      operation,
-      error instanceof DeadlinePassed || isPostgresTimeout(error) ? 'deadline' : 'store_error',
-    );
+    recordUnavailable(operation, unavailableReason(error));
     return 'unavailable';
   }
 }
 
-/** `57014` statement timeout and `55P03` lock timeout: Postgres enforcing our deadline. */
-function isPostgresTimeout(error: unknown): boolean {
+/**
+ * `55P03` is Postgres's lock timeout, `57014` its statement timeout. A
+ * transaction that only got a connection after the deadline never ran.
+ */
+function unavailableReason(error: unknown): PasswordGuessUnavailableReason {
+  if (error instanceof DeadlinePassed) return 'pool_wait';
   const code = getPostgresErrorCode(error);
-  return code === '57014' || code === '55P03';
+  if (code === '55P03') return 'lock_wait';
+  if (code === '57014') return 'deadline';
+  return 'store_error';
 }
