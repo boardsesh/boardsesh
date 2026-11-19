@@ -7,6 +7,7 @@ import {
   storeTokensForGeneration,
 } from './auth-store';
 import { signOutForGeneration } from './auth';
+import { rememberDeviceTokenFromReply } from './device-token-store';
 import { getConnectivitySnapshot, reportBackendOutcome } from './connectivity/connectivity-store';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { clientIdentityHeaders, getClientIdentityHeaderValue } from './client-identity';
@@ -98,7 +99,9 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
 
     const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
     const stored = await storeTokensForGeneration(credentialGeneration, data.jwt, data.refreshToken, data.expiresAt);
-    return stored ? { status: 'refreshed', generation: credentialGeneration } : { status: 'superseded' };
+    if (!stored || !isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+    void rememberDeviceTokenFromReply(data, { jwt: data.jwt });
+    return { status: 'refreshed', generation: credentialGeneration };
   } catch (error) {
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
     console.warn('[Auth] Token refresh error:', error instanceof Error ? error.message : 'unknown');

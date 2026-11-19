@@ -19,6 +19,10 @@ The fix (#4127) copies values into a keychain **service** we had never used, `bo
 
 26 keys are carried: 3 auth (`boardsesh_jwt`, `boardsesh_refresh_token`, `boardsesh_token_expires_at`) and the 23 in `PREFERENCE_SECURE_KEYS`. Two are deliberately excluded, both documented at the source in `preference-secure-keys.ts`.
 
+A key born after #4127 needs no migration. `boardsesh_device_tokens` (#7656, `device-token-store.ts`) is one: every build that writes it writes v2 first through `secure-store-io`, so no legacy-only copy exists to copy, and no rolled-back build ever writes it, so its stamp can never disagree. It still goes through the helpers for its reads, writes and deletes, and so gets the mirror, the stamp and the tombstone like every other key.
+
+If the signed-in profile arrives before the first device token, the app holds its email in memory until a reply names the same account. Only accepted credential refreshes replace a stored token. A late refresh from an earlier sign-in leaves the newer login’s token in place.
+
 ## Phase 1: both namespaces at once
 
 Everything goes through `packages/mobile/src/lib/secure-store-io.ts`.
