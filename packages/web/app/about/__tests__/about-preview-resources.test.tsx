@@ -32,7 +32,7 @@ const catalogs = {
   de: deMarketing,
   it: itMarketing,
   'zh-CN': zhMarketing,
-};
+} satisfies Record<Locale, typeof enMarketing>;
 beforeEach(() => {
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Windows NT 10.0');
   loadServerResources.mockImplementation(async (locale: Locale) => ({ marketing: structuredClone(catalogs[locale]) }));
