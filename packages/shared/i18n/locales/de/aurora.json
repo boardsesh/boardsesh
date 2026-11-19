@@ -13,7 +13,7 @@
       "step1": "Lade die kostenlose App herunter und melde dich an.",
       "step2": "Tipp auf deinen Avatar, dann auf Einstellungen, dann auf Verbundene Apps.",
       "step3": "Tipp auf Bei Kilter anmelden oder auf Verknüpfen bei der Tension-Karte.",
-      "sync": "Deine Begehungen werden etwa alle 12 Stunden übernommen. Die Synchronisation läuft in eine Richtung: Was du in Boardsesh einträgst, bleibt in Boardsesh.",
+      "sync": "Nach dem Verknüpfen prüft Boardsesh im Hintergrund auf neue Begehungen. Die Wartezeit variiert. Importe laufen nur zu Boardsesh; deine Einträge hier gehen nicht zurück an deren Apps.",
       "signIn": "Anmelden"
     },
     "legacy": {

@@ -120,11 +120,8 @@ export default async function DevelopersPage() {
           </>
         ) : (
           <Prose>
-            {t('docs.access.invitation.body', {
-              live: EARLY_ACCESS_LIVE_CLIMBERS,
-              perDay: EARLY_ACCESS_NEW_PER_DAY,
-              email: SUPPORT_EMAIL,
-            })}
+            {t('docs.access.invitation.body', { live: EARLY_ACCESS_LIVE_CLIMBERS, perDay: EARLY_ACCESS_NEW_PER_DAY })}{' '}
+            <MuiLink href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</MuiLink>
           </Prose>
         )}
       </PageSection>

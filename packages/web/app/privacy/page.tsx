@@ -3,6 +3,7 @@ import { parsePartnerOAuthMode } from '@boardsesh/auth-protocol/partner-oauth-mo
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { SUPPORT_CURRENCIES, hasMonthlyLinks, readSupportLinksConfig } from '@/app/support/support-links';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 
 export async function generateMetadata() {
@@ -20,11 +21,16 @@ export default async function PrivacyPolicyPage() {
   // Apps can connect only once this web service's PARTNER_OAUTH_MODE is on, so
   // the section describing them appears with them. DRAFT (#6981 F18): the
   // wording waits for the owner's approval, which is also a launch gate.
+  const supportLinks = readSupportLinksConfig();
+  const cardGivingAvailable =
+    hasMonthlyLinks(supportLinks) || SUPPORT_CURRENCIES.some((currency) => Boolean(supportLinks.once[currency]));
   const partnerAppsOn = parsePartnerOAuthMode(process.env.PARTNER_OAUTH_MODE) !== 'off';
   return (
     <PageShell title={t('privacy.title')} lead={t('privacy.lastUpdated')}>
       <PageSection>
         <Prose>{t('privacy.intro1')}</Prose>
+        <Prose>{t('privacy.operator')}</Prose>
+        <Prose>{t('funding.body')}</Prose>
         <Prose>{t('privacy.intro2ProductAnalytics')}</Prose>
       </PageSection>
 
@@ -47,6 +53,12 @@ export default async function PrivacyPolicyPage() {
         <Prose>
           <strong>{t('privacy.collect.serviceStatsLabel')}</strong> {t('privacy.collect.serviceStatsBody')}
         </Prose>
+      </PageSection>
+
+      <PageSection title={t('privacy.boardAccounts.title')}>
+        <Prose>{t('privacy.boardAccounts.sync')}</Prose>
+        <Prose>{t('privacy.boardAccounts.credentials')}</Prose>
+        <Prose>{t('privacy.boardAccounts.legalBasis')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.bluetooth.title')}>
@@ -119,20 +131,15 @@ export default async function PrivacyPolicyPage() {
           </Link>
           .
         </Prose>
-        <Prose>
-          <strong>{t('privacy.thirdParty.auroraLabel')}</strong> {t('privacy.thirdParty.auroraBody')}
-          <Link href="https://auroraclimbing.com" target="_blank" rel="noopener">
-            {t('privacy.thirdParty.auroraLink')}
-          </Link>
-          {t('privacy.thirdParty.auroraBodyEnd')}
-        </Prose>
-        <Prose>
-          <strong>{t('privacy.thirdParty.stripeLabel')}</strong> {t('privacy.thirdParty.stripeBody')}
-          <Link href="https://stripe.com/privacy" target="_blank" rel="noopener">
-            {t('privacy.thirdParty.stripeLink')}
-          </Link>
-          .
-        </Prose>
+        {cardGivingAvailable ? (
+          <Prose>
+            <strong>{t('privacy.thirdParty.stripeLabel')}</strong> {t('privacy.thirdParty.stripeBody')}
+            <Link href="https://stripe.com/privacy" target="_blank" rel="noopener">
+              {t('privacy.thirdParty.stripeLink')}
+            </Link>
+            .
+          </Prose>
+        ) : null}
       </PageSection>
 
       <PageSection title={t('privacy.choices.title')}>

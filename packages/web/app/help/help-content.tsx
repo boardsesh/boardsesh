@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { brandCtaOutlinedSx, brandCtaSx } from '@/app/components/ui/brand-cta';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { helpScreenshot, type HelpShot } from '@/app/lib/help-screenshots';
@@ -50,7 +51,11 @@ const GUIDES: ReadonlyArray<{ key: string; href: string; shot: HelpShot; peekY: 
  * Tension account, why Kilter's app shows more climbs, and where to ask. The
  * section ids are stable: `climb-counts` is linked from docs/kilter-sync.md.
  */
-export default function HelpContent() {
+export default function HelpContent({
+  developerDocsState = 'unavailable',
+}: {
+  developerDocsState?: DeveloperDocsState;
+}) {
   const { t } = useTranslation('marketing');
 
   return (
@@ -170,9 +175,15 @@ export default function HelpContent() {
             <Typography component="p" className={styles.askBody}>
               {t('help.hub.ask.devBody')}
             </Typography>
-            <MuiLink component={LocaleLink} href="/docs" className={styles.askLink}>
-              {t('help.hub.ask.docs')}
-            </MuiLink>
+            {developerDocsState === 'unavailable' ? (
+              <MuiLink href="mailto:support@boardsesh.com" className={styles.askLink}>
+                {t('help.hub.ask.contact')}
+              </MuiLink>
+            ) : (
+              <MuiLink component={LocaleLink} href="/developers" className={styles.askLink}>
+                {t('help.hub.ask.docs')}
+              </MuiLink>
+            )}
           </Box>
         </Box>
       </HelpBand>

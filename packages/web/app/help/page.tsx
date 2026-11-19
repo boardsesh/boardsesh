@@ -1,3 +1,4 @@
+import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import React from 'react';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -19,7 +20,7 @@ export default async function HelpPage() {
   const locale = await getLocale();
   return (
     <I18nProvider locale={locale} namespaces={['marketing']}>
-      <HelpContent />
+      <HelpContent developerDocsState={getDeveloperDocsState()} />
     </I18nProvider>
   );
 }

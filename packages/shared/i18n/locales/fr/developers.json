@@ -220,7 +220,7 @@
     "access": {
       "invitation": {
         "title": "L'inscription se fait sur invitation",
-        "body": "L'accès anticipé est ouvert uniquement aux comptes développeur que l'équipe Boardsesh a ajoutés. Chaque app peut avoir {{live}} grimpeurs connectés en même temps et {{perDay}} nouveaux par tranche de 24 heures. Pour demander l'accès, écris à {{email}} en disant ce que fait ton app."
+        "body": "L’inscription est sur invitation pendant les tests. Chaque application commence avec {{live}} grimpeurs connectés à la fois et {{perDay}} nouveaux par jour. Pour demander l’accès, écris à :"
       },
       "open": {
         "title": "Enregistre ton app",

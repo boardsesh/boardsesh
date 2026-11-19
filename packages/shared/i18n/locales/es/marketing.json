@@ -19,8 +19,8 @@
       "description": "Guías cortas de la app Boardsesh, cómo traerte tu logbook de Kilter o Tension y dónde preguntar."
     },
     "docs": {
-      "title": "Documentación de la API",
-      "description": "Documentación de la API REST y WebSocket de Boardsesh: integración con plafones de entrenamiento de escalada interactivos."
+      "title": "Referencia de la API pública de bloques",
+      "description": "Consulta bloques, grados y configuración de plafones públicos. Conecta una app al logbook de un escalador mediante la API OAuth para desarrolladores."
     },
     "legal": {
       "title": "Política Legal y de Propiedad Intelectual",
@@ -168,13 +168,18 @@
     },
     "openSource": {
       "title": "Código Abierto",
-      "body": "Boardsesh es código abierto bajo licencia Apache. Navega por el código, manda un PR, abre un issue o haz un fork del proyecto entero.",
+      "body": "El código es público bajo la licencia Apache 2.0, así que puedes ejecutar tu propia copia. CONTRIBUTING.md es el punto de partida actual; la guía de autoalojamiento mantenida aún está pendiente.",
       "cta": "Ver en GitHub →"
     },
     "api": {
       "title": "Documentación de la API",
-      "body": "¿Quieres construir sobre los datos de escalada? La API es pública. Adelante.",
-      "cta": "Explora la documentación de la API →"
+      "body": "La API de lectura de bloques y grados es pública. Otra app puede leer el logbook de un escalador con su permiso mediante la API OAuth independiente; la guía para desarrolladores explica las condiciones de acceso actuales.",
+      "cta": "Explora la documentación de la API →",
+      "status": {
+        "open": "El registro de apps está abierto.",
+        "invitation": "El registro de apps es solo por invitación mientras hacemos pruebas.",
+        "unavailable": "Las conexiones con otras apps no están disponibles ahora."
+      }
     },
     "community": {
       "title": "Únete a la Comunidad",
@@ -184,41 +189,33 @@
     },
     "legalLink": "Política Legal y de Propiedad Intelectual",
     "footer": "Hecho por escaladores. Abierto para todos.",
-    "profile": {
-      "title": "Todos tus plafones. Un perfil.",
-      "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
-    },
     "story": {
       "title": "Por qué existe esto",
       "p1": "Cada plafón trae su propia app, su propio inicio de sesión y su propio registro. Escalas un Kilter en tu rocódromo y un MoonBoard de vacaciones y acabas con dos historiales que nunca se juntan.",
-      "p2": "Cuando la antigua app de Kilter dejó de funcionar, quienes escalaban con ella perdieron el acceso a su historial.",
+      "p2": "Cuando la antigua app de Kilter dejó de funcionar en marzo de 2026, algunos escaladores perdieron acceso a su historial. En Boardsesh ya puedes descargar tu logbook: abre Ajustes → Cuenta → Exportar datos de escalada y elige un plafón. El código es público bajo Apache 2.0.",
       "link": "Qué pasó y cómo sacar tus datos"
     },
     "who": {
       "title": "Quién lo hace",
-      "body": "Empezó en 2024 con un escalador y un repositorio, y sigue siendo de esos proyectos en los que se trabaja por las tardes. Los fallos los encuentra alguien de pie delante del muro, no un equipo de QA.",
+      "body": "Marco de Jongh, escalador de plafón residente en Sídney, Australia, gestiona Boardsesh con código, traducciones e informes de errores de otros escaladores. Escríbele a support@boardsesh.com.",
       "cta": "Mira quién ha contribuido"
     },
     "next": {
       "title": "Qué viene ahora",
-      "body": "Más plafones, mejor modo sin conexión y poder sacar tus datos tan fácil como entraron. La hoja de ruta es pública y se discute en Discord.",
+      "body": "Más plafones, mejor escalada sin conexión e importación del historial de más apps. Sigue la hoja de ruta y participa en Discord.",
       "cta": "Lee la hoja de ruta"
     }
   },
   "support": {
     "hero": {
       "title": "Mantén Boardsesh en marcha",
-      "subtitle": "Gratis, de código abierto y pagado por escaladores",
       "ctaMonthly": "Apóyanos"
     },
-    "promise": "Sin pantallas bloqueadas, sin segunda categoría, sin anuncios. Echar una mano paga la factura, nada más.",
-    "promiseMonthly": "Sin pantallas bloqueadas, sin segunda categoría, sin anuncios. Echar una mano paga las horas que lleva construir Boardsesh, nada más.",
+    "promise": "Todos tienen la misma app, aporten o no. Sin anuncios en la app.",
     "why": {
       "title": "Por qué existe esta página",
-      "p1": "Boardsesh es gratis y de código abierto, y siempre lo será. Pero mantenerlo cuesta dinero de verdad: el hosting, la base de datos y la infraestructura suman cada vez que se une más gente.",
-      "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas.",
-      "p1Monthly": "Boardsesh es gratis y de código abierto, y siempre lo será. Construirlo lleva horas cada semana, y el apoyo mensual paga ese tiempo.",
-      "p2Monthly": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano hace que el trabajo siga adelante."
+      "p1": "Mantener Boardsesh implica pagar el alojamiento, la base de datos y el tiempo de desarrollo.",
+      "p2": "El código es público bajo Apache 2.0, así que puedes ejecutar tu propia copia. Si puedes aportar, ayudas a que el trabajo continúe."
     },
     "rails": {
       "title": "Formas de echar una mano"
@@ -255,7 +252,7 @@
       },
       "translate": {
         "title": "Traduce una pantalla",
-        "body": "Los catálogos en español, francés y alemán están en el repo. Corrige una frase o añade un idioma.",
+        "body": "Los catálogos en español, francés, alemán e italiano están en el repo. Corrige una frase o añade un idioma.",
         "cta": "Explora los catálogos de idiomas →"
       },
       "patch": {
@@ -271,10 +268,8 @@
     },
     "honesty": {
       "title": "La letra pequeña",
-      "p1": "Las donaciones no son deducibles de impuestos. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
-      "p1Monthly": "Las donaciones no son deducibles de impuestos. Boardsesh no es una ONG, solo escaladores pagando el tiempo que lleva construirlo.",
-      "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no.",
-      "p2Monthly": "Tu dinero paga el tiempo que lleva construir Boardsesh. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, apoyes o no."
+      "p1": "Las donaciones no son deducibles de impuestos. Boardsesh no es una entidad benéfica.",
+      "p2": "Las aportaciones pagan los servidores y el desarrollo. No compran nada extra en la app."
     },
     "thanks": {
       "title": "Gracias",
@@ -285,13 +280,15 @@
       "body": "Tu apoyo se ha registrado. Va directo a construir Boardsesh."
     },
     "aboutLink": "Conoce más sobre el proyecto →",
-    "docsLink": "Mira cómo está construido en la documentación →",
-    "footer": "Gratis para todos, financiado por quien puede echar una mano."
+    "docsLink": "Lee el código en GitHub",
+    "footer": "Gratis para todos, financiado por quien puede echar una mano.",
+    "legalLink": "Lee la política legal",
+    "privacyLink": "Lee la política de privacidad"
   },
   "legal": {
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
-      "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). La app es gratuita, el código es abierto y quienes la construyen son voluntarios. Boardsesh vende una sola cosa opcional —planos de construcción CNC para un muro en casa, con una licencia de fabricación aparte— y ese dinero paga el alojamiento y el desarrollo.",
+      "p1": "Boardsesh es una app gratuita, de código abierto y creada por la comunidad para buscar bloques y usar plafones compatibles, incluidos Kilter, Tension y MoonBoard.",
       "p2": "Creemos que los escaladores deben tener la libertad de elegir cómo interactúan con el hardware que han comprado y que los datos creados por la comunidad deben seguir siendo accesibles para la comunidad."
     },
     "climbData": {
@@ -351,10 +348,6 @@
     "trademark": {
       "title": "Uso de Marcas Registradas",
       "body": "Usamos los nombres de plafones y productos (por ejemplo, «Kilter Board», «MoonBoard», «Tension Board») únicamente para describir la compatibilidad e interoperabilidad de hardware. Estos nombres son marcas registradas de sus respectivos propietarios. Este proyecto no está afiliado, respaldado ni patrocinado por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones."
-    },
-    "buildPlans": {
-      "title": "Planos de construcción",
-      "body": "Boardsesh vende planos de construcción CNC para un muro en casa: archivos de corte generados para un muro, con licencia para un muro y no vendidos en propiedad. El generador que los produce es cerrado y no se distribuye; la app sigue siendo gratuita y de código abierto. Los planos son compatibles con el patrón de agujeros del Kilter Homewall, lo que dice algo sobre posiciones de agujeros y nada sobre una relación con ningún fabricante. Las condiciones completas están en la página de la <licence>licencia de fabricación de los planos de construcción</licence>."
     },
     "dmca": {
       "title": "DMCA y Solicitudes de Retirada",
@@ -663,9 +656,10 @@
         "devLead": "¿Desarrollas sobre la API?",
         "docs": "Lee la documentación para desarrolladores",
         "discordTitle": "Discord",
-        "discordBody": "Escaladores y el equipo responden casi todo el mismo día.",
+        "discordBody": "Marco y otros escaladores de Discord pueden ayudarte. Di qué plafón usas, qué has tocado y qué has visto.",
         "bugBody": "En la app, toca tu avatar y luego Reportar un bug. Cuéntanos qué pasó y en qué móvil.",
-        "devBody": "Sincronización del logbook, entrenamientos y webhooks."
+        "devBody": "¿Creas una herramienta de logbook? Lee el historial de un escalador con su permiso. Consulta el acceso actual en la guía para desarrolladores.",
+        "contact": "Pregunta por el acceso para desarrolladores"
       },
       "topics": {
         "guides": "Guías",
@@ -710,10 +704,11 @@
         "lead": "Vincula la cuenta de tu plafón una vez y tus encadenes llegan solos.",
         "step1": "Toca tu avatar, luego Ajustes y luego Aplicaciones conectadas.",
         "step2": "En Cuentas de Aurora, toca Vincular en la tarjeta de Tension o Iniciar sesión en Kilter en la de Kilter.",
-        "step3": "Pon el usuario y la contraseña de ese plafón.",
+        "step3": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Para Tension, introduce tu usuario y contraseña de Tension.",
         "p1": "¿Usabas la app vieja de Kilter? La tarjeta Kilter (Aurora) acepta un export JSON.",
-        "p2": "La sincronización va en un solo sentido, de sus apps a Boardsesh, cada 12 horas más o menos. No vuelve nada.",
-        "link": "Trae tu logbook"
+        "p2": "Tras vincular tu cuenta, Boardsesh busca nuevos encadenes en segundo plano. El tiempo puede variar. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps.",
+        "link": "Trae tu logbook",
+        "credentials": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Boardsesh los intercambia por un token de acceso cifrado y no guarda tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora, guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Desvincular elimina la credencial guardada y detiene futuras importaciones."
       },
       "beta": {
         "title": "Adjunta un vídeo de beta",
@@ -867,87 +862,44 @@
     }
   },
   "docs": {
-    "loading": "Cargando documentación...",
-    "headerTitle": "Documentación de la API",
-    "headerSubtitle": "Referencia completa de las APIs REST y WebSocket de Boardsesh",
+    "headerTitle": "Referencia de la API pública de bloques",
+    "headerSubtitle": "Lee datos de bloques sin cuenta de Boardsesh. Las apps que se conectan al logbook de un escalador usan otra API para desarrolladores.",
     "tabs": {
       "overview": "Resumen",
-      "rest": "API REST",
-      "graphql": "Esquema GraphQL interno",
-      "websocket": "Guía de WebSocket"
+      "rest": "Referencia REST pública",
+      "graphql": "Esquema GraphQL interno"
     },
-    "overview": {
-      "title": "Resumen de la API de Boardsesh",
-      "intro": "Boardsesh ofrece dos APIs complementarias para interactuar con plafones de entrenamiento de escalada interactivos (Kilter, Tension):",
-      "usagePolicy": "Esta API es para integraciones. Publicar una app que use el backend de Boardsesh como su servicio requiere permiso por escrito, y por ahora no lo concedemos. Consulta nuestra",
-      "usagePolicyLink": "página legal",
-      "rest": {
-        "title": "API REST",
-        "intro": "Usa la API REST para operaciones sin estado, como buscar bloques, obtener la configuración del plafón o autenticar usuarios. La API REST es ideal para:",
-        "feature1": "Obtener datos y estadísticas de bloques",
-        "feature2": "Registro y autenticación de usuarios",
-        "feature3": "Gestión de perfil",
-        "feature4": "Resolución de slugs de URL a identificadores",
-        "baseUrlLabel": "URL base:"
-      },
-      "ws": {
-        "title": "API GraphQL interna por WebSocket",
-        "intro": "Usa la API por WebSocket para funciones en tiempo real, como sesiones de fiesta y sincronización de la cola. La API GraphQL ofrece:",
-        "feature1": "Actualizaciones de la cola en tiempo real mediante suscripciones",
-        "feature2": "Gestión de sesiones (crear, unirse, salir)",
-        "feature3": "Colaboración multiusuario",
-        "feature4": "Toda la funcionalidad de la API REST mediante queries/mutations",
-        "endpointLabel": "Endpoint:",
-        "endpointSuffix": "(mediante el protocolo graphql-ws)"
-      },
-      "auth": {
-        "title": "Autenticación",
-        "restLabel": "API REST:",
-        "restBody": "Usa cookies de sesión de NextAuth. Autentícate mediante los endpoints",
-        "restBodyEnd": ".",
-        "wsLabel": "API por WebSocket:",
-        "wsBody": "Obtén un token JWT desde",
-        "wsBodyEnd": "e inclúyelo en los parámetros de conexión:"
-      },
-      "rateLimit": {
-        "title": "Límite de solicitudes",
-        "body": "Los endpoints de autenticación tienen límite de solicitudes para evitar abusos. Las respuestas incluyen cabeceras con la información del límite. Los endpoints públicos de lectura tienen límites generosos."
-      }
+    "public": {
+      "title": "API pública de lectura · Disponible",
+      "body": "Usa /api/v1/ para consultar bloques, grados, configuración de plafones y slugs públicos. Estas rutas de lectura no usan cookies de inicio de sesión, no registran usuarios ni cambian perfiles."
     },
-    "ws": {
-      "title": "Guía de conexión por WebSocket",
-      "introStart": "La API por WebSocket de Boardsesh usa el protocolo",
-      "introEnd": "para suscripciones GraphQL en tiempo real.",
-      "connection": {
-        "title": "Configuración de la conexión"
-      },
-      "session": {
-        "title": "Gestión de sesiones",
-        "body": "Las sesiones son la unidad básica de colaboración. Los usuarios se unen a sesiones para compartir una cola de bloques."
-      },
-      "delta": {
-        "title": "Sincronización delta",
-        "body": "Al reconectar, usa la sincronización delta para ponerte al día sin transferir el estado completo:"
-      },
-      "connectionHandling": {
-        "title": "Gestión de la conexión",
-        "body": "La conexión WebSocket puede interrumpirse por cambios de red. Implementa la lógica de reconexión con las opciones de reintento de graphql-ws y usa la sincronización delta para mantener la coherencia del estado."
-      }
-    }
+    "partners": {
+      "title": "Apps conectadas",
+      "body": "Usa OAuth, el permiso del escalador y los ámbitos que apruebe para acceder a su logbook personal. El registro puede ser por invitación; la guía indica el acceso actual. Esta página no presenta los entrenamientos ni los webhooks como disponibles para todos.",
+      "link": "Lee la guía para desarrolladores",
+      "contact": "Pregunta por el acceso para desarrolladores"
+    },
+    "internal": {
+      "title": "Protocolo interno · Referencia para colaboradores",
+      "body": "GraphQL y los protocolos de sesión sirven a las apps de Boardsesh. Son interfaces internas, no una API compatible para el backend de otra app. Los forks ejecutan su propio servicio. Consulta la referencia y la política del servicio alojado.",
+      "link": "Lee la referencia del protocolo interno"
+    },
+    "policyLink": "Lee la política del servicio alojado",
+    "loading": "Cargando la referencia…"
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "lastUpdated": "Última actualización: 17 de noviembre de 2026",
+    "lastUpdated": "Última actualización: 18 de noviembre de 2026",
     "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no hay anuncios en Boardsesh y no compartimos datos con brokers de datos. Sí anunciamos Boardsesh en Reddit e Instagram, y en nuestra web la analítica incluye medir esos anuncios con Meta y Reddit, como explicamos más abajo.",
     "collect": {
       "title": "Qué recogemos",
       "accountLabel": "Información de cuenta.",
-      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
+      "accountBody": "Cuando creas una cuenta, guardamos tu correo y tu nombre de usuario. El correo se usa para la autenticación. Tu nombre de usuario aparece en tu perfil y es visible para otros usuarios en las sesiones y funciones sociales.",
       "activityLabel": "Actividad de escalada.",
       "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
       "locationLabel": "Ubicación.",
-      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de Modo Fiesta cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
+      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones cercanas. No rastreamos tu ubicación en segundo plano ni guardamos un historial.",
       "productAnalyticsLabel": "Analítica de producto.",
       "productAnalyticsBody": "Usamos PostHog para el uso de funciones, las visitas a páginas, el rendimiento y la grabación opcional de sesiones de la app. En la UE, el EEE, el Reino Unido, Suiza, Gibraltar, Jersey, Guernsey, la Isla de Man, China, Corea del Sur, Andorra, Mónaco, San Marino, la Ciudad del Vaticano, las Islas Feroe y Quebec, y siempre que no podamos saber dónde estás, te preguntamos primero y PostHog solo funciona si permites la analítica. En el resto del mundo la analítica está activada por defecto, por nuestro interés legítimo en mejorar Boardsesh, y puedes desactivarla cuando quieras en Ajustes o en Opciones de privacidad; si tu navegador envía una señal Global Privacy Control, la tratamos como un no. Lo decidimos a partir del país y, en Canadá, de la provincia que Cloudflare indica para tu conexión, que no guardamos. La analítica con sesión iniciada puede vincularse a tu cuenta de Boardsesh. La atribución de instalaciones necesita en todas partes tu propio permiso; el valor por defecto no la activa. Con tu permiso, la atribución de instalaciones en Android puede incluir la referencia de instalación de Play Store y datos de campañas, y en iOS usamos Apple AdServices a través de nuestro propio servidor para medir qué campañas de Apple Ads generan registros y actividad de escalada. Compartimos con PostHog identificadores de campaña validados y el estado de descarga, nunca el token de atribución. No usamos estos datos para mostrarte anuncios.",
       "adMeasurementLabel": "Medición de anuncios en nuestra web.",
@@ -961,7 +913,7 @@
     },
     "location": {
       "title": "Datos de ubicación",
-      "body1": "El acceso a la ubicación es opcional. Cuando se concede, se usa para una sola cosa: hacer que tu sesión de Modo Fiesta sea descubrible para escaladores cercanos. Tu ubicación se comparte con el servidor solo mientras una sesión de Modo Fiesta está activa. No guardamos historial, no construimos un perfil de ubicación ni compartimos datos de ubicación con nadie fuera de la función de descubrimiento de sesiones.",
+      "body1": "El acceso a la ubicación es opcional. Si lo permites, se usa para que los escaladores cercanos puedan descubrir tu sesión. Tu ubicación se comparte con el servidor solo mientras hay una sesión activa. No guardamos un historial, no creamos un perfil de ubicación ni compartimos esos datos fuera de la función de descubrimiento de sesiones.",
       "body2": "Puedes revocar el permiso de ubicación en cualquier momento desde los ajustes del dispositivo. La app funciona perfectamente sin él."
     },
     "sprayPhotos": {
@@ -990,10 +942,6 @@
       "adPixelsJoin": " y ",
       "redditLink": "la política de privacidad de Reddit",
       "adPixelsBodyEnd": ".",
-      "auroraLabel": "API de Aurora Climbing.",
-      "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por los plafones Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
-      "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " para sus prácticas de datos.",
       "hostingLabel": "Railway y Cloudflare.",
       "hostingLink": "la política de privacidad de Railway",
       "cloudflareLink": "la política de privacidad de Cloudflare",
@@ -1011,13 +959,13 @@
     "sharing": {
       "title": "Compartir de datos",
       "body1ProductAnalytics": "No vendemos tus datos, no mostramos anuncios en Boardsesh ni compartimos información con intermediarios de datos. Los proveedores descritos arriba procesan datos para alojamiento, almacenamiento, pagos, fiabilidad del servicio y analítica opcional, que en nuestra web incluye la medición de anuncios con Meta y Reddit. La sincronización con Aurora Climbing funciona cuando la activas.",
-      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto.",
+      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus bloques registrados si participas en funciones sociales como las sesiones. Esto se ve en la app y forma parte de cómo funciona el producto.",
       "body3SprayPhotos": "No entregamos a nadie más las fotos de Spraywalls ni las presas que marcas para entrenar modelos. El único modelo que se entrena con ellas es nuestro propio detector de presas. Otras personas ven la foto de un Spraywall según su visibilidad, y los miembros de un rocódromo ven los Spraywalls vinculados a ese rocódromo, también los privados. La foto de un Spraywall público está en la web abierta."
     },
     "retention": {
       "title": "Retención de datos",
       "body": "Conservamos los datos de tu cuenta y tu historial de escalada mientras tu cuenta esté activa. Si dejas de usar Boardsesh, tus datos se quedan hasta que borres la cuenta.",
-      "donations": "Los registros de donaciones se quedan en Stripe y en nuestra contabilidad durante el tiempo que exige la ley fiscal. No están vinculados a tu cuenta de Boardsesh, así que borrar la cuenta no los elimina. ¿Tienes preguntas sobre un registro de donación? Escríbenos."
+      "donations": "Si has donado, los registros de pago permanecen con el proveedor de pagos y en nuestra contabilidad durante el plazo exigido por la ley fiscal. Están separados de tu cuenta de Boardsesh. Si tienes dudas, escríbenos."
     },
     "deletion": {
       "title": "Eliminación de cuenta",
@@ -1028,7 +976,7 @@
       "onWebBody": " Inicia sesión en ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " y abre Ajustes y después Cuenta desde el menú de tu avatar para encontrar el mismo botón Eliminar cuenta.",
-      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
+      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones. Esto no se puede deshacer."
     },
     "children": {
       "title": "Menores",
@@ -1052,11 +1000,61 @@
       "storageBody": "El almacenamiento necesario incluye las cookies de inicio de sesión de NextAuth, tu idioma (boardsesh-locale), las preferencias del dispositivo y la cookie boardsesh-consent. La cookie de consentimiento dura un año y se comparte entre boardsesh.com y app.boardsesh.com. Fuera de las regiones donde preguntamos, la web la configura con la analítica por defecto en tu primera visita. Cuando la analítica está activada (porque la permitiste, o por defecto fuera de las regiones donde preguntamos), PostHog guarda identificadores y eventos (ph_* en la web y almacenamiento del SDK en la app). Rechazar o retirar el permiso elimina los identificadores de analítica y detiene la analítica opcional, las grabaciones y los eventos de atribución de instalaciones. Los diagnósticos básicos de errores y rendimiento en nuestros servidores siguen activos. Las opciones de funciones siguen usando un cliente en memoria; con sesión iniciada pueden usar tu identificador de cuenta.",
       "adCookiesBody": "Mientras la medición de anuncios está activada, el píxel de Meta guarda _fbp (y _fbc si llegas desde un anuncio de Meta) y el píxel de Reddit guarda _rdt_uuid (y _rdt_cid si llegas desde un anuncio de Reddit), cada una hasta 90 días. Si dices que no en Opciones de privacidad, los dos píxeles se detienen al momento y estas cookies se borran.",
       "changeBody": "Usa Opciones de privacidad en el pie de la web o Analítica en Ajustes → Privacidad para cambiar tu respuesta. Guardamos tu decisión en el dispositivo y, con sesión iniciada, en tu cuenta. Donde la analítica está activada por defecto, ese valor se queda en el dispositivo y nunca se guarda en tu cuenta como consentimiento. Un rechazo en la cuenta prevalece sobre los permisos del dispositivo; un permiso en la cuenta se aplica a dispositivos que aún no han respondido. Conservamos el historial de decisiones como prueba del consentimiento hasta que eliminas la cuenta. Los eventos anónimos y efímeros del estado de las actualizaciones y de las pantallas de los rocódromos siguen activos para mantener la fiabilidad del servicio."
+    },
+    "operator": "Marco de Jongh gestiona Boardsesh y es responsable de los datos descritos en esta política. Contacta con support@boardsesh.com para cuestiones sobre tus datos.",
+    "boardAccounts": {
+      "title": "Cuentas de plafones vinculadas",
+      "sync": "Tras vincular tu cuenta, Boardsesh busca nuevos encadenes en segundo plano. El tiempo puede variar. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps. Desvincula la cuenta en Ajustes → Apps conectadas para detener futuras importaciones.",
+      "credentials": "Para Kilter, Boardsesh guarda un token de acceso cifrado, no tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora (Decoy, Touchstone, Grasshopper y So iLL), guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Solo usamos estas credenciales para la conexión que solicitas. Desvincular elimina la credencial guardada, pero no los bloques ya importados.",
+      "legalBasis": "Tratamos estas credenciales para prestar la conexión de cuenta que solicitas. La base jurídica es la prestación de ese servicio. Tras desvincular también podemos solicitar la revocación del token de Kilter; eliminarlo localmente no depende de que Kilter responda."
     }
   },
   "preview": {
     "label": "Vista previa de la app",
     "ios": "iOS",
     "android": "Android"
+  },
+  "funding": {
+    "title": "Quién lo paga",
+    "body": "Boardsesh es gratis. Todas las funciones, para todos. Quienes pueden aportan, y eso paga los servidores y las horas de desarrollo. Donar no compra nada extra en la app."
+  },
+  "trust": {
+    "title": "Lo primero que preguntan los escaladores",
+    "legal": "Lee la política legal y de compatibilidad",
+    "import": "Trae tu logbook",
+    "privacy": "Lee la política de privacidad",
+    "questions": {
+      "operator": {
+        "question": "¿Quién gestiona Boardsesh?",
+        "answer": "Marco de Jongh, escalador de plafón residente en Sídney, Australia, gestiona Boardsesh con aportaciones de otros escaladores. Contacto: support@boardsesh.com."
+      },
+      "funding": {
+        "question": "¿Cómo puede ser gratis?"
+      },
+      "compatibility": {
+        "question": "¿Puedo usarlo con mi Kilter, Tension o MoonBoard?",
+        "answer": "Boardsesh es software independiente para plafones compatibles. No está creado ni respaldado por Aurora Climbing, Kilter o Moon Climbing. La política legal explica la compatibilidad y las reglas del servicio alojado."
+      },
+      "import": {
+        "question": "¿Puedo traer mi historial de Kilter o Tension?",
+        "answer": "Sí. Vincula tu cuenta en Ajustes → Apps conectadas. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps. La guía también cubre las antiguas exportaciones de Aurora."
+      },
+      "password": {
+        "question": "¿Qué pasa con mi contraseña del plafón?",
+        "answer": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Boardsesh los intercambia por un token cifrado y no guarda tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora, tu usuario y contraseña se guardan cifrados para obtener tu historial. Desvincular elimina la credencial guardada y detiene futuras importaciones."
+      },
+      "shutdown": {
+        "question": "¿Y si Boardsesh cierra?",
+        "answer": "Ya puedes descargar tu logbook, plafón por plafón, desde Ajustes → Cuenta → Exportar datos de escalada. El código y las descargas nocturnas del catálogo son públicos, así que puedes guardar una copia fuera de Boardsesh."
+      },
+      "tracking": {
+        "question": "¿Boardsesh me rastrea?",
+        "answer": "Opciones de privacidad en la web y Analítica en Ajustes → Privacidad controlan la analítica opcional. Los diagnósticos básicos de errores y rendimiento mantienen el servicio. La política explica lo que recibe cada proveedor."
+      },
+      "sprayPrivacy": {
+        "question": "¿La foto de mi Spraywall puede ser privada?",
+        "answer": "Elige un Spraywall privado en vez de público. Los miembros de un rocódromo pueden ver los Spraywalls privados vinculados a él. Las fotos de Spraywalls públicos están en la web abierta."
+      }
+    }
   }
 }

@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { CNC_PACKS_FLAG } from '@/app/flags';
 
 vi.mock('server-only', () => ({}));
 
@@ -33,36 +32,17 @@ beforeEach(() => {
 // content element as its only child, so reading that child's props is the same
 // thing React would hand the component, without a DOM.
 async function renderLegalPage() {
-  const tree = (await route.default()) as ReactElement<{ children: ReactElement<{ showBuildPlans: boolean }> }>;
+  const tree = (await route.default()) as ReactElement<{ children: ReactElement<Record<string, never>> }>;
   expect(tree.type).toBe(I18nProvider);
   const content = tree.props.children;
   expect(content.type).toBe(LegalContent);
   return content.props;
 }
 
-describe('LegalPage build-plans gate', () => {
-  it('resolves the flag anonymously, without a distinct id', async () => {
-    // Both arguments are load-bearing. `distinctId: null` keeps the cached flag
-    // lookup to a single entry, because the answer is identical for everybody;
-    // `allowAnonymous` keeps it resolvable for the signed-out visitors who are
-    // most of /legal's traffic.
-    getServerFeatureFlag.mockResolvedValue(false);
-    await route.default();
-    expect(getServerFeatureFlag).toHaveBeenCalledWith(CNC_PACKS_FLAG, {
-      distinctId: null,
-      allowAnonymous: true,
-    });
-  });
-
-  it('shows the build-plans section once cnc-packs is on', async () => {
+describe('LegalPage public copy', () => {
+  it('does not expose the unreleased build-plans surface', async () => {
     getServerFeatureFlag.mockResolvedValue(true);
-    await expect(renderLegalPage()).resolves.toEqual({ showBuildPlans: true });
-  });
-
-  it('hides the build-plans section while cnc-packs is off', async () => {
-    // /legal is indexed, and `/build-plans/licence` 404s while the flag is off.
-    // Passing `false` here is what keeps an indexed page from linking into a 404.
-    getServerFeatureFlag.mockResolvedValue(false);
-    await expect(renderLegalPage()).resolves.toEqual({ showBuildPlans: false });
+    await expect(renderLegalPage()).resolves.toEqual({});
+    expect(getServerFeatureFlag).not.toHaveBeenCalled();
   });
 });

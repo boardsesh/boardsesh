@@ -474,3 +474,7 @@ dark when no choice is saved, with a black `color-scheme: dark` shell so it neve
 ## Web
 
 Dark only, with the foreground/fill violet split never collapsed: [web-velvet-send.md](./web-velvet-send.md).
+
+## English website trust FAQ
+
+The public website trust FAQ uses “spray wall”, two words and lowercase in a sentence. Native app controls and store listings retain “Spraywall”. Other locales follow their own terminology glossaries, including grammatical gender and plurals.
