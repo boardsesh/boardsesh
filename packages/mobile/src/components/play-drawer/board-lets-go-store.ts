@@ -52,11 +52,9 @@ export const LETS_GO_STALE_MS = 15_000;
  * own account is never a taker, even on another device: presence knows
  * accounts, not phones.
  *
- * Every sequence here is presence's `lastHolderChangeSeq`, never its
- * `lastConnectionSeq`: a catch-up (the app coming back to the foreground, a
- * reconnect) moves the latter past every stats and history event it repaired
- * through even when it reads back the same holder, which would name a holder
- * who took nothing. A catch-up that reads a different holder does count.
+ * Compare the current `lastHolderChangeSeq` with `lastConnectionSeq` progress
+ * frozen at drive/drop boundaries. A later same-holder repair changes neither
+ * boundary and cannot name a taker. A newer holder change can still count.
  */
 export function resolveLetsGoTaker({
   holder,
@@ -69,9 +67,9 @@ export function resolveLetsGoTaker({
   holder: BoardConnectionHolder | null;
   /** Presence's `lastHolderChangeSeq` now. */
   holderChangeSeq: number;
-  /** Presence's `lastHolderChangeSeq` when the drive started. */
+  /** Presence's `lastConnectionSeq` progress frozen when the drive started. */
   driveStartSeq: number;
-  /** Presence's `lastHolderChangeSeq` when the link dropped. */
+  /** Presence's `lastConnectionSeq` progress frozen when the link dropped. */
   dropSeq: number;
   /** The signed-in climber's id, or null when signed out or not known yet. */
   viewerUserId: string | null;

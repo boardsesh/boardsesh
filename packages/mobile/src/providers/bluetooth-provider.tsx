@@ -983,7 +983,7 @@ function VirtualWallHolderWatch({
 }: {
   onHolderChange: (heldByOtherUser: boolean, connectionSeq: number) => void;
 }) {
-  const { holder, lastConnectionSeq } = useBoardPresenceCurrent();
+  const { holder, lastHolderChangeSeq } = useBoardPresenceCurrent();
   // Same `['profile']` query key every other profile reader uses, so this is a
   // React Query cache read, not another request. Declared inline rather than
   // through the `lib/graphql/hooks` barrel on purpose: the barrel would join the
@@ -1004,8 +1004,8 @@ function VirtualWallHolderWatch({
   const onHolderChangeRef = useRef(onHolderChange);
   onHolderChangeRef.current = onHolderChange;
   useEffect(() => {
-    onHolderChangeRef.current(heldByOtherUser, lastConnectionSeq);
-  }, [heldByOtherUser, lastConnectionSeq]);
+    onHolderChangeRef.current(heldByOtherUser, lastHolderChangeSeq);
+  }, [heldByOtherUser, lastHolderChangeSeq]);
   // Unmount-only, so a board that stops being watched doesn't strand a stale
   // "a peer holds it". Separate from the effect above: sharing one cleanup
   // would churn the value false on every holder change.

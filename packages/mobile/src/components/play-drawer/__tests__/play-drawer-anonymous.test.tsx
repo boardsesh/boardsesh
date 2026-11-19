@@ -87,6 +87,10 @@ const activeBoard = vi.hoisted(() => ({
   } | null,
 }));
 const gymBoards = vi.hoisted(() => ({ current: undefined as UserBoard[] | undefined }));
+const crewGymHolder = vi.hoisted(() => ({ held: false, memberUserIds: new Set<string>() }));
+vi.mock('../../../lib/boards/use-crew-gym-board-held', () => ({
+  useCrewGymBoardHeld: (board: Pick<UserBoard, 'boardId' | 'uuid'> | null) => board !== null && crewGymHolder.held,
+}));
 const queueActions = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
   nextClimb: vi.fn(),
@@ -499,6 +503,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
+  useQueueSessionControls: () => ({ sessionMemberUserIds: crewGymHolder.memberUserIds }),
   useIsSharedSession: () => session.isShared,
   useIsCrewSession: () => session.isCrew ?? session.isShared,
   usePlaylistSuggestionSource: () => session.suggestionSource,
@@ -747,6 +752,7 @@ beforeEach(() => {
   recorded.board = [];
   resetPreviewNotesForTests();
   queueActions.addToQueue.mockResolvedValue('added');
+  crewGymHolder.held = false;
   session.isShared = false;
   session.isCrew = null;
   session.useRealNavigation = false;
@@ -2507,6 +2513,7 @@ describe('PlayDrawer — busy-wall confirmation on another gym board (#7126)', (
   });
 
   it('relays an answer to the crew’s gym board without taking its connection', () => {
+    crewGymHolder.held = true;
     browseGymClimbThenLoseTheWall({ crewBoardPath: '/b/gym-moonboard' });
     expect(lastActionBarProps().wallControlState).toBe('put_on_wall');
     act(() => (lastActionBarProps().onWallControl as () => void)());

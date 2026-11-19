@@ -743,6 +743,40 @@ describe('the board lets go mid-drive, with presence catching up', () => {
     expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: null });
   });
 
+  it('does not name a delayed pre-drive peer after catch-up advances board progress', async () => {
+    const sam: BoardConnectionHolder = { userId: 'user-sam', displayName: 'Sam' };
+    const server = presenceServer({ holder: sam, recent: [wallClimb(1)] });
+    const watcher = await mountOn(server.client);
+    await server.catchUp({ holder: sam, recent: [wallClimb(13), wallClimb(1)] });
+    driveLive();
+
+    server.emit({
+      __typename: 'BoardConnectionChanged',
+      holder: { userId: 'user-liz', displayName: 'Liz' },
+      seq: 2,
+    });
+    linkEnds(watcher, { deliberate: false });
+    advance(LETS_GO_TAKER_WAIT_MS);
+
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: null });
+  });
+
+  it('does not attribute a delayed anonymous event from before the drop to another phone', async () => {
+    reads.current = { ...reads.current, isAuthenticated: false, viewerUserId: null };
+    const anonymous: BoardConnectionHolder = { userId: null, displayName: null };
+    const server = presenceServer({ holder: anonymous, recent: [wallClimb(1)] });
+    const watcher = await mountOn(server.client);
+    driveLive();
+    await server.catchUp({ holder: anonymous, recent: [wallClimb(13), wallClimb(1)] });
+    linkEnds(watcher, { deliberate: false });
+    server.emit({ __typename: 'BoardConnectionChanged', holder: anonymous, seq: 2 });
+    advance(LETS_GO_TAKER_WAIT_MS);
+
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: null });
+  });
+
   it('names a taker only a catch-up reveals', async () => {
     const server = presenceServer({ holder: null, recent: [wallClimb(4)] });
     const watcher = await mountOn(server.client);

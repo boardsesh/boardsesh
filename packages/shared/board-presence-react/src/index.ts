@@ -54,3 +54,10 @@ export type { BoardHistoryPageLoadedInfo, BoardHistoryPagination } from './use-b
 
 export { useBoardClimbRecentSenders } from './use-board-climb-recent-senders';
 export type { BoardClimbRecentSendersOptions, BoardClimbRecentSendersState } from './use-board-climb-recent-senders';
+
+export { useBoardConnectionHolder } from './use-board-connection-holder';
+export type {
+  BoardConnectionHolderClient,
+  BoardConnectionHolderOptions,
+  BoardConnectionHolderState,
+} from './use-board-connection-holder';

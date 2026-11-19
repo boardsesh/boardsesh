@@ -25,7 +25,7 @@ type LostLink = {
   droppedAt: number;
   /** The board presence was bound to at the drop: another board drops the notice. */
   boardId: number | null;
-  /** Presence's last holder change when the drive started, and at the drop. */
+  /** Presence's observed connection progress when the drive started, and at the drop. */
   driveStartSeq: number;
   dropSeq: number;
   /** A wall with no lights another climber took: never "disconnected". */
@@ -76,29 +76,41 @@ export function useBoardLetsGo({
   // Non-throwing: outside the provider there is no holder to name.
   const presence = useContext(BoardPresenceCurrentContext);
   const holder = presence?.holder ?? null;
-  // Not `lastConnectionSeq`: a catch-up moves that past every event it repaired
-  // through, stats and history included, even when it reads back the same
-  // holder. Only a real change of holder moves this (`resolveLetsGoTaker`).
+  // Freeze connection progress at drive/drop boundaries, then compare only
+  // actual holder changes against them. A delayed pre-boundary event must not
+  // name a taker, and a later stats-only repair must not invent one either.
+  const connectionProgressSeq = presence?.lastConnectionSeq ?? 0;
   const holderChangeSeq = presence?.lastHolderChangeSeq ?? 0;
   const viewerUserId = useViewerUserId();
   const latestRef = useRef<{
     holder: BoardConnectionHolder | null;
     holderChangeSeq: number;
+    connectionProgressSeq: number;
     viewerUserId: string | null;
     signedIn: boolean;
     linked: boolean;
     pending: boolean;
     boardId: number | null;
     t: TFunction<'session'>;
-  }>({ holder, holderChangeSeq, viewerUserId, signedIn, linked, pending, boardId, t });
-  latestRef.current = { holder, holderChangeSeq, viewerUserId, signedIn, linked, pending, boardId, t };
+  }>({ holder, holderChangeSeq, connectionProgressSeq, viewerUserId, signedIn, linked, pending, boardId, t });
+  latestRef.current = {
+    holder,
+    holderChangeSeq,
+    connectionProgressSeq,
+    viewerUserId,
+    signedIn,
+    linked,
+    pending,
+    boardId,
+    t,
+  };
 
-  // The holder change seen when each drive started: a holder from before it took nothing.
+  // Connection progress when each drive started: an earlier holder took nothing.
   const startSeqRef = useRef<{ startedAt: number; seq: number } | null>(null);
   const driveStartedAt = drive?.startedAt ?? null;
   useEffect(() => {
     if (driveStartedAt === null || startSeqRef.current?.startedAt === driveStartedAt) return;
-    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.holderChangeSeq };
+    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.connectionProgressSeq };
   }, [driveStartedAt]);
 
   const lostRef = useRef<LostLink | null>(null);
@@ -155,7 +167,7 @@ export function useBoardLetsGo({
     }
     const ended = exitDriveMode('link_dropped', { holdReport: true });
     if (!ended) return;
-    const { holderChangeSeq: dropSeq, boardId: droppedOn } = latestRef.current;
+    const { connectionProgressSeq: dropSeq, boardId: droppedOn } = latestRef.current;
     const start = startSeqRef.current;
     lostRef.current = {
       droppedAt: Date.now(),
