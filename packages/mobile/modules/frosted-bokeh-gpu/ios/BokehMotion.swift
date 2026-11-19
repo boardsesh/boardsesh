@@ -129,9 +129,10 @@ final class BokehMotion {
   private(set) var current = BokehClimb(key: "", lights: [])
   /// The climbs the board can swap between, by page; empty without swap frames.
   private var pages: [Int: BokehClimb] = [:]
-  /// The newest frame, and the newest one whose leaving page the app has sent.
+  /// The newest frame, and the newest one whose complete pair the app has sent.
   private var frame: BokehSwapFrame?
   private var drawnFrame: BokehSwapFrame?
+  private var drawnPages: [Int: BokehClimb] = [:]
   private var lastSequence: Double?
   private var visible: [String: Float] = [:]
   private var leftovers: [(light: BokehLight, start: Double)] = []
@@ -199,14 +200,23 @@ final class BokehMotion {
     return true
   }
 
-  /// The frame to draw: the newest, once its leaving page is known; until
-  /// then the last one that was, so a flick run never blanks the pill.
+  /// Keep the last complete pair until both pages of the newest frame arrive.
+  /// Snapshot its climbs too: a partial app update can evict the held pair.
   private func resolveFrame() {
     guard let frame else {
       drawnFrame = nil
+      drawnPages = [:]
       return
     }
-    if pages[frame.from] != nil { drawnFrame = frame }
+    guard let outgoing = pages[frame.from] else { return }
+    var resolvedPages = [frame.from: outgoing]
+    if frame.direction != 0 {
+      let incomingPage = frame.from + frame.direction
+      guard let incoming = pages[incomingPage] else { return }
+      resolvedPages[incomingPage] = incoming
+    }
+    drawnFrame = frame
+    drawnPages = resolvedPages
   }
 
   // MARK: - Output
@@ -233,13 +243,13 @@ final class BokehMotion {
 
   // MARK: - Transitions
 
-  private var frameMode: Bool { drawnFrame != nil && !pages.isEmpty }
+  private var frameMode: Bool { drawnFrame != nil }
 
   private func visibleWeights() -> [String: Float] {
     guard frameMode, let frame = drawnFrame else { return current.lights.isEmpty ? [:] : [current.key: 1] }
     var weights: [String: Float] = [:]
-    if let outgoing = pages[frame.from] { weights[outgoing.key] = frame.outgoing }
-    if frame.direction != 0, let incoming = pages[frame.from + frame.direction] {
+    if let outgoing = drawnPages[frame.from] { weights[outgoing.key] = frame.outgoing }
+    if frame.direction != 0, let incoming = drawnPages[frame.from + frame.direction] {
       weights[incoming.key] = max(weights[incoming.key] ?? 0, frame.incoming)
     }
     return weights
@@ -248,8 +258,8 @@ final class BokehMotion {
   private func visibleClimbs() -> [BokehClimb] {
     guard frameMode, let frame = drawnFrame else { return [current] }
     var climbs: [BokehClimb] = []
-    if let outgoing = pages[frame.from] { climbs.append(outgoing) }
-    if frame.direction != 0, let incoming = pages[frame.from + frame.direction] { climbs.append(incoming) }
+    if let outgoing = drawnPages[frame.from] { climbs.append(outgoing) }
+    if frame.direction != 0, let incoming = drawnPages[frame.from + frame.direction] { climbs.append(incoming) }
     return climbs
   }
 
@@ -321,8 +331,8 @@ final class BokehMotion {
 
   private func frameEntries(_ frame: BokehSwapFrame) -> [Entry] {
     let direction = frame.direction
-    let outgoing = pages[frame.from]
-    let incoming = direction != 0 ? pages[frame.from + direction] : nil
+    let outgoing = drawnPages[frame.from]
+    let incoming = direction != 0 ? drawnPages[frame.from + direction] : nil
     let look = frame.outgoingCode < 0 ? nil : self.look
     var entries: [Entry] = []
     if let outgoing {

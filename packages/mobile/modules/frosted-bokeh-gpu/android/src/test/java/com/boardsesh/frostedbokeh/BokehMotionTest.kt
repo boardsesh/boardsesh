@@ -301,6 +301,58 @@ class BokehMotionTest {
         assertEquals(1f, motion.blobs(0.5).single().peak, 0.0001f)
     }
 
+    @Test fun `an unknown incoming page cannot fade the held climb to black in either direction`() {
+        for (direction in listOf(-1, 1)) {
+            val motion = motion()
+            val currentPage = if (direction > 0) 5 else 4
+            val current = if (direction > 0) right else left
+            val incomingPage = currentPage + direction
+            motion.setClimbs(current, pages, 0.0)
+            motion.applyFrame(listOf(currentPage.toDouble(), 1.0, 0.0, 1.0, 1.0), 0.0)
+            val held = motion.blobs(0.0)
+            val position = currentPage + direction * 0.25
+            val arrivalCode = if (direction > 0) 1.0 else 2.0
+            motion.applyFrame(listOf(position, 0.6, 0.2, 1.0, 2.0, 0.0, arrivalCode), 1.0)
+            motion.applyFrame(listOf(position, 0.0, 0.9, 1.0, 3.0, 0.0, arrivalCode), 1.16)
+            assertEquals(held, motion.blobs(1.17))
+            motion.applyFrame(listOf(incomingPage.toDouble(), 1.0, 0.0, 1.0, 4.0), 1.22)
+            assertEquals(held, motion.blobs(1.4))
+            val incoming = BokehClimb("incoming", listOf(light(150f, id = 21)))
+            motion.setClimbs(incoming, mapOf(currentPage to current, incomingPage to incoming), 1.5)
+            assertTrue(motion.transitioning(1.5))
+            assertEquals(held, motion.blobs(1.5))
+            assertEquals(incoming.lights, motion.blobs(1.8))
+        }
+    }
+
+    @Test fun `a partial page update preserves the held pair until the latest pair is complete`() {
+        val motion = motion()
+        motion.framed()
+        motion.drag(0.4, 0.4)
+        val held = motion.blobs(0.0)
+        val third = BokehClimb("third", listOf(light(150f, id = 21)))
+        val fourth = BokehClimb("fourth", listOf(light(270f, id = 31)))
+        motion.applyFrame(listOf(6.25, 0.0, 1.0, 1.0, 3.0, 0.0, 1.0), 1.0)
+        // Neither climb in the held frame is still in the app's latest page map.
+        motion.setClimbs(third, mapOf(6 to third), 1.1)
+        assertEquals(held, motion.blobs(1.4))
+        motion.setClimbs(third, mapOf(6 to third, 7 to fourth), 1.5)
+        assertTrue(motion.transitioning(1.5))
+        assertEquals(held, motion.blobs(1.5))
+        assertEquals(fourth.lights, motion.blobs(1.8))
+    }
+
+    @Test fun `reversing an unresolved flick resumes the known pair`() {
+        val motion = motion()
+        motion.setClimbs(right, pages, 0.0)
+        motion.applyFrame(listOf(5.0, 1.0, 0.0, 1.0, 1.0), 0.0)
+        motion.applyFrame(listOf(5.25, 0.0, 1.0, 1.0, 2.0), 1.0)
+        assertEquals(right.lights, motion.blobs(1.2))
+        motion.applyFrame(listOf(4.75, 0.6, 0.2, 1.0, 3.0), 1.3)
+        assertEquals(0.6f, motion.blobs(1.3).single { it.id == 11L }.peak, 0.0001f)
+        assertEquals(0.2f, motion.blobs(1.3).single { it.id == 1L }.peak, 0.0001f)
+    }
+
     @Test fun `a climb arriving after a climb with no lights still runs the release`() {
         val motion = motion()
         val empty = BokehClimb("empty", emptyList())

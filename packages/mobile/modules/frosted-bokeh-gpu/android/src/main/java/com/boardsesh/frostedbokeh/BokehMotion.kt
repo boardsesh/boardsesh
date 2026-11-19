@@ -128,9 +128,10 @@ internal class BokehMotion {
         private set
     /** The climbs the board can swap between, by page; empty without swap frames. */
     private var pages: Map<Int, BokehClimb> = emptyMap()
-    /** The newest frame, and the newest one whose leaving page the app has sent. */
+    /** The newest frame, and the newest one whose complete pair the app has sent. */
     private var frame: BokehSwapFrame? = null
     private var drawnFrame: BokehSwapFrame? = null
+    private var drawnPages: Map<Int, BokehClimb> = emptyMap()
     private var lastSequence: Double? = null
     private var visible: Map<String, Float> = emptyMap()
     private val leftovers = mutableListOf<Leftover>()
@@ -171,13 +172,25 @@ internal class BokehMotion {
     }
 
     /**
-     * The frame to draw: the newest, once its leaving page is known; until then the last one
-     * that was, so a flick run never blanks the pill.
+     * Keep the last complete pair until both pages of the newest frame arrive.
+     * Snapshot its climbs too: a partial app update can evict the held pair.
      */
     private fun resolveFrame() {
         val latest = frame
-        if (latest == null) drawnFrame = null
-        else if (pages.containsKey(latest.from)) drawnFrame = latest
+        if (latest == null) {
+            drawnFrame = null
+            drawnPages = emptyMap()
+            return
+        }
+        val outgoing = pages[latest.from] ?: return
+        val resolvedPages = mutableMapOf(latest.from to outgoing)
+        if (latest.direction != 0) {
+            val incomingPage = latest.from + latest.direction
+            val incoming = pages[incomingPage] ?: return
+            resolvedPages[incomingPage] = incoming
+        }
+        drawnFrame = latest
+        drawnPages = resolvedPages
     }
 
     // Output
@@ -196,15 +209,15 @@ internal class BokehMotion {
 
     // Transitions
 
-    private val frameMode: Boolean get() = drawnFrame != null && pages.isNotEmpty()
+    private val frameMode: Boolean get() = drawnFrame != null
 
     private fun visibleWeights(): Map<String, Float> {
         val frame = drawnFrame
         if (!frameMode || frame == null) return if (current.lights.isEmpty()) emptyMap() else mapOf(current.key to 1f)
         val weights = mutableMapOf<String, Float>()
-        pages[frame.from]?.let { weights[it.key] = frame.outgoing }
+        drawnPages[frame.from]?.let { weights[it.key] = frame.outgoing }
         if (frame.direction != 0) {
-            pages[frame.from + frame.direction]?.let { weights[it.key] = max(weights[it.key] ?: 0f, frame.incoming) }
+            drawnPages[frame.from + frame.direction]?.let { weights[it.key] = max(weights[it.key] ?: 0f, frame.incoming) }
         }
         return weights
     }
@@ -213,8 +226,8 @@ internal class BokehMotion {
         val frame = drawnFrame
         if (!frameMode || frame == null) return listOf(current)
         val climbs = mutableListOf<BokehClimb>()
-        pages[frame.from]?.let { climbs.add(it) }
-        if (frame.direction != 0) pages[frame.from + frame.direction]?.let { climbs.add(it) }
+        drawnPages[frame.from]?.let { climbs.add(it) }
+        if (frame.direction != 0) drawnPages[frame.from + frame.direction]?.let { climbs.add(it) }
         return climbs
     }
 
@@ -279,8 +292,8 @@ internal class BokehMotion {
 
     private fun frameEntries(frame: BokehSwapFrame): List<Entry> {
         val direction = frame.direction
-        val outgoing = pages[frame.from]
-        val incoming = if (direction != 0) pages[frame.from + direction] else null
+        val outgoing = drawnPages[frame.from]
+        val incoming = if (direction != 0) drawnPages[frame.from + direction] else null
         val look = if (frame.outgoingCode < 0) null else look
         val entries = mutableListOf<Entry>()
         if (outgoing != null) {

@@ -3526,7 +3526,7 @@ export function PlayCore({
                                 pager={swipePager}
                                 centerPage={swipeCenterPage}
                                 dismissRef={dismissGestureRef}
-                                swapFrameMirror={frostSwapFrames}
+                                swapFrameMirror={frostFollowsBoard ? frostSwapFrames : undefined}
                               />
                             ) : (
                               <BoardRenderUnavailable
