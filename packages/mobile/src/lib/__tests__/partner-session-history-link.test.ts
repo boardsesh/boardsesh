@@ -11,8 +11,10 @@ describe('partner session history links', () => {
   it.each([
     `https://www.boardsesh.com/history/session/${EXPORT_ID}`,
     `https://boardsesh.com/es/history/session/${EXPORT_ID}?from=partner`,
+    `https://www.boardsesh.com/zh-CN/history/session/${EXPORT_ID}?from=partner`,
     `com.boardsesh.app://history/session/${EXPORT_ID}`,
     `/history/session/${EXPORT_ID}`,
+    `/zh-CN/history/session/${EXPORT_ID}`,
   ])('accepts an opaque history reference from %s', (url) => {
     expect(parseSessionHistoryExportId(url)).toBe(EXPORT_ID);
   });
@@ -24,6 +26,8 @@ describe('partner session history links', () => {
     `com.boardsesh.app://session/${EXPORT_ID}`,
     '/history/session/../private',
     '/history/session/not-a-uuid',
+    `/es-419/history/session/${EXPORT_ID}`,
+    `/xx/history/session/${EXPORT_ID}`,
   ])('refuses unrelated URLs and invite paths: %s', (url) => {
     expect(parseSessionHistoryExportId(url)).toBeNull();
   });

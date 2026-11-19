@@ -1216,5 +1216,12 @@
     "resume": "继续此训练",
     "privacyLoading": "正在检查活动隐私…",
     "budgetShortfall": "计划的 {{planned}} 条线路中，有 {{found}} 条符合队列和训练限制。"
+  },
+  "partnerHistory": {
+    "title": "打开你的攀爬活动",
+    "description": "打开你在 Boardsesh 中记录或参与过的一场已完成的攀爬活动。",
+    "unavailable": "此账号无法查看这场攀爬活动。请使用记录或参与过该活动的账号登录。",
+    "loadError": "无法打开这场攀爬活动，请重试。",
+    "retry": "重试"
   }
 }

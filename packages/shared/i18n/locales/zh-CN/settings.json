@@ -606,7 +606,8 @@
         "offlineAccess": "在你断开连接前持续保有这些权限",
         "other": "其他权限：{{scope}}",
         "workoutsRead": "读取此应用制定的训练的结果",
-        "workoutsWrite": "为你制定和取消训练"
+        "workoutsWrite": "为你制定和取消训练",
+        "sessionsRead": "可读取你已完成的攀爬活动、私密总结笔记和完整训练内容，包括来自其他应用的训练"
       },
       "disconnect": "断开连接",
       "disconnectA11y": "断开 {{app}}",

@@ -1,3 +1,5 @@
+import { stripLocalePrefix } from './routing/strip-locale-prefix';
+
 export const PENDING_SESSION_HISTORY_KEY = 'boardsesh_pending_session_history';
 const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
 const EXPORT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -10,7 +12,8 @@ export function parseSessionHistoryExportId(url: string): string | null {
   const path = url
     .replace(/^com\.boardsesh\.app:\/\//, '/')
     .replace(/^https:\/\/(?:www\.|app\.)?boardsesh\.com(?=\/)/, '');
-  const match = /^\/(?:[a-z]{2}\/)?history\/session\/([^/?#]+)\/?(?:[?#].*)?$/.exec(path);
+  const normalizedPath = stripLocalePrefix(path) ?? path;
+  const match = /^\/history\/session\/([^/?#]+)\/?(?:[?#].*)?$/.exec(normalizedPath);
   return isSessionExportId(match?.[1]) ? match[1] : null;
 }
 

@@ -85,8 +85,11 @@ beforeEach(() => {
 describe('DeepLinkProvider — read-only session history', () => {
   const exportId = '3c2d56f7-1f63-4c63-9c48-3c239b14727d';
 
-  it('preserves a signed-out launch and replays history after login', async () => {
-    linkState.initialUrl = `com.boardsesh.app://history/session/${exportId}`;
+  it.each([
+    `com.boardsesh.app://history/session/${exportId}`,
+    `https://www.boardsesh.com/zh-CN/history/session/${exportId}`,
+  ])('preserves a signed-out history launch through sign-in: %s', async (url) => {
+    linkState.initialUrl = url;
     const signedOut = render(createElement(DeepLinkProvider, { children: null }));
     await waitFor(() =>
       expect(readPendingSessionHistory(store.get(PENDING_SESSION_HISTORY_KEY) ?? null)).toBe(exportId),
