@@ -83,6 +83,27 @@ describe('ChineseTranslationOnboarding', () => {
     );
   });
 
+  it('opens the published form after an early intro dismissal without an environment override', async () => {
+    vi.stubEnv('EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL', undefined);
+    mocks.hasSeenTip.mockImplementation(async (key: string) => key === 'onboarding_chinese_translation_intro_v1');
+    mocks.choose.mockResolvedValue('form');
+
+    render(<ChineseTranslationOnboarding onboardingDecided />);
+
+    await waitFor(() =>
+      expect(mocks.openExternalUrl).toHaveBeenCalledWith(
+        'https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform',
+        'chinese-translation-onboarding',
+      ),
+    );
+    expect(mocks.hasSeenTip).toHaveBeenCalledWith('onboarding_chinese_translation_form_v1');
+    expect(mocks.choose.mock.calls[0][0].options).toContainEqual({
+      value: 'form',
+      label: 'chineseTranslation.openForm',
+    });
+    expect(mocks.markTipSeen).toHaveBeenCalledWith('onboarding_chinese_translation_form_v1');
+  });
+
   it('does not repeat an invitation dismissed on an earlier launch', async () => {
     mocks.hasSeenTip.mockResolvedValue(true);
     render(<ChineseTranslationOnboarding onboardingDecided />);

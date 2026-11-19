@@ -7,6 +7,7 @@ import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Updates from 'expo-updates';
 import { useTranslation } from 'react-i18next';
+import { getChineseTerminologyFormUrl, isChineseTranslationLocale } from '@boardsesh/i18n';
 import { useProfile } from '../src/lib/graphql/hooks';
 import { useAuth } from '../src/providers/auth-provider';
 import { useTheme } from '../src/providers/theme-provider';
@@ -50,7 +51,7 @@ const DRAWER_ANIMATION_MS = 220;
 export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: 'drawer' | 'account' }) {
   const isAccount = presentation === 'account';
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, undefined>>>();
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -121,6 +122,9 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // already signed off.
   const { show: showQaRows, prNumber: qaPrNumber } = useQaMenu();
   const supportAsksAllowed = useSupportAsksAllowed();
+  const terminologyFormUrl = isChineseTranslationLocale(i18n.language)
+    ? getChineseTerminologyFormUrl(process.env.EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL)
+    : null;
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -240,20 +244,26 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     close(() => presentFeedback());
   };
 
-  const handleSupport = () => {
+  const openAccountLink = (url: string, source: string, onOpen?: () => void) => {
     if (!mountedRef.current || closingRef.current || !navigation.isFocused() || supportBrowserOpenRef.current) return;
-    // Counted on the tap, before the browser opens, like every support link.
-    trackSupportLinkTapped('account');
+    onOpen?.();
     if (isAccount && Platform.OS === 'ios') {
       // React can unmount Account before its native dismissal finishes. Keep
       // its presenter stable so that dismissal cannot close the browser too.
       supportBrowserOpenRef.current = true;
-      void openExternalUrl(supportUrlFor('account'), 'account-support').finally(() => {
+      void openExternalUrl(url, source).finally(() => {
         supportBrowserOpenRef.current = false;
       });
       return;
     }
-    close(() => void openExternalUrl(supportUrlFor('account'), 'account-support'));
+    close(() => void openExternalUrl(url, source));
+  };
+
+  const handleSupport = () =>
+    openAccountLink(supportUrlFor('account'), 'account-support', () => trackSupportLinkTapped('account'));
+
+  const handleHelpTranslate = () => {
+    if (terminologyFormUrl) openAccountLink(terminologyFormUrl, 'account-help-translate');
   };
 
   const handleReportBug = () => {
@@ -308,17 +318,27 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
         </View>
       )}
 
-      {/* US iPhones and the browser app only, and only while "Show support
-              asks" is on (lib/support-asks.ts). Everywhere else, nothing. */}
-      {supportAsksAllowed ? (
+      {/* Translation help follows the active language independently of donation availability. */}
+      {supportAsksAllowed || terminologyFormUrl ? (
         <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-          <DrawerRow
-            icon="favorite.fill"
-            title={t('mobile.supportAsks.accountRow')}
-            tintColor={brandColors.primary}
-            onPress={handleSupport}
-            showSeparator={false}
-          />
+          {supportAsksAllowed ? (
+            <DrawerRow
+              icon="favorite.fill"
+              title={t('mobile.supportAsks.accountRow')}
+              tintColor={brandColors.primary}
+              onPress={handleSupport}
+              showSeparator={!!terminologyFormUrl}
+            />
+          ) : null}
+          {terminologyFormUrl ? (
+            <DrawerRow
+              icon="comment"
+              title={t('mobile.settings.language.contributeTitle')}
+              tintColor={brandColors.primary}
+              onPress={handleHelpTranslate}
+              showSeparator={false}
+            />
+          ) : null}
         </View>
       ) : null}
 

@@ -20,8 +20,13 @@ describe('Chinese translation invitation', () => {
     );
   });
 
+  it('uses the published questionnaire when no environment override is configured', () => {
+    expect(getChineseTerminologyFormUrl(undefined)).toBe(
+      'https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform',
+    );
+  });
+
   it.each([
-    undefined,
     '',
     'soon',
     'javascript:alert(1)',

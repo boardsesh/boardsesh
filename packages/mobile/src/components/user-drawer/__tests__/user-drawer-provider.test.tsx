@@ -90,6 +90,7 @@ const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 // The Account support row: the store rules and the Show support asks switch are
 // one answer from lib/support-asks.ts, covered by its own suite.
 const supportState = vi.hoisted(() => ({ allowed: false }));
+const localeState = vi.hoisted(() => ({ language: 'en-US' }));
 const supportAnalytics = vi.hoisted(() => ({ trackSupportLinkTapped: vi.fn() }));
 
 // The launch hold is covered by its own suite; here the screen renders as is.
@@ -149,6 +150,7 @@ vi.mock('expo-web-browser', () => browser);
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: localeState.language },
     // Interpolates `{{name}}` like the real `t`, so the QA rows (which carry the
     // PR number) assert on the string a user actually reads.
     t: (key: string, values?: Record<string, unknown>) => {
@@ -167,6 +169,7 @@ vi.mock('react-i18next', () => ({
           'userDrawer.reportBug': 'Report a bug',
           'userDrawer.whatsNew': "What's New",
           'mobile.supportAsks.accountRow': 'Support Boardsesh',
+          'mobile.settings.language.contributeTitle': 'Help translate',
           'userDrawer.qa.pick': 'Test a PR preview',
           'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
           'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
@@ -392,6 +395,8 @@ beforeEach(() => {
   drawerState.climbModerationEnabled = true;
   drawerState.isAuthenticated = true;
   supportState.allowed = false;
+  localeState.language = 'en-US';
+  vi.stubEnv('EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL', undefined);
   supportAnalytics.trackSupportLinkTapped.mockClear();
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
@@ -407,6 +412,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 // Fire the captured close-animation completion callback(s), which mirror the
@@ -998,6 +1004,150 @@ describe('user-drawer library rows', () => {
     const titles = rowTitles(container);
     expect(titles).not.toContain('Notifications');
     expect(titles).not.toContain('All playlists');
+  });
+});
+
+describe('user-drawer Chinese translation row', () => {
+  const formUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform';
+
+  function rowTitles(container: HTMLElement): (string | null)[] {
+    return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
+  }
+
+  it('shows translation help first for Chinese while donations are unavailable', () => {
+    localeState.language = 'zh-CN';
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container).slice(0, 2)).toEqual(['Help translate', 'Change board']);
+    expect(screen.queryByText('Support Boardsesh')).toBeNull();
+  });
+
+  it.each(['en-US', 'zh-TW', 'fr'])('does not show the Chinese form for %s', (locale) => {
+    localeState.language = locale;
+    render(<Harness showScreen />);
+    expect(screen.queryByText('Help translate')).toBeNull();
+  });
+
+  it('keeps donation and translation rows together above Change board', () => {
+    localeState.language = 'zh-CN';
+    supportState.allowed = true;
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container).slice(0, 3)).toEqual(['Support Boardsesh', 'Help translate', 'Change board']);
+  });
+
+  it('updates visibility when the active language changes', () => {
+    const { rerender } = render(<Harness showScreen />);
+    expect(screen.queryByText('Help translate')).toBeNull();
+    localeState.language = 'zh-CN';
+    rerender(<Harness showScreen />);
+    expect(screen.getByText('Help translate')).toBeTruthy();
+    localeState.language = 'en-US';
+    rerender(<Harness showScreen />);
+    expect(screen.queryByText('Help translate')).toBeNull();
+  });
+
+  it('honors an explicitly disabled form without hiding permitted donations', () => {
+    localeState.language = 'zh-CN';
+    supportState.allowed = true;
+    vi.stubEnv('EXPO_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL', '');
+    render(<Harness showScreen />);
+    expect(screen.queryByText('Help translate')).toBeNull();
+    expect(screen.getByText('Support Boardsesh')).toBeTruthy();
+  });
+
+  it('opens the public form above iOS Account without dismissing its presenter or donation analytics', () => {
+    localeState.language = 'zh-CN';
+    platform.OS = 'ios';
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Help translate'));
+
+    expect(browser.openBrowserAsync).toHaveBeenCalledExactlyOnceWith(formUrl);
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+  });
+
+  it('shares the native browser in-flight guard across translation and donation rows', async () => {
+    localeState.language = 'zh-CN';
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    let finishBrowser = () => {};
+    browser.openBrowserAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishBrowser = resolve;
+        }),
+    );
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Help translate'));
+    fireEvent.click(screen.getByText('Help translate'));
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    expect(browser.openBrowserAsync).toHaveBeenCalledExactlyOnceWith(formUrl);
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+
+    await act(async () => finishBrowser());
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(2);
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledExactlyOnceWith('account');
+  });
+
+  it('allows translation retry after a failed native browser presentation', async () => {
+    localeState.language = 'zh-CN';
+    platform.OS = 'ios';
+    browser.openBrowserAsync.mockRejectedValueOnce(new Error('Browser unavailable'));
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    await act(async () => fireEvent.click(screen.getByText('Help translate')));
+    fireEvent.click(screen.getByText('Help translate'));
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(2);
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+  });
+
+  it.each(['unmounted', 'closing', 'unfocused'])('ignores translation presses from %s iOS Account', (boundary) => {
+    localeState.language = 'zh-CN';
+    platform.OS = 'ios';
+    const { unmount } = render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    const pressTranslate = rowHandlers.get('Help translate');
+    expect(pressTranslate).toBeDefined();
+    if (boundary === 'unmounted') unmount();
+    else if (boundary === 'unfocused') navigationMocks.focus.current = false;
+    else
+      act(() =>
+        navigationMocks.accountListeners
+          .get('transitionStart')
+          ?.forEach((listener) => listener({ data: { closing: true } })),
+      );
+    act(() => pressTranslate?.());
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+  });
+
+  it('opens the form only after the Android drawer unmounts', () => {
+    localeState.language = 'zh-CN';
+    const { rerender } = render(<Harness showScreen />);
+    fireEvent.click(screen.getByText('Help translate'));
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(browser.openBrowserAsync).toHaveBeenCalledExactlyOnceWith(formUrl);
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
   });
 });
 

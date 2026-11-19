@@ -62,6 +62,22 @@ describe('Chinese translation welcome on www', () => {
     expect(mocks.setPreference).toHaveBeenCalledWith('onboarding_chinese_translation_form_v1', true);
   });
 
+  it('offers the published form after an early intro dismissal without an environment override', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL', undefined);
+    mocks.getPreference.mockImplementation(async (key: string) => key === 'onboarding_chinese_translation_intro_v1');
+
+    render(<Welcome />);
+
+    const formLink = await screen.findByRole('link', { name: 'chineseTranslation.openForm' });
+    expect(formLink.getAttribute('href')).toBe(
+      'https://docs.google.com/forms/d/e/1FAIpQLSewiiQkpQG5bT2UVYEdqDRmeSSs26h50xJLrR-rYORuZIj17g/viewform',
+    );
+    expect(formLink.getAttribute('target')).toBe('_blank');
+    expect(mocks.getPreference).toHaveBeenCalledWith('onboarding_chinese_translation_form_v1');
+    fireEvent.click(formLink);
+    expect(mocks.setPreference).toHaveBeenCalledWith('onboarding_chinese_translation_form_v1', true);
+  });
+
   it('stays hidden for another language and responds to a Chinese switch', async () => {
     mocks.state.language = 'en-US';
     const view = render(<Welcome />);
