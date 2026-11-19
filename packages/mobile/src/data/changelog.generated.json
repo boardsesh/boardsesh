@@ -1,6 +1,43 @@
 {
-  "generatedAt": "2026-11-19T08:25:34.959Z",
+  "generatedAt": "2026-11-19T09:55:14.625Z",
   "entries": [
+    {
+      "prNumber": 7835,
+      "category": "new",
+      "title": "Swiping between climbs keeps your wall still and fades the holds, even without the GPU board.",
+      "mergedAt": "2026-11-19T09:34:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7835"
+    },
+    {
+      "prNumber": 7902,
+      "category": "fixed",
+      "title": "Use Boardsesh in Simplified Chinese, with Chinese App Store and Google Play listings.",
+      "mergedAt": "2026-11-19T09:29:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7902"
+    },
+    {
+      "prNumber": 7897,
+      "category": "fixed",
+      "title": "Connect to your crew's board when a crewmate cancels or loses their connection.",
+      "mergedAt": "2026-11-19T08:57:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7897",
+      "body": "Keep virtual-wall control while session history catches up."
+    },
+    {
+      "prNumber": 7898,
+      "category": "new",
+      "title": "Use Boardsesh in Simplified Chinese.",
+      "mergedAt": "2026-11-19T08:52:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7898",
+      "body": "A Chinese welcome shows how to help improve climbing terms."
+    },
+    {
+      "prNumber": 7883,
+      "category": "new",
+      "title": "See Boardsesh in action from the homepage. Check your board and bring your logbook before installing.",
+      "mergedAt": "2026-11-19T08:41:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7883"
+    },
     {
       "prNumber": 7893,
       "category": "fixed",
@@ -10059,6 +10096,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-19T08:54:22Z",
+      "sha": "df198e6c0d55441d20592293b0a6e509017eba9b",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "61f1155f027ce2f81524c6c7c9000c9cdde48523"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-19T07:42:05Z",

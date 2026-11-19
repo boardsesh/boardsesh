@@ -12,11 +12,18 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Swiping between climbs keeps your wall still and fades the holds, even without the GPU board. ([#7835](https://github.com/boardsesh/boardsesh/pull/7835))
+- Use Boardsesh in Simplified Chinese. ([#7898](https://github.com/boardsesh/boardsesh/pull/7898))
+  A Chinese welcome shows how to help improve climbing terms.
+- See Boardsesh in action from the homepage. Check your board and bring your logbook before installing. ([#7883](https://github.com/boardsesh/boardsesh/pull/7883))
 - Swiping between climbs now fades the wall button's lights in place, following your finger like the board does. ([#7884](https://github.com/boardsesh/boardsesh/pull/7884))
 - Plan a board workout with your AI assistant using your climbing history or a training screenshot. Download the local connector from GitHub Releases after it ships. ([#7840](https://github.com/boardsesh/boardsesh/pull/7840))
 
 ### Fixed
 
+- Use Boardsesh in Simplified Chinese, with Chinese App Store and Google Play listings. ([#7902](https://github.com/boardsesh/boardsesh/pull/7902))
+- Connect to your crew's board when a crewmate cancels or loses their connection. ([#7897](https://github.com/boardsesh/boardsesh/pull/7897))
+  Keep virtual-wall control while session history catches up.
 - Climbs stay visible when your phone takes longer to prepare effects. ([#7893](https://github.com/boardsesh/boardsesh/pull/7893))
 - GPU drawing starts only when needed, and the wall button recovers if its glow cannot render. ([#7889](https://github.com/boardsesh/boardsesh/pull/7889))
 - Open a shared climb or playlist and get straight to the app. Browse clearer gym listings and find board troubleshooting faster. ([#7882](https://github.com/boardsesh/boardsesh/pull/7882))
