@@ -10,13 +10,15 @@ import { isLaunchReloadRequested, subscribeLaunchReloadWindow } from '../lib/lau
  *
  * **Why a context and not a prop (#5654).** `RootLayout` owns these states,
  * but every gate is mounted inside `<DatabaseProvider>`, and expo-sqlite's
- * `SQLiteProvider` is `memo()`'d with a comparator that ignores `children`. A
- * `RootLayout` re-render therefore never reaches anything below it: each JSX
- * prop created there keeps its FIRST-render value. `ready={authReady &&
+ * `SQLiteProvider` historically ignored `children` in its memo comparator. A
+ * `RootLayout` re-render therefore never reached anything below it: each JSX
+ * prop created there kept its FIRST-render value. `ready={authReady &&
  * fontsReady}` was `false` on that render, so from 2.2.0 (July 2026) until this
  * fix all four gates sat frozen at "not ready" and never ran. A context value
  * changing still reaches its consumers past a memo boundary, so the provider
- * goes ABOVE `<DatabaseProvider>` and the gates read `useLaunchReady()`.
+ * goes ABOVE `<DatabaseProvider>` and the gates read `useLaunchReady()`. Expo
+ * SQLite 58.0.18 forwards child updates; keep this context contract so readiness
+ * remains independent of the provider's memo behavior.
  *
  * The default is `false`: a gate rendered outside the provider never runs, and
  * the onboarding gate's stall watchdog reports that as `not_ready`.
