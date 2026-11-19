@@ -20,6 +20,7 @@ import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secur
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
 import { partnerLinkGuardActive } from '@/app/lib/auth/partner-link-guard-mode';
+import { admitLegacyWebPasswordGuess } from './guess-limit-client.server';
 import { parseAccountCreationReceipt } from '@boardsesh/analytics';
 
 // Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
@@ -204,7 +205,7 @@ providers.push(
       email: { label: 'Email', type: 'email', placeholder: 'your@email.com' },
       password: { label: 'Password', type: 'password' },
     },
-    async authorize(credentials) {
+    async authorize(credentials, request) {
       if (!credentials?.email || !credentials?.password) {
         return null;
       }
@@ -215,28 +216,42 @@ providers.push(
       // caller which addresses have accounts. So every path makes this one
       // query and then one bcrypt comparison at the stored cost.
       const found = await findAccountsByEmail(getDb(), credentials.email);
-      const candidates = found.rows.flatMap((account) =>
-        account.passwordHash === null ? [] : [{ ...account, passwordHash: account.passwordHash }],
-      );
-      if (candidates.length === 0) {
-        await compare(credentials.password, ABSENT_PASSWORD_HASH);
-        return null;
-      }
-      // Several rows can store the very same text. The password decides, as
-      // native sign-in's bounded match does: exactly one of them must accept it.
-      const accepted = await Promise.all(
-        candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
-      );
-      const matched = candidates.filter((_candidate, index) => accepted[index]);
-      if (matched.length !== 1) return null;
-      const [account] = matched;
+      const admission = await admitLegacyWebPasswordGuess({
+        email: credentials.email,
+        accounts: found.rows,
+        cookieHeader: request?.headers?.cookie,
+      });
+      try {
+        const candidates = found.rows.flatMap((account) =>
+          account.passwordHash === null ? [] : [{ ...account, passwordHash: account.passwordHash }],
+        );
+        if (candidates.length === 0) {
+          await compare(credentials.password, ABSENT_PASSWORD_HASH);
+          await admission.settle('rejected');
+          return null;
+        }
+        // Several rows can store the very same text. The password decides, as
+        // native sign-in's bounded match does: exactly one of them must accept it.
+        const accepted = await Promise.all(
+          candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
+        );
+        const matched = candidates.filter((_candidate, index) => accepted[index]);
+        if (matched.length !== 1) {
+          await admission.settle('rejected');
+          return null;
+        }
+        await admission.settle('accepted');
+        const [account] = matched;
 
-      return {
-        id: account.id,
-        email: account.email,
-        name: account.name,
-        image: account.image,
-      };
+        return {
+          id: account.id,
+          email: account.email,
+          name: account.name,
+          image: account.image,
+        };
+      } finally {
+        await admission.settle('no_verdict');
+      }
     },
   }),
 );

@@ -6,6 +6,7 @@ import {
   setPasswordCommandSchema,
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
+  PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER,
   AUTH_PROTOCOL_VERSION,
   authCommandReplySchema,
   authCommandReplyStatus,
@@ -250,7 +251,9 @@ export async function handleCurrentStoreWebAuth(
                 ? await requestPasswordRecovery(commandDatabase, configuration.authority, command)
                 : command.operation === 'set-password'
                   ? await setWebPassword(commandDatabase, configuration.authority, command)
-                  : await consumePasswordRecovery(commandDatabase, configuration.authority, command),
+                  : await consumePasswordRecovery(commandDatabase, configuration.authority, command, {
+                      issueDeviceToken: request.headers[PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER] === '1',
+                    }),
     );
     // Only a rejected password stays counted; a right one never uses up a limit.
     if (!(result.operation === 'password' && result.outcome === 'invalid_credentials')) {

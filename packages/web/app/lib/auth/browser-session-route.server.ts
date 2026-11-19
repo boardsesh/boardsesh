@@ -2,6 +2,7 @@ import 'server-only';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
 import type { NextRequest } from 'next/server';
+import { createDeviceTokenAuthRequest } from './device-token-request.server';
 import { authOptions } from './auth-options';
 import { capturePresentedWebCredential } from './admitted-session.server';
 import { withAuthResponseAdmission } from './auth-response-admission.server';
@@ -9,6 +10,7 @@ import type { BrowserSessionCookieConfiguration, BrowserSessionRouteMode } from 
 import { resolveBrowserSession, sessionReadAnswer } from './browser-session-bridge.server';
 import {
   loginSessionCookies,
+  responseSetsBrowserLoginCookie,
   presentedForLogin,
   readRequestBrowserSession,
   signOutBrowserSessionCookieClears,
@@ -62,6 +64,7 @@ async function login(
   request: NextRequest,
   context: AuthRouteContext,
   cookies: BrowserSessionCookieConfiguration,
+  options: NextAuthOptions,
 ): Promise<Response> {
   const admission = admitPasswordLogin(request);
   if (admission.limitedResponse) return admission.limitedResponse;
@@ -73,13 +76,15 @@ async function login(
   }
   const presented = presentedForLogin(session);
   const commandRequest = createPasswordCommandAuthRequest(
-    authOptions,
+    options,
     undefined,
     admission.passwordAccepted,
     cloudflareVouchedVisitorAddress(request),
-    presented ? { presented } : {},
+    { webSession: presented ? { presented } : {}, cookieHeader: request.headers.get('cookie') },
   );
   const response = await (NextAuth(commandRequest.options) as NextAuthHandler)(request, context);
+  const retryAfterSeconds = commandRequest.limited();
+  if (retryAfterSeconds !== undefined) return unavailablePasswordAuthResponse(request.url, retryAfterSeconds);
   if (commandRequest.unavailable()) return unavailablePasswordAuthResponse(request.url);
   const issued = commandRequest.issuedWebSession();
   // A session issued without NextAuth writing its cookie, or the reverse, is a
@@ -231,7 +236,15 @@ export async function routeBrowserSessionAuth(
   const credentialsLogin = request.method === 'POST' && action === 'callback' && provider === 'credentials';
   if (mode.kind === 'unavailable')
     return credentialsLogin ? unavailablePasswordAuthResponse(request.url) : unavailableCredentialResponse();
-  if (credentialsLogin) return withAuthResponseAdmission(request, context, () => login(request, context, mode.cookies));
+  if (credentialsLogin) {
+    const recognition = createDeviceTokenAuthRequest(authOptions, (response) =>
+      responseSetsBrowserLoginCookie(response, mode.cookies),
+    );
+    const response = await withAuthResponseAdmission(request, context, () =>
+      login(request, context, mode.cookies, recognition.options),
+    );
+    return recognition.decorate(response);
+  }
   if (request.method === 'POST' && action === 'signout') return signOut(request, context, mode.cookies, legacy);
   if (action === 'session') return readSession(request, mode.cookies, legacy.legacyRoute);
   if (action === 'csrf') return withoutSessionSetCookies(await legacy.legacyRoute());

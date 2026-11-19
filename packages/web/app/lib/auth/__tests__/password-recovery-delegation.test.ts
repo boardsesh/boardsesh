@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
+import { mintDeviceToken, verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol';
 
 vi.mock('server-only', () => ({}));
@@ -147,6 +148,22 @@ describe('actual public recovery routes with strict backend delegation', () => {
     expect(mocks.database).not.toHaveBeenCalled();
     expect(mocks.hash).not.toHaveBeenCalled();
     privacy(response);
+  });
+  it('publishes reset recognition only as a host-only cookie, never as a login or JSON token', async () => {
+    const secret = 'test-reset-recognition-secret-distinct-32bytes';
+    const { token: deviceToken } = await mintDeviceToken({ userId: 'authoritative-owner', secret });
+    vi.stubGlobal('fetch', backend({ outcome: 'reset', deviceToken }));
+    const response = await reset(request('reset-password', submitted));
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toContain('__Host-boardsesh.device=');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).not.toContain('Domain=');
+    expect(cookies[0]).not.toContain('session-token');
+    expect(JSON.stringify(await response.json())).not.toContain(deviceToken);
+    expect(await verifyDeviceToken(deviceToken, { userId: 'authoritative-owner', secret })).not.toBeNull();
+    expect(mocks.database).not.toHaveBeenCalled();
   });
   it('maps authoritative invalid-or-expired to the released finite400', async () => {
     vi.stubGlobal('fetch', backend({ outcome: 'invalid_or_expired' }));

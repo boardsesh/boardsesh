@@ -13,6 +13,7 @@ import {
   webPasswordMode,
   type PasswordCommandClient,
 } from './password-command-client.server';
+import { PasswordGuessRefusedError, readRequestDeviceToken } from './guess-limit-client.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { checkRateLimit, releaseRateLimitAttempt } from './rate-limiter';
 import { cloudflareVisitorRateLimitKey, trustedClientRateLimitKey } from './trusted-client-ip.server';
@@ -36,7 +37,11 @@ function isCredentialsProvider(provider: Provider): boolean {
  * authorize accepts a password. NextAuth reads a provider's settings from its
  * `options`, so that is where the original authorize lives.
  */
-function reportAcceptedPassword(existing: Provider, onPasswordAccepted: () => void): Provider {
+function reportAcceptedPassword(
+  existing: Provider,
+  onPasswordAccepted: () => void,
+  onRefused: (retryAfterSeconds: number) => void,
+): Provider {
   const configured = { ...existing, ...(existing.options as Partial<CredentialsConfig> | undefined) };
   const { authorize } = configured as Pick<CredentialsConfig, 'authorize'>;
   return CredentialsProvider({
@@ -44,9 +49,15 @@ function reportAcceptedPassword(existing: Provider, onPasswordAccepted: () => vo
     name: configured.name,
     credentials: (configured as Pick<CredentialsConfig, 'credentials'>).credentials,
     async authorize(credentials, request) {
-      const user = await authorize(credentials, request);
-      if (user) onPasswordAccepted();
-      return user;
+      try {
+        const user = await authorize(credentials, request);
+        if (user) onPasswordAccepted();
+        return user;
+      } catch (error) {
+        if (!(error instanceof PasswordGuessRefusedError)) throw error;
+        onRefused(error.retryAfterSeconds);
+        return null;
+      }
     },
   });
 }
@@ -70,21 +81,28 @@ export function createPasswordCommandAuthRequest(
   clientFactory: () => PasswordCommandClient = createPasswordCommandClient,
   onPasswordAccepted: () => void = () => {},
   clientAddress: string | null = null,
-  webSession?: WebSessionRequest,
+  requestOptions?: { webSession?: WebSessionRequest; cookieHeader?: string | null },
 ) {
+  const webSession = requestOptions?.webSession;
   let unavailable = false;
+  let retryAfterSeconds: number | undefined;
   let verdict: AuthenticatedReply | undefined;
   try {
     if (webPasswordMode() === 'legacy') {
       const options: NextAuthOptions = {
         ...base,
         providers: base.providers.map((existing) =>
-          isCredentialsProvider(existing) ? reportAcceptedPassword(existing, onPasswordAccepted) : existing,
+          isCredentialsProvider(existing)
+            ? reportAcceptedPassword(existing, onPasswordAccepted, (seconds) => {
+                retryAfterSeconds = seconds;
+              })
+            : existing,
         ),
       };
       return {
         options,
         unavailable: () => false,
+        limited: () => retryAfterSeconds,
         issuedWebSession: (): IssuedWebSessionReply | undefined => undefined,
       };
     }
@@ -106,13 +124,19 @@ export function createPasswordCommandAuthRequest(
       if (unavailable) return rejectUnavailable();
       if (!credentials?.email || !credentials.password) return null;
       try {
+        const deviceToken = readRequestDeviceToken(requestOptions?.cookieHeader);
+        const commandOptions = { ...(webSession ? { webSession } : {}), ...(deviceToken ? { deviceToken } : {}) };
         const reply = await clientFactory().password(
           credentials.email,
           credentials.password,
           clientAddress ?? undefined,
-          ...(webSession ? [webSession] : []),
+          ...(Object.keys(commandOptions).length ? [commandOptions] : []),
         );
         if (reply.outcome === 'invalid_credentials') return null;
+        if (reply.outcome === 'error' && reply.code === 'rate_limited') {
+          retryAfterSeconds = reply.retryAfterSeconds;
+          return null;
+        }
         if (reply.outcome !== 'authenticated') return rejectUnavailable();
         if (webSession && !issuedAsAsked(reply)) return rejectUnavailable();
         verdict = reply;
@@ -147,6 +171,7 @@ export function createPasswordCommandAuthRequest(
   return {
     options,
     unavailable: () => unavailable,
+    limited: () => retryAfterSeconds,
     /** The session the backend issued for this login, once NextAuth has run; undefined when none was asked for or issued. */
     issuedWebSession: (): IssuedWebSessionReply | undefined => (unavailable ? undefined : verdict?.webSession),
   };

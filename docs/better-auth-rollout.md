@@ -176,6 +176,37 @@ breaks.
 | Proof cookies (`__Host-boardsesh.browser-proof.*`, no env switch) | Gone | | Removed from main with the binding web core (#7596). Nothing on www reads or writes them. | A leftover cookie expires within 30 days. Until then it only counts toward the Cookie-header limits on Google and Apple sign-in. |
 | The eight readiness functions that returned `false` in code | Gone | | Every one is deleted with the code it guarded, the last (`browser-consumer-readiness.ts`) with the binding web core. | `AUTH_BROWSER_SESSION_MODE` (section 4) replaces them; it has nothing to turn on until B1. Provider security is **kept** in the backend, and B5 rebuilds its web layer. |
 
+## Shared password-guess counter: web wiring (#7656)
+
+The backend PR #7783 and its web follow-up share one counter. The web never
+writes `auth_password_guess_windows` or holds its digest key. Set
+`AUTH_ACCOUNT_GUESS_LIMIT_MODE=observe` on **both web and backend** only after
+the documented connection budget and recognition seeding preconditions hold.
+Unset, empty or `off` leaves the web counter unused. `enforce` remains blocked
+by the backend's four named gates; merging either PR does not authorize a mode
+change. The ordinary per-client sign-in limits still apply.
+
+Legacy NextAuth resolves the email with its existing lookup, verifies a device
+cookie for that account, then asks the backend to reserve before bcrypt. A
+right password or an unfinished comparison gives the reservation back once.
+Rejected passwords stay charged. Every private reserve, give-back and clear
+has a 400 ms total deadline; unavailable calls keep today's sign-in behavior
+and produce a bounded, credential-free diagnostic. The staged password path
+forwards the cookie to the backend and preserves its full daily-window 429.
+
+`AUTH_DEVICE_TOKEN_SECRET` seeds a host-only, HttpOnly browser cookie after an
+admitted password, Google, Apple or native-transfer login. Session reads and
+sign-out do not rewrite it. Completed resets clear the email counter and seed
+recognition for the exact reset owner without creating a login. The backend
+only adds this token to a reset reply when the authenticated private caller
+sends `x-boardsesh-reset-device-token: 1`. Older web callers receive their
+original strict reply even during a backend-first rollout or rollback. New web
+callers tolerate an older backend that ignores this header and returns no token.
+
+Recognition does not remove the native reset-owner gate: the reset browser is
+recognized, but a different phone may still hold a voided device token. Keep
+enforcement off until that accepted policy and the load evidence are resolved.
+
 ## Code gates
 
 A code gate is a constant or an assertion. No variable, flag or script option closes one.

@@ -57,6 +57,7 @@ describe('native device tokens (#7656)', () => {
 
 describe('device token codec boundary', () => {
   const repositoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+  const deviceTokenCodecModule = /['"`][^'"`]*\/device-token(?:\.[cm]?[jt]sx?)?(?:[?#][^'"`]*)?['"`]/;
 
   function sourceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -69,11 +70,29 @@ describe('device token codec boundary', () => {
 
   it('stays a server-only subpath: not in the protocol index, never imported by the app', () => {
     const protocolIndex = readFileSync(join(repositoryRoot, 'packages/shared/auth-protocol/src/index.ts'), 'utf8');
-    expect(protocolIndex).not.toContain('device-token');
+    expect(protocolIndex).not.toMatch(deviceTokenCodecModule);
     // The phone stores and returns the string; minting and verifying stay with the web and backend.
     const importers = ['src', 'app']
       .flatMap((folder) => sourceFiles(join(repositoryRoot, 'packages/mobile', folder)))
       .filter((path) => readFileSync(path, 'utf8').includes('auth-protocol/device-token'));
     expect(importers).toEqual([]);
+  });
+
+  it.each([
+    "export * from './device-token';",
+    "export { verifyDeviceToken } from './device-token.js';",
+    "import { mintDeviceToken } from '@boardsesh/auth-protocol/device-token';",
+    "import('./device-token');",
+    "require('./device-token.cjs');",
+    'import(`./device-token`);',
+    "export * from './device-token.ts?raw';",
+    "import('./device-token.js#codec');",
+    "export * from './device-token.tsx';",
+  ])('rejects a codec module reference: %s', (source) => {
+    expect(source).toMatch(deviceTokenCodecModule);
+  });
+
+  it('allows an HTTP capability name without exposing the codec', () => {
+    expect("export const header = 'x-boardsesh-reset-device-token';").not.toMatch(deviceTokenCodecModule);
   });
 });

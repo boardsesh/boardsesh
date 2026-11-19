@@ -9,6 +9,7 @@
  * Google freshness verifier checks the same token (its certificate fetch is
  * answered with the stand-in's key). Nothing scripts a backend reply.
  */
+import { verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { decode, encode } from './legacy-credential-fixture';
@@ -217,6 +218,8 @@ describe('Google sign-in under better-auth', () => {
   beforeEach(betterAuth);
 
   it('publishes a fresh login: login cookie, legacy twin with its id and sign-in time, bridged name cleared', async () => {
+    const deviceSecret = 'combined-provider-device-token-secret-32bytes';
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', deviceSecret);
     const identity = newGoogleIdentity(30);
     const jar = new CookieJar();
     const { start, response } = await googleSignIn(jar, identity);
@@ -234,6 +237,13 @@ describe('Google sign-in under better-auth', () => {
     expect(resolveSessionRequests[0]).toMatchObject({ googleAuthentication: { nonce: authorization?.get('nonce') } });
 
     const { twin, session } = await expectTwinBesideLogin(response, jar);
+    const recognition = setCookies(response).find((cookie) => cookie.startsWith('__Host-boardsesh.device='));
+    expect(
+      await verifyDeviceToken(recognition?.split(';')[0].split('=')[1], {
+        userId: session.userId,
+        secret: deviceSecret,
+      }),
+    ).not.toBeNull();
     expect(twin?.auth_time).toBe(identity.authTimeSeconds);
     expect(twin?.link_guarded).toBe(true);
     const clears = setCookies(response).filter((header) => header.startsWith(`${BRIDGED}=;`));

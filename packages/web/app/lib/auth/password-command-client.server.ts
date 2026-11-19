@@ -2,6 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import {
   WEB_CREDENTIAL_PROOF_VERSION,
+  PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER,
   webCredentialProofMode,
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
@@ -58,6 +59,8 @@ export function registrationMailOrigin(requestOrigin: string, environment: AuthE
   }
 }
 
+export type PasswordCommandRequestOptions = { webSession?: WebSessionRequest; deviceToken?: string };
+
 export type PasswordCommandClient = {
   register(payload: unknown): Promise<RegisterReply>;
   /**
@@ -72,7 +75,7 @@ export type PasswordCommandClient = {
     email: string,
     password: string,
     clientAddress?: string,
-    webSession?: WebSessionRequest,
+    requestOptions?: PasswordCommandRequestOptions,
   ): Promise<PasswordReply>;
 };
 /**
@@ -135,6 +138,16 @@ export function createPasswordCommandClient(
     ...options,
     environment,
     paths: Object.values(AUTH_COMMAND_PATHS),
+    // An unknown header is ignored by old backends. Old web callers omit it,
+    // so a newly seeded backend must retain their original strict reply.
+    fetch: (input, init) => {
+      const send = options.fetch ?? fetch;
+      if (typeof input !== 'string' || new URL(input).pathname !== AUTH_COMMAND_PATHS['reset-password'])
+        return send(input, init);
+      const headers = new Headers(init?.headers);
+      headers.set(PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER, '1');
+      return send(input, { ...init, headers });
+    },
   });
   async function command(command: AuthCommand): Promise<AuthCommandReply> {
     try {
@@ -188,7 +201,7 @@ export function createPasswordCommandClient(
         payload,
       })) as RegisterReply;
     },
-    async password(email, password, clientAddress, webSession) {
+    async password(email, password, clientAddress, requestOptions) {
       const sendableAddress = sendableClientAddress(clientAddress);
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -197,7 +210,8 @@ export function createPasswordCommandClient(
           ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
           : {}),
         ...(sendableAddress ? { clientAddress: sendableAddress } : {}),
-        ...(webSession ? { webSession } : {}),
+        ...(requestOptions?.webSession ? { webSession: requestOptions.webSession } : {}),
+        ...(requestOptions?.deviceToken ? { deviceToken: requestOptions.deviceToken } : {}),
         requestId: randomUUID(),
         issuedAt: Date.now(),
         payload: { email, password },
