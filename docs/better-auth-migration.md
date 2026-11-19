@@ -646,6 +646,12 @@ or playlist by name. Keep this provenance after the repair CLI is archived so
 old exports cannot recreate moved resources. The percentile refresh excludes
 retired members and preserves their historical derived snapshots.
 
+Import readers activate aliases only for applied source memberships in the same
+repair. A surviving draft can receive updated holds and description while its
+owner, board, layout and draft status still match; a deleted draft stays deleted.
+Tick tombstones also match historical climb UUIDs, so changing both the owner and
+climb identity cannot recreate a deleted ascent or attempt on re-import.
+
 The generated metadata migration is additive and moves no account data. Apply
 it before importer code; existing importer readers need SELECT on membership,
 import aliases and tick aliases. Batches, session aliases and group audits are

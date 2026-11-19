@@ -17,21 +17,27 @@ describe('consolidated frozen import identities', () => {
     await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
     created = true;
     client = postgres(adminUrl.replace(/\/[^/]+$/, `/${databaseName}`), { max: 1, onnotice: () => {} });
-    await client.unsafe(`CREATE TABLE account_consolidation_members(source_user_id text,canonical_user_id text,status text);
+    await client.unsafe(`CREATE TABLE account_consolidation_members(source_user_id text,canonical_user_id text,merge_id text,status text);
       CREATE TABLE account_consolidation_import_aliases(former_user_id text,provider text,kind text,external_id text,canonical_resource_id text,target_user_id text,merge_id text,tombstoned boolean);
       CREATE TABLE account_consolidation_tick_aliases(retired_uuid text,canonical_uuid text,target_user_id text,merge_id text,tombstoned boolean);
       CREATE TABLE users(id text PRIMARY KEY);
       CREATE TABLE boardsesh_ticks(user_id text,climb_uuid text,status text);
       CREATE TABLE user_climb_percentiles(user_id text PRIMARY KEY,total_distinct_climbs integer,percentile double precision,total_active_users integer,computed_at timestamp);
       INSERT INTO users VALUES ('survivor'),('source'),('other');
-      INSERT INTO account_consolidation_members VALUES ('source','survivor','applied');
+      INSERT INTO account_consolidation_members VALUES ('source','survivor','merge','applied'),('planned-source','survivor','planned-merge','planned');
       INSERT INTO account_consolidation_import_aliases VALUES
       ('source','aurora','tick','old-hash','tick-1','survivor','merge',false),
       ('source','aurora','tick','deleted-hash',NULL,'survivor','merge',true),
       ('source','aurora','playlist','circuit-a','playlist-1','survivor','merge',false),
       ('survivor','aurora','playlist','circuit-b','playlist-2','survivor','merge',false),
-      ('source','moonboard','tick','old-moon','tick-2','survivor','merge',false);
-      INSERT INTO account_consolidation_tick_aliases VALUES ('retired','tick-1','survivor','merge',false);
+      ('source','moonboard','tick','old-moon','tick-2','survivor','merge',false),
+      ('survivor','aurora','tick','planned-hash',NULL,'survivor','planned-merge',true),
+      ('planned-source','aurora','tick','unapplied-source-hash',NULL,'survivor','merge',true),
+      ('source','aurora','climb','original-climb','retained-climb','survivor','merge',false),
+      ('survivor','aurora','climb','planned-climb','retained-climb','survivor','planned-merge',false),
+      ('source','aurora','climb','ambiguous-climb','ambiguous-retained-a','survivor','merge',false),
+      ('survivor','aurora','climb','ambiguous-climb','ambiguous-retained-b','survivor','merge',false);
+      INSERT INTO account_consolidation_tick_aliases VALUES ('retired','tick-1','survivor','merge',false),('planned-retired',NULL,'survivor','planned-merge',true);
       INSERT INTO boardsesh_ticks VALUES ('survivor','climb-a','send'),('survivor','climb-a','flash'),('survivor','climb-b','send'),('other','climb-c','send'),('source','retired-only','send');
       INSERT INTO user_climb_percentiles VALUES ('source',77,88,99,now());`);
   });
@@ -53,6 +59,22 @@ describe('consolidated frozen import identities', () => {
   it('refuses to merge distinct resources with the same export shape', async () => {
     const history = await loadConsolidationImportHistory(drizzle(client), 'survivor');
     expect(() => history.resolve('aurora', 'playlist', ['circuit-a', 'circuit-b'])).toThrow('Ambiguous');
+  });
+  it('activates only aliases from this target’s applied merge and source memberships', async () => {
+    const history = await loadConsolidationImportHistory(drizzle(client), 'survivor');
+    expect(history.formerUserIds).toEqual(['source']);
+    expect(history.resolve('aurora', 'tick', ['planned-hash'])).toBeUndefined();
+    expect(history.resolve('aurora', 'tick', ['unapplied-source-hash'])).toBeUndefined();
+    expect(history.resolve('moonboard', 'tick', ['planned-retired'])).toBeUndefined();
+    expect(history.resolve('aurora', 'playlist', ['circuit-b'])).toBe('playlist-2');
+    expect(history.resolve('aurora', 'tick', ['old-hash'])).toBe('tick-1');
+  });
+  it('recovers original climb UUIDs only from applied, unambiguous aliases', async () => {
+    const history = await loadConsolidationImportHistory(drizzle(client), 'survivor');
+    expect(history.formerClimbUuids('retained-climb')).toEqual(['original-climb']);
+    expect(history.formerClimbUuids('unknown-climb')).toEqual([]);
+    expect(() => history.formerClimbUuids('ambiguous-retained-a')).toThrow('Ambiguous');
+    expect(() => history.resolve('aurora', 'climb', ['ambiguous-climb'])).toThrow('Ambiguous');
   });
   it('refreshes the canonical rank while preserving retired historical snapshots', async () => {
     await refreshUserClimbPercentiles(drizzle(client));

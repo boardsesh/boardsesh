@@ -1236,6 +1236,7 @@ export async function importJsonExportData(
 
     // Build rows for draft climbs (always imported)
     const draftRows: ClimbRow[] = [];
+    const historicalDraftRows: ImportedClimbRow[] = [];
     for (const climb of draftClimbs) {
       const layoutId = resolveLayoutName(boardType, climb.layout);
       if (layoutId == null) {
@@ -1255,27 +1256,26 @@ export async function importJsonExportData(
         'climb',
         importOwners.map((owner) => generateClimbImportUuid(owner, boardType, layoutId, climb.name, climb.created_at)),
       );
-      if (historicalClimb !== undefined) {
+      if (historicalClimb === null) {
         result.climbs.skipped++;
         continue;
       }
 
       const edges = computeEdgesFromHolds(climb.holds);
-
-      draftRows.push(
-        buildImportedClimbRow({
-          userId,
-          boardType,
-          layoutId,
-          setterUsername: data.user.username,
-          name: climb.name,
-          description: climb.description,
-          frames,
-          edges,
-          createdAt: climb.created_at,
-          isDraft: true,
-        }),
-      );
+      const draftRow = buildImportedClimbRow({
+        userId,
+        boardType,
+        layoutId,
+        setterUsername: data.user.username,
+        name: climb.name,
+        description: climb.description,
+        frames,
+        edges,
+        createdAt: climb.created_at,
+        isDraft: true,
+      });
+      if (historicalClimb === undefined) draftRows.push(draftRow);
+      else historicalDraftRows.push({ ...draftRow, uuid: historicalClimb });
     }
 
     // Build rows for published climbs that don't already exist
@@ -1331,10 +1331,46 @@ export async function importJsonExportData(
       );
     }
 
-    const totalRows = draftRows.length + publishedRows.length;
+    const totalRows = draftRows.length + historicalDraftRows.length + publishedRows.length;
 
     if (totalRows > 0) {
       await db.transaction(async (tx) => {
+        const historicalUpdatedUuids: string[] = [];
+        // A mapped draft may have been deleted, published or transferred since
+        // the repair. Refresh only the retained draft, never recreate its UUID.
+        for (const draft of historicalDraftRows) {
+          const updated = await tx
+            .update(boardClimbs)
+            .set({
+              name: draft.name,
+              setterUsername: draft.setterUsername,
+              description: draft.description,
+              characteristics: mergeCatalogCharacteristicsSql(
+                boardClimbs.characteristics,
+                sql`${sql.param(draft.characteristics, boardClimbs.characteristics)}::text[]`,
+                [CLIMB_CHARACTERISTICS.NO_MATCH],
+              ),
+              frames: draft.frames,
+              isListed: false,
+              edgeLeft: draft.edgeLeft,
+              edgeRight: draft.edgeRight,
+              edgeBottom: draft.edgeBottom,
+              edgeTop: draft.edgeTop,
+            })
+            .where(
+              and(
+                eq(boardClimbs.uuid, draft.uuid),
+                eq(boardClimbs.userId, userId),
+                eq(boardClimbs.boardType, boardType),
+                eq(boardClimbs.layoutId, draft.layoutId),
+                eq(boardClimbs.isDraft, true),
+              ),
+            )
+            .returning({ uuid: boardClimbs.uuid });
+          historicalUpdatedUuids.push(...updated.map((climb) => climb.uuid));
+          if (updated.length) result.climbs.imported++;
+          else result.climbs.skipped++;
+        }
         // Insert draft climbs with upsert (re-import updates them)
         for (let i = 0; i < draftRows.length; i += BATCH_SIZE) {
           const batch = draftRows.slice(i, i + BATCH_SIZE);
@@ -1397,7 +1433,11 @@ export async function importJsonExportData(
         }
 
         // Populate denormalized required_set_ids and compatible_size_ids
-        const allInsertedUuids = [...draftRows.map((r) => r.uuid), ...publishedRows.map((r) => r.uuid)];
+        const allInsertedUuids = [
+          ...draftRows.map((r) => r.uuid),
+          ...publishedRows.map((r) => r.uuid),
+          ...historicalUpdatedUuids,
+        ];
         await populateDenormalizedColumns(tx, boardType, allInsertedUuids);
       });
     }
@@ -1515,7 +1555,11 @@ export async function importJsonExportData(
     const historicalTick = consolidationHistory.resolve(
       'aurora',
       'tick',
-      importOwners.map((owner) => generateJsonImportAuroraId(owner, climbUuid, ascent.angle, climbedAt, 'ascents')),
+      importOwners.flatMap((owner) =>
+        [climbUuid, ...consolidationHistory.formerClimbUuids(climbUuid)].map((historicalClimbUuid) =>
+          generateJsonImportAuroraId(owner, historicalClimbUuid, ascent.angle, climbedAt, 'ascents'),
+        ),
+      ),
     );
     if (historicalTick !== undefined) {
       result.ascents.skipped++;
@@ -1545,7 +1589,11 @@ export async function importJsonExportData(
     const historicalTick = consolidationHistory.resolve(
       'aurora',
       'tick',
-      importOwners.map((owner) => generateJsonImportAuroraId(owner, climbUuid, attempt.angle, climbedAt, 'bids')),
+      importOwners.flatMap((owner) =>
+        [climbUuid, ...consolidationHistory.formerClimbUuids(climbUuid)].map((historicalClimbUuid) =>
+          generateJsonImportAuroraId(owner, historicalClimbUuid, attempt.angle, climbedAt, 'bids'),
+        ),
+      ),
     );
     if (historicalTick !== undefined) {
       result.attempts.skipped++;
