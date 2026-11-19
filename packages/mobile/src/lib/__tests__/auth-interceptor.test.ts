@@ -25,6 +25,11 @@ vi.mock('../auth', () => ({
   signOutForGeneration: (...args: unknown[]) => mockSignOut(...args),
 }));
 
+// ── Mock the device-token store (#7656) ─────────────────────────────────
+// A refresh reply's device token replaces the stored one for its account.
+const rememberDeviceTokenMock = vi.hoisted(() => vi.fn(async (_reply: unknown, _options?: unknown) => {}));
+vi.mock('../device-token-store', () => ({ rememberDeviceTokenFromReply: rememberDeviceTokenMock }));
+
 // ── Mock the connectivity store (issue #4862) ───────────────────────────
 // The interceptor asks it before spending a PROACTIVE refresh, and feeds every
 // refresh response back into it as a reachability sample.
@@ -123,6 +128,49 @@ describe('ensureFreshToken', () => {
       }),
     );
     expect(mockStoreTokensForGeneration).toHaveBeenCalledWith(7, 'new-jwt', 'new-refresh', '2099-01-01T00:00:00Z');
+  });
+
+  it("hands a refresh reply's device token to the store and sends none on the refresh", async () => {
+    mockIsTokenExpiringSoon.mockResolvedValue(true);
+    const reply = {
+      jwt: 'new-jwt',
+      refreshToken: 'new-refresh',
+      expiresAt: '2099-01-01T00:00:00Z',
+      userId: 'user-1',
+      deviceToken: 'v1.device-token',
+    };
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(reply) });
+
+    await expect(ensureFreshToken()).resolves.toBe(true);
+
+    expect(rememberDeviceTokenMock).toHaveBeenCalledExactlyOnceWith(reply, { jwt: 'new-jwt' });
+    expect(mockFetch.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-boardsesh-client': CLIENT_IDENTITY,
+    });
+  });
+
+  it('drops a device token when a newer sign-in supersedes a pending refresh write', async () => {
+    const reply = {
+      jwt: 'old-jwt',
+      refreshToken: 'old-refresh',
+      expiresAt: '2099-01-01T00:00:00Z',
+      userId: 'same-user',
+      deviceToken: 'old-device-token',
+    };
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => reply });
+    let finishWrite!: (stored: boolean) => void;
+    mockStoreTokensForGeneration.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    const oldRefresh = deduplicatedRefresh();
+    await vi.waitFor(() => expect(mockStoreTokensForGeneration).toHaveBeenCalled());
+    mockCaptureAuthCredentialGeneration.mockReturnValue(8);
+    finishWrite(false);
+    await expect(oldRefresh).resolves.toEqual({ status: 'superseded' });
+    expect(rememberDeviceTokenMock).not.toHaveBeenCalled();
   });
 
   it('deduplicates concurrent refresh calls', async () => {

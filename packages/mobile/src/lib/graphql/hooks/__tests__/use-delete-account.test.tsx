@@ -34,6 +34,8 @@ vi.mock('../../../user-storage-owner', () => ({
   getCurrentUserStorageOwner: () => credentials.browserOwner,
 }));
 vi.mock('../../../signup-conversion', () => ({ forgetSignupConversion: forgetSignupConversionMock }));
+const forgetDeviceTokenMock = vi.hoisted(() => vi.fn(async (_userId: string): Promise<void> => {}));
+vi.mock('../../../device-token-store', () => ({ forgetDeviceTokenForAccount: forgetDeviceTokenMock }));
 
 import { useDeleteAccountInfo, useDeleteAccount } from '../use-delete-account';
 
@@ -55,6 +57,7 @@ beforeEach(() => {
   credentials.confirmedUserId = undefined;
   credentials.browserOwner = null;
   forgetSignupConversionMock.mockReset().mockResolvedValue(undefined);
+  forgetDeviceTokenMock.mockReset().mockResolvedValue(undefined);
 });
 
 function tokenFor(userId: string): string {
@@ -125,6 +128,32 @@ describe('useDeleteAccount', () => {
 
     expect(forgetSignupConversionMock).toHaveBeenCalledExactlyOnceWith(userId);
     expect(credentials.getToken.mock.invocationCallOrder[0]).toBeLessThan(requestMock.mock.invocationCallOrder[0]);
+  });
+
+  it("drops the deleted account's device token, even when a newer sign-in superseded the deletion", async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-000000000087';
+    credentials.getToken.mockResolvedValue(tokenFor(userId));
+    requestMock.mockImplementation(async () => {
+      credentials.generation += 1;
+      return { deleteAccount: true };
+    });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await result.current.mutateAsync({ credentialGeneration: 1, input: { removeSetterName: false } });
+
+    expect(forgetDeviceTokenMock).toHaveBeenCalledExactlyOnceWith(userId);
+  });
+
+  it('keeps the device token when the server did not delete the account', async () => {
+    credentials.getToken.mockResolvedValue(tokenFor('602c83bf-e090-4c90-9f7e-000000000088'));
+    requestMock.mockResolvedValue({ deleteAccount: false });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await result.current.mutateAsync({ credentialGeneration: 1, input: { removeSetterName: false } });
+
+    expect(forgetDeviceTokenMock).not.toHaveBeenCalled();
   });
 
   it('retains the account marker when the mutation returns false', async () => {

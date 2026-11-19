@@ -41,6 +41,14 @@ export default defineConfig({
       },
       // The GPU failure latch is also scoped to the running OTA update. The real
       // package loads react-native's Flow entry, which Node cannot parse.
+      // expo-secure-store loads expo's runtime, which Node cannot resolve.
+      // auth.ts reaches it through device-token-store.ts even in suites that
+      // mock auth-store; suites asserting keychain behaviour register their own
+      // vi.mock, which takes precedence.
+      {
+        find: /^expo-secure-store$/,
+        replacement: fileURLToPath(new URL('./test/expo-secure-store-stub.ts', import.meta.url)),
+      },
       {
         find: 'expo-updates',
         replacement: fileURLToPath(new URL('./test/expo-updates-stub.ts', import.meta.url)),
