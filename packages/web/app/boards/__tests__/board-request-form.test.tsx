@@ -8,7 +8,7 @@ import BoardRequestForm from '../board-request-form';
 
 const { submit, track } = vi.hoisted(() => ({ submit: vi.fn(), track: vi.fn() }));
 vi.mock('@/app/lib/graphql/client', () => ({ executeGraphQL: submit }));
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics', () => ({ trackBoardRequestSubmitted: track }));
 const labels = enWebsite.boardRequest;
 beforeEach(() => {
   submit.mockReset();
@@ -50,7 +50,7 @@ describe('private board request form', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     finish({ submitBoardRequest: true });
     expect((await screen.findByRole('status')).textContent).toBe(labels.sent);
-    expect(track.mock.calls).toEqual([['Board Request Submitted', { role: 'climber' }]]);
+    expect(track.mock.calls).toEqual([['climber']]);
   });
 
   it('clears the optional address when follow-up permission is withdrawn', async () => {

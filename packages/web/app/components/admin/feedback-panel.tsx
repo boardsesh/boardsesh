@@ -173,8 +173,9 @@ export default function FeedbackPanel() {
         setHasMore(data.hasMore);
         setTotalCount(data.totalCount);
         setCounts(data.statusCounts);
-      } catch (err) {
-        console.error('[FeedbackPanel] Failed to fetch feedback:', err);
+      } catch {
+        // ClientError includes the admin's private search and response in its message.
+        console.error('[FeedbackPanel] Failed to fetch feedback');
         setErrorOffset(offset);
       } finally {
         setLoading(false);
@@ -282,6 +283,7 @@ export default function FeedbackPanel() {
         <Box sx={{ flexGrow: 1 }} />
         <TextField
           size="small"
+          className="ph-no-capture ph-ignore-input rr-block sentry-block"
           placeholder={t('feedback.search.placeholder')}
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}

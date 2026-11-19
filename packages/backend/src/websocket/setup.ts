@@ -44,6 +44,7 @@ import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } fr
 import { sanitizeAppleAdsGraphqlError } from '../graphql/apple-ads-token-privacy';
 import {
   isPrivateBoardDocument,
+  isAdminFeedbackDocument,
   isBoardRequestDocument,
   sanitizePrivateBoardGraphqlError,
   sanitizePrivateBoardResult,
@@ -626,6 +627,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           ];
         // Block this HTTP-only credential before parsing/coercing a document;
         // graphql-ws otherwise sends its original validation errors to clients.
+        if (isAdminFeedbackDocument(payload.query)) {
+          return [new GraphQLError('Feedback reports require HTTP')];
+        }
         if (isBoardRequestDocument(payload.query)) {
           return [new GraphQLError('Board requests require HTTP')];
         }
