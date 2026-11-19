@@ -162,7 +162,7 @@ on:
           - full
           - probe
       locales:
-        description: 'App languages to capture: e.g. "zh-CN" for Chinese only, or "zh-CN,fr". Empty = en-US,es,fr,de,it. Selected languages are capture-only: upload=false and publish_baseline=false. Use app codes, not Apple folder names such as zh-Hans.'
+        description: 'App languages to capture: e.g. "zh-CN" for Chinese only, or "zh-CN,fr". Empty = en-US,es,fr,de,it. Selected languages can upload with devices=common, gate=full and upload=true; publish_baseline must stay false. Use app codes, not Apple folder names such as zh-Hans.'
         type: string
         default: ''
       devices:
@@ -205,7 +205,7 @@ on:
         type: string
         default: ''
       upload:
-        description: 'Upload captured screenshots to App Store Connect. Requires the full App Store set (app-store flow, empty locales).'
+        description: 'Upload captured screenshots to App Store Connect. Requires app-store flow, gate=full and devices=common. With locales set, replaces only those languages; other App Store languages stay unchanged.'
         type: boolean
         default: false
       publish_baseline:
@@ -496,15 +496,15 @@ jobs:
             echo "::error::locales must contain supported app languages: $supported_locales. Use zh-CN for Simplified Chinese, not zh-Hans."
             exit 1
           fi
-          # Uploading mutates the live App Store listing and needs the full store
-          # set, so refuse a contradictory narrowed/onboarding upload up front (on
+          # Uploading mutates the live App Store listing. Every requested language
+          # needs its complete device set, so refuse an onboarding upload (on
           # this cheap ubuntu job) instead of failing ~40 min later inside fastlane.
-          if [ "$upload" = "true" ] && { [ -n "$locales" ] || [ "$flow" = "onboarding" ]; }; then
-            echo "::error::upload=true requires the full App Store set: flow=app-store and empty locales. Narrowed / onboarding runs are capture-only."
+          if [ "$upload" = "true" ] && [ "$flow" != "app-store" ]; then
+            echo "::error::upload=true requires flow=app-store. Onboarding runs are capture-only."
             exit 1
           fi
           if [ "$PUBLISH_BASELINE" = "true" ] && [ -n "$locales" ]; then
-            echo '::error::selected languages are capture-only; publish_baseline=true requires empty locales.'
+            echo '::error::publish_baseline=true requires empty locales; a language subset cannot replace the full baseline.'
             exit 1
           fi
           # Same reasoning for the probe gate: an upload must carry the whole set,
@@ -1022,12 +1022,19 @@ jobs:
       # genuinely expected here regardless of how the probe fared. Any shard
       # ios-capture itself failed to produce is still caught by the dimension
       # gate below, which every upload and baseline-refresh step is already
-      # conditioned on via `success()`. Only such a run may refresh the baseline
-      # or push to App Store Connect.
+      # conditioned on via `success()`. Only such a run may refresh the baseline;
+      # selected-language uploads use their separate complete-set preflight.
       FULL_SET_CAPTURED: >-
         ${{ needs.ios-capture.result == 'success' &&
             (inputs.flow == null || inputs.flow == 'app-store') &&
             (inputs.locales == null || inputs.locales == '') &&
+            (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
+      # Explicit selected-language writes require a successful complete device
+      # matrix. Their own preflight below runs before any Apple credentials.
+      SELECTED_SET_CAPTURED: >-
+        ${{ github.event_name == 'workflow_dispatch' && inputs.upload == true &&
+            needs.ios-capture.result == 'success' && inputs.flow == 'app-store' &&
+            inputs.locales != null && inputs.locales != '' &&
             (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
 
     steps:
@@ -1076,9 +1083,9 @@ jobs:
       # locales at once, which is why it runs here after the merge, not per-shard.
       - name: Assert screenshot dimensions
         # The gate needs the full App Store set (all six store locales, app-store
-        # flow). Skip it for the onboarding flow, a narrowed `locales` run, or an
-        # unchanged probe — those are capture-only and hold one shard at most; the
-        # per-shard artifacts are still produced + uploaded. `success() &&` is kept
+        # flow). Selected-language uploads use the complete subset preflight
+        # below; onboarding and unchanged-probe runs remain capture-only.
+        # Per-shard artifacts are still retained. `success() &&` is kept
         # here for readability, not because it's load-bearing: per docs.github.com
         # (Expressions -> Status check functions), a custom `if:` that omits
         # success()/failure()/always()/cancelled() still gets the default
@@ -1097,7 +1104,7 @@ jobs:
       # `if` as the dimension gate: both protect the same automatic upload below.
       - name: Fetch previous screenshot baseline
         id: previous_baseline
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null || env.SELECTED_SET_CAPTURED == 'true') && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1131,14 +1138,29 @@ jobs:
             vp run screenshot:assert-content -- --dir app-stores/apple/screenshots
           fi
 
+      - name: Validate and stage selected-language upload
+        if: ${{ success() && env.SELECTED_SET_CAPTURED == 'true' }}
+        env:
+          APP_LOCALES_JSON: ${{ needs.setup.outputs.ios_locales }}
+          BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
+          CONTENT_BASELINE: ${{ inputs.content_baseline || 'compare' }}
+        run: |
+          set -euo pipefail
+          args=(--app-locales "$APP_LOCALES_JSON" --source app-stores/apple/screenshots --output "$RUNNER_TEMP/selected-ios-upload")
+          if [ "$BASELINE_FOUND" = true ] && [ "$CONTENT_BASELINE" != floor-only ]; then
+            args+=(--baseline "$RUNNER_TEMP/previous-baseline")
+          fi
+          vp exec tsx scripts/prepare-selected-ios-screenshots.ts "${args[@]}"
+
       # --- Upload to App Store Connect ---
       # Screenshots ONLY — no binary, no metadata, no review submission. Gated
-      # behind the `upload` input on a dispatch and a successful full capture on
-      # both manual and automatic runs. Apple only accepts screenshot changes
+      # behind the `upload` input on a dispatch and a successful complete capture
+      # of every requested language and device. Apple only accepts screenshot changes
       # on a version in "Prepare for Submission", and the lane pre-flights that:
-      # with no editable version it skips with a summary instead of failing, and
-      # mobile-store-draft.yml attaches the published baseline once it creates
-      # one. The `success() &&` prefix below is kept for readability, not because
+      # explicit selected-language uploads fail if that version is unavailable
+      # or differs from the captured app version. Default full-set uploads keep
+      # the existing skip-and-summary behavior when no version is editable.
+      # The `success() &&` prefix below is kept for readability, not because
       # it changes behaviour: per docs.github.com (Expressions -> Status check
       # functions), a custom `if:` that omits
       # success()/failure()/always()/cancelled() still gets the default
@@ -1146,13 +1168,13 @@ jobs:
       # a prior failure without it. fastlane's screenshots lane is a pure network
       # upload (no Xcode), so it runs fine on ubuntu.
       - name: Set up Ruby + fastlane
-        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
           working-directory: fastlane
       - name: Install fastlane gems
-        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
         working-directory: fastlane
         run: |
           bundle config set --local path "$PWD/vendor/bundle"
@@ -1160,7 +1182,7 @@ jobs:
           bundle install --jobs 4
 
       - name: Decode App Store Connect API key
-        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
@@ -1175,7 +1197,7 @@ jobs:
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
       - name: Upload screenshots to App Store Connect
-        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
         working-directory: fastlane
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}

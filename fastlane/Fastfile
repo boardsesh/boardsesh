@@ -155,6 +155,7 @@ end
 # lib/app_store_version_states.rb, shared with the merge-back submission's
 # status check so both agree on what holds the next version.
 require File.join(REPO_ROOT, "fastlane", "lib", "app_store_version_states")
+require File.join(REPO_ROOT, "fastlane", "lib", "screenshot_upload")
 OPEN_APP_STORE_VERSION_STATES = BoardseshAppStoreVersionStates::OPEN
 
 # The open iOS versions (raw appStoreVersions resources) carrying a version
@@ -244,6 +245,18 @@ def staged_filename(device_slug, png_path)
   basename = File.basename(png_path)
   staged = basename.sub(/\A(\d+)-/, "\\1-#{device_slug}-")
   staged == basename ? "#{device_slug}-#{basename}" : staged
+end
+
+def screenshot_upload_manifest
+  locales = BoardseshScreenshotUpload.parse_locales(ENV["ASC_SCREENSHOT_LOCALES"])
+  if locales
+    BoardseshScreenshotUpload.manifest(root: ENV["ASC_SCREENSHOT_PATH"], locales: locales)
+  else
+    UI.user_error!("ASC_SCREENSHOT_PATH requires an explicit ASC_SCREENSHOT_LOCALES scope.") unless ENV["ASC_SCREENSHOT_PATH"].to_s.empty?
+    screenshot_manifest
+  end
+rescue BoardseshScreenshotUpload::Error => error
+  UI.user_error!(error.message)
 end
 
 # A precautionary retry for the App Store screenshot upload. App Store Connect
@@ -486,7 +499,7 @@ platform :ios do
 
   desc "Upload App Store screenshots to App Store Connect (no binary, no metadata, no review)"
   lane :screenshots do
-    manifest = screenshot_manifest
+    manifest = screenshot_upload_manifest
 
     staging_dir = Dir.mktmpdir("asc-screenshots-")
     begin
@@ -503,7 +516,7 @@ platform :ios do
         UI.message("Staged #{staged_count} screenshot(s) into #{locale_dir}")
       end
 
-      api_key = app_store_connect_api_key(
+      app_store_connect_api_key(
         key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
         issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
         key_filepath: ENV.fetch("ASC_KEY_PATH"),
@@ -518,31 +531,31 @@ platform :ios do
       # Without this guard the upload grinds through deliver's ~20-minute "Cannot find edit
       # app store version" backoff ladder AFTER the ~30-minute capture matrix has already run
       # — wasted either way, but at least this saves the finalize step itself.
-      unless editable_app_store_version_present?
+      edit_version = editable_app_store_version
+      if edit_version.nil? || edit_version == :unknown
+        unless ENV["ASC_SCREENSHOT_LOCALES"].to_s.empty?
+          UI.user_error!("No verified editable iOS App Store version; selected-language screenshots were not uploaded. Prepare the release version in App Store Connect, then rerun.")
+        end
         UI.important("No editable App Store version in 'Prepare for Submission' — nothing for deliver to attach screenshots to. Skipping the upload; re-run once a version is editable.")
         emit_step_summary("**Skipped:** no editable App Store version — no iOS screenshots uploaded.")
         next
       end
+      unless ENV["ASC_SCREENSHOT_LOCALES"].to_s.empty?
+        expected_version = mobile_app_version
+        if edit_version.version_string != expected_version
+          UI.user_error!("Editable iOS App Store version is #{edit_version.version_string}, expected #{expected_version}; selected-language screenshots were not uploaded.")
+        end
+      end
 
+      require "deliver/sync_screenshots"
+      require "deliver/loader"
+      screenshots = Deliver::Loader.load_app_screenshots(staging_dir, false)
       with_upload_retries do
-        upload_to_app_store(
-          api_key: api_key,
-          app_identifier: "com.boardsesh.app",
-          screenshots_path: staging_dir,
-          skip_binary_upload: true,
-          # skip_metadata: true also skips deliver's phased-release and
-          # rating-reset step, so this call cannot remove either. Turning
-          # metadata on here needs the DELIVER_VERSION_SETTINGS pass-through the
-          # `metadata` lane has (#7225).
-          skip_metadata: true,
-          skip_app_version_update: true,
-          overwrite_screenshots: true,
-          sync_screenshots: true,
-          submit_for_review: false,
-          run_precheck_before_submit: false,
-          # force: true is mandatory in CI — without it deliver opens an HTML
-          # preview in a browser and blocks until timeout.
-          force: true
+        BoardseshScreenshotUpload.sync(
+          version: edit_version,
+          locales: manifest.keys,
+          screenshots: screenshots,
+          sync_class: Deliver::SyncScreenshots
         )
       end
     ensure

@@ -65,6 +65,7 @@ jobs:
         run: |
           vp exec ruby tests/android_release_test.rb
           vp exec ruby tests/native_upload_lanes_test.rb
+          vp exec ruby tests/screenshot_upload_test.rb
           vp exec ruby tests/testflight_distribution_test.rb
           vp exec ruby tests/play_listing_test.rb
           vp exec ruby tests/store_submission_status_test.rb
