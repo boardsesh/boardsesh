@@ -98,7 +98,7 @@ vi.mock('../../../providers/queue-provider', async () => {
   return {
     useQueueActions: () => ({
       nextClimb,
-      getQueueSnapshot: () => ({ ...harness.getQueueData(), playlistSuggestionSource: null }),
+      getQueueSnapshot: () => ({ ...harness.getQueueData(), sessionId: SESSION, playlistSuggestionSource: null }),
       refreshPlaylistSuggestionSource: vi.fn(),
       setSessionRestCadence,
     }),

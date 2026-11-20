@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   run: null as WorkoutRun | null,
   hydrate: vi.fn(async () => 'clean'),
   request: vi.fn(async () => ({})),
+  toast: vi.fn(),
+  write: vi.fn(async () => 'queued'),
   start: vi.fn(async () => 'new-session'),
   append: vi.fn((items: ClimbQueueItem[]) => Math.min(items.length, 1)),
   activate: vi.fn(),
@@ -52,7 +54,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     getQueueSnapshot: () => ({ sessionId: state.sessionId, queue: state.queue, currentClimbQueueItem: null }),
   }),
 }));
-vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: state.toast }) }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter' } }),
   getActiveBoardWriteGeneration: () => 0,
@@ -67,7 +69,7 @@ vi.mock('../../../lib/graphql/hooks/search-grade-source', () => ({
   useSearchGradeSourceActive: () => false,
   useSearchGradeSourceSettled: () => true,
 }));
-vi.mock('../../../offline/session-workout-outbox', () => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
+vi.mock('../../../offline/session-workout-outbox', () => ({ enqueueSessionWorkoutWrite: state.write }));
 vi.mock('../pre-session/select-climbs-for-plan', () => ({ fetchGradePool: vi.fn() }));
 vi.mock('../../../lib/workout-run-store', () => ({
   getWorkoutRunForSession: () => state.run,
@@ -295,6 +297,85 @@ describe('adding a partner workout to a running session', () => {
     await waitFor(() => expect(state.hydrate).toHaveBeenCalled());
     expect(state.request).not.toHaveBeenCalled();
     expect(state.append).not.toHaveBeenCalled();
+  });
+
+  it('records and activates the partial non-round plan when a peer fills capacity during attachment', async () => {
+    const volumeWorkout: AppWorkout = {
+      ...focusWorkout,
+      spec: {
+        ...focusWorkout.spec,
+        blocks: [{ type: 'volume', climbCount: 2, targetGrade: { scale: 'font', value: '6B' } }],
+      },
+    };
+    state.pending = volumeWorkout;
+    state.preview = await buildPartnerWorkoutPreview({
+      spec: volumeWorkout.spec,
+      partnerPlan: buildPartnerWorkoutPlan(volumeWorkout.spec, getGradesForBoard('kilter'), volumeWorkout.id),
+      grades: getGradesForBoard('kilter'),
+      ctx: { board: { boardType: 'kilter' } as UserBoard, isAuthenticated: true },
+      fetchPool: async () => ({ climbs: [climb('first'), climb('second')], topUpTiers: new Map(), exhausted: true }),
+    });
+    state.queue = Array.from(
+      { length: 498 },
+      (_, index) => ({ uuid: `queued-${index}`, climb: climb(`queued-climb-${index}`) }) as ClimbQueueItem,
+    );
+    let finishAttachment: (() => void) | undefined;
+    const attachment = new Promise<void>((resolve) => {
+      finishAttachment = resolve;
+    });
+    state.request.mockImplementationOnce(async () => {
+      await attachment;
+      return {};
+    });
+    state.append.mockImplementation((items: ClimbQueueItem[]) => {
+      const landed = items.slice(0, 500 - state.queue.length);
+      state.queue = [...state.queue, ...landed];
+      return landed.length;
+    });
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.request).toHaveBeenCalledOnce());
+    state.queue.push({ uuid: 'peer-item', climb: climb('peer-climb') } as ClimbQueueItem);
+    finishAttachment?.();
+    await waitFor(() => expect(state.request).toHaveBeenCalledTimes(2));
+    expect(state.append).toHaveBeenCalledOnce();
+    expect(state.queue).toHaveLength(500);
+    const landed = state.queue.at(-1)!;
+    expect(state.setRun).toHaveBeenCalledWith(
+      'existing-session',
+      expect.objectContaining({ stages: [expect.objectContaining({ itemUuids: [landed.uuid] })] }),
+      expect.anything(),
+    );
+    expect(state.write).toHaveBeenCalledWith('existing-session', expect.anything());
+    expect(state.activate).toHaveBeenCalledWith('existing-session', expect.objectContaining({ status: 'started' }));
+    expect(state.request).toHaveBeenLastCalledWith(expect.anything(), {
+      workoutId: volumeWorkout.id,
+      plan: [{ index: 0, climbUuids: [landed.climb.uuid] }],
+    });
+    expect(state.toast).toHaveBeenCalledWith('partnerWorkouts.budgetShortfall', 'info');
+  });
+
+  it('records and activates a shorter non-round preview after post-attachment reselection', async () => {
+    const originalPreview = state.preview!;
+    state.preview = { ...originalPreview, selectionSlots: 2 };
+    // The plan has two requested visits, while its freshly reselected catalogue
+    // can only return one. This can happen when peer additions consume a pool.
+    state.pending = {
+      ...focusWorkout,
+      spec: {
+        ...focusWorkout.spec,
+        blocks: [{ type: 'gradeFocus', climbCount: 2, targetGrade: { scale: 'font', value: '6B' } }],
+      },
+    };
+    const secondItem = { uuid: 'second-preview-item', climb: climb('second') } as ClimbQueueItem;
+    state.preview = { ...state.preview, items: [...originalPreview.items, secondItem] };
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.activate).toHaveBeenCalled());
+    expect(state.append.mock.calls[0][0]).toHaveLength(1);
+    expect(state.write).toHaveBeenCalled();
+    expect(state.request).toHaveBeenCalledTimes(2);
+    expect(state.toast).toHaveBeenCalledWith('partnerWorkouts.budgetShortfall', 'info');
   });
 
   it('does not arm the rest timer while the session workout waits for its Start', async () => {

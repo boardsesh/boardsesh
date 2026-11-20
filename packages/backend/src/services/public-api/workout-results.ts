@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import {
   BoardTypeSchema,
   CreateWorkoutSchema,
@@ -351,11 +352,16 @@ export async function buildWorkoutResults(
     ? (tick: SessionTick) => storedPlacement.blockIndexByTick.get(tick.uuid) ?? null
     : await blockIndexBySnapshotClimb(transaction, workout.planSnapshot);
   const metadata = await readLogbookClimbMetadata(transaction as unknown as FeedTransaction, workout.userId, rows);
-  const pathParts = session.boardPath?.split('/') ?? [];
-  const pathType = BoardTypeSchema.safeParse(pathParts[0]).data;
-  const pathLayoutId = pathParts[1] && /^\d+$/.test(pathParts[1]) ? Number(pathParts[1]) : null;
-  const pathSizeId = pathParts[2] && /^\d+$/.test(pathParts[2]) ? Number(pathParts[2]) : null;
-  const pathAngle = pathParts[4] && Number.isFinite(Number(pathParts[4])) ? Number(pathParts[4]) : null;
+  const namedPath = parseNamedBoardPath(session.boardPath ?? '');
+  const tuplePath = namedPath ? null : parseBoardPath(session.boardPath ?? '');
+  const pathType = BoardTypeSchema.safeParse(tuplePath?.boardName).data;
+  const pathLayoutId = tuplePath?.layoutId ?? null;
+  const pathSizeId = tuplePath?.sizeId ?? null;
+  const requestedAngle = namedPath?.angle ?? tuplePath?.angle;
+  const pathAngle =
+    requestedAngle != null && Number.isInteger(requestedAngle) && requestedAngle >= -90 && requestedAngle <= 90
+      ? requestedAngle
+      : null;
   const [board] = session.boardId
     ? await transaction
         .select({

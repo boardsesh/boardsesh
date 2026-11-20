@@ -148,7 +148,12 @@ function publicWorkout(
     source: partnerWorkout ? 'partner' : 'boardsesh',
     title: partnerSpec?.title ?? null,
     notes: partnerSpec?.notes ?? null,
-    plannedBlocks: partnerSpec?.blocks ?? [],
+    plannedBlocks:
+      partnerSpec?.blocks.map((block) => {
+        const publicBlock = { ...block };
+        delete publicBlock.externalRef;
+        return publicBlock;
+      }) ?? [],
     stages: derived.stages.map((stage, index) => {
       const storedStage = usablePlan.stages[index];
       const originalPositionByItem = new Map(storedStage.items.map((item) => [item.queueItemUuid, item.position]));

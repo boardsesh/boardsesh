@@ -343,6 +343,7 @@ describe('completed partner sessions', () => {
     await db.insert(oauthConnections).values({ id: sourceConnectionId, userId: OWNER, clientId: sourceClientId });
     const sourceWorkoutId = `wk_${randomUUID()}`;
     const privateExternalRef = randomUUID();
+    const privateBlockExternalRef = `exercise-${randomUUID()}`;
     await db.insert(appWorkouts).values({
       id: sourceWorkoutId,
       userId: OWNER,
@@ -358,7 +359,15 @@ describe('completed partner sessions', () => {
         externalRef: privateExternalRef,
         title: 'Coach’s volume',
         notes: 'Stay on your feet',
-        blocks: [{ type: 'volume', climbCount: 1, targetGrade: { scale: 'v', value: 3 }, restSeconds: 45 }],
+        blocks: [
+          {
+            type: 'volume',
+            externalRef: privateBlockExternalRef,
+            climbCount: 1,
+            targetGrade: { scale: 'v', value: 3 },
+            restSeconds: 45,
+          },
+        ],
       },
     });
     await db.insert(sessionWorkouts).values({
@@ -401,11 +410,13 @@ describe('completed partner sessions', () => {
       sourceConnectionId,
       sourceWorkoutId,
       privateExternalRef,
+      privateBlockExternalRef,
       'private-queue-id',
       guestTick,
       session.id,
     ])
       expect(JSON.stringify(result)).not.toContain(forbidden);
+    expect(result?.workout?.plannedBlocks[0]).not.toHaveProperty('externalRef');
   });
 
   it('canonicalizes merged planned climbs and still attributes raw and surviving ticks', async () => {

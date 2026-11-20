@@ -27,6 +27,8 @@ import {
   restTimerForegroundGeneration,
   sameRestTimerForeground,
   createRestTimerAcceptanceId,
+  restTimerControlGeneration,
+  sameRestTimerControlGeneration,
 } from './rest-timer-foreground-state';
 import {
   buildArmInput,
@@ -34,6 +36,7 @@ import {
   buildCrewPacingEditInput,
   buildRestartInput,
   buildTickInput,
+  noteLiveCrewTickAcceptance,
   getLastCrewCadenceSnapshot,
   handleCrewCadenceChange,
   normalizeCrewConfig,
@@ -269,18 +272,36 @@ export function createCrewRestPublisher({
           const crewRule = getState().crew?.config?.advanceOn ?? 'deadline';
           if (crewRule !== 'deadline' && !tickRecorded) return;
           const foregroundAtSave = restTimerForegroundGeneration();
+          const controlAtSave = restTimerControlGeneration();
           const acceptedAtMs = nowMs();
           const acceptanceId = createRestTimerAcceptanceId();
-          enqueueInput(() =>
-            sameRestTimerForeground(foregroundAtSave) && nowMs() - acceptedAtMs <= 5_000
-              ? {
-                  ...buildTickInput(tick, tickStartMs, nowMs(), action.tickAgeAtLogMs),
-                  ...((getOwnPacing().source === 'stage' || getState().crew?.config?.source === 'stage') && acceptanceId
-                    ? { tickAcceptanceId: acceptanceId }
-                    : {}),
-                }
-              : null,
-          );
+          enqueueInput(() => {
+            if (!sameRestTimerForeground(foregroundAtSave) || !sameRestTimerControlGeneration(controlAtSave))
+              return null;
+            const ownPacing = getOwnPacing();
+            const heldPacing = getState().crew?.config;
+            const pacing = ownPacing.source === 'stage' ? ownPacing : (heldPacing ?? ownPacing);
+            const expiredImmediateClaim =
+              pacing.source === 'stage' &&
+              pacing.mode === 'afterTick' &&
+              pacing.advanceOn !== 'deadline' &&
+              pacing.targetSeconds !== null;
+            // An expired zero/short workout claim must not be renewed after
+            // waiting in the publisher queue. Future rests still propagate.
+            if (
+              expiredImmediateClaim &&
+              pacing.targetSeconds !== null &&
+              nowMs() > Math.max(tickStartMs + pacing.targetSeconds * 1000, acceptedAtMs) + 5_000
+            )
+              return null;
+            const tagsWorkoutTick =
+              (ownPacing.source === 'stage' || heldPacing?.source === 'stage') && acceptanceId !== null;
+            if (tagsWorkoutTick) noteLiveCrewTickAcceptance(acceptanceId);
+            return {
+              ...buildTickInput(tick, tickStartMs, nowMs(), action.tickAgeAtLogMs),
+              ...(tagsWorkoutTick ? { tickAcceptanceId: acceptanceId } : {}),
+            };
+          });
           return;
         }
         case 'pause':

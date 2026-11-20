@@ -531,6 +531,11 @@ starts through the session plan. `completedRounds` requires one logged outcome
 at every planned visit in a round; the denominator remains the requested
 round count. An unavailable or ambiguous round plan returns `progress: null`.
 Results remain derived on read so late ticks, edits and deletions are reflected.
+Higher-revision writes preserve seeded round dimensions and retained queue
+UUID positions even when an older client omits them. Existing valid round
+tick pins are merged with a resumed phone’s log, with explicit incoming
+remaps taking precedence. All pins are checked against the caller, session,
+current plan and pending limits under the session fence.
 The session ending and the exercise being complete are separate facts.
 
 The stored plan cap is 500 visits, matching the queue. Partner preview/Start
@@ -546,7 +551,10 @@ A workout containing partner 4×4 rounds requires a fresh personal session.
 The live queue uses Redis CAS, while attachment uses Postgres; capacity
 preflight alone cannot make existing-session attachment atomic. End the
 current session, then use the atomic seeded new-session Start. Other block
-attachments retain their existing behavior.
+attachments retain their existing behavior. If a non-round attachment has
+already committed and queue capacity changes, install and record the visits
+that landed and show the shortfall; never leave a started workout without its
+active association and attribution plan.
 
 Still separate work:
 

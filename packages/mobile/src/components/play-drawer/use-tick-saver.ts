@@ -33,7 +33,12 @@ import { nowMs } from '../../lib/clock';
 import { getRestTimerStartMs } from '../../lib/rest-timer';
 import { isTickFreshEnoughToArm } from '../../lib/rest-timer-auto-advance';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
-import { restTimerForegroundGeneration, sameRestTimerForeground } from '../../lib/rest-timer-foreground-state';
+import {
+  restTimerForegroundGeneration,
+  sameRestTimerForeground,
+  restTimerControlGeneration,
+  sameRestTimerControlGeneration,
+} from '../../lib/rest-timer-foreground-state';
 import { attributeTickToQueueItem, type TickAttributionCandidate } from '../../lib/tick-attribution';
 import { noteWorkoutRunTick } from '../../lib/workout-run-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -192,6 +197,7 @@ export function useTickSaver({
       // the rest timer is handed the same instant below.
       const loggedAtMs = nowMs();
       const foregroundAtLog = restTimerForegroundGeneration();
+      const controlAtLog = restTimerControlGeneration();
       const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? loggedAtMs, loggedAtMs);
 
       saveSurvivingUnmount(
@@ -258,7 +264,7 @@ export function useTickSaver({
             // judges the tick fresh or history at `loggedAtMs`, as `isWorkoutGo`
             // does, so a rep whose save is slow still earns the set rest's
             // advance; `landedAtMs` only caps the anchor.
-            if (sameRestTimerForeground(foregroundAtLog))
+            if (sameRestTimerForeground(foregroundAtLog) && sameRestTimerControlGeneration(controlAtLog))
               noteRestTimerTick(
                 climbedAtIso,
                 getEffectiveRestPacing().mode,

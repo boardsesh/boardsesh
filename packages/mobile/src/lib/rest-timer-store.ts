@@ -1,3 +1,4 @@
+import { invalidateRestTimerControlIntent } from './rest-timer-foreground-state';
 // Runtime state for the rest timer (#5378), as a module singleton read through
 // `useSyncExternalStore`.
 //
@@ -273,6 +274,7 @@ export function getRestTimerState(): RestTimerState {
  * it stays anchorless and the pill shows the target instead of a false 0:00.
  */
 export function armRestTimer(mode: RestTimerMode, nowMs: number, sessionId: string | null): void {
+  invalidateRestTimerControlIntent();
   setState({
     ...INITIAL_STATE,
     stagePacing: state.stagePacing,
@@ -288,6 +290,7 @@ export function armRestTimer(mode: RestTimerMode, nowMs: number, sessionId: stri
 export function disarmRestTimer(): void {
   const sessionId = state.armedForSessionId;
   const wasArmed = state.armed;
+  if (wasArmed) invalidateRestTimerControlIntent();
   // Keep the cycle counter climbing so any timeout scheduled against the old
   // cycle can never match after a re-arm.
   setState({ ...INITIAL_STATE, stagePacing: state.stagePacing, cycleId: state.cycleId + 1 });
@@ -479,6 +482,7 @@ export function invalidateRestTimerAcceptedTick(): void {
 
 export function pauseRestTimer(nowMs: number): void {
   if (!state.armed || !state.isRunning) return;
+  invalidateRestTimerControlIntent();
   const elapsedSeconds =
     state.anchorMs === null ? state.pausedElapsedSeconds : Math.max(0, Math.floor((nowMs - state.anchorMs) / 1000));
   setState({
@@ -493,6 +497,7 @@ export function pauseRestTimer(nowMs: number): void {
 
 export function resumeRestTimer(nowMs: number): void {
   if (!state.armed || state.isRunning) return;
+  invalidateRestTimerControlIntent();
   setState({
     ...state,
     isRunning: true,
@@ -510,6 +515,7 @@ export function resumeRestTimer(nowMs: number): void {
  */
 export function resetRestTimer(nowMs: number): void {
   if (!state.armed) return;
+  invalidateRestTimerControlIntent();
   setState({
     ...state,
     anchorMs: state.isRunning ? nowMs : null,
@@ -886,11 +892,19 @@ export function adoptCrewCadence(
     state.anchorMs === previous.anchorMs &&
     state.isRunning === previous.isRunning &&
     state.pausedElapsedSeconds === previous.pausedElapsedSeconds;
-  const keepsOwnClock = serverClockHeld && state.armed && !followsHeldClock;
+  const keepsOwnClock =
+    state.armed &&
+    state.armedForSessionId === crew.sessionId &&
+    (crew.rejectedLiveAcceptance || (serverClockHeld && !followsHeldClock));
   const anchorMs = keepsOwnClock ? state.anchorMs : crewAnchorMs;
   const isRunning = keepsOwnClock ? state.isRunning : crew.isRunning;
   const pausedElapsedSeconds = keepsOwnClock ? state.pausedElapsedSeconds : crew.pausedElapsedSeconds;
-  const lastTick = crew.rejectedOwnAcceptance ? null : serverTickHeld && state.armed ? state.lastTick : crew.lastTick;
+  const rejectsAcceptance =
+    crew.rejectedOwnAcceptance ||
+    (state.invalidatedCrewAcceptance?.sessionId === crew.sessionId &&
+      crew.qualifyingTickAcceptedAtServerMs != null &&
+      crew.qualifyingTickAcceptedAtServerMs <= state.invalidatedCrewAcceptance.serverMs);
+  const lastTick = rejectsAcceptance ? null : serverTickHeld && state.armed ? state.lastTick : crew.lastTick;
   const lastFiredDeadlineMs =
     crewLastFiredBeatMs === null
       ? state.lastFiredDeadlineMs
@@ -913,12 +927,20 @@ export function adoptCrewCadence(
     crew: { ...crew, config, anchorMs: crewAnchorMs, lastFiredBeatMs: crewLastFiredBeatMs },
     crewPacingDraft,
     anchorMs,
-    qualifyingTickAcceptedAtMs:
-      state.invalidatedCrewAcceptance?.sessionId === crew.sessionId &&
-      crew.qualifyingTickAcceptedAtServerMs != null &&
-      crew.qualifyingTickAcceptedAtServerMs <= state.invalidatedCrewAcceptance.serverMs
-        ? null
-        : (crew.qualifyingTickAcceptedAtMs ?? null),
+    qualifyingTickAcceptedAtMs: rejectsAcceptance ? null : (crew.qualifyingTickAcceptedAtMs ?? null),
+    ...(rejectsAcceptance && crew.qualifyingTickAcceptedAtServerMs != null
+      ? {
+          invalidatedCrewAcceptance: {
+            sessionId: crew.sessionId,
+            serverMs: Math.max(
+              state.invalidatedCrewAcceptance?.sessionId === crew.sessionId
+                ? state.invalidatedCrewAcceptance.serverMs
+                : -Infinity,
+              crew.qualifyingTickAcceptedAtServerMs,
+            ),
+          },
+        }
+      : {}),
     isRunning,
     pausedElapsedSeconds,
     lastTick,

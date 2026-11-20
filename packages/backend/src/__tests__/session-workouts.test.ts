@@ -12,6 +12,10 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { RecordSessionWorkoutInput } from '@boardsesh/shared-schema/generated';
+import { parseSessionWorkoutPlan, parseSessionWorkoutTickMap } from '@boardsesh/workout-summary';
+import { buildWorkoutResults } from '../services/public-api/workout-results';
+import type { AppWorkoutRow } from '../services/public-api/workouts';
+import type { PartnerDatabase } from '../auth/partner/tables';
 import { db } from '../db/client';
 import {
   MAX_PENDING_TICK_MAP_ENTRIES,
@@ -202,7 +206,223 @@ afterEach(async () => {
   await db.execute(sql`DELETE FROM resource_privacy WHERE owner_id = ${CLIMBER}`);
 });
 
+const roundInput = (
+  sessionId: string,
+  revision: number,
+  ticks: RecordSessionWorkoutInput['ticks'] = [],
+): RecordSessionWorkoutInput => ({
+  sessionId,
+  revision,
+  ticks,
+  stages: [
+    {
+      id: 'wk_rollback:0',
+      kind: 'fourByFour',
+      targetGrade: TARGET_GRADE,
+      pacing: {
+        mode: 'afterTick',
+        advanceOn: 'round',
+        restSeconds: 0,
+        roundCount: 2,
+        climbsPerRound: 2,
+        restBetweenRoundsSeconds: 180,
+      },
+      items: [CLIMB_A, CLIMB_B, CLIMB_A, CLIMB_B].map((climbUuid, position) => ({
+        queueItemUuid: `qi-round-${position}`,
+        climbUuid,
+        angle: 40,
+        position,
+      })),
+    },
+  ],
+});
+
+const legacyRoundInput = (
+  sessionId: string,
+  revision: number,
+  ticks: RecordSessionWorkoutInput['ticks'] = [],
+): RecordSessionWorkoutInput => {
+  const input = roundInput(sessionId, revision, ticks);
+  return {
+    ...input,
+    stages: input.stages.map((stage) => ({
+      ...stage,
+      pacing: undefined,
+      items: stage.items.map((item) => ({
+        queueItemUuid: item.queueItemUuid,
+        climbUuid: item.climbUuid,
+        angle: item.angle,
+      })),
+    })),
+  };
+};
+
+/** Exercise the real partner result reader without creating an unrelated OAuth connection. */
+async function readRoundResults(sessionId: string) {
+  const endedAt = new Date('2026-10-20T10:30:00Z');
+  await db
+    .update(dbSchema.boardSessions)
+    .set({ status: 'ended', endedAt })
+    .where(eq(dbSchema.boardSessions.id, sessionId));
+  const workout: AppWorkoutRow = {
+    id: 'wk_rollback',
+    clientId: 'rollback-fixture',
+    userId: CLIMBER,
+    connectionId: 'rollback-fixture',
+    connectionGeneration: 1,
+    externalRef: 'rollback-round',
+    title: 'Round workout',
+    spec: {
+      externalRef: 'rollback-round',
+      title: 'Round workout',
+      blocks: [
+        {
+          type: 'fourByFour',
+          targetGrade: { scale: 'v', value: 4 },
+          climbCount: 2,
+          rounds: 2,
+          restBetweenClimbsSeconds: 0,
+          restBetweenRoundsSeconds: 180,
+        },
+      ],
+    },
+    planSnapshot: null,
+    status: 'completed',
+    sessionId,
+    openedByMismatch: false,
+    createdAt: endedAt,
+    openedAt: null,
+    startedAt: null,
+    completedAt: endedAt,
+    expiresAt: endedAt,
+  };
+  return buildWorkoutResults(db as unknown as PartnerDatabase, workout);
+}
+
 describe('recordSessionWorkout', () => {
+  it('preserves seeded round dimensions and positions across a higher-revision legacy write', async () => {
+    const sessionId = await hostSession();
+    const native = roundInput(sessionId, 0);
+    await db.insert(dbSchema.sessionWorkouts).values({
+      sessionId,
+      userId: CLIMBER,
+      revision: 0,
+      plan: { version: 1, stages: native.stages },
+      tickMap: [],
+    });
+    const ticks: RecordSessionWorkoutInput['ticks'] = [];
+    for (const [index, climbUuid] of [CLIMB_A, CLIMB_B, CLIMB_A, CLIMB_B].entries()) {
+      ticks.push({
+        tickUuid: await logTick(sessionId, climbUuid, index === 3 ? 'attempt' : 'send', index + 1),
+        queueItemUuid: `qi-round-${index}`,
+      });
+    }
+    await record(legacyRoundInput(sessionId, 1, ticks));
+    const stored = await storedRow(sessionId);
+    expect(stored.revision).toBe(1);
+    expect(stored.plan).toEqual({ version: 1, stages: native.stages });
+    expect(stored.tickMap).toEqual(ticks);
+    const changed = roundInput(sessionId, 2, ticks);
+    changed.stages[0].pacing = {
+      mode: 'afterTick',
+      advanceOn: 'round',
+      restSeconds: 9,
+      roundCount: 1,
+      climbsPerRound: 4,
+      restBetweenRoundsSeconds: 0,
+    };
+    changed.stages[0].items = changed.stages[0].items.map((item, index) => ({ ...item, position: 3 - index }));
+    await record(changed);
+    expect((await storedRow(sessionId)).plan).toEqual({ version: 1, stages: native.stages });
+    const results = await readRoundResults(sessionId);
+    expect(results?.blocks[0].progress).toEqual({
+      status: 'completed',
+      completedRounds: 2,
+      plannedRounds: 2,
+      sends: 3,
+      falls: 1,
+    });
+    expect(results?.ticks.map((tick) => tick.position)).toEqual([
+      { roundIndex: 0, climbIndex: 0 },
+      { roundIndex: 0, climbIndex: 1 },
+      { roundIndex: 1, climbIndex: 0 },
+      { roundIndex: 1, climbIndex: 1 },
+    ]);
+  });
+
+  it('retains earlier round pins as restored phones submit only their new tick log', async () => {
+    const sessionId = await hostSession();
+    const otherSession = await hostSession();
+    const foreign = await logTick(sessionId, CLIMB_A, 'send', 1, MEMBER);
+    const elsewhere = await logTick(otherSession, CLIMB_A, 'send', 1);
+    const first = await logTick(sessionId, CLIMB_A, 'send', 1);
+    const firstMap = { tickUuid: first, queueItemUuid: 'qi-round-0' };
+    await record(roundInput(sessionId, 1, [firstMap]));
+    // Even a previously stored bad pin must be rechecked before carrying it.
+    await db
+      .update(dbSchema.sessionWorkouts)
+      .set({
+        tickMap: [
+          firstMap,
+          { tickUuid: foreign, queueItemUuid: 'qi-round-0' },
+          { tickUuid: elsewhere, queueItemUuid: 'qi-round-0' },
+        ],
+      })
+      .where(and(eq(dbSchema.sessionWorkouts.sessionId, sessionId), eq(dbSchema.sessionWorkouts.userId, CLIMBER)));
+    const expected = [firstMap];
+    for (const [index, climbUuid] of [CLIMB_B, CLIMB_A, CLIMB_B].entries()) {
+      const mapping = {
+        tickUuid: await logTick(sessionId, climbUuid, 'send', index + 2),
+        queueItemUuid: `qi-round-${index + 1}`,
+      };
+      expected.push(mapping);
+      await record(legacyRoundInput(sessionId, index + 2, [mapping]));
+      expect((await storedRow(sessionId)).tickMap).toEqual(expected);
+    }
+    expect((await readRoundResults(sessionId))?.blocks[0].progress).toMatchObject({
+      status: 'completed',
+      completedRounds: 2,
+      sends: 4,
+    });
+  });
+
+  it('preserves original round metadata while accepting removals, explicit remaps and new stages atomically', async () => {
+    const sessionId = await hostSession();
+    const tick = await logTick(sessionId, CLIMB_A, 'send', 1);
+    const removedTick = await logTick(sessionId, CLIMB_B, 'send', 2);
+    await record(
+      roundInput(sessionId, 1, [
+        { tickUuid: tick, queueItemUuid: 'qi-round-0' },
+        { tickUuid: removedTick, queueItemUuid: 'qi-round-1' },
+      ]),
+    );
+    const incoming = legacyRoundInput(sessionId, 5, [{ tickUuid: tick, queueItemUuid: 'qi-extra' }]);
+    incoming.stages[0].items = [incoming.stages[0].items[3], incoming.stages[0].items[0], incoming.stages[0].items[2]];
+    incoming.stages[0].pacing = { mode: 'afterTick', advanceOn: 'tick', restSeconds: 7 };
+    incoming.stages.push({
+      id: 'extra-volume',
+      kind: 'volume',
+      items: [{ queueItemUuid: 'qi-extra', climbUuid: CLIMB_A, angle: 40 }],
+    });
+    await record(incoming);
+    const stored = await storedRow(sessionId);
+    const plan = parseSessionWorkoutPlan(stored.plan)!;
+    expect(plan.stages[0].pacing).toEqual(roundInput(sessionId, 1).stages[0].pacing);
+    expect(plan.stages[0].items.map((item) => item.position)).toEqual([3, 0, 2]);
+    expect(plan.stages[1]).toEqual(incoming.stages[1]);
+    expect(stored.tickMap).toEqual(incoming.ticks);
+    await record({ ...incoming, revision: 4, stages: [] });
+    expect((await storedRow(sessionId)).plan).toEqual(stored.plan);
+    await Promise.all([record({ ...incoming, revision: 6 }), record({ ...incoming, revision: 7 })]);
+    expect((await storedRow(sessionId)).revision).toBe(7);
+    expect(
+      parseSessionWorkoutPlan((await storedRow(sessionId)).plan)?.stages[0].items.map((item) => item.position),
+    ).toEqual([3, 0, 2]);
+    await record({ ...incoming, revision: 8, stages: [incoming.stages[1]], ticks: [] });
+    expect(parseSessionWorkoutPlan((await storedRow(sessionId)).plan)?.stages).toEqual([incoming.stages[1]]);
+    expect(parseSessionWorkoutTickMap((await storedRow(sessionId)).tickMap)).toEqual([]);
+  });
+
   it('needs a signed-in caller', async () => {
     const sessionId = await hostSession();
     await expect(record(workoutInput(sessionId, 1), null)).rejects.toThrow('Authentication required');

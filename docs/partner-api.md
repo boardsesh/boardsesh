@@ -793,9 +793,11 @@ Give a block an optional `externalRef` to identify the planned exercise in
 your app. Supplied block references must be unique within the workout, but can
 repeat in other workouts. They are echoed on block descriptors and in results,
 including `planned.externalRef`. The workout-level reference keeps its existing
-uniqueness and idempotency rules.
+uniqueness and idempotency rules. Block references are returned only by the
+creating app’s workout endpoints; generalized session/logbook exports omit
+them, including when another app supplied the workout.
 
-Native workouts must fit the 500-visit session/queue budget. The app explains
+Partner 4×4 plans must fit the 500-visit session/queue budget. The app explains
 when a complete plan cannot fit and leaves it unstarted; it does not silently
 shorten the exercise. Native round support requires a compatible mobile release.
 

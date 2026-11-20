@@ -1203,7 +1203,8 @@ describe('queued tick acceptance belongs to its foreground save', () => {
     expect(sent.map((input) => input.action)).toEqual(['ARM']);
   });
 
-  it('drops a tick whose publisher queue wait outlives its acceptance window', async () => {
+  it('drops an already expired zero-rest tick after its queued acceptance window', async () => {
+    own = { mode: 'afterTick', targetSeconds: 0, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
     autoReply = false;
     armRestTimer('afterTick', currentNowMs, SESSION);
     publisher.handleLocalAction(tickAction());
@@ -1298,4 +1299,219 @@ describe('queued tick acceptance belongs to its foreground save', () => {
       expect(getRestTimerState().lastTick).toBeNull();
     },
   );
+});
+
+describe('queued future rests and native zero configuration', () => {
+  it('keeps a queued ten-second workout rest claim within its actual deadline grace', async () => {
+    own = { mode: 'afterTick', targetSeconds: 10, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+    autoReply = false;
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    publisher.handleLocalAction({
+      type: 'tick',
+      sessionId: SESSION,
+      tick: { status: 'send', queueItemUuid: 'item-1' },
+      tickStartMs: T0,
+      tickAgeAtLogMs: 0,
+      tickRecorded: true,
+    });
+    currentNowMs += 11_000;
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'TICK', elapsedMs: 11_000, tickAcceptanceId: expect.any(String) });
+  });
+
+  it('tags a local workout tick while the held crew configuration still says settings', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    adoptCrewCadence({
+      sessionId: SESSION,
+      revision: 200,
+      config: { ...own, setByParticipantId: ME },
+      isRunning: true,
+      anchorMs: null,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: null,
+      lastFiredBeatServerMs: null,
+    });
+    own = { mode: 'afterTick', targetSeconds: 0, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+    publisher.handleLocalAction({
+      type: 'tick',
+      sessionId: SESSION,
+      tick: { status: 'send', queueItemUuid: 'item-1' },
+      tickStartMs: T0,
+      tickAgeAtLogMs: 0,
+      tickRecorded: true,
+    });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'TICK', tickAcceptanceId: expect.any(String) });
+  });
+
+  it('publishes a 120-second settings rest after six seconds queued with its original deadline', async () => {
+    own = { mode: 'afterTick', targetSeconds: 120, autoAdvance: true, advanceOn: 'deadline', source: 'settings' };
+    autoReply = false;
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    currentNowMs += 6_000;
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'TICK', elapsedMs: 6_000, tickAgeAtLogMs: 0 });
+    expect(currentNowMs - (sent.at(-1)?.elapsedMs ?? 0) + 120_000).toBe(T0 + 120_000);
+  });
+
+  it('publishes the actual zero-rest ARM and CONFIGURE without converting them to Off', async () => {
+    own = { mode: 'afterTick', targetSeconds: 0, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    expect(sent[0]).toMatchObject({ action: 'ARM', config: { targetSeconds: 0, source: 'stage', advanceOn: 'tick' } });
+    own = { ...own, targetSeconds: 3 };
+    publisher.noteSettingsEdited();
+    await vi.advanceTimersByTimeAsync(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    own = { ...own, targetSeconds: 0 };
+    publisher.noteSettingsEdited();
+    await vi.advanceTimersByTimeAsync(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({
+      action: 'CONFIGURE',
+      config: { targetSeconds: 0, source: 'stage', advanceOn: 'tick' },
+    });
+  });
+
+  it('caps both age fields when a historical go is more than a day old', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    noteRestTimerTick(new Date(T0 - 24 * 60 * 60_000).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'TICK', elapsedMs: 14_400_000, tickAgeAtLogMs: 14_400_000 });
+  });
+});
+
+describe('local controls supersede an unseen tick acceptance', () => {
+  it.each([
+    ['pause', 'reply-first'],
+    ['pause', 'subscription-first'],
+    ['reset', 'reply-first'],
+    ['reset', 'subscription-first'],
+  ] as const)('%s invalidates the pending tick in either delivery order (%s)', async (control, order) => {
+    own = { mode: 'afterTick', targetSeconds: 0, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    autoReply = false;
+    noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    const tickAcceptanceId = sent.at(-1)?.tickAcceptanceId;
+    expect(tickAcceptanceId).toBeTruthy();
+    currentNowMs += 5_000;
+    if (control === 'pause') pauseRestTimer(currentNowMs);
+    else resetRestTimer(currentNowMs);
+    const intendedAnchor = getRestTimerState().anchorMs;
+    const lateReply: SetSessionRestCadencePayload = {
+      applied: true,
+      change: {
+        revision: revision + 1,
+        serverNow: String(currentNowMs),
+        isSnapshot: false,
+        action: null,
+        restCadence: {
+          mode: 'afterTick',
+          targetSeconds: 0,
+          autoAdvance: true,
+          advanceOn: 'tick',
+          source: 'stage',
+          isRunning: true,
+          anchorAt: String(T0),
+          tickAcceptedAt: String(T0),
+          tickAcceptanceId,
+          pausedElapsedSeconds: 0,
+          lastFiredBeatAt: null,
+          lastTickQueueItemUuid: 'item-1',
+          lastTickStatus: 'send',
+          setByParticipantId: ME,
+        },
+      },
+    };
+    const receive = () =>
+      handleCrewCadenceChange(lateReply.change, {
+        sessionId: SESSION,
+        ownParticipantId: ME,
+        receivedAtMs: currentNowMs,
+      });
+    if (order === 'subscription-first') receive();
+    pendingReplies.shift()?.resolve(lateReply);
+    await flush();
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+    expect(getRestTimerState().lastTick).toBeNull();
+    expect(getRestTimerState().anchorMs).toBe(intendedAnchor);
+    expect(getRestTimerState().isRunning).toBe(control !== 'pause');
+    receive();
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+    expect(getRestTimerState().lastTick).toBeNull();
+  });
+});
+
+describe('known positive rests across pause and resume', () => {
+  it('keeps an already accepted tick eligible for its remaining positive rest', async () => {
+    own = { mode: 'afterTick', targetSeconds: 120, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    autoReply = false;
+    noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    const tickAcceptanceId = sent.at(-1)?.tickAcceptanceId;
+    const tickClock: NonNullable<SetSessionRestCadencePayload['change']['restCadence']> = {
+      mode: 'afterTick',
+      targetSeconds: 120,
+      autoAdvance: true,
+      advanceOn: 'tick',
+      source: 'stage',
+      isRunning: true,
+      anchorAt: String(T0),
+      tickAcceptedAt: String(T0),
+      tickAcceptanceId,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatAt: null,
+      lastTickQueueItemUuid: 'item-1',
+      lastTickStatus: 'send',
+      setByParticipantId: ME,
+    };
+    const receive = (clock: typeof tickClock, sequence: number) =>
+      handleCrewCadenceChange(
+        {
+          restCadence: clock,
+          revision: revision + sequence,
+          serverNow: String(currentNowMs),
+          isSnapshot: false,
+          action: null,
+        },
+        { sessionId: SESSION, ownParticipantId: ME, receivedAtMs: currentNowMs },
+      );
+    receive(tickClock, 1);
+    currentNowMs += 10_000;
+    pauseRestTimer(currentNowMs);
+    // A duplicate live TICK cannot undo Pause even though its previously known
+    // positive go remains eligible for the rest after an explicit Resume.
+    receive(tickClock, 2);
+    expect(getRestTimerState().isRunning).toBe(false);
+    receive({ ...tickClock, isRunning: false, tickAcceptedAt: null, pausedElapsedSeconds: 10 }, 3);
+    expect(getRestTimerState().lastTick?.queueItemUuid).toBe('item-1');
+    currentNowMs += 10_000;
+    resumeRestTimer(currentNowMs);
+    receive({ ...tickClock, anchorAt: String(T0 + 10_000), tickAcceptedAt: null }, 4);
+    expect(getRestTimerState().isRunning).toBe(true);
+    expect(getRestTimerState().lastTick?.queueItemUuid).toBe('item-1');
+    expect(getRestTimerState().anchorMs).toBe(T0 + 10_000);
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+  });
 });

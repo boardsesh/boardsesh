@@ -296,13 +296,9 @@ export function PartnerWorkoutCard({
       const attached = plan
         ? reselectPartnerWorkoutPreview(preview.data, pending.spec, plan.plan, queuedClimbUuids(snapshot.queue))
         : preview.data;
-      if (
-        attached.items.length + snapshot.queue.length > MAX_SYNCED_QUEUE_ITEMS ||
-        attached.items.length < attached.selectionSlots
-      ) {
-        showToast(t('partnerWorkouts.queueFull'), 'error');
-        return;
-      }
+      // Attachment has committed. A non-round workout keeps whatever still fits
+      // after peer additions or reselection, and records that honest partial plan.
+      // Returning here would leave a started workout without a local run or plan.
       const {
         landedItems: items,
         partnerRun,
@@ -313,11 +309,8 @@ export function PartnerWorkoutCard({
         existingRun: getWorkoutRunForSession(attachedSessionId),
         appendQueueItems,
       });
-      if (attached.items.length > 0 && items.length === 0) {
-        showToast(t('partnerWorkouts.queueFull'), 'error');
-        return;
-      }
-      if (items.length < attached.items.length || (plan?.slots.length ?? 0) > MAX_SESSION_WORKOUT_ITEMS)
+      const plannedSlots = plan?.slots.length ?? preview.data.selectionSlots;
+      if (items.length < plannedSlots)
         showToast(
           t('partnerWorkouts.budgetShortfall', {
             found: items.length,

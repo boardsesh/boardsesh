@@ -975,6 +975,38 @@ describe('partner workouts', () => {
 });
 
 describe('partner workout results', () => {
+  it.each([
+    { boardType: 'kilter', path: '/b/named-kilter/25/list', angle: 25 },
+    { boardType: 'tension', path: '/b/named-tension/25/list', angle: 25 },
+    { boardType: 'kilter', path: 'kilter/1/1/1/45', angle: 45 },
+    { boardType: 'tension', path: '/es/tension/1/1/1/35/list', angle: 35 },
+  ])('uses actual session angle instead of the saved board default for $path', async ({ boardType, path, angle }) => {
+    const { principal } = await connected();
+    const workout = await create(principal);
+    const sessionId = await start(principal.userId, workout.id);
+    const [board] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: principal.userId,
+        name: 'Configured wall',
+        boardType,
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        angle: 40,
+      })
+      .returning();
+    await db.update(boardSessions).set({ boardId: board.id, boardPath: path }).where(eq(boardSessions.id, sessionId));
+    await endSession(sessionId);
+    expect((await read(principal, workout.id)).results?.session.board).toMatchObject({
+      type: boardType,
+      angle,
+      name: 'Configured wall',
+    });
+  });
+
   it.each([false, true])(
     'resolves pinned alias visits and follows later alias reassignment (original row: %s)',
     async (originalRow) => {

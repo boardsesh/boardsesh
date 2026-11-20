@@ -29,7 +29,7 @@ describe('partner workout queue handoff', () => {
     expect(append).not.toHaveBeenCalled();
     expect(result).toEqual({ landedItems: [], partnerRun: { stages: [] }, combinedRun: { stages: [] } });
   });
-  it('limits Add to remaining stored-plan capacity before touching the queue', () => {
+  it('keeps a committed non-round attachment within remaining stored-plan capacity', () => {
     const existing: WorkoutRun = {
       stages: [
         {
@@ -40,9 +40,27 @@ describe('partner workout queue handoff', () => {
       ],
     };
     const append = vi.fn((accepted: ClimbQueueItem[]) => accepted.length);
-    expect(() => appendPartnerWorkout({ items, run, existingRun: existing, appendQueueItems: append })).toThrow(
-      'capacity',
-    );
+    const result = appendPartnerWorkout({ items, run, existingRun: existing, appendQueueItems: append });
+    expect(append).toHaveBeenCalledExactlyOnceWith([items[0]]);
+    expect(result.landedItems).toEqual([items[0]]);
+    expect(result.combinedRun.stages.flatMap((stage) => stage.itemUuids)).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
+  });
+
+  it('still refuses to shorten a round plan before touching the queue', () => {
+    const roundRun: WorkoutRun = { stages: [{ ...run.stages[0], kind: 'fourByFour' }] };
+    const existing: WorkoutRun = {
+      stages: [
+        {
+          id: 'earlier',
+          kind: 'volume',
+          itemUuids: Array.from({ length: MAX_SESSION_WORKOUT_ITEMS - 1 }, (_, index) => `earlier-${index}`),
+        },
+      ],
+    };
+    const append = vi.fn((accepted: ClimbQueueItem[]) => accepted.length);
+    expect(() =>
+      appendPartnerWorkout({ items, run: roundRun, existingRun: existing, appendQueueItems: append }),
+    ).toThrow('capacity');
     expect(append).not.toHaveBeenCalled();
   });
 });

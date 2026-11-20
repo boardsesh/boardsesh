@@ -45,9 +45,16 @@ FIRE consumes eligibility; pause, reset, clear and manual advancement invalidate
 it. Hydration, resume and offline outbox replay never create fresh eligibility.
 Each new TICK also carries an opaque `tickAcceptanceId`, echoed on its
 accepted clock. The receiving phone rejects its own IDs from an invalidated
-foreground generation, including a subscription update arriving before the
+foreground or local-control generation, including a subscription update arriving before the
 mutation reply. This prevents an in-flight request from renewing eligibility
-after backgrounding. Backend support must deploy before the compatible mobile bundle.
+after backgrounding or a pause/reset/manual queue change. A pending FIRE
+also captures foreground/control generations, session, queue visit and driver
+identity; stale replies may not navigate, retry or use the solo fallback.
+Queued positive rests retain their original deadline even after a slow ARM;
+only an already-expired stage claim loses its immediate-advance eligibility.
+A cold/rejoin snapshot retains the authoritative clock and future deadlines,
+but an expired snapshot cannot create a new tick-backed advance.
+Backend support must deploy before the compatible mobile bundle.
 
 ## Effective pacing
 

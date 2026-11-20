@@ -16,9 +16,12 @@ export function appendPartnerWorkout({
   appendQueueItems: (items: ClimbQueueItem[]) => number;
 }) {
   const alreadyRecorded = new Set(existingRun?.stages.flatMap((stage) => stage.itemUuids) ?? []).size;
-  if (alreadyRecorded + items.length > MAX_SESSION_WORKOUT_ITEMS)
+  const remainingCapacity = Math.max(0, MAX_SESSION_WORKOUT_ITEMS - alreadyRecorded);
+  if (items.length > remainingCapacity && run.stages.some((stage) => stage.kind === 'fourByFour'))
     throw new Error('Partner workout exceeds stored plan capacity');
-  const acceptedItems = items;
+  // Non-round attachments have already committed. Preserve their established
+  // partial-add behavior if another local block consumed capacity meanwhile.
+  const acceptedItems = items.slice(0, remainingCapacity);
   const landedCount = acceptedItems.length > 0 ? appendQueueItems(acceptedItems) : 0;
   const landedItems = acceptedItems.slice(0, landedCount);
   const landedUuids = landedItems.map((item) => item.uuid);
