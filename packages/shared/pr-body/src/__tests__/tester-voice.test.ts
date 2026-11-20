@@ -11,10 +11,7 @@ import { describeDeveloperVoice, findDeveloperVoice } from '../tester-voice';
 // Shipped in the `## Test plan` of a merged PR, where a tester read it on a phone.
 const WRITTEN_FOR_THE_AUTHOR: Array<[label: string, step: string]> = [
   ['a test runner', 'Run `vitest run scripts/__tests__/ci-runner-*.test.ts` → all pass.'],
-  [
-    'a doc to read',
-    'Read docs/operations/production-deploy.md § "Where the images are built" → records the retirement.',
-  ],
+  ['a doc to read', 'Read docs/production-deploy.md § "Where the images are built" → records the retirement.'],
   ['a header check', 'Run `curl -sI` on it. `x-sitemap-climbs-source: store` is present.'],
   ['a secrets CLI', 'Optional: `op run --env-file=packages/kilter-sync/.env.1password -- node …` prints credentials.'],
   ['a CI log step name', 'After merge: `build-web` log has no "Setup vp" step.'],
@@ -59,9 +56,9 @@ describe('findDeveloperVoice', () => {
 
   it('separates a command from a repo path, so the message can say which', () => {
     expect(findDeveloperVoice('Run `vp check`')).toEqual({ kind: 'command', quote: 'vp' });
-    expect(findDeveloperVoice('Open docs/operations/db-migrations.md')).toEqual({
+    expect(findDeveloperVoice('Open docs/db-migrations.md')).toEqual({
       kind: 'path',
-      quote: 'docs/operations/db-migrations.md',
+      quote: 'docs/db-migrations.md',
     });
   });
 
