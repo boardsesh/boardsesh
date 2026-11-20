@@ -22,8 +22,9 @@ import {
   REDBEARLAB_SERVICE_UUID,
   REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
   splitMessages,
+  writeChunkSeries,
 } from './transport';
-import { MOONBOARD_DEVICE_NAME_PREFIXES } from '@boardsesh/board-constants/moonboard';
+import { MOONBOARD_DEVICE_NAME_PREFIXES } from '@boardsesh/moonboard-ble-protocol';
 
 // --- Minimal Web Bluetooth type surface -------------------------------------
 // Only the members these helpers touch — a structural subset of the W3C spec so
@@ -255,21 +256,23 @@ export async function writeCharacteristicSeries(
     (options?.forceWithResponse ?? false) ||
     ((options?.allowWithResponseFallback ?? false) && characteristic.properties?.writeWithoutResponse === false);
 
-  const writeChunks = async (chunks: Uint8Array[], writeWithResponse: boolean) => {
-    for (let messageIndex = 0; messageIndex < chunks.length; messageIndex++) {
-      if (signal?.aborted) throw new DOMException('Write aborted', 'AbortError');
-      if (messageIndex > 0) {
-        await delay(INTER_CHUNK_DELAY_MS);
-        if (signal?.aborted) throw new DOMException('Write aborted', 'AbortError');
-      }
-      const chunk = new Uint8Array(chunks[messageIndex]);
-      if (writeWithResponse) {
-        await characteristic.writeValueWithResponse(chunk);
-      } else {
-        await characteristic.writeValueWithoutResponse(chunk);
-      }
-    }
-  };
+  const writeChunks = (chunks: Uint8Array[], writeWithResponse: boolean) =>
+    writeChunkSeries(
+      chunks,
+      async (message) => {
+        const chunk = new Uint8Array(message);
+        if (writeWithResponse) {
+          await characteristic.writeValueWithResponse(chunk);
+        } else {
+          await characteristic.writeValueWithoutResponse(chunk);
+        }
+      },
+      {
+        signal,
+        delayMs: INTER_CHUNK_DELAY_MS,
+        abortError: () => new DOMException('Write aborted', 'AbortError'),
+      },
+    );
 
   try {
     await writeChunks(messages, useWithResponse);

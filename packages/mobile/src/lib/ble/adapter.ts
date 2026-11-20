@@ -14,6 +14,7 @@ import {
   blePlxErrorCodes,
   BleWriteDisconnectedError,
 } from '@boardsesh/ble-protocol';
+import { writeChunkSeries } from '@boardsesh/ble-protocol/transport';
 import { getBleManager } from './ble-manager';
 import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
@@ -49,8 +50,6 @@ const MIN_RETRY_CONNECT_WINDOW_MS = 2_000;
 // the fallback when negotiation fails.
 const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
-
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // The connect stage waits on the native clock as well as the JS one, so a
 // connect from the session notification's bulb (#7038) still gets its retry and
@@ -628,50 +627,47 @@ export class RNBleAdapter implements BluetoothAdapter {
       chunkCount: chunks.length,
     };
 
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      if (signal?.aborted) {
-        throw new DOMException('Write aborted', 'AbortError');
-      }
-
-      if (chunkIndex > 0 && canPaceChunksWithJsTimer()) {
-        await delay(INTER_CHUNK_DELAY_MS);
-        if (signal?.aborted) {
-          throw new DOMException('Write aborted', 'AbortError');
+    await writeChunkSeries(
+      chunks,
+      async (chunk) => {
+        // Re-check the characteristic before each chunk — a mid-write
+        // disconnect sets it to null via the onDeviceDisconnected handler.
+        const characteristic = this.writeCharacteristic;
+        if (!characteristic) {
+          throw new Error('Device disconnected during write');
         }
-      }
 
-      // Re-check the characteristic before each chunk — a mid-write
-      // disconnect sets it to null via the onDeviceDisconnected handler.
-      const characteristic = this.writeCharacteristic;
-      if (!characteristic) {
-        throw new Error('Device disconnected during write');
-      }
+        const base64Chunk = uint8ArrayToBase64(chunk);
 
-      const chunk = chunks[chunkIndex];
-      const base64Chunk = uint8ArrayToBase64(chunk);
-
-      try {
-        if (usesWithoutResponse) {
-          await characteristic.writeWithoutResponse(base64Chunk);
-        } else {
-          await characteristic.writeWithResponse(base64Chunk);
+        try {
+          if (usesWithoutResponse) {
+            await characteristic.writeWithoutResponse(base64Chunk);
+          } else {
+            await characteristic.writeWithResponse(base64Chunk);
+          }
+        } catch (error) {
+          // react-native-ble-plx surfaces a mid-write drop as a BleError whose
+          // message (e.g. CharacteristicWriteFailed — "Characteristic … write
+          // failed for device …") doesn't name the disconnect, so
+          // isDisconnectionError can't classify it from the message. Probe the
+          // live link: if the device is actually gone, normalise to the
+          // disconnect signature the write-failure path keys on so the lightbulb
+          // darkens; otherwise rethrow the original error untouched (a genuine
+          // transient write failure on a live link must not look like a drop).
+          const stillConnected = await this.connectedDevice?.isConnected().catch(() => false);
+          if (!stillConnected) {
+            throw new BleWriteDisconnectedError(error);
+          }
+          throw error;
         }
-      } catch (error) {
-        // react-native-ble-plx surfaces a mid-write drop as a BleError whose
-        // message (e.g. CharacteristicWriteFailed — "Characteristic … write
-        // failed for device …") doesn't name the disconnect, so
-        // isDisconnectionError can't classify it from the message. Probe the
-        // live link: if the device is actually gone, normalise to the
-        // disconnect signature the write-failure path keys on so the lightbulb
-        // darkens; otherwise rethrow the original error untouched (a genuine
-        // transient write failure on a live link must not look like a drop).
-        const stillConnected = await this.connectedDevice?.isConnected().catch(() => false);
-        if (!stillConnected) {
-          throw new BleWriteDisconnectedError(error);
-        }
-        throw error;
-      }
-    }
+      },
+      {
+        signal,
+        delayMs: INTER_CHUNK_DELAY_MS,
+        shouldDelay: canPaceChunksWithJsTimer,
+        abortError: () => new DOMException('Write aborted', 'AbortError'),
+      },
+    );
   }
 
   onDisconnect(callback: (info?: BleDisconnectInfo) => void): () => void {
