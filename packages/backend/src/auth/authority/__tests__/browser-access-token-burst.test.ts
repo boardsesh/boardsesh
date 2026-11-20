@@ -20,6 +20,8 @@ import {
 } from './web-session-http-harness';
 import { MAX_UNSETTLED_AUTH_ADMISSION_READS } from '../../admission-read-runner';
 import { validateToken } from '../../../middleware/auth';
+import * as browserAccessToken from '../browser-access-token';
+import { barrier, bounded } from './lock-order-harness';
 
 const statements = vi.hoisted(() => ({ count: 0, delayMs: 0 }));
 vi.mock('../../admission-pool', async () => {
@@ -112,10 +114,27 @@ describe('a burst of browser requests on one replica', () => {
   it('admits the same session asked nine times at once, as a resubscribe does, with one read', async () => {
     const { userId, token } = await browserToken();
     statements.count = 0;
-    statements.delayMs = 50;
-    const results = await Promise.all(Array.from({ length: 9 }, () => validateToken(token)));
-    expect(results.every((result) => result?.userId === userId)).toBe(true);
-    expect(statements.count).toBe(1);
+    const callers = 9;
+    const verifiedTogether = barrier();
+    const realVerify = browserAccessToken.verifyBrowserAccessToken;
+    let verifiedCallers = 0;
+    // Crypto can settle across different event-loop turns. Release the real verified tokens
+    // together so this case exercises callers arriving before the coalescer claims its batch.
+    const verifier = vi.spyOn(browserAccessToken, 'verifyBrowserAccessToken').mockImplementation(async (...args) => {
+      const verified = await realVerify(...args);
+      if (!verified) throw new Error('The fixture browser token failed verification');
+      if (++verifiedCallers === callers) verifiedTogether.resolve();
+      await verifiedTogether.promise;
+      return verified;
+    });
+    try {
+      const results = await bounded(Promise.all(Array.from({ length: callers }, () => validateToken(token))));
+      expect(results.map((result) => result?.userId)).toEqual(Array.from({ length: callers }, () => userId));
+      expect(statements.count).toBe(1);
+    } finally {
+      verifiedTogether.resolve();
+      verifier.mockRestore();
+    }
   });
 });
 
