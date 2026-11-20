@@ -318,6 +318,18 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
         </View>
       )}
 
+      {Platform.OS === 'web' && isAuthenticated ? (
+        <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+          <DrawerRow
+            icon="logout"
+            title={t('profile:mobile.signOut')}
+            tintColor={brandColors.error}
+            onPress={handleSignOut}
+            showSeparator={false}
+          />
+        </View>
+      ) : null}
+
       {/* Translation help follows the active language independently of donation availability. */}
       {supportAsksAllowed || terminologyFormUrl ? (
         <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
@@ -449,15 +461,17 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
         />
       </View>
 
-      <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-        <DrawerRow
-          icon="logout"
-          title={t('userDrawer.logout')}
-          tintColor={brandColors.error}
-          onPress={handleSignOut}
-          showSeparator={false}
-        />
-      </View>
+      {Platform.OS !== 'web' ? (
+        <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+          <DrawerRow
+            icon="logout"
+            title={t('userDrawer.logout')}
+            tintColor={brandColors.error}
+            onPress={handleSignOut}
+            showSeparator={false}
+          />
+        </View>
+      ) : null}
     </ScrollView>
   );
 

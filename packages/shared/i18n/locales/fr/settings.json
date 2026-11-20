@@ -554,7 +554,12 @@
       "stopDrivingHint": "Les prochains blocs que tu choisis s'ouvrent en aperçu"
     },
     "relayToWall": "Allumer ton bloc au mur",
-    "peerDrivingBoard": "Quelqu’un d’autre a la board"
+    "peerDrivingBoard": "Quelqu’un d’autre a la board",
+    "browserUnsupported": {
+      "title": "Bluetooth dans ton navigateur",
+      "message": "Ce navigateur ne peut pas encore se connecter à ta board. Dans Firefox sur ordinateur, installe WebBT et WebBT Server, puis recharge Boardsesh. La prise en charge de Linux est expérimentale. Tu peux continuer à parcourir les blocs et leurs cotations.",
+      "setup": "Configurer WebBT"
+    }
   },
   "integrations": {
     "title": "Applications connectées",

@@ -409,7 +409,14 @@
       "editBoard": "Modifica pannello",
       "updating": "Aggiornamento dei risultati…",
       "refreshFailed": "Impossibile aggiornare i risultati.",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "searchSubmit": "Cerca palestre",
+      "placesLabel": "Città",
+      "placesLoading": "Ricerca delle città…",
+      "placesError": "Impossibile cercare le città. Puoi comunque cercare le palestre per nome.",
+      "placesEmpty": "Nessuna città trovata. Premi Invio per cercare le palestre per nome.",
+      "placesHint": "Scegli una città o premi Invio per cercare le palestre per nome.",
+      "placesAttribution": "Dati delle città: GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "Le mie palestre",

@@ -409,7 +409,14 @@
       "editBoard": "Board bearbeiten",
       "updating": "Ergebnisse werden aktualisiert…",
       "refreshFailed": "Die Ergebnisse konnten nicht aktualisiert werden.",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "searchSubmit": "Hallen suchen",
+      "placesLabel": "Städte",
+      "placesLoading": "Städte werden gesucht…",
+      "placesError": "Die Städtesuche klappt gerade nicht. Du kannst weiterhin nach Hallennamen suchen.",
+      "placesEmpty": "Keine passende Stadt. Drück die Eingabetaste, um nach Hallennamen zu suchen.",
+      "placesHint": "Wähl eine Stadt oder drück die Eingabetaste, um nach Hallennamen zu suchen.",
+      "placesAttribution": "Städtedaten: GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "Meine Hallen",

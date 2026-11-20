@@ -22,7 +22,7 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
-import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
 import type { Coords } from '../../../src/lib/use-device-location';
 import type { WallFinderFilterChipsProps } from '../../../src/components/gym-directory/WallFinderFilterChips';
 import type { useNearbyBoards, useNearbyGyms } from '../../../src/lib/graphql/hooks';
@@ -47,6 +47,7 @@ const refetchGyms = vi.hoisted(() => vi.fn());
 const refetchBoards = vi.hoisted(() => vi.fn());
 const queryMocks = vi.hoisted(() => ({ gyms: vi.fn(), boards: vi.fn() }));
 const geocodeMock = vi.hoisted(() => vi.fn<(text: string) => Promise<Coords | null>>());
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   activateOptions: null as ActivateOptions | null,
@@ -63,6 +64,9 @@ const captured = vi.hoisted(() => ({
   gymsQuery: null as DiscoveryQuery | null,
   boardsQuery: null as DiscoveryQuery | null,
   standaloneBoards: [] as UserBoard[],
+  gyms: [] as Gym[],
+  locationPrompt: undefined as ReactNode,
+  onSelectPlace: null as ((place: PlaceSuggestion) => void) | null,
   rowArgs: null as {
     expandedGymUuid: string | null;
     expandedGymRoster?: UserBoard[];
@@ -77,7 +81,7 @@ const captured = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: platform,
   View: ({ children, style }: Children & { style?: unknown }) =>
     createElement('div', { 'data-native-style': JSON.stringify(style) }, children),
   Pressable: ({
@@ -203,13 +207,33 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
     filterSlot?: ReactNode;
     placeCaption?: ReactNode;
     searchSlot?: ReactNode;
+    locationPrompt?: ReactNode;
   }) => {
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
-    return createElement('div', null, props.searchSlot, props.filterSlot, props.placeCaption);
+    captured.locationPrompt = props.locationPrompt;
+    return createElement(
+      'div',
+      null,
+      props.searchSlot,
+      props.filterSlot,
+      props.placeCaption,
+      props.locationPrompt ?? captured.gyms.map((gym) => createElement('span', { key: gym.uuid }, gym.name)),
+    );
   },
 }));
+vi.mock('../../../src/components/gym-directory/GymSearchField', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/components/gym-directory/GymSearchField')>();
+  return {
+    GymSearchField: (
+      props: import('../../../src/components/gym-directory/GymSearchField.types').GymSearchFieldProps,
+    ) => {
+      captured.onSelectPlace = props.onSelectPlace;
+      return createElement(original.GymSearchField, props);
+    },
+  };
+});
 vi.mock('../../../src/components/gym-directory/GymLocationPrompt', () => ({ GymLocationPrompt: () => null }));
 vi.mock('../../../src/components/gym-directory/ClaimGymSheet', () => ({ ClaimGymSheet: () => null }));
 vi.mock('../../../src/components/gym-directory/WallFinderFilterChips', () => ({
@@ -221,12 +245,14 @@ vi.mock('../../../src/components/gym-directory/WallFinderFilterChips', () => ({
 vi.mock('../../../src/components/gym-directory/gym-list-rows', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/components/gym-directory/gym-list-rows')>()),
   buildGymListRows: (props: {
+    gyms: Gym[];
     standaloneBoards: UserBoard[];
     expandedGymUuid: string | null;
     expandedGymRoster?: UserBoard[];
     expandedGymRosterPending?: boolean;
   }) => {
     captured.standaloneBoards = props.standaloneBoards;
+    captured.gyms = props.gyms;
     captured.rowArgs = props;
     return [];
   },
@@ -244,6 +270,7 @@ const GYM_WALL = { uuid: 'wall-1', name: 'Crux Kilter', gymUuid: 'gym-1' } as un
 
 beforeEach(() => {
   vi.clearAllMocks();
+  platform.OS = 'ios';
   captured.params = {};
   captured.activateOptions = null;
   captured.analyticsOptions = null;
@@ -257,6 +284,9 @@ beforeEach(() => {
   captured.chips = null;
   captured.coords = undefined;
   captured.standaloneBoards = [];
+  captured.gyms = [];
+  captured.locationPrompt = undefined;
+  captured.onSelectPlace = null;
   captured.rowArgs = null;
   captured.rosterQuery = { data: undefined, isPending: false, isError: false };
   captured.rosterGymUuids = [];
@@ -396,6 +426,115 @@ describe('discovery search integration', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     captured.coords = madrid;
+  });
+
+  it('keeps native initial map layout while a cold location request resolves', () => {
+    captured.coords = undefined;
+    const screen = render(createElement(GymDiscovery));
+    expect(captured.mapAvailable).toBe(true);
+    captured.coords = madrid;
+    screen.rerender(createElement(GymDiscovery));
+    expect(captured.mapAvailable).toBe(true);
+  });
+
+  it('shows a coordinate-free gym name result instead of the location prompt', () => {
+    platform.OS = 'web';
+    captured.coords = undefined;
+    captured.gymsQuery = {
+      ...idleQuery(),
+      isSuccess: true,
+      data: {
+        gyms: [
+          { uuid: 'atlanta', name: 'Central Rock Gym Atlanta Bouldering', latitude: null, longitude: null } as Gym,
+        ],
+        boards: [],
+      },
+    };
+    const screen = render(createElement(GymDiscovery));
+    expect(captured.locationPrompt).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'atlanta bouldering' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(geocodeMock).not.toHaveBeenCalled();
+    expect(captured.locationPrompt).toBeUndefined();
+    expect(captured.mapAvailable).toBe(false);
+    expect(screen.getByText('Central Rock Gym Atlanta Bouldering')).toBeTruthy();
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toBeNull();
+    expect(queryMocks.gyms.mock.lastCall?.[2]).toBe('atlanta bouldering');
+  });
+
+  it('uses selected city coordinates without a name filter and preserves board chips', () => {
+    platform.OS = 'web';
+    captured.coords = undefined;
+    captured.params = { source: 'onboarding', boardType: 'kilter' };
+    const screen = render(createElement(GymDiscovery));
+    const place: PlaceSuggestion = {
+      id: 4180439,
+      name: 'Atlanta',
+      region: 'Georgia',
+      country: 'United States',
+      countryCode: 'US',
+      latitude: 33.749,
+      longitude: -84.388,
+    };
+    act(() => captured.onSelectPlace?.(place));
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual({ latitude: 33.749, longitude: -84.388 });
+    expect(queryMocks.gyms.mock.lastCall?.[2]).toBeUndefined();
+    expect(captured.chips?.selected).toEqual(['kilter']);
+    expect(captured.locationPrompt).toBeUndefined();
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(queryMocks.gyms.mock.lastCall?.[2]).toBeUndefined();
+  });
+
+  it('drops retained standalone boards when a city is replaced with a global name search', () => {
+    platform.OS = 'web';
+    captured.coords = undefined;
+    captured.boardsQuery = {
+      ...idleQuery(),
+      isSuccess: true,
+      data: {
+        gyms: [],
+        boards: [
+          { uuid: 'old-board', name: 'Old city board', gymUuid: null, latitude: 33.7, longitude: -84.3 } as UserBoard,
+        ],
+      },
+    };
+    const screen = render(createElement(GymDiscovery));
+    act(() =>
+      captured.onSelectPlace?.({
+        id: 4180439,
+        name: 'Atlanta',
+        region: 'Georgia',
+        country: 'United States',
+        countryCode: 'US',
+        latitude: 33.749,
+        longitude: -84.388,
+      }),
+    );
+    expect(captured.standaloneBoards).toHaveLength(1);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'atlanta bouldering' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    act(() => vi.advanceTimersByTime(500));
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toBeNull();
+    expect(captured.standaloneBoards).toEqual([]);
+  });
+
+  it('keeps chip changes made while native geocoding is pending', async () => {
+    let finishGeocode!: (coords: Coords) => void;
+    geocodeMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishGeocode = resolve;
+      }),
+    );
+    const screen = render(createElement(GymDiscovery));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Paris' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    act(() => captured.chips?.onToggle('kilter'));
+    await act(async () => {
+      finishGeocode({ latitude: 48.86, longitude: 2.35 });
+    });
+    act(() => vi.advanceTimersByTime(500));
+    expect(captured.chips?.selected).toEqual(['kilter']);
+    expect(queryMocks.gyms.mock.lastCall?.[3]).toEqual(['kilter']);
   });
 
   it('discards a geocode response after clearing the search', async () => {

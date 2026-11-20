@@ -44,6 +44,7 @@ import {
 import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
 import { alertBluetoothPermissionDenied, alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
+import { useBrowserBluetoothGuidance } from './use-browser-bluetooth-guidance';
 import { manufacturerCompanyId } from './advertisement';
 import { classifyBleDisconnect } from './disconnect-category';
 import type {
@@ -709,6 +710,7 @@ export function useBoardBluetooth({
   // Connect-failure copy lives in the shared `common.bluetooth.*` keys so web
   // and mobile describe the same failure the same way.
   const { t: tCommon } = useTranslation('common');
+  const showBrowserBluetoothGuidance = useBrowserBluetoothGuidance();
   const [loading, setLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -1941,7 +1943,8 @@ export function useBoardBluetooth({
         if (permissionStatus === 'unsupported') {
           // Expo web in a browser with no Web Bluetooth. Not a denial: there is
           // nothing to allow, so no permission copy and no Permission Denied event.
-          await alertBluetoothUnavailable({ reason: 'unsupported', boardName, t, tCommon });
+          if (showBrowserBluetoothGuidance) await showBrowserBluetoothGuidance(boardName);
+          else await alertBluetoothUnavailable({ reason: 'unsupported', boardName, t, tCommon });
           return false;
         }
         if (permissionStatus !== 'granted') {
@@ -2490,6 +2493,7 @@ export function useBoardBluetooth({
       encodingSignature,
       writeActivityStore,
       devicePicker,
+      showBrowserBluetoothGuidance,
       t,
       tCommon,
     ],

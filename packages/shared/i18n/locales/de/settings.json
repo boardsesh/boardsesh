@@ -554,7 +554,12 @@
       "stopDrivingHint": "Die nächsten Boulder, die du wählst, öffnen sich als Vorschau"
     },
     "relayToWall": "Deinen Boulder am Board beleuchten",
-    "peerDrivingBoard": "Jemand anderes hat das Board"
+    "peerDrivingBoard": "Jemand anderes hat das Board",
+    "browserUnsupported": {
+      "title": "Bluetooth in deinem Browser",
+      "message": "Dieser Browser kann sich noch nicht mit deinem Board verbinden. Installiere in Firefox auf deinem Computer WebBT und WebBT Server und lade Boardsesh dann neu. Die Linux-Unterstützung ist experimentell. Du kannst weiterhin Boulder und ihre Grade ansehen.",
+      "setup": "WebBT einrichten"
+    }
   },
   "integrations": {
     "title": "Verbundene Apps",

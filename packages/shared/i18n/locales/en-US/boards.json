@@ -409,7 +409,14 @@
       "editBoard": "Edit board",
       "updating": "Updating results…",
       "refreshFailed": "Couldn’t update results.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "searchSubmit": "Search gyms",
+      "placesLabel": "Cities",
+      "placesLoading": "Looking up cities…",
+      "placesError": "Couldn't look up cities. You can still search gym names.",
+      "placesEmpty": "No city matches. Press Enter to search gym names.",
+      "placesHint": "Choose a city, or press Enter to search gym names.",
+      "placesAttribution": "City data: GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "My gyms",

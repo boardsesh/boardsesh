@@ -409,7 +409,14 @@
       "editBoard": "Modifier la board",
       "updating": "Actualisation des résultats…",
       "refreshFailed": "Impossible d’actualiser les résultats.",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "searchSubmit": "Chercher des salles",
+      "placesLabel": "Villes",
+      "placesLoading": "Recherche de villes…",
+      "placesError": "Impossible de rechercher les villes. Tu peux toujours chercher une salle par son nom.",
+      "placesEmpty": "Aucune ville trouvée. Appuie sur Entrée pour chercher une salle par son nom.",
+      "placesHint": "Choisis une ville ou appuie sur Entrée pour chercher une salle par son nom.",
+      "placesAttribution": "Données des villes : GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "Mes salles",

@@ -11,14 +11,11 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { SEARCH_PLACES, type SearchPlacesQueryResponse } from '@boardsesh/graphql/operations';
 import type { PlaceSuggestion } from '@boardsesh/shared-schema';
+import { isPlaceSearchQuery, PLACE_SEARCH_DEBOUNCE_MS, placeSuggestionLabel } from '@boardsesh/gym-filters';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import type { Locale } from '@/app/lib/i18n/config';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { buildDirectoryHref, FACET_BASE_PATHS, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
-
-function placeLabel(place: PlaceSuggestion): string {
-  return [...new Set([place.name, place.region, place.country].filter(Boolean))].join(', ');
-}
 
 export default function GymPlaceSearch({
   facet,
@@ -62,7 +59,7 @@ export default function GymPlaceSearch({
 
   useEffect(() => {
     const trimmed = input.trim();
-    if (!edited || trimmed.length < 3 || trimmed.length > 80) return;
+    if (!edited || !isPlaceSearchQuery(trimmed)) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
@@ -78,7 +75,7 @@ export default function GymPlaceSearch({
       } catch {
         if (!controller.signal.aborted) setStatus('error');
       }
-    }, 300);
+    }, PLACE_SEARCH_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -93,7 +90,7 @@ export default function GymPlaceSearch({
           {
             ...query,
             query: '',
-            place: placeLabel(place),
+            place: placeSuggestionLabel(place),
             latitude: place.latitude,
             longitude: place.longitude,
             radiusKm: 50,
@@ -120,7 +117,7 @@ export default function GymPlaceSearch({
           freeSolo
           options={suggestions}
           filterOptions={(options) => options}
-          getOptionLabel={(option) => (typeof option === 'string' ? option : placeLabel(option))}
+          getOptionLabel={(option) => (typeof option === 'string' ? option : placeSuggestionLabel(option))}
           getOptionKey={(option) => (typeof option === 'string' ? option : option.id)}
           inputValue={input}
           value={selectedPlace ? input : null}
@@ -134,7 +131,7 @@ export default function GymPlaceSearch({
             setEdited(true);
             setInput(next);
             setSuggestions([]);
-            setStatus(next.trim().length >= 3 && next.trim().length <= 80 ? 'loading' : 'idle');
+            setStatus(isPlaceSearchQuery(next) ? 'loading' : 'idle');
           }}
           onChange={(_event, next) => {
             if (next && typeof next !== 'string') selectPlace(next);

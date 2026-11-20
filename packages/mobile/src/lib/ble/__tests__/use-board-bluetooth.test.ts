@@ -118,7 +118,11 @@ vi.mock('../adapter', () => ({
 
 // Lets a test stand in the web fork's answer (use-ble-permissions.web.ts), which
 // the native module this file resolves to never gives. Null = the real module.
-const permissionStatusOverride = vi.hoisted(() => ({ status: null as 'unsupported' | null }));
+const permissionStatusOverride = vi.hoisted(() => ({ status: null as 'unsupported' | 'granted' | null }));
+const browserGuidance = vi.hoisted(() => ({ show: null as ((boardName: string) => Promise<void>) | null }));
+vi.mock('../use-browser-bluetooth-guidance', () => ({
+  useBrowserBluetoothGuidance: () => browserGuidance.show,
+}));
 vi.mock('../use-ble-permissions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../use-ble-permissions')>();
   return {
@@ -5650,6 +5654,7 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
 describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
   beforeEach(() => {
     permissionStatusOverride.status = null;
+    browserGuidance.show = null;
     vi.clearAllMocks();
     resetReactNativePermissionHarness();
     mockBleManager.state.mockResolvedValue('PoweredOn');
@@ -6018,6 +6023,41 @@ describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
     );
     // Nothing was refused, so it isn't counted as a denial.
     expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Permission Denied');
+  });
+
+  it('shows browser setup guidance without opening a board picker when Web Bluetooth is absent', async () => {
+    permissionStatusOverride.status = 'unsupported';
+    const showGuidance = vi.fn().mockResolvedValue(undefined);
+    browserGuidance.show = showGuidance;
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected = true;
+    await act(async () => {
+      connected = await result.current.connect();
+    });
+
+    expect(connected).toBe(false);
+    expect(showGuidance).toHaveBeenCalledWith('kilter');
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+  });
+
+  it('connects normally when Web Bluetooth is available instead of showing setup guidance', async () => {
+    permissionStatusOverride.status = 'granted';
+    const showGuidance = vi.fn().mockResolvedValue(undefined);
+    browserGuidance.show = showGuidance;
+    const adapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected = false;
+    await act(async () => {
+      connected = await result.current.connect();
+    });
+
+    expect(connected).toBe(true);
+    expect(adapter.requestAndConnect).toHaveBeenCalledOnce();
+    expect(showGuidance).not.toHaveBeenCalled();
   });
 
   it('asks for Android 13 notifications after the board connects, not in front of the scan', async () => {

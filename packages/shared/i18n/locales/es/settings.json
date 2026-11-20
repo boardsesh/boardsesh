@@ -554,7 +554,12 @@
       "stopDrivingHint": "Los siguientes bloques que elijas se abren en vista previa"
     },
     "relayToWall": "Poner tu bloque en el plafón",
-    "peerDrivingBoard": "Otra persona tiene el plafón"
+    "peerDrivingBoard": "Otra persona tiene el plafón",
+    "browserUnsupported": {
+      "title": "Bluetooth en tu navegador",
+      "message": "Este navegador todavía no puede conectarse a tu plafón. En Firefox de escritorio, instala WebBT y WebBT Server y vuelve a cargar Boardsesh. La compatibilidad con Linux es experimental. Puedes seguir explorando bloques y grados.",
+      "setup": "Configurar WebBT"
+    }
   },
   "integrations": {
     "title": "Aplicaciones conectadas",

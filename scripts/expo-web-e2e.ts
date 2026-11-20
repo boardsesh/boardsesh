@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Orchestrated Expo-web smoke runner: boots the full expo-web dev stack
 // (backend + Next proxy + Metro web) via the dev orchestrator, waits for the
-// /app surface to serve, runs the `expo-web-smoke` Playwright project against
+// /app surface to serve, runs the mobile smoke and desktop Chromium/Firefox projects against
 // the printed Next origin, then tears the stack down. Exit code mirrors
 // Playwright's. Invoked by `vp run test:e2e:expo-web` (which provides db:up +
 // the web-runtime install as task dependencies).
@@ -111,7 +111,15 @@ async function main(): Promise<number> {
     const nextOrigin = new URL(appUrl).origin;
     const playwright = spawn(
       'vp',
-      ['exec', 'playwright', 'test', '--project=expo-web-smoke', '--config=playwright.config.ts'],
+      [
+        'exec',
+        'playwright',
+        'test',
+        '--project=expo-web-smoke',
+        '--project=expo-web-chromium',
+        '--project=expo-web-firefox',
+        '--config=playwright.config.ts',
+      ],
       {
         cwd: path.join(repoRoot, 'packages/web'),
         stdio: 'inherit',

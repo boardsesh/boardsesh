@@ -79,6 +79,26 @@ routes, keyboard selection, and a simulated lookup failure.
 
 ## Mobile map discovery
 
+The Expo browser app uses the same `searchPlaces` query as the public website,
+without requesting device location or calling Expo's native geocoder. After
+300 ms, 3–80 trimmed characters produce up to five city suggestions. Choose a
+city to search within 50 km; its label never becomes a gym-name filter. Arrow
+keys highlight suggestions, Enter selects the highlighted city or submits a
+gym-name search, and Escape closes the suggestions. Both surfaces share query
+bounds, labels and debounce timing through `@boardsesh/gym-filters`.
+
+A submitted gym-name search works without coordinates. It replaces the location
+prompt with the actual loading, result, empty or error state. Gyms without
+coordinates still appear in the list, but have no map pin. When no map is
+available, the list gets the panel's full-height layout. Editing a selected city
+clears its geographic selection; clearing search restores the device location
+when available. Board filters survive city selection and name searches. Native
+apps retain their submit-to-geocode flow.
+
+City-lookup failures leave gym-name search usable and show a translated message.
+Superseded lookups are aborted, and late answers cannot restore a cleared city.
+City names and coordinates are not added to analytics.
+
 The mobile Gyms map sends the first usable search immediately. Later changes to
 the map position, submitted search, filters, or reset share one trailing 500 ms
 debounce. Gym and board searches use the same final inputs. Small movements and
