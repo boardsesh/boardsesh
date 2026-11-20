@@ -36,9 +36,10 @@ export default async function SupportedBoardsPage() {
             <Box component="li" key={layout.layoutId} className={styles.layout}>
               <Box component="figure" className={styles.figure}>
                 <Box className={styles.stage}>
-                  <Box
-                    component="img"
+                  <img
                     src={resolveStaticAssetUrl(layout.src)}
+                    width={layout.width}
+                    height={layout.height}
                     alt={t('boardLayoutAlt', { board: boardTypeLabel(board), layout: layout.layoutName })}
                     loading={board === 'kilter' && index === 0 ? 'eager' : 'lazy'}
                     fetchPriority={board === 'kilter' && index === 0 ? 'high' : undefined}
@@ -66,9 +67,10 @@ export default async function SupportedBoardsPage() {
               {board === 'spray' ? (
                 <Box component="figure" className={styles.figure}>
                   <Box className={styles.stage}>
-                    <Box
-                      component="img"
+                    <img
                       src={resolveStaticAssetUrl('/images/help/spray-wall-photo.webp')}
+                      width={1752}
+                      height={2047}
                       alt={t('sprayGalleryAlt')}
                       loading="lazy"
                       className={styles.image}
