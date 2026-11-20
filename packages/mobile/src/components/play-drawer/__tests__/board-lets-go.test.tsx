@@ -113,6 +113,7 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
   readLiveActivityLightingWindow: () => null,
+  readLiveActivityLockScreenPress: () => null,
   addWidgetQueueNavigateListener: () => () => undefined,
   addLockScreenDriveStopListener: () => () => undefined,
   isAndroidSessionPresence: false,
@@ -127,10 +128,12 @@ import { noteLinkEnded, resetLinkEndForTests } from '../../../lib/ble/link-end-s
 import { resetLockScreenLightingForTests } from '../lock-screen-lighting';
 import {
   LETS_GO_NOTICE_MS,
+  LETS_GO_BUTTON_MS,
   LETS_GO_STALE_MS,
   LETS_GO_TAKER_WAIT_MS,
   clearLetsGo,
   getLetsGo,
+  getBoardTakenButtonNotice,
 } from '../board-lets-go-store';
 import {
   enterDriveMode,
@@ -242,6 +245,7 @@ describe('the board lets go mid-drive', () => {
     expect(effects.announceQueued).toHaveBeenCalledTimes(1);
     expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.boardDropped');
     expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
     expect(driveEndedCalls()).toHaveLength(1);
     expect(driveEndedCalls()[0]?.[1]).toMatchObject({ reason: 'link_dropped', takenBy: null });
     // Never again for this end, whatever presence or time brings.
@@ -265,6 +269,7 @@ describe('the board lets go mid-drive', () => {
     expect(effects.announceQueued).toHaveBeenCalledTimes(1);
     expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.boardTakenBy {"name":"Sam"}');
     expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+    expect(getBoardTakenButtonNotice(7)).toBe(true);
     expect(driveEndedCalls()).toHaveLength(1);
     expect(driveEndedCalls()[0]?.[1]).toMatchObject({ reason: 'link_dropped', takenBy: 'named' });
     // The wait's own timer says nothing more.
@@ -495,10 +500,10 @@ describe('the board lets go mid-drive', () => {
       expect(getLetsGo()).toBeNull();
     });
 
-    it('when nobody was driving', () => {
+    it('when nobody was driving and no new holder confirms a takeover', () => {
       const watcher = mount();
       linkEnds(watcher, { deliberate: false });
-      watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+      watcher.change({ holder: null, lastConnectionSeq: 5 });
       advance(LETS_GO_TAKER_WAIT_MS * 2);
       expect(effects.hapticWarning).not.toHaveBeenCalled();
       expect(effects.announceQueued).not.toHaveBeenCalled();
@@ -594,6 +599,41 @@ describe('the board lets go mid-drive', () => {
   });
 
   describe('the caption', () => {
+    it.each([
+      ['a retry starts', { loading: true }],
+      ['the link returns', { isConnected: true }],
+      ['the board changes', { boardId: 9 }],
+      ['the session changes', { sessionId: 'session-2' }],
+      ['the account changes', { viewerUserId: 'user-other' }],
+      ['the viewer signs out', { isAuthenticated: false }],
+    ] as const)('clears both takeover displays when %s', (_label, next) => {
+      const watcher = mount();
+      driveLive();
+      watcher.change({});
+      linkEnds(watcher, { deliberate: false });
+      watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+      expect(getBoardTakenButtonNotice(7)).toBe(true);
+      watcher.change(next);
+      expect(getBoardTakenButtonNotice(7)).toBe(false);
+      expect(getLetsGo()).toBeNull();
+      advance(LETS_GO_BUTTON_MS);
+      expect(getLetsGo()).toBeNull();
+    });
+
+    it('clears a displayed takeover on unmount', () => {
+      const watcher = mount();
+      driveLive();
+      watcher.change({});
+      linkEnds(watcher, { deliberate: false });
+      watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+      expect(getBoardTakenButtonNotice(7)).toBe(true);
+      watcher.unmount();
+      expect(getBoardTakenButtonNotice(7)).toBe(false);
+      expect(getLetsGo()).toBeNull();
+      advance(LETS_GO_NOTICE_MS);
+      expect(getLetsGo()).toBeNull();
+    });
+
     it('stays up for its time', () => {
       const watcher = mount();
       driveLive();
@@ -626,6 +666,102 @@ describe('the board lets go mid-drive', () => {
       watcher.change({ boardId: 9 });
       expect(getLetsGo()).toBeNull();
     });
+  });
+});
+
+describe('a confirmed takeover after an idle connection drops', () => {
+  it.each([
+    ['session change', { sessionId: 'session-2' }],
+    ['account change', { viewerUserId: 'user-other' }],
+    ['sign-out', { isAuthenticated: false }],
+  ] as const)('cancels attribution across a %s while waiting for presence', (_label, change) => {
+    const watcher = mount();
+    linkEnds(watcher, { deliberate: false });
+    advance(1_000);
+    watcher.change({ ...change, holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
+    expect(getLetsGo()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
+    expect(driveEndedCalls()).toHaveLength(0);
+  });
+
+  it('shows the button notice without inventing a drive-ended event', () => {
+    const watcher = mount();
+    linkEnds(watcher, { deliberate: false });
+    advance(1_000);
+    watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+    expect(getBoardTakenButtonNotice(7)).toBe(true);
+    expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+    expect(driveEndedCalls()).toHaveLength(0);
+    expect(effects.announceQueued).toHaveBeenCalledTimes(1);
+    advance(LETS_GO_BUTTON_MS);
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
+    expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+  });
+
+  it('still identifies the new holder after the 45-second drive window expires', () => {
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    advance(45_000);
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(reads.current.isConnected).toBe(true);
+    const endedBeforeDrop = driveEndedCalls().length;
+    linkEnds(watcher, { deliberate: false });
+    watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+    expect(getBoardTakenButtonNotice(7)).toBe(true);
+    expect(driveEndedCalls()).toHaveLength(endedBeforeDrop);
+  });
+
+  it.each([
+    ['stale holder', { userId: 'user-sam', displayName: 'Sam' }, 4, 4],
+    ['self holder', { userId: 'user-me', displayName: 'Me' }, 5, 5],
+    ['same-holder repair', { userId: 'user-sam', displayName: 'Sam' }, 8, 4],
+  ] as const)('keeps an idle %s silent', (_label, holder, lastConnectionSeq, lastHolderChangeSeq) => {
+    const watcher = mount();
+    linkEnds(watcher, { deliberate: false });
+    watcher.change({ holder, lastConnectionSeq, lastHolderChangeSeq });
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
+    expect(getLetsGo()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
+    expect(driveEndedCalls()).toHaveLength(0);
+  });
+
+  it('captures a fresh link boundary so a holder from the previous connection cannot take the new one', () => {
+    const watcher = mount();
+    linkEnds(watcher, { deliberate: true });
+    watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+    watcher.change({ isConnected: true });
+    linkEnds(watcher, { deliberate: false });
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
+    expect(getLetsGo()).toBeNull();
+  });
+
+  it.each([
+    ['deliberate hang-up', true, {}],
+    ['board change', false, { boardId: 9 }],
+    ['sign-out', false, { isAuthenticated: false }],
+    ['account change', false, { viewerUserId: 'user-other' }],
+  ] as const)('does not announce an idle %s', (_label, deliberate, change) => {
+    const watcher = mount();
+    linkEnds(watcher, { deliberate }, { isConnected: false, ...change });
+    watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 });
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getBoardTakenButtonNotice(7)).toBe(false);
+    expect(getLetsGo()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
   });
 });
 

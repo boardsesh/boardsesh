@@ -46,7 +46,7 @@ import { describeBlePermissionDenial } from './android-location-permission';
 import { alertBluetoothPermissionDenied, alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { useBrowserBluetoothGuidance } from './use-browser-bluetooth-guidance';
 import { manufacturerCompanyId } from './advertisement';
-import { classifyBleDisconnect } from './disconnect-category';
+import { classifyBleDisconnect, isAndroidGattFailure } from './disconnect-category';
 import type {
   BleAdapterOptions,
   BleDisconnectInfo,
@@ -1825,7 +1825,11 @@ export function useBoardBluetooth({
               androidErrorCode: nativeErrorCodes.androidErrorCode,
               iosErrorCode: nativeErrorCodes.iosErrorCode,
             };
-            if (lostLink && classifyBleDisconnect(disconnectInfo) !== 'authentication_failed') {
+            if (
+              lostLink &&
+              classifyBleDisconnect(disconnectInfo) !== 'authentication_failed' &&
+              !isAndroidGattFailure(disconnectInfo)
+            ) {
               track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
             }
             if (sendAdapter && sendGeneration !== null) {

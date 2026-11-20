@@ -263,6 +263,10 @@ export default defineConfig({
         command: 'tsx scripts/board-qa.ts',
         cache: false,
       },
+      'qa:boards:auth-drop': {
+        command: 'tsx scripts/board-qa-auth-drop.ts',
+        cache: false,
+      },
       'qa:boards:ios-driver': {
         command: 'tsx scripts/board-qa-ios-driver.ts',
         cache: false,

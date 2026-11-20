@@ -993,6 +993,7 @@
       "crewPutUp": "Tu grupo ha encendido {{climb}}",
       "boardTakenBy": "{{name}} ha tomado el plafón",
       "boardTakenOtherPhone": "Otro móvil tiene el plafón",
+      "someoneElseConnected": "Otra persona se ha conectado",
       "boardDropped": "Plafón desconectado · Poner en el plafón lo reconecta",
       "holderHasBoard": "{{name}} tiene el plafón",
       "crewHasBoard": "Tu grupo tiene el plafón",

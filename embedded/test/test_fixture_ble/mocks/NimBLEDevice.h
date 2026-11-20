@@ -8,6 +8,8 @@
 #define BLE_ADDR_RANDOM 1
 #define BLE_HS_ADV_F_DISC_GEN 2
 #define BLE_HS_ADV_F_BREDR_UNSUP 4
+#define BLE_ERR_AUTH_FAIL 5
+#define BLE_HS_ENOTCONN 7
 namespace NIMBLE_PROPERTY {
 constexpr unsigned WRITE = 8, WRITE_NR = 4, NOTIFY = 16;
 }
@@ -24,6 +26,12 @@ inline bool deferDisconnects = false;
 inline std::array<bool, 3> active{}, configured{};
 inline std::array<ble_addr_t, 3> addresses{};
 inline std::map<uint16_t, ble_gap_conn_desc> peers;
+struct TerminateCommand {
+    uint16_t handle;
+    uint8_t reason;
+};
+inline std::vector<TerminateCommand> terminateCommands;
+inline int terminateReturnCode = 0;
 }  // namespace fixture_ble_host
 inline int ble_hs_synced() {
     return fixture_ble_host::synced;
@@ -37,6 +45,12 @@ inline int ble_gap_conn_find(uint16_t handle, ble_gap_conn_desc* desc) {
         return 1;
     *desc = found->second;
     return 0;
+}
+inline int ble_gap_terminate(uint16_t handle, uint8_t reason) {
+    fixture_ble_host::terminateCommands.push_back({handle, reason});
+    if (fixture_ble_host::terminateReturnCode)
+        return fixture_ble_host::terminateReturnCode;
+    return fixture_ble_host::peers.count(handle) ? 0 : BLE_HS_ENOTCONN;
 }
 class NimBLEAddress {
   public:

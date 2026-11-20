@@ -22,8 +22,9 @@
 // the button opens the board sheet (Re-light, Turn off all lights, Disconnect)
 // while this phone holds the link. Only Disconnect board disconnects on a tap.
 //
-// It draws a `WallControlModel` (`resolveWallControl`) and nothing else: no
-// presence or profile reads of its own, so the face can't outlive the link.
+// It draws a `WallControlModel` (`resolveWallControl`), plus the shared brief
+// confirmed-takeover notice. No presence or profile reads of its own, so the
+// face can't outlive the link.
 // The tap and the hold go to `useWallControl`, which does the haptics and the
 // events. `compact` is the narrower button in a workout's top row, between
 // ⏮ and ⏭ (#7000).
@@ -80,6 +81,7 @@ import { useWallSwipe } from './use-wall-swipe';
 import { peekProgress } from './wall-swipe';
 import type { DriveStartOutcome } from './use-wall-control';
 import { useWindowSecondsLeft, WallWindowDigits, WallWindowFrost } from './WallWindowClock';
+import { useBoardTakenButtonNotice } from './board-lets-go-store';
 
 const ICON_SIZE = 20;
 /** The holder's face. 24pt reads as a face inside a 44pt control. */
@@ -161,6 +163,8 @@ export function wallControlEdgeInset(spansRow: boolean): number {
 
 type WallControlButtonProps = {
   model: WallControlModel;
+  /** The rendered control's physical board; unknown targets never borrow another board's notice. */
+  targetBoardId?: number | null;
   /** The workout's top-row button, between ⏮ and ⏭: tighter padding, a little more shrink. */
   compact?: boolean;
   /**
@@ -202,6 +206,7 @@ type WallControlButtonProps = {
 
 function WallControlButtonComponent({
   model,
+  targetBoardId = null,
   compact = false,
   spansRow = false,
   onPress,
@@ -289,11 +294,23 @@ function WallControlButtonComponent({
     [followsSwap, swapFrames, swapCenterPage, previousGlow, nextGlow, swapLook],
   );
   const text = useWallControlText(model);
+  const { t } = useTranslation('session');
+  const boardTakenNotice = useBoardTakenButtonNotice(targetBoardId);
+  const takenLabel =
+    boardTakenNotice &&
+    !sample &&
+    !model.pending &&
+    !model.writing &&
+    !model.driving &&
+    model.holder !== 'self' &&
+    (model.labelKey === 'putOnBoard' || model.labelKey === 'takeWall')
+      ? t('playView.wallControl.someoneElseConnected')
+      : null;
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
   // Clear of Android's edge Back, the same on both sides so it stays centred.
   const edgeInset = wallControlEdgeInset(spansRow);
-  const label = swipe.releaseArmed && swipeDrawn ? text.releaseLabel : text.label;
+  const label = swipe.releaseArmed && swipeDrawn ? text.releaseLabel : (takenLabel ?? text.label);
   const showChevrons = swipeOffered && !model.driving;
 
   const { consumePanned, noteLongPress } = swipe;
@@ -459,7 +476,7 @@ function WallControlButtonComponent({
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
-      accessibilityLabel={text.accessibilityLabel}
+      accessibilityLabel={takenLabel ? `${takenLabel}, ${text.accessibilityLabel}` : text.accessibilityLabel}
       accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy }}
       // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.

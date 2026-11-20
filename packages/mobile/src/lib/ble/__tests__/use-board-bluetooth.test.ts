@@ -4637,12 +4637,37 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
   });
 });
 
-describe('useBoardBluetooth Android authentication disconnects', () => {
+describe('useBoardBluetooth Android failed connections', () => {
   const authenticationDisconnect: BleDisconnectInfo = {
     source: 'ble-plx',
     bleErrorCode: 201,
     androidErrorCode: 5,
   };
+  const genericGattDisconnect: BleDisconnectInfo = {
+    source: 'ble-plx',
+    bleErrorCode: 201,
+    androidErrorCode: 257,
+  };
+  const failureCases = [
+    {
+      label: 'authentication',
+      disconnectInfo: authenticationDisconnect,
+      notice: { title: 'ble.authenticationFailedTitle', body: 'ble.authenticationFailedBody' },
+    },
+    {
+      label: 'ambiguous GATT status257',
+      disconnectInfo: genericGattDisconnect,
+      notice: null,
+    },
+  ];
+
+  function expectFailureNotice(notice: { title: string; body: string } | null) {
+    if (notice) {
+      expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(notice.title, notice.body);
+    } else {
+      expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
+    }
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -4679,103 +4704,107 @@ describe('useBoardBluetooth Android authentication disconnects', () => {
     return { adapter, disconnectCallbacks };
   }
 
-  it('shows one notice after a quick drop, retains reconnect memory and ignores old-generation callbacks', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-20T07:51:00.000Z'));
-    const { adapter, disconnectCallbacks } = installMoonboardAdapter();
-    const onConnectionEnded = vi.fn();
-    const { result } = renderHook(() =>
-      useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
-    );
-    await act(async () => {
-      expect(await result.current.connect()).toBe(true);
-    });
-    expect(result.current.isConnected).toBe(true);
+  it.each(failureCases)(
+    'keeps $label feedback bounded after a quick drop and preserves reconnect memory',
+    async (failureNotice) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-20T07:51:00.000Z'));
+      const { adapter, disconnectCallbacks } = installMoonboardAdapter();
+      const onConnectionEnded = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
+      );
+      await act(async () => {
+        expect(await result.current.connect()).toBe(true);
+      });
+      expect(result.current.isConnected).toBe(true);
 
-    act(() => {
-      vi.advanceTimersByTime(60);
-      disconnectCallbacks[0](authenticationDisconnect);
-      disconnectCallbacks[0](authenticationDisconnect);
-    });
-    expect(result.current.isConnected).toBe(false);
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
-      'ble.authenticationFailedTitle',
-      'ble.authenticationFailedBody',
-    );
-    expect(onConnectionEnded).toHaveBeenCalledOnce();
-    expect(onConnectionEnded).toHaveBeenCalledWith(
-      expect.objectContaining({ disconnectInfo: authenticationDisconnect }),
-    );
-    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-device');
+      act(() => {
+        vi.advanceTimersByTime(60);
+        disconnectCallbacks[0](failureNotice.disconnectInfo);
+        disconnectCallbacks[0](failureNotice.disconnectInfo);
+      });
+      expect(result.current.isConnected).toBe(false);
+      expectFailureNotice(failureNotice.notice);
+      expect(onConnectionEnded).toHaveBeenCalledOnce();
+      expect(onConnectionEnded).toHaveBeenCalledWith(
+        expect.objectContaining({ disconnectInfo: failureNotice.disconnectInfo }),
+      );
+      expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-device');
 
-    await act(async () => {
-      expect(
-        await result.current.connect(
-          undefined,
-          undefined,
-          undefined,
-          result.current.reconnectDeviceIdForCurrentBoard ?? undefined,
-        ),
-      ).toBe(true);
-    });
-    expect(adapter.requestAndConnect).toHaveBeenLastCalledWith(undefined, 'moon-device');
-    act(() => disconnectCallbacks[0](authenticationDisconnect));
-    expect(result.current.isConnected).toBe(true);
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledOnce();
-    expect(onConnectionEnded).toHaveBeenCalledOnce();
-  });
+      await act(async () => {
+        expect(
+          await result.current.connect(
+            undefined,
+            undefined,
+            undefined,
+            result.current.reconnectDeviceIdForCurrentBoard ?? undefined,
+          ),
+        ).toBe(true);
+      });
+      expect(adapter.requestAndConnect).toHaveBeenLastCalledWith(undefined, 'moon-device');
+      act(() => disconnectCallbacks[0](failureNotice.disconnectInfo));
+      expect(result.current.isConnected).toBe(true);
+      expectFailureNotice(failureNotice.notice);
+      expect(onConnectionEnded).toHaveBeenCalledOnce();
+    },
+  );
 
-  it('keeps the single connect-failure notice when authentication drops during the initial write', async () => {
-    const { adapter, disconnectCallbacks } = installMoonboardAdapter();
-    adapter.write = vi.fn(async () => disconnectCallbacks[0](authenticationDisconnect));
-    const onConnectionEnded = vi.fn();
-    const { result } = renderHook(() =>
-      useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
-    );
-    await act(async () => {
-      expect(await result.current.connect('p100r12')).toBe(false);
-    });
-    expect(result.current.isConnected).toBe(false);
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
-      'ble.connectionFailedTitle',
-      'bluetooth.connectFailed',
-    );
-    expect(onConnectionEnded).toHaveBeenCalledOnce();
-    expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success')).toHaveLength(0);
-  });
+  it.each(failureCases)(
+    'keeps the single connect-failure notice when $label happens during the initial write',
+    async (failureNotice) => {
+      const { adapter, disconnectCallbacks } = installMoonboardAdapter();
+      adapter.write = vi.fn(async () => disconnectCallbacks[0](failureNotice.disconnectInfo));
+      const onConnectionEnded = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
+      );
+      await act(async () => {
+        expect(await result.current.connect('p100r12')).toBe(false);
+      });
+      expect(result.current.isConnected).toBe(false);
+      expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
+        'ble.connectionFailedTitle',
+        'bluetooth.connectFailed',
+      );
+      expect(onConnectionEnded).toHaveBeenCalledOnce();
+      expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success')).toHaveLength(0);
+    },
+  );
 
-  it('does not report success when the connection dies while diagnostics are pending', async () => {
-    const { disconnectCallbacks } = installMoonboardAdapter();
-    const onConnectSuccess = vi.fn();
-    const { result } = renderHook(() =>
-      useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectSuccess }),
-    );
-    let resolveDiagnostics!: (snapshot: null) => void;
-    const diagnostics = new Promise<null>((resolve) => {
-      resolveDiagnostics = resolve;
-    });
-    vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(diagnostics);
-    let connectResult!: Promise<boolean>;
-    act(() => {
-      connectResult = result.current.connect();
-    });
-    await waitFor(() => expect(onConnectSuccess).toHaveBeenCalledOnce());
-    act(() => disconnectCallbacks[0](authenticationDisconnect));
-    await act(async () => {
-      resolveDiagnostics(null);
-      expect(await connectResult).toBe(false);
-    });
-    expect(result.current.isConnected).toBe(false);
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
-      'ble.authenticationFailedTitle',
-      'ble.authenticationFailedBody',
-    );
-    expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success')).toHaveLength(0);
-  });
+  it.each(failureCases)(
+    'does not report success when $label happens while diagnostics are pending',
+    async (failureNotice) => {
+      const { disconnectCallbacks } = installMoonboardAdapter();
+      const onConnectSuccess = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectSuccess }),
+      );
+      let resolveDiagnostics!: (snapshot: null) => void;
+      const diagnostics = new Promise<null>((resolve) => {
+        resolveDiagnostics = resolve;
+      });
+      vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(diagnostics);
+      let connectResult!: Promise<boolean>;
+      act(() => {
+        connectResult = result.current.connect();
+      });
+      await waitFor(() => expect(onConnectSuccess).toHaveBeenCalledOnce());
+      act(() => disconnectCallbacks[0](failureNotice.disconnectInfo));
+      await act(async () => {
+        resolveDiagnostics(null);
+        expect(await connectResult).toBe(false);
+      });
+      expect(result.current.isConnected).toBe(false);
+      expectFailureNotice(failureNotice.notice);
+      expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success')).toHaveLength(0);
+    },
+  );
 
   it.each([
-    { errorCode: 201, androidErrorCode: 5, attErrorCode: undefined, authenticationFailed: true },
-    { errorCode: 401, androidErrorCode: undefined, attErrorCode: 5, authenticationFailed: false },
+    { errorCode: 201, androidErrorCode: 5, attErrorCode: undefined, notice: failureCases[0].notice },
+    { errorCode: 201, androidErrorCode: 257, attErrorCode: undefined, notice: failureCases[1].notice },
+    { errorCode: 401, androidErrorCode: undefined, attErrorCode: 5, notice: null },
   ])('retains separate native error domains when write failure wins: $errorCode', async (nativeCodes) => {
     const { adapter, disconnectCallbacks } = installMoonboardAdapter();
     const nativeError = Object.assign(new Error('Native device address must not enter analytics'), {
@@ -4796,19 +4825,15 @@ describe('useBoardBluetooth Android authentication disconnects', () => {
     expect(result.current.isConnected).toBe(false);
     const failure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure')?.[1];
     expect(failure).toMatchObject({ bleErrorCode: nativeCodes.errorCode });
-    if (nativeCodes.authenticationFailed) {
-      expect(failure).toMatchObject({ androidErrorCode: 5 });
+    if (nativeCodes.androidErrorCode !== undefined) {
+      expect(failure).toMatchObject({ androidErrorCode: nativeCodes.androidErrorCode });
       expect(failure).not.toHaveProperty('attErrorCode');
       expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Stolen')).toHaveLength(0);
-      expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
-        'ble.authenticationFailedTitle',
-        'ble.authenticationFailedBody',
-      );
     } else {
       expect(failure).toMatchObject({ attErrorCode: 5 });
       expect(failure).not.toHaveProperty('androidErrorCode');
-      expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
     }
+    expectFailureNotice(nativeCodes.notice);
     expect(JSON.stringify(failure)).not.toContain('Native device address');
     expect(onConnectionEnded).toHaveBeenCalledOnce();
     expect(onConnectionEnded).toHaveBeenCalledWith(
@@ -4818,53 +4843,108 @@ describe('useBoardBluetooth Android authentication disconnects', () => {
     );
     act(() => disconnectCallbacks[0](authenticationDisconnect));
     expect(onConnectionEnded).toHaveBeenCalledOnce();
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledTimes(nativeCodes.authenticationFailed ? 1 : 0);
+    expect(mockBluetoothAlert.alert).toHaveBeenCalledTimes(nativeCodes.notice ? 1 : 0);
   });
 
-  it('keeps the native authentication verdict when an older write awaits diagnostics', async () => {
-    const { adapter, disconnectCallbacks } = installMoonboardAdapter();
-    const nativeWriteError = Object.assign(new Error('Write failed'), {
-      name: 'BleError',
-      errorCode: 401,
-      attErrorCode: 5,
-    });
-    adapter.write = vi.fn().mockRejectedValue(new BleWriteDisconnectedError(nativeWriteError));
-    let resolveDiagnostics!: (snapshot: null) => void;
-    adapter.getLastWriteDiagnostics.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveDiagnostics = resolve;
-      }),
-    );
+  it.each(failureCases)(
+    'keeps the native $label verdict when an older write awaits diagnostics',
+    async (failureNotice) => {
+      const { adapter, disconnectCallbacks } = installMoonboardAdapter();
+      const nativeWriteError = Object.assign(new Error('Write failed'), {
+        name: 'BleError',
+        errorCode: 401,
+        attErrorCode: 5,
+      });
+      adapter.write = vi.fn().mockRejectedValue(new BleWriteDisconnectedError(nativeWriteError));
+      let resolveDiagnostics!: (snapshot: null) => void;
+      adapter.getLastWriteDiagnostics.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveDiagnostics = resolve;
+        }),
+      );
+      const onConnectionEnded = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
+      );
+      await act(async () => {
+        await result.current.connect();
+      });
+      let sendResult!: ReturnType<typeof result.current.sendFramesToBoard>;
+      act(() => {
+        sendResult = result.current.sendFramesToBoard('p100r12');
+      });
+      await waitFor(() => expect(adapter.getLastWriteDiagnostics).toHaveBeenCalledOnce());
+      act(() => disconnectCallbacks[0](failureNotice.disconnectInfo));
+      await act(async () => {
+        resolveDiagnostics(null);
+        expect(await sendResult).toBeUndefined();
+      });
+
+      expect(result.current.isConnected).toBe(false);
+      expect(onConnectionEnded).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ disconnectInfo: failureNotice.disconnectInfo }),
+      );
+      expectFailureNotice(failureNotice.notice);
+      expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Stolen')).toHaveLength(0);
+      expect(mockTrack.mock.calls.filter(([name]) => name === 'Climb Sent to Board Failure')).toHaveLength(0);
+      expect(reportHandledError).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not show a connection-failure notice after a deliberate disconnect', async () => {
+    const { disconnectCallbacks } = installMoonboardAdapter();
     const onConnectionEnded = vi.fn();
     const { result } = renderHook(() =>
       useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
     );
     await act(async () => {
       await result.current.connect();
+      await result.current.disconnect();
     });
-    let sendResult!: ReturnType<typeof result.current.sendFramesToBoard>;
-    act(() => {
-      sendResult = result.current.sendFramesToBoard('p100r12');
-    });
-    await waitFor(() => expect(adapter.getLastWriteDiagnostics).toHaveBeenCalledOnce());
-    act(() => disconnectCallbacks[0](authenticationDisconnect));
-    await act(async () => {
-      resolveDiagnostics(null);
-      expect(await sendResult).toBeUndefined();
-    });
-
+    act(() => disconnectCallbacks[0](genericGattDisconnect));
     expect(result.current.isConnected).toBe(false);
+    expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
     expect(onConnectionEnded).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ disconnectInfo: authenticationDisconnect }),
+      expect.objectContaining({ reason: 'user', disconnectTrigger: 'explicit_user' }),
     );
-    expect(mockBluetoothAlert.alert).toHaveBeenCalledExactlyOnceWith(
-      'ble.authenticationFailedTitle',
-      'ble.authenticationFailedBody',
-    );
-    expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Stolen')).toHaveLength(0);
-    expect(mockTrack.mock.calls.filter(([name]) => name === 'Climb Sent to Board Failure')).toHaveLength(0);
-    expect(reportHandledError).not.toHaveBeenCalled();
   });
+
+  it.each(['callback', 'write'] as const)(
+    'keeps known peer status19 handling unchanged when %s arrives first',
+    async (firstFailure) => {
+      const { adapter, disconnectCallbacks } = installMoonboardAdapter();
+      const peerDisconnect: BleDisconnectInfo = { source: 'ble-plx', bleErrorCode: 201, androidErrorCode: 19 };
+      adapter.write = vi.fn().mockRejectedValue(
+        new BleWriteDisconnectedError(
+          Object.assign(new Error('Peer disconnected'), {
+            name: 'BleError',
+            errorCode: 201,
+            androidErrorCode: 19,
+          }),
+        ),
+      );
+      const onConnectionEnded = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, onConnectionEnded }),
+      );
+      await act(async () => {
+        await result.current.connect();
+      });
+      if (firstFailure === 'callback') {
+        act(() => disconnectCallbacks[0](peerDisconnect));
+      } else {
+        await act(async () => {
+          expect(await result.current.sendFramesToBoard('p100r12')).toBe(false);
+        });
+      }
+      expect(result.current.isConnected).toBe(false);
+      expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
+      expect(onConnectionEnded).toHaveBeenCalledOnce();
+      expect(mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Stolen')).toHaveLength(
+        firstFailure === 'write' ? 1 : 0,
+      );
+    },
+  );
 
   it('does not add an old write failure to a replacement connection while diagnostics are pending', async () => {
     const { adapter } = installMoonboardAdapter();

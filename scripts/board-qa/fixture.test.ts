@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Evidence, QaFailure } from './evidence';
 import * as evidenceModule from './evidence';
-import { Fixture, parseStatus, type FixtureRequest, type FixtureStatus, type FixtureTransport } from './fixture';
+import {
+  Fixture,
+  parseStatus,
+  type FixtureBoard,
+  type FixtureRequest,
+  type FixtureStatus,
+  type FixtureTransport,
+} from './fixture';
 
 const BOARD_UUID = 'cd558849-aaf1-4e24-bce5-4a6b22129d49';
 const request: FixtureRequest = { action: 'status', requestId: 'poll-1', runId: 'test-run' };
@@ -44,6 +51,7 @@ class FakeTransport implements FixtureTransport {
   readonly writes: FixtureRequest[] = [];
   autoReply = true;
   closed = false;
+  boardOverrides: Partial<FixtureBoard> = {};
   async open(receive: (line: string) => void, failed: (error: Error) => void): Promise<void> {
     this.receive = receive;
     this.failed = failed;
@@ -54,7 +62,19 @@ class FakeTransport implements FixtureTransport {
   }
   respond(selected = this.writes.at(-1), overrides: Record<string, unknown> = {}): void {
     if (!selected) throw new Error('No pending fake request');
-    this.receive(JSON.stringify({ ...status(selected), ...overrides }));
+    const snapshot = status(selected);
+    Object.assign(snapshot.boards[0], this.boardOverrides);
+    if (selected.action === 'auth-drop') {
+      snapshot.authDrop = {
+        connectionHandle: selected.connectionHandle,
+        connectionGeneration: selected.connectionGeneration,
+        reason: 5,
+        attempted: true,
+        gapReturnCode: 0,
+        commandAccepted: true,
+      };
+    }
+    this.receive(JSON.stringify({ ...snapshot, ...overrides }));
   }
   async close(): Promise<void> {
     this.closed = true;
@@ -73,6 +93,41 @@ afterEach(() => {
 });
 
 describe('physical fixture evidence validation', () => {
+  it('accepts optional active connection metadata and crosschecks its handles', () => {
+    const candidate = status();
+    Object.assign(candidate.boards[0], {
+      connections: 1,
+      handles: [8],
+      activeConnections: [{ handle: 8, generation: 9 }],
+    });
+    expect(parseStatus(candidate, { request }).boards[0].activeConnections).toEqual([{ handle: 8, generation: 9 }]);
+    expect(parseStatus(status(), { request }).boards[0].activeConnections).toBeUndefined();
+  });
+
+  it.each([
+    [],
+    [{ handle: 9, generation: 1 }],
+    [{ handle: 8, generation: 0 }],
+    [{ handle: 8, generation: 1.5 }],
+    [{ handle: 8 }],
+  ])('rejects invalid active connection metadata %j', (...connections) => {
+    const candidate = status();
+    Object.assign(candidate.boards[0], { connections: 1, handles: [8], activeConnections: connections });
+    expect(() => parseStatus(candidate, { request })).toThrow();
+  });
+
+  it('rejects duplicated active handles even when the array length matches', () => {
+    const candidate = status();
+    Object.assign(candidate.boards[0], {
+      connections: 2,
+      handles: [8, 9],
+      activeConnections: [
+        { handle: 8, generation: 1 },
+        { handle: 8, generation: 2 },
+      ],
+    });
+    expect(() => parseStatus(candidate, { request })).toThrow('active connection/handle');
+  });
   it('accepts owner status, complete clear payloads, and non-acquiring doctor reads', () => {
     expect(parseStatus(status(), { request }).policy).toBe('last-connection-wins');
     const observe: FixtureRequest = { action: 'status', requestId: 'observe' };
@@ -201,6 +256,133 @@ describe('physical fixture evidence validation', () => {
     expect(() => parseStatus(changed, { request, previous })).toThrow('did not advance');
     changed.boards[0].sequence = 4;
     expect(parseStatus(changed, { request, previous }).boards[0].commands[0].position).toBe(2);
+  });
+});
+
+describe('one-shot fixture auth-drop', () => {
+  it('does not reuse a heartbeat started before confirmation', async () => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    await fixture.start();
+    transport.autoReply = false;
+    transport.boardOverrides = { connections: 1, handles: [8], activeConnections: [{ handle: 8, generation: 18 }] };
+    const heartbeat = fixture.request('status');
+    const dropping = fixture.authDrop(BOARD_UUID);
+    await vi.waitFor(() => expect(transport.writes).toHaveLength(2));
+    transport.respond();
+    await heartbeat;
+    await vi.waitFor(() => expect(transport.writes).toHaveLength(3));
+    expect(transport.writes.at(-1)?.action).toBe('status');
+    transport.boardOverrides = { connections: 1, handles: [8], activeConnections: [{ handle: 8, generation: 19 }] };
+    transport.respond();
+    await vi.waitFor(() => expect(transport.writes.at(-1)?.action).toBe('auth-drop'));
+    expect(transport.writes.at(-1)).toMatchObject({ connectionGeneration: 19 });
+    transport.respond();
+    await dropping;
+    transport.autoReply = true;
+    await fixture.close();
+  });
+
+  it('requires ownership and a fresh single connection, sends its generation once, then releases', async () => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    await expect(fixture.authDrop(BOARD_UUID)).rejects.toThrow('owned fixture lease');
+    await fixture.start();
+    transport.boardOverrides = { connections: 1, handles: [8], activeConnections: [{ handle: 8, generation: 19 }] };
+    const result = await fixture.authDrop(BOARD_UUID);
+    expect(result).toMatchObject({
+      connectionHandle: 8,
+      connectionGeneration: 19,
+      gapReturnCode: 0,
+      commandAccepted: true,
+    });
+    expect(transport.writes.map((entry) => entry.action)).toEqual(['start', 'status', 'auth-drop']);
+    expect(transport.writes.at(-1)).toMatchObject({
+      boardUuid: BOARD_UUID,
+      connectionHandle: 8,
+      connectionGeneration: 19,
+    });
+    await expect(fixture.authDrop(BOARD_UUID)).rejects.toThrow('already requested');
+    await fixture.close();
+    expect(transport.writes.filter((entry) => entry.action === 'auth-drop')).toHaveLength(1);
+    expect(transport.writes.at(-1)?.action).toBe('end');
+  });
+
+  it.each([
+    ['old firmware', undefined],
+    ['no connection', []],
+    [
+      'multiple connections',
+      [
+        { handle: 8, generation: 1 },
+        { handle: 9, generation: 2 },
+      ],
+    ],
+  ] as const)('refuses %s without sending a drop', async (_label, activeConnections) => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    await fixture.start();
+    transport.boardOverrides = {
+      activeConnections: activeConnections ? [...activeConnections] : undefined,
+      connections: activeConnections?.length ?? 0,
+      handles: activeConnections?.map((connection) => connection.handle) ?? [],
+    };
+    await expect(fixture.authDrop(BOARD_UUID)).rejects.toThrow();
+    await fixture.close();
+    expect(transport.writes.some((entry) => entry.action === 'auth-drop' || entry.action === 'drop')).toBe(false);
+  });
+
+  it('never retries a rejected native termination and still releases ownership', async () => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    await fixture.start();
+    transport.boardOverrides = { connections: 1, handles: [8], activeConnections: [{ handle: 8, generation: 19 }] };
+    transport.autoReply = false;
+    const dropping = fixture.authDrop(BOARD_UUID);
+    const assertion = expect(dropping).rejects.toThrow('native rejected');
+    await vi.waitFor(() => expect(transport.writes.at(-1)?.action).toBe('status'));
+    transport.respond();
+    await vi.waitFor(() => expect(transport.writes.at(-1)?.action).toBe('auth-drop'));
+    transport.respond(undefined, {
+      ok: false,
+      error: 'native rejected',
+      authDrop: { attempted: true, gapReturnCode: 3, commandAccepted: false },
+    });
+    await assertion;
+    transport.autoReply = true;
+    await expect(fixture.authDrop(BOARD_UUID)).rejects.toThrow('already requested');
+    await fixture.close();
+    expect(transport.writes.filter((entry) => entry.action === 'auth-drop')).toHaveLength(1);
+  });
+
+  it.each([
+    { connectionGeneration: 20 },
+    { reason: 19 },
+    { attempted: false },
+    { gapReturnCode: 1 },
+    { commandAccepted: false },
+  ])('rejects false acceptance evidence %j', (override) => {
+    const authRequest: FixtureRequest = {
+      action: 'auth-drop',
+      requestId: 'drop',
+      runId: 'test-run',
+      boardUuid: BOARD_UUID,
+      connectionHandle: 8,
+      connectionGeneration: 19,
+    };
+    const candidate = {
+      ...status(authRequest),
+      authDrop: {
+        connectionHandle: 8,
+        connectionGeneration: 19,
+        reason: 5,
+        attempted: true,
+        gapReturnCode: 0,
+        commandAccepted: true,
+        ...override,
+      },
+    };
+    expect(() => parseStatus(candidate, { request: authRequest })).toThrow('auth-drop acceptance');
   });
 });
 

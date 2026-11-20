@@ -993,6 +993,7 @@
       "crewPutUp": "La tua crew ha illuminato {{climb}}",
       "boardTakenBy": "{{name}} ha preso il pannello",
       "boardTakenOtherPhone": "Un altro telefono ha il pannello",
+      "someoneElseConnected": "Un’altra persona si è connessa",
       "boardDropped": "Pannello disconnesso · Illumina il pannello lo ricollega",
       "holderHasBoard": "{{name}} ha il pannello",
       "crewHasBoard": "La tua crew ha il pannello",

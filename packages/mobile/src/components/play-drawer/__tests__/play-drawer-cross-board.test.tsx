@@ -21,6 +21,7 @@ import { Children, Fragment, createElement, isValidElement, useEffect, useRef, t
 import { DeferredBoard } from '../DeferredBoard';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import { BoardPresenceClientContext, type BoardPresenceClient } from '@boardsesh/board-presence-react';
 import type { LayoutChangeEvent } from 'react-native';
 import { clearOpeningLayoutCache } from '../opening-layout-cache';
 import type { SwipePager } from '../use-swipe-pager';
@@ -746,6 +747,43 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('takeover identity for a sanitized saved board', () => {
+  const unexpectedPresenceCall = () => {
+    throw new Error('Button identity must not request presence');
+  };
+  const client: BoardPresenceClient = {
+    subscribeNowPlaying: unexpectedPresenceCall,
+    fetchRecentClimbs: unexpectedPresenceCall,
+    fetchStats: unexpectedPresenceCall,
+    reportClimb: unexpectedPresenceCall,
+    resolveBoardForSerial: unexpectedPresenceCall,
+  };
+
+  it.each([
+    ['exact verified UUID', 'gym-kilter', 7, true, TWELVE_CLIMB, 7],
+    ['another UUID', 'other-board', 7, true, TWELVE_CLIMB, null],
+    ['unidentified binding', null, 7, true, TWELVE_CLIMB, null],
+    ['unbound presence', 'gym-kilter', null, true, TWELVE_CLIMB, null],
+    ['denied presence', 'gym-kilter', 7, false, TWELVE_CLIMB, null],
+    ['another rendered board', 'gym-kilter', 7, true, HOMEWALL_CLIMB, null],
+  ] as const)(
+    'uses %s without borrowing another board identity',
+    (_label, boardUuid, boardId, allowed, climb, expected) => {
+      queueState.currentClimbQueueItem = queueItem(climb, 'current-climb');
+      render(
+        createElement(
+          BoardPresenceClientContext.Provider,
+          {
+            value: { boardId, boardUuid, client: allowed ? client : null },
+          },
+          drawerElement(),
+        ),
+      );
+      expect(recorded.actionBar.at(-1)?.wallControlBoardId).toBe(expected);
+    },
+  );
+});
+
 describe('PlayDrawer relay board compatibility', () => {
   it('forwards the claimed dismiss gesture ref', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
@@ -972,6 +1010,7 @@ describe('PlayDrawer uses the crew gym board only while a member holds it (#7181
 
     expect(recorded.actionBar.at(-1)?.wallControlState).toBe('put_on_wall');
     expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({ holder: 'crew', tapAction: 'relay' });
+    expect(recorded.actionBar.at(-1)?.wallControlBoardId).toBe(HOMEWALL_BOARD.boardId);
     tapWallControl();
     expect(setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ climb: expect.objectContaining({ uuid: HOMEWALL_CLIMB.uuid }) }),

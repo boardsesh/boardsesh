@@ -86,6 +86,73 @@ vp run qa:boards:simulator-peer -- run --holder-only
 
 This mode runs exactly six cases: three iPhone solo cases and three iPhone board-switch isolation cases. It keeps all physical payload, generation, backend subscription/history, safe case-boundary and cleanup requirements, plus the six driving/plain-preview screenshots. Only the iPhone visits each board for the real history dwell. The existing private configuration is retained, but the runner neither leases nor accesses its Android device, constructs a peer driver, reads a peer password, signs in a peer, checks Metro, or invokes any peer UI. No `--peer` or Metro arguments are required. Coverage records only the physical holder, `verifiedPeer: false`, all peer observations and all crew/roster/relay/clear/re-light scenarios as **unrun**. This mode is opt-in; the default simulator-peer profile and original physical `all` matrix retain their prerequisites.
 
+## One-shot authentication-status disconnect
+
+Use the separate helper to request one ESP32 GAP termination with reason `5` on a specific current connection. This exercises disconnect handling; it does not perform a PIN challenge, reproduce a controller's authentication protocol, or establish the production failure's cause.
+
+1. Disconnect every phone from the fixture, then run the command below in an interactive terminal. Keep any other serial monitor closed.
+2. Wait for `Fixture lease acquired`, then connect one phone to the selected fixture board in Boardsesh.
+3. When the app shows connected, press Enter within 300 seconds. Record the phone's actual error and UI separately.
+
+```sh
+vp run qa:boards:auth-drop --port /dev/cu.usbmodemDEVICE --board 803099ab-30ae-45e4-82e3-6bb2744af255
+```
+
+The UUID above is the QA fixture's MoonBoard. Replace the port with its USB device path. `--output DIR` selects the evidence directory. The helper acquires the existing local USB lock and firmware lease before inviting a phone connection, renews that lease while waiting, then reads fresh status and requires exactly one active connection on the selected board. It binds the command to both its handle and generation. Firmware without `activeConnections` metadata is refused; normal QA status reads still support that firmware.
+
+There is no automatic retry, reconnection, or drop of another board. A successful command prints **GAP accepted** and records `commandAccepted:true` with `gapReturnCode:0`; this confirms only that the ESP32 accepted the termination request. It does not prove the Android phone reported `201/5`, disconnected, or displayed the expected UI. A rejection or missing reply is not retried. Ctrl-C, input closure, or the 300-second confirmation deadline releases owned resources; a USB failure may leave the firmware lease to expire after 30 seconds. Ending this helper does not issue a second BLE drop. If the phone remains connected, disconnect it normally before another run. Raw command replies remain in `events.jsonl`, including rejected GAP results.
+
+On 2026-11-20, a physical Pixel 8 Pro running Android 16 (API 36, security patch
+2026-05-05) connected to the MoonBoard fixture and delivered a complete climb
+before this command dropped the link. Its system logs recorded
+`HCI_ERR_AUTH_FAILURE` and `GATT disconnected reason=5`, but its application
+`BluetoothGatt` callback reported status `257`, which ble-plx preserved as
+`201/257`. Record both layers when available: this phone's result is not an
+app-level `201/5` reproduction. Status `257` alone does not identify authentication
+failure, a PIN requirement, or the cause of the original controller incident.
+The installed Bluetooth system module was `BluetoothGoogle@373041380`. Inspection
+of its `GattService.onDisconnectedFromNative` confirmed that incoming reason `5`
+falls through to generic status `257`; it can emit app status `5` for local-host
+termination with a missing-key count. Earlier Android source forwards reason `5`
+directly, so record the Bluetooth module version as well as the Android version.
+That module also maps peer-termination reason `19` to `257`. Its public ACL
+disconnect broadcast omits the reason, so Boardsesh cannot use it to recover
+that distinction. Do not show an error popup or infer a takeover from `201/257`
+alone. Keep the passive reconnect control and unknown diagnostic category.
+
+The same physical run verified that the normal Put on board action reconnected
+the remembered MoonBoard and delivered a fresh complete ten-hold command on a
+new connection generation. A temporary generic-error dialog was visibly above
+the player, but was removed because it also covered normal takeovers. This
+establishes native dialog layering and reconnect behavior; the final
+authentication-specific `201/5` dialog remains unverified on this Pixel because
+its Bluetooth service remaps the injected reason.
+
+For takeover feedback, use two different Boardsesh accounts on the same Kilter
+or Tension fixture. After the second phone connects and lights a climb, the first
+phone's button should say **Someone else connected** for three seconds, then
+restore **Put on board**. The existing explanatory caption remains longer.
+Repeat after the first phone's Drive window expires. Reconnecting, starting a
+new drive, or changing boards must clear the old message. Neither this notice
+nor its expiry automatically reconnects. It requires a confirmed new holder;
+an official-app handoff or a masked disconnect without that evidence must not
+invent a takeover or open an error dialog.
+
+On 2026-11-20, the physical Pixel 8 Pro and iPhone 13 Pro, signed into different
+accounts, verified this feedback on the Kilter fixture both during Drive and
+after its 45-second window expired. Android recordings showed the three-second
+button message followed by Put on board, with no popup. Each iPhone takeover
+had a new physical connection generation, a complete 13-hold climb, and matching
+backend holder and climb events. A deliberate Android retry also delivered a
+fresh complete climb. This verifies Android's new feedback with iOS as the peer;
+it does not verify the new label on an iPhone running the updated code.
+
+That check caught a saved-board identity edge case: persisted board snapshots
+omit the numeric board ID. The button may recover it from authorized presence
+only when the displayed board's UUID matches exactly. Include a saved board
+after an app restart in takeover QA; a missing numeric ID must not hide a
+confirmed takeover, and a different board preview must not inherit its message.
+
 ## What counts as a send
 
 For each send the runner requires a newer ESP32 completed-command sequence, an exact decoded position/color pattern, the expected connection generation, matching live holder attribution, a matching subscription event, and durable history on the same saved wall UUID. A title change, bulb icon, first ATT chunk, LED count alone, or queued mutation is insufficient. The other two boards must receive no writes.

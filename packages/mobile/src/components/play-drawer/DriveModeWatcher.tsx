@@ -123,7 +123,7 @@ export function DriveModeWatcher(): null {
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
   // Ends a drive whose link dropped, and says so when this phone didn't drop it.
-  const endDriveForLinkDrop = useBoardLetsGo({ linked, pending, boardId, drive, signedIn: isAuthenticated });
+  const endDriveForLinkDrop = useBoardLetsGo({ linked, pending, boardId, sessionId, drive, signedIn: isAuthenticated });
   // A spray wall's LED hold is this phone's own link, as a radio is on other boards.
   const sprayLedsEnabled = useSprayWallLedsEnabled(bluetooth?.boardName, bluetooth?.layoutId);
   const ownLink = (bluetooth?.isConnected ?? false) || (sprayLedsEnabled && (bluetooth?.virtualWallHeld ?? false));
@@ -214,7 +214,20 @@ export function DriveModeWatcher(): null {
     const previous = previousRef.current ?? current;
     previousRef.current = current;
     if ((previous.linked && !current.linked) || (previous.signedIn && !current.signedIn)) clearDrivingStopped();
-    if (!drive) return;
+    if (!drive) {
+      // The timed drive may have ended while this phone still held the link.
+      // A later confirmed takeover deserves the same brief button notice.
+      if (
+        previous.linked &&
+        !current.linked &&
+        previous.boardId === current.boardId &&
+        previous.sessionId === current.sessionId &&
+        previous.signedIn === current.signedIn
+      ) {
+        endDriveForLinkDrop();
+      }
+      return;
+    }
     if (drive.phase === 'arming' && current.pending) connectSeenForRef.current = drive.startedAt;
     const reason = resolveDriveModeExit({
       drive,
