@@ -19,11 +19,12 @@ type FakeReqOptions = {
   country?: string;
   analyticsConsent?: string;
   cfConnectingIp?: string;
+  originProof?: string;
 };
 
 function createFakeReq(options: FakeReqOptions): ProxyReq {
   const listeners: Record<string, Array<(arg?: unknown) => void>> = {};
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { host: 'ws.boardsesh.com' };
   if (options.origin) headers.origin = options.origin;
   if (options.contentType) headers['content-type'] = options.contentType;
   if (options.contentEncoding) headers['content-encoding'] = options.contentEncoding;
@@ -32,6 +33,7 @@ function createFakeReq(options: FakeReqOptions): ProxyReq {
   if (options.country) headers['cf-ipcountry'] = options.country;
   if (options.analyticsConsent) headers['x-boardsesh-analytics-consent'] = options.analyticsConsent;
   if (options.cfConnectingIp) headers['cf-connecting-ip'] = options.cfConnectingIp;
+  if (options.originProof) headers['x-boardsesh-origin-proof'] = options.originProof;
 
   const req = {
     method: options.method,
@@ -118,12 +120,15 @@ describe('PostHog Proxy Handler', () => {
 
   beforeEach(() => {
     initCors('https://boardsesh.com');
+    vi.stubEnv('POSTHOG_ORIGIN_PROOF_SECRET', 'test-origin-proof-secret-at-least-32-bytes');
+    vi.stubEnv('POSTHOG_ORIGIN_PROOF_SECRET_NEXT', '');
     fetchMock.mockReset();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.unstubAllEnvs();
   });
 
   it('responds to OPTIONS preflight with CORS headers and no upstream call', async () => {
@@ -165,7 +170,7 @@ describe('PostHog Proxy Handler', () => {
       expect(upstreamUrl).toBe(`https://us.i.posthog.com${endpoint}?v=1`);
       expect(options.method).toBe('GET');
       expect(options.body).toBeUndefined();
-      expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+      expect(options.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
       expect(res.status).toBe(200);
       expect(res.body).toBe('{"sessionRecording":false}');
     },
@@ -208,7 +213,7 @@ describe('PostHog Proxy Handler', () => {
     expect(init.method).toBe('POST');
     const headers = init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['X-Forwarded-For']).toBeUndefined();
+    expect(headers['X-Forwarded-For']).toBe('0.0.0.0');
     expect(headers['User-Agent']).toBeUndefined();
     // Body must be forwarded as bytes (the SDK may have gzipped it).
     expect(init.body).toBeInstanceOf(Uint8Array);
@@ -261,14 +266,15 @@ describe('PostHog Proxy Handler', () => {
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/i/v0/e/'));
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBeUndefined();
+    expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe('0.0.0.0');
   });
 
-  // Behind Cloudflare and our private ingress: Cloudflare appends to whatever
-  // X-Forwarded-For the caller sent, and the ingress appends the edge it saw.
+  // Production: CGNAT socket, Cloudflare then public Railway hop in XFF.
+  // Our own-zone proof authenticates CF-Connecting-IP independently of that chain.
   const viaEdge = {
-    remoteAddress: '10.0.0.8',
-    forwardedFor: '6.6.6.6, 203.0.113.7, 104.16.0.5',
+    remoteAddress: '::ffff:100.64.0.4',
+    forwardedFor: '172.64.209.4, 79.127.151.145',
+    originProof: 'test-origin-proof-secret-at-least-32-bytes',
     cfConnectingIp: '203.0.113.7',
   };
 
@@ -337,11 +343,12 @@ describe('PostHog Proxy Handler', () => {
         forwardedFor,
         cfConnectingIp,
         analyticsConsent: 'granted',
+        originProof: expected ? 'test-origin-proof-secret-at-least-32-bytes' : undefined,
       });
       const res = createFakeRes();
       await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/batch/'));
       const init = fetchMock.mock.calls[0][1] as RequestInit;
-      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe(expected);
+      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe(expected ?? '0.0.0.0');
     },
   );
 
@@ -353,7 +360,7 @@ describe('PostHog Proxy Handler', () => {
       const res = createFakeRes();
       await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/batch/'));
       const init = fetchMock.mock.calls[0][1] as RequestInit;
-      expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
     },
   );
 
@@ -363,7 +370,7 @@ describe('PostHog Proxy Handler', () => {
     const res = createFakeRes();
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/batch/'));
     const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
   });
 
   it.each(['/flags/', '/decide/'])('ignores the consent header on %s: flags never carry the IP', async (endpoint) => {
@@ -377,7 +384,7 @@ describe('PostHog Proxy Handler', () => {
     const res = createFakeRes();
     await handlePosthogProxy(req, res.asProxyRes, buildUrl(`/api/posthog${endpoint}`));
     const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
   });
 
   it.each(['/flags//', '/api/surveys/', '/i/v1/logs', '/batch/extra', '/capture/'])(
@@ -388,7 +395,7 @@ describe('PostHog Proxy Handler', () => {
       const res = createFakeRes();
       await handlePosthogProxy(req, res.asProxyRes, buildUrl(`/api/posthog${endpoint}`));
       const init = fetchMock.mock.calls[0][1] as RequestInit;
-      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBeUndefined();
+      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe('0.0.0.0');
     },
   );
 
@@ -398,7 +405,7 @@ describe('PostHog Proxy Handler', () => {
     const res = createFakeRes();
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/array/phc_publicProject/config'));
     const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
   });
 
   it.each(['/flags/', '/decide/'])('resolves %s without IP or browser identity headers', async (endpoint) => {
@@ -417,7 +424,7 @@ describe('PostHog Proxy Handler', () => {
 
     expect(res.status).toBe(200);
     const request = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
     expect(new TextDecoder().decode(request.body as Uint8Array)).toContain('ephemeral');
   });
 
@@ -457,7 +464,7 @@ describe('PostHog Proxy Handler', () => {
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/', '?v=2'));
     expect(res.status).toBe(200);
     const request = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
     expect(JSON.parse(new TextDecoder().decode(request.body as Uint8Array))).toEqual({
       token: 'project',
       distinct_id: 'account',
@@ -479,7 +486,7 @@ describe('PostHog Proxy Handler', () => {
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/decide/'));
     const request = fetchMock.mock.calls[0][1] as RequestInit;
     expect(res.status).toBe(200);
-    expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json', 'X-Forwarded-For': '0.0.0.0' });
     expect(JSON.parse(new TextDecoder().decode(request.body as Uint8Array))).toEqual({
       distinct_id: 'account',
       geoip_disable: true,

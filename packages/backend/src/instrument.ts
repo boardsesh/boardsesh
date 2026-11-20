@@ -39,6 +39,7 @@ applyGeneratedDevDbEnv();
 dotenv.config({ path: '.env.development.local', override: true });
 
 import * as Sentry from '@sentry/node';
+import { redactOriginProof } from '@boardsesh/consent/origin-proof';
 // Leaf config module — pure env-detection helpers with no side effects and no
 // postgres/driver imports, so pulling it in here can't defeat the OTel patching
 // this file must run before.
@@ -73,6 +74,11 @@ Sentry.init({
   // `sendDefaultPii` does not cover request bodies. Sign-in and token routes
   // carry passwords and refresh tokens there, so keep bodies out of every event.
   integrations: [Sentry.requestDataIntegration({ include: { data: false } })],
+  // Custom headers are still captured with PII off. Keep the origin proof out
+  // of errors, transactions, and independently streamed spans.
+  beforeSend: redactOriginProof,
+  beforeSendTransaction: redactOriginProof,
+  beforeSendSpan: redactOriginProof,
   // Platform-neutral — no RAILWAY_*-style branching. See resolveSentryEnvironment.
   environment: resolveSentryEnvironment(),
   serverName: 'boardsesh-backend',

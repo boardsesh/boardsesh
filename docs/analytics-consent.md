@@ -773,22 +773,34 @@ visitor IP as `X-Forwarded-For` only when all of these hold:
 - the request carries `x-boardsesh-analytics-consent: granted`
   (`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`), which a client adds
   while analytics is on: an Allow, or a region default this launch confirmed;
-- it came through a trusted Cloudflare edge, and the address is the public
-  `CF-Connecting-IP` that edge reports (`resolveEdgeVisitorIp` in
-  `packages/backend/src/utils/flag-country.ts`, the same trust boundary as the
-  flag country in [Cloudflare](./cloudflare.md)).
+- our zone's analytics transform authenticated the request with
+  `X-Boardsesh-Origin-Proof`, and `CF-Connecting-IP` is a public address
+  (`resolvePosthogVisitorIp` in `packages/backend/src/utils/posthog-visitor-ip.ts`).
+  The proof is scoped to `ws.boardsesh.com/api/posthog/` and checked against
+  the backend's `POSTHOG_ORIGIN_PROOF_SECRET` or `_NEXT` rotation secret.
 
 Earlier `X-Forwarded-For` entries are caller-controlled and are never used, nor
-is the socket peer (our own ingress), a private or carrier-grade NAT address,
-or a request that did not come through Cloudflare. Web and app add the header
-only to capture sent while analytics is on, an Allow or a region default
-confirmed this launch (not to flags or the SDK config request); www adds it only when it talks to exactly our proxy, not to a
-direct-to-PostHog override. Everything else is stripped: flags, the public
-config request, surveys, logs, the anonymous OTA health event, kiosk telemetry
-and any older client. The default is strip, so a missing or
-mistyped header can only lose a consented event's location, never locate an
-anonymous one. Without the forwarded IP, PostHog geolocated consented events
-and overwrote person `$geoip_*` properties with the backend's own location.
+is the socket peer (our own ingress), a private or carrier-grade NAT address.
+Production adds a public Railway hop after Cloudflare and uses a CGNAT socket;
+checking the final hop for Cloudflare rejected legitimate consented requests.
+The own-zone proof authenticates the visitor header independently of hop count,
+without changing the trust checks used by authentication or GraphQL consent.
+
+Web and app add the consent header only to capture while analytics is on, an
+Allow or a region default confirmed this launch. It is absent from flags and
+SDK configuration requests; www adds it only when talking to exactly our proxy.
+Every request without both capture consent and a verified visitor sends the
+unspecified `X-Forwarded-For: 0.0.0.0`, including flags, configuration, surveys,
+logs, anonymous OTA health events, kiosk telemetry and older clients. Simply
+omitting XFF lets PostHog geolocate the backend's egress and overwrite person
+`$geoip_*` properties. The unspecified address has no country or city. A live
+isolated ingestion probe on 2026-11-20 verified this; `?ip=0` did **not** stop
+geolocation. Capture/replay payloads, including gzip bytes, remain unchanged.
+This prevents proxy-derived GeoIP; it does not remove properties explicitly
+supplied in a client payload or rewrite historical events/person properties.
+The proxy logs only `visitorIpForwarded: true/false`, never the IP or proof.
+See [the rollout order](./cloudflare.md#analytics-origin-proof) before enabling
+its Cloudflare rule: backend Sentry redaction must be deployed first.
 Granted analytics explicitly supplies its consented user-agent event property;
 operational events use minimal payloads.
 Functional flag requests retain allowlisted OS, app version/build, namespace,

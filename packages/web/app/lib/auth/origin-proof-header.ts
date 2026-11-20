@@ -7,7 +7,7 @@
  * lets it set `CF-Connecting-IP` itself because that domain is not a Cloudflare
  * zone. Only our zone can add this header.
  *
- * Its own module, with no imports, so the edge Sentry config can strip it from
- * events without loading the Node-only proof check.
+ * Reexported from a Node-free module, so the edge Sentry config can strip it
+ * from events without loading the Node-only proof check.
  */
-export const CLOUDFLARE_ORIGIN_PROOF_HEADER = 'X-Boardsesh-Origin-Proof';
+export { CLOUDFLARE_ORIGIN_PROOF_HEADER } from '@boardsesh/consent/origin-proof';

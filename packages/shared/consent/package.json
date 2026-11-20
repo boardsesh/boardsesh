@@ -14,6 +14,16 @@
       "types": "./src/edge-country.ts",
       "import": "./src/edge-country.ts",
       "default": "./src/edge-country.ts"
+    },
+    "./origin-proof": {
+      "types": "./src/origin-proof.ts",
+      "import": "./src/origin-proof.ts",
+      "default": "./src/origin-proof.ts"
+    },
+    "./origin-proof-server": {
+      "types": "./src/origin-proof-server.ts",
+      "import": "./src/origin-proof-server.ts",
+      "default": "./src/origin-proof-server.ts"
     }
   },
   "scripts": {

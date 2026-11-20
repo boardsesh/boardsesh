@@ -1,16 +1,18 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as Sentry from '@sentry/node';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER, redactOriginProof } from '@boardsesh/consent/origin-proof';
 import { afterAll, describe, expect, it } from 'vite-plus/test';
 
 const secret = 'fixture-password-value';
+const originProof = 'fixture-origin-proof-secret-at-least-32-bytes';
 
 describe('Sentry request bodies', () => {
   afterAll(async () => {
     await Sentry.close(1000);
   });
 
-  it('keeps a POST body out of transactions and error events', async () => {
+  it('keeps a POST body and origin proof out of transactions and error events', async () => {
     const payloads: Array<Record<string, unknown>> = [];
     Sentry.init({
       dsn: 'https://public@o0.ingest.sentry.io/1',
@@ -18,6 +20,9 @@ describe('Sentry request bodies', () => {
       tracesSampleRate: 1,
       // The same option packages/backend/src/instrument.ts passes.
       integrations: [Sentry.requestDataIntegration({ include: { data: false } })],
+      beforeSend: redactOriginProof,
+      beforeSendTransaction: redactOriginProof,
+      beforeSendSpan: redactOriginProof,
       transport: () => ({
         send: async (envelope) => {
           for (const [, payload] of envelope[1] as unknown as Array<[unknown, Record<string, unknown>]>) {
@@ -44,6 +49,7 @@ describe('Sentry request bodies', () => {
       const { port } = server.address() as AddressInfo;
       const response = await fetch(`http://127.0.0.1:${port}/auth/native/credentials`, {
         method: 'POST',
+        headers: { [CLOUDFLARE_ORIGIN_PROOF_HEADER]: originProof },
         body: JSON.stringify({ password: secret }),
       });
       await expect(response.text()).resolves.toBe('ok');
@@ -56,5 +62,6 @@ describe('Sentry request bodies', () => {
     const requestEvents = payloads.filter((payload) => payload.request);
     expect(requestEvents.length).toBeGreaterThan(0);
     expect(JSON.stringify(payloads)).not.toContain(secret);
+    expect(JSON.stringify(payloads)).not.toContain(originProof);
   });
 });
