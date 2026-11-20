@@ -4,7 +4,6 @@
   "boardsDescription": "Sieh dir die unterstützten Boards und Layouts an und finde Kletterhallen mit einem passenden Board.",
   "findGyms": "Finde eine Halle mit {{board}}",
   "sprayLabel": "Spraywall",
-  "sprayLayout": "Ein Foto deiner Spraywall",
   "sprayTitle": "Deine Spraywall: Boulder setzen und loggen.",
   "sprayLead": "Mach ein Foto. Boardsesh erkennt die Griffe, du korrigierst fehlende, und deine Crew setzt und loggt Boulder. Kostenlos für Spraywalls zu Hause und in der Halle.",
   "sprayStep1": "Mach ein deutliches Foto",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "Halle oder Ort",
   "sprayRoute": "Deine Spraywall einrichten",
   "photoPrivacy": "Wer das Foto deiner Spraywall sieht",
-  "privacyPolicy": "Datenschutzerklärung lesen"
+  "privacyPolicy": "Datenschutzerklärung lesen",
+  "previousLayouts": "Vorherige {{board}}-Layouts",
+  "nextLayouts": "Weitere {{board}}-Layouts",
+  "boardLayoutAlt": "Griffanordnung {{layout}} am {{board}}",
+  "sprayGalleryAlt": "Spraywall mit Klettergriffen"
 }

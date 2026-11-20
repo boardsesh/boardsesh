@@ -4,7 +4,6 @@
   "boardsDescription": "查看支持的攀爬训练板和布局，找到可以攀爬的岩馆。",
   "findGyms": "查找设有 {{board}} 的岩馆",
   "sprayLabel": "喷点墙",
-  "sprayLayout": "你自己的喷点墙照片",
   "sprayTitle": "在自己的喷点墙上定线、记攀爬",
   "sprayLead": "拍一张照片，Boardsesh 会识别岩点。补上漏掉的岩点，就能和伙伴一起定线、记录攀爬。家用和岩馆喷点墙均可免费使用。",
   "sprayStep1": "拍一张清晰的照片",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "岩馆或城镇",
   "sprayRoute": "设置你的喷点墙",
   "photoPrivacy": "谁能看到你的岩墙照片",
-  "privacyPolicy": "阅读隐私政策"
+  "privacyPolicy": "阅读隐私政策",
+  "previousLayouts": "上一个 {{board}} 布局",
+  "nextLayouts": "下一个 {{board}} 布局",
+  "boardLayoutAlt": "{{board}} 的 {{layout}} 岩点布局",
+  "sprayGalleryAlt": "布满岩点的喷点墙"
 }

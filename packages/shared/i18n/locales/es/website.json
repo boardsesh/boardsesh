@@ -4,7 +4,6 @@
   "boardsDescription": "Consulta los plafones y layouts compatibles y encuentra rocódromos donde escalar.",
   "findGyms": "Encuentra un rocódromo con {{board}}",
   "sprayLabel": "Spraywall",
-  "sprayLayout": "Una foto de tu Spraywall",
   "sprayTitle": "Tu Spraywall, con bloques y logbook.",
   "sprayLead": "Haz una foto. Boardsesh encuentra las presas, corriges las que falten y tu grupo crea y registra bloques. Gratis para Spraywalls de casa y de rocódromo.",
   "sprayStep1": "Haz una foto clara",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "Rocódromo o localidad",
   "sprayRoute": "Configura tu Spraywall",
   "photoPrivacy": "Quién ve la foto de tu Spraywall",
-  "privacyPolicy": "Lee la política de privacidad"
+  "privacyPolicy": "Lee la política de privacidad",
+  "previousLayouts": "Layouts anteriores de {{board}}",
+  "nextLayouts": "Siguientes layouts de {{board}}",
+  "boardLayoutAlt": "Layout {{layout}} de {{board}}",
+  "sprayGalleryAlt": "Spraywall con presas"
 }

@@ -4,7 +4,6 @@
   "boardsDescription": "See supported climbing boards and layouts, and find gyms with a wall you can climb on.",
   "findGyms": "Find a wall with {{board}}",
   "sprayLabel": "Spray wall",
-  "sprayLayout": "Your own wall photo",
   "sprayTitle": "Your spray wall, set and logged.",
   "sprayLead": "Take one photo. Boardsesh finds the holds, you fix any it missed, and your crew sets and logs climbs on it. Free for home and gym walls.",
   "sprayStep1": "Take a clear photo",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "Gym or town",
   "sprayRoute": "Set up your spray wall",
   "photoPrivacy": "Who sees your wall photo",
-  "privacyPolicy": "Read the Privacy policy"
+  "privacyPolicy": "Read the Privacy policy",
+  "previousLayouts": "Previous {{board}} layouts",
+  "nextLayouts": "Next {{board}} layouts",
+  "boardLayoutAlt": "{{layout}} on {{board}}",
+  "sprayGalleryAlt": "Spray wall with climbing holds"
 }

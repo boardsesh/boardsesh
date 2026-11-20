@@ -4,7 +4,6 @@
   "boardsDescription": "Consultez les boards et configurations compatibles et trouvez une salle où grimper.",
   "findGyms": "Trouver une salle avec {{board}}",
   "sprayLabel": "Spraywall",
-  "sprayLayout": "Une photo de votre Spraywall",
   "sprayTitle": "Votre Spraywall, ses blocs et son carnet.",
   "sprayLead": "Prenez une photo. Boardsesh détecte les prises, vous corrigez les oublis, puis votre crew ouvre et consigne ses blocs. Gratuit pour les Spraywalls à domicile comme en salle.",
   "sprayStep1": "Prenez une photo nette",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "Salle ou ville",
   "sprayRoute": "Configurer votre Spraywall",
   "photoPrivacy": "Qui voit la photo de votre Spraywall",
-  "privacyPolicy": "Lire la politique de confidentialité"
+  "privacyPolicy": "Lire la politique de confidentialité",
+  "previousLayouts": "Configurations précédentes de {{board}}",
+  "nextLayouts": "Configurations suivantes de {{board}}",
+  "boardLayoutAlt": "Disposition des prises {{layout}} sur {{board}}",
+  "sprayGalleryAlt": "Spraywall avec ses prises"
 }

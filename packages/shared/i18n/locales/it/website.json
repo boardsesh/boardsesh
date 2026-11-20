@@ -4,7 +4,6 @@
   "boardsDescription": "Scopri i pannelli e i layout compatibili e trova palestre con una parete su cui arrampicare.",
   "findGyms": "Trova una palestra con {{board}}",
   "sprayLabel": "Spraywall",
-  "sprayLayout": "Una foto della tua Spraywall",
   "sprayTitle": "La tua Spraywall, con blocchi e diario.",
   "sprayLead": "Scatta una foto. Boardsesh trova le prese, correggi quelle mancanti e il gruppo traccia e registra i blocchi. Gratis per le Spraywall domestiche e in palestra.",
   "sprayStep1": "Scatta una foto nitida",
@@ -46,5 +45,9 @@
   "directorySearchLabel": "Palestra o località",
   "sprayRoute": "Configura la tua Spraywall",
   "photoPrivacy": "Chi vede la foto della tua Spraywall",
-  "privacyPolicy": "Leggi l’informativa sulla privacy"
+  "privacyPolicy": "Leggi l’informativa sulla privacy",
+  "previousLayouts": "Layout precedenti di {{board}}",
+  "nextLayouts": "Layout successivi di {{board}}",
+  "boardLayoutAlt": "Layout {{layout}} di {{board}}",
+  "sprayGalleryAlt": "Spraywall con prese"
 }
