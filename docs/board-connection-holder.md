@@ -119,7 +119,7 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 
 **Client.** The reducer already applied `APPLY_CLIMB_CLEARED` (wall to `null`, history kept). It now also keeps `lastClearedClimbUuid`: the event's `climbUuid`, or the climb that was current when an older server sends none. `selectClearedClimbUuid` returns it only while nothing has been lit since, and the provider exposes it as `useBoardPresenceClearedClimbUuid()`. Compare it with the climb on screen. Never read it as "the wall is dark": a peer's queue moves before the presence echo, and its new climb must not read as turned off.
 
-**Mobile.** The controls sheet's "Turn off all lights" calls `BluetoothProvider.turnOffAllLights()`. The spill skip (#7047) blanks the wall the same way when the auto-sender can't light the current climb on this board: in a party session, for a climb on another board at this gym, and in a solo queue with nothing compatible left. Both go through `blankWallAndReportClear(write)`. Only the write differs: "Turn off all lights" passes the tagged `clearBoard`, the spill skip an untagged write, so Board Lights Cleared counts only the button. The helper bumps the wall-operation epoch before the write, so a report of the pre-clear wall (or its membership-restamp retry) can't settle afterwards, and gives up if the epoch or board moved during the write. Once the write succeeds:
+**Mobile.** The controls sheet's "Turn off all lights" calls `BluetoothProvider.turnOffAllLights()`. The spill skip (#7047) blanks the wall the same way when the auto-sender can't light the current climb on this board: for an unreachable climb in a party session, or in a solo queue with nothing compatible left. A climb on another reachable gym board keeps the source wall lit. Both go through `blankWallAndReportClear(write)`. Only the write differs: "Turn off all lights" passes the tagged `clearBoard`, the spill skip an untagged write, so Board Lights Cleared counts only the button. The helper bumps the wall-operation epoch before the write, so a report of the pre-clear wall (or its membership-restamp retry) can't settle afterwards, and gives up if the epoch or board moved during the write. Once the write succeeds:
 
 1. It forgets the physical frames the auto-sender's dedup compares against. Without that, a drain re-run that doesn't write (a crew FullSync with a new item object, the current-change clock moving) would confirm the turned-off climb and report it as lit.
 2. It forgets the last accepted report, so re-lighting the same climb reports it again.
@@ -147,6 +147,24 @@ drive, Settings › Board turns the choice to Right away (or In a session too of
 drops, the connect fails or arming times out, the session or the board changes, or the climber signs out
 (`DriveModeExitReason` in `drive-mode-store.ts`). A crewmate's board offers no swipe, by design (and a drive the runner can't
 start answers `held_by_crew`): their phone holds it, and Put on board relays the climb to that phone. See `docs/climb-view-options.md`, "Swipe to drive".
+
+### Moving between boards in a mixed queue
+
+Browsing a climb for another reachable board keeps the current board lit and
+connected. Put on {board} moves the connection only when pressed. That press
+uses the same Stop driving after preference as Put on board, including Until I
+stop and the crew-session setting. A successful move arms the destination's
+drive and explicitly re-lights the selected climb; only this phone's confirmed
+write starts the driving indicator and timer. This also releases the stale-climb
+hold on the destination, so a second press is unnecessary.
+
+The request survives closing the player. A changed account, session, board or
+current climb, a newer move, or a deliberate stop invalidates its completion.
+Failed or cancelled connections start no drive. The move offers no swipe-to-drive
+action while the old board is connected, and does not clear that board's LEDs.
+A drive belongs to one board: the source drive ends during the switch, and the
+button starts a new drive on the destination rather than transferring the old
+drive or its remaining timer.
 
 ## Known limitations
 

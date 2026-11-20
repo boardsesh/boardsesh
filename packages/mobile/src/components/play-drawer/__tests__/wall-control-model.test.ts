@@ -947,6 +947,10 @@ describe('resolveWallControl: a press resumes Always drive the wall', () => {
     ['put_on_wall, linked', { ...MINE, commitButton: 'putOnWall' }],
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
+    ['move_to_board', { gymBoardName: 'Tension', offWall: true }],
+    ['move_to_board, linked', { ...MINE, gymBoardName: 'Tension', offWall: true }],
+    ['move_to_board, driving another board', { ...MINE, gymBoardName: 'Tension', offWall: true, driveMode: 'live' }],
+    ['move_to_board, arming another board', { ...MINE, gymBoardName: 'Tension', offWall: true, driveMode: 'arming' }],
   ];
 
   // [always drive, stopped, tapDrive]
@@ -966,7 +970,7 @@ describe('resolveWallControl: a press resumes Always drive the wall', () => {
       drivingStopped: stopped,
       alwaysDrive,
     });
-    expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
+    expect(['connect', 'put_on_wall', 'relight', 'move_to_board']).toContain(model.tapAction);
     expect(model.tapDrive).toBe(tapDrive);
     // It never times a drive of its own.
     expect(model.tapKeepLighting).toBeNull();
@@ -1028,6 +1032,10 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['put_on_wall, linked', { ...MINE, commitButton: 'putOnWall' }],
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
+    ['move_to_board', { gymBoardName: 'Tension', offWall: true }],
+    ['move_to_board, linked', { ...MINE, gymBoardName: 'Tension', offWall: true }],
+    ['move_to_board, driving another board', { ...MINE, gymBoardName: 'Tension', offWall: true, driveMode: 'live' }],
+    ['move_to_board, arming another board', { ...MINE, gymBoardName: 'Tension', offWall: true, driveMode: 'arming' }],
   ];
   /** Solo, the flag on, Stop driving after at its default, Always drive the wall off. */
   const ON: Partial<WallControlInput> = {
@@ -1078,13 +1086,41 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
 
   it.each(cases)('%s', (_name, state, change, tapDrive, windowMs, setting) => {
     const model = resolveWallControl({ ...FREE, ...state, ...ON, ...change });
-    expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
+    expect(['connect', 'put_on_wall', 'relight', 'move_to_board']).toContain(model.tapAction);
     expect(model.tapDrive).toBe(tapDrive);
     if (tapDrive === 'window' || tapDrive === 'drive') {
       expect(model.tapKeepLighting).toEqual({ windowMs, setting });
     } else {
       expect(model.tapKeepLighting).toBeNull();
     }
+    if (model.tapAction === 'move_to_board') expect(model.swipeAction).toBeNull();
+  });
+
+  it.each([
+    ['a connect in flight', { pending: true }],
+    ['the busy-wall question', { confirmArmed: true }],
+    ['a destination without lights', { gymBoardHasLights: false }],
+  ])('does not arm a destination drive with %s', (_name, change) => {
+    for (const alwaysDrive of [false, true]) {
+      expect(
+        resolveWallControl({ ...FREE, ...MINE, ...ON, gymBoardName: 'Tension', offWall: true, alwaysDrive, ...change }),
+      ).toMatchObject({ tapDrive: null, tapKeepLighting: null, swipeAction: null });
+    }
+  });
+
+  it('does not start a destination drive when a crewmate lights that gym board', () => {
+    expect(
+      resolveWallControl({
+        ...FREE,
+        ...MINE,
+        ...ON,
+        gymBoardName: 'Tension',
+        offWall: true,
+        crewGymBoard: true,
+        commitButton: 'putOnWall',
+        driveMode: 'live',
+      }),
+    ).toMatchObject({ tapAction: 'relay', tapDrive: null, tapKeepLighting: null, swipeAction: null });
   });
 
   it('never keeps lighting from a relay, Set active, a wall with no lights, or a press that puts nothing up', () => {

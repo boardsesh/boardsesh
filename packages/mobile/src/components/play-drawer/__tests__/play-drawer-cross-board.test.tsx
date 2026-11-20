@@ -25,6 +25,8 @@ import type { LayoutChangeEvent } from 'react-native';
 import { clearOpeningLayoutCache } from '../opening-layout-cache';
 import type { SwipePager } from '../use-swipe-pager';
 import { publishHingeStatus, resetHingeStatusForTests } from '../../../lib/device-hinge-store';
+import { getBoardRenderData } from '../../../lib/board-details';
+import { registerMoveLightingPolicy } from '../move-to-board-lighting';
 
 type Props = Record<string, unknown>;
 
@@ -277,9 +279,18 @@ vi.mock('react-native-safe-area-context', () => ({
 // answer here is inert; it just has to be the selected 12x12 rather than a
 // throw. Literal instead of a reference to TWELVE_BY_TWELVE because vi.mock
 // factories hoist above that const.
+const selectedBoard = vi.hoisted(() => ({
+  current: { uuid: 'gym-kilter', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+}));
+const moveQueryClient = vi.hoisted(() => ({ getQueryData: () => selectedBoard.current }));
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => moveQueryClient,
+}));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
+  ACTIVE_BOARD_QUERY_KEY: ['activeBoard'],
   useActiveBoard: () => ({
-    data: { uuid: 'gym-kilter', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+    data: selectedBoard.current,
     isPending: false,
   }),
 }));
@@ -725,6 +736,14 @@ beforeEach(() => {
   queueState.currentClimbQueueItem = null;
   queueState.suggestionSource = null;
   bluetoothContext.value = null;
+  selectedBoard.current = {
+    uuid: 'gym-kilter',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    angle: 40,
+  };
   lightbulbState.lit = false;
   lightbulbState.ledless = false;
   lightbulbState.localConnected = false;
@@ -2513,6 +2532,183 @@ describe('PlayDrawer wall button taps', () => {
       const sheet = boardSheet.props.at(-1);
       expect(sheet?.visible).toBe(true);
       expect(sheet?.onDrive).toEqual(expect.any(Function));
+    });
+  });
+
+  describe('Put on another gym board keeps lighting', () => {
+    beforeEach(() => {
+      const unregister = registerMoveLightingPolicy(() => ({
+        plan: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
+        resumeAlways: false,
+      }));
+      onTestFinished(unregister);
+    });
+    const HOMEWALL_BOARD = {
+      uuid: '11111111-1111-4111-8111-111111111111',
+      slug: 'gym-homewall',
+      boardId: 7,
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '26,27',
+      name: 'Gym Homewall',
+    } as UserBoard;
+    const HOMEWALL_CONFIG = { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '26,27', angle: 30 };
+    const homewallHold = getBoardRenderData({ ...HOMEWALL_CONFIG, boardName: 'kilter', setIds: [26, 27] })
+      ?.holdsData[0];
+    if (!homewallHold) throw new Error('Homewall fixture has no hold placements');
+    const homewallClimb = { ...HOMEWALL_CLIMB, frames: `p${homewallHold.id}r15` };
+
+    function moveDrawerElement(boardConfig = TWELVE_BY_TWELVE) {
+      return createElement(PlayDrawer, {
+        presentation: 'pane',
+        boardConfig,
+        reachableBoardKeys: new Set(['kilter:8']),
+        openTarget: null,
+        onOpenQueue: onOpenQueueForDrawer,
+      });
+    }
+
+    function prepareMove() {
+      swipeToDrive.on = true;
+      setSetting('alwaysDrive', false);
+      setSetting('putOnBoardKeepsLighting', '45');
+      crewGymBoard.boards = [HOMEWALL_BOARD];
+      queueState.currentClimbQueueItem = queueItem(homewallClimb, 'queue-homewall');
+      const bluetooth = linkedBluetooth();
+      linkedTo(bluetooth, false);
+      let finishMove: (connected: boolean) => void = () => undefined;
+      lightbulbState.moveToClimbBoard.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finishMove = resolve;
+          }),
+      );
+      return { bluetooth, finishMove: (connected: boolean) => finishMove(connected) };
+    }
+
+    function selectHomewall() {
+      selectedBoard.current = {
+        uuid: HOMEWALL_BOARD.uuid,
+        boardType: 'kilter',
+        layoutId: 8,
+        sizeId: 17,
+        setIds: '26,27',
+        angle: 30,
+      };
+    }
+
+    afterEach(() => {
+      lightbulbState.moveToClimbBoard.mockReset().mockResolvedValue(true);
+      setCurrentClimb.mockReset();
+    });
+
+    it.each(['off', 'arming', 'live'] as const)(
+      'arms the destination after connecting, source drive=%s',
+      async (sourceDrive) => {
+        const { bluetooth, finishMove } = prepareMove();
+        if (sourceDrive !== 'off') {
+          enterDriveMode({ sessionId: null, boardId: null, boardType: 'kilter', startedBy: 'tap' });
+          if (sourceDrive === 'live') markDriveLive();
+        }
+        const originalDrive = getDriveMode();
+        const screen = render(moveDrawerElement());
+        expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({
+          state: 'move_to_board',
+          tapKeepLighting: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
+        });
+
+        tap('onWallControl');
+        expect(lightbulbState.moveToClimbBoard).toHaveBeenCalledWith('move_to_board', homewallClimb);
+        expect(getDriveMode()).toBe(originalDrive);
+        expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+
+        await act(async () => {
+          selectHomewall();
+          finishMove(true);
+          await Promise.resolve();
+        });
+        expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+        expect(getDriveMode()).not.toBe(originalDrive);
+        expect(bluetooth.reassertWall).toHaveBeenCalledExactlyOnceWith({ carryToConnect: true });
+
+        // The provider's successful local write makes the armed drive live.
+        act(() => {
+          lightbulbState.lit = true;
+          markDriveLive({ boardId: HOMEWALL_BOARD.boardId });
+        });
+        screen.rerender(moveDrawerElement(HOMEWALL_CONFIG));
+        expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({
+          state: 'lit',
+          labelKey: 'youAreDriving',
+          driving: true,
+          lightWindow: true,
+          tapAction: 'stop_window',
+        });
+        screen.unmount();
+      },
+    );
+
+    it.each(['connect failed', 'queue changed'] as const)('starts no destination drive when %s', async (reason) => {
+      const { bluetooth, finishMove } = prepareMove();
+      render(moveDrawerElement());
+      tap('onWallControl');
+      expect(lightbulbState.moveToClimbBoard).toHaveBeenCalledOnce();
+      await act(async () => {
+        selectHomewall();
+        if (reason === 'queue changed') queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-new');
+        finishMove(reason !== 'connect failed');
+        await Promise.resolve();
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('keeps the destination lighting choice through the busy-wall confirmation', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const { bluetooth, finishMove } = prepareMove();
+      crew.shared = true;
+      queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+      const previewItem = queueItem(homewallClimb, 'preview-homewall');
+      const player = () =>
+        createElement(PlayDrawer, {
+          presentation: 'pane',
+          boardConfig: TWELVE_BY_TWELVE,
+          reachableBoardKeys: new Set(['kilter:8']),
+          openTarget: { climb: homewallClimb, options: { previewQueueItem: previewItem }, nonce: 1 },
+          onOpenQueue: onOpenQueueForDrawer,
+        });
+      const screen = render(player());
+      wallClimbState.uuid = 'SOMEONE-ELSES-CLIMB';
+      screen.rerender(player());
+      flushOpeningFrame();
+
+      tap('onWallControl');
+      expect(recorded.actionBar.at(-1)?.commitButton).toBe('confirm');
+      expect(lightbulbState.moveToClimbBoard).not.toHaveBeenCalled();
+      expect(getDriveMode()).toBeNull();
+      setCurrentClimb.mockImplementationOnce((item: ClimbQueueItem) => {
+        queueState.currentClimbQueueItem = item;
+      });
+      vi.setSystemTime(Date.now() + 501);
+      tap('onCommit');
+      expect(setCurrentClimb).toHaveBeenCalledWith(
+        expect.objectContaining({ climb: homewallClimb }),
+        expect.anything(),
+      );
+      expect(lightbulbState.moveToClimbBoard).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        selectHomewall();
+        finishMove(true);
+        await Promise.resolve();
+      });
+      expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+      expect(bluetooth.reassertWall).toHaveBeenCalledExactlyOnceWith({ carryToConnect: true });
+      screen.unmount();
     });
   });
 

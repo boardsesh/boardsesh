@@ -280,7 +280,9 @@ export function useWallControl({
     // open-ended drive comes back to light the next climbs. Otherwise, with
     // Stop driving after set to a time or Until I stop (2.7), the press puts
     // the climb up the ordinary way and, once it went up, arms the drive.
-    if (current.tapDrive === 'resume' && putsUp) clearDrivingStopped();
+    // A move has not left this wall yet. Resume only after the destination
+    // connects; a cancelled picker or busy-wall question keeps this one stopped.
+    if (current.tapDrive === 'resume' && putsUp && action !== 'move_to_board') clearDrivingStopped();
     const keepLighting =
       putsUp && (current.tapDrive === 'window' || current.tapDrive === 'drive') ? current.tapKeepLighting : null;
     const putUp = (put: () => boolean) => {

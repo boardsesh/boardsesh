@@ -13,6 +13,8 @@ import {
   type RefObject,
 } from 'react';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
+import { useQueryClient } from '@tanstack/react-query';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import {
   AccessibilityInfo,
   Platform,
@@ -29,7 +31,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
@@ -187,7 +189,7 @@ import {
   getPlayCoreEnhancementTargetKey,
   type PlayCoreEnhancementSnapshot,
 } from './PlayCoreEnhancements';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { ACTIVE_BOARD_QUERY_KEY, useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
@@ -224,6 +226,7 @@ import {
 import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { startDrive, startKeepLighting } from './drive-runner';
+import { moveToBoardAndLight } from './move-to-board-lighting';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { formatLetsGo, useLetsGo } from './board-lets-go-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
@@ -901,6 +904,7 @@ export function PlayCore({
     canRelay: canRelayToHolder,
   });
   const { data: activeBoardForNavigation } = useActiveBoard();
+  const queryClient = useQueryClient();
   // A spray wall with its LED setup on for this phone. Only the wall the
   // provider drives counts: the LAN sender lights that wall and no other, so a
   // climb from another board or wall never borrows it.
@@ -1515,6 +1519,7 @@ export function PlayCore({
         offWall: showBoardMismatch || climbBoardMismatch || !playerBoardHasLights,
         // ...unless another board at this gym draws it: then Put on {board} (#7076).
         gymBoardName: climbGymBoardName,
+        gymBoardHasLights: climbGymBoard ? boardHasLights(climbGymBoard) : false,
         crewGymBoard: climbOnCrewGymBoard,
         wallHeldLocally,
         // On the wall per presence with no link (QA #147).
@@ -1558,6 +1563,7 @@ export function PlayCore({
       showBoardMismatch,
       climbBoardMismatch,
       climbGymBoardName,
+      climbGymBoard,
       climbOnCrewGymBoard,
       playerBoardHasLights,
       wallHeldLocally,
@@ -2288,10 +2294,73 @@ export function PlayCore({
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
   // then the move to that board, which connects there and lights it.
+  const pendingMoveLightingRef = useRef<{
+    climbUuid: string;
+    plan: KeepLightingPlan | null;
+    resumeAlways: boolean;
+  } | null>(null);
   const handleMoveToGymBoard = useCallback(() => {
-    if (commitBarModel.mode === 'commit' && !handleSetActive()) return;
-    void moveLightbulbToClimbBoard('move_to_board', displayedClimb ?? null);
-  }, [commitBarModel.mode, handleSetActive, moveLightbulbToClimbBoard, displayedClimb]);
+    const pendingPlan = pendingMoveLightingRef.current;
+    const plan =
+      busyWallUp && pendingPlan?.climbUuid === displayedClimb?.uuid
+        ? (pendingPlan?.plan ?? null)
+        : wallControlForDriveRef.current.tapKeepLighting;
+    const resumeAlways =
+      busyWallUp && pendingPlan?.climbUuid === displayedClimb?.uuid
+        ? pendingPlan?.resumeAlways === true
+        : wallControlForDriveRef.current.tapDrive === 'resume';
+    pendingMoveLightingRef.current = null;
+    if (commitBarModel.mode === 'commit' && !handleSetActive()) {
+      if (displayedClimb) pendingMoveLightingRef.current = { climbUuid: displayedClimb.uuid, plan, resumeAlways };
+      return;
+    }
+    if (!climbGymBoard || !displayedClimb || !bluetooth) {
+      void moveLightbulbToClimbBoard('move_to_board', displayedClimb ?? null);
+      return;
+    }
+    const credentialScope = getCredentialGeneration();
+    // These readers belong to the app providers, not this player. Closing it
+    // during the picker still finishes its press; another board, climb,
+    // session or account invalidates it even after the player unmounts.
+    const targetBoardUuid = climbGymBoard.uuid;
+    const climbUuid = displayedClimb.uuid;
+    const reassertWall = bluetooth.reassertWall;
+    void moveToBoardAndLight({
+      boardUuid: targetBoardUuid,
+      boardId: climbGymBoard.boardId,
+      boardType: climbGymBoard.boardType,
+      climbUuid,
+      sessionId,
+      credentialScope,
+      plan,
+      resumeAlways,
+      move: () => moveLightbulbToClimbBoard('move_to_board', displayedClimb),
+      isCurrent: () => {
+        const snapshot = getQueueSnapshot();
+        return (
+          getCredentialGeneration() === credentialScope &&
+          queryClient.getQueryData<UserBoard>(ACTIVE_BOARD_QUERY_KEY)?.uuid === targetBoardUuid &&
+          (snapshot.sessionId ?? null) === sessionId &&
+          snapshot.currentClimbQueueItem?.climb.uuid === climbUuid
+        );
+      },
+      relight: () => {
+        resetWallCleared();
+        reassertWall({ carryToConnect: true });
+      },
+    });
+  }, [
+    commitBarModel.mode,
+    busyWallUp,
+    handleSetActive,
+    moveLightbulbToClimbBoard,
+    displayedClimb,
+    climbGymBoard,
+    bluetooth,
+    sessionId,
+    getQueueSnapshot,
+    queryClient,
+  ]);
   // The busy-wall question (#7017): who put the lit climb up, and the one
   // handler behind its pair, which drops taps for the first 500 ms and speaks
   // the caption once. Its words replace the browse caption while it is up.

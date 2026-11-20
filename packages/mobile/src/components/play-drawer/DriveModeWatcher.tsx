@@ -48,6 +48,7 @@ import { useBoardLetsGo } from './use-board-lets-go';
 import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
+import { registerMoveLightingPolicy } from './move-to-board-lighting';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -166,6 +167,9 @@ export function DriveModeWatcher(): null {
       })
     : null;
   const adoptionInputRef = useRef({ sessionId, linked, boardId, boardType, plan: pressPlan });
+  const moveLightingPolicyRef = useRef({ plan: pressPlan, resumeAlways: alwaysApplies });
+  moveLightingPolicyRef.current = { plan: pressPlan, resumeAlways: alwaysApplies };
+  useEffect(() => registerMoveLightingPolicy(() => moveLightingPolicyRef.current), []);
   adoptionInputRef.current = { sessionId, linked, boardId, boardType, plan: pressPlan };
   const adoptFromLockScreen = useCallback(() => {
     adoptLockScreenLighting(adoptionInputRef.current);

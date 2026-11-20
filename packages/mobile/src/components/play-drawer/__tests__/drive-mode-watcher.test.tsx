@@ -163,6 +163,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { DriveModeWatcher } from '../DriveModeWatcher';
+import { moveToBoardAndLight } from '../move-to-board-lighting';
 import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
 import { LOCK_SCREEN_PRESS_RECHECK_MS, resetLockScreenLightingForTests } from '../lock-screen-lighting';
@@ -192,6 +193,75 @@ const DEFAULT_READS: Reads = {
   boardId: 7,
   isAuthenticated: true,
 };
+
+describe('board-specific drive handoff', () => {
+  it('ends the source drive and starts a fresh destination timer only after its confirmed send', async () => {
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({ sessionId: 'session-1', boardId: 7, boardType: 'kilter', startedBy: 'swipe', now: 1 });
+      markDriveLive();
+    });
+    let connected!: (success: boolean) => void;
+    const connecting = new Promise<boolean>((resolve) => {
+      connected = resolve;
+    });
+    const relight = vi.fn();
+    const completed = moveToBoardAndLight({
+      boardUuid: 'gym-tension',
+      boardType: 'tension',
+      climbUuid: 'climb-b',
+      sessionId: 'session-1',
+      credentialScope: 1,
+      plan: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
+      move: () => connecting,
+      isCurrent: () => true,
+      relight,
+    });
+    watcher.change({ isConnected: false, boardId: null });
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ isConnected: true, boardId: 8, boardName: 'tension' });
+    expect(getDriveMode()).toBeNull();
+    await act(async () => {
+      connected(true);
+      await completed;
+    });
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', boardType: 'tension', startedBy: 'tap', expiresAt: null });
+    expect(relight).toHaveBeenCalledOnce();
+    const confirmedAt = Date.now();
+    act(() => emitWallConfirm('climb-b', 'self'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 8, windowMs: 45_000, climbsLit: 1 });
+    expect(getDriveMode()?.expiresAt).toBeGreaterThanOrEqual(confirmedAt + 45_000);
+    expect(getDriveMode()?.expiresAt).toBeLessThanOrEqual(Date.now() + 45_000);
+  });
+
+  it('rechecks crew eligibility after the picker even for an Until I stop press', async () => {
+    const watcher = mount();
+    watcher.change({ keepLighting: 'until_stopped', drivesInSession: false, isCrew: false });
+    let connected!: (success: boolean) => void;
+    const connecting = new Promise<boolean>((resolve) => {
+      connected = resolve;
+    });
+    const relight = vi.fn();
+    const completed = moveToBoardAndLight({
+      boardUuid: 'gym-tension',
+      boardType: 'tension',
+      climbUuid: 'climb-b',
+      sessionId: 'session-1',
+      credentialScope: 1,
+      plan: { windowMs: null, setting: 'putOnBoardKeepsLighting' },
+      move: () => connecting,
+      isCurrent: () => true,
+      relight,
+    });
+    watcher.change({ isCrew: true });
+    await act(async () => {
+      connected(true);
+      await completed;
+    });
+    expect(getDriveMode()).toBeNull();
+    expect(relight).toHaveBeenCalledOnce();
+  });
+});
 
 function mount() {
   const view = render(createElement(DriveModeWatcher));
