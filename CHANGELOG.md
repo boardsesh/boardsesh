@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-20
 
+### App update
+
+A new version shipped to the Play Store.
+
 ### Fixed
 
 - Install Boardsesh on more Android devices. ([#7931](https://github.com/boardsesh/boardsesh/pull/7931))
