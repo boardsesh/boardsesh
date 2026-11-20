@@ -5,7 +5,7 @@ import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: async (namespace: string) => ({
+  getServerTranslation: async (namespace: string | readonly string[]) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),
     locale: 'en-US',
   }),
@@ -47,12 +47,20 @@ describe('supported boards public entry', () => {
       expect(image.getAttribute('alt')?.length).toBeGreaterThan(0);
     }
     expect(document.querySelectorAll('ul[role="list"]')).toHaveLength(9);
+    expect(document.querySelectorAll('ul[tabindex="0"]')).toHaveLength(3);
     expect(document.querySelector('#kilter figcaption')?.textContent).toBe('Original');
     expect([...document.querySelectorAll('#tension figcaption')].map((caption) => caption.textContent)).toEqual([
       'Board 2 Mirror',
       'Board 2 Spray',
       'Original',
     ]);
+  });
+
+  it('names each board once in image descriptions while retaining layout generations', async () => {
+    const document = await renderPage();
+    expect(document.querySelector('#kilter img')?.getAttribute('alt')).toBe('Original on Kilter');
+    expect(document.querySelector('#tension img')?.getAttribute('alt')).toBe('Board 2 Mirror on Tension');
+    expect(document.querySelector('#moonboard img')?.getAttribute('alt')).toBe('Mini 2025 on MoonBoard');
   });
 
   it('keeps crawlable useful actions and one global logbook link', async () => {
@@ -66,6 +74,9 @@ describe('supported boards public entry', () => {
 
   it('declares canonical, social and all six translated alternate metadata', async () => {
     const metadata = await generateMetadata();
+    expect(metadata.title).toEqual({ absolute: 'Supported boards | Boardsesh' });
+    expect(metadata.openGraph).toMatchObject({ title: 'Supported boards | Boardsesh' });
+    expect(metadata.twitter).toMatchObject({ title: 'Supported boards | Boardsesh' });
     expect(metadata.alternates?.canonical).toContain('/boards');
     expect(metadata.openGraph).toBeTruthy();
     expect(metadata.twitter).toBeTruthy();

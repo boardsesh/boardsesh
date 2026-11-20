@@ -68,6 +68,18 @@ describe('board layout rail', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('leaves a fitting list outside tab order and preserves native key defaults', () => {
+    const { rail, scrollBy, scrollTo } = renderRail();
+    Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 647 });
+    act(() => measureRail());
+    expect(rail.hasAttribute('tabindex')).toBe(false);
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+      expect(fireEvent.keyDown(rail, { key, cancelable: true })).toBe(true);
+    }
+    expect(scrollBy).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it('supports buttons and Arrow/Home/End without intercepting nested links', () => {
     const { rail, scrollBy, scrollTo } = renderRail();
     fireEvent.click(screen.getByRole('button', { name: 'Next layouts' }));
