@@ -129,14 +129,27 @@ export default function GymDirectoryNearMe({
 
   const [nearMeOn, setNearMeOn] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const revealMapRef = useRef(false);
   useEffect(() => {
-    const restoreView = () => setMapOpen(new URLSearchParams(window.location.search).get('view') === 'map');
+    const restoreView = () => {
+      revealMapRef.current = false;
+      setMapOpen(new URLSearchParams(window.location.search).get('view') === 'map');
+    };
     restoreView();
     window.addEventListener('popstate', restoreView);
     return () => window.removeEventListener('popstate', restoreView);
   }, []);
+  useEffect(() => {
+    if (!revealMapRef.current) return;
+    revealMapRef.current = false;
+    if (mapOpen) {
+      mapContainerRef.current?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+    }
+  }, [mapOpen]);
   const toggleMap = () => {
     const nextMapOpen = !mapOpen;
+    revealMapRef.current = nextMapOpen;
     const nextUrl = new URL(window.location.href);
     if (nextMapOpen) nextUrl.searchParams.set('view', 'map');
     else nextUrl.searchParams.delete('view');
@@ -460,7 +473,14 @@ export default function GymDirectoryNearMe({
               the tiles unrequested on a narrow screen with the map collapsed:
               the map's effect waits for its container to report a non-zero
               size. Above the breakpoint the container has one from the start. */}
-          <Box sx={{ display: mapOpen ? 'block' : 'none', [WIDE_LAYOUT]: { display: 'block' } }}>
+          <Box
+            ref={mapContainerRef}
+            sx={{
+              display: mapOpen ? 'block' : 'none',
+              scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
+              [WIDE_LAYOUT]: { display: 'block' },
+            }}
+          >
             <GymDirectoryMap pins={pins} pinnedCount={pinnedCount} shownCount={shownCount} locale={locale} />
           </Box>
         </Box>
