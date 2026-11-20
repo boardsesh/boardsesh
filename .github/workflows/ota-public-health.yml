@@ -1,0 +1,60 @@
+name: OTA Public Health
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ota-public-health
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.health.outputs.enabled }}
+      healthy: ${{ steps.health.outputs.healthy }}
+    # No environment gate or application credentials: this must run outside the homelab.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Check the public OTA endpoints
+        id: health
+        run: node --experimental-strip-types scripts/ota-public-health.ts probe
+
+  notify:
+    needs: probe
+    if: always() && github.ref == 'refs/heads/main' && needs.probe.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Match the existing OTA drift alert's environment and best-effort Discord delivery.
+    environment: ota-stable-release
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Report failure or recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTHY: ${{ needs.probe.outputs.healthy }}
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+        run: node --experimental-strip-types scripts/ota-public-health.ts notify

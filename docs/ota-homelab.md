@@ -191,6 +191,20 @@ The owner explicitly waived the issue's UPS/NUT prerequisite on 2026-11-20.
 Backups and restore checks remain required; UPS protection is not represented
 as installed or proven.
 
+`OTA Public Health` (`ota-public-health.yml`) checks the public `/hc` and `/ready`
+endpoints from GitHub-hosted runners every 15 minutes and on manual dispatch.
+It reads current main's hosting declaration and stays inactive while Railway
+owns OTA. Each endpoint gets three anonymous GET attempts with a 10-second
+timeout and five seconds between retries. Both must return HTTP 200; redirects
+fail. Logs and the job summary contain response codes and latency, never response
+bodies. The probe has no environment approval or application credentials.
+The existing `ota-stable-release` Discord webhook receives failure alerts and a
+recovery notice after the previous completed probe failed. Delivery is best
+effort; a runner/setup failure before the ownership check may only leave a failed
+Actions run, and recovery refers to the probe job's outcome. The failed GitHub
+run remains the durable check record. GitHub scheduling
+can be delayed, so the 15-minute schedule is not a guaranteed detection deadline.
+
 Record cutover time, source and destination release digests, backup IDs and
 checksums, restore timings, schema/data checks, signed-manifest and asset checks,
 Observe ingestion/history checks, US manifest latency, reboot recovery, and the

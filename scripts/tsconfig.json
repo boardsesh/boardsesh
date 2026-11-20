@@ -157,6 +157,8 @@
     "ota-image-bump.ts",
     "ota-image-bump.test.ts",
     "ota-hosting.test.ts",
+    "ota-public-health.ts",
+    "ota-public-health.test.ts",
     "ota-image-bump-workflow.test.ts",
     "railway-apply.ts",
     "railway-deployment-rollback.d.mts",
