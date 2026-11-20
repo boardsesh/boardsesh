@@ -15,6 +15,7 @@ import {
   bindLedPositionsToHoles,
   createWiring,
   createLedStripes,
+  moveLedStripeEndpoint,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
   generateTnutGrid,
@@ -1249,7 +1250,7 @@ describe('SprayWallLedSetupScreen', () => {
       await screen.findByText('sprayLedSetup.ledHint');
       expect(radio('ledCenter')).toBeTruthy();
       expect(radio('ledBelow')).toBeTruthy();
-      expect(radio('ledStripe')).toBeTruthy();
+      expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledStripe' }) !== null).toBe(pattern !== 'custom');
       expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
       expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledAlternating' }) !== null).toBe(pattern === 'offset');
       expect(screen.queryByText('sprayLedSetup.ledAlternatingHint')).toBeNull();
@@ -1313,6 +1314,87 @@ describe('SprayWallLedSetupScreen', () => {
         'wall-1',
         expect.objectContaining({ pattern: 'offset', firstRowOffset: !firstRowOffset, ledPlacement: 'alternating' }),
       );
+    },
+  );
+
+  it.each(['grid', 'offset'] as const)(
+    'clears the strip choice when changing %s spacing to custom',
+    async (pattern) => {
+      storage.load.mockResolvedValue({ ...savedLayout(), pattern });
+      await open();
+      next();
+      if (pattern === 'offset') next();
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      fireEvent.click(radio('ledStripe'));
+      back();
+      back();
+      back();
+      if (pattern === 'offset') back();
+      fireEvent.click(radio('custom'));
+      next();
+      fireEvent.click(button('add'));
+      tap({ x: 0.5, y: 0.5 });
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledStripe' })).toBeNull();
+      expect(controls.header?.trailing.disabled).toBe(true);
+      next();
+      expect(screen.queryByText('sprayLedSetup.stripeConfigTitle')).toBeNull();
+      expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
+    },
+  );
+
+  it.each([false, true])(
+    'keeps an older custom strip setup until a replacement is confirmed (wired=%s)',
+    async (wired) => {
+      const generated = createLedStripes({ ...savedLayout(), rows: 2, columns: 2 }, 'vertical', 3);
+      if (generated === 'capacity') throw new Error('fixture capacity');
+      const moved = moveLedStripeEndpoint(generated, generated.ledStripes!.stripes[0].id, 'start', {
+        x: 0.18,
+        y: 0.04,
+      });
+      const wiring = wired
+        ? {
+            direction: 'custom' as const,
+            startCorner: 'tl' as const,
+            initialSkip: 2,
+            paths: [moved.ledStripes!.stripes.flatMap((stripe) => stripe.ledIds)],
+            skips: [],
+          }
+        : undefined;
+      const saved = { ...moved, pattern: 'custom' as const, wiring };
+      storage.load.mockResolvedValue(saved);
+      await open();
+      expect(storage.save).not.toHaveBeenCalled();
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(lastSaved().ledPositions).toEqual(saved.ledPositions);
+      expect(lastSaved().ledStripes).toEqual(saved.ledStripes);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+      expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledStripe' })).toBeNull();
+      expect(controls.header?.trailing.disabled).toBe(true);
+      const saves = storage.save.mock.calls.length;
+      next();
+      expect(storage.save).toHaveBeenCalledTimes(saves);
+      expect(screen.queryByText('sprayLedSetup.stripeConfigTitle')).toBeNull();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      expect(controls.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'sprayLedSetup.rebuildLedsTitle' }),
+      );
+      await respondToConfirm(false);
+      expect(storage.save).toHaveBeenCalledTimes(saves);
+      expect(lastSaved().ledPositions).toEqual(saved.ledPositions);
+      expect(lastSaved().ledStripes).toEqual(saved.ledStripes);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+      next();
+      await respondToConfirm(true);
+      expect(lastSaved().ledPlacement).toBe('center');
+      expect(lastSaved().ledStripes).toBeUndefined();
+      expect(lastSaved().wiring).toBeUndefined();
     },
   );
 

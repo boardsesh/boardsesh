@@ -85,8 +85,10 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
    placement pairs the LEDs it generated per hole, and an explicit empty list
    keeps every pair separated. Rebuilding the LEDs returns to those defaults.
-   **LED strip** uses the approved continuous-strip diagram. Next asks for
-   horizontal or vertical strips and a default LED count (20 initially).
+   **LED strip** is available for grid and offset layouts and uses the approved
+   continuous-strip diagram. Custom spacing offers the in/behind/below choices.
+   Next asks for horizontal or vertical strips and a default LED count
+   (20 initially).
    Vertical starts with one strip per calibrated column, horizontal with one
    per row. Each line extends to the rectified photo's boundaries. The next
    photo editor can move either endpoint, change a selected strip's LED count,
@@ -345,7 +347,7 @@ The setup test remains white and can take control of the same serialized lane.
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
 top-row inset. Switching to grid or custom clears this offset-only choice.
-The other placement choices remain available for every wall pattern. All LED
+The in/behind/below choices remain available for every wall pattern. All LED
 placement tiles have the same size. The explanation for complementary positions appears
 below the selection only while that option is selected. LED positions and cable
 paths are stored alongside the placement choice.
