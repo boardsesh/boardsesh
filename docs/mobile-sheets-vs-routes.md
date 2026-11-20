@@ -451,6 +451,8 @@ shown, so a playback frame never re-renders the other sections.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
+The preview's bottom clears the bottom safe-area inset plus its section margin, keeping
+the header above the home indicator and Android's gesture-navigation area.
 With no eligible sections, the board and controls fill the viewport including safe-area
 clearance, and vertical scrolling is disabled. Native scrolling uses its normal
 activation distance, with iOS directional locking to reduce diagonal drift.

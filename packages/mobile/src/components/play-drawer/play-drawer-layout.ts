@@ -35,7 +35,10 @@ export function computeFirstScreenHeight(windowHeight: number, reserve: number, 
   return Math.max(windowHeight - reserve, windowHeight * minFraction);
 }
 
-/** Without sections, the content plus its bottom safe area exactly fills the viewport. */
+/**
+ * Keep the first section's header above the bottom safe area and its margin.
+ * Without sections, the content plus its bottom safe area exactly fills the viewport.
+ */
 export function computeDrawerFirstScreenHeight({
   viewport,
   bottomInset,
@@ -50,7 +53,7 @@ export function computeDrawerFirstScreenHeight({
   sectionMargin: number;
 }): number {
   if (firstSectionHeaderHeight === null) return Math.max(0, viewport - bottomInset);
-  return computeFirstScreenHeight(viewport, sectionTopPadding + firstSectionHeaderHeight + sectionMargin);
+  return computeFirstScreenHeight(viewport, bottomInset + sectionTopPadding + firstSectionHeaderHeight + sectionMargin);
 }
 
 /** Width of the landscape iPad player's Up next / Logbook / Beta panel. */
