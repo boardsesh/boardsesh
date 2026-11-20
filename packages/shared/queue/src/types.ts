@@ -539,6 +539,14 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          */
         pruneSuggestedAfterCurrent?: boolean;
         /**
+         * Queue-item uuids to drop from Up next (after the new current climb),
+         * in now-slot mode too (issue #7304). The provider names them solo when
+         * the climb that was up had not changed for 4 h: an older list's
+         * swipe leftovers, never a live workout's climbs. Ignored on server
+         * events. Local-only, like the prune above.
+         */
+        dropUpNextQueueItemUuids?: readonly string[];
+        /**
          * Local moves only: the party session a setCurrentClimb mutation for
          * this move is being sent to. Set it only when that mutation really goes
          * out; the reducer then records the move as unconfirmed (see
