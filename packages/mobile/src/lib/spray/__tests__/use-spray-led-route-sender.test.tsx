@@ -515,6 +515,57 @@ describe('spray route transport', () => {
     expect(mocks.payload).not.toHaveBeenCalled();
   });
 
+  it('lights the rest of the route when a known hold deliberately has no LEDs', async () => {
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [
+        { holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [2], aboveLedIds: [], aboveIndices: [] },
+        { holdId: 8, holeIndices: [], ledIds: [], indices: [], aboveLedIds: [], aboveIndices: [] },
+      ],
+    });
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1p8r1')).toBe(true);
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([2]);
+    expect(mocks.failure).not.toHaveBeenCalled();
+  });
+
+  it('clears old lights rather than retaining a previous route when every known hold is unassigned', async () => {
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    mocks.show.mockClear();
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 7, holeIndices: [], ledIds: [], indices: [], aboveLedIds: [], aboveIndices: [] }],
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.clear).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.show).not.toHaveBeenCalled();
+  });
+
+  it('never clears or acknowledges an empty assignment while another preview owns the wall', async () => {
+    mocks.ownsLane = false;
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 7, holeIndices: [], ledIds: [], indices: [], aboveLedIds: [], aboveIndices: [] }],
+    });
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(mocks.failure).not.toHaveBeenCalled();
+  });
+
+  it('still rejects an assigned but wholly unwired hold instead of confirming a partial route', async () => {
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [], aboveLedIds: [], aboveIndices: [] }],
+    });
+    const { result } = renderHook(() => useSender());
+    expect(await result.current.send('p7r1')).toBe(false);
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(mocks.failure).toHaveBeenCalledExactlyOnceWith();
+  });
+
   it('refuses failure acknowledgements and closes the owned session', async () => {
     mocks.show.mockRejectedValueOnce(new Error('offline'));
     const { result } = renderHook(() => useSender());

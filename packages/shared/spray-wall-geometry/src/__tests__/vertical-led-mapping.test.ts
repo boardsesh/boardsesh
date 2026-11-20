@@ -281,13 +281,13 @@ describe('one lower LED and one optional upper LED per mounting hole', () => {
     expect(rebound[1].aboveHole).toEqual({ x: 0.5, y: 0.5 });
   });
 
-  it('uses one mounting nut for a large hold while retaining multiple hand-made primary links', () => {
+  it('uses outer nuts in every covered column while retaining multiple hand-made primary links', () => {
     const configured = layout('below');
     const hold = { id: 1, cx: 350, cy: 650, r: 400 };
     const automatic = buildSprayLedMapping(configured, frame, [hold]).holds[0];
-    expect(automatic.holeIndices).toHaveLength(1);
-    expect(automatic.ledIds).toHaveLength(1);
-    expect(automatic.aboveLedIds).toHaveLength(1);
+    expect(automatic.holeIndices).toHaveLength(11);
+    expect(automatic.ledIds).toHaveLength(5);
+    expect(automatic.aboveLedIds).toHaveLength(5);
     const chosen = configured.ledPositions!.slice(0, 3).map((led) => led.id);
     const manual = buildSprayLedMapping(setHoldLedLink(configured, 1, chosen), frame, [hold]).holds[0];
     expect(manual.ledIds).toEqual(chosen);

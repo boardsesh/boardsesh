@@ -62,7 +62,7 @@ describe('hold, hole and physical LED mapping', () => {
     expect(mapping.holds[0]).toMatchObject({ holdId: 1, holeIndices: [4], indices: [4] });
   });
 
-  it('infers one mounting hole near the center without changing silhouette tap targets', () => {
+  it('owns covered nuts while excluding a concave opening and retaining tap targets', () => {
     const configured = layout({
       pattern: 'custom',
       holes: [
@@ -72,7 +72,7 @@ describe('hold, hole and physical LED mapping', () => {
       ],
     });
     const traced = hold({ r: 100, outline: [-1, -1, 1, -1, 1, 1, 0.3, 1, 0.3, 0.2, -0.3, 0.2, -0.3, 1, -1, 1] });
-    expect(buildSprayLedMapping(configured, frame, [traced]).holds[0].holeIndices).toEqual([0]);
+    expect(buildSprayLedMapping(configured, frame, [traced]).holds[0].holeIndices).toEqual([0, 1]);
     expect(findSprayHoldAtPoint([traced], { x: 0.55, y: 0.5 }, frame)).toBe(1);
     expect(findSprayHoldAtPoint([traced], { x: 0.5, y: 0.6 }, frame)).toBeNull();
   });
@@ -85,7 +85,7 @@ describe('hold, hole and physical LED mapping', () => {
       ],
     });
     const boundary = hold({ r: 50, outline: [-1, -1, 1, -1, 1, 1, -1, 1] });
-    expect(buildSprayLedMapping(configured, frame, [boundary]).holds[0].holeIndices).toEqual([1]);
+    expect(buildSprayLedMapping(configured, frame, [boundary]).holds[0].holeIndices).toEqual([0, 1]);
     expect(findSprayHoldAtPoint([boundary], { x: 0.55, y: 0.5 }, frame)).toBe(1);
     expect(buildSprayLedMapping(configured, frame, [hold({ outline: [1, 2, 3] })]).holds[0].holeIndices).toEqual([1]);
   });
@@ -96,14 +96,14 @@ describe('hold, hole and physical LED mapping', () => {
     expect(mapping.holes.every((entry) => entry.holdId === null)).toBe(true);
   });
 
-  it('resolves overlapping silhouettes deterministically by normalized distance then hold ID', () => {
+  it('leaves equally plausible overlapping owners unassigned independently of input order', () => {
     const first = hold({ id: 20, cx: 490, r: 40 });
     const second = hold({ id: 10, cx: 510, r: 40 });
     for (const holds of [
       [first, second],
       [second, first],
     ]) {
-      expect(buildSprayLedMapping(layout(), frame, holds).holes[4].holdId).toBe(10);
+      expect(buildSprayLedMapping(layout(), frame, holds).holes[4].holdId).toBeNull();
     }
   });
 
@@ -171,7 +171,7 @@ describe('hold, hole and physical LED mapping', () => {
     );
     configured.wiring = setWiringSkip(configured.wiring, first.id, second.id, 3);
     const mapping = buildSprayLedMapping(configured, frame, [hold({ r: 100 })]);
-    expect(mapping.holds[0].indices).toEqual([9]);
+    expect(mapping.holds[0].indices).toEqual([5, 9]);
     expect(mapping.holes[0].indices).toEqual([5]);
     expect(mapping.holes[2].ledIds).toHaveLength(1);
     expect(mapping.holes[2].indices).toEqual([]);

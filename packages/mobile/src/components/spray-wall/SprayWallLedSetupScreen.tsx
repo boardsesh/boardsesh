@@ -8,6 +8,9 @@ import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
   generateLedPositions,
+  createLedStripes,
+  MAX_LED_POSITIONS,
+  MAX_LED_STRIPES,
   expandLedGrid,
   hasStaleLedGrid,
   bindLedPositionsToHoles,
@@ -67,6 +70,7 @@ import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { SprayLedMapEditor } from './SprayLedMapEditor';
 import { SprayLedLightingStep } from './SprayLedLightingStep';
 import { SprayHoldLedStep } from './SprayHoldLedStep';
+import { SprayLedStripeEditor } from './SprayLedStripeEditor';
 import { SprayPointToolbar, type SprayPointMode } from './SprayPointToolbar';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { CablePatternThumbnail } from './CablePatternThumbnail';
@@ -85,6 +89,7 @@ type Step =
   | 'align'
   | 'holes'
   | 'led'
+  | 'stripeConfig'
   | 'ledPositions'
   | 'holdLeds'
   | 'holdAboveLeds'
@@ -304,6 +309,17 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const [direction, setDirection] = useState<CableDirection>(layout.wiring?.direction ?? 'horizontal');
   const [startCorner, setStartCorner] = useState<CableStartCorner>(layout.wiring?.startCorner ?? 'tl');
   const [initialSkipText, setInitialSkipText] = useState(String(layout.wiring?.initialSkip ?? 0));
+  const [stripeOrientation, setStripeOrientation] = useState<'vertical' | 'horizontal'>(
+    layout.ledStripes?.orientation ?? 'vertical',
+  );
+  const [stripeCountText, setStripeCountText] = useState(String(layout.ledStripes?.stripes[0]?.ledIds.length ?? 20));
+  const stripeConfigBasis = useRef(
+    layout.ledStripes
+      ? { orientation: layout.ledStripes.orientation, count: layout.ledStripes.stripes[0]?.ledIds.length ?? 20 }
+      : null,
+  );
+  const stripeCount = Number(stripeCountText);
+  const validStripeCount = /^\d+$/.test(stripeCountText) && stripeCount >= 1 && stripeCount <= MAX_LED_POSITIONS;
   const ledSignature = (draft: TnutLayout) =>
     JSON.stringify([
       draft.holes,
@@ -436,7 +452,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'align') setStep(layout.pattern === 'offset' ? 'offset' : 'pattern');
     else if (step === 'holes') setStep(layout.pattern === 'custom' ? 'pattern' : 'align');
     else if (step === 'led') setStep('holes');
-    else if (step === 'ledPositions') setStep('led');
+    else if (step === 'stripeConfig') setStep('led');
+    else if (step === 'ledPositions') setStep(layout.ledPlacement === 'stripe' ? 'stripeConfig' : 'led');
     else if (step === 'holdLeds') setStep('ledPositions');
     else if (step === 'holdAboveLeds') setStep('holdLeds');
     else if (step === 'cablePattern') setStep(hasUpperLayer ? 'holdAboveLeds' : 'holdLeds');
@@ -512,6 +529,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     }
     if (step === 'led') {
       if (!layout.ledPlacement) return;
+      if (layout.ledPlacement === 'stripe') {
+        setStep('stripeConfig');
+        return;
+      }
       const signature = ledSignature(layout);
       if (generatedLeds.current === signature) {
         saveWork(layout);
@@ -561,6 +582,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           holdAboveLeds: [],
           tnutLeds: [],
           ledGroups: undefined,
+          ledStripes: undefined,
         });
       };
       if (wouldDiscardHandWork()) {
@@ -577,6 +599,41 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       } else {
         rebuildLeds();
       }
+      return;
+    }
+    if (step === 'stripeConfig') {
+      if (!validStripeCount) return;
+      const basis = stripeConfigBasis.current;
+      const unchanged = layout.ledStripes && basis?.orientation === stripeOrientation && basis.count === stripeCount;
+      const draft = unchanged ? layout : createLedStripes(layout, stripeOrientation, stripeCount);
+      if (draft === 'capacity') {
+        setExpansionTooLarge(true);
+        return;
+      }
+      const apply = () => {
+        const bound = { ...draft, ledPositions: bindLedPositionsToHoles(draft, source.frame) };
+        setLayout(bound);
+        generatedLeds.current = ledSignature(bound);
+        ledBasis.current = bound;
+        generatedWiring.current = bound.wiring
+          ? wiringSignature(bound, bound.wiring.direction, bound.wiring.startCorner)
+          : null;
+        stripeConfigBasis.current = { orientation: stripeOrientation, count: stripeCount };
+        saveWork(bound);
+        setStep('ledPositions');
+      };
+      if (!unchanged && ledBasis.current && (wouldDiscardHandWork() || layout.ledStripes)) {
+        await confirmAction(
+          {
+            title: t('sprayLedSetup.rebuildLedsTitle'),
+            message: t('sprayLedSetup.rebuildLedsBody'),
+            cancelLabel: t('sprayLedSetup.keepEditing'),
+            confirmLabel: t('sprayLedSetup.rebuildLeds'),
+            destructive: true,
+          },
+          apply,
+        );
+      } else apply();
       return;
     }
     if (step === 'ledPositions') {
@@ -667,6 +724,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     (step !== 'align' || (validCounts && validCorners)) &&
     (step !== 'holes' || layout.holes.length > 0) &&
     (step !== 'led' || Boolean(layout.ledPlacement)) &&
+    (step !== 'stripeConfig' || validStripeCount) &&
     (step !== 'initialSkip' || validInitialSkip) &&
     ((step !== 'ledPositions' && step !== 'wiring' && step !== 'skips') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
@@ -747,25 +805,29 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             ? t('sprayLedSetup.editTitle')
             : step === 'led'
               ? t('sprayLedSetup.ledTitle')
-              : step === 'ledPositions'
-                ? t('sprayLedSetup.ledPositionsTitle')
-                : step === 'cablePattern'
-                  ? t('sprayLedSetup.cablePatternTitle')
-                  : step === 'cableStart'
-                    ? t('sprayLedSetup.cableStartTitle')
-                    : step === 'initialSkip'
-                      ? t('sprayLedSetup.initialSkipTitle')
-                      : step === 'lighting'
-                        ? t('sprayLedSetup.lightingTitle')
-                        : step === 'holdLeds'
-                          ? hasUpperLayer
-                            ? t('sprayLedSetup.holdLedsBelowTitle')
-                            : t('sprayLedSetup.holdLedsTitle')
-                          : step === 'holdAboveLeds'
-                            ? t('sprayLedSetup.holdLedsAboveTitle')
-                            : step === 'skips'
-                              ? t('sprayLedSetup.skipsTitle')
-                              : t('sprayLedSetup.wiringTitle');
+              : step === 'stripeConfig'
+                ? t('sprayLedSetup.stripeConfigTitle')
+                : step === 'ledPositions'
+                  ? layout.ledPlacement === 'stripe'
+                    ? t('sprayLedSetup.stripeEditorTitle')
+                    : t('sprayLedSetup.ledPositionsTitle')
+                  : step === 'cablePattern'
+                    ? t('sprayLedSetup.cablePatternTitle')
+                    : step === 'cableStart'
+                      ? t('sprayLedSetup.cableStartTitle')
+                      : step === 'initialSkip'
+                        ? t('sprayLedSetup.initialSkipTitle')
+                        : step === 'lighting'
+                          ? t('sprayLedSetup.lightingTitle')
+                          : step === 'holdLeds'
+                            ? hasUpperLayer
+                              ? t('sprayLedSetup.holdLedsBelowTitle')
+                              : t('sprayLedSetup.holdLedsTitle')
+                            : step === 'holdAboveLeds'
+                              ? t('sprayLedSetup.holdLedsAboveTitle')
+                              : step === 'skips'
+                                ? t('sprayLedSetup.skipsTitle')
+                                : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -974,7 +1036,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             <Text>{t('sprayLedSetup.ledHint')}</Text>
             {expansionTooLarge ? <Text color={brandColors.error}>{t('sprayLedSetup.expandLedsCapacity')}</Text> : null}
             <View style={[styles.row, { gap: spacing[2] }]}>
-              {(['center', 'sides', 'below'] as const).map((placement) => (
+              {(['center', 'sides', 'below', 'stripe'] as const).map((placement) => (
                 <ChoiceCard
                   key={placement}
                   label={
@@ -982,7 +1044,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                       ? t('sprayLedSetup.ledCenter')
                       : placement === 'sides'
                         ? t('sprayLedSetup.ledSides')
-                        : t('sprayLedSetup.ledBelow')
+                        : placement === 'below'
+                          ? t('sprayLedSetup.ledBelow')
+                          : t('sprayLedSetup.ledStripe')
                   }
                   selected={layout.ledPlacement === placement}
                   disabled={saving}
@@ -1013,7 +1077,58 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             </Text>
           </>
         ) : null}
-        {step === 'ledPositions' || step === 'wiring' || step === 'skips' ? (
+        {step === 'stripeConfig' ? (
+          <>
+            <Text>{t('sprayLedSetup.stripeConfigHint')}</Text>
+            <View style={[styles.row, { gap: spacing[2] }]}>
+              <Button
+                title={t('sprayLedSetup.vertical')}
+                variant={stripeOrientation === 'vertical' ? 'filled' : 'outlined'}
+                onPress={() => {
+                  setStripeOrientation('vertical');
+                  setExpansionTooLarge(false);
+                }}
+              />
+              <Button
+                title={t('sprayLedSetup.horizontal')}
+                variant={stripeOrientation === 'horizontal' ? 'filled' : 'outlined'}
+                onPress={() => {
+                  setStripeOrientation('horizontal');
+                  setExpansionTooLarge(false);
+                }}
+              />
+            </View>
+            <CountControl
+              label={t('sprayLedSetup.stripeCount')}
+              value={stripeCountText}
+              maximum={MAX_LED_POSITIONS}
+              onChange={(text) => {
+                setStripeCountText(text);
+                setExpansionTooLarge(false);
+              }}
+            />
+            {!validStripeCount ? (
+              <Text color={brandColors.error}>{t('sprayLedSetup.stripeCountRange', { max: MAX_LED_POSITIONS })}</Text>
+            ) : null}
+            {expansionTooLarge ? (
+              <Text color={brandColors.error} accessibilityLiveRegion="polite">
+                {t('sprayLedSetup.stripeCapacity', { max: MAX_LED_POSITIONS, stripes: MAX_LED_STRIPES })}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+        {step === 'ledPositions' && layout.ledPlacement === 'stripe' ? (
+          <SprayLedStripeEditor
+            layout={layout}
+            defaultCount={validStripeCount ? stripeCount : 20}
+            source={source}
+            photoUri={photoUri}
+            width={viewportWidth}
+            onChange={changeLayout}
+            onInteractionChange={setDragging}
+          />
+        ) : null}
+        {(step === 'ledPositions' && layout.ledPlacement !== 'stripe') || step === 'wiring' || step === 'skips' ? (
           <SprayLedMapEditor
             key={step}
             kind={step === 'ledPositions' ? 'positions' : step}
@@ -1212,7 +1327,7 @@ function CountControl({
             keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
             returnKeyType="done"
             onSubmitEditing={() => Keyboard.dismiss()}
-            maxLength={3}
+            maxLength={String(maximum).length}
             selectTextOnFocus
           />
         </View>

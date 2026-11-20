@@ -63,6 +63,26 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('acknowledges every consecutive index of an indivisible strip together', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, 5)).toBe('unit'));
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([4, 5, 6, 7, 8]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('restores the starting LED without confirming a partial strip after an index-range failure', async () => {
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, 5)).toBe('single'));
+    expect(mocks.show.mock.calls).toEqual([[[4, 5, 6, 7, 8]], [[4]]]);
+  });
+
+  it.each([0, -1, 1.5, 6001, Infinity])('never allocates or sends an invalid unit size %s', async (count) => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, count)).toBe('unavailable'));
+    expect(mocks.show).not.toHaveBeenCalled();
+  });
+
   it('acknowledges consecutive physical indices together for a paired assignment', async () => {
     const { result } = renderHook(() => useSprayLedPreview('wall'));
     await act(async () => expect(await result.current.showPair(4)).toBe('pair'));

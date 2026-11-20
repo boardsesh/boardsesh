@@ -1,6 +1,7 @@
 import type { LedPosition } from './led-layout';
 import type { TnutLayout } from './tnut-layout';
 import type { SprayLedLinkLayer } from './tnut-led-links';
+import { MAX_LED_POSITIONS } from './led-limits';
 
 /**
  * A hold whose LEDs the climber chose by hand. It replaces the automatic,
@@ -12,7 +13,7 @@ export type SprayHoldLedLink = { holdId: number; ledIds: string[] };
 /** A wall has at most 1500 holds (MAX_HOLDS_PER_WALL on the server). */
 export const MAX_HOLD_LED_LINKS = 1500;
 /** More LEDs than any one hold needs, yet bounded. */
-export const MAX_LEDS_PER_HOLD_LINK = 64;
+export const MAX_LEDS_PER_HOLD_LINK = MAX_LED_POSITIONS;
 
 const isRecord = (candidate: unknown): candidate is Record<string, unknown> =>
   typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);

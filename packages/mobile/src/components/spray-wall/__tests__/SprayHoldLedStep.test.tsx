@@ -2,7 +2,13 @@
 import { createElement, useState, type ReactElement, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout, type SprayLedLinkLayer } from '@boardsesh/spray-wall-geometry';
+import {
+  buildSprayLedMapping,
+  createLedStripes,
+  DEFAULT_TNUT_CORNERS,
+  type TnutLayout,
+  type SprayLedLinkLayer,
+} from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
@@ -485,5 +491,95 @@ describe('holds and LEDs step', () => {
     expect(within(rail.container).getByText('sprayLedSetup.undo').getAttribute('data-icon')).toBe('undo');
     fireEvent.click(within(rail.container).getByText('sprayLedSetup.undo'));
     expect(changes.at(-1)?.tnutLeds).toEqual([]);
+  });
+
+  it('edits all covered nuts without copying the whole hold’s LEDs onto the first nut', () => {
+    const broadHold = [{ id: 10, cx: 250, cy: 210, r: 180 }];
+    render(<Harness wallHolds={broadHold} />);
+    tap(left);
+    expect(overlay().selected).toEqual(['a', 'b', 'c']);
+    tap(right); // Remove c from the whole hold.
+    const updated = { ...initial, ...changes.at(-1) };
+    const replacement = buildSprayLedMapping(updated, source.frame, holds);
+    expect(replacement.holds.find((hold) => hold.holdId === 10)?.ledIds).toEqual(['a', 'b']);
+    expect(replacement.holds.find((hold) => hold.holdId === 20)?.ledIds).toEqual([]);
+    fireEvent.click(button('holdLedsPickTnuts'));
+    tap(right);
+    expect(overlay().selected).toEqual([]);
+    tap({ x: 0.19, y: 0.3 }); // Explicitly assign the pair only to this nut.
+    fireEvent.click(button('holdLedsChooseTnut'));
+    tap(left);
+    expect(overlay().selected).toEqual(['a', 'b']);
+    fireEvent.click(button('undo'));
+    expect(overlay().selected).toEqual(['a', 'b']);
+    fireEvent.click(button('holdLedsPickHolds'));
+    tap(left);
+    fireEvent.click(button('holdLedsReset'));
+    expect(changes.at(-1)?.tnutLeds).toEqual([]);
+  });
+
+  it('keeps sibling nut choices while editing and resetting one nut of a large hold', () => {
+    const broadHold = [{ id: 10, cx: 250, cy: 210, r: 180 }];
+    const roles = [
+      { hole: left, ledIds: ['a'], aboveLedIds: ['c'] },
+      { hole: right, ledIds: ['b', 'c'], aboveLedIds: [] },
+    ];
+    render(<Harness wallHolds={broadHold} start={{ ...initial, ledGroups: [], tnutLeds: roles }} />);
+    fireEvent.click(button('holdLedsPickTnuts'));
+    tap(left);
+    expect(overlay().selected).toEqual(['a']);
+    tap({ x: 0.21, y: 0.3 });
+    expect(changes.at(-1)?.tnutLeds).toContainEqual(roles[1]);
+    expect(changes.at(-1)?.tnutLeds).toContainEqual({ ...roles[0], ledIds: ['a', 'b'] });
+    fireEvent.click(button('undo'));
+    expect(changes.at(-1)?.tnutLeds).toEqual(roles);
+    fireEvent.click(button('holdLedsReset'));
+    expect(changes.at(-1)?.tnutLeds).toContainEqual(roles[1]);
+    expect(changes.at(-1)?.tnutLeds).toContainEqual({ hole: left, aboveLedIds: ['c'] });
+  });
+
+  it('keeps more than 64 automatically mapped strip LEDs when one member is removed', () => {
+    const stripe = createLedStripes(
+      {
+        ...initial,
+        rows: 2,
+        columns: 1,
+        corners: {
+          topLeft: { x: 0.5, y: 0.1 },
+          topRight: { x: 0.5, y: 0.1 },
+          bottomLeft: { x: 0.5, y: 0.9 },
+          bottomRight: { x: 0.5, y: 0.9 },
+        },
+        holes: [
+          { x: 0.5, y: 0.3 },
+          { x: 0.5, y: 0.7 },
+        ],
+        ledGroups: [],
+      },
+      'vertical',
+      100,
+    );
+    if (stripe === 'capacity') throw new Error('fixture capacity');
+    const wallHold = [{ id: 10, cx: 250, cy: 350, r: 200 }];
+    const wired = {
+      ...stripe,
+      wiring: {
+        direction: 'custom' as const,
+        startCorner: 'tl' as const,
+        paths: [stripe.ledStripes!.stripes[0].ledIds],
+        skips: [],
+      },
+    };
+    render(<Harness start={wired} wallHolds={wallHold} />);
+    tap({ x: 0.5, y: 0.5 });
+    const before = overlay().selected;
+    expect(before.length).toBeGreaterThan(64);
+    const led = stripe.ledPositions!.find((position) => position.id === before[0])!;
+    tap(led);
+    expect(overlay().selected).toHaveLength(before.length - 1);
+    expect(overlay().selected).toEqual(before.filter((id) => id !== led.id));
+    expect(preview.show).toHaveBeenLastCalledWith(expect.arrayContaining([98, 99]));
+    fireEvent.click(button('undo'));
+    expect(overlay().selected).toEqual(before);
   });
 });

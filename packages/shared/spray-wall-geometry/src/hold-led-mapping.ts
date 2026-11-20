@@ -4,6 +4,9 @@ import { homographyFromAnchors, mapPoint, type ReferenceSize } from './homograph
 import { assignLedIndices, generateLedPositions, type LedPosition } from './led-layout';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
 import { readTnutLedLinks } from './tnut-led-links';
+import type { SprayLedLinkLayer } from './tnut-led-links';
+import { clearHoldLedLink, setHoldLedLink } from './hold-led-links';
+import { stripeProgress } from './led-stripes';
 
 export type SprayHoleLedMapping = {
   holeIndex: number;
@@ -246,10 +249,11 @@ function verticalBindings(layout: TnutLayout): { main: Map<string, number[]>; ab
       if (bucket) bucket.push(candidate);
       else index.set(key, [candidate]);
     }
-    const selected = new Map<string, { holeIndex: number; key: string; distance: number }>();
+    const selected = new Map<string, { holeIndex: number; key: string; distance: number; ambiguous: boolean }>();
     for (const { holeIndex, key, point } of holes) {
       let chosen: string | null = null;
       let nearest = Infinity;
+      let tied = false;
       // Explicit references have priority and stale ones never enter the slot
       // index. Unbound markers only search the immediate expected neighborhood.
       const explicit = byHole.get(key);
@@ -276,71 +280,265 @@ function verticalBindings(layout: TnutLayout): { main: Map<string, number[]>; ab
         // must not substitute for the one immediately below/above the hole.
         if (!explicit && (Math.abs(horizontal) > 0.2 || vertical < 0.6 || vertical > 1.4)) continue;
         const distance = horizontal ** 2 + (vertical - 1) ** 2;
-        if (distance < nearest - 1e-8 || (Math.abs(distance - nearest) <= 1e-8 && led.id < (chosen ?? ''))) {
+        if (distance < nearest - 1e-8) {
           chosen = led.id;
           nearest = distance;
-        }
+          tied = false;
+        } else if (Math.abs(distance - nearest) <= 1e-8 && led.id !== chosen) tied = true;
       }
-      if (chosen === null) continue;
+      if (chosen === null || tied) continue;
       const previous = selected.get(chosen);
       // Nearby edited nuts may nominate the same slot. Resolve by proximity,
       // then coordinates, so reordering the hole list cannot move ownership.
-      if (
-        !previous ||
-        nearest < previous.distance - 1e-8 ||
-        (Math.abs(nearest - previous.distance) <= 1e-8 && key < previous.key)
-      )
-        selected.set(chosen, { holeIndex, key, distance: nearest });
+      if (!previous || nearest < previous.distance - 1e-8)
+        selected.set(chosen, { holeIndex, key, distance: nearest, ambiguous: false });
+      else if (Math.abs(nearest - previous.distance) <= 1e-8) previous.ambiguous = true;
     }
-    return new Map([...selected].map(([id, { holeIndex }]) => [id, [holeIndex]]));
+    return new Map([...selected].flatMap(([id, { holeIndex, ambiguous }]) => (ambiguous ? [] : [[id, [holeIndex]]])));
   };
   return { main: select(1), above: select(-1) };
 }
 
 function allBindings(layout: TnutLayout, frame: ReferenceSize) {
   if (!validFrame(frame)) return { main: new Map<string, number[]>(), above: new Map<string, number[]>() };
+  if (layout.ledPlacement === 'stripe')
+    return { main: stripeBindings(layout, frame), above: new Map<string, number[]>() };
   return layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating'
     ? verticalBindings(layout)
     : { main: holeBindings(layout, frame), above: new Map<string, number[]>() };
 }
 
-/** A grip is mounted at one nut near its center; its outline remains a tap target. */
+/** Every covered nut belongs to its closest containing hold; equal fits stay unassigned. */
 function mountingHoles(layout: TnutLayout, holds: readonly CanonicalSprayHold[], frame: ReferenceSize) {
   const ownership = new Map<number, { holdId: number; distance: number; ambiguous: boolean }>();
-  for (const candidate of holdCandidates(holds)) {
-    const { hold } = candidate;
+  const candidates = holdCandidates(holds);
+  for (const [holeIndex, hole] of layout.holes.entries()) {
     let chosen: number | null = null;
     let nearest = Infinity;
     let ambiguous = false;
-    for (const [holeIndex, hole] of layout.holes.entries()) {
-      const distance = holdPointDistance(candidate, hole, frame);
-      if (distance === null) continue;
+    for (const candidate of candidates) {
+      const relative = holdPointDistance(candidate, hole, frame);
+      if (relative === null) continue;
+      const distance = relative * candidate.hold.r ** 2;
       if (distance < nearest - 1e-8) {
-        chosen = holeIndex;
+        chosen = candidate.hold.id;
         nearest = distance;
         ambiguous = false;
       } else if (Math.abs(distance - nearest) <= 1e-8) ambiguous = true;
     }
-    if (chosen === null) continue;
-    const mountingHole = layout.holes[chosen];
-    let spacing = Infinity;
-    for (const [holeIndex, hole] of layout.holes.entries()) {
-      if (holeIndex === chosen) continue;
-      const distance = distanceSquared(mountingHole, hole, frame);
-      if (distance > 1e-8) spacing = Math.min(spacing, distance);
-    }
-    // A wide outline must not pull in a remote nut when its center has none.
-    if (nearest * hold.r ** 2 > spacing * 0.75 ** 2 + 1e-8) continue;
-    const previous = ownership.get(chosen);
-    if (!previous || nearest < previous.distance || (nearest === previous.distance && hold.id < previous.holdId))
-      ownership.set(chosen, { holdId: hold.id, distance: nearest, ambiguous });
+    if (chosen !== null && !ambiguous)
+      ownership.set(holeIndex, { holdId: chosen, distance: nearest, ambiguous: false });
   }
   return ownership;
+}
+
+function stripeBindings(layout: TnutLayout, frame: ReferenceSize): Map<string, number[]> {
+  const stripes = layout.ledStripes?.stripes ?? [];
+  const bindings = new Map<string, number[]>();
+  const byId = new Map((layout.ledPositions ?? []).map((led) => [led.id, led]));
+  const chosenStripe = new Int32Array(layout.holes.length).fill(-1);
+  const nearest = new Float64Array(layout.holes.length).fill(Infinity);
+  const ambiguous = new Uint8Array(layout.holes.length);
+  const metrics = stripes.map((stripe) => {
+    const deltaX = (stripe.end.x - stripe.start.x) * frame.width;
+    const deltaY = (stripe.end.y - stripe.start.y) * frame.height;
+    const length = Math.hypot(deltaX, deltaY);
+    const count =
+      layout.ledStripes?.orientation === 'horizontal'
+        ? layout.rows
+        : layout.pattern === 'offset' && layout.columnConvention !== 'all'
+          ? 2 * layout.columns - 1
+          : layout.columns;
+    const { topLeft, topRight, bottomLeft, bottomRight } = layout.corners;
+    const spans =
+      layout.ledStripes?.orientation === 'horizontal'
+        ? [
+            { x: bottomLeft.x - topLeft.x, y: bottomLeft.y - topLeft.y },
+            ...(layout.columns === 1 ? [] : [{ x: bottomRight.x - topRight.x, y: bottomRight.y - topRight.y }]),
+          ]
+        : [
+            { x: topRight.x - topLeft.x, y: topRight.y - topLeft.y },
+            ...(layout.rows === 1 ? [] : [{ x: bottomRight.x - bottomLeft.x, y: bottomRight.y - bottomLeft.y }]),
+          ];
+    const extents = spans
+      .map((span) => Math.abs(span.x * frame.width * deltaY - span.y * frame.height * deltaX) / length)
+      .filter((extent) => extent > 1e-6);
+    const extent = extents.length ? Math.min(...extents) : Math.min(frame.width, frame.height) * 0.2;
+    return {
+      deltaX,
+      deltaY,
+      length,
+      limit: count > 1 ? (extent / (count - 1)) * 0.5 : Math.min(frame.width, frame.height) * 0.1,
+    };
+  });
+  stripes.forEach((stripe, stripeIndex) => {
+    const metric = metrics[stripeIndex];
+    layout.holes.forEach((hole, holeIndex) => {
+      const progress = stripeProgress(stripe, hole, frame);
+      if (progress < -1e-8 || progress > 1 + 1e-8) return;
+      const distance = Math.abs(
+        ((hole.x - stripe.start.x) * frame.width * metric.deltaY -
+          (hole.y - stripe.start.y) * frame.height * metric.deltaX) /
+          metric.length,
+      );
+      if (distance > metric.limit + 1e-6) return;
+      if (distance < nearest[holeIndex] - 1e-6) {
+        nearest[holeIndex] = distance;
+        chosenStripe[holeIndex] = stripeIndex;
+        ambiguous[holeIndex] = 0;
+      } else if (Math.abs(distance - nearest[holeIndex]) <= 1e-6) ambiguous[holeIndex] = 1;
+    });
+  });
+  stripes.forEach((stripe, stripeIndex) => {
+    const sorted = layout.holes
+      .flatMap((hole, holeIndex) =>
+        chosenStripe[holeIndex] === stripeIndex && !ambiguous[holeIndex]
+          ? [{ holeIndex, progress: stripeProgress(stripe, hole, frame), distance: nearest[holeIndex] }]
+          : [],
+      )
+      .sort((first, second) => first.progress - second.progress || first.distance - second.distance);
+    const anchors: { progress: number; holeIndex: number | null; distance: number }[] = [];
+    for (const entry of sorted) {
+      const previous = anchors.at(-1);
+      const distance = entry.distance;
+      if (previous && Math.abs(previous.progress - entry.progress) <= 1e-8) {
+        if (distance < previous.distance - 1e-6) {
+          previous.holeIndex = entry.holeIndex;
+          previous.distance = distance;
+        } else if (Math.abs(previous.distance - distance) <= 1e-6) previous.holeIndex = null;
+      } else anchors.push({ progress: entry.progress, holeIndex: entry.holeIndex, distance });
+    }
+    for (const id of stripe.ledIds) {
+      const led = byId.get(id);
+      if (!led) continue;
+      const progress = stripeProgress(stripe, led, frame);
+      if (progress < -1e-8 || progress > 1 + 1e-8) continue;
+      let first = 0,
+        last = anchors.length - 1,
+        tied = false;
+      while (first < last) {
+        const middle = (first + last) >>> 1;
+        const boundary = (anchors[middle].progress + anchors[middle + 1].progress) / 2;
+        if (Math.abs(progress - boundary) <= 1e-8) {
+          tied = true;
+          break;
+        }
+        if (progress < boundary) last = middle;
+        else first = middle + 1;
+      }
+      const anchor = anchors[first];
+      if (!tied && anchor && anchor.holeIndex !== null) bindings.set(id, [anchor.holeIndex]);
+    }
+  });
+  return bindings;
+}
+
+function assignLedsToNuts(
+  layout: TnutLayout,
+  frame: ReferenceSize,
+  holeIndices: readonly number[],
+  ledIds: readonly string[],
+  layer: SprayLedLinkLayer,
+  automatic: readonly SprayHoleLedMapping[] = [],
+  ambiguousIds?: Set<string>,
+): Map<number, string[]> {
+  const assigned = new Map(holeIndices.map((index) => [index, [] as string[]]));
+  const positions = new Map((layout.ledPositions ?? []).map((led) => [led.id, led]));
+  const field = layer === 'above' ? 'aboveLedIds' : 'ledIds';
+  const manual = new Map((layout.tnutLeds ?? []).map((entry) => [keyFor(entry.hole), entry[field]]));
+  const grid = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating' ? verticalGrid(layout) : null;
+  const existingOwners = new Map<string, number[]>(),
+    inferredOwners = new Map<string, number[]>();
+  const targets = new Map(
+    holeIndices.map((index) => [
+      index,
+      {
+        key: keyFor(layout.holes[index]),
+        point: grid ? grid.toGrid(layout.holes[index]) : layout.holes[index],
+      },
+    ]),
+  );
+  for (const index of holeIndices)
+    for (const [ids, owners] of [
+      [manual.get(keyFor(layout.holes[index])) ?? [], existingOwners],
+      [automatic[index]?.[field] ?? [], inferredOwners],
+    ] as const)
+      for (const id of ids) {
+        const existing = owners.get(id);
+        if (existing) existing.push(index);
+        else owners.set(id, [index]);
+      }
+  for (const id of new Set(ledIds)) {
+    const led = positions.get(id);
+    if (!led) continue;
+    const candidates = existingOwners.get(id) ?? inferredOwners.get(id) ?? holeIndices;
+    let chosen: number | null = null,
+      nearest = Infinity,
+      tied = false;
+    const slot = layout.ledPlacement === 'stripe' ? led : originalPosition(led);
+    const projectedSlot = grid?.toGrid(slot);
+    for (const index of candidates) {
+      const target = targets.get(index)!;
+      let distance: number;
+      if (grid) {
+        const gap = layer === 'above' ? -grid.upperGap : grid.lowerGap;
+        distance =
+          ((projectedSlot!.x - target.point.x) / grid.columnStep) ** 2 +
+          ((projectedSlot!.y - target.point.y - gap) / Math.abs(gap)) ** 2;
+      } else distance = distanceSquared(slot, target.point, frame);
+      if (distance < nearest - 1e-8) {
+        chosen = index;
+        nearest = distance;
+        tied = false;
+      } else if (Math.abs(distance - nearest) <= 1e-8) {
+        tied = true;
+        if (chosen !== null && target.key < targets.get(chosen)!.key) chosen = index;
+      }
+    }
+    if (tied && ambiguousIds) {
+      ambiguousIds.add(id);
+      continue;
+    }
+    if (chosen !== null) assigned.get(chosen)!.push(id);
+  }
+  return assigned;
+}
+
+function writeNutRoles(
+  layout: TnutLayout,
+  assignments: ReadonlyMap<number, readonly string[] | undefined>,
+  layer: SprayLedLinkLayer,
+): TnutLayout {
+  const field = layer === 'above' ? 'aboveLedIds' : 'ledIds';
+  const entries = new Map(
+    (readTnutLedLinks(layout.tnutLeds ?? [], layout.holes, layout.ledPositions ?? []) ?? []).map((entry) => [
+      keyFor(entry.hole),
+      entry,
+    ]),
+  );
+  for (const [index, ids] of assignments) {
+    const hole = layout.holes[index];
+    if (!hole) continue;
+    const key = keyFor(hole),
+      existing = entries.get(key);
+    if (ids === undefined) {
+      if (!existing) continue;
+      const remaining = layer === 'above' ? existing.ledIds : existing.aboveLedIds;
+      if (remaining === undefined) entries.delete(key);
+      else
+        entries.set(key, {
+          hole: existing.hole,
+          ...(layer === 'above' ? { ledIds: remaining } : { aboveLedIds: remaining }),
+        });
+    } else entries.set(key, { ...existing, hole: { ...hole }, [field]: [...new Set(ids)] });
+  }
+  return { ...layout, tnutLeds: [...entries.values()] };
 }
 
 /** Persist inferred associations before a manual LED is moved on a later visit. */
 export function bindLedPositionsToHoles(layout: TnutLayout, frame: ReferenceSize): LedPosition[] {
   const leds = layout.ledPositions ?? [];
+  if (layout.ledPlacement === 'stripe') return leds;
   if (!validFrame(frame)) return leds;
   const { main, above } = allBindings(layout, frame);
   return leds.map((led) => {
@@ -420,14 +618,6 @@ export function buildSprayLedMapping(
         }),
       ),
     ].sort((first, second) => first - second);
-  for (const role of roles) {
-    const claimed = new Set([...nutLinks.values()].flatMap((link) => link[role.ids] ?? []));
-    for (const entry of holes) {
-      const override = nutLinks.get(keyFor(layout.holes[entry.holeIndex]))?.[role.ids];
-      entry[role.ids] = override ?? entry[role.ids].filter((id) => !claimed.has(id));
-      entry[role.indices] = physicalIndices(entry[role.ids]);
-    }
-  }
   const ownership = mountingHoles(layout, holds, frame);
   const holdMappings = new Map(mappedHolds.map((hold) => [hold.holdId, hold]));
   for (const entry of holes) {
@@ -436,36 +626,132 @@ export function buildSprayLedMapping(
     entry.holdId = chosen;
     const matched = holdMappings.get(chosen)!;
     matched.holeIndices.push(entry.holeIndex);
-    matched.ledIds.push(...entry.ledIds);
-    matched.indices.push(...entry.indices);
-    matched.aboveLedIds.push(...entry.aboveLedIds);
-    matched.aboveIndices.push(...entry.aboveIndices);
   }
   const known = new Set((layout.ledPositions ?? []).map((led) => led.id));
+  const grid = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating' ? verticalGrid(layout) : null;
+  const projectedHoles = grid ? layout.holes.map(grid.toGrid) : [];
   for (const role of roles) {
+    if (layout.ledPlacement === 'stripe' && role.ids === 'aboveLedIds') continue;
     const nutClaims = new Set([...nutLinks.values()].flatMap((link) => link[role.ids] ?? []));
-    const hasNutOverride = (hold: SprayHoldLedMapping) =>
-      hold.holeIndices.some((index) => nutLinks.get(keyFor(layout.holes[index]))?.[role.ids] !== undefined);
-    // Durable nut roles take priority over legacy version-specific hold links.
-    const links = new Map(
-      role.legacy.flatMap((link) => {
-        const hold = holdMappings.get(link.holdId);
-        return !hold || hasNutOverride(hold)
-          ? []
-          : [[link.holdId, link.ledIds.filter((id) => known.has(id) && !nutClaims.has(id))] as const];
-      }),
-    );
-    const linked = new Set([...links.values()].flat());
+    const legacyNuts = new Map<number, string[]>();
+    const legacyHolds = new Map<number, string[]>();
+    for (const link of role.legacy) {
+      const hold = holdMappings.get(link.holdId);
+      if (!hold) continue;
+      const ids = link.ledIds.filter((id) => known.has(id));
+      if (!hold.holeIndices.length) {
+        legacyHolds.set(
+          link.holdId,
+          ids.filter((id) => !nutClaims.has(id)),
+        );
+        continue;
+      }
+      const assignments = assignLedsToNuts(
+        layout,
+        frame,
+        hold.holeIndices,
+        ids,
+        role.ids === 'aboveLedIds' ? 'above' : 'primary',
+        holes,
+      );
+      for (const [index, assigned] of assignments) {
+        if (nutLinks.get(keyFor(layout.holes[index]))?.[role.ids] === undefined)
+          legacyNuts.set(
+            index,
+            assigned.filter((id) => !nutClaims.has(id)),
+          );
+      }
+    }
+    const legacyClaims = new Set([...legacyNuts.values(), ...legacyHolds.values()].flat());
+    for (const entry of holes) {
+      const override = nutLinks.get(keyFor(layout.holes[entry.holeIndex]))?.[role.ids];
+      entry[role.ids] =
+        override ??
+        legacyNuts.get(entry.holeIndex) ??
+        entry[role.ids].filter((id) => !nutClaims.has(id) && !legacyClaims.has(id));
+      entry[role.indices] = physicalIndices(entry[role.ids]);
+    }
     for (const hold of mappedHolds) {
-      const override = links.get(hold.holdId);
-      const ledIds = hasNutOverride(hold)
-        ? hold[role.ids]
-        : (override ?? hold[role.ids].filter((id) => !linked.has(id)));
+      const ledIds =
+        legacyHolds.get(hold.holdId) ??
+        hold.holeIndices.flatMap((index) => {
+          const manual = nutLinks.get(keyFor(layout.holes[index]))?.[role.ids] !== undefined || legacyNuts.has(index);
+          if (!manual && grid) {
+            const current = projectedHoles[index],
+              direction = role.ids === 'aboveLedIds' ? -1 : 1;
+            if (
+              hold.holeIndices.some(
+                (other) =>
+                  other !== index &&
+                  Math.abs(projectedHoles[other].x - current.x) <= grid.columnStep * 0.2 &&
+                  (projectedHoles[other].y - current.y) * direction > 1e-8,
+              )
+            )
+              return [];
+          }
+          return holes[index][role.ids];
+        });
       hold[role.ids] = [...new Set(ledIds)];
       hold[role.indices] = physicalIndices(hold[role.ids]);
     }
   }
   return { holes, holds: mappedHolds };
+}
+
+/** Preserve sibling choices before an explicit individual nut edit replaces legacy hold provenance. */
+export function prepareSprayNutLedEdit(
+  layout: TnutLayout,
+  frame: ReferenceSize,
+  holds: readonly CanonicalSprayHold[],
+  holeIndex: number,
+  layer: SprayLedLinkLayer = 'primary',
+): TnutLayout {
+  const mapping = buildSprayLedMapping(layout, frame, holds);
+  const holdId = mapping.holes[holeIndex]?.holdId;
+  const legacy = layer === 'above' ? layout.holdAboveLeds : layout.holdLeds;
+  const link = legacy?.find((entry) => entry.holdId === holdId);
+  const mounted = mapping.holds.find((entry) => entry.holdId === holdId);
+  if (!link || !mounted) return layout;
+  const field = layer === 'above' ? 'aboveLedIds' : 'ledIds';
+  const manual = new Map((layout.tnutLeds ?? []).map((entry) => [keyFor(entry.hole), entry[field]]));
+  const missing = new Map(
+    mounted.holeIndices
+      .filter((index) => manual.get(keyFor(layout.holes[index])) === undefined)
+      .map((index) => [index, mapping.holes[index][field]]),
+  );
+  return clearHoldLedLink(writeNutRoles(layout, missing, layer), mounted.holdId, layer);
+}
+
+export function setSprayHoldLedSelection(
+  layout: TnutLayout,
+  frame: ReferenceSize,
+  holds: readonly CanonicalSprayHold[],
+  holdId: number,
+  ledIds: readonly string[],
+  layer: SprayLedLinkLayer = 'primary',
+): TnutLayout {
+  const mapping = buildSprayLedMapping(layout, frame, holds);
+  const mounted = mapping.holds.find((entry) => entry.holdId === holdId);
+  if (!mounted?.holeIndices.length) return setHoldLedLink(layout, holdId, ledIds, layer);
+  return clearHoldLedLink(
+    writeNutRoles(layout, assignLedsToNuts(layout, frame, mounted.holeIndices, ledIds, layer, mapping.holes), layer),
+    holdId,
+    layer,
+  );
+}
+
+export function clearSprayHoldLedSelection(
+  layout: TnutLayout,
+  frame: ReferenceSize,
+  holds: readonly CanonicalSprayHold[],
+  holdId: number,
+  layer: SprayLedLinkLayer = 'primary',
+): TnutLayout {
+  const mounted = buildSprayLedMapping(layout, frame, holds).holds.find((entry) => entry.holdId === holdId);
+  const cleared = mounted?.holeIndices.length
+    ? writeNutRoles(layout, new Map(mounted.holeIndices.map((index) => [index, undefined])), layer)
+    : layout;
+  return clearHoldLedLink(cleared, holdId, layer);
 }
 
 /** Promote existing manual choices only when the climber confirms the mapping step. */
@@ -475,15 +761,16 @@ export function migrateHoldLedLinksToTnuts(
   holds: readonly CanonicalSprayHold[],
 ): TnutLayout {
   if (!validFrame(frame) || (!layout.holdLeds?.length && !layout.holdAboveLeds?.length)) return layout;
-  const mounted = new Map(
-    [...mountingHoles(layout, holds, frame)].map(([holeIndex, entry]) => [
-      entry.holdId,
-      { holeIndex, ambiguous: entry.ambiguous },
-    ]),
-  );
+  const mounted = new Map<number, number[]>();
+  for (const [holeIndex, entry] of mountingHoles(layout, holds, frame)) {
+    const existing = mounted.get(entry.holdId);
+    if (existing) existing.push(holeIndex);
+    else mounted.set(entry.holdId, [holeIndex]);
+  }
   const candidates = holdCandidates(holds);
   const overlap = new Map<number, boolean>();
   const known = new Set((layout.ledPositions ?? []).map((led) => led.id));
+  const automatic = buildSprayLedMapping({ ...layout, holdLeds: undefined, holdAboveLeds: undefined }, frame, []).holes;
   const nuts = new Map(
     (readTnutLedLinks(layout.tnutLeds ?? [], layout.holes, layout.ledPositions ?? []) ?? []).map((link) => [
       keyFor(link.hole),
@@ -514,33 +801,55 @@ export function migrateHoldLedLinksToTnuts(
     const migrated = new Set<number>();
     for (const link of role.links) {
       const mounting = mounted.get(link.holdId);
-      if (!mounting || mounting.ambiguous) continue;
-      const holeIndex = mounting.holeIndex;
-      const hole = layout.holes[holeIndex];
-      const holeKey = keyFor(hole);
+      if (!mounting?.length) continue;
       // A silhouette overlap or shared legacy claim is uncertain provenance.
       // Keep it version-specific rather than changing another hold's behavior.
-      let uncertain = overlap.get(holeIndex);
-      if (uncertain === undefined) {
-        uncertain = candidates.some(
-          (candidate) => candidate.hold.id !== link.holdId && holdPointDistance(candidate, hole, frame) !== null,
-        );
-        overlap.set(holeIndex, uncertain);
-      }
-      if (uncertain) continue;
-      const ledIds = link.ledIds.filter((id) => known.has(id));
-      if (ledIds.some((id) => (claims.get(id)?.size ?? 0) > 1)) continue;
-      if (ledIds.some((id) => [...(nutClaims.get(id) ?? [])].some((key) => key !== holeKey))) continue;
-      const previous = nuts.get(holeKey);
-      const previousIds = previous?.[role.field];
       if (
-        previousIds !== undefined &&
-        (previousIds.length !== new Set(ledIds).size || ledIds.some((id) => !previousIds.includes(id)))
+        mounting.some((holeIndex) => {
+          let uncertain = overlap.get(holeIndex);
+          if (uncertain === undefined) {
+            uncertain = candidates.some(
+              (candidate) =>
+                candidate.hold.id !== link.holdId &&
+                holdPointDistance(candidate, layout.holes[holeIndex], frame) !== null,
+            );
+            overlap.set(holeIndex, uncertain);
+          }
+          return uncertain;
+        })
       )
         continue;
-      if (previous?.[role.field] === undefined) {
-        nuts.set(holeKey, { ...previous, hole: { ...hole }, [role.field]: ledIds });
-        for (const id of ledIds) nutClaims.set(id, new Set([holeKey]));
+      const ledIds = link.ledIds.filter((id) => known.has(id));
+      if (ledIds.some((id) => (claims.get(id)?.size ?? 0) > 1)) continue;
+      const covered = new Set(mounting.map((index) => keyFor(layout.holes[index])));
+      if (ledIds.some((id) => [...(nutClaims.get(id) ?? [])].some((key) => !covered.has(key)))) continue;
+      const ambiguous = new Set<string>();
+      const assignments = assignLedsToNuts(
+        { ...layout, tnutLeds: [...nuts.values()] },
+        frame,
+        mounting,
+        ledIds,
+        role.field === 'aboveLedIds' ? 'above' : 'primary',
+        automatic,
+        ambiguous,
+      );
+      if (ambiguous.size) continue;
+      if (
+        [...assignments].some(([index, ids]) => {
+          const previous = nuts.get(keyFor(layout.holes[index]))?.[role.field];
+          if (previous === undefined) return false;
+          const selected = new Set(ids);
+          return previous.length !== selected.size || previous.some((id) => !selected.has(id));
+        })
+      )
+        continue;
+      for (const [index, ids] of assignments) {
+        const hole = layout.holes[index],
+          key = keyFor(hole),
+          previous = nuts.get(key);
+        if (previous?.[role.field] !== undefined) continue;
+        nuts.set(key, { ...previous, hole: { ...hole }, [role.field]: ids });
+        for (const id of ids) nutClaims.set(id, new Set([key]));
       }
       migrated.add(link.holdId);
       changed = true;

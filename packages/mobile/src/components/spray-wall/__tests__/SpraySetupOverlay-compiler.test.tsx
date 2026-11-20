@@ -57,6 +57,9 @@ type OverlayProps = {
   showPairConnectors?: boolean;
   mutedHoles?: TnutPoint[];
   associations?: { from: TnutPoint; to: TnutPoint }[];
+  stripeSegments?: { from: TnutPoint; to: TnutPoint }[];
+  liveDrag?: { value: { index: number; x: number; y: number } | null };
+  liveDragTarget?: 'holes' | 'leds';
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
@@ -197,6 +200,30 @@ function expectPathCoordinates(path: string | undefined, coordinates: number[]) 
 afterEach(cleanup);
 
 describe.each([true, false])('Expo + React Compiler + native Worklets overlay (dev=%s)', (isDev) => {
+  it('moves a continuous strip endpoint on the UI thread without moving other strips', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = {
+      ...props(),
+      stripeSegments: [
+        { from: { x: 0.1, y: 0.1 }, to: { x: 0.1, y: 0.9 } },
+        { from: { x: 0.9, y: 0.1 }, to: { x: 0.9, y: 0.9 } },
+      ],
+      liveDrag: { value: null as { index: number; x: number; y: number } | null },
+      liveDragTarget: 'holes' as const,
+    };
+    render(React.createElement(Component, initial));
+    expect(evaluated(shapes)[0]).toMatchObject({
+      d: 'M30 50L30 450M270 50L270 450',
+      stroke: palette.primary,
+      strokeWidth: 3,
+    });
+    initial.liveDrag.value = { index: 0, x: 0.4, y: 0.3 };
+    expectPathCoordinates(evaluated(shapes)[0].d, [120, 150, 30, 450, 270, 50, 270, 450]);
+    initial.zoom.value = 2;
+    initial.panX.value = 20;
+    expectPathCoordinates(evaluated(shapes)[0].d, [110, 50, -70, 650]);
+  });
+
   it('keeps dashed LED associations and grey mounted nuts on the UI thread while zooming', () => {
     const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
     const initial = {

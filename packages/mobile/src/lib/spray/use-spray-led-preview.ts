@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { MAX_LED_POSITIONS } from '@boardsesh/spray-wall-geometry';
 import {
   createLedPreviewSession,
   getLedControllerDriver,
@@ -147,15 +148,23 @@ export function useSprayLedPreviewForSettings(
       run('sending', (current) => current.session.show(indices), indices.length ? 'lit' : 'idle'),
     [run],
   );
-  /** Confirm consecutive pair indices, restoring the known single LED if the pair exceeds the strip. */
-  const showPair = useCallback(
-    async (firstIndex: number): Promise<'pair' | 'single' | 'unavailable'> => {
+  /** Validate a complete strip before committing any of its physical indices. */
+  const showUnit = useCallback(
+    async (firstIndex: number, count: number): Promise<'unit' | 'single' | 'unavailable'> => {
+      if (
+        !Number.isSafeInteger(firstIndex) ||
+        firstIndex < 0 ||
+        !Number.isInteger(count) ||
+        count < 1 ||
+        count > MAX_LED_POSITIONS
+      )
+        return 'unavailable';
       let restoredSingle = false;
       const completed = await run(
         'sending',
         async (current, generation) => {
           try {
-            return await current.session.show([firstIndex, firstIndex + 1]);
+            return await current.session.show(Array.from({ length: count }, (_, offset) => firstIndex + offset));
           } catch (failure) {
             if (!(failure instanceof LedControllerError) || failure.code !== 'invalid-indices') throw failure;
             if (!current.active || current.generation !== generation || !current.session.isOwner()) return false;
@@ -165,9 +174,17 @@ export function useSprayLedPreviewForSettings(
         },
         'lit',
       );
-      return !completed ? 'unavailable' : restoredSingle ? 'single' : 'pair';
+      return !completed ? 'unavailable' : restoredSingle ? 'single' : 'unit';
     },
     [run],
+  );
+  /** Preserve the existing pair API while sharing atomic index validation. */
+  const showPair = useCallback(
+    async (firstIndex: number): Promise<'pair' | 'single' | 'unavailable'> => {
+      const result = await showUnit(firstIndex, 2);
+      return result === 'unit' ? 'pair' : result;
+    },
+    [showUnit],
   );
   /** Without indices, test the entire controller strip. The editor supplies its wired photo LEDs. */
   const lightAll = useCallback(
@@ -211,5 +228,5 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  return { available, state, error, allLit, chaseIndex, show, showPair, lightAll, clear, stop, chase };
+  return { available, state, error, allLit, chaseIndex, show, showPair, showUnit, lightAll, clear, stop, chase };
 }

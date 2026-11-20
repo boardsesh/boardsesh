@@ -140,6 +140,7 @@ export function SpraySetupOverlay({
   selectedHoles = [],
   mutedHoles = NO_POINTS,
   associations = NO_ASSOCIATIONS,
+  stripeSegments = NO_ASSOCIATIONS,
   compactHoles = false,
   liveDrag,
   liveDragTarget,
@@ -184,6 +185,8 @@ export function SpraySetupOverlay({
   mutedHoles?: TnutPoint[];
   /** Active role's LED links, kept on the UI thread during zoom and pan. */
   associations?: readonly SprayLedAssociation[];
+  /** Continuous LED stripes; endpoint drags update these on the UI thread. */
+  stripeSegments?: readonly SprayLedAssociation[];
   width: number;
   height: number;
   zoom: SharedValue<number>;
@@ -259,6 +262,31 @@ export function SpraySetupOverlay({
     for (const association of associations) {
       const from = screenPoint(association.from, width, height, zoom.value, panX.value, panY.value);
       const to = screenPoint(association.to, width, height, zoom.value, panX.value, panY.value);
+      if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
+    }
+    return { d: path };
+  });
+  const stripeProps = useAnimatedProps(() => {
+    let path = '';
+    for (let index = 0; index < stripeSegments.length; index++) {
+      const segment = stripeSegments[index];
+      const drag = liveDragTarget === 'holes' ? liveDrag?.value : null;
+      const from = screenPoint(
+        drag?.index === index * 2 ? drag : segment.from,
+        width,
+        height,
+        zoom.value,
+        panX.value,
+        panY.value,
+      );
+      const to = screenPoint(
+        drag?.index === index * 2 + 1 ? drag : segment.to,
+        width,
+        height,
+        zoom.value,
+        panX.value,
+        panY.value,
+      );
       if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
     }
     return { d: path };
@@ -369,6 +397,15 @@ export function SpraySetupOverlay({
   });
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+      {stripeSegments.length ? (
+        <AnimatedPath
+          animatedProps={stripeProps}
+          fill="none"
+          stroke={brandColors.primary}
+          strokeWidth={3}
+          opacity={0.55}
+        />
+      ) : null}
       {associations.length ? (
         <AnimatedPath
           animatedProps={associationProps}

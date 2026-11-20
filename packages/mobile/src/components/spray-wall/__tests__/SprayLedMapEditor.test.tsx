@@ -2,7 +2,13 @@
 import { createElement, useState, type ReactElement, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, ledPairs, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  createLedStripes,
+  DEFAULT_TNUT_CORNERS,
+  ledPairs,
+  readTnutLayout,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 
@@ -11,7 +17,15 @@ const controls = vi.hoisted(() => ({
   confirm: vi.fn(),
   changed: vi.fn(),
   layout: null as TnutLayout | null,
-  preview: { available: false, state: 'lit', show: vi.fn(), showPair: vi.fn(), stop: vi.fn(), error: null },
+  preview: {
+    available: false,
+    state: 'lit',
+    show: vi.fn(),
+    showPair: vi.fn(),
+    showUnit: vi.fn(),
+    stop: vi.fn(),
+    error: null,
+  },
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -133,6 +147,7 @@ beforeEach(() => {
   controls.preview.state = 'lit';
   controls.preview.show.mockReset().mockResolvedValue(true);
   controls.preview.showPair.mockReset().mockResolvedValue('pair');
+  controls.preview.showUnit.mockReset().mockResolvedValue('unit');
 });
 describe('LED position edits with cable work', () => {
   it('does not transfer a removed manual LED link when Add reuses its id, and Undo restores it', () => {
@@ -568,5 +583,121 @@ describe('Skipped LEDs on a connection', () => {
     expect(controls.preview.show).toHaveBeenLastCalledWith([3, 4, 8, 9]);
     fireEvent.click(screen.getByText('sprayLedSetup.skipsEndsOff'));
     expect(controls.preview.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('indivisible stripe cable actions', () => {
+  function striped(wired = false): TnutLayout {
+    const created = createLedStripes(
+      {
+        ...original,
+        holes: [
+          { x: 0.1, y: 0.1 },
+          { x: 0.9, y: 0.1 },
+          { x: 0.1, y: 0.9 },
+          { x: 0.9, y: 0.9 },
+        ],
+      },
+      'vertical',
+      3,
+    );
+    if (created === 'capacity') throw new Error('Unexpected fixture capacity');
+    const ids = created.ledStripes!.stripes.flatMap((stripe) => stripe.ledIds);
+    return {
+      ...created,
+      wiring: { direction: 'custom', startCorner: 'tl', initialSkip: 3, paths: wired ? [ids] : [], skips: [] },
+    };
+  }
+  const tap = (x: number, y: number) => act(() => controls.canvas?.onTap?.({ x, y }, 400, 400));
+  function selectedIds() {
+    const overlay = controls.canvas?.renderOverlay?.(
+      400,
+      400,
+      { value: 1 } as never,
+      { value: 0 } as never,
+      { value: 0 } as never,
+      { value: null } as never,
+    ) as ReactElement<{ selected: string[] }> | undefined;
+    if (!overlay) throw new Error('Cable overlay was not rendered');
+    return overlay.props.selected;
+  }
+
+  it('lays the complete stripe from either end and undoes it in one action', () => {
+    const layout = striped();
+    const unit = layout.ledStripes!.stripes[0].ledIds;
+    render(<Editor initial={layout} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 1);
+    expect(controls.layout?.wiring?.paths).toEqual([[...unit].reverse()]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+  });
+
+  it('treats two stripes as two selections and cuts only their shared boundary', () => {
+    const layout = striped(true);
+    const [first, second] = layout.ledStripes!.stripes.map((stripe) => stripe.ledIds);
+    render(<Editor initial={layout} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    tap(0.1, 0.5);
+    expect(selectedIds()).toEqual(first);
+    tap(0.1, 0);
+    expect(selectedIds()).toEqual([]);
+    tap(0.1, 0.5);
+    tap(0.9, 0.5);
+    expect(selectedIds()).toEqual([...first, ...second]);
+    fireEvent.click(screen.getByText('sprayLedSetup.cutCable'));
+    expect(controls.layout?.wiring?.paths).toEqual([first, second]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+    fireEvent.click(screen.getByText('sprayLedSetup.connectCable'));
+    expect(controls.layout?.wiring?.paths).toEqual(layout.wiring?.paths);
+  });
+
+  it('confirms and advances every physical stripe index together in Light and tap', async () => {
+    controls.preview.available = true;
+    const layout = striped();
+    const unit = layout.ledStripes!.stripes[0].ledIds;
+    render(<Editor initial={layout} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    tap(0.1, 0.5);
+    await waitFor(() => expect(controls.layout?.wiring?.paths).toEqual([unit]));
+    expect(controls.preview.showUnit).toHaveBeenCalledWith(3, 3);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([6]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+  });
+
+  it('never saves a partial stripe when its last physical LED exceeds the controller', async () => {
+    controls.preview.available = true;
+    controls.preview.showUnit.mockResolvedValueOnce('single');
+    render(<Editor initial={striped()} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    tap(0.1, 0.5);
+    await waitFor(() => expect(screen.queryByText('sprayLedSetup.lightAndTapUnitFailed')).not.toBeNull());
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+  });
+
+  it('edits skipped LEDs only between whole stripes and previews both complete units', async () => {
+    controls.preview.available = true;
+    const layout = striped(true);
+    render(<Editor initial={layout} kind="skips" />);
+    tap(0.1, 0.25);
+    expect(controls.preview.show).not.toHaveBeenCalled();
+    tap(0.5, 0.5);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3, 4, 5, 6, 7, 8]));
+    expect(selectedIds()).toEqual(layout.ledStripes!.stripes.flatMap((stripe) => stripe.ledIds));
+    fireEvent.click(screen.getByText('sprayLedSetup.insertSkips'));
+    fireEvent.change(screen.getByLabelText('skip count'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('sprayLed.confirm'));
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+    expect(controls.layout?.wiring?.skips).toEqual([
+      {
+        from: layout.ledStripes!.stripes[0].ledIds[2],
+        to: layout.ledStripes!.stripes[1].ledIds[0],
+        count: 2,
+      },
+    ]);
   });
 });

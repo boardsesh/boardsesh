@@ -14,6 +14,7 @@ import {
   assignLedIndices,
   bindLedPositionsToHoles,
   createWiring,
+  createLedStripes,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
   generateTnutGrid,
@@ -341,11 +342,12 @@ const savedWithLeds = (): TnutLayout => {
 };
 const lastSaved = () => storage.save.mock.calls.at(-1)?.[1] as TnutLayout;
 async function openOnLedStep() {
-  await open();
+  const view = await open();
   next();
   next();
   next();
   await screen.findByText('sprayLedSetup.ledHint');
+  return view;
 }
 function tap(point: TnutPoint) {
   act(() => controls.editor?.onTap(point, 500, 700));
@@ -1103,6 +1105,135 @@ describe('SprayWallLedSetupScreen', () => {
     next();
     expectHoles(1);
     expect(controls.editor?.holes).toEqual(savedLayout().holes);
+  });
+
+  describe('continuous LED strips', () => {
+    it.each(['horizontal', 'vertical'] as const)(
+      'opens %s configuration before the inactive, editable photo and one hold-link step',
+      async (orientation) => {
+        storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 2 });
+        await openOnLedStep();
+        fireEvent.click(radio('ledStripe'));
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+        fireEvent.click(button(orientation));
+        fireEvent.change(field('stripeCount'), { target: { value: '3' } });
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+        expect(controls.canvas?.mode).toBe('pan');
+        expect(lastSaved().ledStripes?.orientation).toBe(orientation);
+        expect(lastSaved().ledStripes?.stripes.map((stripe) => stripe.ledIds.length)).toEqual([3, 3]);
+        back();
+        expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+        next();
+        expect(controls.confirm).not.toHaveBeenCalled();
+        next();
+        expect(screen.getByText('sprayLedSetup.holdLedsTitle')).toBeTruthy();
+        next();
+        expect(screen.getByText('sprayLedSetup.cablePatternTitle')).toBeTruthy();
+        expect(screen.queryByText('sprayLedSetup.holdLedsAboveTitle')).toBeNull();
+        back();
+        back();
+        expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+      },
+    );
+
+    it('reports total capacity before creating strips', async () => {
+      storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 2 });
+      await openOnLedStep();
+      fireEvent.click(radio('ledStripe'));
+      next();
+      const saves = storage.save.mock.calls.length;
+      fireEvent.change(field('stripeCount'), { target: { value: '6000' } });
+      next();
+      expect(screen.getByText('sprayLedSetup.stripeCapacity')).toBeTruthy();
+      expect(storage.save).toHaveBeenCalledTimes(saves);
+      expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+    });
+
+    it('preserves custom cable order, skips and strip edits through Next, save and reopen', async () => {
+      const striped = createLedStripes({ ...savedLayout(), rows: 2, columns: 2 }, 'vertical', 3);
+      if (striped === 'capacity') throw new Error('fixture capacity');
+      const [first, second] = striped.ledStripes!.stripes;
+      const firstOrder = [...first.ledIds].reverse();
+      const wiring = {
+        direction: 'custom' as const,
+        startCorner: 'br' as const,
+        initialSkip: 3,
+        paths: [[...firstOrder, ...second.ledIds]],
+        skips: [{ from: firstOrder.at(-1)!, to: second.ledIds[0], count: 4 }],
+      };
+      storage.load.mockResolvedValue({ ...striped, wiring });
+      const view = await openOnLedStep();
+      next();
+      next();
+      fireEvent.click(button('movePoint'));
+      const newStart = { x: 0.2, y: 0.05 };
+      act(() => controls.canvas?.onMove?.(first.start, newStart, 500, 700));
+      next();
+      next();
+      next();
+      expect(field('initialSkipLabel').value).toBe('3');
+      next();
+      expect(lastSaved().wiring).toEqual(wiring);
+      expect(lastSaved().ledStripes?.stripes[0].start).toEqual(newStart);
+      next();
+      next();
+      next();
+      await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
+      const saved = lastSaved();
+      view.unmount();
+      storage.load.mockResolvedValue(saved);
+      await openOnLedStep();
+      next();
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().wiring).toEqual(wiring);
+      expect(lastSaved().ledStripes).toEqual(saved.ledStripes);
+    });
+
+    it('keeps per-strip counts when revisiting unchanged global configuration', async () => {
+      const striped = createLedStripes({ ...savedLayout(), rows: 2, columns: 2 }, 'horizontal', 3);
+      if (striped === 'capacity') throw new Error('fixture capacity');
+      storage.load.mockResolvedValue(striped);
+      await openOnLedStep();
+      next();
+      next();
+      fireEvent.click(button('stripeSelect'));
+      const first = striped.ledStripes!.stripes[0];
+      tap({ x: (first.start.x + first.end.x) / 2, y: first.start.y });
+      fireEvent.click(button('stripeEditCount'));
+      fireEvent.change(field('stripeCount'), { target: { value: '5' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'sprayLed.confirm' })));
+      back();
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().ledStripes?.stripes.map((stripe) => stripe.ledIds.length)).toEqual([5, 3]);
+    });
+
+    it('asks before restarting strips and preserves the saved cable on cancel', async () => {
+      const striped = createLedStripes({ ...savedLayout(), rows: 2, columns: 2 }, 'vertical', 3);
+      if (striped === 'capacity') throw new Error('fixture capacity');
+      const wiring = {
+        direction: 'custom' as const,
+        startCorner: 'tl' as const,
+        paths: [striped.ledStripes!.stripes.flatMap((stripe) => stripe.ledIds)],
+        skips: [],
+        initialSkip: 4,
+      };
+      storage.load.mockResolvedValue({ ...striped, wiring });
+      await openOnLedStep();
+      next();
+      fireEvent.click(button('horizontal'));
+      next();
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      await respondToConfirm(false);
+      expect(lastSaved().wiring).toEqual(wiring);
+      next();
+      await respondToConfirm(true);
+      expect(lastSaved().wiring).toBeUndefined();
+      expect(lastSaved().ledStripes?.orientation).toBe('horizontal');
+    });
   });
 
   it.each(['grid', 'offset', 'custom'] as const)(

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import { createLedStripes, DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
 // The sync module loads its storage and network layers on first use; under a
 // full parallel run that can take longer than the default 5 s.
@@ -76,6 +76,7 @@ const uploaded = (sent: TnutLayout) => ({
   ledGroups: sent.ledGroups ?? null,
   tnutLeds: sent.tnutLeds ?? [],
   holdAboveLeds: sent.holdAboveLeds ?? [],
+  ledStripes: sent.ledStripes ?? null,
 });
 
 /** The server's row: jsonb key order differs from what the reader builds. */
@@ -544,6 +545,18 @@ describe('saving', () => {
     await saveLocally('layout', { ...layout(), ledGroups: [] });
     await settle();
     expect(saves()[1].layout).toHaveProperty('ledGroups', []);
+  });
+
+  it('sends the stripe capability for both a complete stripe setup and an explicit switch away', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    const stripes = createLedStripes(layout(), 'vertical', 3);
+    if (stripes === 'capacity') throw new Error('Unexpected fixture capacity');
+    await saveLocally('layout', stripes);
+    await settle();
+    expect(saves()[0].layout).toHaveProperty('ledStripes', stripes.ledStripes);
+    await saveLocally('layout', layout());
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('ledStripes', null);
   });
 
   it('sends persistent T-nut roles and upper hold links, and explicitly clears them', async () => {

@@ -28,6 +28,7 @@ export function LedPlacementThumbnail({
   const { systemColors, brandColors } = useTheme();
   if (placement === 'alternating') return <AlternatingThumbnail firstRowOffset={firstRowOffset} />;
   if (placement === 'sides') return <BehindHoldThumbnail />;
+  if (placement === 'stripe') return <StripeThumbnail />;
   const lights = placement === 'below' ? [[50, 82]] : [[50, 50]];
   return (
     <Svg width="100%" height="100%" viewBox="0 0 100 100" accessible={false}>
@@ -68,6 +69,45 @@ export function LedPlacementThumbnail({
 // Selected diagram: two lights behind the translucent sides, with a solid grip centre.
 const behindHoldOutline =
   'M49 162C46 132 66 104 92 88C114 72 143 75 163 80C188 81 216 96 237 120C254 139 262 163 247 183C230 208 199 222 166 224C135 230 98 223 76 209C60 198 51 183 49 162Z';
+
+/** Approved variant 1: a continuous vertical stripe behind a translucent hold. */
+function StripeThumbnail() {
+  const { systemColors, brandColors } = useTheme();
+  return (
+    <Svg width="100%" height="100%" viewBox="0 0 300 300" accessible={false}>
+      <Rect width={300} height={300} rx={24} fill={systemColors.tertiaryGroupedBackground} />
+      <Rect x={170} y={22} width={16} height={256} rx={8} fill={brandColors.primary} opacity={0.1} />
+      <Rect x={172} y={23} width={12} height={254} rx={6} fill={brandColors.primary} opacity={0.2} />
+      <Rect x={174.3} y={24} width={7.4} height={252} rx={3.7} fill={brandColors.primary} />
+      <Rect x={176.4} y={25} width={3.2} height={250} rx={1.6} fill={brandColors.onPrimary} opacity={0.9} />
+      <Path
+        d={behindHoldOutline}
+        fill={systemColors.secondaryLabel}
+        fillOpacity={0.34}
+        stroke={systemColors.secondaryLabel}
+        strokeWidth={1.8}
+      />
+      <Path
+        d="M77 126C107 101 163 89 209 119"
+        fill="none"
+        stroke={systemColors.secondaryLabel}
+        strokeWidth={3.3}
+        strokeLinecap="round"
+        opacity={0.48}
+      />
+      <Ellipse cx={148} cy={163} rx={13} ry={12} fill={systemColors.secondaryLabel} opacity={0.35} />
+      <Circle
+        cx={148}
+        cy={159}
+        r={9}
+        fill={systemColors.tertiaryGroupedBackground}
+        stroke={systemColors.secondaryLabel}
+        strokeWidth={1.6}
+      />
+      <Path d="M145.7 155L150.3 155L152.6 159L150.3 163L145.7 163L143.4 159Z" fill={systemColors.secondaryLabel} />
+    </Svg>
+  );
+}
 
 function BehindHoldThumbnail() {
   const { systemColors, brandColors } = useTheme();
