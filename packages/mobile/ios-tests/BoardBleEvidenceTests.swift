@@ -25,6 +25,31 @@ final class BoardBleEvidenceTests: XCTestCase {
         XCTAssertEqual(scan.dictionary(selectedDeviceId: "")["complete"] as? Bool, true)
     }
 
+    func testSoIllNameVariantsRemainEligibleWithoutServiceUuid() {
+        let names = ["So iLL Board", "So-iLL Board", "Soill Board", "SO ILL BOARD", "So \t-iLL Board"]
+        for name in names {
+            for useCachedName in [false, true] {
+                var scan = BoardBleEvidenceScan(scanId: "soill")
+                scan.observe(deviceId: "controller", localName: useCachedName ? nil : name,
+                             cachedName: useCachedName ? name : nil, serviceUuids: [],
+                             manufacturerData: "000123", serviceData: nil)
+                let devices = scan.dictionary(selectedDeviceId: "")["devices"] as? [[String: Any]]
+                XCTAssertEqual(devices?.count, 1, "\(name), cached: \(useCachedName)")
+                XCTAssertEqual(devices?.first?["manufacturerData"] as? String, "000123")
+            }
+        }
+    }
+
+    func testUnrelatedSimilarNamesStayUnknown() {
+        for name in ["Soiled sensor", "So il sensor"] {
+            var scan = BoardBleEvidenceScan(scanId: "not-soill")
+            scan.observe(deviceId: "sensor", localName: name, cachedName: nil, serviceUuids: [],
+                         manufacturerData: "000123", serviceData: nil)
+            let devices = scan.dictionary(selectedDeviceId: "")["devices"] as? [[String: Any]]
+            XCTAssertEqual(devices?.count, 0, name)
+        }
+    }
+
     func testGenericUartIsUnknownUntilExplicitlySelected() {
         var scan = BoardBleEvidenceScan(scanId: "scan")
         scan.observe(deviceId: "unknown", localName: "Sensor", cachedName: nil, serviceUuids: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"], manufacturerData: "0000", serviceData: nil)

@@ -10,6 +10,9 @@ import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
+import { BleEvidenceCollector } from '../../lib/ble/controller-evidence';
+import { upsertDiscoveredDevice } from '../../lib/ble/scan-device-cache';
+import type { DiscoveredDevice } from '../../lib/ble/types';
 
 vi.mock('../../lib/spray/use-spray-led-route-sender', () => {
   const sender = { send: async () => null, release: () => undefined };
@@ -3615,6 +3618,54 @@ describe('BluetoothProvider wall-confirm integration', () => {
       const allTrackedValues = analytics.track.mock.calls.flatMap(([, properties]) => Object.values(properties ?? {}));
       expect(allTrackedValues).not.toContain('SERIAL-SECRET-123');
     });
+  });
+
+  it('flushes late evidence from the live picker cache without a scan-triggered rerender', async () => {
+    const collector = new BleEvidenceCollector('connection_picker', 'android', 'real-radio-scan');
+    const cachedDevices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(cachedDevices, {
+      deviceId: 'device-1',
+      name: 'Kilter Board',
+      rssi: -40,
+      evidence: collector.observe({ deviceId: 'device-1', localName: 'Kilter Board' }),
+    });
+    const liveDevices = [...cachedDevices.values()];
+    bluetooth.state.pickerState = {
+      devices: liveDevices,
+      isScanning: true,
+      handleSelect: vi.fn(),
+      handleCancel: vi.fn(),
+      sessionId: 53,
+      showAllBoards: false,
+      mode: 'list',
+      presented: true,
+      closing: false,
+      handleDisplaced: vi.fn(),
+      handleClosed: vi.fn(),
+    };
+    const { rerender } = renderProvider();
+    await act(async () => {});
+    expect(analytics.track.mock.calls.filter(([event]) => event === 'BLE Picker Devices Resolved')).toHaveLength(0);
+    // The same signal bucket produces no state push. The existing row changes
+    // in place, just as it does in both real connection adapters.
+    expect(
+      upsertDiscoveredDevice(cachedDevices, {
+        deviceId: 'device-1',
+        name: 'Kilter Board',
+        rssi: -40,
+        evidence: collector.observe({ deviceId: 'device-1', manufacturerData: '00001234' }),
+      }),
+    ).toBe(false);
+    bluetooth.state.pickerState = null;
+    rerenderProvider(rerender);
+    const summaries = analytics.track.mock.calls.filter(([event]) => event === 'BLE Picker Devices Resolved');
+    expect(summaries).toHaveLength(1);
+    const summary = summaries[0][1];
+    const evidence = JSON.parse(summary.bleEvidence);
+    expect(evidence.scan.complete).toBe(false);
+    expect(evidence.scan.devices).toEqual([expect.objectContaining({ manufacturerData: '00001234' })]);
+    expect(summary.blePickerSessionId).toBe(53);
+    expect(summary).not.toHaveProperty('bleScanId');
   });
 
   it('forwards picker selection after refreshing a matching recorded config', async () => {

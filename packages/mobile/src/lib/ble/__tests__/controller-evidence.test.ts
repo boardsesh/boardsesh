@@ -34,6 +34,30 @@ describe('controller evidence', () => {
     expect(collector.snapshot().devices).toHaveLength(30);
   });
 
+  it.each(['So iLL Board', 'So-iLL Board', 'soill Board', 'SO ILL Board', ' S-o i-LL Board'])(
+    'recognizes the supported name-only So iLL variant %s',
+    (name) => {
+      const collector = new BleEvidenceCollector('test', 'ios');
+      collector.observe({ deviceId: 'soill-controller', localName: name });
+      expect(collector.snapshot().devices).toEqual([
+        expect.objectContaining({ deviceId: 'soill-controller', localName: name, matchBasis: 'board_name' }),
+      ]);
+    },
+  );
+
+  it('recognizes cached So iLL names without classifying unrelated UART peripherals as boards', () => {
+    const collector = new BleEvidenceCollector('test', 'android');
+    collector.observe({ deviceId: 'soill-controller', cachedName: 'So-iLL Board' });
+    collector.observe({
+      deviceId: 'unrelated-uart',
+      cachedName: 'LED strip',
+      serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+    });
+    expect(collector.snapshot().devices).toEqual([
+      expect.objectContaining({ deviceId: 'soill-controller', cachedName: 'So-iLL Board', matchBasis: 'board_name' }),
+    ]);
+  });
+
   it('labels generic UART as transport evidence rather than a board identity', () => {
     const collector = new BleEvidenceCollector('test', 'ios');
     collector.observe({ deviceId: 'uart', serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] });

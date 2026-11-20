@@ -66,6 +66,9 @@ export function upsertDiscoveredDevice(devices: Map<string, DiscoveredDevice>, d
     if (device.serviceData !== undefined) {
       existingDevice.serviceData = { ...existingDevice.serviceData, ...device.serviceData };
     }
+    // Evidence is already accumulated across packets by the adapter. Keep its
+    // newest snapshot without publishing a picker update for every packet.
+    if (device.evidence !== undefined) existingDevice.evidence = device.evidence;
     // Keep RSSI fresh so the sort and the bars follow the climber walking
     // toward a box. Only a bucket change (with hysteresis) re-pushes, so
     // duplicate adverts do not re-render the picker at advert rate. A new object

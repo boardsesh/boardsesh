@@ -1,5 +1,6 @@
 // Diagnostic observations, never a manufacturer identity decoder. Raw handles
 // and name-derived serials remain separate from any future verified identity.
+import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol/aurora';
 import { base64ToHex, serviceDataToHex } from './base64';
 
 export type BleEvidenceDevice = {
@@ -59,7 +60,10 @@ function basisFor(
   device: Pick<BleEvidenceDevice, 'localName' | 'cachedName' | 'serviceUuids'>,
 ): BleEvidenceDevice['matchBasis'] {
   const name = device.localName ?? device.cachedName ?? '';
-  if (/^(moonboard|woods|kilter|tension|grasshopper|touchstone|decoy|soill)(?:[\s#@-]|$)/i.test(name))
+  if (
+    /^(moonboard|woods|kilter|tension|grasshopper|touchstone|decoy|soill)(?:[\s#@-]|$)/i.test(name) ||
+    parseBoardTypeFromDeviceName(name) === 'soill'
+  )
     return 'board_name';
   if (
     device.serviceUuids.some((uuid) =>

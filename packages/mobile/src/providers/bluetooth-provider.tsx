@@ -83,7 +83,7 @@ import { visibleWallHeldByOtherUser } from '../components/play-drawer/lightbulb-
 import type { DevicePickerSeen } from '../lib/ble/picker-seen';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { capture, track } from '../lib/analytics';
-import { bleEvidenceProperties, evidenceBatchFromDevices, type BleEvidenceBatch } from '../lib/ble/controller-evidence';
+import { bleEvidenceProperties, evidenceBatchFromDevices } from '../lib/ble/controller-evidence';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
@@ -2015,7 +2015,7 @@ export function BluetoothProvider({
   // Monotonic id for the open picker session. A `check` that resolves after its
   // own session was flushed must not write into the next session's answer.
   const pickerSessionIdRef = useRef(0);
-  const pickerEvidenceRef = useRef<BleEvidenceBatch | undefined>(undefined);
+  const pickerEvidenceDevicesRef = useRef<PickerState['devices'] | undefined>(undefined);
   const pickerEvidenceSessionRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     // Only a picker that showed its list counts (#5658). One still searching for
@@ -2033,7 +2033,9 @@ export function BluetoothProvider({
         pickerSessionWatchRef.current = openPickerSessionWatch(pickerState);
       }
       // The UI session identifies this partial cache, not the adapter's radio scan.
-      pickerEvidenceRef.current = evidenceBatchFromDevices(pickerState.devices, 'connection_picker_cache', '');
+      // The cache enriches these device objects between React updates. Build
+      // the partial evidence batch only when the existing summary is emitted.
+      pickerEvidenceDevicesRef.current = pickerState.devices;
       pickerEvidenceSessionRef.current = pickerState.sessionId;
       pickerResolutionStatsRef.current = summarizePickerResolution(
         pickerState.devices,
@@ -2047,9 +2049,9 @@ export function BluetoothProvider({
       return;
     }
     const finalStats = pickerResolutionStatsRef.current;
-    const finalEvidence = pickerEvidenceRef.current;
+    const finalEvidenceDevices = pickerEvidenceDevicesRef.current;
     const finalPickerSessionId = pickerEvidenceSessionRef.current;
-    pickerEvidenceRef.current = undefined;
+    pickerEvidenceDevicesRef.current = undefined;
     pickerEvidenceSessionRef.current = undefined;
     if (!finalStats) {
       // No list showed this session: nothing the sheet saw belongs to the next.
@@ -2066,7 +2068,9 @@ export function BluetoothProvider({
     const seen = pickerSeenRef.current;
     pickerSessionWatchRef.current = null;
     pickerSeenRef.current = emptyPickerSeen();
-    const finalEvidenceProperties = bleEvidenceProperties(finalEvidence);
+    const finalEvidenceProperties = bleEvidenceProperties(
+      finalEvidenceDevices ? evidenceBatchFromDevices(finalEvidenceDevices, 'connection_picker_cache', '') : undefined,
+    );
     // A picker cache has no authoritative radio scan token.
     delete finalEvidenceProperties.bleScanId;
     capture(SHARED_EVENTS.BlePickerDevicesResolved, {

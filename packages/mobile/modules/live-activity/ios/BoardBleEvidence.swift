@@ -15,9 +15,13 @@ struct BoardBleEvidenceDevice {
 
     var eligible: Bool {
         let name = (localName ?? cachedName ?? "").lowercased()
+        // Match the shared Aurora parser's whitespace/hyphen normalization
+        // for the multi-word So iLL brand. This remains a name hint only.
+        let normalizedName = name.filter { !$0.isWhitespace && $0 != "-" }
+        let isSoillName = normalizedName.hasPrefix("soill")
         let brands = ["moonboard", "kilter", "tension", "woods", "grasshopper", "touchstone", "decoy", "soill"]
         let specificServices = ["4488b571-7806-4df6-bcff-a2897e4953ff", "2c9285bc-dfd0-4fd8-a13d-393660f8a060", "7a112233-4455-6677-8899-aabbccddee01"]
-        return brands.contains(where: { brand in
+        return isSoillName || brands.contains(where: { brand in
             guard name.hasPrefix(brand) else { return false }
             guard let boundary = name.dropFirst(brand.count).first else { return true }
             return boundary.isWhitespace || "#@-".contains(boundary)
