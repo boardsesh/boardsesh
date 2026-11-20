@@ -20,6 +20,7 @@ A new version shipped to the Play Store.
 
 ### Fixed
 
+- Get clear Bluetooth permission help when your browser blocks board connections. ([#7964](https://github.com/boardsesh/boardsesh/pull/7964))
 - See when someone else takes the board, with a brief message in the light button. Bluetooth error messages now explain the disconnect and how to try again. ([#7952](https://github.com/boardsesh/boardsesh/pull/7952))
 - Find your gym without sharing your location in the browser. ([#7956](https://github.com/boardsesh/boardsesh/pull/7956))
   Sign out directly from your account menu.
