@@ -154,11 +154,14 @@ export async function assertKnownBoardConfig(
   }
 
   if (boardType === 'quantum') {
-    const isExactModel = Object.values(QUANTUM_MODELS).some(
-      (model) => model.layoutId === layoutId && model.sizeId === productSizeId,
-    );
-    if (!isExactModel || uniqueSetIds.length !== 1 || uniqueSetIds[0] !== QUANTUM_SET_ID) {
-      throwUnknownBoardConfig();
+    const model = Object.values(QUANTUM_MODELS).find((entry) => entry.layoutId === layoutId);
+    if (!model) throwUnknownBoardConfig('layoutId');
+    if (model.sizeId !== productSizeId) throwUnknownBoardConfig('sizeId');
+    if (uniqueSetIds.length !== 1 || uniqueSetIds[0] !== QUANTUM_SET_ID) {
+      throwUnknownBoardConfig(
+        'setIds',
+        uniqueSetIds.filter((setId) => setId !== QUANTUM_SET_ID),
+      );
     }
     return;
   }

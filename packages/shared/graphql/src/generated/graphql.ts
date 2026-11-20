@@ -1350,6 +1350,8 @@ export type BoardShareLink = {
 /** What a signed-out visitor holding a share link may see: the board's name only. */
 export type BoardShareLinkPreview = {
   __typename?: 'BoardShareLinkPreview';
+  /** Board family for signed-in link holders checking rollout eligibility. */
+  boardType?: Maybe<Scalars['String']['output']>;
   name: Scalars['String']['output'];
 };
 
@@ -18030,6 +18032,15 @@ export type BoardShareLinkPreviewQuery = {
   boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string } | null;
 };
 
+export type BoardShareLinkEligibilityQueryVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+export type BoardShareLinkEligibilityQuery = {
+  __typename?: 'Query';
+  boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string; boardType?: string | null } | null;
+};
+
 export type GetClimbProposalsQueryVariables = Exact<{
   input: GetClimbProposalsInput;
 }>;
@@ -27707,6 +27718,46 @@ export const BoardShareLinkPreviewDocument = {
     },
   ],
 } as unknown as DocumentNode<BoardShareLinkPreviewQuery, BoardShareLinkPreviewQueryVariables>;
+export const BoardShareLinkEligibilityDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BoardShareLinkEligibility' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'boardShareLinkPreview' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'token' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BoardShareLinkEligibilityQuery, BoardShareLinkEligibilityQueryVariables>;
 export const GetClimbProposalsDocument = {
   kind: 'Document',
   definitions: [

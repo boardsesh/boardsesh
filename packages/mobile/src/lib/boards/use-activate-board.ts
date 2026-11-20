@@ -182,7 +182,8 @@ export function useActivateBoard({
       if (haptic) hapticSelection();
       try {
         // Persists to AsyncStorage + the ['activeBoard'] cache.
-        await setActiveBoard(board);
+        const activated = await setActiveBoard(board);
+        if (activated === false) return;
 
         if (source === 'onboarding') {
           // The real activation metric — board history turns on the moment a

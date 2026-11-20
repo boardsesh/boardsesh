@@ -11,6 +11,10 @@ import itKiosk from '@boardsesh/i18n/locales/it/kiosk.json';
 import zhKiosk from '@boardsesh/i18n/locales/zh-CN/kiosk.json';
 
 vi.mock('server-only', () => ({}));
+const visibility = vi.hoisted(() => ({ enabled: false }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': visibility.enabled }),
+}));
 vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 vi.mock('next/navigation', () => ({
@@ -67,6 +71,7 @@ const metadataFor = (slug: string, params: Record<string, string | string[] | un
   });
 
 beforeEach(() => {
+  visibility.enabled = false;
   executeAuthenticatedGraphQL.mockReset();
   viewer.token = undefined;
 });
@@ -408,4 +413,18 @@ describe('gym search metadata evidence', () => {
       consoleError.mockRestore();
     }
   });
+});
+
+it.each([false, true])('uses Quantum in public gym share metadata when rollout is %s', async (enabled) => {
+  visibility.enabled = enabled;
+  const slug = `rollout-${enabled}`;
+  serveGym(gym(slug, { description: null }), [{ boardType: 'quantum', angle: 40 }]);
+  const metadata = await metadataFor(slug, {});
+  expect(metadata.openGraph?.title).toBe(enabled ? 'gymPage.ogTitle:Boulderwelt' : 'Boulderwelt');
+  expect(metadata.openGraph?.description).toBe(
+    enabled ? 'gymPage.ogDescriptionOneType:Boulderwelt' : 'gymPage.ogDescriptionNoBoards',
+  );
+  const imageUrl = ogImages(metadata)[0].url;
+  if (enabled) expect(imageUrl).toMatch(CARD_URL(slug));
+  else expect(imageUrl).toBe('/opengraph-image');
 });

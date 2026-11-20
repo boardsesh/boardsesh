@@ -149,6 +149,15 @@ Every lookup that found a card candidate logs `[serial-reveal] request cards` at
 
 What this does not hide: the owner's followee learns that the owner's board is here. That is what the owner opted into by following them; an owner who does not want it unfollows them, or makes the board Only me.
 
+Signed-in holders of an active board invite can additionally request the board
+family through `BoardShareLinkEligibility`, so the app checks rollout eligibility
+before showing Join and again before redeeming. The anonymous preview remains
+name-only (`boardType` resolves to null), and neither preview creates a grant or
+returns board IDs, location or credentials. Deploy the backend schema before the
+app update; missing eligibility metadata falls back to an ordinary board read
+without granting membership.
+
+
 ## Enforcement and writes
 
 `packages/shared/privacy` defines renderer-independent policy. `packages/db/src/queries/privacy.ts` expresses the policy inside queries, before pagination and counts. Backend runtime helpers in `services/privacy.ts` authorize individual resources. Policy reads use the primary database: a lagging replica cannot restore a revoked grant.

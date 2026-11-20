@@ -1,5 +1,5 @@
 import {
-  GET_BOARD_SHARE_LINK_PREVIEW,
+  GET_BOARD_SHARE_LINK_ELIGIBILITY,
   REDEEM_BOARD_SHARE_LINK,
   type BoardShareLinkRedemption,
 } from '@boardsesh/graphql/operations/privacy';
@@ -68,20 +68,24 @@ export async function fetchBoardFromShareLink(
   fallback: (slug: string) => Promise<UserBoard | null>,
   confirmJoin: ((boardName: string) => Promise<boolean>) | undefined,
   routeIsCurrent: () => boolean = () => true,
+  isBoardTypeVisible: (boardType: string) => boolean = () => true,
 ): Promise<UserBoard | null> {
   const credentialGeneration = captureAuthCredentialGeneration();
   const canContinue = () => routeIsCurrent() && isAuthCredentialGenerationCurrent(credentialGeneration);
   const resolveFallback = async () => {
     const board = await fallback(slug);
-    return canContinue() ? board : null;
+    return canContinue() && (!board || isBoardTypeVisible(board.boardType)) ? board : null;
   };
   if (!canContinue()) return null;
-  let preview: { name: string } | null;
+  let preview: { name: string; boardType?: string | null } | null;
   try {
     preview = (
-      await getHttpClient().request<{ boardShareLinkPreview: { name: string } | null }>(GET_BOARD_SHARE_LINK_PREVIEW, {
-        token,
-      })
+      await getHttpClient().request<{ boardShareLinkPreview: { name: string; boardType?: string | null } | null }>(
+        GET_BOARD_SHARE_LINK_ELIGIBILITY,
+        {
+          token,
+        },
+      )
     ).boardShareLinkPreview;
   } catch {
     // graphql-request errors carry the token: never report them.
@@ -89,16 +93,21 @@ export async function fetchBoardFromShareLink(
   }
   if (!canContinue()) return null;
   if (!preview || !confirmJoin) return resolveFallback();
+  const boardType = preview.boardType;
+  if (typeof boardType !== 'string') return resolveFallback();
+  const canJoin = () => canContinue() && isBoardTypeVisible(boardType);
+  if (!canJoin()) return null;
   const confirmed = await confirmJoin(preview.name);
   // A delayed alert must never join under a different account or after the
   // person navigated away. Every retry rechecks the same scope.
-  if (!canContinue()) return null;
+  if (!canJoin()) return null;
   if (!confirmed) return resolveFallback();
-  const redemption = await redeemWithOneRetry(token, canContinue);
+  const redemption = await redeemWithOneRetry(token, canJoin);
   // Signed out or switched accounts mid-request: the grant belongs to whoever
   // sent it, and this route must not adopt a board for someone else.
   if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return null;
+  if (!canJoin()) return null;
   if (!redemption) return resolveFallback();
   const board = await fetchBoardByUuid(redemption.boardUuid);
-  return canContinue() ? board : null;
+  return canJoin() && (!board || isBoardTypeVisible(board.boardType)) ? board : null;
 }

@@ -18,6 +18,10 @@ import type { Gym } from '@boardsesh/shared-schema';
  */
 
 vi.mock('server-only', () => ({}));
+const visibility = vi.hoisted(() => ({ enabled: false }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': visibility.enabled }),
+}));
 vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 class NotFoundSignal extends Error {}
@@ -156,6 +160,7 @@ const renderPage = (slug: string) =>
   GymPage({ params: Promise.resolve({ gym_slug: slug }), searchParams: Promise.resolve({}) });
 
 beforeEach(() => {
+  visibility.enabled = false;
   executeAuthenticatedGraphQL.mockReset();
   vi.mocked(getBoardDiscovery).mockResolvedValue([]);
 });
@@ -241,4 +246,19 @@ describe('gym front door essentials', () => {
       true,
     );
   });
+});
+
+it.each([false, true])('shows the Quantum roster link when rollout is %s', async (enabled) => {
+  visibility.enabled = enabled;
+  const slug = `rollout-${enabled}`;
+  respondWith({
+    gym: gym(slug),
+    boards: [
+      { uuid: 'quantum-board', slug: 'quantum-wall', name: 'Quantum Wall', boardType: 'quantum', angle: 40 },
+      { uuid: 'kilter-board', slug: 'kilter-wall', name: 'Kilter Wall', boardType: 'kilter', angle: 40 },
+    ],
+  });
+  const hrefs = linkHrefs(await renderPage(slug));
+  expect(hrefs.includes('/b/quantum-wall')).toBe(enabled);
+  expect(hrefs).toContain('/b/kilter-wall');
 });

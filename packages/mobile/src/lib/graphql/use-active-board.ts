@@ -10,7 +10,8 @@
 //
 // The queryFn returns `UserBoard | null`.
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
@@ -120,6 +121,7 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
+  const isBoardTypeVisible = useIsBoardTypeVisible();
   useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration, getCredentialGeneration);
   const query = useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
@@ -135,7 +137,8 @@ export function useActiveBoard() {
     // no value in background refetching here.
     staleTime: Infinity,
   });
-  return { ...query, data: query.data ? currentActiveBoardProjection(query.data) : query.data };
+  const board = query.data ? currentActiveBoardProjection(query.data) : query.data;
+  return { ...query, data: board && !isBoardTypeVisible(board.boardType) ? null : board };
 }
 
 /**
@@ -144,6 +147,9 @@ export function useActiveBoard() {
  * every reader re-renders with the new board immediately, no refetch.
  */
 export function useSetActiveBoard() {
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const visibilityRef = useRef(isBoardTypeVisible);
+  visibilityRef.current = isBoardTypeVisible;
   const queryClient = useQueryClient();
   const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
@@ -152,14 +158,14 @@ export function useSetActiveBoard() {
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      if (credentialGeneration !== getCredentialGeneration() || (isOperationCurrent && !isOperationCurrent()))
-        return false;
+      const isCurrent = () => visibilityRef.current(board.boardType) && (!isOperationCurrent || isOperationCurrent());
+      if (credentialGeneration !== getCredentialGeneration() || !isCurrent()) return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
       return enqueueActiveBoardWrite(
         generation,
         () => {
-          if (isOperationCurrent && !isOperationCurrent()) return Promise.resolve();
+          if (!isCurrent()) return Promise.resolve();
           return setStoredActiveBoard(board, owner);
         },
         () => {
@@ -167,7 +173,7 @@ export function useSetActiveBoard() {
           if (cached) authorizeActiveBoardProjection(cached);
         },
         true,
-        isOperationCurrent,
+        isCurrent,
       );
     },
     [queryClient, credentialGeneration],
