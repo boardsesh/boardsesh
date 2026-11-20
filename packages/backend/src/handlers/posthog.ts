@@ -3,12 +3,16 @@ import { gunzipSync } from 'node:zlib';
 import { ANALYTICS_CAPTURE_PATH, ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED } from '@boardsesh/consent';
 import { applyCorsHeaders } from './cors';
 import { logger } from '../utils/logger';
-import { resolveEdgeVisitorIp, resolveFlagCountry } from '../utils/flag-country';
+import { resolveFlagCountry } from '../utils/flag-country';
+import { resolvePosthogVisitorIp } from '../utils/posthog-visitor-ip';
 
 const POSTHOG_UPSTREAM = 'https://us.i.posthog.com';
 const MAX_BODY_BYTES = 64 * 1024;
 const UPSTREAM_TIMEOUT_MS = 5000;
 const PROXY_PATH_PREFIX = '/api/posthog';
+// Omitting XFF makes PostHog geolocate our egress instead. This unspecified
+// address has no location, without decoding/re-encoding compressed SDK bodies.
+const UNKNOWN_VISITOR_IP = '0.0.0.0';
 
 function readBody(req: IncomingMessage, limitBytes: number): Promise<Buffer | { tooLarge: true }> {
   return new Promise((resolve, reject) => {
@@ -40,11 +44,12 @@ function readBody(req: IncomingMessage, limitBytes: number): Promise<Buffer | { 
  * Forwards the visitor IP (X-Forwarded-For) only on capture paths
  * (`ANALYTICS_CAPTURE_PATH` from `@boardsesh/consent`) from a client that says it holds a current Allow
  * (`x-boardsesh-analytics-consent: granted`), and only the `cf-connecting-ip` a
- * trusted Cloudflare edge reports, so PostHog geolocates consented events to the
+ * request authenticated by our zone's origin proof reports, so PostHog geolocates consented events to the
  * visitor rather than to our egress. Everything else is stripped: every other
  * path, capture without the header (the anonymous OTA health event, kiosk
  * telemetry, an older client), and requests that did not come through a
- * Cloudflare edge. A missing header can only lose location, never add it.
+ * verified zone. Otherwise XFF is the unspecified address, preventing our
+ * server's location from being attached to anonymous or unverified events.
  * Never forwards the HTTP User-Agent: consented analytics registers
  * `$raw_user_agent` in its event payload instead (#5653).
  */
@@ -75,6 +80,7 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
   const upstreamUrl = `${POSTHOG_UPSTREAM}${rest}${url.search}`;
   const headers: Record<string, string> = {
     'Content-Type': typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : 'application/json',
+    'X-Forwarded-For': UNKNOWN_VISITOR_IP,
   };
   const contentEncoding = req.headers['content-encoding'];
   if (typeof contentEncoding === 'string' && contentEncoding.length > 0) {
@@ -85,9 +91,9 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
     ANALYTICS_CAPTURE_PATH.test(rest) &&
     req.headers[ANALYTICS_CONSENT_HEADER] === ANALYTICS_CONSENT_HEADER_GRANTED
   ) {
-    // Only the address Cloudflare vouches for. Earlier X-Forwarded-For entries
-    // are caller-controlled, and the socket peer is our own ingress.
-    const visitorIp = resolveEdgeVisitorIp(req);
+    // Only our own zone's proof authenticates the visitor header, independent
+    // of how many ingress hops the hosting provider adds to X-Forwarded-For.
+    const visitorIp = resolvePosthogVisitorIp(req, url);
     if (visitorIp) headers['X-Forwarded-For'] = visitorIp;
   }
   if (/^\/(flags|decide)\/?$/.test(rest) && body) {
@@ -154,7 +160,12 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
     res.writeHead(upstream.status, { 'Content-Type': contentType });
     res.end(responseBody);
 
-    logger.info('[posthog-proxy]', { status: upstream.status, durationMs: Date.now() - startedAt, path: rest });
+    logger.info('[posthog-proxy]', {
+      status: upstream.status,
+      durationMs: Date.now() - startedAt,
+      path: rest,
+      visitorIpForwarded: headers['X-Forwarded-For'] !== UNKNOWN_VISITOR_IP,
+    });
   } catch (err) {
     const aborted = err instanceof Error && err.name === 'AbortError';
     logger.error('[posthog-proxy] upstream error', {

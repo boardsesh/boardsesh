@@ -168,7 +168,7 @@ by [Cloudflare IP Geolocation](https://developers.cloudflare.com/network/ip-geol
 Keep the zone's IP Geolocation setting on; absent country fails closed as `XX`.
 Flag requests forward no visitor IP, city, coordinates, or HTTP User-Agent to
 PostHog. Only consented capture forwards the visitor IP, for GeoIP, and only
-the `CF-Connecting-IP` that a trusted edge (below) reports; see
+the `CF-Connecting-IP` authenticated by the [analytics origin proof](#analytics-origin-proof); see
 [analytics consent](./analytics-consent.md#website-and-browser-app).
 
 The backend accepts that header only when the socket peer is in Cloudflare's
@@ -214,6 +214,54 @@ created by hand, and `vp run cf:apply` leaves rules it does not declare alone.
 The rule, the matching Railway variable `CLOUDFLARE_ORIGIN_PROOF_SECRET` and the
 order to set them, and the `_NEXT` variable for rotation, are in
 [password delegation](./better-auth-web-password-delegation.md#turning-on-the-origin-proof).
+
+### Analytics origin proof
+
+Analytics capture has a separate trust boundary from feature-flag country,
+GraphQL consent geography, and auth rate limiting. Production observations on
+2026-11-20 showed a `::ffff:100.64.0.x` socket and an XFF chain of
+`<Cloudflare edge>, <public Railway edge>`. Neither adding CGNAT to private
+ranges nor trusting an earlier Cloudflare-looking hop safely authenticates the
+visitor. The PostHog proxy instead verifies an own-zone proof, scoped to
+`ws.boardsesh.com/api/posthog/`, before accepting `CF-Connecting-IP`.
+
+Use a **separate backend secret**, not the web authentication proof. The backend
+accepts `POSTHOG_ORIGIN_PROOF_SECRET` and `POSTHOG_ORIGIN_PROOF_SECRET_NEXT`, each
+at least 32 UTF-8 bytes after trimming. Verification is constant-time over
+SHA-256 digests and compares both configured secrets. Missing, short or invalid
+proofs fail closed. The generic edge/auth helpers retain their existing policy.
+
+Rollout order (the backend service is inventory-only in `infra/railway/config.ts`):
+
+1. Deploy the backend proxy fix and Sentry proof-header redaction first. All
+   unverified events then have unknown location, instead of the server's US
+   location. **Do not enable the transform on the old backend:** Sentry's
+   `sendDefaultPii: false` alone does not redact this custom secret header.
+2. Generate a distinct cryptographically random secret of at least 32 bytes.
+   Set `POSTHOG_ORIGIN_PROOF_SECRET` on `boardsesh-backend` and deploy it. Do not
+   commit or log the value. This variable is required for visitor GeoIP, not for
+   accepting events.
+3. Add an owner-managed request-header transform with expression
+   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/api/posthog/"))`.
+   **Set/overwrite** `X-Boardsesh-Origin-Proof` to that secret; never append it.
+   Keep this secret-bearing rule out of `infra/cloudflare/config.ts`, as with
+   the web proof rule. `cf:apply` preserves undeclared rules.
+4. Verify consented capture logs `visitorIpForwarded: true`, while anonymous
+   capture, missing/wrong proofs, flags and config log `false`. Inspect a new
+   consented event's country against the test device's network; anonymous
+   events must have no inferred country/city. VPNs can legitimately change IP
+   geolocation. Existing person and historical event locations are not repaired.
+5. Rotate by setting `_NEXT` and deploying before changing the transform. Then
+   promote that secret to the primary and unset `_NEXT`. To disable visitor
+   GeoIP, unset both backend secrets and redeploy; events still ingest with
+   unknown location. Keep Sentry redaction in place while the rule exists.
+
+The proxy never forwards the proof upstream. It sends the unspecified
+`X-Forwarded-For: 0.0.0.0` whenever there is no consented, verified public visitor
+IP. Omitting XFF reintroduces server GeoIP; the `ip=0` query parameter did not
+prevent it in the live ingestion probe. JSON and gzip capture/replay bodies
+remain byte-for-byte intact. Only flag bodies retain the existing bounded
+rewrite and `geoip_disable: true` behavior.
 
 ### Consent province header
 

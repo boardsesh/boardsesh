@@ -1,7 +1,7 @@
 import 'server-only';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIPv6 } from 'node:net';
 import { isCloudflareEdgeAddress, normalizeIpAddress } from '@boardsesh/consent/edge-country';
+import { verifyOriginProof, type OriginProof } from '@boardsesh/consent/origin-proof-server';
 import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from './origin-proof-header';
 import { webPasswordMode } from './password-command-client.server';
 
@@ -46,20 +46,8 @@ export const CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRE
  * 32-byte rule.
  */
 export const CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT';
-const MIN_ORIGIN_PROOF_SECRET_BYTES = 32;
 /** How often the log may say a Cloudflare request arrived without our zone's proof. */
 const UNPROVEN_WARNING_INTERVAL_MS = 60_000;
-
-type OriginProof = 'unconfigured' | 'proven' | 'unproven';
-
-function sha256(value: string): Buffer {
-  return createHash('sha256').update(value, 'utf8').digest();
-}
-
-function usableSecret(name: string): string | null {
-  const secret = process.env[name]?.trim();
-  return secret && Buffer.byteLength(secret, 'utf8') >= MIN_ORIGIN_PROOF_SECRET_BYTES ? secret : null;
-}
 
 let lastUnprovenWarningAt = Number.NEGATIVE_INFINITY;
 let unprovenSinceLastWarning = 0;
@@ -90,18 +78,12 @@ function warnUnprovenEdgeRequest(request: Request): void {
  * request with a Cloudflare last hop is counted toward the warning.
  */
 function originProof(request: Request): OriginProof {
-  const secrets = [CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV, CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV]
-    .map(usableSecret)
-    .filter((secret): secret is string => secret !== null);
-  if (secrets.length === 0) return 'unconfigured';
-  const presented = request.headers.get(CLOUDFLARE_ORIGIN_PROOF_HEADER)?.trim();
-  // Digests have one length, so the comparison time says nothing about a secret.
-  // Every secret is compared, so the time does not say which one matched either.
-  const presentedDigest = presented ? sha256(presented) : null;
-  const matches = secrets.map((secret) => presentedDigest !== null && timingSafeEqual(presentedDigest, sha256(secret)));
-  if (matches.includes(true)) return 'proven';
-  if (isCloudflareEdgeAddress(lastForwardedHop(request))) warnUnprovenEdgeRequest(request);
-  return 'unproven';
+  const proof = verifyOriginProof(request.headers.get(CLOUDFLARE_ORIGIN_PROOF_HEADER) ?? undefined, [
+    process.env[CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV],
+    process.env[CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV],
+  ]);
+  if (proof === 'unproven' && isCloudflareEdgeAddress(lastForwardedHop(request))) warnUnprovenEdgeRequest(request);
+  return proof;
 }
 
 function lastForwardedHop(request: Request): string | undefined {
