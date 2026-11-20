@@ -66,7 +66,7 @@ vi.mock('../../../lib/ble/android-location-permission', () => ({
   describeBlePermissionDenial: vi.fn(async () => ({})),
 }));
 const analyticsTrack = vi.hoisted(() => vi.fn());
-vi.mock('../../../lib/analytics', () => ({ track: analyticsTrack }));
+vi.mock('../../../lib/analytics', () => ({ track: analyticsTrack, capture: analyticsTrack }));
 vi.mock('../../../lib/ble/transport-runtime', () => ({ bluetoothTransport: () => undefined }));
 vi.mock('../../../lib/ble/bluetooth-status-store', () => ({ useBluetoothConnectedStatus: () => false }));
 vi.mock('../../../lib/ble/bluetooth-authorization', () => ({
