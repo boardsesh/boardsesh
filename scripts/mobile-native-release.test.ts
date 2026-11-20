@@ -515,6 +515,108 @@ function platformHistory() {
 }
 
 describe('per-platform native upload reuse', { timeout: 30_000 }, () => {
+  it('keeps Android on the open version when the accepted iOS binary is unchanged', () => {
+    const repository = platformHistory();
+    const receipt = repository.tagIosUpload(repository.first);
+    const anchor = { tag: 'release/ios-v2.7.0-aaaaaaaaaaaa', sha: repository.first.sha };
+    repository.git(['tag', anchor.tag, anchor.sha]);
+    const adopted = prepareNativeVersionStamp(
+      repository.directory,
+      repository.first.sha,
+      { ...fingerprints, android: 'c'.repeat(40) },
+      repository.first.version,
+      [receipt, anchor],
+    );
+    expect(adopted).toMatchObject({ kind: 'version-adoption', version: '2.7.0' });
+    expect(validateNativeStampSource(adopted.sha, adopted.sha, repository.directory)).toMatchObject(adopted);
+    expect(findUploadedNativePlatform('ios', adopted, repository.directory)).toEqual(receipt);
+    expect(findUploadedNativePlatform('android', adopted, repository.directory)).toBeNull();
+  });
+
+  it('restores an Android-only bump and reuses the accepted iOS binary through later Android changes', () => {
+    const repository = platformHistory();
+    const receipt = repository.tagIosUpload(repository.first);
+    repository.git(['tag', 'release/ios-v2.7.0-aaaaaaaaaaaa', repository.first.sha]);
+    const pair = { ...fingerprints, android: 'c'.repeat(40) };
+    const bad = repository.append(pair);
+    repository.tagIosUpload(bad);
+    repository.git(['tag', 'build-android-v2.7.1-2000100-cccccccccccc', bad.sha]);
+    const restored = prepareNativeVersionRestoration(repository.directory, bad.sha, '2.7.0', bad.sha, pair).stamp;
+    repository.setHead(restored.sha);
+    repository.git(['update-ref', 'refs/remotes/origin/main', restored.sha]);
+    expect(validateNativeStampSource(restored.sha, restored.sha, repository.directory)).toMatchObject(restored);
+    expect(getSupersededNativeStampShas(repository.directory, restored.sha)).toEqual([bad.sha]);
+    expect(findUploadedNativePlatform('ios', restored, repository.directory)).toEqual(receipt);
+    expect(findUploadedNativePlatform('android', restored, repository.directory)).toBeNull();
+    for (const platform of ['ios', 'android'] as const)
+      expect(
+        nativePlatformBuildDecision(
+          { platform, sourceSha: restored.sha, fingerprint: restored[platform], version: '2.7.0', forced: false },
+          repository.directory,
+        ).shouldBuild,
+      ).toBe(platform === 'android');
+    expect(() =>
+      nativePlatformBuildDecision(
+        { platform: 'ios', sourceSha: restored.sha, fingerprint: restored.ios, version: '2.7.0', forced: true },
+        repository.directory,
+      ),
+    ).toThrow('Apple already approved');
+    const references = [
+      receipt,
+      { tag: 'release/ios-v2.7.0-aaaaaaaaaaaa', sha: repository.first.sha },
+      { tag: 'build-ios-v2.7.1-1-aaaaaaaaaaaa', sha: bad.sha },
+      { tag: 'build-android-v2.7.1-2000100-cccccccccccc', sha: bad.sha },
+    ];
+    const next = prepareNativeVersionStamp(
+      repository.directory,
+      restored.sha,
+      { ...pair, android: 'd'.repeat(40) },
+      restored.version,
+      references,
+      [bad.sha],
+    );
+    expect(next).toMatchObject({ kind: 'version-adoption', version: '2.7.0' });
+    expect(findUploadedNativePlatform('ios', next, repository.directory)).toEqual(receipt);
+    // iOS changing again must open a new version, even while Android stays open.
+    expect(
+      prepareNativeVersionStamp(
+        repository.directory,
+        restored.sha,
+        { ...pair, ios: 'd'.repeat(40) },
+        restored.version,
+        references,
+        [bad.sha],
+      ),
+    ).toMatchObject({ kind: 'version-bump', version: '2.7.1' });
+  });
+
+  it.each([
+    'changed-ios',
+    'missing-upload',
+    'wrong-anchor-source',
+    'wrong-anchor-fingerprint',
+    'released-android',
+    'higher-release',
+    'higher-tester',
+    'superseded-upload-only',
+  ] as const)('refuses a platform restoration without reusable release proof: %s', (failure) => {
+    const repository = platformHistory();
+    if (failure !== 'missing-upload' && failure !== 'superseded-upload-only') repository.tagIosUpload(repository.first);
+    const pair = { ...fingerprints, android: 'c'.repeat(40) };
+    if (failure === 'changed-ios') pair.ios = `${'a'.repeat(12)}${'d'.repeat(28)}`;
+    const bad = repository.append(pair);
+    const anchor = `release/ios-v2.7.0-${failure === 'wrong-anchor-fingerprint' ? 'dddddddddddd' : 'aaaaaaaaaaaa'}`;
+    repository.git(['tag', anchor, failure === 'wrong-anchor-source' ? bad.sha : repository.first.sha]);
+    if (failure === 'superseded-upload-only') repository.tagIosUpload(bad);
+    if (failure === 'released-android')
+      repository.git(['tag', 'release/android-v2.7.0-bbbbbbbbbbbb', repository.first.sha]);
+    if (failure === 'higher-release') repository.git(['tag', 'release/ios-v2.7.2-aaaaaaaaaaaa', repository.first.sha]);
+    if (failure === 'higher-tester')
+      repository.git(['tag', 'build-android-v2.7.2-2000101-bbbbbbbbbbbb', repository.first.sha]);
+    expect(() => prepareNativeVersionRestoration(repository.directory, bad.sha, '2.7.0', bad.sha, pair)).toThrow();
+    expect(repository.git(['rev-parse', 'HEAD'])).toBe(bad.sha);
+  });
+
   it('skips TestFlight for an Android-only patch after the previous iOS version was accepted', () => {
     const repository = platformHistory();
     const receipt = repository.tagIosUpload(repository.first);

@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { APP_CONFIG_PATH, BOT_EMAIL, BOT_NAME, readMarketingVersion } from './lib/mobile-release-version.ts';
+import { parseReleaseTag } from './lib/release-tags.ts';
 import {
   NATIVE_BASELINE_TAG,
   NATIVE_RESTORATION_MARKER,
@@ -290,6 +291,37 @@ export function findUploadedNativePlatform(
   return null;
 }
 
+/** An accepted sibling need not close the other store's version when its exact binary is reusable. */
+function nativeVersionReferences(
+  directory: string,
+  version: string,
+  fingerprints: NativeFingerprints,
+  previous: NativeStamp | NativeBaseline,
+  references: readonly TaggedNativeBuild[],
+): TaggedNativeBuild[] {
+  return references.filter((reference) => {
+    const release = parseReleaseTag(reference.tag);
+    if (
+      !release ||
+      release.version !== version ||
+      previous[release.platform] !== fingerprints[release.platform] ||
+      release.shortFp !== fingerprints[release.platform].slice(0, 12)
+    )
+      return true;
+    const history =
+      'sha' in previous
+        ? nativePlatformHistory(release.platform, previous, directory)
+        : [{ ...previous, sha: previous.sourceSha }];
+    return !history.some(
+      (uploaded) =>
+        uploaded.sha === reference.sha &&
+        uploaded.version === version &&
+        uploaded[release.platform] === fingerprints[release.platform] &&
+        exactNativeBuilds(references, release.platform, uploaded).length > 0,
+    );
+  });
+}
+
 function cleanEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const name of [
@@ -540,7 +572,9 @@ export function prepareNativeVersionStamp(
   supersededStampShas: readonly string[] = [],
 ): NativeStamp {
   const currentVersion = readMarketingVersion(git(['show', `${mainSha}:${APP_CONFIG_PATH}`], { cwd: directory }));
-  const plan = planNativeVersion(currentVersion, previousNativeVersion, references, supersededStampShas);
+  const previous = latestStamp(mainSha, directory) ?? baseline(mainSha, directory);
+  const availableReferences = nativeVersionReferences(directory, currentVersion, fingerprints, previous, references);
+  const plan = planNativeVersion(currentVersion, previousNativeVersion, availableReferences, supersededStampShas);
   return writeNativeStamp(directory, mainSha, fingerprints, plan.version, plan.kind);
 }
 
@@ -580,12 +614,21 @@ export function prepareNativeVersionRestoration(
     throw new Error('Restoration must undo only the latest bump, back to the version its source had.');
   if (!sameNativeFingerprints(latest, fingerprints))
     throw new Error('Native fingerprints changed after the expected stamp; refusing version restoration.');
-  const references = git(['tag', '--list'], { cwd: directory }).split('\n').filter(Boolean);
-  requireUnreleasedNativeVersion(targetVersion, references);
+  const references = nativeVersionReferences(
+    directory,
+    targetVersion,
+    fingerprints,
+    previous,
+    tagReferences(directory),
+  );
+  requireUnreleasedNativeVersion(
+    targetVersion,
+    references.map((reference) => reference.tag),
+  );
   // Restore only what the coordinator would keep today: the target is still open (no release
   // anchor, no higher reservation once this bump's own tester builds are retired).
   const retired = [...getSupersededNativeStampShas(directory, mainSha), expectedStampSha];
-  const plan = planNativeVersion(targetVersion, previous.version, tagReferences(directory), retired);
+  const plan = planNativeVersion(targetVersion, previous.version, references, retired);
   if (plan.kind !== 'version-adoption' || plan.version !== targetVersion)
     throw new Error(`Native ${targetVersion} is not an open version the coordinator would keep; refusing restoration.`);
   return {
