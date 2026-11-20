@@ -1,8 +1,8 @@
 # Mobile store release runbook
 
 Native and JavaScript work both target `main`. A native fingerprint change rebuilds
-main's open marketing version with new store build numbers and starts iOS TestFlight and
-Android tester builds. The version stays open until a store accepts it; the first native
+main's open marketing version with new store build numbers for the changed platforms.
+Unchanged platforms reuse their confirmed upload. The version stays open until a store accepts it; the first native
 change after that opens the next unused patch. JavaScript-only changes keep the marketing
 version and use the existing OTA deployment pipeline. Several native merges waiting for
 the coordinator share one current snapshot.
@@ -53,9 +53,9 @@ update, or delete those tags.
 **Main Native Release** (`mobile-native-release.yml`) runs after main pushes, native
 workflow completions, hourly, and on demand. It compares both canonical platform
 fingerprints with the latest validated native release stamp. A changed pair adopts
-main's marketing version while that version is open, and rebuilds it: iOS takes the
-next TestFlight build number for that version and Android the next versionCode. A
-version is open when all three hold:
+main's marketing version while that version is open. Platforms needing a binary take
+the next TestFlight build number or Android versionCode for that version. A version
+is open when all three hold:
 
 1. It is at or above the previous native stamp's version.
 2. No `release/<platform>-v<version>-*` anchor exists for it on either platform.
@@ -82,12 +82,24 @@ on main deliberately; the next native change adopts it.
 
 The bot records the parent source SHA, version, and both full fingerprints. A bump
 stamp changes only the marketing version. An adoption stamp (`chore(mobile): adopt
-native v<version>`) preserves the parent tree exactly and immediately dispatches both
-exact-source tester builds, since an empty commit does not match their push path
-filters. Whether the version was still open is decided when the stamp is planned;
+native v<version>`) preserves the parent tree exactly and immediately dispatches
+needed tester builds, since an empty commit does not match their push path filters.
+Whether the version was still open is decided when the stamp is planned;
 validating an old stamp reads only git history, so a later store approval never
 invalidates it. The original unversioned merge waits for this validated stamp.
 Version-only changes remain outside the fingerprint.
+
+Each platform reuses its uploaded binary while its full native fingerprint remains
+unchanged across consecutive validated stamps. For example, an Android-only native
+change can open shared version 2.8.1 while iOS stays on its uploaded 2.8.0 binary;
+it does not create a TestFlight patch. Reuse requires an immutable successful build
+tag tied to a validated stamp (or the exact baseline source) in that uninterrupted
+runtime history. Missing iOS uploads still recover, and A → B → A native rollbacks
+build A again rather than reusing the earlier A upload. The initial workflow gate
+and hourly recovery use this same proof. Active builds and uncertain uploads in that
+same unchanged runtime also block duplicate uploads across stamps. Explicit
+`force_native=true` builds remain available for intentional JS hotfix binaries,
+subject to the closed-version guard.
 
 The coordinator refetches and recomputes if main moves. Repeating a run never bumps an
 unchanged native pair. It does not hold its lock while native builds run. Failed or
@@ -156,8 +168,10 @@ store submission remains manual.
 
 ## 2. Automatic tester builds
 
-- **iOS TestFlight Deploy** builds the stamped main commit and uploads its exact IPA.
-- **Android Play Internal Deploy** builds that same commit, uploads the exact AAB to
+- **iOS TestFlight Deploy** builds the stamped main commit when iOS needs a binary,
+  and uploads its exact IPA.
+- **Android Play Internal Deploy** builds that same commit when Android needs a binary,
+  uploads the exact AAB to
   internal and open testing, and publishes its signed APK as Boardsesh Android Beta.
 - Both retain platform-wide queued signing/upload locks, exact version/source/
   fingerprint tags, and force-native manual hotfix builds from main.
@@ -165,6 +179,8 @@ store submission remains manual.
   `force_native=false`. Workflow tooling SHA and binary source SHA are recorded
   separately. Automatic drafts and screenshots consume the exact upload receipt,
   rather than assuming the workflow head produced the binary.
+  Automatic store drafts select only the platform that uploaded; an unchanged
+  sibling platform does not need a new same-version tester build.
 - Play's review queue remains package-wide. Pending reviews defer tester uploads;
   the coordinator retries the newest stamped version. Tester availability requires
   the live backend to serve the source schema. Main OTAs still follow backend

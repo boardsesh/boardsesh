@@ -97,8 +97,8 @@ env:
 jobs:
   # Fingerprint gate: resolve the iOS runtimeVersion fingerprint on a cheap Linux
   # runner and skip the ~60-min macOS build when a binary with that fingerprint
-  # AND this marketing version already shipped (a fingerprint-ios-<hash> tag and a
-  # build-ios-v<version>-* tag both exist). The OTA publish
+  # already uploaded in the current uninterrupted iOS runtime history. Android-only
+  # stamps can reuse that upload across shared marketing versions. The OTA publish
   # (mobile-ota-production.yml) still delivers the JS to matching binaries. This
   # gate is the ONE canonical resolution: the build job embeds this exact value in
   # the binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE (no macOS re-resolve) and tags

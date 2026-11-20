@@ -10,6 +10,7 @@ import {
   readinessOutputForMode,
   resolveExecutionMode,
   shouldSkipAnchorWrites,
+  selectUploadedPlatformBuild,
 } from '../mobile-cut-release-tags';
 
 describe('buildTagsAsUploadedBuilds', () => {
@@ -156,5 +157,44 @@ describe('CANDIDATE_ONLY entrypoint mode', () => {
     expect(readinessOutputForMode(false)).toBe('release_ready');
     expect(shouldSkipAnchorWrites(true, false)).toBe(true);
     expect(shouldSkipAnchorWrites(false, false)).toBe(false);
+  });
+});
+
+describe('single-platform uploaded draft candidates', () => {
+  const ios = 'build-ios-v2.8.0-7-aaaaaaaaaaaa';
+  const android = 'build-android-v2.8.1-2000200-bbbbbbbbbbbb';
+
+  it('selects Android without inventing an iOS build at the new version', () => {
+    expect(selectUploadedPlatformBuild([ios, android], 'android', '2.8.1')).toMatchObject({
+      platform: 'android',
+      version: '2.8.1',
+      buildNumber: 2000200,
+    });
+    expect(selectUploadedPlatformBuild([ios, android], 'ios', '2.8.1')).toBeNull();
+  });
+
+  it('selects the highest upload for the requested platform and version', () => {
+    expect(
+      selectUploadedPlatformBuild(
+        [
+          android,
+          'build-android-v2.8.1-2000201-cccccccccccc',
+          'build-android-v2.8.0-2000300-dddddddddddd',
+          'build-ios-v2.8.1-3000000-eeeeeeeeeeee',
+        ],
+        'android',
+        '2.8.1',
+      ),
+    ).toMatchObject({ buildNumber: 2000201, shortFp: 'cccccccccccc' });
+  });
+
+  it('fails closed when the highest build has conflicting receipts', () => {
+    expect(
+      selectUploadedPlatformBuild(
+        [android, 'build-android-v2.8.1-2000201-cccccccccccc', 'build-android-v2.8.1-2000201-dddddddddddd'],
+        'android',
+        '2.8.1',
+      ),
+    ).toBeNull();
   });
 });

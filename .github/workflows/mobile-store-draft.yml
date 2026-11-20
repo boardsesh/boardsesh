@@ -158,6 +158,7 @@ jobs:
     outputs:
       sha: ${{ steps.ref.outputs.sha }}
       candidate_ready: ${{ steps.stable.outputs.ready }}
+      platform: ${{ steps.ref.outputs.platform }}
       version: ${{ steps.candidate.outputs.version }}
       ios_build_number: ${{ steps.candidate.outputs.ios_build_number }}
       ios_build_tag: ${{ steps.candidate.outputs.ios_build_tag }}
@@ -181,6 +182,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NATIVE_SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
           NATIVE_SOURCE_WORKFLOW: ${{ github.event.workflow_run.path }}
+          REQUESTED_DRAFT_PLATFORM: ${{ inputs.platform || 'all' }}
         run: |
           set -euo pipefail
           if [ -n "$PINNED_RELEASE_SHA" ]; then
@@ -194,6 +196,7 @@ jobs:
               ahead|identical) ;;
               *) echo "::error::$PINNED_RELEASE_SHA is not in main's history ($in_main); refusing to prepare a store draft."; exit 1 ;;
             esac
+            echo "platform=all" >> "$GITHUB_OUTPUT"
             echo "sha=$PINNED_RELEASE_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -209,13 +212,17 @@ jobs:
               exit 0
             fi
             sha="$(sed -n 's/^source_sha=//p' "$source_file")"
+            platform="$(sed -n 's/^platform=//p' "$source_file")"
           else
+            platform="$REQUESTED_DRAFT_PLATFORM"
             sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${RELEASE_BRANCH}" --jq '.object.sha')"
           fi
           if [ -z "$sha" ]; then
             echo "::error::Could not resolve $RELEASE_BRANCH; refusing to prepare a store draft."
             exit 1
           fi
+          case "$platform" in ios|android|all) ;; *) exit 1 ;; esac
+          echo "platform=$platform" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Checkout trusted release tooling
@@ -241,6 +248,7 @@ jobs:
         id: candidate
         env:
           RELEASE_HEAD_SHA: ${{ steps.ref.outputs.sha }}
+          DRAFT_PLATFORM: ${{ steps.ref.outputs.platform }}
         run: |
           set -euo pipefail
           git fetch origin "$RELEASE_HEAD_SHA"
@@ -260,6 +268,10 @@ jobs:
               IOS_BUILD_NUMBER="$SELECTED_IOS_BUILD" ANDROID_VERSION_CODE="$SELECTED_ANDROID_BUILD" \
               GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-store-submit-target.ts
             echo 'candidates_found=true' >> "$result"
+          elif [ "$DRAFT_PLATFORM" != all ]; then
+            CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$version" \
+              CANDIDATE_PLATFORM="$DRAFT_PLATFORM" CANDIDATE_ANCESTOR_OF="$RELEASE_HEAD_SHA" \
+              GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-cut-release-tags.ts
           else
             CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$version" \
               CANDIDATE_ANCESTOR_OF="$RELEASE_HEAD_SHA" \
@@ -272,17 +284,23 @@ jobs:
 
           ios_tag="$(sed -n 's/^ios_build_tag=//p' "$result" | tail -n 1)"
           android_tag="$(sed -n 's/^android_build_tag=//p' "$result" | tail -n 1)"
-          if [[ "$ios_tag" =~ ^build-ios-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
-            ios_build_number="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Cutter returned an invalid iOS build tag: $ios_tag"
-            exit 1
+          ios_build_number=''
+          android_version_code=''
+          if [ "$DRAFT_PLATFORM" != android ]; then
+            if [[ "$ios_tag" =~ ^build-ios-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+              ios_build_number="${BASH_REMATCH[1]}"
+            else
+              echo "::error::Cutter returned an invalid iOS build tag: $ios_tag"
+              exit 1
+            fi
           fi
-          if [[ "$android_tag" =~ ^build-android-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
-            android_version_code="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Cutter returned an invalid Android build tag: $android_tag"
-            exit 1
+          if [ "$DRAFT_PLATFORM" != ios ]; then
+            if [[ "$android_tag" =~ ^build-android-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+              android_version_code="${BASH_REMATCH[1]}"
+            else
+              echo "::error::Cutter returned an invalid Android build tag: $android_tag"
+              exit 1
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ios_build_number=$ios_build_number" >> "$GITHUB_OUTPUT"
@@ -297,7 +315,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout tagged iOS build without credentials
-        if: steps.candidate.outputs.found == 'true'
+        if: steps.candidate.outputs.ios_build_sha != ''
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.candidate.outputs.ios_build_sha }}
@@ -305,7 +323,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout tagged Android build without credentials
-        if: steps.candidate.outputs.found == 'true'
+        if: steps.candidate.outputs.android_build_sha != ''
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.candidate.outputs.android_build_sha }}
@@ -317,6 +335,7 @@ jobs:
         run: |
           set -euo pipefail
           for tree in release-head ios-build android-build; do
+            [ -d "$tree" ] || continue
             (cd "$tree" && vp install --frozen-lockfile --ignore-scripts)
           done
 
@@ -325,6 +344,7 @@ jobs:
         run: |
           set -euo pipefail
           for tree in release-head ios-build android-build; do
+            [ -d "$tree" ] || continue
             cat > "$tree/packages/mobile/.env" <<EOF
           EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
           EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
@@ -348,7 +368,7 @@ jobs:
           EXPECTED_ANDROID_TAG: ${{ steps.candidate.outputs.android_build_tag }}
         run: |
           set -euo pipefail
-          [ -n "${GOOGLE_MAPS_API_KEY:-}" ] || {
+          [ -z "$EXPECTED_ANDROID_TAG" ] || [ -n "${GOOGLE_MAPS_API_KEY:-}" ] || {
             echo '::error::Missing GOOGLE_MAPS_API_KEY; Android fingerprint verification cannot reproduce the uploaded binary.'
             exit 1
           }
@@ -392,8 +412,12 @@ jobs:
             return 1
           }
           matches=true
-          compare_platform ios ios-build "$EXPECTED_IOS_TAG" || matches=false
-          compare_platform android android-build "$EXPECTED_ANDROID_TAG" || matches=false
+          if [ -n "$EXPECTED_IOS_TAG" ]; then
+            compare_platform ios ios-build "$EXPECTED_IOS_TAG" || matches=false
+          fi
+          if [ -n "$EXPECTED_ANDROID_TAG" ]; then
+            compare_platform android android-build "$EXPECTED_ANDROID_TAG" || matches=false
+          fi
           echo "matches=$matches" >> "$GITHUB_OUTPUT"
 
       - name: Recheck the release branch after fingerprint comparison
@@ -402,6 +426,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_RELEASE_SHA: ${{ steps.ref.outputs.sha }}
+          DRAFT_PLATFORM: ${{ steps.ref.outputs.platform }}
           HEAD_VERSION: ${{ steps.candidate.outputs.version }}
           EXPECTED_IOS_TAG: ${{ steps.candidate.outputs.ios_build_tag }}
           EXPECTED_IOS_SHA: ${{ steps.candidate.outputs.ios_build_sha }}
@@ -423,6 +448,10 @@ jobs:
               IOS_BUILD_NUMBER="$SELECTED_IOS_BUILD" ANDROID_VERSION_CODE="$SELECTED_ANDROID_BUILD" \
               GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-store-submit-target.ts
             echo 'candidates_found=true' >> "$result"
+          elif [ "$DRAFT_PLATFORM" != all ]; then
+            CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
+              CANDIDATE_PLATFORM="$DRAFT_PLATFORM" CANDIDATE_ANCESTOR_OF="$EXPECTED_RELEASE_SHA" \
+              GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-cut-release-tags.ts
           else
             CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
               CANDIDATE_ANCESTOR_OF="$EXPECTED_RELEASE_SHA" \
@@ -448,6 +477,7 @@ jobs:
     # event, so the caller's dispatch inputs would be read here instead.
     if: >-
       needs.release-candidate.outputs.candidate_ready == 'true' &&
+      needs.release-candidate.outputs.platform != 'android' &&
       (github.event_name == 'workflow_run' || inputs.platform == 'ios' || inputs.platform == 'all')
     runs-on: ubuntu-latest
     # The lane waits up to 45 min for App Store Connect to finish processing the
@@ -532,8 +562,11 @@ jobs:
             ahead|identical) ;;
             *) echo "::error::$EXPECTED_RELEASE_SHA is not in main's history ($in_main); refusing to prepare a store draft."; exit 1 ;;
           esac
+          [ -n "$EXPECTED_IOS_TAG" ] && [ -n "$EXPECTED_IOS_SHA" ] || exit 1
           assert_ref "tags/$EXPECTED_IOS_TAG" "$EXPECTED_IOS_SHA"
-          assert_ref "tags/$EXPECTED_ANDROID_TAG" "$EXPECTED_ANDROID_SHA"
+          if [ -n "$EXPECTED_ANDROID_TAG" ]; then
+            assert_ref "tags/$EXPECTED_ANDROID_TAG" "$EXPECTED_ANDROID_SHA"
+          fi
 
       - name: Prepare App Store draft submission
         id: draft
@@ -673,6 +706,7 @@ jobs:
     needs: release-candidate
     if: >-
       needs.release-candidate.outputs.candidate_ready == 'true' &&
+      needs.release-candidate.outputs.platform != 'ios' &&
       (github.event_name == 'workflow_run' || inputs.platform == 'android' || inputs.platform == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -744,8 +778,11 @@ jobs:
             ahead|identical) ;;
             *) echo "::error::$EXPECTED_RELEASE_SHA is not in main's history ($in_main); refusing to prepare a store draft."; exit 1 ;;
           esac
-          assert_ref "tags/$EXPECTED_IOS_TAG" "$EXPECTED_IOS_SHA"
+          [ -n "$EXPECTED_ANDROID_TAG" ] && [ -n "$EXPECTED_ANDROID_SHA" ] || exit 1
           assert_ref "tags/$EXPECTED_ANDROID_TAG" "$EXPECTED_ANDROID_SHA"
+          if [ -n "$EXPECTED_IOS_TAG" ]; then
+            assert_ref "tags/$EXPECTED_IOS_TAG" "$EXPECTED_IOS_SHA"
+          fi
 
       - uses: voidzero-dev/setup-vp@v1
         with:

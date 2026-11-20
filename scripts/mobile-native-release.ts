@@ -17,6 +17,7 @@ import {
   coordinateNativeSnapshots,
   exactNativeBuilds,
   nativeRecoveryDecision,
+  nativeGateAdmissionRuns,
   nativeReleaseMessage,
   nativeStampKind,
   planNativeVersion,
@@ -256,8 +257,37 @@ function tagReferences(directory = ROOT): TaggedNativeBuild[] {
     });
 }
 
-function allTagNames(): string[] {
-  return git(['tag', '--list']).split('\n').filter(Boolean);
+/** Full-hash lineage ends at the first platform transition, including native rollbacks. */
+export function nativePlatformHistory(platform: NativePlatform, stamp: NativeStamp, directory = ROOT): NativeStamp[] {
+  const context = validationContext();
+  let current = validateStamp(stamp.sha, stamp.sha, directory, context);
+  const retired = new Set(getSupersededNativeStampShas(directory, stamp.sha));
+  const history = retired.has(current.sha) ? [] : [current];
+  for (;;) {
+    const previous = latestStamp(current.sourceSha, directory, context);
+    if (!previous) {
+      const initial = baseline(current.sourceSha, directory);
+      if (initial[platform] === current[platform]) history.push({ ...initial, sha: initial.sourceSha });
+      return history;
+    }
+    if (previous[platform] !== current[platform]) return history;
+    if (!retired.has(previous.sha)) history.push(previous);
+    current = previous;
+  }
+}
+
+/** Receipt prefixes are proved by validated full fingerprints in this uninterrupted runtime. */
+export function findUploadedNativePlatform(
+  platform: NativePlatform,
+  stamp: NativeStamp,
+  directory = ROOT,
+  references: readonly TaggedNativeBuild[] = tagReferences(directory),
+): TaggedNativeBuild | null {
+  for (const previous of nativePlatformHistory(platform, stamp, directory)) {
+    const uploaded = exactNativeBuilds(references, platform, previous)[0];
+    if (uploaded) return uploaded;
+  }
+  return null;
 }
 
 function cleanEnvironment(): NodeJS.ProcessEnv {
@@ -412,23 +442,27 @@ function recoverLatest(stamp: NativeStamp, dryRun: boolean): void {
   }
   const taggedBuilds = tagReferences();
   for (const workflow of NATIVE_WORKFLOWS) {
-    if (exactNativeBuilds(taggedBuilds, workflow.platform, stamp).length > 0) {
-      console.log(`${workflow.platform}: done. The exact stamped binary is tagged.`);
+    const uploaded = findUploadedNativePlatform(workflow.platform, stamp, ROOT, taggedBuilds);
+    if (uploaded) {
+      console.log(`${workflow.platform}: done. Native runtime already uploaded (${uploaded.tag}).`);
       continue;
     }
+    const relatedStampShas = nativePlatformHistory(workflow.platform, stamp).map((previous) => previous.sha);
     const runs = buildRuns(workflow.file);
     const firstDecision = nativeRecoveryDecision({
       platform: workflow.platform,
       stamp,
       taggedBuilds,
       runs,
+      relatedStampShas,
       now: Date.now(),
     });
     const matching = runs
-      .filter((run) => run.title === `${workflow.platform}:${stamp.sha}`)
+      .filter((run) => relatedStampShas.some((source) => run.title === `${workflow.platform}:${source}`))
       .sort((left, right) => right.id - left.id);
-    const latest = matching[0];
-    const attempted = latest?.status === 'completed' && uploadAttempted(latest.id, workflow.uploadStep);
+    const uncertain = matching.find(
+      (run) => run.status === 'completed' && uploadAttempted(run.id, workflow.uploadStep),
+    );
     const decision =
       firstDecision.action === 'done' || firstDecision.action === 'wait'
         ? firstDecision
@@ -437,8 +471,10 @@ function recoverLatest(stamp: NativeStamp, dryRun: boolean): void {
             stamp,
             taggedBuilds,
             runs,
+            relatedStampShas,
             now: Date.now(),
-            uploadAttempted: attempted,
+            uploadAttempted: Boolean(uncertain),
+            uploadAttemptedRunId: uncertain?.id,
           });
     console.log(`${workflow.platform}: ${decision.action}. ${decision.reason}`);
     if (decision.action === 'inspect')
@@ -730,49 +766,78 @@ function resolveSource(): void {
   output({ source_sha: sourceSha, eligible: true, version: stamp.version });
 }
 
+/** Filesystem-only gate shared by automatic and forced native workflow runs. */
+export function nativePlatformBuildDecision(
+  input: { platform: NativePlatform; sourceSha: string; fingerprint: string; version: string; forced: boolean },
+  directory = ROOT,
+): { shouldBuild: boolean; reason: string } {
+  const { platform, sourceSha, fingerprint, version, forced } = input;
+  const message = git(['show', '-s', '--format=%B', sourceSha], { cwd: directory });
+  if (getSupersededNativeStampShas(directory).includes(sourceSha))
+    throw new Error('Native source was explicitly superseded by a version restoration.');
+  const stamp = nativeStampKind(message) ? validateNativeStampSource(sourceSha, undefined, directory) : null;
+  if (stamp && (stamp.version !== version || stamp[platform] !== fingerprint))
+    throw new Error('Resolved native state differs from the release stamp.');
+  const references = tagReferences(directory);
+  const uploaded = stamp
+    ? findUploadedNativePlatform(platform, stamp, directory, references)
+    : exactNativeBuilds(references, platform, { sha: sourceSha, version, ios: fingerprint, android: fingerprint })[0];
+  const shouldBuild = forced || !uploaded;
+  if (
+    shouldBuild &&
+    platform === 'ios' &&
+    references.some((reference) => reference.tag.startsWith(`release/ios-v${version}-`))
+  )
+    throw new Error(
+      `Apple already approved iOS ${version}; merge a native change or bump the marketing version before rebuilding.`,
+    );
+  return {
+    shouldBuild,
+    reason: shouldBuild
+      ? 'Building the exact native release source.'
+      : `This native runtime already uploaded (${uploaded!.tag}).`,
+  };
+}
+
 function gate(): void {
   const platform = process.env.NATIVE_PLATFORM;
   if (platform !== 'ios' && platform !== 'android') throw new Error('NATIVE_PLATFORM must be ios or android.');
   const sourceSha = requireFullSha(process.env.NATIVE_SOURCE_SHA ?? '');
   const fingerprint = requireFullSha(process.env.RESOLVED_FINGERPRINT ?? '', `${platform} fingerprint`);
   const version = readMarketingVersion(readFileSync(join(ROOT, APP_CONFIG_PATH), 'utf8'));
-  const message = git(['show', '-s', '--format=%B', sourceSha]);
   const forced = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.FORCE_NATIVE === 'true';
-  if (getSupersededNativeStampShas().includes(sourceSha))
-    throw new Error('Native source was explicitly superseded by a version restoration.');
-  const stamp = nativeStampKind(message) ? validateNativeStampSource(sourceSha) : null;
-  if (stamp && (stamp.version !== version || stamp[platform] !== fingerprint))
-    throw new Error('Resolved native state differs from the release stamp.');
-  const exact = exactNativeBuilds(tagReferences(), platform, {
-    sha: sourceSha,
-    version,
-    ios: fingerprint,
-    android: fingerprint,
-  });
-  const shouldBuild = forced || exact.length === 0;
-  if (shouldBuild && platform === 'ios' && allTagNames().some((tag) => tag.startsWith(`release/ios-v${version}-`)))
-    throw new Error(
-      `Apple already approved iOS ${version}; merge a native change or bump the marketing version before rebuilding.`,
-    );
-  if (!forced && exact.length === 0) {
+  const decision = nativePlatformBuildDecision({ platform, sourceSha, fingerprint, version, forced });
+  if (!forced && decision.shouldBuild) {
     const workflow = NATIVE_WORKFLOWS.find((candidate) => candidate.platform === platform)!;
     const currentRunId = Number(process.env.GITHUB_RUN_ID);
     const currentAttempt = Number(process.env.GITHUB_RUN_ATTEMPT || '1');
-    const earlier = buildRuns(workflow.file).filter(
-      (run) => run.title === `${platform}:${sourceSha}` && (run.id !== currentRunId || currentAttempt > 1),
+    const message = git(['show', '-s', '--format=%B', sourceSha]);
+    const relatedStampShas = nativeStampKind(message)
+      ? nativePlatformHistory(platform, validateNativeStampSource(sourceSha)).map((previous) => previous.sha)
+      : [sourceSha];
+    const earlier = buildRuns(workflow.file).filter((run) =>
+      relatedStampShas.some((source) => run.title === `${platform}:${source}`),
     );
-    if (earlier.some((run) => uploadAttempted(run.id, workflow.uploadStep)))
+    const admission = nativeGateAdmissionRuns(earlier, currentRunId, currentAttempt);
+    if (admission.activeRun) {
+      output({
+        source_sha: sourceSha,
+        fingerprint,
+        should_build: false,
+        reason: 'A build of this unchanged native runtime is already queued or running.',
+      });
+      return;
+    }
+    if (admission.inspectRuns.some((run) => uploadAttempted(run.id, workflow.uploadStep)))
       throw new Error(
-        'An upload of this exact native source already started without a build tag. Reconcile its store receipt before rebuilding.',
+        'An upload of this unchanged native runtime already started without a build tag. Reconcile its store receipt before rebuilding.',
       );
   }
   output({
     source_sha: sourceSha,
     fingerprint,
-    should_build: shouldBuild,
-    reason: shouldBuild
-      ? 'Building the exact native release source.'
-      : 'This exact version, source and fingerprint already uploaded.',
+    should_build: decision.shouldBuild,
+    reason: decision.reason,
   });
 }
 
