@@ -215,6 +215,18 @@ runs:
         fi
         vp run mobile:screenshot-fixtures-fetch -- --reference-url "$FIXTURE_SNAPSHOT_URL"
 
+    # -timezone UTC pins the guest clock's zone, so the app's local-date
+    # derivations (day dividers, the activity heatmap's today cell) land on
+    # the same calendar day here as they do from the same frozen instant on
+    # a developer's machine. The iOS side pins the same thing per launch
+    # with SIMCTL_CHILD_TZ; the local emulator gets it in
+    # scripts/lib/android-emulator.ts.
+    # Written to GITHUB_ENV so the emulator-runner's `emulator-options` and the
+    # capture script's relaunch path read the same flags.
+    - name: Set emulator options
+      shell: bash
+      run: echo "ANDROID_CAPTURE_EMULATOR_OPTIONS=-no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC" >> "$GITHUB_ENV"
+
     - name: Run the flow on the emulator
       uses: reactivecircus/android-emulator-runner@v2
       # android-emulator-runner splits `script:` by newline and runs each line
@@ -235,13 +247,9 @@ runs:
         # give the emulator room and a bigger app heap.
         ram-size: 4096M
         heap-size: 1024M
-        # -timezone UTC pins the guest clock's zone, so the app's local-date
-        # derivations (day dividers, the activity heatmap's today cell) land on
-        # the same calendar day here as they do from the same frozen instant on
-        # a developer's machine. The iOS side pins the same thing per launch
-        # with SIMCTL_CHILD_TZ; the local emulator gets it in
-        # scripts/lib/android-emulator.ts.
-        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
+        # One string, set by the step above, so ci-android-screenshot-capture.sh
+        # relaunches a dead emulator with exactly the flags it booted with.
+        emulator-options: ${{ env.ANDROID_CAPTURE_EMULATOR_OPTIONS }}
         disable-animations: true
         script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
       env:

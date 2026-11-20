@@ -297,6 +297,23 @@ describe('android-emulator-capture composite action', () => {
     expect(action.inputs.fixtures.default).toBe('replay');
   });
 
+  it('boots and relaunches the emulator with one option string', () => {
+    const steps = action.runs.steps;
+    const runner = steps.findIndex((step) => step.uses === 'reactivecircus/android-emulator-runner@v2');
+    const setter = steps.findIndex((step) => step.name === 'Set emulator options');
+    expect(setter).toBeGreaterThanOrEqual(0);
+    expect(setter).toBeLessThan(runner);
+    expect(steps[runner].with?.['emulator-options']).toBe('${{ env.ANDROID_CAPTURE_EMULATOR_OPTIONS }}');
+    expect(steps[setter].run).toContain('ANDROID_CAPTURE_EMULATOR_OPTIONS=');
+    // The renderer and the pinned guest timezone (local-date derivations) are load-bearing.
+    expect(steps[setter].run).toContain('-gpu swiftshader_indirect');
+    expect(steps[setter].run).toContain('-timezone UTC');
+    // The capture script relaunches a dead emulator with the same string.
+    const script = readFileSync('scripts/ci-android-screenshot-capture.sh', 'utf8');
+    expect(script).toContain('ANDROID_CAPTURE_EMULATOR_OPTIONS');
+    expect(script).toMatch(/if ! emulator_alive; then\s+relaunch_emulator/);
+  });
+
   it('leaves the checkout to its caller', () => {
     expect(stepsUsing({ steps: action.runs.steps }, 'actions/checkout@')).toEqual([]);
   });
