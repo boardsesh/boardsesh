@@ -6,7 +6,13 @@ import type { SitemapItem } from '../entries';
 
 vi.mock('server-only', () => ({}));
 // Authorization is exercised separately in privacy-filter.test.ts.
-vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async <Item>(items: Item[]) => items }));
+const visibility = vi.hoisted(() => ({ hidden: false, checks: 0 }));
+vi.mock('../privacy-filter', () => ({
+  filterPublicSitemapItems: async <Item>(items: Item[]) => {
+    visibility.checks += 1;
+    return visibility.hidden ? [] : items;
+  },
+}));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',
@@ -66,24 +72,37 @@ vi.mock('../climb-store', () => ({
 
 const LAST_MODIFIED = new Date('2026-05-04T11:22:33.000Z');
 
-const setters = vi.hoisted(() => ({ itemCount: 25_000 }));
+const setters = vi.hoisted(() => ({ itemCount: 25_000, buildCalls: 0, summaryThrows: false }));
 
 vi.mock('../setter-query', () => ({
-  fetchSetterSitemapSummary: async () => ({
-    itemCount: setters.itemCount,
-    lastModified: new Date('2026-05-04T11:22:33.000Z'),
-  }),
-  buildSetterSitemapItems: async () =>
-    Array.from({ length: setters.itemCount }, (_, index) => ({
+  fetchSetterSitemapSummary: async () => {
+    if (setters.summaryThrows) throw new Error('setters summary unavailable');
+    return {
+      itemCount: setters.itemCount,
+      lastModified: new Date('2026-05-04T11:22:33.000Z'),
+    };
+  },
+  buildSetterSitemapItems: async () => {
+    setters.buildCalls += 1;
+    return Array.from({ length: setters.itemCount }, (_, index) => ({
       path: `/setter/climber-${index}`,
       lastModified: new Date('2026-05-04T11:22:33.000Z'),
-    })) satisfies SitemapItem[],
+    })) satisfies SitemapItem[];
+  },
 }));
 
 const { PAGED_SHARD_REGISTRY, buildSitemapIndexXml, pagedShardRouteHandler } = await import('../shard-registry');
 
+async function readGzipXml(response: Response): Promise<string> {
+  return gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8');
+}
+
 beforeEach(() => {
   setters.itemCount = 25_000;
+  setters.buildCalls = 0;
+  setters.summaryThrows = false;
+  visibility.hidden = false;
+  visibility.checks = 0;
 });
 
 describe('the paged setters shard', () => {
@@ -104,10 +123,10 @@ describe('the paged setters shard', () => {
   it('slices the last page short rather than padding or repeating', async () => {
     // 25,000 items at 10,000 per page: pages 1 and 2 are full, page 3 holds the
     // remaining 5,000. An off-by-one in the slice shows up here as 10,000 or 0.
-    const lastPage = await (await pagedShardRouteHandler('setters', '3.xml')).text();
+    const lastPage = await readGzipXml(await pagedShardRouteHandler('setters', '3.xml.gz'));
     expect(lastPage.match(/<url>/g)).toHaveLength(setters.itemCount % SETTER_URLS_PER_SHARD);
 
-    const firstPage = await (await pagedShardRouteHandler('setters', '1.xml')).text();
+    const firstPage = await readGzipXml(await pagedShardRouteHandler('setters', '1.xml.gz'));
     expect(firstPage.match(/<url>/g)).toHaveLength(SETTER_URLS_PER_SHARD);
     expect(firstPage).toContain('<loc>https://www.boardsesh.com/setter/climber-0</loc>');
     expect(lastPage).not.toContain('<loc>https://www.boardsesh.com/setter/climber-0</loc>');
@@ -121,11 +140,11 @@ describe('the paged setters shard', () => {
     // surface was deleted.
     setters.itemCount = 3 * SETTER_URLS_PER_SHARD;
 
-    const lastPage = await pagedShardRouteHandler('setters', '3.xml');
+    const lastPage = await pagedShardRouteHandler('setters', '3.xml.gz');
     expect(lastPage.status).toBe(200);
-    expect((await lastPage.text()).match(/<url>/g)).toHaveLength(SETTER_URLS_PER_SHARD);
+    expect((await readGzipXml(lastPage)).match(/<url>/g)).toHaveLength(SETTER_URLS_PER_SHARD);
 
-    const pastEnd = await pagedShardRouteHandler('setters', '4.xml');
+    const pastEnd = await pagedShardRouteHandler('setters', '4.xml.gz');
     expect(pastEnd.status).toBe(404);
 
     const index = await buildSitemapIndexXml();
@@ -134,37 +153,68 @@ describe('the paged setters shard', () => {
 
   it('keeps privacy-filtered setter pages out of shared caches', async () => {
     // Unlisting, moderation or spray-wall changes can withdraw these URLs.
-    const response = await pagedShardRouteHandler('setters', '1.xml');
+    const response = await pagedShardRouteHandler('setters', '1.xml.gz');
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
-  it('offers a gzip file with the same freshly filtered setter URLs', async () => {
+  it('redirects legacy XML to gzip without building or publishing setter URLs', async () => {
+    const response = await pagedShardRouteHandler('setters', '3.xml');
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('/sitemaps/setters/3.xml.gz');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.text()).toBe('');
+    expect(setters.buildCalls).toBe(0);
+    expect(visibility.checks).toBe(0);
+  });
+
+  it('rechecks publication visibility before each gzip response', async () => {
     setters.itemCount = 2;
-    const plain = await (await pagedShardRouteHandler('setters', '1.xml')).text();
     const response = await pagedShardRouteHandler('setters', '1.xml.gz');
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/gzip');
     expect(response.headers.get('content-encoding')).toBeNull();
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8')).toBe(plain);
+    expect((await readGzipXml(response)).match(/<url>/g)).toHaveLength(2);
+
+    visibility.hidden = true;
+    const withdrawn = await pagedShardRouteHandler('setters', '1.xml.gz');
+    expect(withdrawn.headers.get('cache-control')).toBe('private, no-store');
+    expect(await readGzipXml(withdrawn)).not.toContain('<url>');
+    expect(visibility.checks).toBe(2);
   });
 
-  it('404s the page past the end rather than serving an empty urlset', async () => {
-    // An empty `<urlset>` on a page the index advertises tells Google the
-    // surface was deleted; a 404 tells a crawler to stop asking.
-    const response = await pagedShardRouteHandler('setters', '4.xml');
+  it.each(['4.xml', '4.xml.gz', '0.xml', '01.xml.gz', '9007199254740992.xml', '9007199254740992.xml.gz'])(
+    '404s invalid page %s without redirecting or serving an empty urlset',
+    async (page) => {
+      // An empty `<urlset>` on a page the index advertises tells Google the
+      // surface was deleted; a 404 tells a crawler to stop asking.
+      const response = await pagedShardRouteHandler('setters', page);
 
-    expect(response.status).toBe(404);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('location')).toBeNull();
+      expect(setters.buildCalls).toBe(0);
+    },
+  );
+
+  it.each(['1.xml', '1.xml.gz'])('503s %s when the summary fails', async (page) => {
+    setters.summaryThrows = true;
+    const response = await pagedShardRouteHandler('setters', page);
+
+    expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('location')).toBeNull();
+    expect(setters.buildCalls).toBe(0);
   });
 
   it('emits one URL per setter with no hreflang block and no xhtml namespace', async () => {
     setters.itemCount = 2;
 
-    const body = await (await pagedShardRouteHandler('setters', '1.xml')).text();
+    const body = await readGzipXml(await pagedShardRouteHandler('setters', '1.xml.gz'));
 
     expect(body.match(/<url>/g)).toHaveLength(2);
     expect(body).not.toContain('xmlns:xhtml');

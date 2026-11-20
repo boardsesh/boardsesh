@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
 import type { RailwayTaggableEvent } from '../sentry-tracing';
 import type { WebIgnoredSpanPattern } from '../sentry-tracing';
 import {
@@ -109,6 +110,39 @@ describe('resolveWebTracesSampleRate: climb view', () => {
     );
     // The board list under the same prefix.
     expect(resolveWebTracesSampleRate({ name: 'GET /kilter/1/10/1,20/40/list' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
+  });
+});
+
+describe('resolveWebTracesSampleRate: named-board climb view', () => {
+  const climbViewPath = '/b/our-gym-moonboard/40/view/skyline-7804be6e-1b2c-4d5e-8f90-123456789abc';
+
+  it.each(SUPPORTED_LOCALES)('rations server and middleware requests in %s to 5%%', (locale) => {
+    const localizedPath = locale === DEFAULT_LOCALE ? climbViewPath : `/${locale}${climbViewPath}`;
+
+    expect(resolveWebTracesSampleRate({ name: `GET ${localizedPath}` })).toBe(0.05);
+    expect(resolveWebTracesSampleRate({ name: `GET ${localizedPath}/?utm_source=share` })).toBe(0.05);
+    expect(
+      resolveWebTracesSampleRate({
+        name: 'middleware GET',
+        method: 'GET',
+        url: `https://www.boardsesh.com${localizedPath}/?utm_source=share`,
+      }),
+    ).toBe(0.05);
+  });
+
+  it.each([
+    '/b/our-gym-moonboard/40/list',
+    '/b/our-gym-moonboard/40/play/skyline',
+    '/api/b/our-gym-moonboard/40/view/skyline',
+    '/boards/our-gym-moonboard/40/view/skyline',
+    '/b/our-gym-moonboard/view/skyline',
+    '/b/our-gym-moonboard/40/view',
+    '/b/our-gym-moonboard/40/view/skyline/beta',
+    '/b/our-gym-moonboard/40/view/skyline//',
+    '/es/b/our-gym-moonboard/40/list',
+    '/unknown-locale/b/our-gym-moonboard/40/view/skyline',
+  ])('keeps unrelated or malformed route %s at the default rate', (path) => {
+    expect(resolveWebTracesSampleRate({ name: `GET ${path}` })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
   });
 });
 

@@ -83,17 +83,21 @@ const HEALTH_PATH = '/api/health';
 export const CLIMB_VIEW_TRACES_SAMPLE_RATE = 0.05;
 
 /**
- * `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]`,
- * optionally behind a locale prefix. The prefixes are derived from
+ * `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]`
+ * and `/b/[board_slug]/[angle]/view/[climb_uuid]`, optionally behind a locale
+ * prefix. The prefixes are derived from
  * SUPPORTED_LOCALES so a new locale cannot slip its climb pages past the ration.
  *
  * Matched against the raw request path, because that is what the sampler sees
  * (`GET /moonboard/2016/standard-11x18-grid/.../40/view/skyline-7804be6e-...`),
- * not the parameterised route name. `view` must be exactly the sixth segment,
- * so `/play/...` and other seven-segment paths keep the default rate.
+ * not the parameterised route name. Both exact climb-view shapes share the
+ * same budget; named-board pages otherwise fall through to the 25% default.
+ * List, play and extra path segments must keep the default rate.
  */
 const LOCALE_PATH_PREFIXES = SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).join('|');
-const CLIMB_VIEW_PATH = new RegExp(`^(?:/(?:${LOCALE_PATH_PREFIXES}))?/[^/]+/[^/]+/[^/]+/[^/]+/[^/]+/view/[^/]+/?$`);
+const CLIMB_VIEW_PATH = new RegExp(
+  `^(?:/(?:${LOCALE_PATH_PREFIXES}))?/(?:[^/]+/[^/]+/[^/]+/[^/]+/[^/]+|b/[^/]+/[^/]+)/view/[^/]+/?$`,
+);
 
 const HTTP_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT']);
 

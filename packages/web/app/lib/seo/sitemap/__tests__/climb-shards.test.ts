@@ -115,6 +115,10 @@ const {
   sitemapIndexRouteHandler,
 } = await import('../shard-registry');
 
+async function readGzipXml(response: Response): Promise<string> {
+  return gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8');
+}
+
 beforeEach(() => {
   visibility.hidden = false;
   visibility.checks = 0;
@@ -153,10 +157,10 @@ describe('the paged climbs shard', () => {
     expect(shard.pagePath(2)).toBe('/sitemaps/climbs/2.xml.gz');
   });
 
-  it('returns a cacheable 410 without reading the store when the switch is not exactly true', async () => {
+  it.each(['1.xml', '1.xml.gz'])('returns a cacheable 410 for disabled %s without reading the store', async (page) => {
     vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'TRUE');
 
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', page);
 
     expect(response.status).toBe(410);
     expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
@@ -165,27 +169,41 @@ describe('the paged climbs shard', () => {
     expect(climbs.buildCalls).toBe(0);
   });
 
-  it('serves XML without caching privacy-filtered climb URLs', async () => {
+  it('redirects legacy XML to gzip without building or publishing climb URLs', async () => {
     const response = await pagedShardRouteHandler('climbs', '1.xml');
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toBe('application/xml; charset=utf-8');
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('/sitemaps/climbs/1.xml.gz');
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(await response.text()).toContain('<urlset');
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBeNull();
+    expect(await response.text()).toBe('');
+    expect(climbs.summaryCalls).toBe(1);
+    expect(climbs.buildCalls).toBe(0);
+    expect(visibility.checks).toBe(0);
   });
 
-  it('serves the same XML as a much smaller gzip file without encoding negotiation', async () => {
+  it('serves gzip without caching privacy-filtered climb URLs', async () => {
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/gzip');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await readGzipXml(response)).toContain('<urlset');
+  });
+
+  it('serves a full climb shard as a much smaller gzip file without encoding negotiation', async () => {
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
-    const plain = await (await pagedShardRouteHandler('climbs', '1.xml')).text();
     const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
     const compressed = Buffer.from(await response.arrayBuffer());
+    const plain = gunzipSync(compressed).toString('utf8');
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/gzip');
     expect(response.headers.get('content-encoding')).toBeNull();
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('store');
-    expect(gunzipSync(compressed).toString('utf8')).toBe(plain);
+    expect(plain.match(/<url>/g)).toHaveLength(CLIMB_URLS_PER_SHARD);
+    expect(plain).toContain(`/view/climb-${CLIMB_URLS_PER_SHARD - 1}</loc>`);
     expect(compressed.byteLength).toBeLessThan(Buffer.byteLength(plain) / 5);
   });
 
@@ -203,7 +221,7 @@ describe('the paged climbs shard', () => {
   it('emits one URL per climb with no hreflang block and no xhtml namespace', async () => {
     // The whole reason the climb shards exist in this shape: four locales with a
     // five-entry alternates block each is ~36 MB per 45k-URL shard.
-    const body = await (await pagedShardRouteHandler('climbs', '1.xml')).text();
+    const body = await readGzipXml(await pagedShardRouteHandler('climbs', '1.xml.gz'));
 
     expect(body.match(/<url>/g)).toHaveLength(3);
     expect(body).not.toContain('xmlns:xhtml');
@@ -232,27 +250,30 @@ describe('the paged climbs shard', () => {
       '01.xml.gz',
       '999.xml.gz',
       '1.xml.gz.gz',
+      '9007199254740992.xml',
+      '9007199254740992.xml.gz',
     ]) {
       const response = await pagedShardRouteHandler('climbs', page);
       expect(response.status, page).toBe(404);
       expect(response.headers.get('cache-control'), page).toBe('no-store');
+      expect(response.headers.get('location'), page).toBeNull();
     }
   });
 
   it('derives the page count from the summary — never from a hardcoded number', async () => {
     climbs.itemCount = 0;
-    expect((await pagedShardRouteHandler('climbs', '1.xml')).status).toBe(404);
+    expect((await pagedShardRouteHandler('climbs', '1.xml.gz')).status).toBe(404);
 
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
-    expect((await pagedShardRouteHandler('climbs', '1.xml')).status).toBe(200);
-    expect((await pagedShardRouteHandler('climbs', '2.xml')).status).toBe(404);
+    expect((await pagedShardRouteHandler('climbs', '1.xml.gz')).status).toBe(200);
+    expect((await pagedShardRouteHandler('climbs', '2.xml.gz')).status).toBe(404);
 
     climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
-    expect((await pagedShardRouteHandler('climbs', '2.xml')).status).toBe(200);
-    expect((await pagedShardRouteHandler('climbs', '3.xml')).status).toBe(404);
+    expect((await pagedShardRouteHandler('climbs', '2.xml.gz')).status).toBe(200);
+    expect((await pagedShardRouteHandler('climbs', '3.xml.gz')).status).toBe(404);
   });
 
-  it.each(['1.xml', '1.xml.gz'])('503s %s past the uncompressed byte budget', async (page) => {
+  it('503s the gzip file past the uncompressed byte budget', async () => {
     // Driven by a fixture of long paths, not by mutating the budget: the guard
     // has to measure the body it is about to serve. The padding is derived from
     // the page size rather than hardcoded, because a hardcoded 500 that used to
@@ -263,7 +284,7 @@ describe('the paged climbs shard', () => {
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
     climbs.pathLength = paddingChars;
 
-    const response = await pagedShardRouteHandler('climbs', page);
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -287,14 +308,14 @@ describe('the paged climbs shard', () => {
 
   it('503s when the builder throws', async () => {
     climbs.buildThrows = true;
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
   it('503s when a page the summary listed builds nothing', async () => {
     climbs.buildsEmpty = true;
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
     expect(response.status).toBe(503);
   });
 
@@ -307,15 +328,19 @@ describe('the paged climbs shard', () => {
     climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
     climbs.builtCount = CLIMB_URLS_PER_SHARD;
 
-    const response = await pagedShardRouteHandler('climbs', '2.xml');
+    const response = await pagedShardRouteHandler('climbs', '2.xml.gz');
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
-  it('503s the shard when the summary itself fails', async () => {
+  it.each(['1.xml', '1.xml.gz'])('503s %s when the summary itself fails', async (page) => {
     climbs.summaryThrows = true;
-    expect((await pagedShardRouteHandler('climbs', '1.xml')).status).toBe(503);
+    const response = await pagedShardRouteHandler('climbs', page);
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('location')).toBeNull();
+    expect(climbs.buildCalls).toBe(0);
   });
 });
 
@@ -456,7 +481,7 @@ describe('the index and the climbs shard', () => {
  */
 describe('the climbs source header', () => {
   it('names the store on a healthy page', async () => {
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
 
     expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('store');
   });
@@ -468,7 +493,7 @@ describe('the climbs source header', () => {
     climbs.summarySource = 'store';
     climbs.pageSource = 'live';
 
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
 
     expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('live');
   });
@@ -477,7 +502,7 @@ describe('the climbs source header', () => {
     climbs.summarySource = 'live';
     climbs.pageSource = undefined;
 
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
 
     expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('live');
   });
@@ -515,7 +540,7 @@ describe('the deferred work stays deferred', () => {
     // payloads that could actually carry one. What a climb shard CAN violate is
     // the video sitemap extension, so pin that. (`TIER_2_MIN_ASCENTS === 10` is
     // pinned in climb-query.test.ts, against the real module rather than a mock.)
-    const body = await (await pagedShardRouteHandler('climbs', '1.xml')).text();
+    const body = await readGzipXml(await pagedShardRouteHandler('climbs', '1.xml.gz'));
 
     expect(body).not.toContain('<video:');
     expect(body).not.toContain('xmlns:video');
