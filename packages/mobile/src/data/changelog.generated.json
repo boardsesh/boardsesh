@@ -1,6 +1,34 @@
 {
-  "generatedAt": "2026-11-19T18:53:07.013Z",
+  "generatedAt": "2026-11-20T12:34:42.829Z",
   "entries": [
+    {
+      "prNumber": 7931,
+      "category": "fixed",
+      "title": "Install Boardsesh on more Android devices.",
+      "mergedAt": "2026-11-20T12:20:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7931"
+    },
+    {
+      "prNumber": 7895,
+      "category": "fixed",
+      "title": "Tap the player's Logbook above your phone's home gesture area.",
+      "mergedAt": "2026-11-20T12:00:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7895"
+    },
+    {
+      "prNumber": 7904,
+      "category": "fixed",
+      "title": "See how many climbers logged a send on a spray-wall climb, in your language.",
+      "mergedAt": "2026-11-20T11:59:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7904"
+    },
+    {
+      "prNumber": 7881,
+      "category": "fixed",
+      "title": "Choose your privacy settings in a smaller notice that leaves the homepage visible.",
+      "mergedAt": "2026-11-20T11:59:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7881"
+    },
     {
       "prNumber": 7927,
       "category": "new",

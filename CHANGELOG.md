@@ -4,6 +4,15 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-20
+
+### Fixed
+
+- Install Boardsesh on more Android devices. ([#7931](https://github.com/boardsesh/boardsesh/pull/7931))
+- Tap the player's Logbook above your phone's home gesture area. ([#7895](https://github.com/boardsesh/boardsesh/pull/7895))
+- See how many climbers logged a send on a spray-wall climb, in your language. ([#7904](https://github.com/boardsesh/boardsesh/pull/7904))
+- Choose your privacy settings in a smaller notice that leaves the homepage visible. ([#7881](https://github.com/boardsesh/boardsesh/pull/7881))
+
 ## 2026-11-19
 
 ### App update
