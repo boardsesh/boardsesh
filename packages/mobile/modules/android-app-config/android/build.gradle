@@ -1,0 +1,18 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.appconfig'
+
+  defaultConfig {
+    minSdk 24
+    // Required by expo-module-gradle-plugin's publication setup.
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
