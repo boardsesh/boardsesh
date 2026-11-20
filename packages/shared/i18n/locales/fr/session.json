@@ -993,6 +993,7 @@
       "crewPutUp": "Ton crew a allumé {{climb}}",
       "boardTakenBy": "{{name}} a pris la board",
       "boardTakenOtherPhone": "Un autre téléphone a la board",
+      "someoneElseConnected": "Quelqu’un d’autre s’est connecté",
       "boardDropped": "Board déconnectée · Allumer sur la board la reconnecte",
       "holderHasBoard": "{{name}} a la board",
       "crewHasBoard": "Ton crew a la board",

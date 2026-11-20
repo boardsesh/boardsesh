@@ -993,6 +993,7 @@
       "crewPutUp": "伙伴显示了 {{climb}}",
       "boardTakenBy": "{{name}} 取得了训练板控制权",
       "boardTakenOtherPhone": "另一部手机持有训练板控制权",
+      "someoneElseConnected": "其他人已连接",
       "boardDropped": "训练板已断开，点击“点亮训练板”可重新连接",
       "holderHasBoard": "{{name}} 持有训练板控制权",
       "crewHasBoard": "伙伴持有训练板控制权",

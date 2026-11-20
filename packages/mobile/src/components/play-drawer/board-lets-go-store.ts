@@ -15,7 +15,7 @@ import { shortCaptionName } from './track-label-text';
  *   board". Anyone who isn't anonymous is named, crewmate or not (owner's rule).
  * - `taken` — another phone has it and presence can't name them: "Another phone
  *   has the board".
- * - `dropped` — no one took it: "Board disconnected · Put on board reconnects".
+ * - `dropped` — no taker is confirmed: "Board disconnected · Put on board reconnects".
  *   The wall button offers Put on board already.
  */
 export type LetsGoNotice = { kind: 'taken_named'; name: string } | { kind: 'taken' } | { kind: 'dropped' };
@@ -31,12 +31,25 @@ export const LETS_GO_TAKER_WAIT_MS = 5_000;
 /** How long the caption stays up. The link coming back or a new drive takes it down sooner. */
 export const LETS_GO_NOTICE_MS = 10_000;
 
+/** The wall button briefly explains a confirmed takeover before offering its usual action. */
+export const LETS_GO_BUTTON_MS = 3_000;
+
 /**
  * Past this since the drop, nothing is said: the wait's timer ran this late
  * only because the app was suspended, and a buzz minutes after the drop
  * would be about nothing the climber can see. Drive Mode Ended still goes.
  */
 export const LETS_GO_STALE_MS = 15_000;
+
+/** A persisted board omits its numeric ID; only its exact verified UUID binding can supply it. */
+export function resolveLetsGoTargetBoardId(
+  target: { uuid: string; boardId?: number | null } | null,
+  binding: { boardId: number | null; boardUuid?: string | null } | null | undefined,
+): number | null {
+  if (!target) return null;
+  if (target.boardId != null) return target.boardId;
+  return target.uuid && binding?.boardUuid === target.uuid ? binding.boardId : null;
+}
 
 /**
  * Who has the board now, if not this phone's climber, from the board-presence
@@ -107,36 +120,60 @@ export function formatLetsGo(notice: LetsGoNotice, t: TFunction<'session'>, { sh
 }
 
 let shown: LetsGoNotice | null = null;
+let buttonBoardId: number | null = null;
 let clearTimer: ReturnType<typeof setTimeout> | null = null;
+let buttonTimer: ReturnType<typeof setTimeout> | null = null;
+let publication = 0;
 const listeners = new Set<() => void>();
 
 function emit(): void {
   for (const listener of listeners) listener();
 }
 
-/** Show the caption for {@link LETS_GO_NOTICE_MS}. */
-export function showLetsGo(next: LetsGoNotice): void {
-  if (clearTimer) clearTimeout(clearTimer);
+/** Show the caption for ten seconds, with a three-second button label for confirmed takeovers. */
+export function showLetsGo(next: LetsGoNotice, boardId: number | null = null): void {
+  if (clearTimer !== null) clearTimeout(clearTimer);
+  if (buttonTimer !== null) clearTimeout(buttonTimer);
+  const currentPublication = ++publication;
   shown = next;
-  emit();
+  buttonBoardId = next.kind !== 'dropped' ? boardId : null;
+  buttonTimer =
+    buttonBoardId !== null
+      ? setTimeout(() => {
+          if (publication !== currentPublication) return;
+          buttonTimer = null;
+          buttonBoardId = null;
+          emit();
+        }, LETS_GO_BUTTON_MS)
+      : null;
   clearTimer = setTimeout(() => {
+    if (publication !== currentPublication) return;
     clearTimer = null;
     shown = null;
     emit();
   }, LETS_GO_NOTICE_MS);
+  emit();
 }
 
 /** Take the caption down now: the link is back, a drive started, or the board changed. */
 export function clearLetsGo(): void {
-  if (clearTimer) clearTimeout(clearTimer);
+  publication += 1;
+  if (clearTimer !== null) clearTimeout(clearTimer);
+  if (buttonTimer !== null) clearTimeout(buttonTimer);
   clearTimer = null;
-  if (!shown) return;
+  buttonTimer = null;
+  if (!shown && buttonBoardId === null) return;
   shown = null;
+  buttonBoardId = null;
   emit();
 }
 
 export function getLetsGo(): LetsGoNotice | null {
   return shown;
+}
+
+export function getBoardTakenButtonNotice(boardId: number | null): boolean {
+  return boardId !== null && buttonBoardId === boardId;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -151,4 +188,12 @@ const read = (): LetsGoNotice | null => shown;
 /** The caption on screen, or null. */
 export function useLetsGo(): LetsGoNotice | null {
   return useSyncExternalStore(subscribe, read, read);
+}
+
+/** Measured from publication, so mounting another button never restarts the three seconds. */
+const readButtonBoardId = (): number | null => buttonBoardId;
+
+export function useBoardTakenButtonNotice(boardId: number | null): boolean {
+  const noticeBoardId = useSyncExternalStore(subscribe, readButtonBoardId, readButtonBoardId);
+  return boardId !== null && noticeBoardId === boardId;
 }

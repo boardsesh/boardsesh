@@ -20,22 +20,27 @@ import {
 import { exitDriveMode, getDriveMode, sendHeldDriveEndedReport, type DriveModeState } from './drive-mode-store';
 import { spokenCaption } from './track-label-text';
 
-/** A drive's link that dropped on its own, until it is said. */
+/** A link that dropped on its own, while waiting for confirmed takeover evidence. */
 type LostLink = {
   droppedAt: number;
   /** The board presence was bound to at the drop: another board drops the notice. */
   boardId: number | null;
-  /** Presence's observed connection progress when the drive started, and at the drop. */
+  sessionId: string | null;
+  viewerUserId: string | null;
+  signedIn: boolean;
+  /** Presence progress when the drive (or idle connection) started, and at the drop. */
   driveStartSeq: number;
   dropSeq: number;
   /** A wall with no lights another climber took: never "disconnected". */
   takenByPeer: boolean;
+  /** An idle link only announces confirmed takeovers, and has no drive report to settle. */
+  endedDrive: boolean;
 };
 
 /**
  * Say so when the board lets go mid-drive (board plan item 8). Mounted once,
- * in `DriveModeWatcher`, which hands it every drive end that is a dropped link
- * (`endDriveForLinkDrop`).
+ * in `DriveModeWatcher`, which also hands it links dropped after driving ended
+ * (`endDriveForLinkDrop`). Those idle links only announce confirmed takeovers.
  *
  * A drop this phone made (a hang-up, a board switch, a new connect replacing
  * the link: `link-end-store.ts`) ends the drive as before, and says nothing.
@@ -47,20 +52,20 @@ type LostLink = {
  * - Presence names a holder who took it during the drive: "Sam took the
  *   board", or "Another phone has the board" when it can't name them (an
  *   anonymous holder, or a wall with no lights another climber took).
- * - No one took it by the end of the wait: "Board disconnected · Put on board
- *   reconnects".
+ * - No taker is confirmed by the end of the wait: a dropped drive says "Board
+ *   disconnected · Put on board reconnects"; an idle link stays silent.
  * - The link came back, a connect is on its way, a new drive started, or the
  *   board changed before then: nothing is said.
  *
  * Drive Mode Ended goes once it is settled, with `takenBy`. Nothing else is
- * ever said for this end: once per drive end, never per retry, and never with
- * nobody driving or when the climber stopped the drive themselves (those end
- * as `stopped`, not as a dropped link).
+ * ever said for this end: once per link drop, never per retry. Idle links do
+ * not invent a drive-ended report. Stopping a drive alone says nothing.
  */
 export function useBoardLetsGo({
   linked,
   pending,
   boardId,
+  sessionId,
   drive,
   signedIn,
 }: {
@@ -69,6 +74,7 @@ export function useBoardLetsGo({
   /** A connect or disconnect is in flight. */
   pending: boolean;
   boardId: number | null;
+  sessionId: string | null;
   drive: DriveModeState | null;
   signedIn: boolean;
 }): () => void {
@@ -91,8 +97,20 @@ export function useBoardLetsGo({
     linked: boolean;
     pending: boolean;
     boardId: number | null;
+    sessionId: string | null;
     t: TFunction<'session'>;
-  }>({ holder, holderChangeSeq, connectionProgressSeq, viewerUserId, signedIn, linked, pending, boardId, t });
+  }>({
+    holder,
+    holderChangeSeq,
+    connectionProgressSeq,
+    viewerUserId,
+    signedIn,
+    linked,
+    pending,
+    boardId,
+    sessionId,
+    t,
+  });
   latestRef.current = {
     holder,
     holderChangeSeq,
@@ -102,11 +120,36 @@ export function useBoardLetsGo({
     linked,
     pending,
     boardId,
+    sessionId,
     t,
   };
 
   // Connection progress when each drive started: an earlier holder took nothing.
   const startSeqRef = useRef<{ startedAt: number; seq: number } | null>(null);
+  const linkStartRef = useRef({ linked, boardId, sessionId, viewerUserId, signedIn, seq: connectionProgressSeq });
+  useEffect(() => {
+    const previous = linkStartRef.current;
+    if (!linked) {
+      linkStartRef.current = { ...previous, linked: false };
+      return;
+    }
+    linkStartRef.current = {
+      linked,
+      boardId,
+      sessionId,
+      viewerUserId,
+      signedIn,
+      seq:
+        linked &&
+        (!previous.linked ||
+          previous.boardId !== boardId ||
+          previous.sessionId !== sessionId ||
+          previous.viewerUserId !== viewerUserId ||
+          previous.signedIn !== signedIn)
+          ? connectionProgressSeq
+          : previous.seq,
+    };
+  }, [linked, boardId, sessionId, viewerUserId, signedIn, connectionProgressSeq]);
   const driveStartedAt = drive?.startedAt ?? null;
   useEffect(() => {
     if (driveStartedAt === null || startSeqRef.current?.startedAt === driveStartedAt) return;
@@ -122,10 +165,10 @@ export function useBoardLetsGo({
     lostRef.current = null;
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = null;
-    sendHeldDriveEndedReport({ takenBy: takenByOf(notice) });
+    if (lost.endedDrive) sendHeldDriveEndedReport({ takenBy: takenByOf(notice) });
     if (!notice || Date.now() - lost.droppedAt > LETS_GO_STALE_MS) return;
     const { t: translate } = latestRef.current;
-    showLetsGo(notice);
+    showLetsGo(notice, lost.boardId);
     hapticWarning();
     announceQueued(spokenCaption(formatLetsGo(notice, translate)));
   }, []);
@@ -139,7 +182,15 @@ export function useBoardLetsGo({
       if (!lost) return;
       const now = latestRef.current;
       // Back, on its way back, driving again, or on another board: nothing to say.
-      if (now.linked || now.pending || getDriveMode() !== null || now.boardId !== lost.boardId) {
+      if (
+        now.linked ||
+        now.pending ||
+        getDriveMode() !== null ||
+        now.boardId !== lost.boardId ||
+        now.sessionId !== lost.sessionId ||
+        now.viewerUserId !== lost.viewerUserId ||
+        now.signedIn !== lost.signedIn
+      ) {
         finish(null);
         return;
       }
@@ -153,29 +204,43 @@ export function useBoardLetsGo({
       });
       if (taker) finish(taker);
       else if (lost.takenByPeer) finish({ kind: 'taken' });
-      else if (waitOver || Date.now() - lost.droppedAt >= LETS_GO_TAKER_WAIT_MS) finish({ kind: 'dropped' });
+      else if (waitOver || Date.now() - lost.droppedAt >= LETS_GO_TAKER_WAIT_MS) {
+        finish(lost.endedDrive ? { kind: 'dropped' } : null);
+      }
     },
     [finish],
   );
 
   const endDriveForLinkDrop = useCallback(() => {
     const end = takeLinkEnd();
+    const link = linkStartRef.current;
+    const current = latestRef.current;
     // This phone let go (or the end went unnoted): the drive ends as before, quietly.
-    if (!end || end.deliberate) {
+    if (
+      !end ||
+      end.deliberate ||
+      link.boardId !== current.boardId ||
+      link.sessionId !== current.sessionId ||
+      link.viewerUserId !== current.viewerUserId ||
+      link.signedIn !== current.signedIn
+    ) {
       exitDriveMode('link_dropped');
       return;
     }
     const ended = exitDriveMode('link_dropped', { holdReport: true });
-    if (!ended) return;
     const { connectionProgressSeq: dropSeq, boardId: droppedOn } = latestRef.current;
     const start = startSeqRef.current;
     lostRef.current = {
       droppedAt: Date.now(),
       boardId: droppedOn,
-      // A drive this hook never saw start only trusts what changes after the drop.
-      driveStartSeq: start?.startedAt === ended.startedAt ? start.seq : dropSeq,
+      sessionId: latestRef.current.sessionId,
+      viewerUserId: latestRef.current.viewerUserId,
+      signedIn: latestRef.current.signedIn,
+      // An unseen drive only trusts post-drop changes; idle links use their own start.
+      driveStartSeq: ended ? (start?.startedAt === ended.startedAt ? start.seq : dropSeq) : linkStartRef.current.seq,
       dropSeq,
       takenByPeer: end.takenByPeer,
+      endedDrive: ended !== null,
     };
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => settle({ waitOver: true }), LETS_GO_TAKER_WAIT_MS);
@@ -185,29 +250,38 @@ export function useBoardLetsGo({
   // Each change presence or the link brings can settle a waiting drop.
   useEffect(() => {
     settle();
-  }, [holder, holderChangeSeq, linked, pending, boardId, drive, settle]);
+  }, [holder, holderChangeSeq, linked, pending, boardId, sessionId, viewerUserId, signedIn, drive, settle]);
 
-  // The caption is about a link that is gone: it goes when the link is back,
-  // a drive starts, or the board changes.
+  // The caption and temporary button label describe the lost link: clear them
+  // when a retry starts, the link returns, a drive starts, or the board changes.
   const driving = drive !== null;
   useEffect(() => {
-    if (linked || driving) clearLetsGo();
-  }, [linked, driving]);
-  const boardIdRef = useRef(boardId);
+    if (linked || pending || driving) clearLetsGo();
+  }, [linked, pending, driving]);
+  const identityRef = useRef({ boardId, sessionId, viewerUserId, signedIn });
   useEffect(() => {
-    if (boardIdRef.current === boardId) return;
-    boardIdRef.current = boardId;
+    const previous = identityRef.current;
+    if (
+      previous.boardId === boardId &&
+      previous.sessionId === sessionId &&
+      previous.viewerUserId === viewerUserId &&
+      previous.signedIn === signedIn
+    )
+      return;
+    identityRef.current = { boardId, sessionId, viewerUserId, signedIn };
     clearLetsGo();
-  }, [boardId]);
+  }, [boardId, sessionId, viewerUserId, signedIn]);
 
   // Unmounting sends a held Drive Mode Ended as it stands, and says nothing.
   useEffect(
     () => () => {
       if (timerRef.current !== null) clearTimeout(timerRef.current);
       timerRef.current = null;
+      clearLetsGo();
       if (!lostRef.current) return;
+      const endedDrive = lostRef.current.endedDrive;
       lostRef.current = null;
-      sendHeldDriveEndedReport({ takenBy: null });
+      if (endedDrive) sendHeldDriveEndedReport({ takenBy: null });
     },
     [],
   );

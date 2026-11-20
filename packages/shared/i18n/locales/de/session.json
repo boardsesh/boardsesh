@@ -993,6 +993,7 @@
       "crewPutUp": "Deine Crew hat {{climb}} beleuchtet",
       "boardTakenBy": "{{name}} hat das Board übernommen",
       "boardTakenOtherPhone": "Ein anderes Handy hat das Board",
+      "someoneElseConnected": "Jemand anderes hat sich verbunden",
       "boardDropped": "Board getrennt · „Am Board beleuchten“ verbindet es neu",
       "holderHasBoard": "{{name}} hat das Board",
       "crewHasBoard": "Deine Crew hat das Board",

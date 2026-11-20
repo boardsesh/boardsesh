@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { classifyBleDisconnect, isBluetoothSwitchedOff } from '../disconnect-category';
+import { classifyBleDisconnect, isAndroidGattFailure, isBluetoothSwitchedOff } from '../disconnect-category';
 
 describe('classifyBleDisconnect', () => {
   it('returns unknown when no info was captured', () => {
@@ -71,6 +71,12 @@ describe('classifyBleDisconnect', () => {
     expect(classifyBleDisconnect({ source, bleErrorCode: 201, androidErrorCode: 5 })).toBe('authentication_failed');
   });
 
+  it.each(['ble-plx', 'write-failure'] as const)('keeps Android GATT_FAILURE from %s unknown', (source) => {
+    const disconnectInfo = { source, bleErrorCode: 201, androidErrorCode: 257 };
+    expect(classifyBleDisconnect(disconnectInfo)).toBe('unknown');
+    expect(isAndroidGattFailure(disconnectInfo)).toBe(true);
+  });
+
   it('does not infer a connection authentication failure from an operation code or an unknown domain', () => {
     expect(classifyBleDisconnect({ source: 'ble-plx', bleErrorCode: 401, androidErrorCode: 5 })).toBe('unknown');
     expect(classifyBleDisconnect({ source: 'write-failure', bleErrorCode: 401, androidErrorCode: 5 })).toBe(
@@ -79,6 +85,24 @@ describe('classifyBleDisconnect', () => {
     expect(classifyBleDisconnect({ source: 'ble-plx', androidErrorCode: 5 })).toBe('unknown');
     expect(classifyBleDisconnect({ source: 'native-ios', bleErrorCode: 201, androidErrorCode: 5 })).toBe('unknown');
     expect(classifyBleDisconnect({ source: 'ble-plx', bleErrorCode: 201, iosErrorCode: 5 })).toBe('unknown');
+  });
+});
+
+describe('isAndroidGattFailure', () => {
+  it('requires the exact Android connection-error domain', () => {
+    expect(isAndroidGattFailure(undefined)).toBe(false);
+    expect(isAndroidGattFailure({ source: 'ble-plx', androidErrorCode: 257 })).toBe(false);
+    expect(isAndroidGattFailure({ source: 'ble-plx', bleErrorCode: 401, androidErrorCode: 257 })).toBe(false);
+    expect(isAndroidGattFailure({ source: 'write-failure', bleErrorCode: 401, androidErrorCode: 257 })).toBe(false);
+    expect(isAndroidGattFailure({ source: 'ble-plx', bleErrorCode: 201, iosErrorCode: 257 })).toBe(false);
+    expect(isAndroidGattFailure({ source: 'native-ios', bleErrorCode: 201, androidErrorCode: 257 })).toBe(false);
+    expect(
+      isAndroidGattFailure({ source: 'ble-plx', bleErrorCode: 201, androidErrorCode: 257, context: 'app_recovery' }),
+    ).toBe(false);
+  });
+
+  it.each([5, 8, 19, 133, 147])('does not treat Android status %i as generic GATT_FAILURE', (androidErrorCode) => {
+    expect(isAndroidGattFailure({ source: 'ble-plx', bleErrorCode: 201, androidErrorCode })).toBe(false);
   });
 });
 

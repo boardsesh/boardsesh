@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import { registerClimbActionPresenters } from '../climb-actions/climb-action-presenters';
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -33,6 +34,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
+import { BoardPresenceClientContext } from '@boardsesh/board-presence-react';
 import { formatRenderBoardLabel, resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import {
   findGymBoardToConnectForClimb,
@@ -188,6 +190,7 @@ import {
   type PlayCoreEnhancementSnapshot,
 } from './PlayCoreEnhancements';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { boardLooselyMatches } from '../../lib/boards/board-matches';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
@@ -225,7 +228,7 @@ import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { startDrive, startKeepLighting } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
-import { formatLetsGo, useLetsGo } from './board-lets-go-store';
+import { formatLetsGo, resolveLetsGoTargetBoardId, useLetsGo } from './board-lets-go-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -972,6 +975,22 @@ export function PlayCore({
     ],
   );
   const climbGymBoardName = climbGymBoard ? gymBoardButtonName(climbGymBoard, playerGymBoards) : null;
+  const presenceBinding = useContext(BoardPresenceClientContext);
+  const wallControlTarget = showBoardMismatch
+    ? null
+    : climbGymBoard
+      ? climbGymBoard
+      : activeBoardForNavigation &&
+          boardLooselyMatches(
+            { boardName: activeBoardForNavigation.boardType, layoutId: activeBoardForNavigation.layoutId },
+            { boardName, layoutId },
+          )
+        ? activeBoardForNavigation
+        : null;
+  const wallControlBoardId = resolveLetsGoTargetBoardId(
+    wallControlTarget,
+    presenceBinding?.client ? presenceBinding : null,
+  );
   // Moving the session names the intended wall before the picker connects.
   // Only a live member holding that target makes it the crew's board; otherwise
   // Put on {board} must still let this phone move there and connect (#7181).
@@ -3174,6 +3193,7 @@ export function PlayCore({
       upNextBadgeCount={listWalkUpNextCount}
       // The board control's one model and one handler, whichever view draws it.
       wallControl={wallControl}
+      wallControlBoardId={wallControlBoardId}
       wallGlow={wallGlowShown ? wallGlowInput : null}
       wallSwap={wallSwap}
       miniPlayerMirrors={miniPlayerMirrors}

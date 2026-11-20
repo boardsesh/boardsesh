@@ -7,12 +7,23 @@ import { record } from './config';
 import { Evidence, QaFailure, requireRunning, runFailure } from './evidence';
 
 export type ConnectionPolicy = 'concurrent' | 'last-connection-wins';
+export type ActiveConnection = { handle: number; generation: number };
+export type AuthDropResult = {
+  connectionHandle: number;
+  connectionGeneration: number;
+  reason: 5;
+  attempted: true;
+  gapReturnCode: 0;
+  commandAccepted: true;
+};
 export type FixtureBoard = {
   uuid: string;
   /** Absent on firmware built before each board reported its own policy. */
   policy?: ConnectionPolicy;
   connections: number;
   handles: number[];
+  /** Absent on older firmware, which cannot safely target an auth-drop. */
+  activeConnections?: ActiveConnection[];
   writes: number;
   updates: number;
   rejected: number;
@@ -34,9 +45,19 @@ export type FixtureStatus = {
   policy: ConnectionPolicy;
   leaseRemainingMs: number;
   boards: FixtureBoard[];
+  authDrop?: AuthDropResult;
 };
 type Action = 'start' | 'status' | 'drop' | 'end';
-export type FixtureRequest = { action: Action; requestId: string; runId?: string; boardUuid?: string };
+export type FixtureRequest =
+  | { action: Action; requestId: string; runId?: string; boardUuid?: string }
+  | {
+      action: 'auth-drop';
+      requestId: string;
+      runId: string;
+      boardUuid: string;
+      connectionHandle: number;
+      connectionGeneration: number;
+    };
 export interface FixtureTransport {
   open(receive: (line: string) => void, failed: (error: Error) => void): Promise<void>;
   write(request: FixtureRequest): void;
@@ -102,6 +123,23 @@ function parseBoard(candidate: unknown): FixtureBoard {
     commands: board.commands.map(decodedCommand),
   };
   if (board.policy !== undefined) parsed.policy = connectionPolicy(board.policy, 'board connection policy');
+  if (board.activeConnections !== undefined) {
+    if (!Array.isArray(board.activeConnections) || board.activeConnections.length !== handles.length)
+      malformed('active connection count');
+    const activeConnections = board.activeConnections.map((candidate: unknown) => {
+      const connection = object(candidate, 'active connection');
+      const handle = integer(connection.handle, 'active connection handle', 65534);
+      const generation = integer(connection.generation, 'active connection generation');
+      if (generation === 0) malformed('active connection generation');
+      return { handle, generation };
+    });
+    if (
+      new Set(activeConnections.map((connection) => connection.handle)).size !== handles.length ||
+      activeConnections.some((connection) => !handles.includes(connection.handle))
+    )
+      malformed('active connection/handle mismatch');
+    parsed.activeConnections = activeConnections;
+  }
   if (parsed.updates === 0) {
     if (
       parsed.sequence !== 0 ||
@@ -180,7 +218,7 @@ export function parseStatus(candidate: unknown, expected: ExpectedReply): Fixtur
         malformed('completed sequence did not advance');
     }
   }
-  return {
+  const snapshot: FixtureStatus = {
     schemaVersion: 1,
     ok: true,
     requestId: request.requestId,
@@ -193,6 +231,27 @@ export function parseStatus(candidate: unknown, expected: ExpectedReply): Fixtur
     leaseRemainingMs,
     boards,
   };
+  if (request.action === 'auth-drop') {
+    const result = object(reply.authDrop, 'missing auth-drop result; update fixture firmware');
+    if (
+      result.connectionHandle !== request.connectionHandle ||
+      result.connectionGeneration !== request.connectionGeneration ||
+      result.reason !== 5 ||
+      result.attempted !== true ||
+      result.gapReturnCode !== 0 ||
+      result.commandAccepted !== true
+    )
+      malformed('auth-drop acceptance or target identity');
+    snapshot.authDrop = {
+      connectionHandle: request.connectionHandle,
+      connectionGeneration: request.connectionGeneration,
+      reason: 5,
+      attempted: true,
+      gapReturnCode: 0,
+      commandAccepted: true,
+    };
+  }
+  return snapshot;
 }
 
 export class SerialTransport implements FixtureTransport {
@@ -279,6 +338,7 @@ export class SerialTransport implements FixtureTransport {
 }
 
 export class Fixture {
+  private authDropRequested = false;
   private readonly transport: FixtureTransport;
   private readonly pending = new Map<
     string,
@@ -342,6 +402,9 @@ export class Fixture {
     if (!waiting) return; // Late responses cannot satisfy another request.
     this.pending.delete(reply.requestId);
     clearTimeout(waiting.timer);
+    // Keep GAP rejection/acceptance evidence even when ok:false prevents parsing
+    // a successful snapshot. This is a command result, never a phone verdict.
+    if (waiting.request.action === 'auth-drop') this.evidence.event('auth-drop-reply', reply);
     try {
       const snapshot = parseStatus(reply, {
         request: waiting.request,
@@ -358,6 +421,35 @@ export class Fixture {
     }
   }
   request(action: Action, boardUuid?: string, observeOnly = false): Promise<FixtureStatus> {
+    return this.enqueueRequest(action, boardUuid, observeOnly);
+  }
+  /** Read a fresh target identity and send at most one auth-drop per lease. */
+  async authDrop(boardUuid: string): Promise<AuthDropResult> {
+    if (!UUID.test(boardUuid)) throw new Error('Auth-drop requires a board UUID');
+    if (!this.owned) throw new QaFailure('Auth-drop requires an owned fixture lease', 'blocked');
+    // Do not reuse an in-flight heartbeat that began before the operator's
+    // confirmation. This read is queued after every earlier USB request.
+    const snapshot = await this.enqueueRequest('status', undefined, false, undefined, true);
+    const board = snapshot.boards.find((entry) => entry.uuid === boardUuid);
+    if (!board) throw new QaFailure('Fixture is missing the selected board', 'blocked');
+    if (!board.activeConnections)
+      throw new QaFailure('Auth-drop requires active connection generations; update fixture firmware', 'blocked');
+    if (board.activeConnections.length !== 1)
+      throw new QaFailure('Auth-drop requires exactly one active connection on the selected board', 'blocked');
+    if (this.authDropRequested)
+      throw new QaFailure('Auth-drop already requested; automatic retries are disabled', 'blocked');
+    this.authDropRequested = true;
+    const reply = await this.enqueueRequest('auth-drop', boardUuid, false, board.activeConnections[0]);
+    if (!reply.authDrop) return malformed('missing auth-drop result');
+    return reply.authDrop;
+  }
+  private enqueueRequest(
+    action: Action | 'auth-drop',
+    boardUuid?: string,
+    observeOnly = false,
+    connection?: ActiveConnection,
+    freshStatus = false,
+  ): Promise<FixtureStatus> {
     if (observeOnly && action !== 'status') return Promise.reject(new Error('Only status may be observe-only'));
     if (action === 'drop' && (!boardUuid || !UUID.test(boardUuid)))
       return Promise.reject(new Error('Drop requires a board UUID'));
@@ -370,19 +462,33 @@ export class Fixture {
       return Promise.reject(error);
     }
     const key = observeOnly ? 'observe' : 'owner';
-    const existing = action === 'status' ? this.statusRequests.get(key) : undefined;
+    const existing = action === 'status' && !freshStatus ? this.statusRequests.get(key) : undefined;
     if (existing) return existing;
     const response = this.tail.then(async () => {
       requireSafeRequest();
       if (!this.opened || (this.closing && action !== 'end'))
         throw new QaFailure('USB transport is not open', 'infrastructure');
       if (this.failure && action !== 'end') throw this.failure;
-      const request: FixtureRequest = {
-        action,
-        requestId: randomUUID(),
-        ...(observeOnly ? {} : { runId: this.runId }),
-        ...(boardUuid ? { boardUuid } : {}),
-      };
+      let request: FixtureRequest;
+      if (action === 'auth-drop') {
+        if (!this.owned || !boardUuid || !connection)
+          throw new QaFailure('Auth-drop requires an owned, identified connection', 'blocked');
+        request = {
+          action,
+          requestId: randomUUID(),
+          runId: this.runId,
+          boardUuid,
+          connectionHandle: connection.handle,
+          connectionGeneration: connection.generation,
+        };
+      } else {
+        request = {
+          action,
+          requestId: randomUUID(),
+          ...(observeOnly ? {} : { runId: this.runId }),
+          ...(boardUuid ? { boardUuid } : {}),
+        };
+      }
       return await new Promise<FixtureStatus>((resolveReply, reject) => {
         const timer = setTimeout(() => {
           this.pending.delete(request.requestId);
@@ -410,7 +516,7 @@ export class Fixture {
       () => undefined,
       () => undefined,
     );
-    if (action !== 'status') return response;
+    if (action !== 'status' || freshStatus) return response;
     const coalesced = response.finally(() => this.statusRequests.delete(key));
     this.statusRequests.set(key, coalesced);
     return coalesced;

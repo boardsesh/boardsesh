@@ -993,6 +993,7 @@
       "crewPutUp": "Your crew put up {{climb}}",
       "boardTakenBy": "{{name}} took the board",
       "boardTakenOtherPhone": "Another phone has the board",
+      "someoneElseConnected": "Someone else connected",
       "boardDropped": "Board disconnected · Put on board reconnects",
       "holderHasBoard": "{{name}} has the board",
       "crewHasBoard": "Your crew has the board",

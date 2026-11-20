@@ -364,5 +364,130 @@ int main() {
     fixture_ble_host::deferDisconnects = false;
     NimBLEDevice::server.disconnect(80);
     CHECK(fixture.connectionCount() == 0);
+
+    // Authentication-failure injection is an explicit, owner-scoped command
+    // against one current generation. It never changes default connection policy.
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    gym_fixture::QaAuthDropResult authDrop;
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, 1, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.empty());
+    CHECK(fixture.startQa("auth-run", error));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, 1, authDrop, error));
+    CHECK(!fixture.authDropQa("auth-run", "unknown", 110, 1, authDrop, error));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", BLE_HS_CONN_HANDLE_NONE, 1, authDrop, error));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, 0, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.empty());
+    NimBLEDevice::server.connect(2, 110);
+    NimBLEDevice::server.connect(1, 111);
+    CHECK(fixture.snapshotQa("auth-run", snapshot, error));
+    const auto moonIdentity = snapshot.boards[2].activeConnections[0];
+    CHECK(moonIdentity.handle == 110 && moonIdentity.generation > 0 &&
+          snapshot.boards[2].latest.connectionGeneration == 0);
+    CHECK(!fixture.authDropQa("other-owner", "board-moon", 110, moonIdentity.generation, authDrop, error));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 111, moonIdentity.generation, authDrop, error));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, moonIdentity.generation + 1, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.empty());
+
+    // Counts alone cannot identify a link if physical/logical routing diverges.
+    fixture_ble_host::peers[110] = {fixture_ble_host::addresses[1]};
+    fixture_ble_host::peers[111] = {fixture_ble_host::addresses[2]};
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, moonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.empty());
+    fixture_ble_host::peers[110] = {fixture_ble_host::addresses[2]};
+    fixture_ble_host::peers[111] = {fixture_ble_host::addresses[1]};
+
+    // Acceptance is not an observed disconnect: retain the active identity
+    // until its callback, but invalidate pending frames and suppress late writes.
+    moon(110, "l#S10#");
+    moon(110, "l#S");
+    write(111, frame('T', {601}));
+    CHECK(fixture.authDropQa("auth-run", "board-moon", 110, moonIdentity.generation, authDrop, error));
+    CHECK(authDrop.attempted && authDrop.completed && authDrop.gapReturnCode == 0 &&
+          fixture_ble_host::terminateCommands.size() == 1 && fixture_ble_host::terminateCommands[0].handle == 110 &&
+          fixture_ble_host::terminateCommands[0].reason == 0x05);
+    CHECK(fixture.connectionCount() == 2 && fixture_ble_host::peers.count(110) == 1 &&
+          fixture_ble_host::peers.count(111) == 1);
+    CHECK(fixture.takeUpdate(update) && update.boardIndex == 1 && update.commands[0].position == 601);
+    CHECK(!fixture.takeUpdate(update));
+    moon(110, "20#");
+    moon(110, "l#S30#");
+    CHECK(!fixture.takeUpdate(update));
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, moonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.size() == 1);
+    CHECK(fixture.snapshotQa("auth-run", snapshot, error) && snapshot.boards[2].latest.sequence > 0 &&
+          snapshot.boards[2].activeConnections[0].generation == moonIdentity.generation);
+    NimBLEDevice::server.disconnect(110);
+    NimBLEDevice::server.connect(2, 110);
+    CHECK(fixture.snapshotQa("auth-run", snapshot, error));
+    auto currentMoonIdentity = snapshot.boards[2].activeConnections[0];
+    CHECK(currentMoonIdentity.generation > moonIdentity.generation);
+    fixture.loop();
+    moon(110, "20#");
+    CHECK(!fixture.takeUpdate(update));
+    moon(110, "l#S40#");
+    CHECK(fixture.takeUpdate(update) && update.boardIndex == 2);
+    CHECK(fixture_ble_host::terminateCommands.size() == 1);  // No automatic repeat.
+
+    // A real GAP failure is preserved and leaves the live connection writable.
+    fixture_ble_host::terminateReturnCode = BLE_HS_ENOTCONN;
+    moon(110, "l#S50#");
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, currentMoonIdentity.generation, authDrop, error));
+    CHECK(authDrop.attempted && authDrop.completed && authDrop.gapReturnCode == BLE_HS_ENOTCONN &&
+          fixture_ble_host::terminateCommands.size() == 2);
+    CHECK(fixture.takeUpdate(update) && update.boardIndex == 2);
+    moon(110, "l#S60#");
+    CHECK(fixture.takeUpdate(update));
+    fixture_ble_host::terminateReturnCode = 0;
+
+    // The host event rechecks after handoff, even when the handle is reused.
+    fixture_ble_host::beforeEvent = [&] {
+        NimBLEDevice::server.disconnect(110);
+        NimBLEDevice::server.connect(2, 110);
+    };
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, currentMoonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.size() == 2);
+    CHECK(fixture.snapshotQa("auth-run", snapshot, error));
+    currentMoonIdentity = snapshot.boards[2].activeConnections[0];
+
+    // A timed-out queued command is canceled before execution. Its late event
+    // cannot fire or leave a semaphore token that completes the next command.
+    fixture_ble_host::runEventsOnWait = false;
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, currentMoonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.size() == 2);
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, currentMoonIdentity.generation, authDrop, error));
+    fixture_ble_host::runEvents();
+    CHECK(fixture_ble_host::terminateCommands.size() == 2);
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 110, currentMoonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::eventQueue.pending.size() == 1);
+    fixture_ble_host::runEvents();
+    fixture_ble_host::runEventsOnWait = true;
+
+    // Even during last-connection-wins handoff, two radio links are ambiguous.
+    fixture_ble_host::deferDisconnects = true;
+    NimBLEDevice::server.connect(2, 112);
+    CHECK(fixture.snapshotQa("auth-run", snapshot, error));
+    currentMoonIdentity = snapshot.boards[2].activeConnections[0];
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 112, currentMoonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.size() == 2);
+    fixture_ble_host::deferDisconnects = false;
+    NimBLEDevice::server.disconnect(110);
+
+    // Lease expiry between USB acceptance and host execution revokes the fault.
+    fixture_ble_host::beforeEvent = [&] { fixtureBleTestMillis += 30000; };
+    CHECK(!fixture.authDropQa("auth-run", "board-moon", 112, currentMoonIdentity.generation, authDrop, error));
+    CHECK(!authDrop.attempted && fixture_ble_host::terminateCommands.size() == 2);
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId.isEmpty());
+    fixture.stop();
+
+    // The fixed reason works for another known board, without affecting peers.
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(fixture.startQa("tension-auth", error));
+    NimBLEDevice::server.connect(1, 120);
+    CHECK(fixture.snapshotQa("tension-auth", snapshot, error));
+    const auto tensionIdentity = snapshot.boards[1].activeConnections[0];
+    CHECK(fixture.authDropQa("tension-auth", "board-tension", 120, tensionIdentity.generation, authDrop, error));
+    CHECK(authDrop.completed && fixture_ble_host::terminateCommands.size() == 3 &&
+          fixture_ble_host::terminateCommands.back().reason == 0x05);
+    fixture.stop();
     std::printf("Fixture BLE: %u checks passed\n", checks);
 }

@@ -35,6 +35,7 @@ const CB_ERROR_PERIPHERAL_DISCONNECTED = 7;
 const GATT_CONN_TIMEOUT = 8; // 0x08 connection timeout
 const GATT_REMOTE_USER_TERMINATED = 19; // 0x13 remote device terminated the connection
 const GATT_CONN_AUTHENTICATION_FAILURE = 5;
+const ANDROID_GATT_FAILURE = 257;
 const BLE_PLX_DEVICE_DISCONNECTED = 201;
 
 // The Swift write-stall recovery paths tag app-driven drops with these markers
@@ -53,6 +54,7 @@ const APP_RECOVERY_CONTEXTS = new Set([
 
 export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined): BleDisconnectCategory {
   if (!info) return 'unknown';
+  if (isAndroidGattFailure(info)) return 'unknown';
 
   // The number 5 is also an ATT operation status. Require ble-plx's connection
   // error domain (201), including when a failed write reports the drop first.
@@ -86,6 +88,20 @@ export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined
   }
 
   return 'unknown';
+}
+
+/**
+ * Android can replace the controller's disconnect reason with GATT_FAILURE.
+ * This confirms a failed link, but cannot identify authentication or a takeover.
+ * Keep its category unknown and leave ordinary handoffs free of error alerts.
+ */
+export function isAndroidGattFailure(info: BleDisconnectInfo | null | undefined): boolean {
+  return (
+    (info?.source === 'ble-plx' || info?.source === 'write-failure') &&
+    !info.context &&
+    info.bleErrorCode === BLE_PLX_DEVICE_DISCONNECTED &&
+    info.androidErrorCode === ANDROID_GATT_FAILURE
+  );
 }
 
 // CBManagerState raw values. BoardBleManager.swift puts "central state N" in the

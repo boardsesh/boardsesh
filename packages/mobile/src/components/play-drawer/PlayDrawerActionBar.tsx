@@ -63,6 +63,7 @@ type PlayDrawerActionBarProps = {
    * the bulb draw. Both views draw only this, so they can't disagree.
    */
   wallControl?: WallControlModel;
+  wallControlBoardId?: number | null;
   /** A tap on one view of the board control; the host's `useWallControl` runs it. */
   onWallControlPress?: (control: WallControlSurface) => void;
   /** A hold on one view of the board control: the board sheet, while this phone holds the link. */
@@ -188,6 +189,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   remainingQueueCount,
   upNextBadgeCount = null,
   wallControl = EMPTY_WALL_CONTROL,
+  wallControlBoardId = null,
   onWallControlPress,
   onWallControlLongPress,
   onWallControlDrive,
@@ -390,6 +392,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             the screen's edge, so this one keeps its width (no spansRow). */}
           <WallControlButton
             model={wallControl}
+            targetBoardId={wallControlBoardId}
             glow={wallGlow}
             swap={wallSwap}
             onPress={pressWallButton}
@@ -425,6 +428,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <View style={styles.compactCenter}>
             <WallControlButton
               model={wallControl}
+              targetBoardId={wallControlBoardId}
               compact
               glow={wallGlow}
               swap={wallSwap}
@@ -543,6 +547,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                     <WallControlButton
                       key={item}
                       model={wallControl}
+                      targetBoardId={wallControlBoardId}
                       // Alone in the row it reaches the screen's edges; between
                       // the bulb row's buttons it doesn't.
                       spansRow={wallControlSpansRow}

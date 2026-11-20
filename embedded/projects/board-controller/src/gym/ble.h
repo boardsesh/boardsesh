@@ -4,6 +4,11 @@
 #include <ArduinoJson.h>
 #include <NimBLEDevice.h>
 #include <esp_mac.h>
+#ifdef USING_NIMBLE_ARDUINO_HEADERS
+#include "nimble/porting/nimble/include/nimble/nimble_port.h"
+#else
+#include "nimble/nimble_port.h"
+#endif
 
 #include <array>
 #include <atomic>
@@ -28,9 +33,21 @@ struct CompletedUpdate {
     uint64_t connectionGeneration = 0;
 };
 
+struct QaConnectionIdentity {
+    uint16_t handle = BLE_HS_CONN_HANDLE_NONE;
+    uint64_t generation = 0;
+};
+
+struct QaAuthDropResult {
+    bool attempted = false;
+    bool completed = false;
+    int gapReturnCode = 0;
+};
+
 struct QaBoardSnapshot {
     String uuid;
     std::vector<uint16_t> handles;
+    std::vector<QaConnectionIdentity> activeConnections;
     unsigned writes = 0, updates = 0, rejected = 0;
     // True when another phone connecting to this board drops the earlier one.
     bool lastConnectionWins = false;
@@ -320,8 +337,10 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             board.latest = _updates[index];
             board.latest.angle = _boards[index].angle;
             for (const Connection& connection : _connections) {
-                if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index)
+                if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index) {
                     board.handles.push_back(connection.handle);
+                    board.activeConnections.push_back({connection.handle, connection.generation});
+                }
             }
             snapshot.boards.push_back(std::move(board));
         }
@@ -361,6 +380,59 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             _server->disconnect(handles[index]);
         error = "";
         return true;
+    }
+
+    bool authDropQa(const String& runId, const String& boardUuid, uint16_t handle, uint64_t generation,
+                    QaAuthDropResult& result, String& error) {
+        result = {};
+        if (!_mutex || !_server)
+            return fail(error, "Fixture is not ready");
+        if (!_authDropCompletion) {
+            _authDropCompletion = xSemaphoreCreateBinary();
+            if (!_authDropCompletion)
+                return fail(error, "Cannot allocate authentication-drop completion");
+            ble_npl_event_init(&_authDropEvent, authDropEvent, this);
+        }
+        {
+            Lock lock(_mutex);
+            expireQaLocked();
+            if (!ownsQaLocked(runId))
+                return fail(error, "QA run does not own the fixture");
+            if (_authDrop.state != AuthDropState::Idle)
+                return fail(error, "An authentication-drop request is still pending");
+            if (handle == BLE_HS_CONN_HANDLE_NONE || generation == 0 || generation > 9007199254740991ULL)
+                return fail(error, "Invalid authentication-drop connection identity");
+            _authDrop = {};
+            _authDrop.runId = runId;
+            _authDrop.boardUuid = boardUuid;
+            _authDrop.handle = handle;
+            _authDrop.generation = generation;
+            _authDrop.waiting = true;
+            _authDrop.state = AuthDropState::Queued;
+        }
+        // Connection callbacks and this event share the NimBLE host task. A
+        // generation cannot be replaced between validation and GAP termination.
+        // Storage belongs to the fixture, never to this waiting stack frame.
+        ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &_authDropEvent);
+        xSemaphoreTake(_authDropCompletion, pdMS_TO_TICKS(1000));
+        Lock lock(_mutex);
+        if (_authDrop.state == AuthDropState::Done) {
+            // Also consume a completion that raced the wait's timeout.
+            xSemaphoreTake(_authDropCompletion, 0);
+            result = _authDrop.result;
+            error = _authDrop.error;
+            _authDrop.state = AuthDropState::Idle;
+            return result.completed && result.gapReturnCode == 0;
+        }
+        _authDrop.waiting = false;
+        if (_authDrop.state == AuthDropState::Queued) {
+            _authDrop.state = AuthDropState::Canceled;
+            return fail(error, "Authentication-drop timed out before execution; request canceled");
+        }
+        // An HCI command already executing cannot be recalled. Preserve this
+        // distinction in USB evidence and reject repeats until it has finished.
+        result = _authDrop.result;
+        return fail(error, "Authentication-drop completion is unknown; do not retry");
     }
 
     bool isAdvertising(size_t boardIndex) const {
@@ -428,6 +500,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         uint16_t handle = BLE_HS_CONN_HANDLE_NONE;
         size_t boardIndex = MAX_BOARDS;
         uint64_t generation = 0;
+        bool authDropAccepted = false;
         AuroraProtocol aurora;
         MoonBoardProtocol moon;
         std::vector<uint8_t> frame;
@@ -448,7 +521,19 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             lastInputAt = 0;
         }
     };
+    enum class AuthDropState { Idle, Queued, Executing, Done, Canceled };
+    struct AuthDropRequest {
+        AuthDropState state = AuthDropState::Idle;
+        String runId, boardUuid, error;
+        uint16_t handle = BLE_HS_CONN_HANDLE_NONE;
+        uint64_t generation = 0;
+        bool waiting = false;
+        QaAuthDropResult result;
+    };
     SemaphoreHandle_t _mutex = nullptr;
+    SemaphoreHandle_t _authDropCompletion = nullptr;
+    ble_npl_event _authDropEvent{};
+    AuthDropRequest _authDrop;
     NimBLEServer* _server = nullptr;
     NimBLECharacteristic* _tx = nullptr;
     NimBLEExtAdvertising* _advertising = nullptr;
@@ -472,6 +557,105 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     static bool fail(String& error, const char* message) {
         error = message;
         return false;
+    }
+
+    static void authDropEvent(ble_npl_event* event) {
+        static_cast<FixtureBle*>(ble_npl_event_get_arg(event))->runAuthDropOnHost();
+    }
+
+    Connection* authDropTargetLocked() {
+        expireQaLocked();
+        if (!ownsQaLocked(_authDrop.runId)) {
+            _authDrop.error = "QA run does not own the fixture";
+            return nullptr;
+        }
+        if (!_enabled || !_accepting.load() || !ble_hs_synced()) {
+            _authDrop.error = "Fixture is not ready";
+            return nullptr;
+        }
+        for (size_t index = 0; index < _boardCount; ++index) {
+            if (_boards[index].uuid != _authDrop.boardUuid)
+                continue;
+            Connection* target = nullptr;
+            size_t logicalCount = 0, radioCount = 0;
+            uint16_t radioHandle = BLE_HS_CONN_HANDLE_NONE;
+            for (Connection& connection : _connections) {
+                if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index) {
+                    ++logicalCount;
+                    target = &connection;
+                }
+            }
+            for (const uint16_t handle : _server->getPeerDevices()) {
+                ble_gap_conn_desc descriptor{};
+                if (ble_gap_conn_find(handle, &descriptor) == 0 &&
+                    NimBLEAddress(descriptor.our_ota_addr) == _boards[index].address) {
+                    ++radioCount;
+                    radioHandle = handle;
+                }
+            }
+            if (logicalCount != 1 || radioCount != 1) {
+                _authDrop.error = "Authentication-drop requires exactly one board connection";
+                return nullptr;
+            }
+            if (radioHandle != _authDrop.handle || target->handle != _authDrop.handle ||
+                target->generation != _authDrop.generation || target->authDropAccepted) {
+                _authDrop.error = "Authentication-drop connection is stale or already terminating";
+                return nullptr;
+            }
+            return target;
+        }
+        _authDrop.error = "Unknown QA board UUID";
+        return nullptr;
+    }
+
+    void runAuthDropOnHost() {
+        uint16_t handle;
+        uint64_t generation;
+        {
+            Lock lock(_mutex);
+            if (_authDrop.state == AuthDropState::Canceled) {
+                _authDrop.state = AuthDropState::Idle;
+                return;
+            }
+            if (_authDrop.state != AuthDropState::Queued)
+                return;
+            Connection* target = authDropTargetLocked();
+            if (!target) {
+                _authDrop.state = AuthDropState::Done;
+                xSemaphoreGive(_authDropCompletion);
+                return;
+            }
+            handle = target->handle;
+            generation = target->generation;
+            _authDrop.result.attempted = true;
+            _authDrop.state = AuthDropState::Executing;
+        }
+        // The C++ wrapper reports true even for already-ended links. Keep the
+        // raw result: zero proves command acceptance, not the peer's error code.
+        const int gapReturnCode = ble_gap_terminate(handle, BLE_ERR_AUTH_FAIL);
+        Lock lock(_mutex);
+        _authDrop.result.completed = true;
+        _authDrop.result.gapReturnCode = gapReturnCode;
+        if (gapReturnCode == 0) {
+            for (Connection& connection : _connections) {
+                if (connection.handle == handle && connection.generation == generation) {
+                    connection.authDropAccepted = true;
+                    connection.clearParser();
+                    _pending[connection.boardIndex] = false;
+                    break;
+                }
+            }
+        } else {
+            _authDrop.error = "Bluetooth stack rejected the authentication-drop command";
+        }
+        // Count this link until its actual disconnect callback. Suppress its
+        // later writes now, without manufacturing evidence of disconnection.
+        if (_authDrop.waiting) {
+            _authDrop.state = AuthDropState::Done;
+            xSemaphoreGive(_authDropCompletion);
+        } else {
+            _authDrop.state = AuthDropState::Idle;
+        }
     }
 
     static bool validRunId(const String& runId) {
@@ -499,6 +683,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     void releaseConnectionLocked(Connection& connection) {
         connection.handle = BLE_HS_CONN_HANDLE_NONE;
         connection.boardIndex = MAX_BOARDS;
+        connection.authDropAccepted = false;
         connection.clearParser();
         _connectionCount.fetch_sub(1);
     }
@@ -507,6 +692,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         for (Connection& connection : _connections) {
             connection.handle = BLE_HS_CONN_HANDLE_NONE;
             connection.boardIndex = MAX_BOARDS;
+            connection.authDropAccepted = false;
             connection.clearParser();
         }
         _connectionCount.store(0);
@@ -573,6 +759,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
                         connection.handle = info.getConnHandle();
                         connection.boardIndex = index;
                         connection.generation = ++_connectionSequence;
+                        connection.authDropAccepted = false;
                         _connectionCount.fetch_add(1);
                         accepted = true;
                         break;
@@ -606,7 +793,8 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         if (!_accepting.load())
             return;
         for (Connection& connection : _connections) {
-            if (connection.handle != info.getConnHandle() || connection.boardIndex >= _boardCount)
+            if (connection.handle != info.getConnHandle() || connection.boardIndex >= _boardCount ||
+                connection.authDropAccepted)
                 continue;
             ++_writes[connection.boardIndex];
             if (payload.size() == 0)

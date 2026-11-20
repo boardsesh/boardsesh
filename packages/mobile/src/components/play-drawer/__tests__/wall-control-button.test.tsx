@@ -36,6 +36,7 @@ vi.mock('../../PressableSurface', () => ({
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     onPress?: () => void;
     onLongPress?: () => void;
+    targetBoardId?: number | null;
     accessibilityLabel?: string;
     accessibilityHint?: string;
     accessibilityState?: { selected?: boolean; busy?: boolean };
@@ -262,9 +263,12 @@ import { act } from '@testing-library/react';
 import { WallControlButton, type WallControlSwap } from '../WallControlButton';
 import type { WallGlowInput } from '../use-wall-glow';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from '../wall-control';
+import { clearLetsGo, LETS_GO_BUTTON_MS, showLetsGo } from '../board-lets-go-store';
 
 afterEach(() => {
   cleanup();
+  clearLetsGo();
+  vi.useRealTimers();
   peekCtrl.triggers = [];
   peekCtrl.screenReaderOn = false;
   windowClock.secondsLeft = 38;
@@ -331,6 +335,7 @@ function renderButton(
   model: WallControlModel,
   extra: {
     onLongPress?: () => void;
+    targetBoardId?: number | null;
     onDrive?: () => void;
     onSwipe?: () => 'started' | 'held_by_crew' | 'unavailable';
     compact?: boolean;
@@ -345,6 +350,7 @@ function renderButton(
   const view = render(
     createElement(WallControlButton, {
       model,
+      targetBoardId: extra.targetBoardId === undefined ? 7 : extra.targetBoardId,
       onPress,
       onLongPress,
       onDrive: extra.onDrive,
@@ -378,9 +384,80 @@ function measure(width = 360, height = 44) {
 const YOU = 'playView.wallControl.youHaveBoard';
 const SAM = 'playView.wallControl.holderHasBoard:{"name":"Sam"}';
 const PUT_ON_BOARD = 'playView.wallControl.putOnBoard';
+const SOMEONE_CONNECTED = 'playView.wallControl.someoneElseConnected';
 const DRIVING = 'playView.wallControl.youAreDriving, playView.wallControl.drivingEveryClimb';
 
 describe('WallControlButton', () => {
+  it('briefly explains a confirmed takeover while keeping the intentional retry and accessible hint', () => {
+    vi.useFakeTimers();
+    const view = renderButton(modelFor('connect'));
+    act(() => showLetsGo({ kind: 'taken_named', name: 'Sam' }, 7));
+    const button = view.getByRole('button');
+    expect(button.textContent).toBe(SOMEONE_CONNECTED);
+    expect(button.getAttribute('aria-label')).toBe(`${SOMEONE_CONNECTED}, ${PUT_ON_BOARD}`);
+    expect(button.getAttribute('data-hint')).toBe('playView.wallControl.connectHint');
+    expect(view.container.querySelector('[data-native-viewer]')?.getAttribute('data-title')).toBe(SOMEONE_CONNECTED);
+    fireEvent.click(button);
+    expect(view.onPress).toHaveBeenCalledTimes(1);
+    act(() => {
+      vi.advanceTimersByTime(LETS_GO_BUTTON_MS);
+    });
+    expect(button.textContent).toBe(PUT_ON_BOARD);
+    expect(button.getAttribute('aria-label')).toBe(PUT_ON_BOARD);
+    expect(view.onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses publication time across button remounts and does not attribute an unknown drop', () => {
+    vi.useFakeTimers();
+    showLetsGo({ kind: 'taken' }, 7);
+    const first = renderButton(modelFor('connect'));
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    first.unmount();
+    const second = renderButton(modelFor('connect'), { compact: true });
+    expect(second.getByRole('button').textContent).toBe(SOMEONE_CONNECTED);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(second.getByRole('button').textContent).toBe(PUT_ON_BOARD);
+    act(() => showLetsGo({ kind: 'dropped' }, 7));
+    expect(second.getByRole('button').textContent).toBe(PUT_ON_BOARD);
+  });
+
+  it('does not override pending or owned connections, and pending presses never reconnect', () => {
+    showLetsGo({ kind: 'taken' }, 7);
+    const pending = renderButton(modelFor('connect', { pending: true }));
+    expect(pending.getByRole('button').textContent).toBe(PUT_ON_BOARD);
+    fireEvent.click(pending.getByRole('button'));
+    expect(pending.onPress).not.toHaveBeenCalled();
+    pending.unmount();
+    const owned = renderButton(modelFor('put_on_wall', { holder: 'self' }));
+    expect(owned.getByRole('button').textContent).toBe(PUT_ON_BOARD);
+    owned.unmount();
+    const sample = renderButton(modelFor('connect'), { sample: true });
+    expect(sample.getByRole('button').textContent).toBe(PUT_ON_BOARD);
+  });
+
+  it('only shows the takeover on the matching physical board, including simultaneous previews', () => {
+    showLetsGo({ kind: 'taken' }, 7);
+    const ownBoard = renderButton(modelFor('connect'), { targetBoardId: 7 });
+    const otherBoard = renderButton(modelFor('connect'), { targetBoardId: 9 });
+    const unknownBoard = renderButton(modelFor('connect'), { targetBoardId: null });
+    expect(ownBoard.container.textContent).toBe(SOMEONE_CONNECTED);
+    expect(otherBoard.container.textContent).toBe(PUT_ON_BOARD);
+    expect(unknownBoard.container.textContent).toBe(PUT_ON_BOARD);
+    ownBoard.rerender(
+      createElement(WallControlButton, {
+        model: modelFor('connect'),
+        targetBoardId: 9,
+        onPress: vi.fn(),
+        onLongPress: vi.fn(),
+      }),
+    );
+    expect(ownBoard.container.textContent).toBe(PUT_ON_BOARD);
+  });
+
   // The label says what a press does (#7113); then who has the board, which the
   // face alone would leave unsaid.
   it.each([

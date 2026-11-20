@@ -1,8 +1,8 @@
 #ifdef ENABLE_GYM_FIXTURE
 #include <Arduino.h>
 #include <esp_bt.h>
-#include <esp_random.h>
 #include <esp_heap_caps.h>
+#include <esp_random.h>
 
 // NimBLE-Arduino allocates the S3 controller for one advertiser. Reserve three
 // connectable sets plus three established connections in this executable only.
@@ -251,7 +251,32 @@ bool serialQa(const String& encoded) {
                 success = fixtureBle.endQa(runId, error);
             else if (action == "drop")
                 success = fixtureBle.dropQa(runId, request["boardUuid"] | "", error);
-            else if (action == "status") {
+            else if (action == "auth-drop") {
+                gym_fixture::QaAuthDropResult result;
+                const bool validTarget = request["connectionHandle"].is<uint16_t>() &&
+                                         request["connectionHandle"].as<uint16_t>() != BLE_HS_CONN_HANDLE_NONE &&
+                                         request["connectionGeneration"].is<uint64_t>() &&
+                                         request["connectionGeneration"].as<uint64_t>() > 0 &&
+                                         request["connectionGeneration"].as<uint64_t>() <= 9007199254740991ULL;
+                if (validTarget)
+                    success = fixtureBle.authDropQa(runId, request["boardUuid"] | "",
+                                                    request["connectionHandle"].as<uint16_t>(),
+                                                    request["connectionGeneration"].as<uint64_t>(), result, error);
+                else
+                    error = "Invalid authentication-drop connection identity";
+                JsonObject evidence = response["authDrop"].to<JsonObject>();
+                evidence["reason"] = 5;
+                evidence["attempted"] = result.attempted;
+                evidence["commandAccepted"] = result.completed && result.gapReturnCode == 0;
+                if (result.completed)
+                    evidence["gapReturnCode"] = result.gapReturnCode;
+                else
+                    evidence["gapReturnCode"] = nullptr;
+                if (validTarget) {
+                    evidence["connectionHandle"] = request["connectionHandle"].as<uint16_t>();
+                    evidence["connectionGeneration"] = request["connectionGeneration"].as<uint64_t>();
+                }
+            } else if (action == "status") {
                 success = fixtureBle.renewQa(runId, error);
             } else
                 error = "Unknown QA action";
@@ -282,6 +307,12 @@ bool serialQa(const String& encoded) {
             JsonArray handles = target["handles"].to<JsonArray>();
             for (const uint16_t handle : board.handles)
                 handles.add(handle);
+            JsonArray activeConnections = target["activeConnections"].to<JsonArray>();
+            for (const auto& connection : board.activeConnections) {
+                JsonObject identity = activeConnections.add<JsonObject>();
+                identity["handle"] = connection.handle;
+                identity["generation"] = connection.generation;
+            }
             target["writes"] = board.writes;
             target["updates"] = board.updates;
             target["rejected"] = board.rejected;
