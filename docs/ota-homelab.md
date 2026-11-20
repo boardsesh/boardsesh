@@ -70,6 +70,17 @@ write** and **Actions: read** on the private Ansible repository. Set
 homelab ownership, a disabled deployment fails; it cannot silently acknowledge a
 required server upgrade. This workflow holds no database or SSH credentials.
 
+Before freezing writers, keep `provider: railway`, set
+`HOMELAB_DEPLOY_ENABLED=true`, and manually run **OTA Server Deploy** on `main`.
+In this preparation state the sender only GETs the private receiver workflow's
+run list and repository artifact list. Both must be readable with the existing
+`HOMELAB_DISPATCH_TOKEN`; missing permission, an unregistered receiver or an
+invalid response fails the run. A green **credential preflight passed** message
+proves those Actions reads without dispatching or changing infrastructure.
+Disabled preparation explicitly reports **preflight not run**. This does not
+prove Contents-write access, a deployment receipt or public service readiness;
+those remain separate cutover checks.
+
 The sender dispatches `boardsesh-ota-release` with
 `{source_sha, version, digest, request_id, source_run_url}`. The request ID is
 the public workflow's `<run_id>-<run_attempt>`. The receiver verifies that exact
