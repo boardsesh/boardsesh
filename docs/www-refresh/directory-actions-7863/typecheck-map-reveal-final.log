@@ -1,0 +1,436 @@
+$ pnpm --filter @boardsesh/email run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/workout-summary run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/auth-protocol run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/hold-detection run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/pr-body run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/wled-ble-protocol run typecheck ⊘ cache disabled
+$ vp exec tsc --noEmit -p packages/mcp/tsconfig.json ⊘ cache disabled
+$ tsx packages/shared-schema/scripts/print-schema.ts ◉ cache hit, replaying
+[print-schema] Wrote SDL to /home/developer/.codex/worktrees/bugbash7844-gym-actions/main/packages/shared-schema/src/generated/schema.graphql
+
+$ pnpm --filter @boardsesh/playlist-generator run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ graphql-codegen ◉ cache hit, replaying
+(node:842424) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[STARTED] Parse Configuration
+[SUCCESS] Parse Configuration
+[STARTED] Generate outputs
+[STARTED] Generate to packages/shared-schema/src/generated/types.ts
+[STARTED] Generate to packages/shared/graphql/src/generated/
+[STARTED] Load GraphQL schemas
+[STARTED] Load GraphQL schemas
+[SUCCESS] Load GraphQL schemas
+[SUCCESS] Load GraphQL schemas
+[STARTED] Load GraphQL documents
+[STARTED] Load GraphQL documents
+[SUCCESS] Load GraphQL documents
+[STARTED] Generate
+[SUCCESS] Generate
+[SUCCESS] Generate to packages/shared-schema/src/generated/types.ts
+[SUCCESS] Load GraphQL documents
+[STARTED] Generate
+[SUCCESS] Generate
+[SUCCESS] Generate to packages/shared/graphql/src/generated/
+[SUCCESS] Generate outputs
+
+$ pnpm --filter @boardsesh/consent run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/sync-runtime run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/queue run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ tsc -p packages/web/auth-proofs/tsconfig.json --noEmit ⊘ cache disabled
+$ vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/ ◉ cache hit, replaying
+Finished in 267ms on 5 files using 18 threads.
+
+$ pnpm --filter @boardsesh/led-controller run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/crypto run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/connected-apps run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/public-api run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/graphql-client run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/analytics run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/watch-pairing run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/kiosk run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/community-roles run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/scheduler run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/spray-wall-geometry run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/key-value-storage run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/party-profile run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/privacy run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/frosted-bokeh run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --dir packages/mobile/web-runtime install --frozen-lockfile ⊘ cache disabled
+$ tsc --noEmit
+Already up to date
+Done in 820ms using pnpm v11.22.0
+
+$ pnpm --filter @boardsesh/i18n run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ tsc -p scripts/tsconfig.json ◉ cache hit, replaying
+
+$ pnpm --filter @boardsesh/queue-runtime run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/queue-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/playlists-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/play-view run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+
+$ pnpm --filter @boardsesh/gym-filters run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/offline-sync run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+
+$ pnpm --filter @boardsesh/graphql run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/create-climb-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/climb-filters run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-config run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/climb-actions run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/shared-schema run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/ble-protocol run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/db run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/board-presence-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-presence run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/hold-detector run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-constants run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/profile-stats run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/playback-react run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-art-geometry run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/board-render run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/mobile run typecheck ◉ cache hit, replaying
+$ tsc --noEmit
+
+$ pnpm --filter @boardsesh/location-sync run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/moonboard-sync run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/kilter-sync run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/aurora-sync run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter boardsesh-backend run build ◉ cache hit, replaying
+$ tsc
+
+$ pnpm --filter @boardsesh/web run build ○ cache miss: 'packages/web/.next/server/app/developers/changelog/page.js.nft.json' modified, executing
+$ node scripts/copy-maplibre-worker.mjs && tsx scripts/generate-openapi.ts && next build
+Generating OpenAPI specification...
+OpenAPI specification written to: /home/developer/.codex/worktrees/bugbash7844-gym-actions/main/packages/web/public/openapi.json
+▲ Next.js 16.3.5 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.mjs took 411ms
+- Experiments (use with caution):
+  · clientTraceMetadata
+  · optimizePackageImports
+  · swcPlugins
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+
+  To migrate automatically, run:
+  npx @next/codemod@canary middleware-to-proxy .
+
+  Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+
+✓ Compiled successfully in 26.4s
+  Running next.config.js provided runAfterProductionCompile ...
+✓ Completed runAfterProductionCompile in 2.2s
+  Running TypeScript ...
+  Finished TypeScript in 12.3s ...
+  Collecting page data using 17 workers ...
+  Generating static pages using 17 workers (0/66) ...
+  Generating static pages using 17 workers (16/66) 
+  Generating static pages using 17 workers (32/66) 
+  Generating static pages using 17 workers (49/66) 
+✓ Generating static pages using 17 workers (66/66) in 945ms
+Turbopack build encountered 1 warning:
+./packages/web/app/lib/i18n/dev-catalog-store.ts:15:10
+Warning: Dynamic filesystem access causes tracing of the whole project
+  13 | export function devCatalogDirectory(): string {
+  14 |   // Next starts in packages/web; tests/tools may start at the monorepo root.
+> 15 |   return resolve(
+     |          ^^^^^^^
+> 16 |     process.cwd(),
+     | ^^^^^^^^^^^^^^^^^^
+> 17 |     process.cwd().endsWith('/packages/web') ? '../shared/i18n/locales' : 'packages/shared/...
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 |   );
+     | ^^^
+  19 | }
+  20 |
+  21 | export async function readDevCatalog(
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: path.resolve(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import trace:
+  App Route:
+    ./packages/web/app/lib/i18n/dev-catalog-store.ts
+    ./packages/web/app/api/internal/dev-translations/route.ts
+
+
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /.well-known/apple-app-site-association
+├ ƒ /.well-known/assetlinks.json
+├ ƒ /[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list
+├ ƒ /[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/play/[climb_uuid]
+├ ƒ /[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]
+├ ƒ /about
+├ ƒ /admin
+├ ƒ /admin/boards
+├ ƒ /admin/build-plans
+├ ƒ /admin/feedback
+├ ƒ /admin/gym-claims
+├ ƒ /admin/gym-duplicates
+├ ƒ /admin/location-sync
+├ ƒ /admin/partner-apps
+├ ƒ /admin/retention
+├ ƒ /admin/spray-walls
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/auth/first-password/[...step]
+├ ƒ /api/auth/forgot-password
+├ ƒ /api/auth/native/attempt
+├ ƒ /api/auth/native/callback
+├ ƒ /api/auth/provider-security/[...step]
+├ ƒ /api/auth/providers-config
+├ ƒ /api/auth/reauthenticate/[action]
+├ ƒ /api/auth/register
+├ ƒ /api/auth/resend-verification
+├ ƒ /api/auth/reset-password
+├ ƒ /api/auth/verify-email
+├ ƒ /api/health
+├ ƒ /api/internal/beta-link-thumbnail
+├ ƒ /api/internal/cleanup
+├ ƒ /api/internal/climb-search-cache/revalidate
+├ ƒ /api/internal/controllers
+├ ƒ /api/internal/dev-metadata
+├ ƒ /api/internal/dev-translations
+├ ƒ /api/internal/feature-flags
+├ ƒ /api/internal/join/[sessionId]
+├ ƒ /api/internal/profile
+├ ƒ /api/internal/profile-percentiles
+├ ƒ /api/internal/profile/[userId]
+├ ƒ /api/internal/refresh-sitemap-climbs
+├ ƒ /api/internal/revalidate-climb
+├ ƒ /api/internal/set-password
+├ ƒ /api/internal/ws-auth
+├ ƒ /api/og/climb
+├ ƒ /api/og/playlist
+├ ƒ /api/og/profile
+├ ƒ /api/og/session
+├ ƒ /api/og/setter
+├ ƒ /api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/[climb_uuid]
+├ ƒ /api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/setters
+├ ƒ /api/v1/[board_name]/climb-stats/[climb_uuid]
+├ ƒ /api/v1/[board_name]/grades
+├ ƒ /api/v1/[board_name]/slugs/layout/[slug]
+├ ƒ /api/v1/[board_name]/slugs/sets/[layout_id]/[size_id]/[slug]
+├ ƒ /api/v1/[board_name]/slugs/size/[layout_id]/[slug]
+├ ƒ /api/v1/angles/[board_name]/[layout_id]
+├ ƒ /api/v1/grades/[board_name]
+├ ƒ /api/v1/spray-walls/[wall_uuid]/photo
+├ ƒ /auth/confirm-first-password
+├ ƒ /auth/error
+├ ƒ /auth/forgot-password
+├ ƒ /auth/login
+├ ƒ /auth/native-start
+├ ƒ /auth/reauthenticate
+├ ƒ /auth/reset-password
+├ ƒ /auth/signout
+├ ƒ /auth/verify-request
+├ ƒ /b/[board_slug]
+├ ƒ /b/[board_slug]/[angle]/list
+├ ƒ /b/[board_slug]/[angle]/play/[climb_uuid]
+├ ƒ /b/[board_slug]/[angle]/view/[climb_uuid]
+├ ƒ /boards
+├ ƒ /bring-your-logbook
+├ ƒ /build-plans
+├ ƒ /build-plans/licence
+├ ƒ /build-plans/orders
+├ ƒ /build-plans/orders/[licenceId]
+├ ƒ /developers
+├ ƒ /developers/apps
+├ ƒ /developers/apps/verify-email
+├ ƒ /developers/auth
+├ ƒ /developers/auth.md
+├ ƒ /developers/changelog
+├ ƒ /developers/changelog.md
+├ ƒ /developers/errors
+├ ƒ /developers/errors.md
+├ ƒ /developers/reference
+├ ƒ /developers/reference.md
+├ ƒ /developers/sync
+├ ƒ /developers/sync.md
+├ ƒ /developers/terms
+├ ƒ /docs
+├ ƒ /embed/board/[board_uuid]
+├ ƒ /embed/gym/[gym_uuid]/leaderboard
+├ ƒ /for-gyms
+├ ƒ /gym-claim/error
+├ ƒ /gym-claim/success
+├ ƒ /gym/[gym_slug]
+├ ƒ /gym/[gym_slug]/manage
+├ ƒ /gym/[gym_slug]/poster
+├ ƒ /gyms
+├ ƒ /gyms/kilter
+├ ƒ /gyms/moonboard
+├ ƒ /gyms/new
+├ ƒ /gyms/tension
+├ ƒ /help
+├ ƒ /help/board-and-bluetooth
+├ ƒ /help/finding-climbs
+├ ƒ /help/logbook
+├ ƒ /help/sessions
+├ ƒ /help/spray-walls
+├ ƒ /history/session/[exportId]
+├ ○ /icon.png
+├ ƒ /join/[sessionId]
+├ ƒ /kiosk/[gym_slug]
+├ ƒ /kiosk/[gym_slug]/[kiosk_slug]
+├ ƒ /legal
+├ ƒ /llms.txt
+├ ○ /manifest.webmanifest
+├ ƒ /oauth/consent
+├ ƒ /oauth/sign-in
+├ ○ /opengraph-image
+├ ƒ /playlists
+├ ƒ /playlists/[playlist_uuid]
+├ ƒ /poster/b/[board_slug]
+├ ƒ /preview/[channel]
+├ ƒ /privacy
+├ ƒ /profile/[user_id]
+├ ƒ /profile/[user_id]/climbs
+├ ƒ /profile/[user_id]/sessions
+├ ƒ /profile/[user_id]/statistics
+├ ○ /robots.txt
+├ ƒ /session/[sessionId]
+├ ƒ /setter/[setter_username]
+├ ƒ /settings
+├ ƒ /settings/first-password
+├ ƒ /sitemap.xml
+├ ƒ /sitemaps/boards.xml
+├ ƒ /sitemaps/build-plans.xml
+├ ƒ /sitemaps/climbs/[page]
+├ ƒ /sitemaps/gyms.xml
+├ ƒ /sitemaps/playlists.xml
+├ ƒ /sitemaps/setters/[page]
+├ ƒ /sitemaps/static.xml
+├ ƒ /spraywalls
+├ ƒ /support
+├ ○ /twitter-image
+└ ƒ /w/[workoutId]
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+
+$ pnpm --filter @boardsesh/web run typecheck ○ cache miss: 'packages/web/app/gyms/gym-directory-filters.tsx' modified, executing
+$ tsc --noEmit
+
+$ true ◉ cache hit, replaying
+
+---
+vp run: 59/61 cache hit (96%), 65/65 successful, 158.38s saved. (Run `vp run --last-details` for full details)

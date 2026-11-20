@@ -1,0 +1,13 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.1.0 /home/developer/.codex/worktrees/bugbash7844-gym-actions/main
+
+
+ Test Files  3 passed (3)
+      Tests  51 passed (51)
+   Start at  15:54:41
+   Duration  13.30s (tests 69%, environment 14%, import 13%, transform 4%)
+
+    Isolate  3 workers spawned · ~706ms startup each (spawn + environment, per file)
+             at least ~1.41s faster with isolate: false — reuses workers across files instead of one per file
+

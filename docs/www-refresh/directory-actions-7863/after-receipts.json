@@ -1,5 +1,5 @@
 {
-  "head": "fdf2ba8de978643cdc755072b6b6cc1f68d4f015",
+  "head": "b35ca088a701505010afd216b4e6099fdaac29dc",
   "baseMain": "f4f504253dff167918796b41ca805d2cc7e48549",
   "receipts": [
     {
@@ -334,6 +334,5 @@
       },
       "errors": []
     }
-  ],
-  "contentSource": "fdf2ba8de978643cdc755072b6b6cc1f68d4f015"
+  ]
 }
