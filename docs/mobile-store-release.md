@@ -2,8 +2,8 @@
 
 Native and JavaScript work both target `main`. A native fingerprint change rebuilds
 main's open marketing version with new store build numbers for the changed platforms.
-Unchanged platforms reuse their confirmed upload. The version stays open until a store accepts it; the first native
-change after that opens the next unused patch. JavaScript-only changes keep the marketing
+Unchanged platforms reuse their confirmed upload. A platform's version stays open until its store accepts it;
+the next native change on that platform opens the next unused patch. JavaScript-only changes keep the marketing
 version and use the existing OTA deployment pipeline. Several native merges waiting for
 the coordinator share one current snapshot.
 
@@ -58,7 +58,9 @@ the next TestFlight build number or Android versionCode for that version. A vers
 is open when all three hold:
 
 1. It is at or above the previous native stamp's version.
-2. No `release/<platform>-v<version>-*` anchor exists for it on either platform.
+2. No `release/<platform>-v<version>-*` anchor exists for a platform needing a new
+   binary. An accepted sibling at that version does not close it when its full
+   fingerprint is unchanged and its exact accepted upload is reusable.
 3. No other build or release tag reserves a higher version. Tester builds of an
    explicitly superseded stamp do not count.
 
@@ -69,11 +71,11 @@ version is not open, the coordinator opens the next unused patch. Public release
 anchors and higher reserved versions still protect against reusing an unavailable
 version.
 
-The release anchor is what closes a version. **Mobile Release Anchor** cuts it when App
+The release anchor is what closes a platform's version. **Mobile Release Anchor** cuts it when App
 Store Connect or Play reports the version accepted, so submitting for review does not
 close it: App Store Connect still takes new builds of a version that is waiting for or
 in review, and later native merges keep producing tester builds of it. The next native
-change after acceptance opens the next patch. The anchor job runs every 6 hours. If
+change on that platform after acceptance opens the next patch. The anchor job runs every 6 hours. If
 Apple approves a version and a native merge lands before its anchor exists, the adopted
 iOS upload is refused as a closed train, and the coordinator stops on that upload
 instead of guessing. Dispatch Mobile Release Anchor (`mobile-auto-version-bump.yml`)
@@ -90,9 +92,10 @@ invalidates it. The original unversioned merge waits for this validated stamp.
 Version-only changes remain outside the fingerprint.
 
 Each platform reuses its uploaded binary while its full native fingerprint remains
-unchanged across consecutive validated stamps. For example, an Android-only native
-change can open shared version 2.8.1 while iOS stays on its uploaded 2.8.0 binary;
-it does not create a TestFlight patch. Reuse requires an immutable successful build
+unchanged across consecutive validated stamps. For example, after iOS 2.8.0 is accepted,
+Android-only native changes keep Android on 2.8.0 while its Play version remains open;
+iOS keeps its accepted 2.8.0 binary. An iOS native change opens the next unused shared
+version. Reuse requires an immutable successful build
 tag tied to a validated stamp (or the exact baseline source) in that uninterrupted
 runtime history. Missing iOS uploads still recover, and A → B → A native rollbacks
 build A again rather than reusing the earlier A upload. The initial workflow gate
@@ -149,8 +152,11 @@ gh workflow run mobile-native-release.yml --ref main \
 
 The target must equal the mistaken stamp's parent version and still be open by the
 rule above, counting the mistaken stamp's own tester builds as retired: at or above
-the previous native version, with no release anchor at or above it and no other
-higher reservation. The expected stamp must still be latest, the current marketing
+the previous native version, with no higher release anchor or other higher
+reservation. A same-version accepted sibling is allowed only when its full
+fingerprint did not change across the mistaken bump and its release anchor matches
+an exact target-version upload in uninterrupted validated native history. The
+platform needing a new binary must still be unreleased. The expected stamp must still be latest, the current marketing
 version must match it, and both canonical native fingerprints must be unchanged. A
 newer native stamp on main (including an adoption of the bumped version) makes the
 restoration refuse, so dispatch it before the next native merge. Apply makes one
