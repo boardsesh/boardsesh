@@ -206,3 +206,9 @@ explain it:
    data was one of them moves from A to B, C or D.
 
 Report the counts by kind, never the worksheet.
+
+For a separately requested account-consolidation investigation, use the
+[read-only merge preview](./account-email-merge-preview.md). It adds row-level
+conflict evidence without adopting the worksheet's keeper proposals or
+changing the retirement runbook. Every group remains blocked until ownership,
+exact mapping review and a restored-database rehearsal are complete.
