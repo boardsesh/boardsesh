@@ -3,6 +3,8 @@ import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 export const WLED_RELEASE_MANIFEST_URL =
   'https://raw.githubusercontent.com/boardsesh/wled-usermod-ble-json/main/release-manifest.json';
 export const WLED_APP_SLOT_BYTES = 1_572_864;
+/** WLED's own access point always serves the controller here. It is not a LAN address. */
+export const WLED_HOTSPOT_URL = 'http://4.3.2.1';
 export type JsonObject = Record<string, unknown>;
 export type ControllerIdentity = {
   controllerId: string;
@@ -47,6 +49,7 @@ export type InstallerStage =
   | 'backingUp'
   | 'ready'
   | 'downloading'
+  | 'connecting'
   | 'uploading'
   | 'rebooting'
   | 'verifying'
@@ -61,7 +64,13 @@ export type InstallerError =
   | 'imageSize'
   | 'preservation'
   | 'verification'
-  | 'cancelled';
+  | 'cancelled'
+  | 'hotspotNotFound'
+  | 'hotspotDenied'
+  | 'hotspotTimeout'
+  | 'hotspotPassword'
+  | 'hotspotUnsupported'
+  | 'hotspotLost';
 export type InstallerSnapshot = {
   stage: InstallerStage;
   identity?: ControllerIdentity;
@@ -92,6 +101,28 @@ export interface InstallerIO {
   clearJournal(this: void, url: string): Promise<void>;
   awake(this: void, enabled: boolean): Promise<void>;
   wait(this: void, milliseconds: number, signal: AbortSignal): Promise<void>;
+}
+/**
+ * The phone's route to a controller that is not on the phone's network: the
+ * controller's own hotspot. Hotspot mode makes every controller request while joined.
+ */
+export interface ControllerLink {
+  /** Asks the OS to join the hotspot. Throws a `hotspot*` WledInstallerError. */
+  join(this: void, signal: AbortSignal): Promise<void>;
+  /** A no-op while joined. Rejoins after the hotspot dropped, e.g. while WLED restarts. */
+  ensure(this: void, signal: AbortSignal): Promise<void>;
+  /** Leaves the hotspot and restores normal routing. Idempotent. */
+  release(this: void): Promise<void>;
+}
+/**
+ * The installer's controller address: a LAN address a wall may store, or WLED's
+ * fixed hotspot address, which is reachable only while joined to the hotspot.
+ */
+export function installerControllerUrl(url: string): string {
+  return url === WLED_HOTSPOT_URL ? WLED_HOTSPOT_URL : normalizeLocalControllerUrl(url);
+}
+export function isHotspotError(code: InstallerError | undefined): boolean {
+  return code?.startsWith('hotspot') ?? false;
 }
 export class WledInstallerError extends Error {
   constructor(public readonly code: InstallerError) {
@@ -236,14 +267,49 @@ export function settingsPreserved(before: Backup, config: JsonObject, presets: J
   );
 }
 
-/** One owner-initiated session. A journal is durable before the first upload byte. */
+type PreparedImage = { uri: string; bytes: number; sha256: string };
+function checkImage(release: FirmwareRelease, image: PreparedImage) {
+  if (image.bytes !== release.imageBytes || image.bytes > WLED_APP_SLOT_BYTES)
+    throw new WledInstallerError('imageSize');
+  if (image.sha256.toLowerCase() !== release.sha256) throw new WledInstallerError('checksum');
+}
+
+/** One owner-initiated session on the controller's local address. A journal is durable before the first upload byte. */
 export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (snapshot: InstallerSnapshot) => void) {
-  const url = normalizeLocalControllerUrl(rawUrl);
+  return createSession(normalizeLocalControllerUrl(rawUrl), io, publish, null);
+}
+
+/**
+ * One owner-initiated session over the controller's own hotspot (WLED-AP), for
+ * a wall with no Wi-Fi. The hotspot has no internet, so the manifest and every
+ * firmware image the owner may install are downloaded and verified first, on
+ * whatever internet the phone has. Only then does the phone join the hotspot.
+ * The link is released whenever the session stops needing it: after install,
+ * verification, any failure, and cancel. It stays joined only from a ready
+ * backup to the owner's install tap.
+ */
+export function createWledHotspotInstaller(
+  io: InstallerIO,
+  link: ControllerLink,
+  publish: (snapshot: InstallerSnapshot) => void,
+) {
+  return createSession(WLED_HOTSPOT_URL, io, publish, link);
+}
+
+function createSession(
+  url: string,
+  io: InstallerIO,
+  publish: (snapshot: InstallerSnapshot) => void,
+  link: ControllerLink | null,
+) {
   let snapshot: InstallerSnapshot = { stage: 'idle' };
   let running = false;
   let controller: AbortController | null = null;
   let releases: FirmwareRelease[] = [];
   let journal: InstallJournal | null = null;
+  // Hotspot mode only: fetched before joining, while the phone has internet.
+  let offlineManifest: FirmwareRelease[] | null = null;
+  const offlineImages = new Map<string, PreparedImage>();
   const update = (next: InstallerSnapshot) => {
     snapshot = next;
     publish(next);
@@ -251,12 +317,18 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
   const ensureCurrent = (signal: AbortSignal) => {
     if (signal.aborted) throw new WledInstallerError('cancelled');
   };
-  async function exclusive(operation: (signal: AbortSignal) => Promise<void>) {
+  const releaseLink = async () => {
+    await link?.release().catch(() => undefined);
+  };
+  /** An operation resolving 'keepLink' leaves the hotspot joined for the owner's next step. */
+  async function exclusive(operation: (signal: AbortSignal) => Promise<'keepLink' | void>) {
     if (running) return;
     running = true;
-    controller = new AbortController();
+    const session = new AbortController();
+    controller = session;
+    let keepLink = false;
     try {
-      await operation(controller.signal);
+      keepLink = (await operation(session.signal)) === 'keepLink';
     } catch (error) {
       update({
         ...snapshot,
@@ -270,8 +342,28 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
     } finally {
       running = false;
       controller = null;
+      if (!keepLink || session.signal.aborted) await releaseLink();
       await io.awake(false).catch(() => undefined);
     }
+  }
+  async function compatibleWith(identity: ControllerIdentity, signal: AbortSignal) {
+    const manifest = offlineManifest ?? readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal));
+    return compatibleReleases(identity, manifest);
+  }
+  /** Hotspot mode: everything that needs the internet happens before the join. */
+  async function prepareOffline(signal: AbortSignal, betaConfirmed: boolean) {
+    update({ stage: 'downloading' });
+    const manifest = readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal));
+    ensureCurrent(signal);
+    for (const release of manifest) {
+      // Beta firmware is never downloaded before the owner's beta consent.
+      if (offlineImages.has(release.sha256) || (release.channel === 'beta' && !betaConfirmed)) continue;
+      const image = await io.download(release, signal);
+      ensureCurrent(signal);
+      checkImage(release, image);
+      offlineImages.set(release.sha256, image);
+    }
+    offlineManifest = manifest.filter((release) => offlineImages.has(release.sha256));
   }
   async function verify(signal: AbortSignal, allowSourceRecovery = false) {
     if (!journal) throw new WledInstallerError('verification');
@@ -280,6 +372,8 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
     for (let attempt = 0; attempt < 45; attempt++) {
       ensureCurrent(signal);
       try {
+        // WLED's hotspot goes down while it restarts. Rejoin before reading.
+        if (link) await link.ensure(signal);
         const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
         if (identity.controllerId !== pending.before.controllerId) throw new WledInstallerError('verification');
         const caps = identity.capabilities;
@@ -311,12 +405,17 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
           return;
         }
       } catch (error) {
-        if (error instanceof WledInstallerError && ['preservation', 'verification'].includes(error.code)) throw error;
+        if (
+          error instanceof WledInstallerError &&
+          (['preservation', 'verification'].includes(error.code) || isHotspotError(error.code))
+        )
+          throw error;
       }
       await io.wait(2000, signal);
     }
     if (allowSourceRecovery) {
       // An explicit inspection after an interrupted upload may prove the original firmware still runs.
+      if (link) await link.ensure(signal);
       const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
       const original = pending.before;
       if (
@@ -336,7 +435,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
         if (!settingsPreserved(pending.backup, requireObject(config), requireObject(presets)))
           throw new WledInstallerError('preservation');
         await io.checkUpdateAccess(url, signal);
-        releases = compatibleReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
+        releases = await compatibleWith(identity, signal);
         ensureCurrent(signal);
         await io.clearJournal(url);
         journal = null;
@@ -351,11 +450,27 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
     }
     throw new WledInstallerError('verification');
   }
+  const cancel = () => {
+    controller?.abort();
+    // Idle at a ready backup, nothing else would release the hotspot.
+    if (!running) void releaseLink();
+  };
   return {
     getSnapshot: () => snapshot,
-    cancel: () => controller?.abort(),
-    inspect: () =>
+    cancel,
+    /** Stops any work and leaves the hotspot: unmount, backgrounding, sign-out. */
+    release: cancel,
+    /** `betaConfirmed` only matters in hotspot mode, where downloading comes first. */
+    inspect: (betaConfirmed = false) =>
       exclusive(async (signal) => {
+        if (link) {
+          // A repeated check starts from the phone's own internet, not the hotspot.
+          await releaseLink();
+          await prepareOffline(signal, betaConfirmed);
+          update({ stage: 'connecting' });
+          await link.join(signal);
+          ensureCurrent(signal);
+        }
         update({ stage: 'inspecting' });
         const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
         ensureCurrent(signal);
@@ -366,7 +481,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
           return;
         }
         await io.checkUpdateAccess(url, signal);
-        releases = compatibleReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
+        releases = await compatibleWith(identity, signal);
         ensureCurrent(signal);
         update({ stage: 'backingUp', identity });
         const [config, presets] = await Promise.all([
@@ -377,7 +492,9 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
         const backup = { config: requireObject(config), presets: requireObject(presets), uri: '' };
         backup.uri = await io.saveBackup(identity, backup.config, backup.presets);
         ensureCurrent(signal);
-        update({ stage: 'ready', identity, backup, release: preferredRelease(releases) });
+        const release = preferredRelease(releases);
+        update({ stage: 'ready', identity, backup, release });
+        return release ? 'keepLink' : undefined;
       }),
     exportBackup: async () => {
       if (snapshot.backup) await io.exportBackup(snapshot.backup.uri);
@@ -397,16 +514,26 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
         )
           throw new WledInstallerError('incompatible');
         await io.awake(true);
+        if (link) {
+          // The owner may have left the app since the backup; rejoin if so.
+          update({ ...snapshot, stage: 'connecting' });
+          await link.ensure(signal);
+        }
         const currentIdentity = readIdentity(await io.readJson(`${url}/json/info`, signal));
         if (currentIdentity.controllerId !== identity.controllerId || currentIdentity.version !== identity.version)
           throw new WledInstallerError('verification');
         await io.checkUpdateAccess(url, signal);
-        update({ ...snapshot, stage: 'downloading' });
-        const image = await io.download(release, signal);
+        let image: PreparedImage;
+        if (link) {
+          const prepared = offlineImages.get(release.sha256);
+          if (!prepared) throw new WledInstallerError('unavailable');
+          image = prepared;
+        } else {
+          update({ ...snapshot, stage: 'downloading' });
+          image = await io.download(release, signal);
+        }
         ensureCurrent(signal);
-        if (image.bytes !== release.imageBytes || image.bytes > WLED_APP_SLOT_BYTES)
-          throw new WledInstallerError('imageSize');
-        if (image.sha256.toLowerCase() !== release.sha256) throw new WledInstallerError('checksum');
+        checkImage(release, image);
         journal = { url, before: identity, backup, release };
         await io.writeJournal(journal);
         ensureCurrent(signal);
@@ -424,6 +551,10 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
     verify: () =>
       exclusive(async (signal) => {
         await io.awake(true);
+        if (link) {
+          update({ ...snapshot, stage: 'connecting' });
+          await link.ensure(signal);
+        }
         await verify(signal, true);
       }),
   };

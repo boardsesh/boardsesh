@@ -88,7 +88,26 @@
       "betaReady": "Il backup è salvato. Conferma il modello del controller e lo stato beta prima dell’installazione.",
       "betaWarning": "Beta: i test OTA, Android e iOS su dispositivi reali non sono ancora completi. L’installazione potrebbe non riuscire e potresti dover ripristinare le impostazioni di WLED dal backup.",
       "confirmBeta": "Capisco che questo firmware è in beta e che i test su dispositivi reali non sono ancora completi",
-      "installBeta": "Installa il firmware beta"
+      "installBeta": "Installa il firmware beta",
+      "hotspot": {
+        "toggle": "Installa senza Wi-Fi (hotspot del controller)",
+        "hint": "Niente Wi-Fi alla tua Spraywall? Boardsesh scarica prima il firmware con qualsiasi connessione, anche i dati mobili. Poi il telefono si collega all’hotspot del controller per installarlo e si scollega alla fine.",
+        "ssid": "Nome dell’hotspot del controller",
+        "password": "Questa password non funziona. Le password dell’hotspot WLED hanno da 8 a 63 caratteri e quella predefinita è wled1234.",
+        "start": "Scarica e collega",
+        "downloading": "Download e verifica del firmware prima di collegarti…",
+        "connecting": "Collegamento al controller… Accetta la richiesta Wi-Fi se il telefono la mostra.",
+        "rebooting": "WLED si sta riavviando. Nuovo collegamento al suo hotspot…",
+        "complete": "Bluetooth installato e il telefono si è scollegato dall’hotspot del controller. Scegli Bluetooth, poi Cerca controller Bluetooth.",
+        "failed": "Impossibile completare tramite l’hotspot del controller. Il telefono si è scollegato, riprova.",
+        "notFound": "Impossibile collegarsi a {{ssid}}. Controlla che il controller sia acceso e vicino, e che nome della rete e password siano corretti.",
+        "denied": "Il telefono non si è collegato all’hotspot del controller. Riprova e scegli Connetti quando te lo chiede.",
+        "timeout": "Il collegamento all’hotspot del controller ha richiesto troppo tempo. Avvicinati al controller e riprova.",
+        "unsupported": "Per collegarti all’hotspot da Boardsesh serve Android 10 o successivo. Collegati a {{ssid}} nelle impostazioni Wi-Fi, apri 4.3.2.1 in un browser e collega WLED a una rete Wi-Fi. Poi installa tramite Wi-Fi.",
+        "lost": "WLED si è riavviato, ma il telefono non è riuscito a ricollegarsi al suo hotspot. Tieni acceso il controller, poi controlla l’installazione.",
+        "locked": "La pagina di aggiornamento di WLED è bloccata. Collegati a {{ssid}} nelle impostazioni Wi-Fi, apri 4.3.2.1/settings/sec in un browser e sblocca OTA. Poi riprova.",
+        "leave": "Scollega dal controller"
+      }
     }
   },
   "sprayDetection": {

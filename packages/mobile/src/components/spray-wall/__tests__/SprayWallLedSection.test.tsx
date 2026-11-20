@@ -222,6 +222,17 @@ describe('SprayWallLedSection', () => {
     expect(screen.queryByText('owner-installer')).not.toBeNull();
   });
 
+  it('offers the owner an install with no saved address, for the controller-hotspot route', async () => {
+    storage.records.set('sprayWallLedSettings:wall-1', {
+      version: 1,
+      enabled: true,
+      controller: { type: 'wled', url: '' },
+    });
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1', canInstall: true }));
+    await openSection();
+    expect(screen.queryByText('owner-installer')).not.toBeNull();
+  });
+
   it('restores this phone’s Wi-Fi address after selecting Bluetooth', async () => {
     storage.records.set('sprayWallLedSettings:wall-1', {
       version: 1,

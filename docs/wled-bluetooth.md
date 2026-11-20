@@ -28,6 +28,17 @@ are separate states. A disconnect alone never establishes success. An interrupte
 upload leaves a local journal; inspection and verification must occur before a
 new attempt. WLED's normal update workflow remains available.
 
+A wall with no Wi-Fi installs over the controller's own hotspot (`WLED-AP`,
+`http://4.3.2.1`). The manifest and every image the owner may install are
+downloaded and verified first, on any internet; then the phone joins the
+hotspot through the local `modules/wifi-join` Expo module (Android 10+
+`WifiNetworkSpecifier` with a process binding, iOS `NEHotspotConfiguration`),
+runs the same inspection, backup, consent, upload and verification, rejoins
+after the restart, and leaves the hotspot on every exit. Requests to `4.3.2.1`
+are refused unless the phone is on the hotspot, because that address is public.
+Owner steps, platform prompts and the iOS entitlement are in
+[spray-wall-wled-bluetooth.md](spray-wall-wled-bluetooth.md#installing-without-wi-fi-controller-hotspot).
+
 Beta installation is an explicit owner opt-in. The screen says that real-device
 OTA, Android and iOS testing is incomplete and installation may fail or require
 restoring WLED settings from the exported backup. The install action is labeled
