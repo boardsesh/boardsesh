@@ -1,0 +1,24 @@
+[
+  {
+    "width": 390,
+    "height": 900,
+    "images": 18,
+    "boardPanels": 9,
+    "invitation": "#request-board",
+    "submitHeight": 44,
+    "syntheticRequestsIntercepted": 1,
+    "success": true,
+    "pageErrors": []
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "images": 18,
+    "boardPanels": 9,
+    "invitation": "#request-board",
+    "submitHeight": 44,
+    "syntheticRequestsIntercepted": 1,
+    "success": true,
+    "pageErrors": []
+  }
+]

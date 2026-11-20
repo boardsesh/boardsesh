@@ -46,3 +46,14 @@ The five request commits start immediately after `54a95e8d8f` and end at `3fa227
 The two admin failure cases and the trusted-address quota test passed against local PostgreSQL and Redis on November 20. The fourth review fix pins the clock inside the quota test so all six submissions exercise the same minute.
 
 The Node HTTP integration records GET query parameters before GraphQL execution. For a GET that contains a private feedback operation, Sentry drops the transaction and exports only a fixed error diagnostic. The abort logger uses the route path. Ordinary GraphQL GET requests keep their existing diagnostics. The installed SDK tests use a synthetic loopback server and in-memory telemetry to verify both private and public cases.
+
+### Final gallery and form comparison
+
+The parent gallery is `3cd6fac4ba`. The final request source is `b6b161e162`. At 390 × 900 and 1440 × 900, Chromium decoded all 17 layout images and the spray wall photograph. The invitation jumped to the form, withdrawing contact permission hid the email field, and the 44px submit button reached the confirmation. Each run intercepted one synthetic submission. Both pages fit the viewport and reported zero JavaScript errors. Both phases used reduced motion, denied optional analytics and hid the development-only Next.js and translation controls.
+
+| Viewport | Gallery before the invitation | Gallery with invitation and form |
+| --- | --- | --- |
+| 390 × 900 | [Before](boards-gallery/after-en-US-phone.png) | [After](board-requests/gallery-form-390.png) |
+| 1440 × 900 | [Before](boards-gallery/after-en-US-desktop.png) | [After](board-requests/gallery-form-1440.png) |
+
+The final source passed all 65 workspace checks. Eight focused suites passed 88 assertions on the integrated gallery and private inbox. The two installed-SDK suites then passed eight checks, including both new transport-level privacy regressions. The earlier screenshots in this document show the pre-gallery directory. [Final browser receipt](board-requests/gallery-form-result.json)
