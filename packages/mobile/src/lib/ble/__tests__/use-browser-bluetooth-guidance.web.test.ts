@@ -14,6 +14,7 @@ vi.mock('../../open-url', () => ({ openExternalUrl: mocks.openExternalUrl }));
 vi.mock('../bluetooth-unavailable', () => ({ trackBluetoothUnavailable: mocks.trackBluetoothUnavailable }));
 
 import { useBrowserBluetoothGuidance } from '../use-browser-bluetooth-guidance.web';
+import type { BrowserBluetoothFailure } from '../use-browser-bluetooth-guidance';
 
 describe('browser Bluetooth guidance', () => {
   beforeEach(() => {
@@ -50,5 +51,51 @@ describe('browser Bluetooth guidance', () => {
       'https://github.com/stevennyman/webbt#installation',
       'browser-bluetooth-guidance',
     );
+  });
+
+  it('explains blocked browser access without offering the unsupported-browser setup', async () => {
+    const { result } = renderHook(() => useBrowserBluetoothGuidance());
+
+    await act(async () => result.current('kilter', { category: 'permission_denied' }));
+
+    expect(mocks.choose).toHaveBeenCalledWith({
+      title: 'ble.browserBlocked.title',
+      message: 'ble.browserBlocked.message',
+      options: [{ value: 'close', label: 'common:actions.close', cancel: true }],
+      cancelValue: 'close',
+    });
+    expect(mocks.trackBluetoothUnavailable).toHaveBeenCalledExactlyOnceWith('unauthorized', 'connect', 'kilter');
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  const failures: Array<{ failure: BrowserBluetoothFailure; messageKey: string }> = [
+    { failure: { category: 'unavailable' }, messageKey: 'ble.browserUnavailable' },
+    { failure: { category: 'board_not_found' }, messageKey: 'common:bluetooth.boardNotFound' },
+    { failure: { category: 'service_missing' }, messageKey: 'common:bluetooth.serviceMissing' },
+    { failure: { category: 'connect_failed' }, messageKey: 'common:bluetooth.connectFailed' },
+    { failure: { category: 'unknown' }, messageKey: 'common:bluetooth.unknownError' },
+    {
+      failure: { category: 'connect_failed', afterBoardSwitch: true },
+      messageKey: 'common:bluetooth.boardSwitchConnectFailed',
+    },
+    {
+      failure: { category: 'unknown', afterBoardSwitch: true },
+      messageKey: 'common:bluetooth.boardSwitchConnectFailed',
+    },
+  ];
+
+  it.each(failures)('shows recovery guidance for $failure', async ({ failure, messageKey }) => {
+    const { result } = renderHook(() => useBrowserBluetoothGuidance());
+
+    await act(async () => result.current('kilter', failure));
+
+    expect(mocks.choose).toHaveBeenCalledExactlyOnceWith({
+      title: 'ble.connectionFailedTitle',
+      message: messageKey,
+      options: [{ value: 'close', label: 'common:actions.close', cancel: true }],
+      cancelValue: 'close',
+    });
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
+    expect(mocks.trackBluetoothUnavailable).not.toHaveBeenCalledWith('unsupported', 'connect', 'kilter');
   });
 });

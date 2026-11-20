@@ -555,6 +555,11 @@
     },
     "relayToWall": "Poner tu bloque en el plafón",
     "peerDrivingBoard": "Otra persona tiene el plafón",
+    "browserBlocked": {
+      "title": "El acceso a Bluetooth está bloqueado",
+      "message": "Tu navegador ha bloqueado el acceso a Bluetooth. Permite que Boardsesh use Bluetooth en los ajustes del navegador y vuelve a intentarlo.\n\n¿Usas Brave? Activa Web Bluetooth en brave://flags/#brave-web-bluetooth-api, reinicia Brave y vuelve a intentarlo."
+    },
+    "browserUnavailable": "Bluetooth no está disponible ahora mismo. Comprueba que este dispositivo tenga Bluetooth, actívalo y vuelve a intentarlo.",
     "browserUnsupported": {
       "title": "Bluetooth en tu navegador",
       "message": "Este navegador todavía no puede conectarse a tu plafón. En Firefox de escritorio, instala WebBT y WebBT Server y vuelve a cargar Boardsesh. La compatibilidad con Linux es experimental. Puedes seguir explorando bloques y grados.",

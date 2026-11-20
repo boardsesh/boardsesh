@@ -57,6 +57,81 @@ describe('classifyBleFailure', () => {
       expected: 'user_cancelled',
     },
     {
+      name: 'Chromium chooser dismissal',
+      error: new DOMException('User cancelled the requestDevice() chooser.', 'NotFoundError'),
+      expected: 'user_cancelled',
+    },
+    {
+      name: 'Brave Web Bluetooth globally disabled',
+      error: new DOMException('Web Bluetooth API globally disabled.', 'NotFoundError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'Web Bluetooth disabled by browser policy',
+      error: new DOMException('User or their enterprise policy has disabled Web Bluetooth.', 'NotFoundError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'browser denied scan permission',
+      error: new DOMException('User denied the browser permission to scan for Bluetooth devices.', 'NotFoundError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'Bluetooth permission blocked',
+      error: new DOMException('Bluetooth permission has been blocked.', 'NotFoundError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'browser security restriction',
+      error: new DOMException('Access to the feature bluetooth is disallowed by permissions policy.', 'SecurityError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'browser permission denial',
+      error: new DOMException('Permission denied.', 'NotAllowedError'),
+      expected: 'permission_denied',
+    },
+    {
+      name: 'chooser requires a user gesture, not a settings change',
+      error: new DOMException('Must be handling a user gesture to show a permission request.', 'SecurityError'),
+      expected: 'unknown',
+    },
+    {
+      name: 'GATT authorization failure, not a browser settings denial',
+      error: new DOMException('GATT operation not authorized.', 'SecurityError'),
+      expected: 'connect_failed',
+    },
+    {
+      name: 'unknown NotFoundError',
+      error: new DOMException('An unexpected lookup failed.', 'NotFoundError'),
+      expected: 'unknown',
+    },
+    {
+      name: 'NotFoundError for a missing adapter',
+      error: new DOMException('Bluetooth adapter not available.', 'NotFoundError'),
+      expected: 'unavailable',
+    },
+    {
+      name: 'NotFoundError for an unsupported platform',
+      error: new DOMException('Web Bluetooth is not supported on this platform.', 'NotFoundError'),
+      expected: 'unavailable',
+    },
+    {
+      name: 'NotFoundError for a missing service',
+      error: new DOMException('UART service was not found.', 'NotFoundError'),
+      expected: 'service_missing',
+    },
+    {
+      name: 'Chromium service UUID lookup failure',
+      error: new DOMException('No Services matching UUID 1234 found in Device.', 'NotFoundError'),
+      expected: 'service_missing',
+    },
+    {
+      name: 'Chromium characteristic UUID lookup failure',
+      error: new DOMException('No Characteristics matching UUID 1234 found in Service 5678.', 'NotFoundError'),
+      expected: 'service_missing',
+    },
+    {
       name: 'Device selection cancelled (capacitor picker)',
       error: new Error('Device selection cancelled'),
       expected: 'user_cancelled',

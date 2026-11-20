@@ -119,7 +119,7 @@ vi.mock('../adapter', () => ({
 // Lets a test stand in the web fork's answer (use-ble-permissions.web.ts), which
 // the native module this file resolves to never gives. Null = the real module.
 const permissionStatusOverride = vi.hoisted(() => ({ status: null as 'unsupported' | 'granted' | null }));
-const browserGuidance = vi.hoisted(() => ({ show: null as ((boardName: string) => Promise<void>) | null }));
+const browserGuidance = vi.hoisted(() => ({ show: null as BrowserBluetoothGuidance | null }));
 vi.mock('../use-browser-bluetooth-guidance', () => ({
   useBrowserBluetoothGuidance: () => browserGuidance.show,
 }));
@@ -237,6 +237,7 @@ import { BleWriteDisconnectedError } from '@boardsesh/ble-protocol/connection-er
 import type { BleDisconnectInfo } from '../types';
 import { RECORD_BOARD_SERIAL } from '@boardsesh/graphql/operations';
 import { getHttpClient } from '../../graphql/client';
+import type { BrowserBluetoothGuidance } from '../use-browser-bluetooth-guidance';
 
 // The #3314 binary-capability probe defaults to "new binary" (drives every
 // board) for the whole file; old-binary tests flip it per test and this
@@ -244,6 +245,8 @@ import { getHttpClient } from '../../graphql/client';
 beforeEach(() => {
   vi.mocked(nativeBleSupportsBoard).mockReturnValue(true);
   vi.mocked(nativeBleSupportsPreparedConnections).mockReturnValue(false);
+  browserGuidance.show = null;
+  permissionStatusOverride.status = null;
 });
 
 // ── Factory helpers ────────────────────────────────────────────────────────
@@ -4258,7 +4261,12 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     });
   }
 
-  it('fails the connect when the initial write kills the link (#3875)', async () => {
+  it.each([false, true])('fails the connect when the initial write kills the link (browser: %s)', async (browser) => {
+    const showGuidance = vi.fn().mockResolvedValue(undefined);
+    if (browser) {
+      browserGuidance.show = showGuidance;
+      permissionStatusOverride.status = 'granted';
+    }
     // The write rejects with a disconnection signature, so sendFramesToBoard tears
     // the connection down. connect() used to sail past that and light the
     // lightbulb over a null adapter: every later send then early-returned with
@@ -4288,7 +4296,15 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
     const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
     expect(failure?.[1]).toMatchObject({ boardName: 'kilter', failureReason: 'dropped_after_connect' });
-    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    if (browser) {
+      expect(showGuidance).toHaveBeenCalledExactlyOnceWith('kilter', {
+        category: 'connect_failed',
+        afterBoardSwitch: false,
+      });
+      expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
+    } else {
+      expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    }
     expect(fakeAdapter.disconnect).toHaveBeenCalled();
   });
 
@@ -5373,6 +5389,7 @@ describe('bleConnectReportLevel', () => {
   it('downgrades environmental failures to warning', () => {
     expect(bleConnectReportLevel('board_not_found')).toBe('warning');
     expect(bleConnectReportLevel('connect_failed')).toBe('warning');
+    expect(bleConnectReportLevel('permission_denied')).toBe('warning');
   });
 
   it('keeps genuine faults at error level', () => {
@@ -6138,6 +6155,107 @@ describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
     expect(connected).toBe(true);
     expect(adapter.requestAndConnect).toHaveBeenCalledOnce();
     expect(showGuidance).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new DOMException('Web Bluetooth API globally disabled.', 'NotFoundError'), 'permission_denied'],
+    [new DOMException('Permission denied.', 'NotAllowedError'), 'permission_denied'],
+    [new DOMException('Bluetooth adapter not available.', 'NotFoundError'), 'unavailable'],
+    [new DOMException('UART service was not found.', 'NotFoundError'), 'service_missing'],
+    [new Error('Failed to connect to device'), 'connect_failed'],
+    [new DOMException('Unexpected lookup failure', 'NotFoundError'), 'unknown'],
+  ] as const)('shows rendered browser guidance for %s', async (connectionError, category) => {
+    permissionStatusOverride.status = 'granted';
+    const showGuidance = vi.fn().mockResolvedValue(undefined);
+    browserGuidance.show = showGuidance;
+    const adapter = makeFakeAdapter({ requestAndConnect: vi.fn().mockRejectedValue(connectionError) });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      expect(await result.current.connect()).toBe(false);
+    });
+
+    expect(showGuidance).toHaveBeenCalledExactlyOnceWith('kilter', { category, afterBoardSwitch: false });
+    expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.loading).toBe(false);
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ failureReason: category === 'unknown' ? 'dom_NotFoundError' : category }),
+    );
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Cancelled');
+    if (category === 'permission_denied') {
+      expect(reportHandledError).toHaveBeenCalledWith(
+        connectionError,
+        expect.objectContaining({ level: 'warning', tags: expect.objectContaining({ failure_category: category }) }),
+      );
+    }
+  });
+
+  it('lets the climber retry after closing blocked browser guidance', async () => {
+    permissionStatusOverride.status = 'granted';
+    let closeGuidance!: () => void;
+    const showGuidance = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          closeGuidance = resolve;
+        }),
+    );
+    browserGuidance.show = showGuidance;
+    const requestAndConnect = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException('Web Bluetooth API globally disabled.', 'NotFoundError'))
+      .mockResolvedValue({ deviceId: 'device-1', deviceName: 'Kilter Board#123@3' });
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      () => makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let failedConnect!: Promise<boolean>;
+    act(() => {
+      failedConnect = result.current.connect();
+    });
+    await waitFor(() => expect(showGuidance).toHaveBeenCalledOnce());
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ failureReason: 'permission_denied' }),
+    );
+    expect(requestAndConnect).toHaveBeenCalledOnce();
+    await act(async () => {
+      closeGuidance();
+      expect(await failedConnect).toBe(false);
+    });
+    expect(result.current.loading).toBe(false);
+    await act(async () => {
+      expect(await result.current.connect()).toBe(true);
+    });
+    expect(requestAndConnect).toHaveBeenCalledTimes(2);
+    expect(result.current.isConnected).toBe(true);
+    expect(showGuidance).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an explicitly cancelled browser chooser silent', async () => {
+    permissionStatusOverride.status = 'granted';
+    const showGuidance = vi.fn();
+    browserGuidance.show = showGuidance;
+    const adapter = makeFakeAdapter({
+      requestAndConnect: vi
+        .fn()
+        .mockRejectedValue(new DOMException('User cancelled the requestDevice() chooser.', 'NotFoundError')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      expect(await result.current.connect()).toBe(false);
+    });
+
+    expect(showGuidance).not.toHaveBeenCalled();
+    expect(mockBluetoothAlert.alert).not.toHaveBeenCalled();
+    expect(reportHandledError).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Cancelled', expect.any(Object));
+    expect(result.current.loading).toBe(false);
   });
 
   it('asks for Android 13 notifications after the board connects, not in front of the scan', async () => {

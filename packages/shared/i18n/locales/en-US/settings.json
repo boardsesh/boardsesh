@@ -555,6 +555,11 @@
     },
     "relayToWall": "Put your climb on the wall",
     "peerDrivingBoard": "Someone else has the board",
+    "browserBlocked": {
+      "title": "Bluetooth access is blocked",
+      "message": "Your browser blocked Bluetooth access. Allow Bluetooth for Boardsesh in your browser settings, then try again.\n\nUsing Brave? Enable Web Bluetooth at brave://flags/#brave-web-bluetooth-api, restart Brave, then try again."
+    },
+    "browserUnavailable": "Bluetooth isn't available right now. Make sure this device has Bluetooth, turn it on, then try again.",
     "browserUnsupported": {
       "title": "Bluetooth in your browser",
       "message": "This browser can’t connect to your board yet. In desktop Firefox, install WebBT and WebBT Server, then reload Boardsesh. Linux support is experimental. You can still browse climbs and grades.",

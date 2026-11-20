@@ -93,12 +93,13 @@ import { boardUuidOrNull } from '../boards/board-identity';
 //  - null  → don't report. The user dismissed the device picker
 //    ('user_cancelled') — that's the app doing exactly what was asked, not a fault.
 //  - 'warning' → environmental, not an app bug: the board is off, out of range,
-//    or the GATT connect timed out ('board_not_found' / 'connect_failed').
+//    the GATT connect timed out, or the browser blocked access.
 //  - 'error' → a genuine fault worth surfacing ('unavailable' / 'service_missing'
 //    / 'unknown').
 export function bleConnectReportLevel(category: BleFailureCategory): 'warning' | 'error' | null {
   if (category === 'user_cancelled') return null;
-  if (category === 'board_not_found' || category === 'connect_failed') return 'warning';
+  if (category === 'board_not_found' || category === 'connect_failed' || category === 'permission_denied')
+    return 'warning';
   return 'error';
 }
 
@@ -1982,7 +1983,11 @@ export function useBoardBluetooth({
         const available = await adapter.isAvailable();
         if (!available) {
           // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
-          await alertBluetoothUnavailable({ boardName, t, tCommon });
+          if (showBrowserBluetoothGuidance) {
+            await showBrowserBluetoothGuidance(boardName, { category: 'unavailable' });
+          } else {
+            await alertBluetoothUnavailable({ boardName, t, tCommon });
+          }
           return false;
         }
 
@@ -2218,7 +2223,6 @@ export function useBoardBluetooth({
           // tags — including onConnectionChange?.(false) without a preceding true,
           // which no consumer reads today but a future one must tolerate.
           connectInitialSendRef.current = null;
-          Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.connectFailed'));
           track(SHARED_EVENTS.BluetoothConnectionFailed, {
             boardName,
             layoutId,
@@ -2227,6 +2231,11 @@ export function useBoardBluetooth({
             // block below; this one is only reachable from the initial write.
             failureReason: 'dropped_after_connect',
           });
+          if (showBrowserBluetoothGuidance) {
+            await showBrowserBluetoothGuidance(boardName, { category: 'connect_failed', afterBoardSwitch });
+          } else {
+            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.connectFailed'));
+          }
           return false;
         }
 
@@ -2315,8 +2324,8 @@ export function useBoardBluetooth({
         // Classify once, up front: it decides both whether this reaches error
         // tracking and the user copy below. A user dismissing the device picker
         // ('user_cancelled') isn't a failure — don't log it as one or report it.
-        // board_not_found / connect_failed are environmental (board off, out of
-        // range, GATT timeout), not app bugs, so they go in as warnings. Genuine
+        // Board/radio problems and blocked browser access are environmental,
+        // not app bugs, so they go in as warnings. Genuine
         // faults (unavailable / service_missing / unknown) stay at error level.
         const failureCategory = classifyBleFailure(error);
         const reportLevel = bleConnectReportLevel(failureCategory);
@@ -2380,31 +2389,6 @@ export function useBoardBluetooth({
         // A connect that followed a board switch says so: the climber is now on
         // another board than the one they tapped from, and "move closer" alone
         // reads as if the old board had failed.
-        switch (failureCategory) {
-          case 'user_cancelled':
-            break;
-          case 'unavailable':
-            await alertBluetoothUnavailable({ boardName, t, tCommon });
-            break;
-          case 'board_not_found':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.boardNotFound'));
-            break;
-          case 'service_missing':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.serviceMissing'));
-            break;
-          case 'connect_failed':
-            Alert.alert(
-              t('ble.connectionFailedTitle'),
-              afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.connectFailed'),
-            );
-            break;
-          default:
-            Alert.alert(
-              t('ble.connectionFailedTitle'),
-              afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.unknownError'),
-            );
-        }
-
         // A dismissed picker gets its own event rather than being counted as a
         // connect failure (#3088) — it used to be 2,478 of 3,467 'Bluetooth
         // Connection Failed' events, so the reported failure rate read 15.5%
@@ -2447,6 +2431,40 @@ export function useBoardBluetooth({
             // web / native iOS.
             ...blePlxErrorCodes(error),
           });
+        }
+
+        // Record the failure before awaiting the dialog: restarting Brave from
+        // its instructions must not lose the connection-failure event.
+        if (showBrowserBluetoothGuidance && failureCategory !== 'user_cancelled') {
+          await showBrowserBluetoothGuidance(boardName, { category: failureCategory, afterBoardSwitch });
+        } else {
+          switch (failureCategory) {
+            case 'user_cancelled':
+              break;
+            case 'permission_denied':
+              await alertBluetoothUnavailable({ reason: 'unauthorized', boardName, t, tCommon });
+              break;
+            case 'unavailable':
+              await alertBluetoothUnavailable({ boardName, t, tCommon });
+              break;
+            case 'board_not_found':
+              Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.boardNotFound'));
+              break;
+            case 'service_missing':
+              Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.serviceMissing'));
+              break;
+            case 'connect_failed':
+              Alert.alert(
+                t('ble.connectionFailedTitle'),
+                afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.connectFailed'),
+              );
+              break;
+            default:
+              Alert.alert(
+                t('ble.connectionFailedTitle'),
+                afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.unknownError'),
+              );
+          }
         }
       } finally {
         connectInFlightRef.current = false;
