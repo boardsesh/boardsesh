@@ -1,0 +1,223 @@
+{
+  "artifact": {
+    "sha256": "521724ec57cd94024989f7d5f57927988a15b7d52ec1b6e75787c9ca27e6dc2c",
+    "application_version": "1.3.77 (377)",
+    "dart_version": "3.12.0 stable",
+    "snapshot_hash": "41be3daaabd524b8aa7423bc24584957",
+    "evidence_type": "offline static ARM64 and Dart AOT metadata; no execution or BLE traffic"
+  },
+  "recovery": {
+    "decoder": "parse_snapshot.py",
+    "disassembler": "trace_aot.py",
+    "matching_sdk_sources": "https://github.com/dart-lang/sdk/tree/3.12.0/runtime/vm",
+    "allocated_objects": 171032,
+    "allocation_clusters": 1577,
+    "global_pool_entries": 57288,
+    "instruction_table_data_file_offset": "0x2abf10",
+    "instruction_table_entries": 45178,
+    "first_retained_code_index": 35539,
+    "retained_code_objects": 9639,
+    "instruction_image_file_offset": "0x3f6a80",
+    "pool_offset_formula": "16 + 8 * entry_index, relative to untagged ARM64 x27 PP"
+  },
+  "profiles": [
+    {
+      "protocol": "legacy",
+      "service": "713d0000-503e-4c75-ba94-3148f18d941e",
+      "primary_characteristics": {
+        "pixelSingle": "713d0003-503e-4c75-ba94-3148f18d941e"
+      },
+      "constructor_range": ["0x792944", "0x7929e8"]
+    },
+    {
+      "protocol": "legacy",
+      "service": "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+      "primary_characteristics": {
+        "pixelSingle": "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+      },
+      "constructor_range": ["0x7929ec", "0x792a90"]
+    },
+    {
+      "protocol": "legacy",
+      "service": "2c9285bc-dfd0-4fd8-a13d-393660f8a060",
+      "primary_characteristics": {
+        "pixelSingle": "5b2bf25f-9a69-4a5a-8788-6f3ddcb97fc4"
+      },
+      "constructor_range": ["0x792a94", "0x792b38"]
+    },
+    {
+      "protocol": "pro",
+      "service": "7a112233-4455-6677-8899-aabbccddee01",
+      "primary_characteristics": {
+        "pixelSingle": "7a112233-4455-6677-8899-aabbccddee02",
+        "pixelBatch": "7a112233-4455-6677-8899-aabbccddee03",
+        "frameCommit": "7a112233-4455-6677-8899-aabbccddee04",
+        "maskSet": "7a112233-4455-6677-8899-aabbccddee06",
+        "holdAssign": "7a112233-4455-6677-8899-aabbccddee07",
+        "chrBoardConfig": "7a112233-4455-6677-8899-aabbccddee20",
+        "chrControl": "7a112233-4455-6677-8899-aabbccddee22",
+        "brightness": "7a112233-4455-6677-8899-aabbccddee0A",
+        "advertisingname": "7a112233-4455-6677-8899-aabbccddee0C",
+        "setledcount": "7a112233-4455-6677-8899-aabbccddee0D",
+        "brightnessPreview": "7a112233-4455-6677-8899-aabbccddee0E",
+        "cfgMultiUserMode": "7a112233-4455-6677-8899-aabbccddee25",
+        "chrUserName": "7a112233-4455-6677-8899-aabbccddee26",
+        "chrBasePixelBatch": "7a112233-4455-6677-8899-aabbccddee27",
+        "chrCfgAll": "7a112233-4455-6677-8899-aabbccddee0F",
+        "setScreensaver": "7a112233-4455-6677-8899-aabbccddee0B",
+        "authClaim": "7a112233-4455-6677-8899-aabbccddee30",
+        "authSalt": "7a112233-4455-6677-8899-aabbccddee31",
+        "authChallenge": "7a112233-4455-6677-8899-aabbccddee32",
+        "authUnlock": "7a112233-4455-6677-8899-aabbccddee33"
+      },
+      "notification_characteristics": {
+        "cfgStatus": "7a112233-4455-6677-8899-aabbccddee09",
+        "connectionStatus": "7a112233-4455-6677-8899-aabbccddee05",
+        "chrSessionStatus": "7a112233-4455-6677-8899-aabbccddee24",
+        "authState": "7a112233-4455-6677-8899-aabbccddee28"
+      },
+      "constructor_range": ["0x792b3c", "0x793284"],
+      "note": "Primary map is used by writes AND reads, including authentication reads; notification map is separate. Map presence is not proof every operation is invoked."
+    }
+  ],
+  "profile_reachability": {
+    "constructor": "method17101 init:cwi @0x79292c, four-element returned list",
+    "registry_field_ref": 149612,
+    "discovery": "method17427 @0x7a4934 loads field149612 and iterates service/characteristic candidates, building matched maps; handler39946 @0xdc80fc installs maps"
+  },
+  "pro_pixel_send": {
+    "producer": "method17908 @0x7c73dc",
+    "gates": [
+      "nonempty input",
+      "connected device state",
+      "provider17915/17918..17921 resolves matching profile and protocol == pro"
+    ],
+    "gate_terminal": "method17921 @0x7c87d4 checks registry service equality and pro enum at0x7c8828",
+    "builder": "method17909 @0x7c7708",
+    "packet": {
+      "header_bytes": ["0x03", "count"],
+      "entry_bytes": ["index low8", "index high8", "value low8", "value high8"],
+      "entry_size": 4,
+      "length": "2 + 4*count",
+      "count_range": [1, 255],
+      "index_range": [0, 65535],
+      "note": "Header03 is observed directly; do not mislabel it as an opcode. Base batch construction below identifies first/last flag semantics."
+    },
+    "event": "TS cid4285 constructed at0x7c769c; name pixelBatch @0x7c76a8, bytes field0xb, forceResponse=false field0xf",
+    "handler_registration": "constructor17277 @0x79bf60..0x79bf80 binds fn98098 to TypeArguments80344 containing Type71696(cid4285)",
+    "handler_chain": ["17399 @0x7a228c", "39943 @0xdc7d48", "closure98100 /39945 @0xdc7e48", "writer39935 @0xdc772c"]
+  },
+  "pro_base_pixels": {
+    "producer": "method24965 @0xa025f8",
+    "builder": "method24966 @0xa027b4",
+    "destination": "chrBasePixelBatch -> 7a112233-4455-6677-8899-aabbccddee27",
+    "gates": ["nonempty input", "connected", "pro profile provider"],
+    "max_entries_per_packet": "clamp(truncate((maxPayloadBytes - 2)/4), 1, 255); reject maxPayloadBytes < 6",
+    "max_entries_evidence": "0xa02b84..0xa02bc8",
+    "packet": {
+      "header_bytes": ["flags", "count"],
+      "entry_bytes": ["index low8", "index high8", "value low8", "value high8"],
+      "flags": {
+        "first_packet": 2,
+        "last_packet": 1,
+        "single_packet": 3,
+        "middle_packet": 0
+      },
+      "flags_evidence": "0xa02c7c..0xa02cf0"
+    },
+    "events": "One TS event per packet, chrBasePixelBatch key @0xa02744 and forceResponse=false @0xa02754..58"
+  },
+  "value_codes": {
+    "description": "Role-to-value constants in init:cui method17914; reported as numeric values without inferring LED color semantics",
+    "values": {
+      "start": 192,
+      "end": 32,
+      "left": 416,
+      "right": 351,
+      "dual": 128,
+      "foot": 288,
+      "match": 448
+    },
+    "evidence": "method_17914.asm; stored immediates are tagged Smi values, divided by2"
+  },
+  "writes": {
+    "method": "39935 @0xdc772c",
+    "chunk_bytes": "clamp(state.maxPayloadBytes,20,242)",
+    "order": "await each write; successive TS events chain through stored Future in39943",
+    "without_response_predicate": "discovered characteristic supportsWriteWithoutResponse AND NOT event.forceResponse",
+    "without_response_chain": ["39940 @0xdc7c10", "39937 @0xdc7990 with false", "39938 @0xdc7a90"],
+    "with_response_chain": ["39936 @0xdc78f0", "39937 @0xdc7990 with true", "39939 @0xdc7b50"],
+    "extra_without_response_delay_microseconds": 5000,
+    "delay_evidence": "0xdc7878 loads Duration instance126965(value5000), calls Future.delayed-shaped445028 then awaits; SDK layout and independent reviewer identify microseconds, not measured pacing",
+    "readiness": "39945 requires named discovered characteristic; connected; phase discoveredReady,ready,or sending; otherwise emits error state; successful await increments counter and returns ready",
+    "capability_proof": [
+      "34879 @0xd05248..54 protobuf field5 named isWritableWithoutResponse",
+      "32548 reads zero-based bool slot4 via32546",
+      "32544 stores that result at model+0x1b @0xc3a864",
+      "39925 copies model+0x1b into wrapper+0x13 @0xdc7074",
+      "17427 copies wrapper+0x13 into writeTarget+0xb @0x7a4ce8",
+      "39935 tests writeTarget+0xb @0xdc7794..b4"
+    ]
+  },
+  "mtu": {
+    "connection_handler": "39962 @0xdc8534",
+    "on_connected": [
+      "reset payload20",
+      "await250000-microsecond Duration",
+      "request MTU242",
+      "store clamp(negotiatedMTU-3,20,242)",
+      "on caught failure store20",
+      "then enter discovering and dispatch discovery"
+    ],
+    "request_chain": [
+      "39962 @0xdc8644",
+      "39964 @0xdc8798",
+      "39965 @0xdc8814",
+      "platform44281 @0xe50ef4 -> negotiateMtuSize channel method"
+    ],
+    "platform_evidence": "0xe50f74 logs tagged0x1e4=242;0xe50f9c passes unboxed0xf2=242;0xe50fc4 loads negotiateMtuSize",
+    "payload_assignment": "0xdc8668..0xdc8688",
+    "reset": "constructor17277 and clear17287 @0x79cd44..48 initialize20"
+  },
+  "subscriptions": {
+    "startup": "39946 @0xdc8244 calls17402 after installing matched maps",
+    "method": "17402 @0x7a23f8",
+    "automatic_keys": ["cfgStatus", "connectionStatus", "chrSessionStatus"],
+    "binding": {
+      "cfgStatus": {
+        "uuid": "7a112233-4455-6677-8899-aabbccddee09",
+        "key_load": "0x7a2474",
+        "handler_function_ref": 98120
+      },
+      "connectionStatus": {
+        "uuid": "7a112233-4455-6677-8899-aabbccddee05",
+        "key_load": "0x7a2574",
+        "handler_function_ref": 98118
+      },
+      "chrSessionStatus": {
+        "uuid": "7a112233-4455-6677-8899-aabbccddee24",
+        "key_load": "0x7a2684",
+        "handler_function_ref": 98116
+      }
+    },
+    "behavior": "Cancel prior subscription, look up mapped characteristic, create subscription through39947->17403 and attach data/error closures. Missing connectionStatus returns before chrSessionStatus branch. authState exists in map but is not subscribed by this routine."
+  },
+  "limits": [
+    "No hardware, live Android execution, packet capture, controller firmware or end-to-end tests. Static reachability does not establish availability on every controller/firmware.",
+    "Application symbols are obfuscated; complete original source recovery was not attempted. Some indirect Dart calls and UI routes are not fully traced.",
+    "frameCommit mapping is confirmed but no invocation/packet semantics established. Absence from collected xrefs does not prove unused.",
+    "Authentication/PIN and configuration authorization gates are not comprehensively traced by this subtask; map keys alone do not establish permission or safety of a write.",
+    "0000fff0 UUID remains unclassified; do not add it as a controller family based on strings.",
+    "trace_aot xref_index is a linear heuristic, not a complete CFG/dataflow analysis; manually verified immediate add+x27/ldr pairs and local instruction paths underpin these findings. Indirect calls, CFG joins and second ldp destinations limit automated xref coverage.",
+    "The bounded snapshot decoder stops after global ObjectPool; later object fills are not decoded. It is artifact-specific, not a general-purpose Dart decompiler."
+  ],
+  "publication_note": "Interoperability address ledger. Method numbers refer to this artifact instruction table. Raw APKs, disassembly files and decoder output remain local and are not included in this PR.",
+  "boardsesh_source_commit": "5e01cb95b62573da799ac9059566c4b86a0abaa1",
+  "controller_identity": {
+    "manufacturer_documented": "Unique 12-digit ID shown during Bluetooth connection",
+    "source": "https://eu.moonclimbing.com/moonboard-control-box-v5.html",
+    "wire_format": "Unresolved: name, advertisement field or GATT characteristic not established",
+    "boardsesh": "Generic #suffix name parser only; otherwise peripheral ID; manufacturer/service bytes are telemetry",
+    "limitations": "Do not infer MAC address, PIN relationship, or absence from the APK."
+  }
+}
