@@ -1,5 +1,5 @@
 {
-  "title": "Nous aider à améliorer Boardsesh ?",
+  "title": "Tu nous aides à progresser ?",
   "body": "Autorise les statistiques d’utilisation et l’enregistrement facultatif des sessions pour nous aider à comprendre ce qui fonctionne. « Non merci » les désactive. Les diagnostics de base sur les erreurs et les performances restent activés. Ton choix s’applique partout où tu es connecté et tu peux le modifier à tout moment.",
   "adMeasurement": "Sur boardsesh.com, les statistiques incluent aussi la mesure publicitaire avec Meta et Reddit. Ils voient quelles pages du site tu visites et quand tu touches un bouton de store, pour qu’on sache quelles pubs amènent des grimpeurs ici.",
   "allow": "Autoriser",
@@ -15,5 +15,7 @@
   "mobileTitle": "Ta confidentialité, ton choix",
   "mobileBody": "Autorise les statistiques d’utilisation et l’enregistrement facultatif des sessions pour nous aider à améliorer Boardsesh. « Non merci » les désactive. Les diagnostics de base sur les erreurs et les performances restent activés. Ton choix s’applique partout où tu es connecté. Tu peux le modifier dans Paramètres → Confidentialité à tout moment.",
   "analyticsLabel": "Partager les statistiques",
-  "regionDefaultNote": "Les statistiques sont activées par défaut dans ta région. Tu peux les désactiver ici à tout moment."
+  "regionDefaultNote": "Les statistiques sont activées par défaut dans ta région. Tu peux les désactiver ici à tout moment.",
+  "bannerSummary": "Statistiques, enregistrement de session et mesure des pubs avec Meta et Reddit restent désactivés sans ton accord. Les rapports de plantage restent actifs. Modifiable à tout moment.",
+  "details": "Détails"
 }

@@ -19,7 +19,7 @@ import { useConsentRegionPromptState, type ConsentRegionPromptState } from './us
 
 export default function ConsentBanner({ children }: { children?: (region: ConsentRegionPromptState) => ReactNode }) {
   const { t } = useTranslation('consent');
-  const { decide, dialogOpen, closeChoices, syncFailed } = useConsent();
+  const { decide, dialogOpen, openChoices, closeChoices, syncFailed } = useConsent();
   const pathname = usePathnameWithoutLocale();
   const chromeLess = isChromeLessPath(pathname.toLowerCase());
   // The banner asks only in the prompt regions (or an unknown one). Privacy
@@ -39,7 +39,7 @@ export default function ConsentBanner({ children }: { children?: (region: Consen
       <Typography variant="body2" color="text.secondary">
         {t('adMeasurement')}
       </Typography>
-      <MuiLink component={LocaleLink} href="/privacy">
+      <MuiLink component={LocaleLink} href="/privacy" onNavigate={closeChoices}>
         {t('privacyLink')}
       </MuiLink>
     </>
@@ -54,27 +54,41 @@ export default function ConsentBanner({ children }: { children?: (region: Consen
           data-testid="consent-banner"
           sx={{
             position: 'fixed',
-            zIndex: (theme) => theme.zIndex.tooltip,
+            zIndex: (theme) => theme.zIndex.modal - 1,
             bottom: 0,
             left: 0,
             right: 0,
-            p: { xs: 1, sm: 2 },
-            pb: 'max(8px, env(safe-area-inset-bottom))',
+            px: 2,
+            pb: 'max(16px, env(safe-area-inset-bottom))',
             display: 'flex',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
+            pointerEvents: 'none',
           }}
         >
-          <Paper elevation={8} sx={{ p: 2, maxWidth: 600, width: '100%' }}>
-            <Stack spacing={2}>
-              <Typography variant="h6" component="h2" id="consent-banner-title">
-                {t('title')}
+          <Paper elevation={8} sx={{ p: 1.5, maxWidth: 420, width: '100%', pointerEvents: 'auto' }}>
+            <Stack spacing={0.5}>
+              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                <Typography variant="h6" component="h2" id="consent-banner-title">
+                  {t('title')}
+                </Typography>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={openChoices}
+                  aria-haspopup="dialog"
+                  sx={{ minHeight: 44, minWidth: 44, flexShrink: 0, textDecoration: 'underline' }}
+                >
+                  {t('details')}
+                </Button>
+              </Stack>
+              <Typography variant="body2" color="text.secondary">
+                {t('bannerSummary')}
               </Typography>
-              {copy}
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                <Button variant="outlined" fullWidth onClick={() => choose('granted')}>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" fullWidth sx={{ minHeight: 44 }} onClick={() => choose('granted')}>
                   {t('allow')}
                 </Button>
-                <Button variant="outlined" fullWidth onClick={() => choose('denied')}>
+                <Button variant="outlined" fullWidth sx={{ minHeight: 44 }} onClick={() => choose('denied')}>
                   {t('deny')}
                 </Button>
               </Stack>
@@ -82,8 +96,8 @@ export default function ConsentBanner({ children }: { children?: (region: Consen
           </Paper>
         </Box>
       )}
-      <Dialog open={dialogOpen} onClose={closeChoices} fullWidth maxWidth="sm">
-        <DialogTitle>{t('privacyChoices')}</DialogTitle>
+      <Dialog open={dialogOpen} onClose={closeChoices} fullWidth maxWidth="sm" aria-labelledby="consent-choices-title">
+        <DialogTitle id="consent-choices-title">{t('privacyChoices')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
             {copy}

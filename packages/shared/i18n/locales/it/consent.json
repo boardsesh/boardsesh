@@ -1,5 +1,5 @@
 {
-  "title": "Ci aiuti a migliorare Boardsesh?",
+  "title": "Ci aiuti a capire cosa funziona?",
   "body": "Consenti analisi del prodotto e, se vuoi, la registrazione delle sessioni per aiutarci a capire cosa funziona. Con No, grazie restano disattivate. La diagnostica di base su arresti anomali e prestazioni resta attiva. La tua scelta vale ovunque tu abbia effettuato l'accesso e puoi cambiarla quando vuoi.",
   "adMeasurement": "Su boardsesh.com, l'analisi include anche la misurazione degli annunci con Meta e Reddit. Vedono quali nostre pagine visiti e quando tocchi un pulsante di uno store, così capiamo quali annunci portano qui chi arrampica.",
   "allow": "Consenti",
@@ -15,5 +15,7 @@
   "mobileTitle": "La tua privacy, la tua scelta",
   "mobileBody": "Consenti analisi del prodotto e, se vuoi, la registrazione delle sessioni per aiutarci a migliorare Boardsesh. Con No, grazie restano disattivate. La diagnostica di base su arresti anomali e prestazioni resta attiva. La tua scelta vale ovunque tu abbia effettuato l'accesso. Puoi cambiarla quando vuoi in Impostazioni → Privacy.",
   "analyticsLabel": "Condividi le analisi",
-  "regionDefaultNote": "Nella tua regione le analisi sono attive di default. Puoi disattivarle qui quando vuoi."
+  "regionDefaultNote": "Nella tua regione le analisi sono attive di default. Puoi disattivarle qui quando vuoi.",
+  "bannerSummary": "Analisi, registrazione delle sessioni e misurazione annunci con Meta e Reddit restano disattivate senza il tuo consenso. I rapporti sugli arresti anomali restano attivi. Puoi cambiare idea.",
+  "details": "Dettagli"
 }

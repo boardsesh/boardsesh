@@ -1,0 +1,1646 @@
+{
+  "capturedAt": "2026-11-19T10:36:57.202601+00:00",
+  "baseCommit": "0757401e2b6d66a96a077bff7432e524210a1025",
+  "candidateSourceCommit": "6c9d237e2d236a2197d581666d7fcfeabec9f873",
+  "environment": "Local development, Chromium; iPhone Safari user-agent at390x664, not physical Safari. Region response stubbed deterministically; app consent authority unchanged. Only nextjs-portal and development-only data-translation-editor controls hidden.",
+  "before": [
+    {
+      "locale": "en-US",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/",
+      "x": 8,
+      "y": 212.40625,
+      "width": 374,
+      "height": 443.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 444,
+      "clientHeight": 444,
+      "buttons": [
+        {
+          "text": "Allow",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "No thanks",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": true,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Get the free app",
+          "x": 24,
+          "y": 298.671875,
+          "width": 179.8125,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "es",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/es",
+      "x": 8,
+      "y": 191.40625,
+      "width": 374,
+      "height": 464.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 465,
+      "clientHeight": 465,
+      "buttons": [
+        {
+          "text": "Permitir",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "No, gracias",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": true,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Consigue la app gratis",
+          "x": 24,
+          "y": 298.671875,
+          "width": 229.59375,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "fr",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/fr",
+      "x": 8,
+      "y": 170.40625,
+      "width": 374,
+      "height": 485.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 486,
+      "clientHeight": 486,
+      "buttons": [
+        {
+          "text": "Autoriser",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "Non merci",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": true,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Obtenir l’app gratuite",
+          "x": 24,
+          "y": 298.671875,
+          "width": 219.796875,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "de",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/de",
+      "x": 8,
+      "y": 191.40625,
+      "width": 374,
+      "height": 464.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 465,
+      "clientHeight": 465,
+      "buttons": [
+        {
+          "text": "Erlauben",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "Nein danke",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 124.78125,
+        "bottom": 257.890625,
+        "overlapsCard": true,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Kostenlose App holen",
+          "x": 24,
+          "y": 367.453125,
+          "width": 226.3125,
+          "height": 48,
+          "bottom": 415.453125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "it",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/it",
+      "x": 8,
+      "y": 191.40625,
+      "width": 374,
+      "height": 464.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 465,
+      "clientHeight": 465,
+      "buttons": [
+        {
+          "text": "Consenti",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "No, grazie",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": true,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Scarica l’app gratis",
+          "x": 24,
+          "y": 298.671875,
+          "width": 204.734375,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/zh-CN",
+      "x": 8,
+      "y": 254.40625,
+      "width": 374,
+      "height": 401.59375,
+      "bottom": 656,
+      "bottomGutter": 8,
+      "scrollHeight": 402,
+      "clientHeight": 402,
+      "buttons": [
+        {
+          "text": "允许",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40,
+          "bottom": 592
+        },
+        {
+          "text": "不用了",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40,
+          "bottom": 640
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "免费下载应用",
+          "x": 24,
+          "y": 298.671875,
+          "width": 154,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/",
+      "x": 420,
+      "y": 572.40625,
+      "width": 600,
+      "height": 311.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 312,
+      "clientHeight": 312,
+      "buttons": [
+        {
+          "text": "Allow",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "No thanks",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 368.859375,
+        "width": 540.671875,
+        "height": 62.890625,
+        "bottom": 431.75,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 531.125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 579.125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 531.125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 579.125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "es",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/es",
+      "x": 420,
+      "y": 551.40625,
+      "width": 600,
+      "height": 332.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 333,
+      "clientHeight": 333,
+      "buttons": [
+        {
+          "text": "Permitir",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "No, gracias",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "fr",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/fr",
+      "x": 420,
+      "y": 551.40625,
+      "width": 600,
+      "height": 332.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 333,
+      "clientHeight": 333,
+      "buttons": [
+        {
+          "text": "Autoriser",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "Non merci",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "de",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/de",
+      "x": 420,
+      "y": 551.40625,
+      "width": 600,
+      "height": 332.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 333,
+      "clientHeight": 333,
+      "buttons": [
+        {
+          "text": "Erlauben",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "Nein danke",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "it",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/it",
+      "x": 420,
+      "y": 551.40625,
+      "width": 600,
+      "height": 332.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 333,
+      "clientHeight": 333,
+      "buttons": [
+        {
+          "text": "Consenti",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "No, grazie",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": true,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/zh-CN",
+      "x": 420,
+      "y": 593.40625,
+      "width": 600,
+      "height": 290.59375,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 291,
+      "clientHeight": 291,
+      "buttons": [
+        {
+          "text": "允许",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        },
+        {
+          "text": "不用了",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40,
+          "bottom": 868
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 315.265625,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 441.046875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 510.734375,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 558.734375,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 510.734375,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 558.734375,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    }
+  ],
+  "candidate": [
+    {
+      "locale": "en-US",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/",
+      "x": 16,
+      "y": 465,
+      "width": 358,
+      "height": 183,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 306.625,
+          "y": 477,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 521
+        },
+        {
+          "text": "Allow",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "No thanks",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Get the free app",
+          "x": 24,
+          "y": 298.671875,
+          "width": 179.8125,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 253.203125,
+      "top": 394.796875,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "flow": "Details does not answer; close returns; deny saves explicit denial",
+      "passed": true
+    },
+    {
+      "locale": "es",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/es",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Detalles",
+          "x": 298.359375,
+          "y": 456,
+          "width": 63.640625,
+          "height": 44,
+          "bottom": 500
+        },
+        {
+          "text": "Permitir",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "No, gracias",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Consigue la app gratis",
+          "x": 24,
+          "y": 298.671875,
+          "width": 229.59375,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "es",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 346.40625,
+      "top": 301.59375,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "locale": "fr",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/fr",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Détails",
+          "x": 306.625,
+          "y": 456,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 500
+        },
+        {
+          "text": "Autoriser",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "Non merci",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Obtenir l’app gratuite",
+          "x": 24,
+          "y": 298.671875,
+          "width": 219.796875,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "fr",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 295.203125,
+      "top": 352.796875,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "locale": "de",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/de",
+      "x": 16,
+      "y": 465,
+      "width": 358,
+      "height": 183,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 306.625,
+          "y": 477,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 521
+        },
+        {
+          "text": "Erlauben",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "Nein danke",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 124.78125,
+        "bottom": 257.890625,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Kostenlose App holen",
+          "x": 24,
+          "y": 367.453125,
+          "width": 226.3125,
+          "height": 48,
+          "bottom": 415.453125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "de",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 304.40625,
+      "top": 343.59375,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "locale": "it",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/it",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Dettagli",
+          "x": 301.65625,
+          "y": 456,
+          "width": 60.34375,
+          "height": 44,
+          "bottom": 500
+        },
+        {
+          "text": "Consenti",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "No, grazie",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "Scarica l’app gratis",
+          "x": 24,
+          "y": 298.671875,
+          "width": 204.734375,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "it",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 346.40625,
+      "top": 301.59375,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "pathname": "/zh-CN",
+      "x": 16,
+      "y": 465,
+      "width": 358,
+      "height": 183,
+      "bottom": 648,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "详情",
+          "x": 318,
+          "y": 477,
+          "width": 44,
+          "height": 44,
+          "bottom": 521
+        },
+        {
+          "text": "允许",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        },
+        {
+          "text": "不用了",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44,
+          "bottom": 636
+        }
+      ],
+      "heading": {
+        "x": 24,
+        "y": 133.109375,
+        "width": 342,
+        "height": 83.1875,
+        "bottom": 216.296875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "免费下载应用",
+          "x": 24,
+          "y": 298.671875,
+          "width": 154,
+          "height": 48,
+          "bottom": 346.671875,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 390
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "textSizeStressPercent": 200,
+      "height": 253.203125,
+      "top": 394.796875,
+      "bottom": 648,
+      "documentWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 368.625,
+          "y": 713,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 757
+        },
+        {
+          "text": "Allow",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "No thanks",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 368.859375,
+        "width": 540.671875,
+        "height": 62.890625,
+        "bottom": 431.75,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 531.125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 579.125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 531.125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 579.125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "es",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/es",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Detalles",
+          "x": 360.359375,
+          "y": 713,
+          "width": 63.640625,
+          "height": 44,
+          "bottom": 757
+        },
+        {
+          "text": "Permitir",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "No, gracias",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "fr",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/fr",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Détails",
+          "x": 368.625,
+          "y": 713,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 757
+        },
+        {
+          "text": "Autoriser",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "Non merci",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "de",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/de",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 368.625,
+          "y": 713,
+          "width": 55.375,
+          "height": 44,
+          "bottom": 757
+        },
+        {
+          "text": "Erlauben",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "Nein danke",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "it",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/it",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Dettagli",
+          "x": 363.65625,
+          "y": 713,
+          "width": 60.34375,
+          "height": 44,
+          "bottom": 757
+        },
+        {
+          "text": "Consenti",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "No, grazie",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 300.421875,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 426.203125,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 525.578125,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 525.578125,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 573.578125,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "pathname": "/zh-CN",
+      "x": 16,
+      "y": 722,
+      "width": 420,
+      "height": 162,
+      "bottom": 884,
+      "bottomGutter": 16,
+      "scrollHeight": 162,
+      "clientHeight": 162,
+      "buttons": [
+        {
+          "text": "详情",
+          "x": 380,
+          "y": 734,
+          "width": 44,
+          "height": 44,
+          "bottom": 778
+        },
+        {
+          "text": "允许",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        },
+        {
+          "text": "不用了",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44,
+          "bottom": 872
+        }
+      ],
+      "heading": {
+        "x": 152,
+        "y": 315.265625,
+        "width": 574.09375,
+        "height": 125.78125,
+        "bottom": 441.046875,
+        "overlapsCard": false,
+        "insideViewport": true
+      },
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "x": 152,
+          "y": 510.734375,
+          "width": 176.015625,
+          "height": 48,
+          "bottom": 558.734375,
+          "overlapsCard": false,
+          "insideViewport": true
+        },
+        {
+          "text": "Google Play",
+          "x": 340.015625,
+          "y": 510.734375,
+          "width": 196.03125,
+          "height": 48,
+          "bottom": 558.734375,
+          "overlapsCard": false,
+          "insideViewport": true
+        }
+      ],
+      "documentWidth": 1440
+    }
+  ]
+}
