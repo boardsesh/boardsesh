@@ -1,0 +1,7 @@
+{
+  "name": "@boardsesh/android-app-config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android-only manifest configuration for app installation requirements",
+  "license": "MIT"
+}

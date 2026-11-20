@@ -19,12 +19,16 @@ compatible with installed apps.
 
 ## Android device availability
 
-`packages/mobile/plugins/with-android-optional-features.js` explicitly marks
-`android.hardware.screen.portrait` and `android.hardware.wifi` as optional.
+The Android-only local module at `packages/mobile/modules/android-app-config`
+declares `android.hardware.screen.portrait` and `android.hardware.wifi` as optional
+in its library manifest, which Gradle merges into the app manifest.
 Without these declarations, Play can infer required hardware from the activity's
 portrait orientation and dependency Wi-Fi permissions, excluding devices that
 could otherwise use Boardsesh. The declarations do not change runtime orientation
-or remove network permissions.
+or remove network permissions. Android autolinking includes this manifest in its
+native fingerprint; iOS excludes the module. Keep these declarations here rather
+than in a shared config plugin so Android hardware changes do not interrupt iOS
+OTA compatibility.
 
 If Play reports either feature as required, check the merged release manifest in
 the new Android bundle. Fixes require a new native build with a higher versionCode;
