@@ -11,7 +11,7 @@ import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } fro
  * stored on the version rather than by a baked-in coordinate system. So this
  * module does the mapping itself and the page draws plain SVG over an `<img>`.
  *
- * The photo is never warped (`docs/spray-walls.md`, "Canonical coordinates"):
+ * The photo is never warped (`docs/product/spray-walls.md`, "Canonical coordinates"):
  * hold coordinates are canonical-frame pixels and the STORED matrix maps
  * photo -> canonical, so drawing means inverting it once and pushing every
  * centre, radius and silhouette point back into photo pixels.

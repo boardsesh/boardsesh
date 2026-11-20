@@ -1,4 +1,4 @@
-// The auth-scoping contract for local user data (docs/offline-reads.md), against
+// The auth-scoping contract for local user data (docs/data/offline-reads.md), against
 // the REAL on-device DDL via node:sqlite.
 //
 // What this protects is a cross-user leak on a shared phone. Sign-out's wipe is

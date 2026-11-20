@@ -639,7 +639,7 @@ describe('an edge/proxy 404 (issue #5295)', () => {
   // climbers with a 404 for 6m30s. The responses also carried
   // `x-railway-fallback: true` — recorded here as evidence and deliberately NOT
   // read by the classifier, which must not learn one host's header
-  // (docs/railway.md portability rule). The status alone is sufficient: this
+  // (docs/operations/railway.md portability rule). The status alone is sufficient: this
   // drainer speaks GraphQL-over-POST to one endpoint, and GraphQL answers
   // not-found as HTTP 200 + `errors`, so a 404 here is always an edge verdict.
   function railwayEdge404(body: string) {

@@ -52,7 +52,7 @@ export default function ClimbsLayout() {
               // or a new reminder (HIG "Modality"). iOS: a pageSheet, with the list
               // scaled behind it. Android: an M3 full-screen dialog sliding up. Not
               // fullScreenModal on a phone: that snapshots the tab bar and doubles
-              // the iOS 26 accessory (docs/mobile-sheets-vs-routes.md, rule 2).
+              // the iOS 26 accessory (docs/mobile/mobile-sheets-vs-routes.md, rule 2).
               // iPad keeps a native editing card too; the board measures its host.
               //
               // Swipe-down is off: painting and pinching the board are drags, and

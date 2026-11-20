@@ -665,7 +665,7 @@ async function selectPageWithGradesJoined(
 
 /**
  * The popular sort once the board's `board_climb_popularity` build has finished
- * (C9 in docs/postgres-query-costs.md).
+ * (C9 in docs/operations/postgres-query-costs.md).
  *
  * The order is:
  *

@@ -55,7 +55,7 @@ export function ownHeaderRight(
  * Put a pushed or modal screen's actions in its native stack header: leading
  * Cancel / close / back as `headerLeft`, the trailing confirm as `headerRight`.
  * The same shape SheetTopBar takes, so a sheet and a screen say the same thing
- * the same way. See docs/mobile-sheets-vs-routes.md, "Where actions go".
+ * the same way. See docs/mobile/mobile-sheets-vs-routes.md, "Where actions go".
  *
  * - **Only writes what you pass, never clears** (unless `clearOnUnmount`). A
  *   slot left out (or `null`) is not touched, and nothing is reset on unmount: `setOptions` cannot give

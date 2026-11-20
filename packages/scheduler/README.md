@@ -49,7 +49,7 @@ A missing `CRON_SECRET` throws at startup, not on the first tick.
 3. Deploy the scheduler and confirm a manual `run <job>` returns 200 in
    production **before** merging the `vercel.json` removal.
 
-Ownership table, Railway setup and the runbook live in `docs/scheduler.md`.
+Ownership table, Railway setup and the runbook live in `docs/backend/scheduler.md`.
 
 ## Cron support
 

@@ -1268,7 +1268,7 @@ export async function exportLayoutSnapshot(params: {
       gradesDb.exec('COMMIT');
       // A layout with no grade rows publishes nothing at all — every MoonBoard
       // layout lands here, because MoonBoard is deliberately outside
-      // CROWD_MEAN_BOARDS (docs/boardsesh-grade.md).
+      // CROWD_MEAN_BOARDS (docs/data/boardsesh-grade.md).
       if (streamed.gradesTables.board_climb_grades.rowCount > 0) {
         grades = { filePath: gradesFilePath as string, tables: streamed.gradesTables };
       }

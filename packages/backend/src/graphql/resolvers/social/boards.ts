@@ -1716,7 +1716,7 @@ export const socialBoardQueries = {
 
     // Get leaderboard entries. `hardestGrade` falls back to the climb's
     // consensus grade when the user didn't attach a personal override (NULL
-    // difficulty means "use consensus" — see docs/ascents-and-attempts.md).
+    // difficulty means "use consensus" — see docs/data/ascents-and-attempts.md).
     // board_climb_stats joined on its PK so the join doesn't multiply rows.
     const entries = await db
       .select({

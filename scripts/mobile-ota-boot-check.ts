@@ -30,7 +30,7 @@
  * Node built-ins only, so the job that runs it needs no install. It shells out
  * to `xcrun simctl` or `adb`, and to the `sqlite3` CLI.
  *
- * See docs/mobile-ota-updates.md ("Boot check").
+ * See docs/operations/mobile-ota-updates.md ("Boot check").
  */
 
 import { spawnSync } from 'node:child_process';

@@ -199,7 +199,7 @@ or wait until the QA run releases it.
 synthetic identities and connection-specific echo probes. It does not fetch or
 represent production gym data. Complete its discovery, simultaneous connection
 and routing checks before production provisioning. See
-[the production QA gym runbook](../docs/prod-qa-gym.md) for release order,
+[the production QA gym runbook](../docs/qa/prod-qa-gym.md) for release order,
 idempotent provisioning and credential handling.
 
 #### GLEDOPTO GL-C-015WL-D variant

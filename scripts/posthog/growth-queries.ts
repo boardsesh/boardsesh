@@ -1,4 +1,4 @@
-/** Versioned native-production metrics. See docs/growth-metrics.md for denominators. */
+/** Versioned native-production metrics. See docs/analytics/growth-metrics.md for denominators. */
 import { SHARED_EVENTS } from '../../packages/shared/analytics/src/events';
 export const DASHBOARD_ID = 2170056;
 export const PROJECT_ID = 412845;

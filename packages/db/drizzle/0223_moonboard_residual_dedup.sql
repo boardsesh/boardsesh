@@ -680,7 +680,7 @@ BEGIN
   -- would never be reaped by anything. Unique key (board_type, climb_uuid,
   -- angle); survivor policy left at "canonical's own, else lowest
   -- computed_at" for the same reason as 5b. NOTE: this table has no delete
-  -- trigger and no tombstone stream (docs/sync-table-manifest.md), so a device
+  -- trigger and no tombstone stream (docs/data/sync-table-manifest.md), so a device
   -- that somehow already held a MoonBoard grade row would keep the stale key
   -- until its next snapshot bootstrap.
   WITH ranked AS (

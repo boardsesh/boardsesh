@@ -1,0 +1,698 @@
+# Kilter Sync
+
+This document describes how Kilter Grips data is synced from Kilter's Keycloak + PowerSync + REST backend to the Boardsesh database. It is the sibling of [`aurora-sync.md`](aurora-sync.md); read that first if you want context on the Boardsesh sync model in general.
+
+## Overview
+
+The `@boardsesh/kilter-sync` package is a separate top-level package from `@boardsesh/aurora-sync` because Kilter Grips split from Aurora Climbing's backend and the two transports have nothing in common at the wire level:
+
+|         | Aurora (Kilter pre-split, Tension)             | Kilter Grips                                  |
+| ------- | ---------------------------------------------- | --------------------------------------------- |
+| Auth    | Username/password login → opaque session token | Keycloak OAuth2 (PKCE) → access + refresh JWT |
+| Pull    | REST `/sync` long-poll, `_complete` pagination | PowerSync `/sync/stream` NDJSON snapshot      |
+| Push    | REST under same session                        | REST under Keycloak bearer (separate host)    |
+| Catalog | Bundled into the same `/sync` response         | Separate PowerSync streams (`global*`)        |
+
+Per-user pull and catalog ingest both work end-to-end against the live Kilter backend. Push-back is stubbed pending wire verification — see [Open wire questions](#open-wire-questions) below.
+
+The package can run as:
+
+1. **CLI** — `vp exec kilter-sync …` for local debugging and forced syncs
+2. **Daemon CLI** — long-running `kilter-sync daemon` loop on a VM, one user per cycle, mirrors aurora-sync's daemon model
+
+There is no Vercel cron path. The web app only hosts the OAuth handshake and the access-control gate.
+
+## Architecture
+
+Kilter exposes its product across three independent hosts. We hit all three on a normal sync cycle.
+
+```
+┌──────────────────────┐   refresh_token grant   ┌────────────────────────┐
+│ idp.kiltergrips.com  │ ◀───────────────────── │  kilter-sync daemon    │
+│ (Keycloak OIDC)      │ ────▶ access_token ──▶ │  (CLI on a VM)         │
+└──────────────────────┘                         └────────────┬───────────┘
+                                                              │
+                                                              │  Bearer <access>
+                          NDJSON snapshot                     ▼
+┌──────────────────────┐ ◀───────────────────── ┌────────────────────────┐
+│ sync1.kiltergrips    │                         │  syncKilterUserData    │
+│ /sync/stream         │ ─────── ops ──────────▶│  (user_buckets +       │
+│ (PowerSync)          │                         │   circuit_buckets)     │
+└──────────────────────┘                         └────────────┬───────────┘
+                                                              │  Drizzle writes
+                                                              ▼
+                                                  ┌─────────────────────┐
+                                                  │  Postgres (Railway) │
+                                                  │  boardsesh_ticks    │
+                                                  │  board_climb_ratings│
+                                                  │  playlists / …      │
+                                                  └─────────────────────┘
+                                                              ▲
+                          push-back (stubbed today)           │
+┌──────────────────────┐ ◀───────────────────────────────────┘
+│ portal.kiltergrips   │
+│ /api/v2/logs/bulk    │
+│ /api/v2/climb-rating/│
+│ /api/circuits        │
+└──────────────────────┘
+```
+
+### Three planes
+
+- **`idp.kiltergrips.com` — Keycloak.** Standard OIDC, `kilter` client (public, PKCE today; `KILTER_OAUTH_CLIENT_SECRET` is optional and only set for confidential-client deployments). Token refresh handled by `packages/kilter-sync/src/api/keycloak.ts`. Keycloak rotates the refresh token on every refresh; the daemon persists the new one (encrypted) inside the same DB session as the rest of the cycle.
+- **`sync1.kiltergrips.com/sync/stream` — PowerSync.** NDJSON wire (`application/x-ndjson`). One POST with subscriptions in the body, the server streams a snapshot of every subscribed bucket and ends with a `{"checkpoint_complete": …}` envelope. Implemented in [`packages/kilter-sync/src/api/powersync-client.ts`](../../packages/kilter-sync/src/api/powersync-client.ts). The client aborts the fetch on `checkpoint_complete` — we deliberately don't follow live updates, only the snapshot.
+- **`portal.kiltergrips.com/api/*` — REST.** The 2.10.1 package contains `/api/v2/logs/bulk` and `/api/v2/climb-rating/` URLs alongside circuit routes. The write method and payload for each operation remain unverified; push-back is gated behind `KILTER_SYNC_PUSH_ENABLED` and the unwired helpers call `pushNotWired()` (throws).
+
+All three hosts are overridable via `KILTER_IDP_HOST`, `KILTER_SYNC_HOST`, `KILTER_PORTAL_HOST` for sandbox use.
+
+## PowerSync buckets (verified live)
+
+PowerSync groups rows into named buckets. We subscribe with `include_defaults: false` and an explicit list, which avoids draining the full catalog when we only want per-user state.
+
+| Bucket                            | Object types it carries                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| `global`                          | `holds`, `hold_sets`, `difficulty_grades`, `grade_systems`, `placement_types`, `videos` |
+| `global_gyms`                     | `gyms`, `walls`, `products`, `product_layouts`                                          |
+| `global_climbs`                   | `climb_beta_links`, `hold_placements`, `mounting_holes`                                 |
+| `user_buckets[<sub>]`             | `users`, `walls` (homewall), `logs`, `climb_ratings`, `gym_users`, `user_analytics`     |
+| `circuit_buckets[<circuit_uuid>]` | `circuits`, `circuit_climbs`                                                            |
+
+Notable absence: there is **no `climbs` table** in any PowerSync bucket. Climb metadata is fetched over REST (`GET /api/climbs/all/{productLayoutUuid}`), not PowerSync — see [Catalog sync (Flow A)](#catalog-sync-flow-a). The per-user pull tolerates a not-yet-ingested catalog because `boardsesh_ticks.climb_uuid` references the Kilter UUID directly and the alias resolver falls back to the input UUID.
+
+A normal per-user sync subscribes to **both** `user_buckets` and `circuit_buckets`. The user's circuits are listed by UUID inside `user_buckets`, but the circuit metadata + its climb list live in the circuit-scoped bucket — you need both or you ingest empty playlists.
+
+## Per-user pull (Flow B)
+
+Lives in [`packages/kilter-sync/src/sync/user-sync.ts`](../../packages/kilter-sync/src/sync/user-sync.ts). Single PowerSync stream, ops buffered by `object_type`, then applied inside one Drizzle transaction.
+
+### Object-type → local-table mapping
+
+| PowerSync `object_type`                            | Local table                                               | Notes                                         |
+| -------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------- |
+| `logs`                                             | `boardsesh_ticks` (`kilter_id` = `log_uuid`)              | Includes attempts — see below                 |
+| `climb_ratings`                                    | `board_climb_ratings` (`kilter_id` = `climb_rating_uuid`) | Conflict target is natural key, not surrogate |
+| `circuits`                                         | `playlists` + `playlist_ownership`                        | `kilter_type = 'circuits'`                    |
+| `circuit_climbs`                                   | `playlist_climbs`                                         | Full-replace per circuit                      |
+| `users` / `walls` / `gym_users` / `user_analytics` | —                                                         | Skipped in v1; no downstream consumer yet     |
+
+### Logs ≠ separate attempts
+
+The original design assumed Kilter had a separate `attempts` table like Aurora. It doesn't. The `logs` table carries **both completed climbs and attempts**, distinguished by the `topped` and `flashed` flags:
+
+| `topped` | `flashed` | Tick status |
+| -------- | --------- | ----------- |
+| 1        | 1         | `flash`     |
+| 1        | 0         | `send`      |
+| 0        | —         | `attempt`   |
+
+A single `logs` row maps to either a flash/send tick or an attempt tick, with `kilter_type` set to `'logs'` or `'attempts'` accordingly. There is no separate per-attempt table to drain.
+
+### The tick's grade comes from `climb_ratings`
+
+A `logs` row has no grade. The grade the climber picks when they log a send in Kilter lands on their `climb_ratings` row for that (climb, angle) as `difficulty_grade_id`, on the same difficulty-id scale as `boardsesh_ticks.difficulty`. `applyRatingGradesToTicks` copies it onto the tick. Without the copy a pulled tick keeps `difficulty` NULL and every surface falls back to the climb's consensus grade (#6182).
+
+Logs and ratings flush in separate transactions in either order, so both phases run the copy over the keys they wrote. The ratings phase runs it over every key in the batch, and because PowerSync redelivers the full snapshot each cycle, that also backfills ticks pulled before the copy existed. A tick is written only when all of these hold:
+
+- it is a send or flash. Attempts never carry a grade (`docs/data/ascents-and-attempts.md`);
+- it has a `kilter_id` and no local edit newer than its last sync (`updated_at <= kilter_synced_at`), so a grade changed in Boardsesh is never overwritten;
+- it has no grade yet, or its `origin` is `kilter_pull`. A grade changed on Kilter follows a pulled tick, while a native tick keeps the grade its climber gave it;
+- the rating is not detached and carries a grade (`difficulty_grade_id > 1`, the same placeholder rule as the catalog sync). A NULL grade never clears a tick's grade.
+
+The copy restamps `kilter_synced_at` with the later of the worker's clock and the database's `NOW()`. The `set_updated_at` trigger sets `updated_at` to `NOW()`, so the copy never looks like a local edit, even when the database clock runs ahead of the worker's. Changed keys go through the usual `board_climb_stats` recompute. One rating covers every tick on that (climb, angle), because Kilter keeps one grade per climb and angle, not one per log.
+
+### Natural-key adoption (design §4.3)
+
+Incoming `logs` PUT ops are first **deduped by `log_uuid`** (last-op-wins). PowerSync's oplog can carry more than one op for the same row within a single snapshot — an edited or re-logged climb shows up as several PUTs. The reference PowerSync client collapses these into a table keyed by id; our hand-rolled stream forwards every op, so the writer dedupes explicitly. Without this, two ops for the same `log_uuid` would both reach the bulk insert with the same `kilter_id` and violate the **global** `boardsesh_ticks_kilter_id_unique` index, aborting the whole flush.
+
+After dedup, the writer does a **three-way match** rather than a straight upsert:
+
+1. If a tick with the same `kilter_id` already exists, update it in place (PowerSync echoing the same `log_uuid` is normal — keep it idempotent). The lookup is **global**, not user-scoped: if the matching `kilter_id` belongs to a **different** Boardsesh user (the same Kilter account linked to two Boardsesh accounts), the row is skipped-and-logged — inserting it would collide on the global unique index and adopting it would stamp a globally-taken `kilter_id`.
+2. Otherwise, look for a Boardsesh-originated tick matching the **natural key** `(user_id, board_type, climb_uuid, angle, climbed_at ± 60s)` whose `kilter_id IS NULL`. If found, **adopt**: fill in `kilter_id` on the existing row instead of inserting a duplicate. This is the path where a tick the user logged in Boardsesh now comes back from Kilter after a board sync. The match is **status-aware** in one direction: an incoming `attempt` will not adopt (and thereby downgrade) an existing `send`/`flash` — the natural key ignores status, so the attempt is left to insert as its own tick. Upgrades (incoming `send`/`flash` onto an existing `attempt`) and same-status re-syncs still adopt.
+3. If the natural-key match exists but has a **different** `kilter_id`, log a `divergent kilter_id` warning and skip the row. Almost always a server-side merge we didn't see; design says don't silently overwrite.
+4. If nothing matches, insert a fresh row.
+
+The reason this isn't a plain `onConflictDoUpdate(target: kilterId)` is that PostgreSQL treats `NULL`s as distinct, so the `kilter_id IS NULL` case would never collide and we'd produce duplicates on the natural key. The three-way match has to be explicit.
+
+`REMOVE` ops **soft-detach** the matching row keyed on `(user_id, kilter_id)`: `kilter_id`, `kilter_type`, `kilter_synced_at`, and `kilter_sync_error` all get nulled, but the tick itself stays. PowerSync re-delivers full snapshots on reconnect or schema migration as `REMOVE` before `PUT` for every row — a hard delete here would wipe Boardsesh-side state (status promoted attempt→send, party-session links, computed fields) milliseconds before the row is re-inserted via the natural-key adoption path. The kilter*id gets re-stamped on the subsequent PUT. For a \_real* Kilter-side delete the row stays detached and visible in Boardsesh, which is the safer default until we have a separate "user explicitly deleted on Kilter" signal we can trust.
+
+### Why `board_climb_ratings` is its own table
+
+Kilter exposes ratings as a first-class resource, separate from logs, with their own UUID (`climb_rating_uuid`). The 2.10.1 package contains a `/api/v2/climb-rating/` URL, but its write contract remains unchecked. We need a stable home for both pulled and pushed rows, with surrogate keys (`kilter_id` and `aurora_id`) that are **partial-unique on NOT NULL** so a Boardsesh-originated rating can later be adopted by either backend without colliding with other not-yet-synced rows.
+
+The conflict target on insert is the natural key `(board_type, climb_uuid, angle, user_id)`, not `kilter_id` — same reasoning as the ticks path. Kilter's per-rating payload doesn't carry `weight`, so kilter-origin rows leave that column NULL.
+
+Two timestamp invariants are easy to break by accident (issue #3524). **`created_at` comes from the upstream rating date** (`raw.created_at`, parsed by `parseKilterTimestamp`), not from the column default — without it every historical rating collapses onto the day our sync first saw it. It is deliberately absent from the `DO UPDATE` SET, so a Boardsesh-originated rating that a later sync adopts keeps its own original date rather than being re-stamped with Kilter's. **The `DO UPDATE` is change-guarded** by a row-wise `IS DISTINCT FROM` over `(rating, difficulty_grade_id, comment, kilter_id)`, comparing the existing row against the _effective_ new value (`COALESCE(EXCLUDED.…, existing)` for the COALESCE'd columns, not bare `EXCLUDED`). PowerSync redelivers a full snapshot every cycle, so without the guard the update fires for every rating on every run and `updated_at` degrades into "when the sync last ran".
+
+### Circuits → playlists
+
+Circuit rows land in `playlists` (`kilter_id` = `circuit_uuid`, `kilter_type = 'circuits'`) via a **three-way match**, the same shape the logs path uses and for the same reason — a plain `ON CONFLICT (kilter_id)` can't see a row whose `kilter_id` is still NULL:
+
+1. If a playlist with the same `kilter_id` already exists, upsert it in place. The lookup is **global**, not user-scoped: a `kilter_id` belonging to a **different** Boardsesh user (one Kilter account linked to two Boardsesh accounts) is skipped-and-logged rather than overwritten (#3526).
+2. Otherwise, look for a **legacy Kilter playlist** this user solely owns that has no `kilter_id` yet, and **adopt** it — stamp the surrogate keys onto the row that is already there instead of inserting a twin. Candidates must already carry an upstream origin (`aurora_id IS NOT NULL`), which is what keeps a playlist the user built by hand in Boardsesh from being swallowed by a same-named Kilter circuit. Two matching tiers, in order: `aurora_id = circuit_uuid` (Grips kept the uuid across the backend split), then the **normalized name** (`lower(btrim(name))`) when it appears exactly once among the candidates **and** exactly once among the incoming circuits. Anything ambiguous is left to insert — a wrong merge is worse than a duplicate.
+3. If nothing matches, insert a fresh playlist.
+
+Those legacy rows exist because Kilter used to be an ordinary Aurora board: aurora-sync wrote its circuits keyed on `aurora_id` until it was switched off for Kilter on 2026-03-30, and the mobile JSON import still writes the same shape with a synthetic `aurora_id = 'json-import-<hash>'`. No migration ever moved `aurora_id` → `kilter_id`, so before the adoption step every pre-split circuit got a second playlist row on the first sync after re-linking Kilter — carrying Kilter's stale content, stamped `created_at = now()`, sorted to the top of the list (#4707). Adoption rather than delete-and-reinsert is what preserves `playlists.uuid`, the offline-sync local PK that `user_playlist_pins`, `playlist_follows` and every mobile client already point at.
+
+**Adoption is link-only.** It stamps `kilter_id` / `kilter_type` / `kilter_synced_at` and leaves `name`, `description`, `is_public`, `color` and `playlist_climbs` exactly as the user left them, because circuit push-back is still stubbed behind `KILTER_SYNC_PUSH_ENABLED` (#3525) — Boardsesh-side edits are the only copy that exists. `kilter_synced_at` is set to `COALESCE(aurora_synced_at, created_at)`, not `now()`: the column means "Kilter's content was last written into this row", and claiming a content sync that never happened would make the guard below read "no local edits" and clobber those edits on the very next cycle.
+
+The upsert in (1) carries an **edit-clobber guard**, the twin of the ticks one: `DO UPDATE` only fires while `updated_at <= COALESCE(kilter_synced_at, updated_at)`. A playlist the user edited in Boardsesh since Kilter content last landed keeps both its metadata and its climbs — the guard suppresses the update, `.returning()` comes back empty and the diff-and-replace below is skipped with it. The tradeoff is deliberate: until push-back ships, an edited playlist is **frozen** against Kilter-side changes. A playlist the user has not edited syncs normally on the cycle after adoption.
+
+When the guard lets it through, the climbs list is **full-replace per sync**: delete every `playlist_climbs` row for the playlist, re-insert from the snapshot, chunk inserts at 500 rows to stay under the 65535-parameter Postgres ceiling. Matches aurora-sync's circuit handling. Ownership is idempotent via `(playlist_id, user_id)` unique.
+
+### Deleted circuits
+
+PowerSync sends every circuit on every cycle, so before #7240 a playlist the climber deleted in Boardsesh came back within 5 minutes: no row carried its `kilter_id`, so step 3 inserted a fresh one with a new uuid. Now `deletePlaylist` writes the playlist's `kilter_id` (and its `aurora_id`, for an adopted pre-split playlist) to `user_deleted_upstream_playlists` in the same transaction as the delete, and `applyCircuits` drops the PUTs for those circuits before the owner lookup. A deleted circuit is not inserted, not adopted onto a same-named legacy playlist, and not counted as a duplicate-account refusal. The circuit stays on Kilter; nothing is pushed upstream.
+
+A pre-split Kilter playlist that no Kilter cycle has adopted yet carries only an `aurora_id`, and aurora-sync never syncs a Kilter credential. So on a Kilter playlist the `aurora_id` is also recorded as a `kilter` id: Grips kept the circuit uuid (tier-1 adoption), and that is the id the circuit comes back with. One case is not covered: an unadopted playlist whose Grips circuit has a different uuid (a JSON import's `json-import-…` id, matched by name in tier 2). The delete cannot know the Grips uuid, so that circuit is imported once Kilter sends it.
+
+The rule is per climber: the list is keyed on `(user_id, upstream_source, upstream_id)`, so a second Boardsesh account linked to the same Kilter account still gets the circuit. An upstream REMOVE still applies.
+
+The skip lasts until the climber **unlinks that board's account**. `deleteAuroraCredential` clears the list for that user and board in the same transaction, so a later re-link imports every circuit again, the deleted ones too. Editing the circuit on Kilter does not bring it back. Deleting the Boardsesh account cascades.
+
+**Locking.** `deletePlaylist` and `applyCircuits` both take a per-user transaction-scoped advisory lock (`acquireUpstreamPlaylistLock`, seed `PLST`) before they read the playlist or the list. Without it a delete could commit after a circuits phase read the list and before it reached that circuit, and the phase would insert it again. The circuits phase holds its transaction for the whole snapshot, so a delete can wait a few seconds behind it. A playlist built in Boardsesh (no `kilter_id`, no `aurora_id`) takes no lock and records nothing.
+
+### Defensive sub-scoping
+
+The Kilter server scopes the `user_buckets` and `circuit_buckets` streams by the bearer token's `sub` today, so subscribing with `parameters: {}` works. We still defensively decode `sub` from the access JWT and drop any `circuits` op whose `user_uuid` doesn't match — if the server-side sync rules ever loosen, we'd at worst ignore valid data rather than write someone else's. `circuit_climbs` carry no `user_uuid`; we trust the parent-circuit filter.
+
+## Catalog sync (Flow A)
+
+Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../../packages/kilter-sync/src/sync/catalog-sync.ts). The public climb catalog is **not** a PowerSync bucket — it's REST, paged by product layout. A cycle:
+
+1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
+2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
+3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
+4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
+5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
+6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync), in the same transaction as the layout flush that inserted them: once a canonical exists no later run sees it as new, so a run that stopped before an end-of-run notification batch would have left it unannounced.
+7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per run**, right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
+
+### Verified REST/PowerSync contract (Phase 0, 2026-06-02)
+
+The endpoint paths read off the APK were partly wrong; verified live against a real account:
+
+| Need      | Endpoint                                      | Notes                                                                                                                                 |
+| --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog   | `GET /api/climbs/all/{productLayoutUuid}`     | Full per-layout array, no pagination. The documented `climbdetails/{productName}/edges` 404s; `/climbs/all/` with no id returns `[]`. |
+| Stats     | `GET /api/climb-stat/all/{productLayoutUuid}` | `{climbUuid, angle, ascentCount, currentDifficultyId, difficultyAverage, qualityAverage, faUsername, faAt}`                           |
+| Deletions | `GET /api/climbs/delteduuids`                 | `string[]` (mixed casing)                                                                                                             |
+| Verified  | `GET /api/climbs/curated`                     | `{ climbs, climbStats }`, no paging. `climbStats` is per (climb, angle); see [Verified climbs](#verified-climbs). Checked 2026-11-09.  |
+| Reference | PowerSync `global` / `global_gyms`            | `product_layouts` carries `product_layout_uuid` + `product_name` + edges                                                              |
+
+Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs (all distinct; each climb has exactly one layout); ~80% already exist in `board_climbs` by UUID (case-insensitive).
+
+### Verified climbs
+
+Kilter's app marks some problems "Verified" and has no benchmarks. We store Verified in `board_climb_stats.benchmark_difficulty`, so search, the offline mirror and every row reader work unchanged. The mobile app says Verified on Kilter through `BoardCapabilities.benchmarkTerm`.
+
+`sync/curated-benchmarks.ts` runs at the start of every catalog pass, before the layouts. The catalog phase takes about 78 minutes and a worker deploy aborts whatever is running, so the marks do not wait for a run to survive that long. A climb that is new this run gets its mark on the next one.
+
+- **Source:** `climbStats` from `/api/climbs/curated`. It is per angle, so a climb can be Verified at 40° and not at 50°.
+- **Value:** Kilter's `officialKilterDifficulty` when it gives one, else the value the row already holds, else its current grade. Keeping the stored value stops a row with no official grade from rewriting each hour as its crowd grade drifts.
+- **Clearing:** Kilter's list is the only source for this column on Kilter, so a marked row it no longer lists goes back to NULL.
+- **Aurora's grades are kept:** migration `0295` froze the 627 benchmark grades Aurora published for Kilter in `kilter_aurora_benchmarks`, before this pass could change them. Nothing writes to that table again. It is the record to compare with `officialKilterDifficulty`, which matched on 543 of the 549 rows that have both, so do not drop it. The pass refuses to run until the table exists, because the worker can deploy ahead of the migration.
+- **Scope:** only `user_id IS NULL` climbs. A repeat pass writes 0 rows, so unchanged rows never bump `sync_seq`.
+- **Safety:** a failed or malformed response skips the pass. A list resolving to fewer than `MIN_CURATED_ANGLE_ROWS` rows (2,500; it was 5,006 on 2026-11-09) is refused and logged as `REFUSING Verified marks`. If Kilter really shrinks the list, lower the constant.
+
+The result is on the run summary as `curatedBenchmarks`.
+
+#### How Kilter's official grades compare with Aurora's
+
+Measured on 2026-11-09, from the live `/api/climbs/curated` response against the 627 rows frozen in `kilter_aurora_benchmarks`:
+
+| Check                                                 | Rows                                |
+| ----------------------------------------------------- | ----------------------------------- |
+| Aurora benchmark rows                                 | 627 (405 climbs)                    |
+| On Kilter's list at the same angle                    | 566 (378 of the 405 climbs are on it) |
+| Of those, carrying an `officialKilterDifficulty`      | 549                                 |
+| Official grade equals Aurora's                        | 543                                 |
+| Official grade differs                                | 6                                   |
+
+Only Aurora's side is frozen. We keep no separate copy of `officialKilterDifficulty` because it is unlikely to change again, and the pass writes it to `benchmark_difficulty` wherever Kilter gives one.
+
+To re-check:
+
+```sql
+SELECT
+  count(*) FILTER (WHERE stats.benchmark_difficulty = aurora.benchmark_difficulty) AS same,
+  count(*) FILTER (WHERE stats.benchmark_difficulty <> aurora.benchmark_difficulty) AS different,
+  count(*) FILTER (WHERE stats.benchmark_difficulty IS NULL) AS cleared
+FROM kilter_aurora_benchmarks AS aurora
+LEFT JOIN board_climb_stats AS stats
+  ON stats.board_type = 'kilter'
+  AND stats.climb_uuid = aurora.climb_uuid
+  AND stats.angle = aurora.angle;
+```
+
+Right after the first pass, expect 560 same, 6 different and 61 cleared. The 560 is the 543 matches plus 17 rows on the list with no official grade, which keep Aurora's value, so `same` slightly overstates the match. The table above is the measured comparison.
+
+### Why Kilter's app shows more climbs than Boardsesh
+
+Climbers compare the two apps and see Kilter's number at roughly double ours: about 36k climbs on an 8x12 Kilter Homewall Full Ride in Kilter's app, about 18k in Boardsesh. Both apps have the same climbs. The difference is the counting unit.
+
+- **Boardsesh counts climbs.** The "Show N climbs" total comes from [`packages/backend/src/db/queries/climbs/count-climbs.ts`](../../packages/backend/src/db/queries/climbs/count-climbs.ts). It LEFT JOINs `board_climb_stats` on its key at the one angle being browsed (`climb_uuid`, `board_type`, `angle`), so each climb contributes one row and `count(*)` is a count of distinct climbs.
+- **Kilter's app looks like it counts (climb, angle) pairs.** We measured our own data, not their code. Counting our stat rows one per (climb, angle) gives 36,000 on the 8x12, which is what their app shows, and 49,892 on the 10x12 against the ~50.6k reported there — within about 1.5%. That is what a per-(climb, angle) count does. A climb with stats at 40° and at 45° is two entries, so the ratio depends on how spread out a board's ascents are.
+
+Measured on prod, 2026-09-15, Kilter Homewall (`layout_id = 8`), `is_listed AND NOT is_draft AND NOT is_hidden`, all frame counts on both sides:
+
+| Size | `size_id` | Distinct climbs | `board_climb_stats` rows | Rows per climb | Kilter's app |
+| --- | --- | --- | --- | --- | --- |
+| 8x12 Full Ride | 23 | 18,335 | 36,000 | 1.96x | ~36k |
+| 10x12 Full Ride | 25 | 28,671 | 49,892 | 1.74x | ~50.6k |
+
+One caveat on the row counts: a few stat rows exist only because someone logged a tick in Boardsesh, not because Kilter sent them. Those are the rows with `upstream_synced_at IS NULL` — 114 of the 36,000 on the 8x12 (0.3%) and 216 of the 49,892 on the 10x12. Too few to move the ratio, but the row count is not purely Kilter's own data.
+
+To re-check, run both queries read-only and swap the `size_id`. They share the same climb predicates, so the only difference is what gets counted. Distinct climbs:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The same climbs counted once per angle:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+JOIN board_climb_stats s
+  ON s.board_type = c.board_type
+ AND s.climb_uuid = c.uuid
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The in-app filter defaults to boulders only (`frames_count = 1 OR frames_count IS NULL`, from `createClimbFilters`), so the button reads a little lower than the table: 18,296 climbs over 35,843 stat rows on the 8x12, and 28,602 over 49,693 on the 10x12. Add `AND (c.frames_count = 1 OR c.frames_count IS NULL)` to both queries to reproduce those. Picking "Both" under Climb Type adds the routes back.
+
+Climbers see this explained in two places: the Help page section at `/help#climb-counts`, and a one-line note under the Show button in the mobile filter sheet on Kilter boards.
+
+### Cooldown + piggyback
+
+The per-board cooldown is persisted in `board_shared_syncs` (default 1h via
+`sharedSyncCooldownMs`) and claimed with a single-statement compare-and-set.
+PostgreSQL writes each cursor timestamp with a fresh UUID and returns that
+complete value to fence the completion update, so duplicate or skewed client
+clocks cannot let a stalled finisher overwrite a newer daemon's claim. After a
+successful per-user cycle, `runCycleForCredential` calls `maybeRunCatalogSync`
+with that user's token; success and failure both keep the full cooldown from
+the end of the catalog run, and a catalog failure never poisons the user's
+credential.
+
+After the worker cutover the `kilter-catalog-sync` job owns it instead (every 6
+hours at :23, since a full catalog pull takes ~43 minutes from the homelab;
+see #5897, `SyncRunner.runCatalogSyncJob`): a refresh-grant token from the most
+recently successful `active` Kilter credential (else the
+`KILTER_TEST_USERNAME`/`KILTER_TEST_PASSWORD` account), the same slot claimed
+with a 50-minute cooldown measured from the claim (the end-of-run marker is
+backdated by the run's length, so a long pull never makes the next hourly tick
+wait), then the catalog, the weekly stats repair and the weekly history
+snapshot. A transient failure, an abort or a database error re-stamps a
+five-minute cooldown so the job's one retry can run; a permanent Kilter
+failure keeps the full one. The catalog's REST client waits out a
+`Retry-After` of up to 5 minutes and retries, else backs off exponentially up
+to 30 s; a longer `Retry-After` is not slept on: the request fails at once as
+`rate_limited` with the delay, and the job closes the catalog slot and holds
+the donor for it. The donor's token is pinned to the link it was borrowed
+under: after a relink mid-run the token read fails with a retryable
+`DONOR_RELINKED` instead of refreshing the new link's token. Every write
+of the job goes through the attempt fence (`syncKilterCatalog`'s and
+`repairKilterCatalogStats`'s `transaction` option, and the slot claim and
+stamp): each layout flush, stats in chunks of 5000 rows, the backlog, layout
+aliases, locations in 25-gym batches, notifications, the deletion apply, the
+repair's atomic apply and watermark, and the history snapshot. A run that
+outlived its lease throws at its next batch, and the catalog's best-effort
+steps rethrow a lost fence instead of logging it. The job's signal reaches
+the reference stream, every REST request and the 429 backoff. The CLI and the
+daemon pass no runner and write as before.
+
+### Prerequisite: fingerprint backfill
+
+Dedup keys on `(board_type, layout_id, hold_fingerprint)`, but the legacy Kilter catalog landed before that column existed — every existing kilter climb has `hold_fingerprint IS NULL` until backfilled. Run once before catalog sync so Grips climbs dedupe against the existing catalog instead of duplicating it:
+
+```bash
+vp exec tsx packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
+```
+
+Idempotent (re-running writes the same fingerprints; self-aliases use `ON CONFLICT DO UPDATE`).
+
+### The `climb_concat` encoding
+
+Every hold in a Grips `climb_concat` is one token:
+
+```
+h{holeId} p{roleCode} [s{startFrame}] [e{endFrame}]
+```
+
+`s`/`e` are **1-based and inclusive**, and are omitted when they equal their default (`s` → frame 1, `e` → the climb's last frame). A bare `h1180p12` on a 15-frame climb is therefore lit for all 15 frames. Animated (`frame_count > 1`) climbs are exactly the ones that carry `s`/`e`; single-frame climbs never do. The commas the Aurora `frames` format uses **never appear** in a `climb_concat`.
+
+`catalog-parse.ts` translates a hold lit over frames `s..e` into a `p{placementId}r{code}` token on frame `s` and, when `e` isn't the final frame, an `x{placementId}` token on frame `e + 1` — the Aurora delta format. A placement cleared and re-lit on the same frame keeps only the `p` token. Multi-frame output sorts each frame's tokens by placement id (the Aurora catalog's own convention); single-frame output preserves the incoming order.
+
+Verified against 100,513 live catalog rows across two product layouts (2026-07-25): every concat matches the grammar with no gaps, and no `s`/`e` index falls outside `1..frameCount`. Decoding every climb present in both catalogs and diffing against the legacy Aurora `frames` gives **141/141 semantic parity on multi-frame climbs** (78 of them byte-identical) over 86,054 climbs compared, with one divergence that is an upstream content edit rather than a decode fault. The captured samples backing the unit tests live in `packages/kilter-sync/src/sync/__fixtures__/grips-multiframe.json`, with their provenance recorded in the file.
+
+#### Two kinds of frame (and why only 78 of those 141 are byte-identical)
+
+An Aurora `frames` string mixes two frame kinds, and the leading `"` is what tells them apart:
+
+- **Delta frame** — starts with `"`. Holds carry over from the previous frame; `p` adds or re-roles one, `x` turns one off. A frame that is _only_ a `"` is a legitimate **hold frame**: a delta with no changes, i.e. hold the lights for one more pace tick. 956 of these exist across 320 catalog climbs.
+- **Absolute frame** — a later frame with no `"`. It restates the whole lit set from scratch, so every hold the previous frame lit goes dark unless this frame lights it again. 295 of the 709 multi-frame climbs carry at least one.
+
+`catalog-parse.ts` emits `,"` unconditionally, so everything _we_ write is pure delta. That is why our decode is byte-identical only for the climbs the legacy catalog also wrote as pure delta, and semantically equal (not byte-equal) for the rest.
+
+Reading every frame as a delta, and dropping the `"`-only ones, is issue **#3947** — it made 91 of those 141 animated Kilter climbs play back wrong. The reader that gets it right is `parseFramesSegments` / `accumulateFramesToMaps` in `@boardsesh/board-constants/hold-states`, pinned by a cross-encoding fixture at `packages/board-constants/src/__tests__/__fixtures__/aurora-frames-oracle.json` whose expected snapshots are decoded from Grips' `s`/`e` ranges rather than from our own reader.
+
+### The skip backlog (`board_climb_ingest_skips`)
+
+A climb the sync reads but cannot turn into a `board_climbs` row is recorded in `board_climb_ingest_skips` with its **verbatim** `climb_concat`, so an encoding change is visible instead of silent. Before this table existed such a climb was counted, logged once, and then missing from Boardsesh forever — including its stats, which get dropped along with it (issue #3523).
+
+| `reason`             | Meaning                                                                     |
+| -------------------- | --------------------------------------------------------------------------- |
+| `unplaceable_hole`   | A hole in the concat has no `board_placements` row on the resolved layout.  |
+| `unparsable_concat`  | The token scan didn't consume the whole string — an encoding we don't know. |
+| `frame_out_of_range` | An `s`/`e` index falls outside `1..frameCount`, or the range is inverted.   |
+
+Rows are upserted on `(board_type, climb_uuid)`: re-skipping refreshes `last_seen_at` and re-opens the row, and a climb a later run manages to ingest gets `resolved_at` stamped. Nothing is ever deleted, so the table doubles as the record of what a parser fix recovered. `climbsUnmapped`, `skipsRecorded`, and `skipsResolved` all land in the per-run summary log.
+
+#### Mis-tagged layouts (the reroute fallback)
+
+Kilter sometimes files a climb under the wrong product layout, so every hole in its `climb_concat` misses on the layout we resolved and the climb lands here as `unplaceable_hole` with no way out — eight live climbs on 2026-09-15 (five tagged Original that place on Homewall, three the other way round).
+
+When **exactly one other layout decodes the whole concat** (`findUniqueDecodableLayout`), the climb is held aside rather than skipped, and a final pass — after every layout group, before the backlog is written — ingests it onto that layout. The pass loads narrowly (the candidate UUIDs on any layout, plus fingerprint matches on the target), dedupes by UUID then fingerprint like any other climb, and stages with rerouting disabled so nothing can hop twice. It falls back to the original skip row when the UUID already lives on a third layout, and a per-layout failure degrades to the backlog instead of failing the catalog run. Two decodable layouts, or any failure that isn't `unplaceable_hole`, is never rerouted — the target would be a guess. Rerouted climbs count in `climbsRerouted`; their stats are replayed from the source layout only when the climb is its own canonical on the target. If it instead folds onto a canonical that already exists there, the duplicate's stat rows are logged and then **dropped rather than summed**, so that canonical's `upstream_ascensionist_count` stays understated by the duplicate's ascents — unlike an ordinary fold, which sums them. Summing them here needs the ingest/stats phase split tracked in [#5510](https://github.com/boardsesh/boardsesh/issues/5510) (a second partial upsert would resolve to `GREATEST(stored, incoming)`, not the total); none of the eight climbs in today's backlog fold, so nothing is understated right now.
+
+#### Rejected skips
+
+A climb nobody will ever ingest — five of the sixteen stuck rows were AI test uploads referencing holes that exist on no board — can be written off with `rejected_at` / `rejected_reason`. That only hides it from the open report: nothing is deleted, the sync keeps trying (`loadOpenSkips` still returns rejected rows, so `resolved_at` still stamps if it ever decodes), and the re-skip upsert deliberately leaves both columns out of its `ON CONFLICT` set so a later run can't clear someone's call.
+
+Read it with:
+
+```bash
+vp exec kilter-sync backlog                                    # open skips, grouped by reason
+vp exec kilter-sync backlog --reason unparsable_concat --raw   # with the raw payloads
+vp exec kilter-sync backlog --include-resolved
+vp exec kilter-sync backlog --include-rejected                 # also the ones written off
+vp exec kilter-sync backlog reject <uuid…> --note "AI test climb: holes that exist on no board"
+vp exec kilter-sync backlog unreject <uuid…>
+```
+
+`reject` takes `--note`, not `--reason`: the parent `backlog` command already uses `--reason` for the skip-reason filter, so reusing that name on the subcommand would read as that filter. A UUID matching no row is named and sets exit code 1, so a typo can't look like a successful write-off.
+
+A non-zero `unparsable_concat` count is the signal that Kilter changed the encoding — and the raw payloads needed to decode the new form are already sitting in the table.
+
+### Remaining known gap
+
+- **Post-2024 hold-set placements (Grips layout 30).** Three climbs use holes (ids 4488–4556) whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails and the climb lands in the backlog as `unplaceable_hole`. Fixing it needs the `mounting_holes` PowerSync bucket, a size-30 `board_product_sizes` row and regenerated board-constants — tracked in [#5505](https://github.com/boardsesh/boardsesh/issues/5505).
+
+### Setter notifications and recovered climbs
+
+A newly-inserted canonical notifies followers of its setter only when the upstream `createdAt` is recent (30 days). Any ingest that recovers a backlog — the multi-frame decoder picks up animated climbs first published as far back as 2021 — would otherwise present years-old climbs to followers as brand new.
+
+## Public board locations
+
+Kilter public locations come from the same PowerSync reference pull as the catalog. `global_gyms` carries `gyms`, `walls`, `products`, and `product_layouts`; `syncKilterLocations` maps each wall to a Boardsesh layout/size/set config and then delegates the actual `gyms` / `user_boards` upsert to `@boardsesh/location-sync`.
+
+The location writer creates deterministic system-owned public rows:
+
+- one `gyms` row per upstream gym UUID
+- one public, unowned `user_boards` row per upstream wall
+- stable UUIDs and slugs derived from the upstream source key
+
+It never deletes rows that disappear upstream. Rows with missing layout mappings, unsupported product/size data, or invalid coordinates are reported as skipped.
+
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. It does not launch a sync. The next successful catalog/location pull may refresh or resurrect the row, while the separate gym-owner/approved-claim guard still prevents an upstream takeover of an owner-curated gym.
+
+The catalog sync refreshes locations after a successful catalog pull. You can also run the location-only path:
+
+```bash
+vp exec kilter-sync locations --user <nextauth-user-id>
+```
+
+For local testing without a linked credential, set `KILTER_TEST_USERNAME` and `KILTER_TEST_PASSWORD`; the CLI will use the password token flow.
+
+The package `sync:locations` script passes `--skip-if-missing-credentials` so aggregate repo tasks can run in clean environments. Direct `kilter-sync locations` calls still require `--user` or test credentials unless that flag is passed explicitly.
+
+## Climb dedup
+
+Kilter's catalog has duplicate climbs at different UUIDs with identical hold layouts. We collapse them behind a canonical row.
+
+**Fingerprint.** `sha256` of sorted `hold_id:hold_state:frame_number` tuples (`packages/kilter-sync/src/sync/fingerprint.ts`), stored on `board_climbs.hold_fingerprint`, indexed `(board_type, layout_id, hold_fingerprint)`.
+
+**Resolution, per incoming climb:**
+
+1. **UUID identity** — if the incoming UUID already exists in `board_climbs` (case-insensitive), it is its own canonical. (The dominant path: Grips inherited Aurora's UUIDs.)
+2. **Fingerprint hit** — a new UUID whose `(layout_id, fingerprint)` matches an existing or already-seen-this-run canonical becomes an alias (`board_climb_aliases`), not a new row.
+3. **Miss** — insert a new canonical row + a self-alias.
+
+### Re-listing a climb Kilter still lists
+
+Both dedup paths can re-list a synced canonical we previously unlisted, because the incoming climb is live-listed in the current catalog pull. They are protected differently:
+
+- **Fold path** — a listed Grips climb fingerprint-matched the canonical. The fold leaves it with ≥2 aliases: the folded one, plus its self-alias, which the fold stages into the same batch for the ~6k canonicals that never got one. The same cycle's deletion pass then classifies it as `skippedCanonicalWithAliases` and never re-unlists it. That staged self-alias is what makes the invariant hold — without it the canonical misses the alias-graph lookup, the direct-uuid fallback unlists it again in the same cycle, and the next fold re-lists it: a flip-flop costing a `sync_seq` bump per cycle.
+- **Identity path** — Kilter served the same UUID from `/climbs/all`. That argument does **not** hold here: the canonical usually has only its own self-alias, so the deletion pass would re-unlist it and the two would fight every cycle. `decideIdentityRelist` keeps them apart, using the run's single `/delteduuids` fetch:
+  - UUID on the deletion list → blocked, counted in `relistsBlockedByDeletionHistory`;
+  - no deletion list at all (fetch failed, or empty) → nothing re-listed through this path, and reconciliation is skipped too;
+  - drafts, user-authored climbs and already-listed climbs need nothing.
+
+Why the guard is load-bearing: on 2026-09-15 Kilter's `/climbs/all` still returned 124 climbs that the same run's deletion pass unlisted, so an unguarded re-list would flip them back every cycle and churn offline sync's `sync_seq`. What it lets through is the genuinely stale unlistings — ~24 climbs carrying the 2026-07-07 Aurora migration baseline as their `updated_at`, invisible in search ever since. Both paths report in `canonicalsRelisted`.
+
+**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `upstream_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
+
+**Unchanged rows are not rewritten.** The catalog sync and `repair-stats` share one upsert (`stats-upsert.ts`). Its `ON CONFLICT … WHERE` writes a row only when a SET column would change, when `upstream_synced_at` is NULL, or when the stamp is over 24 h old on a row with `boardsesh_ascensionist_count > 0`. The tick recompute's push-back absorption reads that stamp (`kilter_synced_at < upstream_synced_at - 48h`), so on Kilter it means "last changed upstream, or confirmed within a day", not "last pass". A stamp can lag by up to 24 h but never runs ahead, so absorption is delayed, never premature. Before this, each pass rewrote all ~420k Kilter rows although a few thousand changed. The same rule covers the other catalog writers: a pure alias refreshes `last_seen_at` at most once a day unless its `source` changes, and `kilter_wall_sources` rows are written only when a mapped column or `is_listed` changes. The self-alias set loads once per run, not once per layout.
+
+### `ascensionist_count` — one upstream column plus Boardsesh
+
+`board_climb_stats.ascensionist_count` is the materialized count the search hot path reads. It sums two owned columns: `upstream_ascensionist_count` — the board's single manufacturer/upstream count — and `boardsesh_ascensionist_count`, the independent Boardsesh-native contribution:
+
+```
+ascensionist_count = COALESCE(upstream_ascensionist_count, 0)
+                   + COALESCE(boardsesh_ascensionist_count, 0)
+```
+
+The Kilter board's upstream count comes from the Grips catalog sync (`catalog-sync.ts`); Tension's from aurora-sync (`shared-sync.ts`); MoonBoard's from the app-catalog import. The same formula runs at every writer, including the Boardsesh-tick recompute (`recompute-climb-stats.ts`). `boardsesh_ascensionist_count` stays additive because Boardsesh-native ticks aren't (yet) pushed upstream; revisit when push-back lands.
+
+Historical note: there used to be two upstream columns — `aurora_` (from the pre-split `kilterboardapp.com`) and `kilter_` (from `kiltergrips.com`), holding the same logs Kilter migrated between the two backends — and the materialized total took `GREATEST(kilter_, aurora_)` to avoid double-counting the Kilter board. Migration `0141` folded them into the single `upstream_ascensionist_count` via `GREATEST(aurora_, kilter_)`. Neither snapshot dominated (in prod 90,262 Kilter rows had `kilter_ > aurora_`, 36,710 the other way), so the fold preserved every row's higher count.
+
+### Stats repair
+
+A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size variants). Before the `(source climb UUID, angle)` dedup landed, the catalog sync folded each repeated source stat once per variant, so `upstream_ascensionist_count` (and thus `ascensionist_count`) was inflated by the number of variants a climb appeared in. The fix prevents new inflation; existing rows need a one-time `repair-stats` pass (`stats-repair.ts`).
+
+`repair-stats` re-fetches every listed Grips layout, dedupes stats the same way the live sync now does, and **overwrites** `upstream_ascensionist_count` from the deduped value (also re-asserting Grips `display_difficulty / difficulty_average / quality_average` on canonical rows). Unlike the live catalog sync — which writes `upstream_ascensionist_count = GREATEST(existing, incoming)` so a stale or partial snapshot can never lower a climb — `repair-stats` is authoritative and may correct a count downward. It is idempotent — re-running converges and the second run is a no-op.
+
+- **Dry-run is the default and is read-only.** It reports `changedKilterRows`, `maxKilterDrop` / `maxKilterRise` (largest per-row decrease/increase), `statsDeduped`, `statsUnresolved`, and a `topBefore` list. Review these before applying — a large `maxKilterDrop` can also signal a partial Grips fetch (delisted climbs, rate-limit truncation), so treat it as a stop-and-investigate signal rather than blindly applying.
+- **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
+- A climb the live sync **rerouted** to another layout is still tagged upstream with the layout it came from, so `repair-stats` fetches its stats under a layout whose canonical map doesn't contain it and counts it in `statsUnresolved`. A handful of those is expected, not a fault.
+- Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
+
+An applied repair that changes 500 or more rows is picked up by the live board-snapshot threshold scan and
+republished to the fleet's gzip CDN prefix. Do not leave devices to replay a bulk repair through hundreds of
+GraphQL pages. The scan runs on a best-effort 15-minute cadence; for a planned repair that should not wait
+for the next scheduled scan, manually dispatch **Export Board Snapshots** after the transaction commits with
+`gzip_only`, `board=kilter`, and the affected layout when it is known.
+
+### Quality scale — every board on 1–5
+
+Kilter Grips reports `quality_average` on a 1–5 scale (MoonBoard too), but Aurora reports 1–3. To keep `board_climb_stats.quality_average` one scale the UI renders uniformly, every writer stores 1–5: aurora-sync normalises its writes via `normalizeQualityTo5` (`×5/3`, continuous — it's a stored average, so unlike `convertQuality` it isn't rounded to integer star steps); Kilter Grips and Boardsesh-tick quality are already 1–5 and stored as-is.
+
+Existing rows synced **before** that change are still on 1–3 (this is why the app showed 1–3 stars). A new boolean **`board_climb_stats.quality_normalized`** tracks whether a row is on the canonical 1–5 scale; migration `0116_backfill_quality_scale_1to5` does the one-time conversion idempotently:
+
+- Scales `×5/3` and sets `quality_normalized = true` for Aurora-sourced 1–3 rows on the Aurora-scale boards (`kilter, tension, decoy, soill, touchstone, grasshopper`), **excluding** Kilter Grips-touched rows (`upstream_ascensionist_count > 0`, the proxy for a Grips-written count) and Boardsesh-owned climbs (both already 1–5).
+- Marks every remaining row `quality_normalized = true` without changing it (MoonBoard, Grips-native, Boardsesh-owned, null quality).
+
+Every write path (`aurora-sync` upsert, kilter `catalog-sync`, the tick `recompute`) sets `quality_normalized`, so rows touched after the migration are never re-scaled, and re-running the migration is a no-op. (Transitional column — drop it in follow-up work once the whole table is normalized.)
+
+> **Already ran the old manual `×5/3` SQL?** Earlier revisions documented a manual one-time `UPDATE … * 5.0/3.0` for the non-kilter boards. If an environment ran it, mark those rows normalized **before** applying `0116` so they aren't scaled twice:
+>
+> ```sql
+> UPDATE board_climb_stats SET quality_normalized = true
+> WHERE board_type IN ('tension','decoy','soill','touchstone','grasshopper') AND quality_average IS NOT NULL;
+> ```
+>
+> Fresh environments (never manually backfilled) need nothing — `0116` handles them.
+
+> **Deploy order matters.** `normalizeQualityTo5` (aurora-sync write path) and the `quality_normalized` flag must ship **together** — they do, on this branch. The hazard: an aurora-sync build that normalises quality on write but predates the `quality_normalized` column would write 1–5 values flagged `false`, which `0116` would then scale **again** (a 1–5 average ≤ 3 still passes the `≤ 3.0` guard). So: **apply migrations `0115`+`0116` before the new aurora-sync daemon runs**, and never run a normalize-on-write build standalone against a DB that hasn't had `0116`. Production is safe today — the kilter-sync branch isn't deployed, so no normalize-on-write has run; prod `quality_average` is uniformly raw 1–3 (verified). If you ever suspect an environment ran normalize-on-write before `0115`, treat its Aurora-board rows like the manual-SQL case above (mark normalized, then migrate).
+
+## Schema changes
+
+The catalog-relevant schema (`board_climbs.hold_fingerprint` + index, `board_climb_aliases`, `board_climb_stats.upstream_ascensionist_count` + the multi-writer recompute) already shipped with Flow B. Flow A adds:
+
+| Change | Object                                                                                                      | Notes                                                                                                                                           |
+| ------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| new    | `board_layout_aliases (board_type, layout_uuid PK, layout_id FK→board_layouts, source, first/last_seen_at)` | Persists the Grips `product_layout_uuid` → integer `layout_id` mapping; reused by the per-user paths.                                           |
+| new    | `board_climb_stats.quality_normalized boolean NOT NULL DEFAULT false` (migration `0115`)                    | Tracks whether `quality_average` is on the canonical 1–5 scale; gates the one-time 1–3→1–5 backfill (`0116`). Transitional — drop in follow-up. |
+| new    | `board_climb_ingest_skips.rejected_at timestamp` + `rejected_reason text` (migration `0229`)                | Operator write-off for a skipped climb that will never ingest. Written only by `backlog reject` / `backlog unreject`; the sync's re-skip upsert leaves both alone. |
+
+## OAuth handshake
+
+The backend owns the Kilter credential flow. Web and mobile both start with
+`POST /api/board-credentials/kilter/handoff`, then send the user through the
+browser-facing `/board-credentials/kilter/start` and
+`/board-credentials/kilter/callback` routes. The callback returns only a
+short-lived completion token; the app must finish linking with
+`POST /api/board-credentials/kilter/finalize` using the signed-in user's bearer
+JWT.
+
+- `handoff` - creates a short-lived signed handoff for the authenticated Boardsesh user and records a one-time nonce.
+- `start` - verifies the handoff, generates a PKCE verifier + state, sets HttpOnly cookies scoped to `/board-credentials/kilter`, and redirects to Keycloak's authorize endpoint with `scope=openid offline_access`.
+- `callback` - validates state, exchanges the code for `{access_token, refresh_token, id_token}`, decodes the `sub` + `preferred_username` from the id_token (no signature verification - we just received it over TLS from Keycloak, and we never accept id_tokens via client redirects), encrypts the refresh token via `@boardsesh/crypto`, and redirects back with a signed completion token.
+- `finalize` - requires the bearer JWT for the active Boardsesh session, verifies that the completion token belongs to the same user, consumes a one-time nonce, decrypts the refresh token, and upserts:
+  - `aurora_credentials` (`board_type = 'kilter'`, `encrypted_refresh_token`, `username/password = NULL`).
+  - `user_board_mappings` (`board_user_id_text = sub`, `board_user_id = NULL` - kilter sub is a UUID, not an integer).
+- `DELETE /api/aurora-credentials` - revokes locally (clears the credential row + mapping).
+
+The callback is **account-linking only**. It never creates a NextAuth session and
+never saves credentials directly. If `offline_access` doesn't return a
+`refresh_token`, the handshake fails closed with `reason=no-refresh-token` rather
+than persisting an unrenewable credential.
+
+### Access gate
+
+Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app reads the flag (`useFeatureFlag('kilter-oauth-linking')`) and only shows the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
+
+## Worker families
+
+Three worker families replace the daemon. Full contracts and the cutover:
+[background-workers.md](../backend/background-workers.md#routine-provider-sync).
+
+| Family | Role | What it does |
+| --- | --- | --- |
+| `kilter-user-sync` | `interactive-import` | One account, right after a climber links Kilter and when they tap "Sync now" |
+| `provider-routine-cycle` (`{ provider: 'kilter' }`) | `routine-provider` | Every 5 minutes: the daemon's one-credential cycle, up to 4 credentials a run |
+| `kilter-catalog-sync` | `routine-provider` | Every 6 hours at :23: the catalog, the weekly stats repair and history snapshot (see [Cooldown + piggyback](#cooldown--piggyback)) |
+
+The daemon stays the owner of routine syncs until the cutover sets
+`SYNC_DAEMON_DISABLED=true` on the sync host; from then on
+`kilter-sync daemon` logs one line and exits 0.
+
+- `runCycleForCredential(db, cred, { transaction, signal, skipCatalogSync })` is
+  public and returns a `SyncOutcome`. The daemon calls it too, so both record
+  failures through the same `recordKilterFailure(tx, cred, err)`: a transient
+  failure stamps the attempt clock, bumps `consecutive_failures` and writes
+  `last_sync_error`; a permanent one sets `error`, or `expired` for
+  `invalid_grant`.
+- `syncKilterUserData` takes `transaction` and `signal`. Each phase flush runs
+  through the batch runner; the signal cancels the PowerSync stream. A fence
+  refusal or an abort ends the sync at once instead of being collected as a
+  failed phase.
+- With a batch runner the stats recompute leaves the logs flush
+  (`deferStatsRecompute`, on by default when `transaction` is set): `applyLogs`
+  collects the keys it wrote, and once the flush commits they are recomputed in
+  batches of at most 500 keys, one transaction each, so no fenced batch blocks
+  the job's heartbeat for long. The keys are written to
+  `climb_stats_recompute_pending` in the flush itself and cleared by the batch
+  that recomputes them; a worker that stops in between leaves them for the
+  hourly self-heal. The daemon keeps the inline recompute.
+- A 429 from Keycloak, the REST portal or PowerSync carries `Retry-After` into
+  `KilterApiError.retryAfterMs` and the `SyncOutcome` (a PowerSync 429 is now
+  `rate_limited`; it was a transient `powersync` error before). The routine
+  cycle holds that credential until `provider_retry_after_until` (the later of
+  it and the failure backoff, never their sum) and stops.
+- The Keycloak refresh (`getStoredKilterAccessToken`) is unchanged and stays
+  outside every fence, on the worker's pool. It is not a short transaction: it
+  holds the credential row `FOR UPDATE` across the Keycloak HTTP call (up to
+  its 30 s timeout) so a rotating refresh token is read and written under one
+  lock. Anything else that locks that row (the daemon's claim, an unlink) waits
+  for it. It never reads or writes the link generation.
+- `SyncRunnerConfig.db` injects the worker's pool; the runner then opens none of
+  its own. A job skips the catalog piggyback (`skipCatalogSync`).
+- `syncableKilterCredentialsFilter()` is exported for the job's named claim.
+
+A worker serving this family refuses to start without `KILTER_OAUTH_CLIENT_ID`
+and `AURORA_CREDENTIALS_SECRET`.
+
+### Catalog runtime and progress
+
+The catalog worker has a two-hour hard lease with its existing five-minute
+heartbeat window. The previous one-hour lease repeatedly expired during full
+catalog jobs in November 2026. Catalog batches commit as they finish, so an
+incomplete job can still import new climbs; a successful user logbook sync is
+not evidence that the catalog completed. The weekly stats repair re-fetches
+the full stats catalog and shares this runtime budget.
+
+Production logs emit `[worker] catalog sync phase` at `info` level for the
+`catalog`, `stats-repair`, and `history` phases, with `started` / `finished`
+and elapsed milliseconds. A `catalog` finish confirms ingestion completed
+even if later maintenance fails. Maintenance completion means the phase returned; check its weekly cursor
+and warning logs to see whether work ran successfully.
+The final `catalog sync finished` line confirms the entire job completed.
+Existing queued jobs retain their old lease; verify the change with a newly
+created run after deployment. The shared fan-out deadline grows automatically
+with the catalog lease so queued Aurora jobs and user cycles remain eligible.
+
+## Daemon
+
+`SYNC_DAEMON_DISABLED=true` (the literal `true`) makes `kilter-sync daemon` log one line and exit 0 before it touches the lease or the pool, so the ansible service goes idle without its unit being deleted (its compose restart policy must not restart a clean exit). The claim skips an account a background job holds a live lease on (`excludeLeased`), so a daemon and a worker never sync one credential at the same time.
+
+Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
+
+**Two timestamps, two jobs:**
+
+- `last_sync_at` — last **successful** sync. Stamped on success only. This is what users see as the credential card's "Last synced" time, so a failed cycle must never advance it (otherwise the card shows "connected, just synced" for a cycle that failed before applying data).
+- `last_sync_attempt_at` — last **attempt**, success or failure. This is the scheduler's fairness clock: `getNextCredentialToSync` orders by `last_sync_attempt_at ASC NULLS FIRST` (served by `aurora_credentials_sync_attempt_priority_idx`).
+
+The split exists because the error classifier fails open — a non-`KilterApiError` (a DB error, a bug) is treated transient. If the scheduler ordered by `last_sync_at` and we never advanced anything on failure, a credential that fails deterministically would keep its `NULL`/old timestamp and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Advancing `last_sync_attempt_at` on every outcome rotates a failing credential to the back while keeping `last_sync_at` honest; it still retries on its next turn. No data is lost: `last_sync_attempt_at` is a scheduling key, never a data cursor — each cycle re-pulls the full snapshot idempotently, so a failed cycle's rows land on the next successful turn.
+
+Selection also **claims**: the pick runs `SELECT ... FOR UPDATE SKIP LOCKED` and stamps `last_sync_attempt_at` inside one short transaction, so two overlapping daemon instances take disjoint work. Part of that claim is a 30-second reclaim gap (`CREDENTIAL_MIN_RECLAIM_GAP_MS`) in the WHERE — a credential is not re-selectable inside that window. It reads like a throttle but isn't one: under READ COMMITTED the claim has to falsify a predicate, because a racer whose lock attempt lands just after the winner's commit gets an EvalPlanQual recheck of the WHERE quals and never of the ORDER BY. The daemon's shortest cycle is 1 minute, so the gap never binds in practice. Full reasoning: the header comment on `claimNextCredentialForSync` in `packages/db/src/queries/sync/claim-credential.ts`.
+
+(aurora-sync still orders by `last_sync_at` and has the same latent starvation gap — adopting this attempt clock there is tracked in [#3331](https://github.com/boardsesh/boardsesh/issues/3331). The `last_sync_attempt_at` column and its index already cover aurora-sync's query shape; only its runner needs updating.)
+
+The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
+
+It runs as a **long-lived CLI process on a VM** — `vp exec kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. The catalog piggyback's cooldown is persisted in Postgres, so restarts and overlapping deploys share the same per-board gate. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
+
+## CLI
+
+Run these commands from `packages/backend` after `vp install`. The checked-in
+launcher loads the TypeScript CLI directly; no build is required.
+
+```bash
+vp exec kilter-sync list                # List all stored kilter credentials
+vp exec kilter-sync user <userId>       # Force a sync for one user
+vp exec kilter-sync daemon              # Run the daemon (one-user-per-cycle, quiet hours)
+vp exec kilter-sync catalog --user <id> # Sync the public climb catalog (Flow A)
+vp exec kilter-sync repair-stats --user <id>          # Dry-run: report deduped Kilter counts vs DB (no writes)
+vp exec kilter-sync repair-stats --user <id> --apply  # Write the deduped counts + recompute totals
+vp exec kilter-sync repair-stats --user <id> --layouts <uuid,uuid>  # Scope to specific Grips product_layout_uuids
+vp exec kilter-sync locations --user <id> # Sync public Kilter gym/board locations
+vp exec kilter-sync locations --skip-if-missing-credentials # No-op when no token source is configured
+```
+
+`repair-stats` is a one-time cleanup for the catalog-stats inflation (see [Stats repair](#stats-repair)). It defaults to a read-only dry-run; nothing is written without `--apply`.
+
+Run with 1Password like aurora-sync:
+
+```bash
+op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync daemon
+```
+
+## Environment variables
+
+| Variable                     | Required           | Purpose                                                            |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------ |
+| `KILTER_OAUTH_CLIENT_ID`     | yes (web + daemon) | Keycloak client ID. Today: `kilter`                                |
+| `KILTER_OAUTH_CLIENT_SECRET` | no                 | Confidential-client secret. Leave unset for the public PKCE client |
+| `KILTER_OAUTH_REDIRECT_URI`  | yes (web)          | Must match the redirect URI registered in Keycloak                 |
+| `AURORA_CREDENTIALS_SECRET`  | yes                | Shared encryption key with aurora-sync — same key, same table      |
+| `KILTER_IDP_HOST`            | no                 | Override Keycloak host (sandbox)                                   |
+| `KILTER_SYNC_HOST`           | no                 | Override PowerSync host (sandbox)                                  |
+| `KILTER_PORTAL_HOST`         | no                 | Override REST portal host (sandbox)                                |
+| `DATABASE_URL`               | yes                | Same Postgres as everything else                                   |
+| `SYNC_DAEMON_DISABLED`       | no                 | `true` once the worker families own routine syncs: the daemon exits 0 |
+| `DB_POOL_MAX`                | no                 | The daemon's Postgres pool size: 5 when unset, never below 2 or above 100 ([db-connectivity.md](../operations/db-connectivity.md), "Pool budgets and pg-boss timers") |
+| `KILTER_TEST_USERNAME` / `KILTER_TEST_PASSWORD` | no | ROPC fallback token for the catalog when no Kilter account is linked (never in production) |
+
+## Open wire questions
+
+These are the remaining integration questions. Packaged client URLs help identify candidates, while request and response behavior needs service checks.
+
+1. **REST push contract.** The 2.10.1 package contains `/api/v2/logs/bulk` and `/api/v2/climb-rating/` URLs, but the operation-to-route mapping, methods, request bodies, and responses need a checked write. Push-back is gated behind `KILTER_SYNC_PUSH_ENABLED`; the helpers call `pushNotWired()` (throws).
+2. **Attempts write.** The checked pull path carries sends and attempts in `logs`; confirm whether the versioned log write uses `topped=false` for attempts.
+3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog uses full per-layout arrays: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The packaged `climbdetails/{productName}/edges` route returned 404 in the service check.
+
+When any of these get verified, replace the matching `pushNotWired()` call with the real POST and remove the item here.

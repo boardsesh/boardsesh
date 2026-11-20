@@ -2,7 +2,7 @@ export const oauthClientsTypeDefs = /* GraphQL */ `
   """
   Where an app's OAuth redirect lands. WEB apps use https:// redirect URIs only;
   NATIVE apps may also use http://127.0.0.1 or http://[::1] and private-use
-  schemes such as com.example.app:/oauth/boardsesh. See docs/partner-api.md.
+  schemes such as com.example.app:/oauth/boardsesh. See docs/integrations/partner-api.md.
   """
   enum OAuthClientApplicationType {
     WEB

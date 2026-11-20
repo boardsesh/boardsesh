@@ -24,7 +24,7 @@ import {
  * honour a per-context proxy, and neither resolves the name itself. The proxy's
  * certificate is self-signed, so the context ignores HTTPS errors; `Secure`
  * cookies are still stored and sent over it, which `cookie-domain.spec.ts`
- * checks in each engine (docs/better-auth-browser-session.md, "Browser-session
+ * checks in each engine (docs/auth/better-auth-browser-session.md, "Browser-session
  * e2e harness").
  *
  * Fixtures beyond the context (docs, "What a spec can use"):

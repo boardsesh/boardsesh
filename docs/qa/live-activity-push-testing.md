@@ -1,0 +1,630 @@
+# Testing Live Activity Push Notifications Locally
+
+This guide covers how to test the full Live Activity push notification flow locally using Tailscale and a development-signed iOS build. It covers APNs delivery, widget navigation, and the background update flow.
+
+## Table of Contents
+
+1. [Architecture](#architecture)
+2. [Prerequisites](#prerequisites)
+3. [Apple Developer Setup](#apple-developer-setup)
+4. [Backend Configuration](#backend-configuration)
+5. [iOS Build Configuration](#ios-build-configuration)
+6. [Running the Full Stack](#running-the-full-stack)
+7. [Testing Push Delivery](#testing-push-delivery)
+8. [Testing Widget Navigation](#testing-widget-navigation)
+9. [Testing Background Updates](#testing-background-updates)
+10. [Debugging](#debugging)
+11. [Common Issues](#common-issues)
+
+---
+
+## Architecture
+
+When the app is backgrounded, two channels replace the native WebSocket:
+
+```
+Server-to-device (push updates):
+
+  Queue mutation
+       |
+  pubsub.publishQueueEvent()
+       |
+  APNs hook (fire-and-forget)
+       |
+  roomManager.getQueueState() --> build ContentState
+       |
+  apnsService.sendLiveActivityUpdate() (1s debounce)
+       |
+  Apple Push Notification Service (production)
+       |
+  iOS ActivityKit updates Live Activity
+       |
+  Lock screen widget renders new state
+
+
+Device-to-server (widget buttons):
+
+  User taps Next/Previous on lock screen
+       |
+  iOS performs the LiveActivityIntent in the MAIN APP process
+  (the intent type is registered in both the App and BoardseshWidgets
+   targets, so iOS background-launches the app when it's suspended
+   instead of running the intent in the widget extension)
+       |
+  1. Save new currentIndex to App Group UserDefaults
+  2. Optimistically update Live Activity content state
+  3. In parallel (async let), both run concurrently:
+     a. BoardBleManager.displayCurrentItemAwaitingReady
+          - awaits CoreBluetooth state restoration
+            (peripheral + write characteristic discovered)
+          - issues the UART display write
+          - all inside a UIApplication beginBackgroundTask window
+            with an expiration handler
+     b. HTTP POST /api/widget/navigate
+          - propagates the new index to the backend so other party
+            clients see it via WebSocket / APNs broadcast
+       |
+  Backend publishes CurrentClimbChanged
+       |
+  APNs push sent to all session tokens (other devices)
+
+  User taps the lightbulb to re-assert the current climb
+       |
+  iOS performs TakeControlIntent in the MAIN APP process
+       |
+  HTTP POST /api/widget/take-control
+       - authenticated with the registered Live Activity bearer token
+       - rejected unless the token row has a bound authenticated userId
+       - re-asserts (re-broadcasts CurrentClimbChanged for) the current climb
+       |
+  On success (200), the widget shows the lightbulb on.
+```
+
+**Per-token board connection:** the server-to-device push stamps each token's
+`boardConnection` ("connectedByMe" | "heldByPeer" | "disconnected") so the
+lightbulb + Previous/Next reflect who holds the board. The send path resolves the
+session's holder once (`session:{id}:board` → `resolveBoardHolder`) and groups
+tokens by derived state, so the holder's device gets `connectedByMe` and peers get
+`heldByPeer` (with the holder's name). A board hand-off kicks an extra debounced
+push from `reportBoardClimb` (it isn't a queue event). When the holder can't be
+resolved, the fields are omitted and the device keeps its own App-Group state. See
+`packages/backend/src/services/apns/board-connection.ts` and the ownership section
+in `docs/mobile/live-activity-board-control.md`.
+
+Latency on the BLE side from a suspended-app cold-launch is ~1.5–2.5 s: background-launch (~0.5–1 s) + CoreBluetooth state restoration (~0.5–1 s) + UART chunk flush (~0.2–0.5 s). Subsequent taps inside the same wake window are faster because the peripheral stays connected.
+
+Cross-device limitation: when _another_ user navigates and your phone is suspended, your board does **not** repaint — the WS connection is dead and the APNs Live Activity push reaches the widget extension, which can't open the CoreBluetooth connection. Tracked in issue #2174; ultimately solved by the planned WS-enabled board controller.
+
+## Prerequisites
+
+- macOS with Xcode 15+
+- Apple Developer account (paid, $99/year) with the Boardsesh app registered
+- iPhone running iOS 17+ connected via USB or on the same network
+- Tailscale set up on both the Mac and iPhone
+- Local dev environment running: `vp run dev` (starts the DB, backend, and web together; run `vp run db:up` first if you only need the database)
+
+## Apple Developer Setup
+
+### 1. Create an APNs Key
+
+1. Go to [Apple Developer](https://developer.apple.com/account) > Certificates, Identifiers & Profiles > Keys
+2. Click **+** to create a new key
+3. Name it something like `Boardsesh APNs Key`
+4. Check **Apple Push Notifications service (APNs)**
+5. Click Continue, then Register
+6. **Download the .p8 file** (you can only download it once)
+7. Note the **Key ID** shown on the confirmation page (10-character string like `ABC123DEF4`)
+
+### 2. Find Your Team ID
+
+Your Team ID is shown at the top-right of the Apple Developer portal, or under Membership > Team ID. It's a 10-character string like `9A2B3C4D5E`.
+
+### 3. Enable Push Notifications for the App ID
+
+1. Go to Identifiers > App IDs
+2. Find or create `com.boardsesh.app`
+3. Under Capabilities, ensure **Push Notifications** is enabled
+4. If using a wildcard App ID, you'll need an explicit App ID for push
+
+### 4. Base64-encode the .p8 Key
+
+```bash
+# From the directory where you downloaded the .p8 file:
+base64 -i AuthKey_ABC123DEF4.p8 | tr -d '\n'
+```
+
+This outputs a single base64 string — you'll paste this into `APNS_KEY_CONTENTS`.
+
+## Backend Configuration
+
+Add these to `packages/backend/.env.local` (create the file if it doesn't exist — it's gitignored):
+
+```bash
+# APNs Configuration for Live Activity push notifications
+APNS_KEY_ID=ABC123DEF4              # Your Key ID from step 1
+APNS_TEAM_ID=9A2B3C4D5E             # Your Team ID from step 2
+APNS_KEY_CONTENTS=LS0tLS1CRUdJT...  # Base64-encoded .p8 key from step 4
+APNS_BUNDLE_ID=com.boardsesh.app    # Must match your iOS app's bundle ID
+APNS_PRODUCTION=true                 # true = production APNs (matches the app's aps-environment=production entitlement)
+
+# Optional server-side product analytics for Live Activity usage
+POSTHOG_PROJECT_KEY=phc_...          # Backend PostHog project key (preferred; falls back to NEXT_PUBLIC_POSTHOG_KEY)
+POSTHOG_HOST=https://us.i.posthog.com
+# getPosthogClient() only sends when the resolved environment is 'production' (#3814).
+# A real backend PostHog project key is prod-only, so DON'T set POSTHOG_ENVIRONMENT=production
+# here — your local test events would land in the real prod project, indistinguishable
+# from Railway. Leave it UNSET and start the backend with `vp run dev`, whose backend `dev`
+# script sets NODE_ENV=development; the environment then resolves to 'development' and
+# nothing is sent. If you run the backend some other way (e.g. plain `tsx src/index.ts`,
+# no NODE_ENV), the runtime looks prod-like and WILL send — set POSTHOG_ENVIRONMENT to
+# anything non-production, e.g. local-dev, in that case.
+POSTHOG_ENVIRONMENT=local-dev
+```
+
+When the backend starts, you should see:
+
+```
+[APNs] Initialized (production=false, bundleId=com.boardsesh.app)
+```
+
+If you see `[APNs] Missing one or more required env vars...`, double-check the values.
+
+If both `POSTHOG_PROJECT_KEY` and `NEXT_PUBLIC_POSTHOG_KEY` are unset, Live Activity product analytics are skipped and APNs delivery still works.
+
+## iOS Build Configuration
+
+> **The Live Activity stack lives in the React Native / Expo app at
+> `packages/mobile/`.** It uses the bundle identifier `com.boardsesh.app`,
+> the App Group `group.com.boardsesh.app`, and a keychain access group, so the
+> Apple Developer Portal capabilities apply to it directly. (The retired
+> Capacitor app at repo-root `mobile/` shared the same identifiers; its source
+> has been removed from the repo.)
+
+### React Native / Expo app (`packages/mobile/`)
+
+The Expo app reaches the same Swift stack via two Expo Modules and a widget
+target generated at prebuild time. `packages/mobile/app.config.ts` already
+declares the App Group, keychain access group, `aps-environment`, the
+`remote-notification` background mode, and the `appleTeamId` — so prebuild
+produces a project that Xcode opens with the capabilities pre-wired. You do
+not need to add them manually in Xcode.
+
+Source locations:
+
+- Main-app Swift (BoardBleManager, LiveActivityManager, SessionWebSocketManager, intents, helpers): `packages/mobile/modules/live-activity/ios/`
+- Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`. Every file in it is a fingerprint input (#7215), so a widget-only edit needs a store build and never ships as an OTA.
+- Widget target build settings that @bacons/apple-targets does not expose directly, including `WIDGET_EXTENSION`: `packages/mobile/plugins/with-boardsesh-widget-build-settings.js`
+
+#### Swift unit tests and CI
+
+The RN app's `packages/mobile/ios/` directory is generated and gitignored, so tracked Swift
+unit tests live in `packages/mobile/ios-tests/`. The CI workflow runs Expo prebuild, then
+`scripts/prepare-rn-ios-tests.mjs` creates a generated `BoardseshTests` XCTest target and
+a `LiveActivityIntentDiagnosticsConcurrencyGate` static-library target. It stages the Live
+Activity Swift sources into the test target and stages the diagnostics source alone in the
+strict-concurrency gate. The subsequent `xcodebuild build-for-testing` invocation builds both
+targets.
+
+Swift test coverage runs in CI:
+
+- `.github/workflows/ios-rn-ci.yml` builds and tests the React Native / Expo app and widget helpers.
+
+#### 1. Generate the native project
+
+```bash
+# Regenerates packages/mobile/ios/ from app.config.ts + plugins, adding
+# the BoardseshWidgets target. Run this whenever any Expo native config or
+# the widget target's expo-target.config.js changes.
+cd packages/mobile && vp exec expo prebuild --platform ios --clean
+```
+
+For normal local simulator/device builds from `packages/mobile`, use `vp run mobile:ios`
+instead of raw `expo run:ios`. It keeps `packages/mobile/ios/build` pointed at the
+shared Boardsesh Xcode cache so separate git worktrees do not each rebuild from cold.
+
+#### 2. Build to a device
+
+Native code changes (Swift, entitlements, new Xcode targets, etc.) cannot
+ship via EAS Update — testers need a fresh installable client:
+
+```bash
+vp run mobile:preview-build
+```
+
+This produces a development-signed build that bundles the native module
+binary + the widget extension. Install it on a physical iPhone running
+**iOS 17+** (Live Activities + AppIntents require it). The simulator can
+exercise the lock-screen Live Activity but not the Dynamic Island or
+ActivityKit push tokens — use a real device for the push-update path.
+
+JS-only iterations after the first install ship via:
+
+```bash
+vp run mobile:publish
+vp dlx eas-cli@16 channel:edit preview-1 --branch <your-branch>
+```
+
+#### 3. Point at a local backend
+
+The Expo app reads the backend URL from `EXPO_PUBLIC_BACKEND_URL`. To point
+at your machine over Tailscale:
+
+```bash
+EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:8080 vp run dev:mobile
+```
+
+The dev server picks up `.boardsesh/qa-notes.md` automatically and exposes
+it under Settings → Developer via `DevMetadataPanel`.
+
+#### 4. Verify in Console.app
+
+Filter by `subsystem:com.boardsesh.app`. Useful categories:
+
+- `BoardBleManager` — connect / write / reconnect
+- `LiveActivityModule` — session lifecycle + push-token registration
+- `LiveActivityManager` — ActivityKit start / update / end
+- `LiveActivityIntent` — fires once per Dynamic Island button tap, prefix logs with `bundle=` so you can tell whether the intent ran in the main app or widget process
+
+## Running the Full Stack
+
+Start all services from the monorepo root with a single command — `vp run dev`
+brings up the database, backend, and web dev server together:
+
+```bash
+vp run dev
+```
+
+Verify the backend is reachable from your iPhone:
+
+```bash
+curl http://your-machine.tailscale-domain:8080/health
+```
+
+## Testing Push Delivery
+
+### Step 1: Start a Session
+
+1. Open the app on your iPhone
+2. Start or join a party session
+3. Add a few climbs to the queue
+4. The Live Activity should appear on the lock screen (swipe down or check Dynamic Island)
+
+### Step 2: Verify Token Registration
+
+Check the backend logs for:
+
+```
+[APNs] Initialized (production=false, bundleId=com.boardsesh.app)
+```
+
+Check the database for the registered token:
+
+```bash
+# From the repo root
+vp run db:studio
+```
+
+Then look at the `activity_push_tokens` table — you should see a row with your session ID and a hex token.
+
+Or query directly:
+
+```sql
+SELECT token, session_id, created_at FROM activity_push_tokens;
+```
+
+### Step 3: Trigger a Push Update
+
+From a second device or browser, join the same session and change the current climb. Or use curl to trigger the widget navigate endpoint:
+
+```bash
+# Replace SESSION_ID with your actual session ID
+curl -X POST http://your-machine.tailscale-domain:8080/api/widget/navigate \
+  -H 'Content-Type: application/json' \
+  -d '{"sessionId":"SESSION_ID","action":"next","currentIndex":0}'
+```
+
+Backend logs should show:
+
+```
+[APNs] Sending Live Activity update for session SESSION_ID to 1 device(s)
+[APNs] Results for session SESSION_ID: 1 sent, 0 failed
+```
+
+### Step 4: Verify Lock Screen Update
+
+Lock your iPhone. The Live Activity widget should update within a few seconds showing the new current climb.
+
+## Testing Widget Navigation
+
+### Test Lightbulb Re-Assert
+
+1. Start a party session with two signed-in participants and register Live Activities on both devices
+2. Have device A's climb relayed to the board so its lightbulb is lit
+3. Lock device B
+4. Tap the lightbulb on device B
+5. Backend logs should show the `/api/widget/take-control` request returning 200
+6. Device B re-asserts (re-broadcasts) the current climb; its lightbulb shows on after the request succeeds
+7. Navigation stays enabled on both devices — sessions are always-live, any member may navigate
+
+### Test with App in Foreground
+
+1. Lock your iPhone with the app still running
+2. Tap the **Next** or **Previous** button on the Live Activity widget
+3. The widget should update immediately (optimistic update)
+4. Backend logs should show the `/api/widget/navigate` request
+5. Unlock and verify the app's queue matches
+
+### Test with App Suspended
+
+1. Connect to a board (so there's a saved BLE config — required for the eager `CBCentralManager` init that makes state restoration work)
+2. Lock your iPhone
+3. Wait 30+ seconds for iOS to suspend the app
+4. Tap Next/Previous on the widget
+5. The widget UI updates optimistically (instant)
+6. The board LEDs update within ~2–3 s — iOS background-launches the app, the intent runs in the main app process, BLE state restoration completes, and `BoardBleManager.displayCurrentItemAwaitingReady` issues the write
+7. The HTTP POST to `/api/widget/navigate` should appear in backend logs (independent of the BLE write — they run in parallel)
+8. Filter Console.app by subsystem `com.boardsesh.app`, category `LiveActivityIntent` to confirm the intent ran in the App process (DEBUG builds only)
+
+### Test with App Force-Killed
+
+1. Force-kill the app from the app switcher
+2. The Live Activity should still be visible
+3. Tap Next/Previous — the widget updates optimistically
+4. The HTTP request to `/api/widget/navigate` should appear in backend logs
+5. Other connected clients should see the queue change
+6. **The board will usually NOT repaint in this case.** iOS usually does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path. iOS may still launch the killed app in-process for the intent; the press then behaves as in the background case above (step 12 of "Test driving the wall" covers what that means for the drive).
+
+### Test driving the wall
+
+Driving the wall (2.7) on the Lock Screen, in the Dynamic Island and in the Android notification: Put on board's timed drive (Settings › Board › **Stop driving after**) and an open-ended drive. Background in `docs/mobile/live-activity-board-control.md`.
+
+1. Start a party session, connect to the board, and leave **Stop driving after** on the default (45 s) and **Disconnect Bluetooth when driving ends** off.
+2. Tap **Put on board**, then lock the phone. The Lock Screen bulb sits in an amber ring that drains, with no digits beside it (VoiceOver: "Driving the wall", then "Every climb you pick lights up"). The compact Dynamic Island shows the ring and keeps the grade. On Android the notification header reads "Driving the wall" with the system countdown beside it.
+3. Tap **Next** on the Lock Screen while the drive runs. The wall lights the next climb and the ring fills again (Android: the clock restarts at 0:45).
+4. Wait out the drive. Within a second of its end the ring goes and the bulb stands alone ("Wall lit, picks are previews" for VoiceOver); the Android header drops its line, its clock and the bulb small icon.
+5. With nothing driving, tap **Next** again. The press starts a fresh timed drive from the settings. With **Until I stop** it starts an open-ended drive instead, on a MoonBoard too: a full amber disc with no time beside it, and on Android "Driving the wall" with no clock.
+6. Swipe the wall button in the app to drive, then lock the phone. The disc shows with no clock (a swipe drive is open-ended), and Android's header reads "Driving the wall" with no clock.
+7. Suspend the app (lock for 30 s or more), press **Next**, then open the app. The player shows the frosted button with the clock still running, ending where the Lock Screen showed; Drive Mode Started reads `startedBy: 'lock_screen'` when nothing was driving before. On Android the header appears once the wall confirms the climb, not at the tap.
+8. Set **Stop driving after** to **Right away** and press **Next** with nothing driving. The wall lights that one climb; no ring, no disc, and no "Driving the wall" header.
+9. Turn **Disconnect Bluetooth when driving ends** on. Start a timed drive, suspend the app past its end, then press **Next**. The wall lights the next climb and the board stays connected: the press starts a drive of its own (iOS) or arms one (Android). Then let a timed drive run out with the app open: the board is let go.
+10. Pick a climb from a list in the app (a preview), then lock the phone. The Lock Screen and the notification still show the climb on the wall, not the MiniPlayer's last pick.
+11. iOS: with the app suspended and nothing driving, press **Next** (the ring appears), swipe the app away in the app switcher, then open it. On relaunch the ring is gone and nothing is driving.
+12. iOS: swipe the app away first, then press **Next** on the Lock Screen, then open the app. Usually the press runs in the widget extension: the wall stays dark, no ring appears, and the app opens with nothing driving. iOS may instead launch the killed app in-process for the intent (the `LiveActivityIntent` Console.app category shows the App process): then the wall lights and the ring appears, and the app opens either with that drive running to the Lock Screen's end (its JS started before the press was written) or with the ring cleared and nothing driving (its JS started after). Never a ring over a dark wall.
+13. From a second device, add or reorder climbs while the timed drive runs. The countdown survives the crew push.
+14. From the second device, put a climb up while the timed drive runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the drive.
+15. On a crewmate's phone (`heldByPeer`), nothing about the holder's drive shows.
+16. Tap **Put on board**, lock the phone, then tap the ringed bulb. The ring goes, the wall keeps its climb, and the app shows previews when opened (Drive Mode Ended `stopped`). Same for the disc of an open-ended drive. On Android the lit bulb reads "Stop driving" while a drive runs.
+17. Turn **Disconnect Bluetooth when driving ends** on and repeat 16. The board is freed and the card reads "Tap to reconnect"; a tap relinks, lights the current climb and lights the bulb, and the app opens connected.
+18. Disconnect from the in-app bulb, then lock the phone. The card reads "Open Boardsesh to connect" and tapping it opens the app.
+19. With a board remembered, walk out of range (or switch it off) and tap "Tap to reconnect". After the connect timeout the card reads "Board didn't answer. Tap again". With Bluetooth off it reads "Turn on Bluetooth, then tap".
+
+Known gap: if the app is suspended before a timed drive's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
+
+## Testing Background Updates
+
+This is the key test — verifying that APNs keeps the Live Activity alive when the app is backgrounded.
+
+1. Start a session on your iPhone with climbs in the queue
+2. Lock the phone (or background the app)
+3. Wait 30+ seconds for iOS to fully suspend the app
+4. From a **second device or browser**, change the current climb
+5. Check your iPhone's lock screen — the Live Activity should update within a few seconds via APNs push
+6. The stale date (10 minutes, `SharedConstants.liveActivityStaleInterval`) should NOT trigger because APNs pushes refresh it
+
+### Verify the Update Source
+
+In the backend logs, look for:
+
+```
+[APNs] Sending Live Activity update for session ... to N device(s)
+[APNs] Results for session ...: N sent, 0 failed
+```
+
+If you see `0 sent, N failed`, check the [Common Issues](#common-issues) section.
+
+### Board-photo thumbnail compositing
+
+For the 2.0 release the thumbnail is the **server-composited** board image, matching the
+legacy Capacitor app (which renders correctly). `ThumbnailFetcher` fetches
+`/api/internal/board-render?...&thumbnail=1&include_background=1` — the Railway backend (`sharp`)
+draws the board photo behind this climb's holds overlay and returns a finished image,
+which `ThumbnailFetcher` writes straight to the App Group `thumbnails/` dir for the widget
+to display. No on-device webp decode or compositing.
+
+This deliberately reverses the earlier "no-network-board-art" rule. The on-device
+bundled-art path (`resolveBoardBackgroundPaths` staging + `compositeWithBoardBackground`)
+never rendered the board reliably in production, so it's deferred. Re-adding offline board
+art (and the `server-rendered-background` guard rule in `scripts/mobile-board-art-network-check.ts`)
+is tracked in issue #2982.
+
+If the Live Activity shows only the climb's holds and no board behind them, the server
+fetch failed or returned the overlay only. Check:
+
+- `include_background=1` is present in the `boardRenderUrl` request and the server returns a
+  composited image (not a 4xx).
+- The cached thumbnail isn't a stale pre-2.0 image — `cacheVersion` (`ThumbnailFetcher`)
+  bumps to purge old overlay-only caches on update.
+
+## Debugging
+
+### Backend APNs Logs
+
+All APNs activity is logged with the `[APNs]` prefix:
+
+```
+[APNs] Initialized (production=false, bundleId=com.boardsesh.app)
+[APNs] Sending Live Activity update for session ... to 2 device(s)
+[APNs] Results for session ...: 2 sent, 0 failed
+[APNs] Stale token for session ... (BadDeviceToken): abc123...
+```
+
+### iOS Console Logs
+
+Connect your iPhone and open Xcode > Window > Devices and Simulators > your device > Open Console. Filter for:
+
+- `com.boardsesh.app` — main app logs
+- `LiveActivityManager` — push token observation
+- `LiveActivityPlugin` — token registration with backend
+- `NativeWebSocketPlugin` — WebSocket connection state
+
+### Interrupted intent diagnostics
+
+The first deployment of these diagnostics requires a new iOS binary: the
+durable store and App Intent recorder live in Swift and cannot be activated by
+an OTA bundle alone. Once that binary is installed, the React-side consumer and
+reporting changes can follow the normal fingerprint-compatible OTA path.
+
+The main app target keeps a best-effort marker for each `LiveActivityIntent`
+run (`NextClimbIntent`, `PreviousClimbIntent`, `TakeControlIntent`, and
+`ReconnectBoardIntent`). The widget-extension copies compile the recorder calls
+out with `#if !WIDGET_EXTENSION`; widget fallback execution never writes the
+main app's store.
+
+The marker is an app-local `UserDefaults` envelope, not App Group storage. It is
+schema-versioned, limited to the newest 16 records, and contains only generated
+run/process UUIDs, the fixed intent kind, app version/build, timestamps, a
+coarse last stage/result, and whether the React root committed. It never stores
+user, climb, queue, session, endpoint/server, auth-token, or Bluetooth
+peripheral values. A React effect mounted directly under the real app root marks
+the root commit; it is deliberately not a module-import side effect.
+
+On foreground, native code atomically consumes only incomplete records from a
+different process that are at least 30 seconds old. It discards records from a
+different build, an unknown schema, corrupt/future-dated records, and records
+older than 24 hours. A durable consumed-key ring prevents a run from being
+returned twice. JS reports each returned record as an informational Sentry
+message with the fixed fingerprint `live-activity-intent-interrupted`; it is not
+captured as an exception or crash. A normally returning intent always marks its
+record completed, including guard/early-return paths, so it is never reported.
+Its normal completion class stays on that stored completed record; interrupted
+records have no completion class, and the native consume payload cannot include
+one.
+
+This instrumentation does not change the intent work budget. Widget HTTP still
+uses its existing 10-second request timeout, and navigation BLE still waits up
+to 3 seconds for readiness plus the existing 1.5-second write-drain window. It
+also does not cancel BLE work when the background task expires.
+
+For navigation intents, `bleFinishedSuccess` means the specific display
+request's native callback succeeded and the global write queue drained inside
+that 1.5-second window. Encoding, connection/enqueue, write, and drain-timeout
+failures record `bleFinishedFailure`; a write that finishes after the deadline
+continues normally but cannot change the already-settled diagnostic result.
+
+#### MetricKit audit (no new integration)
+
+The mobile app currently pins `@sentry/react-native` 7.11.0, whose podspec pins
+Sentry Cocoa 8.58.0. That Cocoa SDK has a MetricKit integration, but
+`enableMetricKit` and `enableMetricKitRawPayload` both default to off, and our
+`src/lib/sentry.ts` initialization does not enable either option. Consequently,
+Boardsesh does not currently subscribe Sentry to MetricKit payloads. If enabled,
+that SDK version's supported conversion covers hang, CPU-exception, and
+disk-write diagnostics; its MetricKit manager disables crash diagnostics by
+default. No MetricKit option or reporting behavior is changed for #4077.
+
+Existing Sentry coverage remains separate: native crash handling is explicitly
+enabled, app-hang tracking uses the configured 2-second threshold, and Sentry
+Cocoa's watchdog-termination tracking retains its default-on setting. Those
+signals do not correlate an unlogged termination to a specific Live Activity
+intent run, which is why the small durable marker is needed.
+
+### Inspect Push Token
+
+The push token is logged (first 8 characters) when obtained:
+
+```
+Push token updated: a1b2c3d4...
+Push token registered with backend
+```
+
+### Test APNs Directly with curl
+
+If you have the push token from the database, you can send a test push directly:
+
+```bash
+# Generate a JWT for APNs auth (requires the .p8 key)
+# Or use a tool like https://github.com/nicklama/apns-push-tester
+
+# The payload must match ClimbSessionAttributes.ContentState exactly. The
+# device-only fields (restRevision, lightingRevision and the ownership fields)
+# are optional and left out here; the rest timer and the drive (timed or
+# open-ended) live in the App Group, so a push like this never wipes them.
+{
+  "aps": {
+    "timestamp": 1712345678,
+    "event": "update",
+    "content-state": {
+      "climbName": "Test Climb",
+      "climbDifficulty": "V5+",
+      "angle": 40,
+      "currentIndex": 1,
+      "totalClimbs": 5,
+      "hasNext": true,
+      "hasPrevious": true,
+      "climbUuid": "test-uuid-123"
+    }
+  }
+}
+```
+
+## Common Issues
+
+### "Missing one or more required env vars"
+
+APNs env vars are not set in `packages/backend/.env.local`. Double-check all five vars are present.
+
+Specifically, a missing `APNS_BUNDLE_ID` now produces a warn-and-abort at startup — APNs stays disabled, and there is no hardcoded `com.boardsesh.app` fallback. If the `[APNs] Initialized (... bundleId=...)` line is absent from the init log, that is likely the cause.
+
+### Push token not appearing in database
+
+- Verify the Live Activity started (check for "Started Live Activity" in Xcode console)
+- The token may take a few seconds to arrive after `Activity.request()`
+- Check the Xcode console for "Push token updated" log
+- Check for "Failed to register push token" errors — the backend may not be reachable from the iPhone
+- If you see "Skipping shared keychain auth token write: authToken was empty" or "Skipping shared keychain auth token write: authToken was not provided", the web app did not pass a usable backend auth token into `LiveActivityPlugin.startSession()`. Confirm `/api/internal/ws-auth` returns a token in the native webview before the Live Activity starts.
+- If you see "Skipping push token registration: no auth token in keychain", the ActivityKit push token arrived, but the native plugin could not read a stored auth token when registering it. Check for the shared keychain auth-token write logs immediately before this message.
+
+### "No registered Live Activity tokens"
+
+The APNs hook fired for a queue change, but `activity_push_tokens` has no rows for that session. The log lives at `debug` level (because most party sessions don't have an iOS device watching, and at `info` the channel would be unreadable):
+
+```
+[APNs] No registered Live Activity tokens for session ...; skipping update
+```
+
+For a session you _expect_ to have an iOS device, this means ActivityKit emitted a push token but native registration failed before the backend stored it. Check iOS console logs for keychain write failures, missing auth-token warnings, GraphQL registration errors, or backend reachability errors. A common past failure mode: the plugin was POSTing the mutation to the web origin (`https://www.boardsesh.com/graphql`) instead of the backend host (`https://ws.boardsesh.com/graphql`) — every request 404'd silently. Verify `graphqlUrl` is passed in to `startSession` from JS and stored in `_currentGraphqlUrl`.
+
+### "BadDeviceToken" in APNs results
+
+- **Wrong environment**: All build configs (Debug + TestFlight + App Store) use `aps-environment=production`, so the backend must run with `APNS_PRODUCTION=true`. The sandbox APNs host (`api.sandbox.push.apple.com`) is not used by any current build.
+- **Wrong bundle ID**: `APNS_BUNDLE_ID` must match the app's actual bundle identifier.
+- **Stale token**: The activity may have ended. Start a new session.
+
+### "ExpiredProviderToken" in APNs results
+
+The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn` library should handle rotation automatically. If this persists, restart the backend.
+
+### Widget buttons don't send HTTP request
+
+- Check that `bs_widget_navigate_url` (constant: `SharedConstants.widgetNavigateUrlKey`) is stored in SharedDefaults. `LiveActivityPlugin.startSession()` derives it from `graphqlUrl` (e.g. `https://ws.boardsesh.com/api/widget/navigate`) and writes it — verify in the Xcode console during session start. The widget reads this exact URL via `WidgetNetworking.sendNavigation`; if the key is missing the call silently no-ops. Earlier builds derived the URL from `bs_server_url` (the web origin), which is wrong because `/api/widget/navigate` is a backend route, not a Next.js route — if you're seeing the old key in SharedDefaults, the user is on a stale build.
+- Check that `bs_widget_take_control_url` (constant: `SharedConstants.widgetTakeControlUrlKey`) is stored in SharedDefaults when debugging lightbulb take-control. It is derived from the same `graphqlUrl` as the navigation endpoint.
+- The widget extension must have the App Group entitlement to read SharedDefaults.
+- Check backend logs for incoming requests to `/api/widget/navigate` or `/api/widget/take-control`.
+
+### Live Activity goes stale after 10 minutes
+
+A stale card keeps the last climb, dimmed on the Lock Screen and in the expanded Dynamic Island, and swaps the Prev/Next/Mirror row for "Open Boardsesh to refresh". The rest clock keeps counting at full strength because the phone computes it. The card never says the session ended, because a stale card can't tell (#6529):
+
+- Usually the session is still on and the phone stopped hearing from the app or the backend.
+- A session the backend ended can also leave a stale card. The "end" push expires after 60 s, so an inactivity-sweep end sent to a phone that is offline for longer is dropped. `endLiveActivity` also skips the push when the session has no registered push token.
+- Opening the app clears that card when the app is still holding the session: the rejoin gets `SESSION_ENDED` and ends the activity. After a cold start it does not. The launch restore drops an ended session without touching ActivityKit, and `LiveActivityManager.cleanupOrphanedActivities()` has no caller, so the card stays until the next session starts or iOS ends the activity at its own time limit.
+
+When a live session goes stale, the updates stopped arriving:
+
+- APNs pushes are not reaching the device. Check backend logs for send failures.
+- The APNs rate limit may be exceeded (~4/hr for non-prominent activities). When the activity is on the lock screen, the limit is much higher.
+- Verify `APNS_PRODUCTION=true` — all builds (Debug + TestFlight + App Store) use `aps-environment=production`.
+
+### CORS errors on widget HTTP request
+
+The `/api/widget/navigate` endpoint includes CORS headers. If you see CORS errors, verify the backend's CORS handler allows the origin. Widget extension `URLSession` requests typically don't send an Origin header, so CORS shouldn't be an issue.

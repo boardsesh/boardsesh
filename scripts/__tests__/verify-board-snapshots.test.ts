@@ -43,7 +43,7 @@ afterEach(async () => {
 
 /**
  * `artifactShape` 2 stores the data tables the way the export's default shape
- * does (docs/board-snapshots.md, "Artifact shape"): WITHOUT ROWID, no secondary
+ * does (docs/data/board-snapshots.md, "Artifact shape"): WITHOUT ROWID, no secondary
  * index, vacuumed. The catalogue artifact has one shape only.
  */
 async function sqliteFixture(kind: 'main' | 'grades' | 'catalog', artifactShape: 1 | 2 = 1): Promise<Buffer> {

@@ -79,7 +79,7 @@ type ClimbBoardFields = {
  * `frames` + `compatibleSizeIds` ride along so a row can draw the board art
  * without a follow-up climb query per row. The size list is not decoration:
  * boards that number holds independently per size (Woods) render a completely
- * different climb on the layout's default size — see docs/board-art-geometry.md.
+ * different climb on the layout's default size — see docs/rendering/board-art-geometry.md.
  */
 function applyClimbBoardFields(group: ClimbBoardFields, climb: NotificationClimb): void {
   group.climbLayoutId = climb.layoutId;

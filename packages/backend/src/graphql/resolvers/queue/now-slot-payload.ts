@@ -20,7 +20,7 @@ import {
  * `joinSession` seed) when the F3 caps apply. Still a memory guard; the cap on
  * what is stored is `MAX_SYNCED_QUEUE_ITEMS` History + Up next entries plus
  * the climb on the wall, reached by trimming History instead of throwing
- * (docs/current-climb-outside-queue.md, section 5).
+ * (docs/product/current-climb-outside-queue.md, section 5).
  */
 export const MAX_RAW_PAYLOAD_ITEMS = 1000;
 

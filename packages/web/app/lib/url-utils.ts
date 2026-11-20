@@ -906,7 +906,7 @@ const getBoardSlugRouteContext = (pathname: string): { slug: string; angle: numb
 /**
  * Build the canonical config-tuple climb-view URL — `/{board}/{layout}/{size}/{sets}/{angle}/view/{slug-uuid}`.
  *
- * This is the tree the reposition treats as canonical (see `docs/web-reposition.md`),
+ * This is the tree the reposition treats as canonical (see `docs/web/web-reposition.md`),
  * so anything that must emit a crawlable, shareable climb link calls this
  * directly rather than `getContextAwareClimbViewUrl` — the latter keeps a
  * visitor inside `/b/{slug}` when they already are there, which is the right

@@ -1,0 +1,273 @@
+# Crowdsourced QA — the mobile half
+
+The app side of the flow described in `docs/qa/crowdsourced-qa.md` (which owns the backend, the
+GitHub round-trip, and the `qaPreviews` / `submitQaVerdict` contract). This file is only about what
+runs on the device.
+
+## Who sees what
+
+Two different questions, and they have different answers.
+
+**The entry point is open to everyone.** Any user on a store or TestFlight build with Branch Surfing
+headers gets **Test a PR preview** in the user drawer and under **Previews** in Settings → Early access. It
+opens the pick list: the `pr-<n>` OTA branches this build could load, each row showing the PR title,
+author, risk (`Risk: N/5` from the PR body) and how fresh the branch is, plus chips for Draft, a
+verdict they already filed, and a branch the server refused because it crashed here. Tapping one
+surfs onto it and reloads.
+
+The row stays put when that list is empty: the screen explains *"Previews are switched off"*
+or *"Nothing to test right now"*. It is hidden only on a binary that cannot surf.
+The floating xprem marker and its light-only sheet were removed for #5287; preview selection
+uses these themed menu destinations. The app still uses xprem's branch API through `qa-surf.ts`.
+
+**The cold-start prompt is tester-only and off by default.** A user whose profile has `isTester`
+can enable **Show previews on launch** under **Settings → Early access → Previews**. The device-local preference
+takes effect on the next launch. When enabled, production offers the pick list once per cold
+start; a `pr-<n>` bundle shows its brief once per branch + bundle: what this PR is and its
+`## Test plan`, with **Start testing**, **Finish testing**, **Open on GitHub**, **Leave preview**.
+Turning the preference off suppresses both automatic screens. Everyone can still open previews
+and test plans manually. `QaTesterGate` checks the preference before doing launch-prompt work;
+`decideQaGate` owns the remaining eligibility checks.
+
+The prompt never actually fired between 2.2.0 and #5654: `QaTesterGate`'s `ready` prop was frozen
+at `false` behind `DatabaseProvider`. It now reads readiness from `LaunchReadyProvider`, waits for
+the feature flags to resolve, and the `qa-tester-gate-kill` flag switches the prompt off without
+touching the drawer and More-tab entry points.
+
+**Filing a verdict is open; moving the label is not.** Anyone signed in can finish testing —
+Approve / Decline plus notes — and it is recorded and posted as a comment on the PR. Only a tester's
+verdict moves the `qa-approved` / `qa-declined` label, because that label gates a merge on a public
+repo. The backend records which it was on the row (`qa_verdicts.by_tester`); see
+`docs/qa/crowdsourced-qa.md`.
+
+Once a verdict is filed for the running bundle the drawer drops back to **Test a PR preview**, even
+though the app is usually still running that preview — see the second gotcha below.
+
+Signed out, the pick list still works: the branch list is an unauthenticated device endpoint, so the
+rows render as bare `pr-N` without their PR metadata. Dev clients and any binary without the surfing
+headers see none of it.
+
+## Testers who also get updates early
+
+"Get updates early" (Settings → Early access → **App updates**, behind the `early-updates` flag) pins a phone to the
+`pr-beta` branch. It shares the one `xprem-branch` header with previews, so the two take turns. The
+whole design, including the expo-updates rule it rests on, is in `docs/operations/mobile-ota-updates.md` →
+"Early updates"; what changes for QA:
+
+- **`pr-beta` is never a PR.** `parsePrBranch` rejects it, `otaBranchKind` names it
+  `early-updates`, and the branch list reports it beside `staging`, never in `previews`. The gate
+  treats a `pr-beta` bundle like production: a tester on early updates is still offered the pick
+  list.
+- **The pin has an owner.** `otaPinnedBranch` records the branch this app last pinned. The three
+  `surfTo*` helpers write it before they surf and put the previous pin back when the surf rejects
+  or hangs. While a `pr-<n>` or `pr-staging` bundle is the one running, nothing about early updates
+  touches the header.
+- **Leaving goes back to early updates, not production.** For a member (the stored choice, unless
+  the flag says off) the picker's Production row is labelled **Early updates** while the server
+  offers that branch for this build, and it, **Leave preview** and a filed verdict all call
+  `returnToOwnTrack`, which switches to `pr-beta` with a download and no reload. The toast says the
+  change applies next time the app opens. When the switch cannot be made the preview stays pinned
+  and the usual "could not switch off this preview" toast shows. A non-member's three exits are
+  unchanged, and so are a member's while `pr-beta` is not offered.
+- **The switch is not offered on a preview.** More shows a line saying to leave the preview first.
+- **A merged PR no longer strands its tester.** A recorded preview pin whose bundle is not the one
+  running makes the launch sync ask the server whether the branch still exists. If it is gone, a
+  member is moved to early updates and everyone else to the regular track. The second can be
+  refused (the regular update is already on disk under the dead pin's stamp); the phone is then on
+  regular updates in effect, and More offers the switch as usual.
+- **Branch Surfing switched off unpins at launch, as before.** The branch request only reads.
+  `QaTesterGate` and the picker's `useQaBranches` both pass a surfing-off answer to
+  `noteBranchSurfingOff`, which fetches a regular update before dropping whichever pin is in place,
+  and tries even with no pin on record. If it cannot finish, the leave is recorded as owed and the
+  launch sync retries it. The gate only makes that request for a tester with the launch prompt on
+  who is not on a preview bundle, the same launches that reached xprem's unpin before. The
+  `earlyUpdates` choice is kept.
+
+## Where the pieces live
+
+| Piece                                           | File                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Launch gate (renders nothing)                   | `src/components/qa/QaTesterGate.tsx`                                             |
+| The policy, as a pure function                  | `src/lib/qa/qa-gate-decision.ts`                                                 |
+| Pick list / brief screens                       | `src/components/qa/Qa{Pick,Brief}Screen.tsx` (routes: `app/qa/{pick,brief}.tsx`) |
+| Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
+| xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
+| Early updates: sync decision, the switch, leaving a preview | `src/lib/qa/early-updates.ts`, `src/lib/qa/use-early-updates.ts`         |
+| Early updates: launch sync (renders nothing)    | `src/components/qa/EarlyUpdatesLaunchSync.tsx`                                   |
+| The picker's branch query + surfing-off effect  | `src/lib/qa/use-qa-branches.ts`                                                  |
+| Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
+| Search parsing, filtering, list state           | `src/lib/qa/qa-pick-rows.ts` (`parsePrQuery`, `filterQaPickRows`, `qaPickListState`) |
+| The search field itself                         | `src/components/SearchField.tsx` (shared with climber search)                    |
+| Which QA rows a menu offers                     | `src/lib/qa/qa-drawer-rows.ts`, `src/lib/qa/use-qa-menu.ts`                      |
+| GraphQL hooks                                   | `src/lib/qa/use-qa-previews.ts`                                                  |
+| Event names                                     | `src/lib/qa/qa-analytics.ts`                                                     |
+
+## Searching, and the PR that isn't in the list
+
+The pick list has a search field that matches the PR's **title** and its **number**.
+`5203`, `#5203`, `pr-5203` and `PR 5203` are all the same query. Titles match as an AND of
+whatever words you type, so `fix queue` finds "Fix the queue reducer".
+
+Numbers match by **prefix**, never by their tail: `520` finds #5203, `203` does not. That is not
+fussiness. The list has to be able to narrow all the way to zero, because reaching zero matches is
+what offers the escape hatch below — under substring matching, `5` would keep #4795 and #1523
+alongside #5203 and the hatch would be unreachable for exactly the short queries that need it.
+
+Only rows that exist can be searched by title. A PR with no preview has no title on the device
+(`qaPreviews` is asked about the branches we have), so its title finds nothing. The number is the
+only handle that works for a PR this build has never heard of — which is what the next section is
+for.
+
+**When a number matches nothing, the screen offers to load `pr-<n>` anyway.** That re-reads
+`/branch_lists` live and lets the server's answer decide: the local copy is cached for 30s, so the
+commonest honest reason a PR is missing is that it published a moment ago. If it turns up, the
+ordinary surf takes over. If it still is not listed, the tester is told so — nothing is pinned.
+See the gotcha below for why "pin it and see" is not an option.
+
+## Seven things that are easy to get wrong
+
+**The branch list is the spine, not the PR list.** A branch the backend knows nothing about (GitHub
+down, PR closed) still gets a tappable row, rendered as bare `pr-N`. Testing must never be blocked
+on metadata. A PR with no loadable branch is dropped instead — this build cannot serve it.
+
+**Except a PR that is mid-publish.** That one is the exception the rule needed: a tester who just
+pushed has no branch yet, and dropping it left them staring at an empty list wondering whether
+previews were broken. `qaPreviews(includeBuilding: true)` returns those PRs too, and they render as
+a dimmed, unpressable **Building** row. A PR that already has a branch AND a newer bundle building
+stays tappable on the published one and shows **Building newer** — never block testing on a build
+that has not landed.
+
+The signal is the `pr-preview` GitHub deployment that `mobile-ota-preview.yml` opens before it
+publishes, read by `packages/backend/src/services/github-ota-deployments.ts`. It is the same state
+store that workflow's own fork reconciler and cleanup job key off, rather than a second source of
+truth. `failed` and `unavailable` (native change, behind main, torn down) are carried on
+`QaPreview.otaBuild` but render no row of their own today.
+
+**Rows mirror the PR's GitHub labels.** Whatever is on the PR shows up as chips, so a tester sees
+`backend` — CI stamps that on any PR that changes `packages/backend`, `packages/db` or
+`packages/shared-schema` *as well as* the app, meaning the preview bundle alone will not exercise
+it until the server ships. `visibleLabels` puts `backend` first, caps the row at six chips, and
+drops `qa-approved` / `qa-declined` because the row already renders this tester's own verdict.
+`labelChipColor` uses GitHub's own hex unless it is too pale to read, in which case the theme's
+colour wins.
+
+**Leaving a preview usually does not reload the app.** `surfTo(config, null)` clears the pin, but
+production is not _newer_ than a freshly published `pr-N` bundle, so `checkForUpdateAsync` answers
+"nothing available" and the tester keeps running the preview until production publishes again. That
+is why a verdict is persisted as `qaVerdictSubmittedKey` (a `<branch>:<updateId>` session key): the
+marker, not the reload, is what stops the gate re-prompting and the drawer re-offering.
+
+**Never pin a branch the list did not offer.** The tempting shortcut for "try this PR anyway" is to
+set the `xprem-branch` header and let `checkForUpdateAsync` sort it out. It does not sort it out.
+An unrecognised branch does **not** make the server answer "nothing available" — it falls back to
+the channel's own latest update. Measured against `updates.boardsesh.com` at a live production
+fingerprint, `xprem-branch: pr-0` and `pr-999999` both return the production manifest verbatim,
+byte-identical to the baked empty-branch request:
+
+```bash
+curl -s https://updates.boardsesh.com/manifest \
+  -H 'expo-app-id: 007e6fd7-…' -H 'expo-channel-name: production' \
+  -H 'expo-runtime-version: <a live fingerprint>' -H 'expo-platform: ios' \
+  -H 'expo-protocol-version: 1' -H 'accept: multipart/mixed' \
+  -H 'xprem-branch: pr-999999'
+```
+
+So a speculative pin on a tester who is behind production would fetch and reload them onto
+**production** while the screen claimed they were on that PR — and leave the device pinned to a
+branch that does not exist. Worse, the pin is persistent: `surfTo` sets the header BEFORE
+`checkForUpdateAsync` and restores it only inside its own `catch`, so a `nothing-to-load` leaves it
+in place across relaunches. `/branch_lists` is the authoritative answer to "can this build be served
+that branch", it is unauthenticated, and it is one request — ask it instead of guessing.
+
+**`isTester === undefined` is not `false`.** The profile is network-only, so on a cold offline start
+it is undefined for a moment. `decideQaGate` returns `wait` there. Treating it as "not a tester"
+would silently switch the cold-start prompt off for anyone whose profile lands a second late. The
+menu entry does not consult `isTester` at all, so it is unaffected — only the prompt is.
+
+**Nothing prompts before xprem's migration settles.** A surfing-capable binary's first launch clears
+a retired channel override once per install (`src/lib/ota-channel-override-cleanup.ts`). That cleanup
+no longer reloads. The reload onto a fresh bundle belongs to the launch update gate
+(`src/lib/launch-update-gate.ts`), which holds launch readiness until it has resolved, so a route the
+QA gate pushes is never thrown away by it. `app/_layout.tsx` publishes the cleanup's state through
+`src/lib/ota-branch-surfing-state.ts`, and the gate waits for `ready`. `ready` stays false for the
+rest of the session only when all four hold: a Branch Surfing build, the
+`ota_branch_surfing_migration_v1` marker absent, `Updates.channel` different from the baked
+`expo-channel-name`, and the gate did not reload. `Updates.channel` then still names the retired
+channel for that JS runtime, and xprem's branch API reads it. That session skips the prompt, and
+the next launch (or the runtime after the gate's reload) is ready. `ready` also covers the store's pre-launch state — `OtaBranchSurfingInitializer`
+is the LAST root sibling, so its publishing effect runs after the gate's — which is why
+`decideQaGate` waits on `surfingReady` alone rather than on `surfingBuild && !surfingReady`. Reading
+an unpublished store as "this build cannot surf" would resolve to `none`, and the gate marks the
+session decided on a `none`: QA would switch itself off with nothing said anywhere.
+
+## Settings
+
+All QA preferences and markers live in `src/settings/types.ts`. `qaPromptOnLaunch` defaults to
+`false` for both new installs and existing installs without a saved choice. It is stored on the
+device and controls only automatic launch prompts, starting with the next launch; the remote
+`qa-tester-gate-kill` switch can still suppress prompts even when the preference is on.
+
+The two account-scoped markers both default to `null` and hold a
+`qaSessionKey(userId, branch, updateId)` — `9f3c…:pr-4792:abc123`, or `9f3c…:pr-4792:embedded` for a
+launch with no update id.
+
+- `qaBriefSeenKey` — the brief has been shown to this account for this branch + bundle.
+- `qaVerdictSubmittedKey` — this account has filed a verdict for this branch + bundle.
+
+`earlyUpdates` (the "Get updates early" choice), `otaPinnedBranch` (the branch this app last
+pinned) and the three bookkeeping keys beside it (`otaPinSwitchInFlight`, `otaLeaveOwed`,
+`otaLeaveBlockedUpdateId`) live in the same store but are per device, not per account: the header
+override they describe is device-wide.
+
+Keying on the bundle rather than the branch is deliberate: when the author pushes again, that is a
+different thing to test, so the brief shows again and a second verdict is possible.
+
+Keying on the account is not tidiness either. The settings store is device-wide and a phone at a gym
+gets shared: without the user id, tester A signing off `pr-4792` swallowed tester B's brief and hid
+B's "Finish testing" row the moment B signed in. Every read passes the current profile id, and while
+that id is unknown the markers read as **wait**, never as "unseen" — `decideQaGate` returns `wait`,
+`runningQaPrNumberToOffer` returns `null`, and the verdict sheet refuses to submit. Nothing migrates
+the old two-part keys; they stop matching, which re-arms the brief once per branch + bundle.
+
+## Telemetry
+
+`QA Preview Prompted` → `QA Preview Picked` (or `QA Preview Skipped`) → `QA Brief Shown` →
+`QA Verdict Submitted`. `QA Surf Failed` and `QA Preview Left` are the two ways out without a
+verdict, and telling them apart is the point: a surf failure is our bug, leaving on purpose is not.
+
+`QA Preview Skipped` fires only for the **launch prompt**, which the gate marks by pushing
+`/qa/pick` with `origin=launch` (`LAUNCH_ORIGIN`). The same screen opened by hand — the drawer's
+"Test a PR preview", the dev row on More — emits nothing when it is closed, and a non-tester bounced
+off the route guard emits nothing either. Otherwise the denominator counted prompts that were never
+shown and prompted → picked/skipped stopped adding up.
+
+`Early Updates Toggled` `{ enabled }` is not part of this funnel. It fires when a climber flips
+"Get updates early" and is defined with the OTA events in `src/lib/ota-telemetry.ts`.
+
+## In a dev build
+
+`qaSurfingAvailable()` is false, so every surf action renders disabled with a hint rather than
+throwing. The screens are still openable — Settings → Developer → **QA: pick a PR (dev)** — so the layout and the
+empty/error states can be checked without a store build.
+
+## No PRs listed?
+
+The screen has three states and they come straight off the update server, so diagnose it there
+rather than on a device — `/branch_lists` needs no credentials:
+
+```bash
+vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
+```
+
+- **"Previews are switched off"** — Branch Surfing is off for the `production` channel. Turn it on in
+  the xprem dashboard: Channels → select `production` → Branch surfing → on, pattern `pr-*`. The card
+  sits inside the selected channel's detail pane, not on the channel list.
+- **"Nothing to test right now"** — surfing is on, but nothing matches this build. Either no PR has
+  published a preview, or a native change has landed on `main` since they did: a `pr-<n>` branch is
+  offered only to a binary whose runtimeVersion matches it exactly, so every un-rebased PR goes
+  invisible at once. Rebasing those PRs onto `main` republishes them.
+
+Take `<hash>` from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`. Run the command bare to
+check only the switch — the branch list needs a real fingerprint, so the script declines to read it
+without one rather than showing you a misleading empty list. Full detail:
+`docs/operations/mobile-ota-updates.md` ("Previews go stale when `main`'s fingerprint moves").

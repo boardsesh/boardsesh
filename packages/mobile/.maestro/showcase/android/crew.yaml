@@ -6,7 +6,7 @@ name: showcase take - a friend adds a climb (Android)
 # The Android twin of ../crew.yaml; that file says what the take shows and how
 # the two phones meet through the recorder's signal server. The second phone
 # is the iOS simulator running ../crew-secondary.yaml (see "Android" in
-# docs/showcase-video.md for why).
+# docs/marketing/showcase-video.md for why).
 #
 # Marks (work/android/marks/crew.json): invite-closed, queue-open, crew-added,
 # row-landed.
@@ -55,7 +55,7 @@ name: showcase take - a friend adds a climb (Android)
 # Hold on the landed row. No long press: on the Android queue sheet an
 # injected long press (Maestro's, or adb's raw DOWN / UP 1.2 s apart) arrives as
 # a tap and plays the row instead of opening the reaction menu, so the Android
-# cut has no "Play next" beat (see "Android recording" in docs/showcase-video.md).
+# cut has no "Play next" beat (see "Android recording" in docs/marketing/showcase-video.md).
 # Long enough that the take outlasts its scene.
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'

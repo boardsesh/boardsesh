@@ -4,7 +4,7 @@ import type { WallDriverRole } from '../../lib/session-timer/driver-rule';
 // row, plus the live clock so it never reads as a dead settings page while the
 // rest carries on underneath.
 //
-// Hosted, never routed: `docs/mobile-sheets-vs-routes.md` rule 1. It takes the
+// Hosted, never routed: `docs/mobile/mobile-sheets-vs-routes.md` rule 1. It takes the
 // CONTROLLED `visible` prop rather than an imperative ref, because each of the
 // two hosts (root and play drawer) owns its own open state — see
 // RestTimerPillHost.

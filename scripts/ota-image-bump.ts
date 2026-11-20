@@ -35,7 +35,7 @@
  * Network reads only, both unauthenticated: GHCR's tag list (via an anonymous pull
  * token) and the npm registry. No credentials, so this runs anywhere.
  *
- * See docs/railway.md and docs/mobile-ota-updates.md.
+ * See docs/operations/railway.md and docs/operations/mobile-ota-updates.md.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';

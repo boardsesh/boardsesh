@@ -174,7 +174,7 @@ void describe('postgres client', () => {
 
     void it('shrinks the defaults on Vercel, where instance count is the term that grows', async () => {
       // A crawl burst scales lambda count; instances × held-idle connections
-      // can exhaust the shared max_connections. See docs/db-connectivity.md.
+      // can exhaust the shared max_connections. See docs/operations/db-connectivity.md.
       const options = await poolOptionsWith({
         DB_POOL_MAX: undefined,
         DB_POOL_IDLE_TIMEOUT_S: undefined,
@@ -270,7 +270,7 @@ void describe('postgres client', () => {
     void it('emits no statement_timeout startup parameter by default', async () => {
       // PgBouncer in transaction-pooling mode rejects unknown startup
       // parameters, so this must stay off until the Railway URL is confirmed
-      // direct. See docs/db-connectivity.md.
+      // direct. See docs/operations/db-connectivity.md.
       const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: undefined });
       assert.equal(options.connection.statement_timeout, undefined);
     });

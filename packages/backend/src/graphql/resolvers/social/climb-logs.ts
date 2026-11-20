@@ -257,7 +257,7 @@ export const climbLogsQueries = {
           // `isBenchmark` is part of the base mapper and not of ClimbLogItem.
           const { isBenchmark: _isBenchmark, ...item } = toClimbLogBase(row);
           // Retired with revision history: null hides an older app's "Earlier
-          // version" tag (docs/spray-walls.md, "What an older app gets back").
+          // version" tag (docs/product/spray-walls.md, "What an older app gets back").
           const log = { ...item, climbCurrentRevision: null };
           return anonymous.has(row.tick.userId)
             ? {

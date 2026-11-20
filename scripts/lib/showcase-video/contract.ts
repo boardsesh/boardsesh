@@ -192,9 +192,9 @@ export type ShowcaseAnchorsFile = Readonly<{
  * can place cuts and callouts on events instead of hand-read frame numbers.
  * The flows raise them on the recorder's signal server as `/mark/<name>`
  * right after the step's action; each take's flow header lists its marks, and
- * docs/showcase-video.md collects them. A mark the flow never reached is
+ * docs/marketing/showcase-video.md collects them. A mark the flow never reached is
  * absent. Marks the recorder derives itself (from an anchor's first sample)
- * are listed in docs/showcase-video.md too.
+ * are listed in docs/marketing/showcase-video.md too.
  */
 export type ShowcaseMarksFile = Readonly<{
   takeId: ShowcaseTakeId;

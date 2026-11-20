@@ -2,7 +2,7 @@
  * F3 (#6666) compatibility simulation: a server built on `now-slot.ts` in one
  * crew with two shipped JS clients, the shipped Swift Live Activity reducer and
  * two new clients, over seeded random operations, at `QUEUE_NOW_SLOT_PERCENT`
- * 0 and 100 (docs/current-climb-outside-queue.md, sections 2, 3, 8 and 9).
+ * 0 and 100 (docs/product/current-climb-outside-queue.md, sections 2, 3, 8 and 9).
  *
  * The shipped clients run the frozen copies in `@boardsesh/queue/testing`, so a
  * later change to the live reducer can't redefine "an old phone". The checks:

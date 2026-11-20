@@ -69,7 +69,7 @@ env:
   # endpoint (e.g. https://updates.boardsesh.com/manifest), set as a repo variable
   # so the domain isn't hardcoded; until it's set, app.config.ts falls back to
   # the EAS URL and OTA stays inert (harmless). The production + xprem headers
-  # are literals in app.config.ts. See docs/mobile-ota-updates.md.
+  # are literals in app.config.ts. See docs/operations/mobile-ota-updates.md.
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Read at runtime by src/lib/sentry.ts (Sentry.init) — Sentry is the mobile
   # error + native-crash sink (PostHog is product analytics only). Same DSN/
@@ -86,12 +86,12 @@ env:
   # Manifest base for the offline snapshot bootstrap (bundle-only, no fingerprint
   # effect). Public R2 host; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # blackheathdc-ansible/inventories/boardsesh_workers.yml (batch defaults).
-  # Cutover: docs/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
+  # Cutover: docs/data/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://snapshots.boardsesh.com/board-snapshots/v1-gzip
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it
   # doesn't enter the resolved config, so it never moves the fingerprint. Kept in
-  # lockstep with the other mobile fingerprint workflows. See docs/mobile-ota-updates.md.
+  # lockstep with the other mobile fingerprint workflows. See docs/operations/mobile-ota-updates.md.
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
@@ -103,7 +103,7 @@ jobs:
   # gate is the ONE canonical resolution: the build job embeds this exact value in
   # the binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE (no macOS re-resolve) and tags
   # it, so binary-rv == tag == the OTA-published rv by construction — no cross-OS
-  # divergence to over-build around or strand OTAs over. See docs/mobile-ota-updates.md.
+  # divergence to over-build around or strand OTAs over. See docs/operations/mobile-ota-updates.md.
   gate:
     # Only main may use Production signing credentials.
     if: github.ref == 'refs/heads/main'
@@ -223,7 +223,7 @@ jobs:
       # app.config.ts reads this and emits it as a LITERAL runtimeVersion, so
       # `expo prebuild` bakes this exact value into Expo.plist and the macOS runner
       # never resolves its own (divergent) fingerprint. Job-level so it's live at
-      # prebuild AND the xcodebuild archive phase. See docs/mobile-ota-updates.md.
+      # prebuild AND the xcodebuild archive phase. See docs/operations/mobile-ota-updates.md.
       EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.gate.outputs.fingerprint }}
 
     steps:

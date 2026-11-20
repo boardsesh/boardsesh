@@ -21,7 +21,7 @@ describe('BLE service/characteristic UUID constants', () => {
   });
 
   it('matches the documented original-MoonBoard (RedBearLab) UUIDs', () => {
-    // docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
+    // docs/boards/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
     expect(REDBEARLAB_SERVICE_UUID).toBe('713d0000-503e-4c75-ba94-3148f18d941e');
     expect(REDBEARLAB_WRITE_CHARACTERISTIC_UUID).toBe('713d0003-503e-4c75-ba94-3148f18d941e');
   });

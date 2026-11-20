@@ -52,7 +52,7 @@ export {
  * 6. **Sort + limit**, then enrichment (profiles, tick stats, current climb) on
  *    the page only.
  *
- * See the "Live sessions" section of docs/websocket-implementation.md.
+ * See the "Live sessions" section of docs/backend/websocket-implementation.md.
  */
 
 export const LIVE_SESSION_CANDIDATE_WINDOW_MS = 4 * 60 * 60 * 1000;

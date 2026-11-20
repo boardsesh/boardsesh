@@ -97,7 +97,7 @@
       hour. Nobody reads them for this service. Removing an element here stops the
       server creating or writing that table. It does not drop a table that already
       exists on the volume; see "Rolling out a new ClickHouse image" in
-      docs/railway.md for the one-off DROP.
+      docs/operations/railway.md for the one-off DROP.
 
       session_log and zookeeper_log are off in stock config; they are listed so a
       future base image that turns them on stays off here.
@@ -124,7 +124,7 @@
 
     <!--
       query_log stays: it is the one log worth reading when a dashboard query is
-      slow (docs/railway-clickhouse-audit.sql uses it). Seven days is enough to look
+      slow (docs/operations/railway-clickhouse-audit.sql uses it). Seven days is enough to look
       back over an incident. Flush interval and partitioning stay stock.
     -->
     <query_log>

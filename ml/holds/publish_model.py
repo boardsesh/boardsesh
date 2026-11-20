@@ -26,7 +26,7 @@ objects are served with a one-year immutable cache and a client holding the old
 bytes would fail the new manifest's checksum.
 
 Env vars (mirrors packages/backend/src/storage/bucket-config.ts's MEDIA_* prefix;
-see docs/user-media-storage.md):
+see docs/operations/user-media-storage.md):
 
     MEDIA_S3_BUCKET_NAME          selects real-upload mode
     MEDIA_AWS_ENDPOINT_URL        (or MEDIA_AWS_ENDPOINT_URL_S3)
@@ -220,7 +220,7 @@ def read_media_bucket_config(env: dict[str, str] | None = None) -> MediaBucketCo
         raise SystemExit(
             "MEDIA_S3_BUCKET_NAME is set but " + " and ".join(missing) + " "
             + ("is" if len(missing) == 1 else "are")
-            + " missing. Set every MEDIA_* variable together (docs/user-media-storage.md)."
+            + " missing. Set every MEDIA_* variable together (docs/operations/user-media-storage.md)."
         )
 
     endpoint_url = _read_trimmed(env, "MEDIA_AWS_ENDPOINT_URL") or _read_trimmed(env, "MEDIA_AWS_ENDPOINT_URL_S3")
@@ -852,7 +852,7 @@ def main(argv: list[str] | None = None) -> int:
     if not dry_run and bucket is None:
         raise SystemExit(
             "no MEDIA_* R2 env vars found; pass --dry-run explicitly, or set MEDIA_S3_BUCKET_NAME / "
-            "MEDIA_AWS_ACCESS_KEY_ID / MEDIA_AWS_SECRET_ACCESS_KEY (docs/user-media-storage.md)"
+            "MEDIA_AWS_ACCESS_KEY_ID / MEDIA_AWS_SECRET_ACCESS_KEY (docs/operations/user-media-storage.md)"
         )
 
     print(json.dumps(manifest, indent=2))

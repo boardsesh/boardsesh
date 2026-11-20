@@ -69,7 +69,7 @@ jobs:
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       dbMigrations: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dbMigrations }}
       staticAssets: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.staticAssets }}
-      # docs/postgres-image-digests.json and docs/*.patch are checked-in PG18
+      # docs/operations/postgres-image-digests.json and docs/*.patch are checked-in PG18
       # rollout artifacts that nothing reads at run time, so nothing notices
       # when the tree drifts under them. Their guard reads every input with
       # readFileSync/readdirSync, which `--changed` can never relate to a diff
@@ -447,7 +447,7 @@ jobs:
             # entries (docs, replication scripts, dev-db-docker.yml) were
             # pruned when that patch landed as a real rename.
             pg18Artifacts:
-              - 'docs/postgres-image-digests.json'
+              - 'docs/operations/postgres-image-digests.json'
               - 'docs/*.patch'
               - 'docs/**/*.patch'
               - 'docker-compose.yml'
@@ -660,7 +660,7 @@ jobs:
       # @expo/ui swift-ui / jetpack-compose imports must stay in their platform
       # file (*.ios.tsx / *.android.tsx) — a misplaced one crashes the other
       # platform at runtime. The .oxlintrc rule isn't enforced by `vp check`, so
-      # this grep guard is the real backstop. See docs/expo-ui-components.md.
+      # this grep guard is the real backstop. See docs/design/expo-ui-components.md.
       - name: Check mobile @expo/ui platform imports
         run: vp run check:mobile-platform-imports
       # The offline-sync engine's drain/scheduler/pull entry points must be
@@ -858,6 +858,15 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: vp run check:velvet-tokens
 
+      # References can break when either their source or target moves. Check the
+      # complete inventory, including contracts that read docs as executable input.
+      - name: docs-links (maintained local references resolve)
+        id: docs-links
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          vp run check:docs
+          vp test run --project scripts scripts/__tests__/check-docs.test.ts --reporter=agent
+
       # No path gate, for the same reason: the input is the whole
       # @boardsesh/public-api contract, and a stale list would stop guarding.
       - name: public-api-openapi (committed document matches the schemas)
@@ -866,7 +875,7 @@ jobs:
         run: vp run check:public-api-openapi
 
       # A PR that changes that document needs a changelog entry
-      # (docs/integration-platform.md, "Versioning"). No path gate either: the
+      # (docs/integrations/integration-platform.md, "Versioning"). No path gate either: the
       # newest entry must name the committed document's hash on every run, and
       # on a PR the entries already on the base may not change.
       - name: public-api-changelog (contract changes carry a changelog entry)
@@ -945,7 +954,7 @@ jobs:
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
 
       # Deliberately not `--changed`-filtered, same rationale as deploy-config
-      # and listing-guards: the spec reads docs/postgres-image-digests.json, any
+      # and listing-guards: the spec reads docs/operations/postgres-image-digests.json, any
       # prepared patch under docs/, and each pinned consumer with
       # readFileSync/readdirSync at run time, so Vitest's module-graph analysis
       # never relates it to a diff that only edits a workflow pin or a file a
@@ -1786,7 +1795,7 @@ jobs:
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
           retention-days: 7
 
-  # BA-04 web writer fence (docs/better-auth-writer-fence-proof.md). Its own PG18
+  # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18
   # cluster, not a step of test-credential-writer: roles are cluster-wide, the
   # fence proof refuses to start while boardsesh_web or boardsesh_identity_writer
   # exists, and the credential proofs leave both behind. It reuses that job's
@@ -2260,7 +2269,7 @@ jobs:
   # The required context must aggregate every gating job. The guards job includes
   # the ungated large-files check; do not restore the retired standalone jobs.
   # scripts/__tests__/ci-status-rollup.test.ts checks the current job graph.
-  # See docs/ci-required-checks.md for absent-check recovery.
+  # See docs/qa/ci-required-checks.md for absent-check recovery.
   ci-status:
     needs:
       - changes

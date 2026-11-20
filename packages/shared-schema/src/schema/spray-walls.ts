@@ -45,7 +45,7 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
 
   Spray-wall photos live in the PRIVATE bucket, never the public \`media\` one:
   the photograph is of somebody's home, and \`media\` is world-readable under
-  guessable keys (\`docs/user-media-storage.md\`). So there is no stable URL to
+  guessable keys (\`docs/operations/user-media-storage.md\`). So there is no stable URL to
   store on a row — every read mints a fresh signature, and \`expiresAt\` is when
   the one in hand stops working.
   """

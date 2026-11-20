@@ -335,7 +335,7 @@ const ClimberLogsFromEveryone = memo(function ClimberLogsFromEveryone({
         {t('mobile.climberLogs.fallthrough.latestFromEveryone')}
       </Text>
       {/* At most INLINE_CLIMBER_LOG_CAP rows on the whole card: the drawer body
-          is a plain ScrollView (docs/react-native-performance.md section 2). */}
+          is a plain ScrollView (docs/mobile/react-native-performance.md section 2). */}
       {block.rows.map((group, index) => (
         <View
           key={group.userId}
@@ -496,7 +496,7 @@ export const ClimberLogsSection = memo(function ClimberLogsSection({
       </Text>
 
       {/* At most INLINE_CLIMBER_LOG_CAP rows, never the whole result: the drawer
-          body is a plain ScrollView (docs/react-native-performance.md section 2). */}
+          body is a plain ScrollView (docs/mobile/react-native-performance.md section 2). */}
       {plan.rows.map((group, index) => (
         <View
           key={group.userId}

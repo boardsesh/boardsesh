@@ -6,7 +6,7 @@ import { normalizeAscentStatus, pickHighestAscentStatus, type AscentStatusValue 
  *
  * Pure and clock-injected: the hook feeds it the handful of logbook entries the
  * `logbookByClimbAngle` index already holds for that key, so a row never scans
- * the whole logbook (docs/react-native-performance.md §4).
+ * the whole logbook (docs/mobile/react-native-performance.md §4).
  */
 
 /** A logbook tick narrowed to the fields the progress line reads. */

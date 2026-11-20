@@ -1,7 +1,7 @@
 /**
  * Nightly Boardsesh grade refresh. The job body, and the model notes behind
  * every threshold, are in `src/jobs/refresh-climb-grades.ts` and
- * docs/boardsesh-grade.md; the batch worker runs the same body.
+ * docs/data/boardsesh-grade.md; the batch worker runs the same body.
  *
  * Run locally: `vp run db:refresh-climb-grades --`
  * Flags: --refit-coefficients (force a refit), --dry-run (gates + stats only),

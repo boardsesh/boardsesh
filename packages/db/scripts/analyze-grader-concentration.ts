@@ -1,5 +1,5 @@
 /**
- * Read-only analysis behind the "Concentration" bullet in docs/boardsesh-grade.md §2.
+ * Read-only analysis behind the "Concentration" bullet in docs/data/boardsesh-grade.md §2.
  *
  * The grade model caps per-user influence in coefficient estimation (σ_within,
  * the board offset, the LOO gate) as an independence guard against

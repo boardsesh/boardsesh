@@ -30,7 +30,7 @@ const boardConfigCache = new Map<string, PlaylistBoardConfig | null>();
  * `getBoardConfigForClimb` rather than the playlist variant because
  * `compatibleSizeIds` picks the size: Woods numbers holds independently per
  * size, so the layout default renders a completely different climb
- * (docs/board-art-geometry.md).
+ * (docs/rendering/board-art-geometry.md).
  *
  * That helper deliberately skips the memo its sibling has, on the stated
  * assumption that it is "called once per resolve rather than once per row" —

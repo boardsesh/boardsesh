@@ -108,7 +108,7 @@ import {
  * A wall is not a new kind of thing — it is a runtime-created catalogue layout
  * under the ninth board type, so queue, play, ticks, stats, playlists, feed,
  * comments, search and the duplicate gate work on it unchanged
- * (`docs/spray-walls.md`). What lives here is the per-wall state that does NOT
+ * (`docs/product/spray-walls.md`). What lives here is the per-wall state that does NOT
  * belong on immutable catalogue rows: which photograph is current, where each
  * hold sits in the canonical frame, and when each hold went on or came off.
  *
@@ -229,7 +229,7 @@ export function sprayWallArchivedError(): GraphQLError {
  * Only for writes that would change what the wall IS: setting or editing a
  * climb, and every hold and version writer. Ticks, deleting a draft climb,
  * discarding a draft version, renaming, the look and deleting the wall stay
- * allowed on an archived wall (docs/spray-walls.md, "Archive and reset").
+ * allowed on an archived wall (docs/product/spray-walls.md, "Archive and reset").
  */
 export async function assertSprayWallNotArchivedUnderLock(
   executor: SprayWriteTransaction,
@@ -744,7 +744,7 @@ async function toGraphQLWall(
     holdCount: wall.holdCount,
     publicPhotoUrl: publicWallPhotoUrl(board, wall),
     viewerCanEdit: canEdit,
-    // Retired (docs/spray-walls.md, "What an older app gets back"). Only a climb's
+    // Retired (docs/product/spray-walls.md, "What an older app gets back"). Only a climb's
     // setter edits it, within 24 hours, and that right comes from the climb. False
     // here keeps an older app from offering an edit of someone else's climb that
     // `updateClimb` would refuse; the stored `climb_edit_policy` is not read.
@@ -1842,7 +1842,7 @@ export const sprayWallQueries = {
     const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
 
     // A wall device reads its owner's hold coordinates over the same socket it
-    // watches `boardNowPlaying` on (docs/wall-devices.md). canEdit below stays on
+    // watches `boardNowPlaying` on (docs/boards/wall-devices.md). canEdit below stays on
     // ctx, so a key reads published versions only.
     const visible = await loadVisibleWallForReader(validatedUuid, ctx);
     if (!visible) return null;
@@ -2227,7 +2227,7 @@ async function insertSprayWallRows(tx: SprayWriteTransaction, settings: NewSpray
       // than the board type — `scanFamilyForBoard('spray')` still answers
       // 'aurora', because every non-MoonBoard board falls through to it. So a
       // wall created with `has_leds = true` would offer a climber a Bluetooth
-      // scan for a wall that has no controller. See docs/spray-walls.md.
+      // scan for a wall that has no controller. See docs/product/spray-walls.md.
       hasLeds: false,
       // A wall's angle is fixed for its life: stats are keyed by angle and a
       // spray wall does not adjust.
@@ -2536,7 +2536,7 @@ export const sprayWallMutations = {
   },
 
   /**
-   * Start a reset by cloning the wall (docs/spray-walls.md, "Archive and reset").
+   * Start a reset by cloning the wall (docs/product/spray-walls.md, "Archive and reset").
    *
    * The clone copies settings only. The owner photographs the wall and marks its
    * holds from scratch in the add-wall wizard, and the clone's first publish

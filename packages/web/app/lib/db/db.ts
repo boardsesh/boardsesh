@@ -27,11 +27,11 @@ export {
 // (drizzle) are backed by the same pool from @boardsesh/db/client so a Vercel
 // function instance opens one pool, not two. This module is server-only and
 // every web route reaches Postgres through it, so the web server's pools end a
-// session left idle inside a transaction (docs/db-connectivity.md, "Idle
+// session left idle inside a transaction (docs/operations/db-connectivity.md, "Idle
 // transactions end after 60 s on request pools").
 applyRequestPoolDefaults();
 // WEB_DATABASE_URL, when set, names the web's own restricted login (BA-04 writer
-// fence, docs/better-auth-writer-fence-proof.md). Unset, the web stays on DATABASE_URL.
+// fence, docs/auth/better-auth-writer-fence-proof.md). Unset, the web stays on DATABASE_URL.
 applyWebDatabaseUrl();
 export const sql = createPool();
 export const dbz = createDb();

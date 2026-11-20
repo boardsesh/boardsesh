@@ -45,7 +45,7 @@ import { PlaylistClimbViewInputSchema } from '../validation/schemas';
  * must reach `board_climbs`, `board_climb_aliases` and the ticks by index,
  * never a sequential scan, and serially.
  *
- * Plan with `jit = off`, as production runs (docs/postgres-dr-architecture.md):
+ * Plan with `jit = off`, as production runs (docs/operations/postgres-dr-architecture.md):
  * with JIT on, compiling these plans takes longer than running them.
  */
 const EXPLAIN_DB_URL = process.env.EXPLAIN_DB_URL;

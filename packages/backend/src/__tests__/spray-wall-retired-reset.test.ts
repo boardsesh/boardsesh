@@ -9,7 +9,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  * The retired in-place reset, and live-wall hold edits, against the real
  * database.
  *
- * The rules (docs/spray-walls.md, "Resets", "Editing the holds of a live wall"
+ * The rules (docs/product/spray-walls.md, "Resets", "Editing the holds of a live wall"
  * and "What an older app gets back"):
  *
  *  - holds stay editable on a live wall, published climbs or not. A climb that

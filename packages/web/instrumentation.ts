@@ -33,7 +33,7 @@ export async function register() {
       // fail sign-up, password reset and email verification with 42501.
       console.error(
         `${webDatabaseRefusal.message}: WEB_DATABASE_URL is set, but the web still writes identity tables. ` +
-          'Unset it until runbook #7430 says otherwise (docs/better-auth-writer-fence-proof.md).',
+          'Unset it until runbook #7430 says otherwise (docs/auth/better-auth-writer-fence-proof.md).',
       );
       Sentry.captureException(webDatabaseRefusal);
       await Sentry.flush(2000).catch(() => {});
@@ -49,7 +49,7 @@ export async function register() {
     if (browserSessionRefusal) {
       console.error(
         `${browserSessionRefusal.message}: AUTH_BROWSER_SESSION_MODE cannot serve sign-in on this deployment. ` +
-          'Set it to legacy or meet its preconditions (docs/better-auth-rollout.md).',
+          'Set it to legacy or meet its preconditions (docs/auth/better-auth-rollout.md).',
       );
       Sentry.captureException(browserSessionRefusal);
       await Sentry.flush(2000).catch(() => {});

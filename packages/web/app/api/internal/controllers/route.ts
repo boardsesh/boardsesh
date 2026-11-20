@@ -23,7 +23,7 @@ const registerControllerSchema = z.discriminatedUnion('boardName', [
   }),
 ]);
 
-// A Spraywall key is for wall devices (docs/wall-devices.md), which pick their board
+// A Spraywall key is for wall devices (docs/boards/wall-devices.md), which pick their board
 // when they subscribe, so there is no configuration to store. The columns are NOT
 // NULL, and 0 is never a real layout or size.
 const SPRAY_CONTROLLER_CONFIG = { layoutId: 0, sizeId: 0, setIds: '' };

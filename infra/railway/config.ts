@@ -11,7 +11,7 @@ import type { OtaHostingProvider } from '../ota/server';
 // Why this exists:
 //
 // 1. `boardsesh-ota-v3` is the Railway service every production and TestFlight
-//    binary talks to for OTA manifests (docs/mobile-ota-updates.md). Its
+//    binary talks to for OTA manifests (docs/operations/mobile-ota-updates.md). Its
 //    configuration was set by hand in the Railway dashboard, so nothing in the repo
 //    records what it is supposed to look like and nothing notices when it drifts.
 //
@@ -40,7 +40,7 @@ import type { OtaHostingProvider } from '../ota/server';
  */
 export const RAILWAY_ENVIRONMENT_NAME = 'production';
 
-/** The xprem OTA server. Named in docs/mobile-ota-updates.md; matched by name, not id. */
+/** The xprem OTA server. Named in docs/operations/mobile-ota-updates.md; matched by name, not id. */
 export const OTA_SERVICE_NAME = 'boardsesh-ota-v3';
 
 /** The ClickHouse service backing xprem's Observe feature. */
@@ -52,7 +52,7 @@ export const WEB_SERVICE_NAME = 'boardsesh-web';
 /**
  * The production PostgreSQL 18 primary. Declared assert-only and for its TLS
  * variables alone: its image digest, volume and networking are managed by the
- * reviewed publish flow in docs/postgres-image-publishing.md, not from here.
+ * reviewed publish flow in docs/operations/postgres-image-publishing.md, not from here.
  */
 export const POSTGRES_PRIMARY_SERVICE_NAME = 'PostGIS - PG18';
 
@@ -107,7 +107,7 @@ export const OTA_READINESS_PATH = '/ready';
  * (built from `docker/clickhouse/Dockerfile`), which layers lean `config.d`/`users.d`
  * overrides on top to cap memory and turn off the system logs. It is published by
  * `.github/workflows/clickhouse-image.yml` on dispatch. Changing this digest is how a new
- * image is rolled out (docs/railway.md, "Rolling out a new ClickHouse image"):
+ * image is rolled out (docs/operations/railway.md, "Rolling out a new ClickHouse image"):
  * railway-apply compares it against both the configured and the serving image, deploys
  * a change only with --allow-image-change, and then probes the OTA server's readiness,
  * because xprem is the thing that has to reach ClickHouse.
@@ -279,7 +279,7 @@ export interface DeploySettings {
    * Railway defaults to 0s, so both signals arrive together and an in-flight
    * manifest or asset fetch is severed mid-response on every redeploy — the same
    * root cause railway.toml's `drainingSeconds` fixes for web and backend
-   * (docs/production-deploy.md). This service has no railway.toml to carry it:
+   * (docs/operations/production-deploy.md). This service has no railway.toml to carry it:
    * Config-as-Code is read from the service's *source repository* at deploy time,
    * and this service's source is a third-party image with no repo attached.
    *
@@ -605,7 +605,7 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
   // The three Redis connection variables below, plus CACHE_MODE and
   // CACHE_KEY_PREFIX in the OTA service's requiredConstrainedVars, move xprem's manifest/asset
   // cache out of the Go heap and into the project's shared Railway Redis.
-  // Rollback lives in docs/railway-cost-reduction.md ("OTA server Redis
+  // Rollback lives in docs/operations/railway-cost-reduction.md ("OTA server Redis
   // cache, September 26").
   {
     name: 'REDIS_HOST',
@@ -646,7 +646,7 @@ export const INVENTORY_SERVICES: ServiceDesired[] = [
     name: 'boardsesh-scheduler',
     management: 'inventory',
     requiredVars: [],
-    managedBy: 'the Railway dashboard; see docs/scheduler.md',
+    managedBy: 'the Railway dashboard; see docs/backend/scheduler.md',
   },
   {
     name: 'Redis',
@@ -684,7 +684,7 @@ const railwayHostedState: RailwayDesiredState = {
       // disagree on manifests, but it doubles cost and nothing needs the capacity.
       // Reported, never applied: replica count is a cost decision.
       expectedScale: { numReplicas: 1, region: 'us-west2' },
-      // The checklist docs/mobile-ota-updates.md already prescribes after any bump.
+      // The checklist docs/operations/mobile-ota-updates.md already prescribes after any bump.
       verify: { baseUrl: OTA_BASE_URL, paths: [OTA_HEALTHCHECK_PATH, OTA_READINESS_PATH] },
       requiredVars: OTA_REQUIRED_VARS,
       forbiddenVars: OTA_FORBIDDEN_VARS,
@@ -795,7 +795,7 @@ const railwayHostedState: RailwayDesiredState = {
             'The value our Cloudflare zone sets as X-Boardsesh-Origin-Proof on www /api/auth/ requests (#7766). ' +
             'Set, the web believes CF-Connecting-IP only on requests carrying it. Unset or under 32 bytes, the ' +
             'auth limiters behave as before and staged sign-in sends no client address. Add the Cloudflare rule ' +
-            'first, then this: docs/better-auth-web-password-delegation.md, "Turning on the origin proof".',
+            'first, then this: docs/auth/better-auth-web-password-delegation.md, "Turning on the origin proof".',
         },
         {
           name: 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT',

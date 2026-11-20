@@ -29,7 +29,7 @@ dayjs.extend(isSameOrBefore);
 /**
  * Grade id to use for chart bucketing: prefer the server-supplied
  * `effectiveDifficulty` (COALESCE of user override + climb consensus) and fall
- * back to the raw `difficulty` when absent. See docs/ascents-and-attempts.md.
+ * back to the raw `difficulty` when absent. See docs/data/ascents-and-attempts.md.
  */
 function gradeIdForEntry(entry: LogbookEntry): number | null {
   return entry.effectiveDifficulty ?? entry.difficulty ?? null;

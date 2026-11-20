@@ -20,7 +20,7 @@
 # Disallow stops the fetch. The usual caveat — that a disallowed URL can stay
 # indexed without content because the crawler never sees the noindex — does not
 # bite here: this host has been noindex since it launched (see
-# docs/expo-web-deployment.md, "Scope: what the browser app is"), so there is
+# docs/operations/expo-web-deployment.md, "Scope: what the browser app is"), so there is
 # nothing in an index to remove.
 #
 # There is no carve-out for share unfurlers on purpose. The export is one static

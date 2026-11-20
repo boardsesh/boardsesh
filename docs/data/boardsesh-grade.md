@@ -1,0 +1,925 @@
+# Boardsesh grade
+
+The Boardsesh grade is a per-climb, per-angle difficulty estimate computed from
+cross-board community data. This doc is written for a data scientist who wants to
+understand the model, argue with it, and contribute. It documents the data we
+have (and its traps), the exact formulas, the validation gates, the honest
+limitations, and the alternatives we rejected and why.
+
+Code map:
+
+- Model math: `packages/db/src/queries/grade-model/` — `constants.ts` (every
+  threshold), `coefficients.ts` (the estimators), `blend.ts` (the posterior),
+  `gates.ts` (validation), `types.ts`.
+- Pipeline: `packages/db/src/jobs/refresh-climb-grades.ts`, run nightly by the
+  `refresh-climb-grades` GitHub Actions workflow through the CLI
+  `packages/db/scripts/refresh-climb-grades.ts`. The batch worker's
+  `refresh-climb-grades` family runs the same code (docs/backend/background-workers.md,
+  "Batch families"); a blocking gate there ends the run with `GATES_FAILED`.
+- Output tables: `packages/db/src/schema/app/climb-grades.ts`.
+- Tests: `packages/db/src/queries/grade-model/__tests__/grade-model.test.ts`.
+- GraphQL: `boardseshGrade` (single climb+angle) and `boardseshGradesForAngles`
+  (every computed angle for a climb, ascending) resolvers in
+  `packages/backend/src/graphql/resolvers/climbs/queries.ts`. The shared
+  `boardseshDifficultyExpr` / `boardseshConfidenceExpr` / `boardseshGradeTickJoinCondition`
+  helpers in `packages/backend/src/graphql/resolvers/shared/sql-expressions.ts`
+  embed the fallback grade on Climb and tick/session payloads (see below).
+
+## 1. What it is and why
+
+LED-board grades are noisy for three reasons that a single-board app can't fix:
+
+- **Subjectivity.** A climb's grade is a crowd opinion, and the crowd is small
+  and self-selected per climb.
+- **Angle traffic is uneven.** The same climb at 40° may have 200 ascents and at
+  25° have two. The sparse angle inherits nothing today.
+- **Cross-board culture gaps.** Folk wisdom says Moon grades hardest and Kilter
+  softest. Our data confirms it: among users who log graded sends on both Kilter
+  and Tension, the paired median gap is about 1.2 ± 0.4 grade points, Kilter
+  reading soft. That gap is invisible from inside any one board.
+
+Boardsesh holds ascent data across all the boards, so standardizing grades is a
+data problem rather than a matter of opinion. The reference point is theCrag's
+GRAID, which applies Whole-History Rating to per-user ascent outcomes — we use a
+different backbone (see §6) because our per-user data is far sparser than theirs.
+
+The model is deliberately small: `GROUP BY` aggregates, frozen coefficient
+rows, capped per-user evidence, and one closed-form empirical-Bayes blend, all
+in TypeScript. No MCMC, no IRT, no neural net. On the client, it ships behind
+the mobile/Expo-web app's `boardsesh-grade` feature flag
+(`packages/mobile/src/providers/feature-flags-provider.tsx`) — the only
+client that renders a Boardsesh grade today; see "Which grade a client
+surfaces" under §3 for the rule every renderer follows.
+
+## 1b. Your own grade beats all of it (#4796, #4828)
+
+Everything above is about producing the best *crowd* number. It is deliberately
+not the number a climber sees first.
+
+**The rule:** if you have graded a climb yourself, that is the grade the app
+shows you for it — in the list, in the play drawer header, and in the Grades
+section. If you have not, you get the crowd's number as before (the Boardsesh
+grade where the toggle is on and one is trusted, otherwise the Aurora grade).
+
+What happens to the other grades depends on the surface.
+
+**Play drawer header.** Where your grade and the crowd's number read
+differently, the crowd's sits under yours, marked. Where they agree, nothing is
+added.
+
+**Climb list row.** The grade column holds one grade. A second one can lead the
+line under the name ("V4 · 1.2k sends · 4.5★ · setterx"), and that token is
+always the community grade, never the Boardsesh grade. The rule is
+`deriveClimbRowGrade` in `packages/mobile/src/lib/climb-row-grade.ts`:
+
+- The token shows when the column holds another grade (yours, or a Boardsesh
+  grade) that reads differently from the community's, unless the climber has
+  switched the token off in the Climb list settings.
+- Your grade wears the `person` mark when it reads differently from the grade
+  the row would otherwise show: the Boardsesh grade where that toggle is on,
+  otherwise the community grade. It is also marked when there is no other grade.
+- The `≈` on an estimated Boardsesh grade is not a difference, for the token or
+  for the mark.
+- Under the "V5 / 6C" format the token uses only the community grade's V half.
+  Matching V halves suppress it, even when the Font halves differ. Font-only
+  format compares the whole grade label.
+
+With both toggles on, the mark and the token compare against different grades.
+A row then shows your grade and the community's, and the Boardsesh grade is in
+the play drawer:
+
+| Yours | Boardsesh | Community | Row |
+|---|---|---|---|
+| V4 | V6 | V5 | V4 marked, token V5 |
+| V4 | V5 | V4 | V4 marked, no token |
+| V5 | ≈V5 | V4 | V5 unmarked, token V4 |
+| V5 | ≈V5 | V5 | V5 unmarked, no token |
+
+Your grade is the difficulty of your LATEST graded tick for
+`(user, board_type, climb_uuid, angle)`, ordered `(climbed_at DESC, uuid DESC)`.
+Not the hardest — a stiff grade from one bad day must not stick. Ties break on
+`uuid` rather than the `boardsesh_ticks.id` bigserial because only the uuid ever
+reaches the client; ordering on the id server-side would let the two disagree
+about which grade is current. The shared implementation is
+`pickLatestGradedTick` in `packages/shared/logbook/src/personal-grade.ts`; the
+client read is `useMyGrade` (mobile), which is an O(1) lookup into the
+`logbookByClimbAngle` index `BoardProvider` already maintains.
+
+**Why this does not feed back into the model.** A personal grade changes what
+*you* see and how *your* searches sort and filter. It is never published, never
+shown to another climber, and never enters the model's input. The rater sample
+(`packages/db/src/queries/grade-model/raters.ts`) still selects
+`DISTINCT ON (user_id, board_type, canonical_uuid, angle)` over ticks with
+`status IN ('flash','send')` — one opinion per climber per climb per angle,
+exactly as before. The anti-echo property in §2 is untouched: the tick picker
+still opens on nothing selected, and the grade rail's reference chip stays on the
+community grade, so we never pre-fill the model's own output back into the
+ascent grades it is estimated from.
+
+**Grading a climb you have not sent** is allowed, which is #4828's literal ask.
+`boardsesh_ticks.difficulty` is nullable on any status, so an attempt can carry
+an opinion. That is safe because every consumer which must only hear from people
+who actually sent the climb already filters `status IN ('flash','send')`: the
+rater sample above, the profile and session OG cards, the board leaderboard and
+the session summary. Containment lives in those queries, not in the column being
+empty for attempts.
+
+**How common this is.** Measured on production, 2026-09-05:
+
+| board | ticks | graded | of graded, % differing from the listed grade |
+|---|---|---|---|
+| kilter | 375,157 | 71.0% | 14.9% |
+| tension | 64,765 | 79.3% | 15.1% |
+| moonboard | 15,405 | 10.3% | 36.6% |
+| woods | 92 | 27.2% | **100%** (22 of 22) |
+
+Two things follow. Most graded ticks *agree* with the listed grade, so the second
+line is rare and the list stays quiet — the design rests on agreement being
+common, not on personal grades being rare, which they are not. And on the Woods
+Board every single climber who gave a grade disagreed with the board's, which is
+precisely what both issues were reporting.
+
+## 2. Data sources and their verified quirks
+
+This section is the most important one for anyone poking holes. Every number
+below was verified against production queries by an adversarial review panel
+(a psychometrician, a rating-systems pragmatist, a selection-bias skeptic).
+
+### `board_climb_stats.difficulty_average` — the crowd mean
+
+Upstream computes `difficulty_average` as a plain arithmetic mean over their
+per-user ascents table on Kilter, Tension, Grasshopper, Decoy, So iLL, and
+Touchstone: fractional, and it moves as ascents accumulate.
+
+- **MoonBoard is different, not absent.** Moon's own feed carries only integer
+  labels — the setter's `grade`. But the MoonBoard app separately exposes
+  `userGrade`, its own community-voted grade, distinct from the setter's — the
+  importer sources `difficulty_average` from `userGrade` when present, falling
+  back to the setter's grade otherwise (see `moonboard-catalog-helpers.ts`'s
+  `userDifficultyId`). It is a real, independent crowd signal, confirmed
+  against OCR'd app screenshots — but it is a **catalog snapshot**, refreshed
+  only when a problem's page is re-imported, not a live per-ascent mean the way
+  the other boards' is. This is what lets MoonBoard sit in `CROWD_MEAN_BOARDS`
+  (§3, "MoonBoard's angle transpose") and get a real `confirmed`/`provisional`
+  grade for a problem graded at both of its real angles (25°/40°) — the case
+  neither of MoonBoard's own standalone mechanisms below covers.
+- **MoonBoard has its own Font → V conversion.** Moon labels 6A as V2, where
+  the shared (Aurora) table says 6a/V3, and its scale skips 5b and 5c. The ids
+  stay on the shared scale, so the model, ticks and filters compare across
+  boards unchanged; only the label moves. `MOONBOARD_BOULDER_GRADES` in
+  `@boardsesh/board-constants` and the MoonBoard rows of
+  `board_difficulty_grades` (migration 0257) carry it, and the display helpers
+  (`formatGrade`, `getGradeLabel`, `getDifficultyMapping`) take the board name
+  so MoonBoard 6A+ reads V3, not V3+.
+- **Zero shrinkage upstream.** A one-ascent "grade" is one person's opinion
+  surfaced raw. On Kilter, 34% of climb+angle rows have exactly one ascent and
+  70% have four or fewer. The ≥20-ascent head is already stable (p90 lifetime
+  drift 0.28 grade points). All the value and all the risk live in the sparse
+  tail.
+
+### The quick-ascent auto-fill (the echo problem)
+
+Aurora's quick-ascent button copies the climb's displayed grade straight into
+the user's log, and that same log feeds the upstream ascents table that
+`difficulty_average` averages over. Boardsesh's quick-tick behaves similarly.
+Result: about 85% of synced tick grades equal the displayed grade, and most of
+those are UI auto-fills carrying zero information — they only pull the mean
+toward the current label. Raw ascent counts overstate the independent-opinion
+count by roughly 5–7×.
+
+Tick **provenance** splits the signal, and we exploit it:
+
+| Tick source                     | Exact-echo rate | Dispersion | Treatment                                                           |
+| ------------------------------- | --------------- | ---------- | ------------------------------------------------------------------- |
+| Native Boardsesh (grade opt-in) | 0.77            | 0.97       | genuine opinion (opt-in ⇒ intentional; an echo is honest agreement) |
+| Upstream-synced (quick-ascent)  | 0.85            | 0.81       | echo = probable auto-fill, carries no opinion                       |
+
+Boardsesh made grade/quality optional on native ticks precisely for data
+quality. Because a native grade is opt-in, even an exact echo is a real "the
+label is right" vote. A synced exact-echo is treated as "no opinion expressed"
+— counting it as agreement would underestimate σ_within by 2–3×.
+
+### Anchors and benchmarks
+
+- **Tension benchmarks are the one externally-valid anchor**: 2,867 curated
+  problems with independent community validation (drift −0.04 ± 0.18). Tension
+  is the offset origin (§3).
+- **Kilter's `benchmark_difficulty` is Kilter's Verified list**, about 5,000
+  (climb, angle) rows since #2493, and the column also holds about 163k NaN rows
+  that mean nothing. Kilter says Verified climbs "won't always be the hardest of
+  the grade, nor the easiest", so it is a curated set but not a grade anchor.
+- **Moon benchmarks are circular** in our feed (`benchmark_difficulty` is still
+  sourced from the setter's label, not `userGrade` — unlike
+  `difficulty_average`, above).
+- **Moon's cross-board bridge is still report-only.** Within-board
+  standardization (`local_grade`) now publishes for MoonBoard (see above and
+  §3, "MoonBoard's angle transpose") — but live paired-user coverage for a
+  cross-board bridge is still below the bridge threshold, so `universal_grade`
+  remains NULL for every MoonBoard row and the Moon bridge (`bridges.ts`) stays
+  report-only until the data grows.
+
+### Structure and hygiene
+
+- **Angle effect is real and monotone** (−1.9 grade points at 0° to +2.8 at 70°
+  within a fixed climb) but **grade-dependent**: the span is 2.1 grades for
+  V0–2 versus 3.3 for V6+. One curve won't do; we fit a grade × angle surface.
+- **Mirrors have no aggregate dimension.** Mirrored ticks (25% on Tension) can't
+  be joined to a per-mirror crowd mean; mirrors inherit the base grade (§5).
+- **Duplicate holds.** 16k Kilter climbs share a `hold_fingerprint` (the same
+  physical problem listed more than once). Tension's `hold_fingerprint` is 100%
+  NULL. Fingerprint groups must agree at the same angle (gate in §4).
+- **Concentration.** The top 50 users are 42.5% of all our sends, so coefficient
+  estimation aggregates per user first (`σ_within`, the board offset, the LOO
+  gate). This is an independence guard against pseudo-replication — a thousand
+  ticks from one user are a thousand draws of one personal calibration, not a
+  thousand opinions — **not** a claim that active users grade worse, and it
+  applies to coefficients only: no user's opinion is down-weighted in any
+  climb's grade (the crowd mean is upstream's unweighted average). The tempting
+  counter-hypothesis, "power users grade more accurately, so weight them up",
+  was tested on prod (2026-07) and rejected: mean |deviation| of expressed
+  opinions from the established crowd mean rises monotonically with grading
+  activity (0.96 grades for users with 3–9 expressed opinions → 1.33 for 500+),
+  heavy graders run systematically harsh (bias −0.16 to −0.27) and disagree
+  with _each other_ by ~1 full grade, and the per-user Kilter/Tension gap
+  spread does not shrink with volume (sd ≈ 1.6–1.8 in every volume bucket), so
+  volume-weighting the offset would only privilege a few individuals'
+  calibration. Where concentration is extreme the guard does real work:
+  Tension's top user is 33% of expressed opinions and tick-weighting would cut
+  `σ_within` from 1.74 to 1.38 — one person's tight personal dispersion faking
+  ~26% more confidence in every Tension crowd mean. On Kilter (top user 5.7%)
+  the choice barely matters (1.55 vs 1.52). The read-only reproduction script is
+  `packages/db/scripts/analyze-grader-concentration.ts`.
+- Drafts and unlisted climbs are excluded from the pipeline.
+
+## 3. The model
+
+Closed-form empirical Bayes, one climb+angle at a time. All boards with a crowd
+mean (everything except Moon) go through the same posterior.
+
+### Echo fraction λ (deconvolution)
+
+λ(board) is the share of logged grades that are quick-ascent auto-copies. We
+recover it from the two tick provenances. Let `a` be the native exact-echo rate
+(honest agreement) and `e` the synced exact-echo rate (agreement mixed with
+auto-fills). Then
+
+```
+e = λ + (1 − λ)·a        →        λ = (e − a) / (1 − a)
+```
+
+Boards with too few native ticks borrow the pooled agreement rate; boards with
+too few synced ticks fall back to `DEFAULT_ECHO_FRACTION = 0.85`. λ is clamped
+to [0.2, 0.95] so a pathological estimate can neither zero out nor fully trust
+the crowd. Estimator: `estimateEchoFractions` in `coefficients.ts`.
+
+### Effective sample size and standard error
+
+```
+n_eff = ascensionist_count · (1 − λ)        (floored at 1 when any ascent exists)
+se²   = σ_within² / n_eff
+```
+
+`σ_within(band)` is the SD of **genuinely expressed** grades around the crowd
+mean, per board × grade band, measured from native graded ticks plus synced
+non-echo ticks (synced echoes are dropped as "no opinion"). Aggregated per user
+first so one power user can't set the variance — an independence guard, not an
+accuracy judgement (see Concentration, §2). Estimator: `estimateSigmaWithin`.
+
+The de-attenuation reading: a small observed drift on a high-traffic climb, once
+you divide out the (1 − λ) of ascents that were auto-copies, implies a much
+larger true disagreement. The widened `se` keeps the extra uncertainty honest.
+
+### Cross-angle prior μ0
+
+The prior mean for one climb+angle comes from **that same climb's other
+angles**, each mapped to an angle-neutral reference via the angle surface,
+combined weighted by `n_eff`, then mapped forward to the target angle
+(`crossAnglePrior` in `blend.ts`). If no sibling angle carries crowd evidence,
+there is no prior.
+
+The display grade is **never** treated as independent evidence. On most boards
+the display _is_ the crowd mean (on Kilter, a damped blend of it), and logged
+grades anchor to it. Blending toward display would re-count the same signal and
+fake a tighter CI. This is why the middle regime below leaves the mean alone.
+
+### The three-regime posterior
+
+`computePosteriorGrade` picks a regime by what independent evidence exists:
+
+1. **Crowd mean + cross-angle prior** → proper EB blend, where the prior's
+   variance includes the siblings' own sampling error — when a climb is new its
+   other angles are thin too, and must not masquerade as head-quality evidence:
+   ```
+   V0      = τ² + σ²/n_eff(siblings)          — the prior's real variance
+   shrunk  = (V0·mean + se²·μ0) / (V0 + se²)
+   post_sd = sqrt(V0·se² / (V0 + se²))
+   ```
+   (Ignoring the sibling sampling term was the first prod validation's failure:
+   thin siblings dragged grades with unearned confidence, and the backtest
+   showed zero improvement over raw. With V0 correct it beats raw.)
+   For established rows (n ≥ 50) the posterior is additionally clamped within
+   ±1 grade of the crowd mean — a prior never overrules a crowd that has
+   already spoken.
+2. **Crowd mean only** → the mean stands as-is with an honest `se = σ/√n_eff`.
+   No shrinking toward display (same signal).
+3. **No crowd mean** → the cross-angle prior if one exists (SD √V0), else the
+   display grade passed through **with no CI**, always tiered `setter_only`.
+
+### Projected grades for unclimbed angles (v2.1)
+
+Regime 3 above already covers a climb+angle with thin evidence via the
+cross-angle prior. v2.1 persists that same projection for angles with **zero**
+ascents too — a climb that has never been climbed at 45° still gets a
+`board_climb_grades` row there, as long as the climb has real crowd evidence at
+2+ other angles. Previously the pipeline only ever computed a row for a
+(climb, angle) pair with an existing `board_climb_stats` row; unclimbed angles
+returned nothing, even though the model could project them the same way it
+already projects a thin one.
+
+`computeBoard` widens each eligible climb's angle set to the board's full fixed
+angle list, adding a zero-evidence synthetic observation for every angle
+without real stats, and lets it fall through the existing regime-3 path
+unchanged. The synthetic observation's `displayDifficulty` (needed to pick the
+right grade band for σ_within/τ²/angle-offset) is resolved with a cheap
+two-pass probe: run the cross-angle projection once to get a nominal grade,
+feed that back as the band-selection input, then compute the real posterior —
+without it, a zero-evidence row silently defaults to the `v3-5` band regardless
+of the climb's actual difficulty.
+
+These rows are tiered `cross_angle_estimate` (see the table below), are real
+SQL columns like any other grade — sortable, filterable, synced to mobile
+offline storage — and are gated by their own zero-evidence backtest (§4)
+before publish. Projection additionally requires fitted angle-surface coverage
+for the target cell and at least two contributing sibling cells; a missing cell
+is never treated as a learned zero offset. Every board this model already covers is eligible
+(`CROWD_MEAN_BOARDS`: Kilter, Tension, Grasshopper, Decoy, So iLL, Touchstone,
+MoonBoard); the backtest runs independently per board so a high-volume catalog
+cannot hide a weak or missing surface on a smaller one. MoonBoard is a member
+but this projection never actually fires for it in practice: it requires at
+least `CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS` (2) OTHER ascent-backed angles to
+project from, and MoonBoard structurally has at most two real angles (25°/40°)
+in total — projecting onto one from the other single sibling never clears the
+bar. (Dropping the threshold to 1 was tried and reverted: it worked
+mechanically, but MoonBoard's own projections came out overconfident, 95% band
+covering only 88% of held-out truth vs 98.9%+ for the other boards — see
+`CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS`'s doc comment.) MoonBoard's actual
+angle-filling mechanisms are both standalone, below.
+
+Publication has a rollout guard: the scheduled job must explicitly pass
+`--publish-cross-angle-estimates`. Ship the readers first, then enable that flag
+only after the compatible mobile build is the minimum supported version; older
+clients do not understand the new confidence tier safely.
+
+### MoonBoard's angle transpose (standalone, not part of this model)
+
+MoonBoard problems are set at one of two fixed angles, 25° or 40°, and 96.7% of
+them (263,316 of 272,294) only ever carry a grade at one of the two — nobody has
+climbed the other, so it shows nothing at all. The projection two sections up
+can't help here even though MoonBoard is a `CROWD_MEAN_BOARDS` member now: a
+single-angle problem has evidence at exactly ONE angle, and projection needs
+`CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS` (2) sibling angles to transport a mean
+through the fitted angle surface from.
+
+So MoonBoard gets a separate, much smaller mechanism.
+`packages/db/src/queries/grade-model/moonboard-angle-model.ts` learns a
+per-grade-band delta between the two angles from the ~5,983 problems that do
+carry a real grade at both (reading `difficulty_average` — the userGrade-backed
+column above, not the setter's raw label — held-out MAE 0.879 vs 1.026 for the
+setter-label version, non-monotonic pairs 7.6% vs 13.0%), and
+`packages/db/src/jobs/refresh-moonboard-angle-estimates.ts` transposes each
+single-angle problem's grade onto its missing angle and writes it as an ordinary
+`board_climb_grades` row tiered `moonboard_angle_estimate`. It is run weekly by
+the `refresh-moonboard-angle-estimates` GitHub Actions workflow through the CLI
+`packages/db/scripts/refresh-moonboard-angle-estimates.ts`; the batch worker's
+`refresh-moonboard-angle-estimates` family runs the same code
+(docs/backend/background-workers.md, "Batch families") and will own this schedule once
+that family is cut over. An unusable pooled fit ends the run with
+`FIT_UNUSABLE` there instead of a nonzero exit code.
+
+What keeps it honest:
+
+- **Two directional tables, median not mean.** `from25` is banded on the 25°
+  grade and carries (40° − 25°); `from40` is banded on the 40° grade and carries
+  the reverse. Each band's value is the median of its pairs, plus a
+  leave-one-out stability check reusing the bridge estimator's
+  `MOON_BRIDGE_MAX_LOO_DELTA` (0.25). A mean is demonstrably fragile here: about
+  15% of dual-graded pairs are not harder at 40° at all, and the v9+ band
+  (n = 54) flips sign outright under one.
+- **Band guards with a pooled fallback.** A band keeps its own delta only when
+  it has ≥ `ANGLE_CELL_MIN_CLIMBS` (30) pairs, its sign agrees with the pooled
+  direction, and it is LOO-stable. Anything else falls back to the pooled `all`
+  delta, and a pooled delta that is itself missing or wrong-signed aborts the run
+  with nothing written.
+- **A band, not a point.** `grade_low`/`grade_high` come from a robust spread
+  (1.4826 × MAD) floored at `DEFAULT_SIGMA_WITHIN` and capped so the published
+  range stays inside what the play drawer will actually print.
+- **`universal_grade` is always NULL.** There is no cross-board bridge for
+  MoonBoard, and this mechanism does not create one.
+
+It is deliberately outside the EB pipeline above: even though MoonBoard is now
+a `CROWD_MEAN_BOARDS` member, no type is shared between this mechanism and the
+blend, and rows are stamped `model_version = 'moonboard-angle-v1'` rather than
+`GRADE_MODEL_VERSION` so a transposed row is never mistaken for one that went
+through the blend. Its own weekly job (today the `refresh-moonboard-angle-estimates.yml` workflow,
+soon the same-named batch family) owns cleanup too: nothing else writes rows at
+THIS model_version, so an estimate whose problem has since been climbed at
+that angle is reaped in the same transaction.
+
+Three separate producers now write `board_climb_grades` rows for MoonBoard —
+the nightly EB pipeline (dual-graded problems, `confirmed`/`provisional`, model
+version `GRADE_MODEL_VERSION`), this angle transpose (single-angle problems'
+missing 25°/40°, `moonboard-angle-v1`), and the wide-angle estimate below
+(angles outside 25°/40°, `moonboard-wide-angle-v1`) — but they write disjoint
+angles for any one climb by construction, so they never race. What DOES need
+guarding is each job's own cleanup: `deleteStaleGrades` in
+`refresh-climb-grades.ts` scopes its DELETE to
+`model_version = GRADE_MODEL_VERSION` for exactly this reason — an earlier,
+unscoped version of that query treated itself as the sole owner of
+`board_climb_grades` for a board and wiped the other two jobs' rows wholesale
+on every nightly run.
+
+Do not confuse either MoonBoard mechanism above with the **Moon bridge**
+(`grade-model/bridges.ts`, §3 "Cross-board offset"), which is a different thing
+entirely: that one is cross-board, feeds `universal_grade`, needs paired users,
+and is still report-only. Both MoonBoard mechanisms above are within-board,
+feed `local_grade` only, need no users at all, and ship now.
+
+### MoonBoard's wide-angle estimate (standalone, not part of this model)
+
+The `moonboard-wide-angles` feature flag lets a MoonBoard problem be climbed
+(and BLE-controlled) at any angle in 5° steps from 0° to 70°, not just the
+catalog's own 25°/40°. Real community evidence at those wide angles barely
+exists — at the time this was written, one lone `board_climb_stats` row
+existed at a non-25/40 angle in the whole catalog — so neither the angle
+transpose above (needs real evidence at both 25° AND 40°) nor the EB pipeline's
+cross-angle projection (needs real evidence at 2+ angles per climb) has
+anything to project from.
+
+`packages/db/src/queries/grade-model/moonboard-wide-angle-model.ts` trades
+same-board accuracy for immediate coverage instead: it borrows another
+crowd-mean board's FITTED angle-effect SHAPE — the same per-grade-band,
+per-angle offset table `estimateAngleSurface` fits for the cross-angle
+projection above, from Kilter and Tension — and applies it as a relative shift
+to MoonBoard's own known grade at 25°/40° (preferring a real angle over a
+transposed one when both exist).
+`packages/db/src/jobs/refresh-moonboard-wide-angle-estimates.ts` writes the
+result as a `board_climb_grades` row tiered `moonboard_wide_angle_estimate`,
+`model_version = 'moonboard-wide-angle-v1'`. It is run weekly by the
+`refresh-moonboard-wide-angle-estimates` GitHub Actions workflow through the
+CLI `packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts`; the batch
+worker's `refresh-moonboard-wide-angle-estimates` family runs the same code
+(docs/backend/background-workers.md, "Batch families") and will own this schedule once
+cut over. Its output runs into the millions of rows: one publish of 2.89M rows
+took ~1,429 s against production (Sep 2026), but that was an insert-only run
+from before the `IS DISTINCT FROM` guard below, so every row was a real write.
+The steady state has not been measured yet; before the family is enabled it
+gets measured on the Sep 28 Actions run and on a `{"dryRun":true}` batch-VM
+run with its peak RSS.
+
+The publish commits in chunks of about 50,000 rows keyed on `climb_uuid`
+(about 3,850 climbs times 13 angles), and every angle of a climb lands in the
+same chunk; the stale-row reap follows in chunks of its own. So while a publish
+is running, readers can see this week's surface for some climbs and last
+week's for others, but each climb's 13-angle ladder always comes from one run.
+Unchanged rows are skipped by the guard, so only climbs whose integer grade
+moved are in that mix. An interrupted run leaves a committed prefix of whole
+climbs; the retry re-plans and the committed rows become no-ops. A generation
+column that would switch the whole surface at once was rejected: it rewrites
+all 2.89M rows every week and re-sends about 1.2M rows to every MoonBoard
+device.
+
+Both MoonBoard estimate jobs share one upsert
+(`packages/db/src/jobs/grade-estimate-upsert.ts`) that skips a row unless one of
+its values moved (`IS DISTINCT FROM` on every overwritten column except
+`coeff_version`, which is minted per run). An unchanged row keeps its
+`computed_at`, which is the offline sync cursor, so devices don't download it
+again. Before this, every Monday run re-stamped all ~2.89M wide-angle rows and
+every MoonBoard device re-pulled its layout's share (about 1.2M rows for the
+largest layout). A row that did move carries that run's `coeff_version`; an
+unchanged one keeps the version of the run that last moved it.
+
+Validated by proxy, since MoonBoard itself has no wide-angle ground truth yet:
+using Kilter's fitted shape to predict Tension's own held-out angles beats "no
+angle effect" by 18.7% MAE. This is deliberately the roughest of MoonBoard's
+tiers — a cross-board borrow, not a same-board transform like the angle
+transpose — and its own UI copy says so.
+
+### Per-climb isotonic angle constraint (v1.1)
+
+Each angle's crowd herds independently, so raw per-angle grades can invert —
+The Enchiridion (Kilter Homewall) was crowd-graded a full point _harder_ at 30°
+(n=55) than at 35° (n=33), display grades included. The blend can't fix that:
+with real evidence at both angles, own-angle data rightly dominates the
+cross-angle prior. But the same holds at a steeper wall cannot be easier, so
+after blending, each climb's grades are projected onto "non-decreasing with
+angle" via weighted isotonic regression (pool-adjacent-violators, weights =
+posterior precision 1/post_sd²) — violating neighbours merge to their
+precision-weighted mean, monotone climbs are untouched. Established rows keep
+the no-shock promise (never moved more than 1 grade from their own crowd mean;
+a binding cap can leave a residual inversion, which the run counts and logs).
+Display-only pass-through rows carry no evidence and don't participate.
+Implementation: `isotonic.ts`.
+
+### Kilter display-delta hygiene (v1.2)
+
+Kilter has a small data-quality tail where the upstream displayed grade appears
+mixed-scale or corrupted: the crowd mean is normal, but the label sits near the
+scale floor or several grades away from the standardized result. The model does
+not repair those source rows and does not clamp the computed grade back toward
+the suspect label. Instead, after blending and isotonic projection, any Kilter
+row that would be `confirmed` is downgraded to `provisional` when:
+
+```
+round(universal_grade) - round(display_difficulty) < -3
+round(universal_grade) - round(display_difficulty) >  1
+```
+
+The local/universal grade and confidence band stay unchanged; only the tier is
+lowered so the UI stops presenting an outlier as settled. The nightly run logs
+and persists how many rows were downgraded. Implementation:
+`applyDisplayDeltaHygiene` in `hygiene.ts`.
+
+### Capped rater and behavior evidence (v2.0)
+
+Stage 2 adds two per-user signals before the EB blend, but keeps them bounded
+so they cannot overpower the upstream crowd aggregate they often feed.
+
+**Rater model.** For every user × gym/board location, we estimate a shrunk bias
+against the current crowd mean. Native Boardsesh grade ticks count as explicit
+opinions, including exact display matches. Synced exact-display echoes count as
+zero opinion because they are likely quick-log auto-fills; synced non-echo
+grades count at `0.25`. Biases need at least 3 effective opinions, shrink toward
+zero with a 12-opinion prior, and clamp to ±1 grade. The climb-level rater
+signal is capped to ±0.5 grade from the raw crowd mean and at 5 effective
+opinions.
+
+**Behavior model.** Native flash/send/attempt outcomes are converted into a
+weak grade signal after fitting shrunk user ability from successful ticks.
+Behavior only publishes for boards whose **used** native rows are broad enough
+after the high-traffic and ability filters (≥100 users, ≥500 outcomes, top user
+≤3% of outcomes). Outcome buckets need support and cannot be dominated by one
+user before they are used. The climb-level behavior signal is capped to ±0.35
+grade from the raw crowd mean and at 2 effective opinions.
+
+**De-echoed crowd mean.** The crowd mean point estimate is gently moved away
+from display by dividing the observed display delta by `(1 − λ)`, but only when
+there is enough independent evidence and only up to ±0.75 grade from the
+observed mean. If the de-echo step is not eligible, the raw crowd mean stands.
+
+Rater and behavior coefficients are fit on training rows. Prediction evidence
+is then built separately, with Tension benchmark holdout rows allowed in
+prediction but excluded from fitting. For normal published rows, per-user rater
+bias and behavior ability are applied leave-target-out so the target climb does
+not help calibrate the user signal used to grade that same target.
+
+All three signals are blended into the observation's `difficultyAverage` before
+the existing cross-angle prior, isotonic projection, no-shock gate, and
+hysteresis. The visible ascent count and confidence-tier thresholds still use
+the upstream raw ascent count, so Stage 2 cannot make a thin climb look like a
+head climb.
+
+### Duplicate climbs share one identity
+
+Climbs with the same `(layout_id, hold_fingerprint)` are the same physical
+problem listed under different UUIDs. The pipeline treats a duplicate group as
+ONE climb: per angle an n-weighted pooled mean/count (and averaged display),
+pooled Stage 2 evidence, and every member uses the group's full angle set as
+its cross-angle evidence — so members get identical posteriors by construction.
+Before pooling, 44% of Kilter duplicate groups disagreed by more than a grade.
+
+### Grade × angle surface
+
+Per board, offsets are fit on 5° angle bins × grade bands, using only climbs
+with ≥2 angles at ≥10 ascents each — so the surface measures re-grading of a
+fixed climb, not which climbs happen to exist at each angle. Cells need ≥30
+climbs to be trusted; lookups fall back band → `all` → 0, never extrapolating to
+an unobserved angle. Estimator: `estimateAngleSurface`.
+
+### τ² (between-climb prior variance)
+
+τ² is the **leave-one-angle-out residual variance** of the cross-angle prior:
+on ≥20-ascent multi-angle head climbs, predict each angle's mean from its
+siblings via the frozen surface, and take the variance of the residuals per
+board × band. That makes τ² the honest uncertainty of the prior itself, not a
+guessed hyperparameter. Clamped to [0.05, 4.0]. Estimator: `estimateTauSquared`.
+
+### Cross-board offset (Tension anchor)
+
+```
+universal_grade = local_grade + board_offset,   board_offset(Tension) = 0
+```
+
+The Kilter offset is the median over shared Kilter/Tension users of their
+(Tension median − Kilter median) sent grade — a robust paired estimator, min 10
+graded sends per side. Expected ≈ −1.2 ± 0.4 (Kilter reads soft). It ships only
+if leave-one-user-out instability stays under ±0.5 (`OFFSET_LOO_MAX_DELTA`),
+guarding against a single power user setting the whole board's offset. Small
+boards (Decoy, Grasshopper, So iLL, Touchstone) have nothing to anchor against,
+so they publish a within-board `local_grade` only and `universal_grade` is NULL.
+Estimator: `estimateBoardOffsets`.
+
+### Which grade a client surfaces
+
+Every client that renders a Boardsesh grade must surface
+`universal_grade ?? local_grade` — the cross-board, standardized number when
+one exists, falling back to the within-board number only for the small boards
+that never earn an anchor (Decoy, Grasshopper, So iLL, Touchstone, per the
+offset section above). This is not a client-side style choice: it is the same
+value `blend.ts` itself calls `surfaced` (`computePosteriorGrade`'s return),
+and the one every server expression flattens into `boardseshDifficulty`
+(`COALESCE(universal_grade, local_grade)` in
+`packages/backend/src/graphql/resolvers/shared/sql-expressions.ts` and
+`packages/db/src/queries/climbs/search-climbs.ts`). `local_grade` is never
+the headline number on its own — it is what the model still has when it
+can't stand up a cross-board estimate.
+
+The shared implementation is `surfacedBoardseshGrade` in
+`packages/shared/logbook/src/grade-display.ts`, so every client-side
+renderer resolves the same way by construction. Getting this backwards is
+exactly what happened in
+[#4414](https://github.com/boardsesh/boardsesh/issues/4414): web's
+now-deleted climb-detail renderer computed `local_grade ?? universal_grade`
+(local-first), which agreed with the correct universal-first clients on
+Tension (offset 0) but read climbs ~1 V-grade softer on Kilter (offset
+≈ −1.2, see above) — invisible on the board where reports usually start,
+systematic everywhere else.
+
+#### Search filter and sort
+
+Climb search can filter and sort on either of two grades: the upstream grade
+(the board's own catalogue grade, `display_difficulty`) or the Boardsesh grade
+(model-generated, `universal_grade ?? local_grade`). `ClimbSearchInput.gradeSource`
+picks one. With `BOARDSESH`, the grade range and the difficulty sort read the
+Boardsesh grade first and fall back to the upstream grade when a climb has no
+grade row. A `setter_only` Boardsesh grade is skipped the same way, because the
+row label never shows it. Without the field (or with `UPSTREAM`) both read the
+upstream grade first, exactly as before. The mobile app sends `BOARDSESH` when
+the `boardsesh-grade` flag and the "Show Boardsesh grades" preference are both
+on and the search has a grade bound or sorts by difficulty. Otherwise the field
+is left off, so the search cache key does not change. The server helper is
+`gradeValueSql` in `packages/db/src/queries/climbs/create-climb-filters.ts`, and
+the on-device search mirrors it in
+`packages/mobile/src/db/queries/search-climbs-local.ts`
+([#5643](https://github.com/boardsesh/boardsesh/issues/5643)).
+
+### Confidence tiers
+
+| Tier                   | Condition                                                                           | UI                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `confirmed`            | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row | grade, "confirmed by N sends"                   |
+| `provisional`          | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band                     |
+| `setter_only`          | n < 3                                                                               | no Boardsesh number, setter's call              |
+| `cross_angle_estimate` | 0 ascents at this angle, projected from 2+ sibling angles                           | `≈` grade, muted, "projected from other angles" |
+| `moonboard_angle_estimate` | MoonBoard only: 0 ascents at this angle, transposed from the board's other fixed angle | `≈` grade, muted, "worked out from the other angle" |
+| `moonboard_wide_angle_estimate` | MoonBoard only: a `moonboard-wide-angles` flag angle (outside 25°/40°), borrowed from another board's angle-effect shape | `≈` grade, muted, "rough estimate" |
+
+### Publish hysteresis
+
+The surfaced grade only changes when a recompute moves it ≥ 0.5 grade points or
+the tier flips (`shouldPublish`). The head is already stable, so this kills
+night-to-night jitter without hiding real movement. Every row stamps
+`model_version` and `coeff_version` for reproducibility.
+
+## 4. Validation gates
+
+Coefficients are refit weekly and frozen between refits. Every nightly run
+evaluates the gates first and **writes zero grade rows if any blocking gate
+fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
+
+The history backtest (`tail_backtest` + `head_holdout`) is the one exception to
+"evaluates". It reads about 3.2M blocks of `board_climb_stats_history`, and its
+verdict depends only on the coefficient set, `GRADE_MODEL_VERSION` and the
+grade-model code. So a night reuses the last evaluated verdict when all three
+match it: same `coeff_version`, same model version, and the same sha256 of the
+`packages/db/src/queries/grade-model/` sources plus `src/jobs/refresh-climb-grades.ts` (stored as `gradeModelHash` in
+each `gate_results` payload). The reused entries keep the original metrics, are
+marked `skipped: true`, and their `detail` names the run they came from. A refit
+(weekly or `--refit-coefficients`), any grade-model code change, `--dry-run`,
+`--validate-only` and `--content-prior-file` always run it for real. The cost:
+new history rows and fresher truth reach the gate at the next refit, at most 7
+days later. Over Sep 2026 the nightly re-runs under frozen coefficients moved
+the improvement metric by under 0.01 (0.060–0.067) against the 0.01 tolerance.
+
+| Gate                             | Threshold                                                                                                                                               | Blocks?             | What a failure means                                                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tail_backtest`                  | multi-angle shrunk MAE must not exceed raw MAE (+0.01 tolerance), n ≥ 100; improvement % reported against an aspirational 20% bar                       | yes                 | the blend makes sparse grades worse than doing nothing                                                                                                 |
+| `head_holdout`                   | single-angle shrunk MAE must not exceed raw MAE (+0.01), n ≥ 100                                                                                        | yes                 | the model regressed the rows where it is supposed to be a no-op                                                                                        |
+| `behavior_eligibility`           | reports how many board behavior models pass the Stage 2 coverage guard                                                                                  | no (report only)    | behavior data is too concentrated or sparse on some boards, so their outcome signal is ignored                                                         |
+| `moon_bridge_readiness`          | reports Moon paired-user coverage and candidate offset stability                                                                                        | no (report only)    | Moon still lacks a publishable bridge; this deliberately does not block Kilter/Tension grades                                                          |
+| `zero_evidence_projection`       | per board: hides a well-sampled angle (≥20 ascents), projects it as if unclimbed, and must beat the naive effective-n-weighted sibling mean by ≥0.01 MAE, n ≥ 100 | withholds that board's projections | walking a grade through this board's fitted angle surface is no better than assuming a climb grades the same at every angle                            |
+| `deherded_tension_benchmark`     | held-out Tension benchmark Stage 2 MAE must not exceed Stage 1 MAE by >0.01, n ≥ 100; display MAE is reported only                                      | yes                 | rater/behavior/de-echo evidence made the benchmark set worse than the existing model                                                                   |
+| `deherded_tension_calibration`   | held-out Tension benchmark 95% interval coverage must land in [85%, 98%], n ≥ 100                                                                       | yes                 | Stage 2 uncertainty is materially under- or over-confident                                                                                             |
+| `deherded_segment_no_regression` | no grade-band, angle, or traffic segment with ≥50 rows may regress by >0.05 MAE vs Stage 1                                                              | yes                 | the aggregate benchmark score hid a segment-level regression                                                                                           |
+| `no_shock`                       | no ≥50-ascent climb's local grade moves >1.0 from its raw mean                                                                                          | yes                 | the prior is overpowering established grades (also enforced by a clamp inside the blend itself; the gate catches regressions)                          |
+| `fingerprint_consistency`        | ≤1% of duplicate-fingerprint groups disagree by >1 grade at the same angle                                                                              | yes                 | evidence for one physical problem is being split badly                                                                                                 |
+| `residual_paired_gap`            | shared-user mean gap vs fitted offset ≤ 0.3 after the Kilter offset                                                                                     | withholds universal | the "constant offset" story is wrong; local grades still publish, universal grades don't                                                               |
+| `display_delta_hygiene`          | reports Kilter rows downgraded from `confirmed` to `provisional` for rounded universal-display delta outside [-3, +1]                                   | no (repaired)       | source labels likely contain mixed-scale/corrupt display values; the grade publishes, but not as confirmed                                             |
+| honesty report                   | reports `corr(grade, display)` and mean \|Δ\| per board                                                                                                 | no (report only)    | a board whose numbers never leave the label is dressing the label as a data product; UI copy must say so                                               |
+
+The backtest replays `board_climb_stats_history` (5.4M snapshots): for series
+that later reached ≥50 ascents (their final mean ≈ truth), it takes the
+earliest 1–3-ascent snapshot plus each sibling angle's state at that instant,
+and asks whether the blended grade beats the raw sparse average against the
+final truth. Scoring: `evaluateBacktest` in `gates.ts`.
+
+Why the pass bar is no-regression rather than "beat raw by 20%": the backtest's
+"truth" is the eventual community mean, and quick-log echoes herd that mean
+toward whatever the early label was — so the raw early average partly _creates_
+the target it is scored against. Under that metric a corrective model cannot
+win big; what it must never do is lose. On the 2026-07-07 prod run the blend
+beat raw by 2.5% on the multi-angle subset (MAE 0.592 vs 0.607) and exactly
+matched it on single-angle rows. The 20% figure remains in the gate output as
+an aspirational bar so refits that help or hurt stay visible run over run; a
+de-herded evaluation (predicting held-out Tension benchmarks) is the Stage 2
+way to raise it honestly.
+
+The Stage 2 benchmark split withholds 20% of Tension benchmarks from rater and
+behavior fitting using a stable climb+angle hash. The withheld rows are still
+allowed to produce prediction evidence; only coefficient fitting is withheld.
+The withheld rows are scored against a true Stage 1 compute path with all Stage
+2 transforms disabled, and against the Stage 2 model. Display grade remains a
+report-only yardstick because benchmarks are curated labels, and requiring the
+model to beat the display label itself would reject any useful non-label signal.
+
+## 5. Known limitations
+
+These are real and we'd rather state them than paper over them.
+
+- **Spray walls are outside the model.** A home wall has a handful of
+  climbers, so spray is not in `CROWD_MEAN_BOARDS` and gets no
+  `board_climb_grades` rows. Its displayed grade is a plain vote instead: one
+  vote per climber, or an approved community grade (`docs/product/spray-walls.md`,
+  #5971). Widening that rule to other boards is #6192.
+
+- **Moon has no cross-board claim.** A problem graded at both 25° and 40° now
+  gets a real within-board `confirmed`/`provisional` grade from its own
+  `userGrade`-backed crowd mean (§2, §3) — but `universal_grade` stays NULL for
+  every MoonBoard row: paired-user coverage is still below the bridge
+  threshold, so there is no cross-board claim, only a within-board one. The
+  unlock for that is still Moon logbook growth — more logged Moon sends create
+  shared users for the bridge report.
+- **Moon's two angle-filling mechanisms trade accuracy for coverage, not the
+  other way round.** A single-angle problem's `≈` estimate at the other angle
+  (the angle transpose, §3) is a transposed crowd-mean-backed value, not an
+  independently standardized one — the values it transposes are noisy (~15% of
+  dual-graded pairs don't get harder with angle), the v9+ band is too thin to
+  fit on its own, and it still carries no cross-board claim. A wide-angle
+  estimate (§3) is rougher still: it borrows another board's angle-effect
+  shape entirely, validated only by proxy since MoonBoard itself has no
+  wide-angle ground truth yet.
+- **Small boards aren't universalized.** Decoy, Grasshopper, So iLL, and
+  Touchstone have no anchor, so they get a within-board grade with no
+  cross-board claim.
+- **Mirrors inherit the base grade.** The aggregates carry no mirror dimension,
+  so a mirrored climb reads at its base orientation's grade. Documented, not
+  fixed.
+- **Anchoring / herding is only partially corrected.** Stage 2 de-echoes the
+  crowd point estimate and adds rater/behavior evidence, but every step is
+  capped. That is intentional: the data is still sparse and self-selected, so a
+  bounded correction is preferable to manufacturing movement from thin ticks.
+- **Single-angle sparse climbs gain little.** With one angle and few ascents the
+  posterior is essentially the raw mean. The model's tail value is cross-angle
+  pooling; a lone sparse angle has nothing to pool with.
+
+## 6. Rejected alternatives
+
+| Alternative               | Why not                                                                                                                                                                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full Bayesian / MCMC      | Upstream gives us aggregate means, not per-ascent variances. Without the underlying distributions there's nothing for a sampler to condition on that the closed-form EB blend doesn't already capture — the cost buys no extra signal.                                                  |
+| WHR / IRT as the backbone | Per-user outcomes cover only ~14% of the Kilter catalog. theCrag's GRAID works because it has dense per-user ascent data; ours is too sparse to carry a rating system as the primary estimator. Ticks are a coefficient factory (variance, cross-board offset), not a grading backbone. |
+| CNN content model         | Deferred, not rejected. A gradient-boosted model on hold features is the cheaper, more credible Stage 3 version (`content_prior` column is already reserved, NULL in v2).                                                                                                               |
+
+## 7. Contributing
+
+### The roadmap
+
+- **Stage 2 — rater and behavior evidence.** Implemented in v2.0 with capped
+  per-user rater bias, weak native behavior outcomes, de-echoed crowd means,
+  held-out Tension benchmark gates, and report-only Moon bridge readiness.
+- **Stage 3 — hold-geometry content model ("Climb2Vec").** A learned per-climb
+  representation over hold geometry gives the cold tail a prior before any
+  ascents exist (into the reserved `content_prior` column), and the same
+  embedding powers climb similarity and style recommendations. It enters the
+  blend as one more `DeherdedGradeSignal` (§3), under the no-shock clamp, and is
+  the only path to a MoonBoard grade anchored in something other than a human
+  label, real or transposed — MoonBoard's two standalone mechanisms (§3) both
+  still move a `userGrade`-backed label from one angle to another (or borrow
+  another board's shape) and inherit every bias in that label. Full
+  design + phased rollout: `docs/data/climb2vec.md`. **Groundwork shipped:** the
+  generated per-hold feature substrate (`board_hold_features` — geometry +
+  de-confounded behavioral difficulty per placement, refreshed nightly by
+  `src/jobs/refresh-hold-features.ts`), which also refills the dormant
+  `user_hold_classifications` layer with algorithmic data.
+
+### Running it
+
+Unit tests:
+
+```
+vp run test:db
+```
+
+Read-only validation against the dev DB or a read-only prod `DB_URL`:
+
+```
+vp run db:refresh-climb-grades -- --validate-only
+vp run db:refresh-climb-grades -- --validate-only --allow-empty-backtest
+```
+
+Publish-path validation is also read-only, but requires the grade tables because
+it exercises hysteresis against existing rows:
+
+```
+vp run db:refresh-climb-grades -- --dry-run
+```
+
+Writable publish paths require a writable `DB_URL`:
+
+```
+vp run db:refresh-climb-grades --
+vp run db:refresh-climb-grades -- --refit-coefficients
+vp run db:refresh-climb-grades -- --publish-cross-angle-estimates
+```
+
+- `--validate-only` refits coefficients in memory, runs every gate against live
+  data, prints per-board tier counts, writes nothing, and exits nonzero if a
+  blocking gate fails. It works even before the grade tables exist (e.g. prod
+  pre-migration).
+- `--dry-run` evaluates gates through the normal publish path but writes no
+  coefficients, gate results, or grade rows.
+- `--refit-coefficients` forces a weekly refit instead of reusing the frozen set.
+- `--publish-cross-angle-estimates` enables the new tier only for boards whose
+  per-board gate passes. Keep it off until compatible mobile clients are required.
+- A bare run reuses frozen coefficients if they're under a week old, else refits.
+- `--allow-empty-backtest` is only for dev-style databases without stats history;
+  production validation should not use it.
+
+The MoonBoard angle transpose is a separate job with its own flags:
+
+```
+vp run db:refresh-moonboard-angle-estimates -- --validate-only
+vp run db:refresh-moonboard-angle-estimates -- --dry-run
+vp run db:refresh-moonboard-angle-estimates -- --publish
+```
+
+- `--validate-only` fits the deltas and prints per-band n / median / spread /
+  LOO stability plus which bands fell back to the pooled value. Writes nothing.
+- `--dry-run` also builds the full plan (estimate rows and stale rows to reap)
+  and prints sample row shapes. Writes nothing.
+- `--publish` is the only flag that writes — a run with no flags reports and
+  exits, so a mis-scheduled job can never publish by accident.
+
+MoonBoard's wide-angle estimate is a third, similarly standalone job:
+
+```
+vp run db:refresh-moonboard-wide-angle-estimates -- --dry-run
+vp run db:refresh-moonboard-wide-angle-estimates -- --publish
+```
+
+- `--dry-run` fits the borrowed angle-effect shape, builds the full plan
+  (estimate rows and stale rows to reap), and prints sample row shapes.
+  Writes nothing.
+- `--publish` is the only flag that writes, same convention as the angle
+  transpose above. No `--validate-only`: there is no MoonBoard-specific fit to
+  report on its own — the shape it borrows is Kilter/Tension's, already
+  reported by the nightly `refresh-climb-grades.ts` run.
+
+### Where things are stored
+
+- `board_climb_grades` — one row per climb+angle: `local_grade`,
+  `universal_grade` (NULL when unanchorable), `grade_low`/`grade_high`,
+  `confidence`, `ascensionist_count` snapshot, `content_prior` (NULL in v2),
+  `model_version`, `coeff_version`.
+- `board_grade_coefficients` — versioned coefficient rows keyed by
+  `(coeff_version, kind, key)`. Kinds: `echo_fraction`, `sigma_within`,
+  `tau_squared`, `angle_offset`, `board_offset`, `rater_model`,
+  `behavior_model`, `bridge_readiness`, `gate_results` (per-run pass/fail +
+  metrics), and `moonboard_angle_offset` (the standalone angle transpose, keyed
+  `from25:<band>` / `from40:<band>`). Plain table, `pg_dump`-portable. The
+  nightly refresh ignores the MoonBoard kind when it picks a frozen coefficient
+  set — that job mints its own `coeff_version` on its own schedule. The
+  wide-angle estimate mints its own `coeff_version` too (a timestamp) but reads
+  its shape straight from the nightly job's own `angle_offset` rows for Kilter
+  and Tension rather than writing a coefficient kind of its own.
+- Climb and tick/session GraphQL payloads (`climb`, `searchClimbs`, `ticks`,
+  `sessionGroupedFeed`, `sessionDetail`, and friends) each embed
+  `boardseshDifficulty` (`COALESCE(universal_grade, local_grade)`) and
+  `boardseshConfidence` alongside the legacy grade fields, for row-level
+  display without a per-climb refetch. Both are nullable — null whenever no
+  `board_climb_grades` row exists at all (too few ascents anywhere, or a
+  MoonBoard problem with no evidence at this angle and no estimate published
+  for it) — and clients fall back to the legacy consensus/Aurora grade in that
+  case (and when `boardseshConfidence` is `setter_only` or any estimate tier).
+- **On-device (mobile offline).** When a board is downloaded for offline
+  browsing on native, `board_climb_grades` is synced
+  to on-device SQLite alongside `board_climbs`/`board_climb_stats`. The pull is
+  the per-board `syncClimbGrades` resolver + the `board_climb_grades`
+  `table-config`/DDL (v4 migration) entries — see `docs/data/sync-table-manifest.md`
+  for the resolver ↔ DDL ↔ table-config contract. Only the surfaced columns are
+  synced (`local_grade`, `universal_grade`, `grade_low`/`grade_high`,
+  `confidence`, `ascensionist_count`, `computed_at`) — **not** `model_version`,
+  `coeff_version`, or `content_prior`. Offline climb search + detail LEFT JOIN
+  the table and expose the same `boardseshDifficulty`/`boardseshConfidence`
+  fields the server does, and the play-drawer grade section + by-angle chart
+  read the `boardseshGrade`/`boardseshGradesForAngles` ops local-first from it,
+  so the grade works with no network.

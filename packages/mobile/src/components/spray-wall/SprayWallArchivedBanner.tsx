@@ -1,5 +1,5 @@
 // The quiet notice an archived wall carries, on its board sheet and over its
-// climb list (`docs/spray-walls.md`, "Archive and reset").
+// climb list (`docs/product/spray-walls.md`, "Archive and reset").
 //
 // An archived wall is read-only, not gone: its climbs, sends, queue and
 // playlists all still work, so this says what stays and what does not, and

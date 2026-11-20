@@ -10,8 +10,8 @@ import { logger } from '../utils/logger';
 /**
  * The daily first-party active-user snapshot and the retention sweep behind
  * `user_activity_days` (#2644). Both run as cron-authenticated backend
- * mutations fired by `packages/scheduler`; see docs/analytics-consent.md and
- * docs/scheduler.md.
+ * mutations fired by `packages/scheduler`; see docs/analytics/analytics-consent.md and
+ * docs/backend/scheduler.md.
  */
 
 export const ACTIVE_USERS_PLATFORMS: readonly ActiveUsersPlatform[] = ['web', 'ios', 'android', 'unknown'];

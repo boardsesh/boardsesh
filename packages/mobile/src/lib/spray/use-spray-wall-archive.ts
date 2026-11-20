@@ -1,4 +1,4 @@
-// The archive readers for the spray registry (`docs/spray-walls.md`, "Archive
+// The archive readers for the spray registry (`docs/product/spray-walls.md`, "Archive
 // and reset").
 //
 // Registry-only on purpose, unlike `use-spray-wall.ts`, which also wires up the

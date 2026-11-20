@@ -16,7 +16,7 @@ import {
  * Why the identity mirror refuses to boot (or boots inert) and the import
  * refuses to run. Each code names one precondition and is the whole message:
  * no driver text, SQL, URL or identity leaves through it.
- * docs/better-auth-identity-mirror.md and docs/better-auth-identity-import.md
+ * docs/auth/better-auth-identity-mirror.md and docs/auth/better-auth-identity-import.md
  * list them. The code gates in identity-copy-gates.ts and the activation gates
  * refuse with their own fixed codes.
  */

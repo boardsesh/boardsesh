@@ -387,7 +387,7 @@ async function recordLogbookSyncSkips(
  * Drop quarantine rows for upstream ids that just synced cleanly, so the table
  * answers "what is broken right now" instead of accumulating into "what ever
  * broke" — the difference between state and a counter, and the reason this is
- * queryable at all (see docs/aurora-sync.md).
+ * queryable at all (see docs/data/aurora-sync.md).
  */
 async function reconcileLogbookSyncSkips(
   db: DrizzleDb,

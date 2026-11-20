@@ -6,7 +6,7 @@
  * migration 0225's `EXCEPTION WHEN insufficient_privilege THEN RAISE WARNING`
  * turns that refusal into a zero-exit-code success.
  *
- * The shape, from docs/postgres-18-migration.md § "Target roles and secrets" and
+ * The shape, from docs/operations/postgres-18-migration.md § "Target roles and secrets" and
  * `production-deploy.yml`'s migrate job:
  *
  *   - the database is owned by a superuser (Railway provisions it that way),

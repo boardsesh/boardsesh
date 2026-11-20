@@ -6,7 +6,7 @@ name: CI Lane Watchdog
 # and the OTA preview `gate` for 8.7; this tells us when that happens again.
 # It keys on each job's queued age, never on a registered-runner count: a
 # runner count says nothing about whether our job is actually waiting (see
-# docs/production-deploy.md, "If a runner destination ever wedges a deploy").
+# docs/operations/production-deploy.md, "If a runner destination ever wedges a deploy").
 # Alert only. It reads the Actions API and never cancels, re-runs or edits
 # anything.
 

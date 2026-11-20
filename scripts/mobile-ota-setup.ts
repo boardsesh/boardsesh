@@ -3,7 +3,7 @@
 /**
  * One-time setup helper for the self-hosted production OTA — the green-field
  * expo-open-ota **V3** control-plane server at updates.boardsesh.com. Splits the
- * runbook in docs/mobile-ota-updates.md into scriptable phases so the error-prone
+ * runbook in docs/operations/mobile-ota-updates.md into scriptable phases so the error-prone
  * bits (the container env block, the S3 lifecycle rule, the GitHub secret/var checks)
  * aren't done by hand. Cloud actions (bucket, Postgres, Railway service, DNS) and
  * dashboard actions (create the app, export the cert, mint the eoo_ key) stay manual.
@@ -305,7 +305,7 @@ function printRunbook(): void {
   log('');
   log('  1. Use the approved Ansible OTA VM stack and existing boardsesh-ota-v3 R2 bucket,');
   log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.6 at the declared immutable digest,');
-  log('       expose updates.boardsesh.com through its Cloudflare Tunnel (see docs/ota-homelab.md).');
+  log('       expose updates.boardsesh.com through its Cloudflare Tunnel (see docs/operations/ota-homelab.md).');
   log('       Migration restores the existing app/signing identity: skip new-app/certificate/native-build steps.');
   log('  2. vp run mobile:ota-setup keys');
   log('       → prints the V3 container env block + the cert-export steps.');
@@ -318,7 +318,7 @@ function printRunbook(): void {
   log('  6. vp run mobile:ota-setup preview     (optional — per-PR preview branches)');
   log('       → prints the S3 {appId}/pr- lifecycle rule + ensures the GitHub environments/secrets.');
   log('');
-  log('Full runbook: docs/mobile-ota-updates.md');
+  log('Full runbook: docs/operations/mobile-ota-updates.md');
 }
 
 const args = process.argv.slice(2).filter((arg) => arg !== '--');

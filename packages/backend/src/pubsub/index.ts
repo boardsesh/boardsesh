@@ -407,7 +407,7 @@ class PubSub {
    * `graphql/resolvers/queue/mutations.ts`.
    *
    * `options.buffer: false` keeps an event out of the replay buffer as well.
-   * The F3 trailing `CurrentClimbChanged` (docs/current-climb-outside-queue.md,
+   * The F3 trailing `CurrentClimbChanged` (docs/product/current-climb-outside-queue.md,
    * section 2) uses it: it shares its `FullSync`'s sequence and carries
    * nothing the `FullSync` lacks, so buffering it would only halve how far back
    * the 100-entry buffer reaches for the #3933 merge, and a replay sorted by

@@ -30,7 +30,7 @@
  * the verdict: it reports, and the caller decides.
  *
  * Dependency-free: runs with no install in jobs that hold the admin login.
- * See docs/mobile-ota-updates.md, "Managing xprem as code".
+ * See docs/operations/mobile-ota-updates.md, "Managing xprem as code".
  */
 
 import { resolve } from 'node:path';

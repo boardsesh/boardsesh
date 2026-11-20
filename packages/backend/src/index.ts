@@ -37,7 +37,7 @@ import { closePasswordGuessPool } from './auth/password-guess-pool';
 
 async function main() {
   // Before anything listens: a staged writer under AUTH_CUTOFF_ENFORCEMENT=observe
-  // would bump generations no reader enforces (docs/better-auth-migration.md).
+  // would bump generations no reader enforces (docs/auth/better-auth-migration.md).
   assertCutoffEnforcementConfiguration();
   assertNativeRevocationActivationConfiguration();
   assertWebSessionWriterActivationConfiguration();
@@ -45,7 +45,7 @@ async function main() {
   assertAccountGuessLimitConfiguration();
   // Off (the default) runs no query. On qualifies against the database and
   // otherwise throws one fixed code and the process exits; after an authority
-  // switch it boots inert instead (docs/better-auth-identity-mirror.md).
+  // switch it boots inert instead (docs/auth/better-auth-identity-mirror.md).
   const identityMirror = await qualifyIdentityMirrorAtStartup();
   if (identityMirror?.state === 'qualified')
     logger.info(`[IdentityMirror] Qualified at writer epoch ${identityMirror.authority.epoch}`);
@@ -55,7 +55,7 @@ async function main() {
       `[IdentityMirror] Inert (${identityMirror.reason}): mirrored credential writes refuse until a redeploy with AUTH_IDENTITY_MIRROR=off or the current CURRENT_STORE_AUTH_WRITER_EPOCH`,
     );
 
-  // The durable job queue (docs/partner-workouts-internal.md, "The job queue").
+  // The durable job queue (docs/integrations/partner-workouts-internal.md, "The job queue").
   //
   // Started HERE and not in `startServer()` on purpose. The queue is a property
   // of the process, not of a server instance: it holds its own Postgres pool and

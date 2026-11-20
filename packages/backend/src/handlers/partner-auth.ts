@@ -32,7 +32,7 @@ type PartnerRuntimeLoader = (mode: PartnerOAuthMode) => Promise<PartnerRuntime |
 const HOLD_RETRY_AFTER_SECONDS = '60';
 const UNAVAILABLE_RETRY_AFTER_SECONDS = '2';
 
-/** `docs/partner-api.md` section 6 and `docs/integration-platform.md` "Limits". */
+/** `docs/integrations/partner-api.md` section 6 and `docs/integrations/integration-platform.md` "Limits". */
 const MAX_BODY_BYTES = 64 * 1024;
 const BODY_READ_DEADLINE_MS = 5000;
 const MAX_BODY_READS = 256;

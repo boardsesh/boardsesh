@@ -1,4 +1,4 @@
--- C7 index cleanup (docs/postgres-query-costs.md): drop indexes that production
+-- C7 index cleanup (docs/operations/postgres-query-costs.md): drop indexes that production
 -- shows as unused or strictly redundant, about 872 MB by the individually
 -- rounded September 2026 measurements, and adopt
 -- board_climbs_layout_filter_idx into the schema.

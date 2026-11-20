@@ -11,7 +11,7 @@ import { refreshClimbSitemapStore } from '@/app/lib/seo/sitemap/climb-store';
  * full rebuild per cold page (#4552).
  *
  * Fired every six hours by the Railway scheduler's `refresh-sitemap-climbs` job
- * (packages/scheduler/src/jobs/registry.ts, docs/scheduler.md), and reachable by
+ * (packages/scheduler/src/jobs/registry.ts, docs/backend/scheduler.md), and reachable by
  * hand for the first refresh after a re-enable; `requireCronAuth` checks
  * `Authorization: Bearer $CRON_SECRET` either way. With the switch off it answers
  * `skipped: "disabled"` after the auth check and scans nothing.

@@ -81,7 +81,7 @@ export function apiLaneGroup(limitKey: string): string {
 /**
  * The client identity for a limit a stranger must not be able to choose. Unlike
  * `getPublicClientIp`, this believes `cf-connecting-ip` only from a verified
- * Cloudflare edge (docs/cloudflare.md), because a direct request to the origin
+ * Cloudflare edge (docs/operations/cloudflare.md), because a direct request to the origin
  * can set that header to anything. Otherwise it is the last `X-Forwarded-For`
  * hop, which the private ingress appends, and never an earlier one a caller wrote.
  *

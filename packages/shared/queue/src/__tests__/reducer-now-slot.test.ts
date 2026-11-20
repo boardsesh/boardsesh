@@ -1,5 +1,5 @@
 /**
- * The reducer in now-slot mode (F3, #6666; docs/current-climb-outside-queue.md,
+ * The reducer in now-slot mode (F3, #6666; docs/product/current-climb-outside-queue.md,
  * section 7). Legacy mode is covered by reducer.test.ts, whose cases all run
  * with `nowSlotMode` off and must stay green unchanged.
  */

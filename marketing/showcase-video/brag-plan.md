@@ -130,7 +130,7 @@ vp run video:render -- --target all                      # every target
 ```
 
 Outputs, per render target (`scripts/lib/showcase-video/targets.ts`,
-docs/showcase-video.md "Targets"): `social` writes the full-quality masters
+docs/marketing/showcase-video.md "Targets"): `social` writes the full-quality masters
 `.boardsesh/showcase-video/out/social/brag.mp4` and `brag-9x16.mp4` (+
 `brag*.jpg`, `share-copy.txt`); `reel`, `app-store` and `play-promo` write to
 `out/reel/`, `out/app-store/` and `out/play/`; `homepage` writes the hero's

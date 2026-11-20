@@ -1,7 +1,7 @@
 # Climb2Vec — offline training & evaluation
 
 Offline PyTorch/sklearn pipeline for the hold-geometry grade model (see
-`../../docs/climb2vec.md`). **Offline only** — nothing here ships to prod; serving
+`../../docs/data/climb2vec.md`). **Offline only** — nothing here ships to prod; serving
 is pure TypeScript. The pipeline reads the training matrix exported by
 `packages/db/scripts/extract-training-matrix.ts` and produces grade-accuracy and
 similarity numbers, plus (eventually) the `content_prior` + embedding artifacts

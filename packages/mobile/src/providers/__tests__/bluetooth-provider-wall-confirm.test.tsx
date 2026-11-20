@@ -703,7 +703,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
   });
 
-  // #4979 (docs/current-climb-outside-queue.md, section 6): when the current
+  // #4979 (docs/product/current-climb-outside-queue.md, section 6): when the current
   // climb hasn't changed for 4 h or more, connecting must not light it.
   describe('stale-climb hold', () => {
     const HOUR = 60 * 60 * 1000;

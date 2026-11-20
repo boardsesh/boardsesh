@@ -111,7 +111,7 @@ export type OpenClimbActionsOptions = {
   dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   /** Add to playlist hosted inside the modal route the menu was opened from
    * (the moderation feed). The root sheet would present under that route and
-   * vanish (docs/mobile-sheets-vs-routes.md, rule 1). Inside `/play` the
+   * vanish (docs/mobile/mobile-sheets-vs-routes.md, rule 1). Inside `/play` the
    * player's own sheet wins. */
   openPlaylistInRoute?: (climb: Climb, boardConfig: BoardConfig) => void;
 };

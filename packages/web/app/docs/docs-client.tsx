@@ -70,7 +70,7 @@ export default function DocsClientPage({
             <Prose>{t('docs.internal.body')}</Prose>
             <Prose>
               <MuiLink
-                href="https://github.com/boardsesh/boardsesh/blob/main/docs/websocket-implementation.md"
+                href="https://github.com/boardsesh/boardsesh/blob/main/docs/backend/websocket-implementation.md"
                 target="_blank"
                 rel="noopener noreferrer"
               >

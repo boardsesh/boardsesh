@@ -36,7 +36,7 @@ const MAX_CAUSE_DEPTH = 3;
  *
  * The `cause` chain is unwrapped because `fetch` rejects with a bare
  * `fetch failed` and hides the actual reason — `ECONNREFUSED`, `ENOTFOUND`, a
- * TLS failure — in `cause`. `docs/scheduler.md`'s runbook reads `lastError` to
+ * TLS failure — in `cause`. `docs/backend/scheduler.md`'s runbook reads `lastError` to
  * tell a blocked egress IP from a DNS problem, and `fetch failed` on its own
  * answers neither.
  */

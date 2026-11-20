@@ -216,7 +216,7 @@ const DROPPED_HOLD_REPORT_FRACTION = 0.05;
 /**
  * Report a wall that lost a material share of its holds to the mapping.
  *
- * Sentry, not an analytics event: `docs/board-render-analytics.md` keeps the
+ * Sentry, not an analytics event: `docs/analytics/board-render-analytics.md` keeps the
  * board-render event set deliberately small, and this is a defect signal with a
  * stack and a wall to look at rather than a behavioural one worth a per-render
  * PostHog row.

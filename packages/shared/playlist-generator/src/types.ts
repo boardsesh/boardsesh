@@ -79,7 +79,7 @@ export type GradeFocusOptions = {
 } & BaseGeneratorOptions;
 
 // The three timed types. On the minute and limit bouldering name their fields
-// after the partner API's block fields (docs/partner-api.md, "Blocks"); its
+// after the partner API's block fields (docs/integrations/partner-api.md, "Blocks"); its
 // `climbCount` is `numberOfClimbs`. A 4x4 counts sets and reps (Marco,
 // 2026-10-25). Their rests and intervals are whole seconds, read by
 // `pacingForOptions` (pacing.ts).

@@ -33,7 +33,7 @@ export { MAX_SYNCED_QUEUE_ITEMS, clampQueueWindow, clampQueueAroundCurrent } fro
 
 // The Now slot (F3, #6666): the History / Now / Up next line in the flat queue
 // and the one rule for putting a climb on the wall. Shared by the backend
-// resolvers and the reducer. See docs/current-climb-outside-queue.md.
+// resolvers and the reducer. See docs/product/current-climb-outside-queue.md.
 export {
   HISTORY_TRIM_AT,
   HISTORY_KEEP_COUNT,

@@ -1,7 +1,7 @@
 name: Mobile E2E Gate
 
 # Answers one question for one commit: is this commit's mobile JS fit to become
-# today's stable OTA candidate? Full write-up: docs/mobile-e2e-gate.md.
+# today's stable OTA candidate? Full write-up: docs/qa/mobile-e2e-gate.md.
 #
 # Three ways in:
 #   - workflow_call: the daily release job asks about the commit it is about to
@@ -237,7 +237,7 @@ jobs:
 
   # The same smoke on ONE iPhone simulator. This is the gate's only macOS job,
   # and it must stay the only one: the org is capped at five concurrent macOS
-  # runners (docs/ci-runners.md).
+  # runners (docs/operations/ci-runners.md).
   ios-smoke:
     needs: resolve
     runs-on: xcode-27

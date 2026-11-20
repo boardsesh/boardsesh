@@ -711,7 +711,7 @@ function NowOnTheWallPanelComponent(
   }, [invalidatePendingActions, dismissAndWait, onClose]);
 
   // A ref, not a dep: a list `.length` in a callback's deps rebuilds it on every
-  // page of history (docs/react-native-performance.md).
+  // page of history (docs/mobile/react-native-performance.md).
   const historyCountRef = useRef(combinedHistory.length);
   historyCountRef.current = combinedHistory.length;
 

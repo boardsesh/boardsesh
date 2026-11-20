@@ -24,8 +24,8 @@ CHANGELOG.md
 # .clang-format; its JS build scripts and Markdown aren't held to the web/mobile Prettier
 # config (the CI PR-lint already skips `embedded/`).
 embedded/
-docs/embedded-architecture.md
-# Recorded screenshot fixtures (docs/mobile-screenshot-fixtures.md). The record
+docs/boards/embedded-architecture.md
+# Recorded screenshot fixtures (docs/qa/mobile-screenshot-fixtures.md). The record
 # backend writes these files and `vp run mobile:screenshot-fixtures-merge`
 # rewrites the manifest; a formatting pass would put both permanently at odds
 # with what the next recording emits.
@@ -37,12 +37,12 @@ packages/mobile/screenshot-fixtures/
 packages/mobile/.maestro/
 
 # Markdown is not formatted. The formatter's emphasis pairing does not follow
-# CommonMark's intraword-underscore rule: on docs/websocket-implementation.md it
+# CommonMark's intraword-underscore rule: on docs/backend/websocket-implementation.md it
 # paired the `_` inside the bare identifier NOT_FOUND with a later `_signed-in_`
 # and emitted NOT*FOUND + \_signed-in*, corrupting an identifier in prose on
 # every run. Prose gains little from auto-formatting and has content the
 # formatter can get wrong. Mirrored in vite.config.ts fmt.ignore.
-# The CHANGELOG.md and docs/embedded-architecture.md entries above are now
+# The CHANGELOG.md and docs/boards/embedded-architecture.md entries above are now
 # subsumed by this, but stay: they document why those two must never be
 # formatted even if markdown formatting is ever reinstated.
 *.md

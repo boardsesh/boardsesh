@@ -83,7 +83,7 @@ const RULES: readonly Rule[] = [
 
 /**
  * The one place a react-native-svg `Image` is allowed: the spray wall look
- * picker's Android mesh (`docs/spray-walls.md`, "Previewing a look on the
+ * picker's Android mesh (`docs/product/spray-walls.md`, "Previewing a look on the
  * phone"), which has to draw the owner's photo under an affine transform a
  * React Native view cannot apply on Android. It is not board art, and it is
  * never a network image. react-native-svg disk-caches network images, so a
@@ -103,7 +103,7 @@ const LOCAL_FILE_GUARD_STATEMENT = /^[ \t]*if \(!isLocalFileUri\(photoUri\)\) re
 /**
  * The one place `Image.prefetch` is allowed: decoding board art that is already
  * a file on the phone into expo-image's memory cache, so a list row or the play
- * board paints its holds on the frame it mounts (`docs/react-native-performance.md`,
+ * board paints its holds on the frame it mounts (`docs/mobile/react-native-performance.md`,
  * rule 6). It is never a download. Read with comments stripped, the file must:
  *
  * - narrow its input with the exact statement

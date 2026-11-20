@@ -4,7 +4,7 @@ name: Mobile Release Anchor
 # Google Play production approvals. It cuts one release/<platform>-v<version>-<shortfp>
 # anchor at the build-* tag for each accepted binary. Because an accepted store
 # binary is frozen forever, the anchor permanently records the fingerprint an OTA
-# must resolve to reach that release. See docs/mobile-ota-updates.md and
+# must resolve to reach that release. See docs/operations/mobile-ota-updates.md and
 # scripts/mobile-cut-release-tags.ts.
 #
 # This workflow only anchors accepted binaries; it never bumps a version.

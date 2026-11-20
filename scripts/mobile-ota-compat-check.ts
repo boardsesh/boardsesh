@@ -310,7 +310,7 @@ export function renderComment(result: OtaCompatResult, ctx: CommentContext): str
     `Branch \`${ctx.branch}\` → \`${ctx.baseBranch}\` · commit \`${ctx.sha.slice(0, 7)}\`.`,
     '',
     '<sub>Fingerprint is resolved per platform against this PR’s base branch. Native store builds run ' +
-      `from \`main\` after an automatic native patch bump. See \`docs/mobile-ota-updates.md\`.</sub>`,
+      `from \`main\` after an automatic native patch bump. See \`docs/operations/mobile-ota-updates.md\`.</sub>`,
   ].join('\n');
 }
 

@@ -12,7 +12,7 @@ import { boardClimbs } from '../boards/unified';
  * Written by `packages/db/scripts/refresh-climb-neighbors.ts` (nightly,
  * watermark-driven, see `board_climb_neighbor_runs`). `updateClimb` deletes a
  * climb's own list when its holds change; the next nightly run removes it from
- * other climbs' lists and rewrites them. See docs/similar-climbs.md.
+ * other climbs' lists and rewrites them. See docs/data/similar-climbs.md.
  */
 export const boardClimbNeighbors = pgTable(
   'board_climb_neighbors',

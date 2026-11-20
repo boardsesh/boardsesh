@@ -46,7 +46,7 @@ disappears for the rest of the launch after a sign-out.
 | --- | --- | --- | --- |
 | `connectivity` | `online` \| `offline` | `analytics-connectivity.ts`, on network transition | Slice any event by whether the network was usable at capture time (#4317) |
 | `offline_engine_state` | `baked-on` \| `web-off` (+ legacy flag values) | `analytics-offline-engine-state.ts`, once per launch | Offline-engine bake measurement (#4312) |
-| `render_mode`, `glow_falloff`, `glow_falloff_source` | see `docs/board-render-analytics.md` | `registerRenderSuperProperties`, on settings change | Board-render A/B (#2202) |
+| `render_mode`, `glow_falloff`, `glow_falloff_source` | see `docs/analytics/board-render-analytics.md` | `registerRenderSuperProperties`, on settings change | Board-render A/B (#2202) |
 | `gym_uuid`, `gym_name` | the active board's gym, or absent | `analytics-gym.ts` via `AnalyticsGymProperties`, on active-board change | Which venue a climber is at — the only gym dimension on climbing events. Cleared (not left stale) when the active board has no gym |
 | `arm_connect_step` | `treatment` \| `control`, or absent | `analytics-connect-step-arm.ts`, at the connect-step exposure and on each launch for an enrolled account | The connect-step test's arm (#5654, Appendix C). Cleared for a signed-in account that is not enrolled |
 
@@ -77,7 +77,7 @@ disappears for the rest of the launch after a sign-out.
 - **To confirm:** mobile used to identify its signed-out anonymous person,
   which split returning climbers on a fresh install across two persons. #6078
   stops that; the split rate has not been re-measured yet
-  (`docs/growth-metrics.md`, "Identity-split pitfall")
+  (`docs/analytics/growth-metrics.md`, "Identity-split pitfall")
 - **Person Properties:**
   - `email` (on login)
   - `language` (synced on locale change via `setPersonProperties()`)
@@ -602,7 +602,7 @@ skip rate and `Board Created` per newcomer as guardrails.
 
 ### Sign-up counting, board type and shared-climb replay (#6027)
 
-Mobile only, shipped by OTA on 2026-10-05. Reading notes and queries: `docs/growth-metrics.md`.
+Mobile only, shipped by OTA on 2026-10-05. Reading notes and queries: `docs/analytics/growth-metrics.md`.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |

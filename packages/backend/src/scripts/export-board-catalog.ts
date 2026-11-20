@@ -13,7 +13,7 @@
  * Its consumer is the seeded developer database image
  * (packages/db/docker/Dockerfile.dev-db), which used to scrape six Aurora APKs
  * at build time to get exactly this data. Geometry is also useful to anyone
- * using the public dataset (docs/board-snapshots-dataset.md) — the climb
+ * using the public dataset (docs/data/board-snapshots-dataset.md) — the climb
  * artifacts reference layout/size/set ids that only mean something with it.
  *
  * Everything here is public, non-personal catalogue data: t-nut coordinates,

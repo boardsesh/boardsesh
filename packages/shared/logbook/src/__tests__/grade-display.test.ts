@@ -131,7 +131,7 @@ describe('surfacedBoardseshGrade', () => {
 
   it('falls back to the board-local grade when there is no universal grade (small boards)', () => {
     // Decoy, Grasshopper, So iLL, and Touchstone never earn a cross-board
-    // anchor (docs/boardsesh-grade.md §3), so universalGrade stays null and
+    // anchor (docs/data/boardsesh-grade.md §3), so universalGrade stays null and
     // localGrade is the only number a client can surface.
     expect(surfacedBoardseshGrade({ universalGrade: null, localGrade: 20 })).toBe(20);
     expect(surfacedBoardseshGrade({ universalGrade: undefined, localGrade: 20 })).toBe(20);
@@ -151,7 +151,7 @@ describe('surfacedBoardseshGrade', () => {
     // The exact row that used to render differently on web (local-first: 22,
     // rounds to 7a/V6) vs mobile (universal-first: 21, rounds to 6c+/V5). The
     // correct, single-source-of-truth answer is the universal one — see
-    // "Which grade a client surfaces" in docs/boardsesh-grade.md.
+    // "Which grade a client surfaces" in docs/data/boardsesh-grade.md.
     expect(surfacedBoardseshGrade({ localGrade: 22.03, universalGrade: 21.03 })).toBeCloseTo(21.03);
   });
 });

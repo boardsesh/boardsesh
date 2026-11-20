@@ -38,7 +38,7 @@ const KILL_SWITCHES = [
   { key: 'first-board-picker-kill', useEnabled: useFirstBoardPickerEnabled },
   { key: 'first-connect-cta-kill', useEnabled: useFirstConnectCtaEnabled },
   // Not a launch surface, but the same direction: the #4979 hold is on until
-  // PostHog says `true` (docs/current-climb-outside-queue.md, section 8).
+  // PostHog says `true` (docs/product/current-climb-outside-queue.md, section 8).
   { key: 'stale-current-hold-kill', useEnabled: useStaleCurrentHoldEnabled },
   // The player board's swap look ships at 100% too: on until PostHog says `true`.
   { key: 'player-swap-look-kill', useEnabled: usePlayerSwapLookEnabled },

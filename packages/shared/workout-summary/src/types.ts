@@ -2,7 +2,7 @@
 // (`session_workouts`, #6903), and what its blocks came to. Pure TS and
 // JSON-serialisable: the backend validates and derives with it, and mobile runs
 // the same derivation on its local run and tick log while the write is pending.
-// See docs/workout-stages.md, "Workouts on the server".
+// See docs/product/workout-stages.md, "Workouts on the server".
 
 /** How one logged rep or climb ended. The same three statuses a tick has. */
 export type SessionWorkoutRepOutcome = 'flash' | 'send' | 'attempt';

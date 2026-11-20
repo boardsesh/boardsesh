@@ -29,7 +29,7 @@ import { CHALLENGE_INVALID_TOKEN, errorOutcome, unauthorized, unavailable, type 
 import type { PartnerRuntime } from './router';
 
 /**
- * `GET /v1/logbook/changes` and `GET /v1/logbook/ticks/{id}` (docs/partner-api.md,
+ * `GET /v1/logbook/changes` and `GET /v1/logbook/ticks/{id}` (docs/integrations/partner-api.md,
  * section 3). The router has already checked the token, charged the limits and
  * holds a `/v1` admission permit on the partner pool when these run.
  *
@@ -45,7 +45,7 @@ type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 type PartnerLogbook = PartnerRuntime['logbook'];
 
 export const LOGBOOK_READ_SCOPE = 'logbook:read';
-/** `docs/integration-platform.md`, "Limits": 2 new snapshots a minute per connection. Joins are free. */
+/** `docs/integrations/integration-platform.md`, "Limits": 2 new snapshots a minute per connection. Joins are free. */
 const SNAPSHOTS_CREATED_PER_CONNECTION = 2;
 /**
  * Snapshot storage frees only when the reclaim job runs (every 15 minutes), so

@@ -13,7 +13,7 @@ export const UART_WRITE_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcc
 // RedBearLab UUID family and LED commands are written to 713d0003, which
 // advertises only `.write` (no write-without-response). Newer MoonBoard
 // controllers use the Nordic UART service above. See
-// docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
+// docs/boards/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
 export const REDBEARLAB_SERVICE_UUID = '713d0000-503e-4c75-ba94-3148f18d941e';
 export const REDBEARLAB_WRITE_CHARACTERISTIC_UUID = '713d0003-503e-4c75-ba94-3148f18d941e';
 

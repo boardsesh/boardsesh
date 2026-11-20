@@ -199,7 +199,7 @@ export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
 
 /**
  * `extensions.code` values the spray API refuses a write with because of where
- * the wall stands in its reset lifecycle (`docs/spray-walls.md`, "Archive and
+ * the wall stands in its reset lifecycle (`docs/product/spray-walls.md`, "Archive and
  * reset"). `resetRetired` comes from a later backend release; mapping it now
  * means the copy is in place the day it arrives.
  */

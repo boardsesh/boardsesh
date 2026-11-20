@@ -73,7 +73,7 @@ export type HoldStateRecord = Record<
 /**
  * `classic` (default, unset) is today's marker-only overlay — untouched by
  * issue #2202. `aura` draws a veil + glow treatment over traced hold
- * silhouettes; see `docs/ai-design-guidelines.md` for the visual language.
+ * silhouettes; see `docs/design/ai-design-guidelines.md` for the visual language.
  */
 export type RenderMode = 'classic' | 'aura';
 

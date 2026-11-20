@@ -265,7 +265,7 @@ export type RestTimerPillProps = {
   onPress: () => void;
   /**
    * The drawer-header tier: a 32pt mini pill carrying a 44pt hit-slop, per the
-   * "label-only pill" rung in docs/ai-design-guidelines.md. Drops the secondary
+   * "label-only pill" rung in docs/design/ai-design-guidelines.md. Drops the secondary
    * line (there is no room beside the grabber) but KEEPS the auto-advance glyph,
    * which is the whole point of showing the pill there.
    */

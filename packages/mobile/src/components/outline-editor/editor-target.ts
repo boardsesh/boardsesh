@@ -5,7 +5,7 @@
  * on a catalogue board. SW-08 (#5441) points the same stroke → ring chain at a
  * spray wall, where the holds themselves are the thing being edited rather than
  * their silhouettes. Rather than fork the chain — which is the one thing
- * `docs/board-art-geometry.md` says must not happen, because a second polygon
+ * `docs/rendering/board-art-geometry.md` says must not happen, because a second polygon
  * editor is a second ring contract — the differences are named here, once, as
  * capabilities a target carries.
  *

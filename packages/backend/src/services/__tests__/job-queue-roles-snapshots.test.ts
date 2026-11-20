@@ -151,7 +151,7 @@ describe('export-board-snapshots under the batch login', () => {
       ).rejects.toThrow(/Export failed for 1 layout/);
       expect(uploadedKeys().filter((key) => key !== LIVE_MANIFEST_KEY)).toEqual([]);
 
-      // The admin's provisioning step (docs/background-workers.md).
+      // The admin's provisioning step (docs/backend/background-workers.md).
       await owner.unsafe(`GRANT pg_read_all_stats TO "${login}"`);
 
       // A writer on another role holds a transaction open: the boundary must

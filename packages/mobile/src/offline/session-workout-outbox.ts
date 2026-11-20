@@ -1,6 +1,6 @@
 // Sends the phone's workout to the server (#6903) through the offline outbox:
 // at Start, at "Add a block", and once more just before END_SESSION with the
-// tick map from the run's tick log. docs/workout-stages.md, "Workouts on the
+// tick map from the run's tick log. docs/product/workout-stages.md, "Workouts on the
 // server" and "The write path".
 //
 // Each write carries the whole workout at a new revision, and the server keeps

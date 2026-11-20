@@ -117,7 +117,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     matching separately — see findExactDuplicateMatch.
     Admins get the live query. Everyone else reads the nightly precomputed
     index (top 25 per climb at 0.5 and above), and a frames-only lookup
-    (no climbUuid) is admin-only. See docs/similar-climbs.md.
+    (no climbUuid) is admin-only. See docs/data/similar-climbs.md.
     """
     similarClimbs(input: SimilarClimbsInput!): [SimilarClimb!]!
 
@@ -1154,7 +1154,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     # Incremental pull with a composite (updatedAt, syncSeq) cursor. Each returns
     # snake_case JSON documents (keys = mobile local columns). User-data queries
     # are scoped to the authenticated user; board-data queries are scoped by
-    # boardType. See docs/sync-table-manifest.md.
+    # boardType. See docs/data/sync-table-manifest.md.
 
     "Pull the authenticated user's ticks changed since the cursor."
     syncTicks(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!

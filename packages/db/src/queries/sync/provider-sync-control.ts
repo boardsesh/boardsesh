@@ -1,6 +1,6 @@
 /**
  * The per-link fences behind the provider sync families
- * (docs/background-workers.md, "Provider sync families").
+ * (docs/backend/background-workers.md, "Provider sync families").
  *
  * ## Lock order
  *

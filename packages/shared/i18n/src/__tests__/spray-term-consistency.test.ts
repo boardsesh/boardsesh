@@ -13,7 +13,7 @@ const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'l
 //   de  Spraywall         (die Spraywall, die Spraywalls)
 // Before this test the catalogs mixed five to six names per language (muro de
 // spray, plafones spray, mur de pan, Spraywand, "Spray Walls" ...). See the
-// "Spray wall" section of docs/i18n-{spanish,french,german}-glossary.md.
+// "Spray wall" section of docs/i18n/i18n-{spanish,french,german}-glossary.md.
 //
 // Two kinds of check:
 //   1. GLOBAL: the retired full names are banned in every string. They only ever
@@ -146,7 +146,7 @@ const RULES: TermRule[] = [
   {
     locale: 'en-US',
     term: '"Spraywall" / "Spraywalls", one word and capitalized',
-    glossary: 'docs/i18n-spanish-glossary.md',
+    glossary: 'docs/i18n/i18n-spanish-glossary.md',
     bannedEverywhere: /\bspray[ -]walls?\b/i,
     bannedInSprayStrings: /\bwalls?\b|\bspray\b/i,
     scopedAllowlist: new Set(NOT_A_WALL_KEYS),
@@ -156,7 +156,7 @@ const RULES: TermRule[] = [
   {
     locale: 'es',
     term: '"Spraywall" / "Spraywalls", untranslated and masculine (el Spraywall)',
-    glossary: 'docs/i18n-spanish-glossary.md',
+    glossary: 'docs/i18n/i18n-spanish-glossary.md',
     bannedEverywhere: /\bmuros?\s+(?:de\s+)?spray\b|\bplaf(?:ones|óns?)\s+(?:de\s+)?(?:presas|spray)\b/i,
     // Plafón is the Kilter/Tension/MoonBoard board; the spray wall is never one.
     bannedInSprayStrings: /\bmuros?\b|\bplaf(?:ones|ón)/i,
@@ -177,7 +177,7 @@ const RULES: TermRule[] = [
   {
     locale: 'fr',
     term: '"Spraywall" / "Spraywalls", one word, masculine',
-    glossary: 'docs/i18n-french-glossary.md',
+    glossary: 'docs/i18n/i18n-french-glossary.md',
     bannedEverywhere: /\bmurs?\s+(?:de\s+)?(?:spray|pan)\b|\bspray[ -]walls?\b/i,
     bannedInSprayStrings: /\bmurs?\b|\bspray\b/i,
     scopedAllowlist: new Set(NOT_A_WALL_KEYS),
@@ -187,7 +187,7 @@ const RULES: TermRule[] = [
   {
     locale: 'de',
     term: '"Spraywall" / "Spraywalls", one word, feminine',
-    glossary: 'docs/i18n-german-glossary.md',
+    glossary: 'docs/i18n/i18n-german-glossary.md',
     bannedEverywhere: /Spraywand|Spraywände|Spraywänden|Spray[ -]+Walls?\b/i,
     // `Board` is the device in German, never the spray wall. Compounds such as
     // Kletterwand, Wandfoto and Garagenwand are caught by the `wand` stem.

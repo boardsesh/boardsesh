@@ -1,5 +1,5 @@
 -- Triggers that populate logbook_changes, the change log behind the
--- public logbook feed. Design and proof: docs/integration-platform.md,
+-- public logbook feed. Design and proof: docs/integrations/integration-platform.md,
 -- "Incremental sync". Nothing reads these rows yet.
 --
 -- LOCKS ON EXISTING TABLES. Two, both SHARE ROW EXCLUSIVE, taken by CREATE

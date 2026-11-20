@@ -21,7 +21,7 @@ name: Mobile OTA Unlock
 #
 # so the workflow file and the scripts both come from main. Publishers await the
 # exact request_id run before uploading anything.
-# See docs/mobile-ota-updates.md, "Managing xprem as code".
+# See docs/operations/mobile-ota-updates.md, "Managing xprem as code".
 run-name: ${{ inputs.request_id != '' && format('OTA unlock {0}', inputs.request_id) || 'Manual OTA unlock' }}
 
 on:

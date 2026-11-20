@@ -4,7 +4,7 @@
 // notification from either tab, and the play drawer's Community section — and
 // the last one is why the route lives at the root. `/play` is itself a root
 // `transparentModal`, so a push aimed at a tab stack lands BENEATH the player:
-// a dead tap and a screen nobody can reach (docs/mobile-sheets-vs-routes.md,
+// a dead tap and a screen nobody can reach (docs/mobile/mobile-sheets-vs-routes.md,
 // "Pushing a route from INSIDE a modal route"). A root `modal` card presents
 // above whatever is already open, so one route serves all three.
 //

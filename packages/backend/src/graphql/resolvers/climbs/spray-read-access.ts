@@ -90,7 +90,7 @@ async function currentControllerOwner(
  * registration still exists. Anything else reads as signed out.
  *
  * Exists for wall devices. An ESP32 controller or an external projector
- * (`docs/wall-devices.md`) connects with `connectionParams.controllerApiKey`
+ * (`docs/boards/wall-devices.md`) connects with `connectionParams.controllerApiKey`
  * instead of a user token, and has to see the climbs on its owner's private
  * spray wall. Setting `ctx.userId` for it would also hand the key every mutation,
  * the queue, the account and anything else keyed on a signed-in user, so the

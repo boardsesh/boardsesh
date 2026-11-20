@@ -36,7 +36,7 @@ type ClimbFramesBadgeProps = {
  * can read as an undesirable climb until you open it.
  *
  * A `View` with a `Text` in it, deliberately: board art is the app's largest
- * memory consumer (docs/react-native-performance.md §7 — foreground OOM kills on
+ * memory consumer (docs/mobile/react-native-performance.md §7 — foreground OOM kills on
  * 4 GB iPhones), so the pip adds no image layer and does not touch the
  * thumbnail's render width.
  *

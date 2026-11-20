@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 /**
- * The shots scripts' half of the dev-only story harness (docs/mobile-stories.md).
+ * The shots scripts' half of the dev-only story harness (docs/mobile/mobile-stories.md).
  *
  * The app renders a story at the `dev/stories/<id>` route. When a component
  * story has painted it logs `[stories] ready <id>` through Metro; a scenario

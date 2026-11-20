@@ -157,7 +157,7 @@ function unwrapCause(error: unknown): unknown {
 // 2026-08-29 incident produced), 57P01-57P04 are the operator-intervention
 // shutdown / cannot-connect / database-dropped codes. The rest are postgres.js and Node socket codes
 // for a connect that never completed (see packages/db connect-retry.ts and
-// docs/db-connectivity.md). 57014 query_canceled is deliberately NOT here: a
+// docs/operations/db-connectivity.md). 57014 query_canceled is deliberately NOT here: a
 // statement timeout on one heavy query is that query's problem.
 const UNAVAILABLE_DRIVER_CODES = new Set([
   'CONNECT_TIMEOUT',

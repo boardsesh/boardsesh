@@ -1,7 +1,7 @@
 // Woods Board constants — the device-name patterns, board sizes, and hold role
 // codes shared across the web and mobile BLE adapters and the data importer.
 // Pure values — no React, no platform APIs. See
-// docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md.
+// docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md.
 import { WOODS_LED_MAPS, type WoodsBoardSize } from './generated/woods-led-maps-data';
 import { WOODS_HOLD_POSITIONS, WOODS_OCCUPIED_HOLD_IDS } from './generated/woods-hold-positions-data';
 

@@ -460,7 +460,7 @@ export type AnchorShift = Readonly<{ from: MarkTime | null; dy: number }>;
 
 /**
  * How a scene cuts its take, all relative to the take's marks
- * (`work/marks/<take>.json`, docs/showcase-video.md), so a re-record needs no
+ * (`work/marks/<take>.json`, docs/marketing/showcase-video.md), so a re-record needs no
  * edits here: the footage it plays (hard cuts between segments), when each
  * callout may be up, and the anchor corrections the recording needs.
  */
@@ -476,7 +476,7 @@ export type TakeEdit = Readonly<{
   /**
    * Anchors the app measures in a native sheet's own window (y from the sheet's
    * top) or before a scroll (they re-log on layout, not on scroll): piecewise
-   * `dy`; see docs/showcase-video.md.
+   * `dy`; see docs/marketing/showcase-video.md.
    */
   anchorShifts?: Partial<Record<ShowcaseCalloutName, readonly AnchorShift[]>>;
   /** The rest pill the footage shows, value by value; the workouts checklist reads the same value. */
@@ -731,7 +731,7 @@ export function resolveTakeEdit(
   if (missing.length > 0) {
     throw new Error(
       `Take "${takeId}" is missing mark(s) ${missing.join(', ')} (has: ${Object.keys(marks).join(', ') || 'none'}). ` +
-        'Re-record it, or check its flow still raises them (docs/showcase-video.md).',
+        'Re-record it, or check its flow still raises them (docs/marketing/showcase-video.md).',
     );
   }
   const frameAt = (time: MarkTime) => Math.round(marks[time.mark] * SHOWCASE_FPS) + Math.round(time.at * SHOWCASE_FPS);
@@ -2152,7 +2152,7 @@ export function buildStoreSearchArgs(input: string, output: string): string[] {
 /**
  * An Apple App Preview: H.264 High profile level 4.0, constant bitrate inside
  * Apple's 10–12 Mbps window, 30 fps progressive, BT.709, with the stereo AAC
- * track Apple requires (silent here). Spec: docs/showcase-video.md, "Targets".
+ * track Apple requires (silent here). Spec: docs/marketing/showcase-video.md, "Targets".
  */
 export function buildAppPreviewArgs(input: string, output: string, videoKbps: number, audio: MasterAudio): string[] {
   const sound = audioArgs(audio);

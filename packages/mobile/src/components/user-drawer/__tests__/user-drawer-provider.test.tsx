@@ -1302,7 +1302,7 @@ describe('user-drawer Support Boardsesh row', () => {
   });
 });
 
-// Crowdsourced QA (docs/crowdsourced-qa-mobile.md). The rows exist for every
+// Crowdsourced QA (docs/qa/crowdsourced-qa-mobile.md). The rows exist for every
 // user on a binary that can actually load a PR preview — the tester role gates
 // the cold-start prompt, not the menu entry.
 describe('user-drawer crowdsourced-QA rows', () => {

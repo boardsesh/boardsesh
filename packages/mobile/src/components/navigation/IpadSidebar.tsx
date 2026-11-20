@@ -61,7 +61,7 @@ function SidebarItem({
   const active = focused || isHovered || isFocused;
   // Neutral chrome glyphs, matching NativeTabs / MaterialTabBar (the systemFill
   // pill is the sole active affordance, not a brand tint). See
-  // docs/ai-design-guidelines.md — chrome carries state with fills, not colour.
+  // docs/design/ai-design-guidelines.md — chrome carries state with fills, not colour.
   const tint = active ? systemColors.label : systemColors.secondaryLabel;
   const handlePress = useCallback(() => onPress(destination), [onPress, destination]);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);

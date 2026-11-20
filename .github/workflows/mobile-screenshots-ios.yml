@@ -91,7 +91,7 @@ name: Mobile Screenshots (iOS)
 #                  that gap: it diffs the changed paths between the baseline's
 #                  commit and this run's commit and forces the fan-out (`force_full`)
 #                  whenever one falls in a documented blind spot, regardless of what
-#                  the pixel comparison found. See docs/mobile-store-release.md.
+#                  the pixel comparison found. See docs/operations/mobile-store-release.md.
 #   ios-capture  — matrix of locale (en-US, es, fr, de, it) × device (the 6.9" iPhone 16
 #                  Pro Max and 6.3" Pro, the iPad Pro 13-inch and 11-inch, a
 #                  separate slot that doesn't auto-scale, and the iPhone Duo,
@@ -992,7 +992,7 @@ jobs:
     # actually captured, so an unchanged probe needs no environment. A
     # train-triggered run resolves Production because #5477 added main to
     # that environment's deployment-branch policy (a one-time owner action, noted
-    # in docs/mobile-store-release.md); without it every automatic upload would
+    # in docs/operations/mobile-store-release.md); without it every automatic upload would
     # fail with a branch-policy rejection instead of a missing secret.
     environment: >-
       ${{ ((github.event_name == 'workflow_dispatch' && inputs.upload) ||

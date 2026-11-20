@@ -18,7 +18,7 @@
  * equal bytes, so an unchanged input set cannot move runtimeVersion. A changed
  * input set refreshes even if the fingerprint would have survived it, so this
  * errs toward refreshing. Metadata only: no checkout of either base, no install,
- * no PR code. See docs/mobile-ota-updates.md, "When an open preview is
+ * no PR code. See docs/operations/mobile-ota-updates.md, "When an open preview is
  * republished".
  */
 

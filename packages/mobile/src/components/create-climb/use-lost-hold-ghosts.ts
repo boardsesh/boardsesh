@@ -57,7 +57,7 @@ export function findLostHoldIds(sourceFrames: readonly LitUpHoldsMap[], liveHold
 
 /**
  * The remix editor's grey rings: where each hold the parent climb lost used to
- * be (`docs/spray-walls.md`, "Remixing a climb that lost a hold").
+ * be (`docs/product/spray-walls.md`, "Remixing a climb that lost a hold").
  *
  * Only in a remix of a climb that lost a hold, never when a climb is edited in
  * place. The editor already opened without those holds; each ring says one was

@@ -125,7 +125,7 @@ export async function syncMoonBoardLocations(args: {
   const records = buildMoonBoardLocationRecords(markers);
   // Both paths resolve each gym the same way: an existing alias, else the
   // name + location physical match, which is how the first run adopts the
-  // seeded gyms instead of minting duplicates (docs/moonboard-sync.md).
+  // seeded gyms instead of minting duplicates (docs/data/moonboard-sync.md).
   const summary = args.transaction
     ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
         logger: toLocationSyncLogger(args.log),

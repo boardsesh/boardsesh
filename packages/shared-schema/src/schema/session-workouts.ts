@@ -1,7 +1,7 @@
 /**
  * Workout-aware sessions (#6903): the workout a climber followed in a session,
  * stored per climber per session and summarised from their ticks on read. See
- * docs/workout-stages.md, "Workouts on the server".
+ * docs/product/workout-stages.md, "Workouts on the server".
  *
  * The read queries are separate from sessionSummary / sessionDetail /
  * sessionGroupedFeed on purpose: new selections on those documents would trip

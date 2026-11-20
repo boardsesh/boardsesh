@@ -3,7 +3,7 @@
 // it. The scheduler names the moment (a cue); this module decides what that
 // moment feels and sounds like, so a new sink never touches the scheduler.
 //
-// Invariants the scheduler keeps (docs/rest-timer.md):
+// Invariants the scheduler keeps (docs/product/rest-timer.md):
 // - Exactly one terminal cue per deadline: `advance` when it called nextClimb(),
 //   `reached` when the rest ran out and the wall did not move, a dead end (the
 //   end of the queue or the list) included.

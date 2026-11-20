@@ -208,7 +208,7 @@ describe('DELTA_ADD_QUEUE_ITEM', () => {
   });
 
   // A client whose queue is behind the server can overshoot; the server clamps the
-  // same way (see docs/websocket-implementation.md).
+  // same way (see docs/backend/websocket-implementation.md).
   it('appends without throwing when position overshoots the queue', () => {
     const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' })] });
 

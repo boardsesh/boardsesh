@@ -28,7 +28,7 @@ export type RefreshClimbNeighborsPayload = z.infer<typeof payload>;
 
 /**
  * Nightly similar-climbs index for one board (`@boardsesh/db/jobs`,
- * docs/similar-climbs.md). The schedule fans out one job per board, cheapest
+ * docs/data/similar-climbs.md). The schedule fans out one job per board, cheapest
  * first, and the batch worker runs them one at a time. Each chunk of up to
  * 1,000 lists commits in its own fenced batch; the watermark moves in the last
  * one. A run stopped by its signal (shutdown, lease, lost attempt), between

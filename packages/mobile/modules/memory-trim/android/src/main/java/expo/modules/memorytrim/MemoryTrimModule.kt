@@ -14,7 +14,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * Android-only, side-effect-only module. It has no JS-callable API: on native
  * module-registry init (app launch) its OnCreate registers a
  * [ComponentCallbacks2] on the application, so the Android framework calls back
- * on memory pressure. This is the "next lever" from docs/react-native-performance.md
+ * on memory pressure. This is the "next lever" from docs/mobile/react-native-performance.md
  * rule 7 — JS Image.clearMemoryCache() can't move Glide's native bitmap cache /
  * pool.
  *

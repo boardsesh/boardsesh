@@ -1161,7 +1161,7 @@ describe('tickQueries — behavior fixes', () => {
     });
   });
 
-  // Hard invariant from docs/ascents-and-attempts.md: a tick with
+  // Hard invariant from docs/data/ascents-and-attempts.md: a tick with
   // `difficulty IS NULL` must bucket under the climb's consensus grade,
   // not be silently dropped from per-grade aggregates / range filters.
   describe('NULL-difficulty ticks fall back to consensus grade', () => {

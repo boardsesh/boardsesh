@@ -30,7 +30,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * The developer terms an app accepts at registration
- * (`PARTNER_DEVELOPER_TERMS_VERSION`, docs/integration-platform.md "Data
+ * (`PARTNER_DEVELOPER_TERMS_VERSION`, docs/integrations/integration-platform.md "Data
  * boundaries and LEGAL.md"). Behind the same flag as the console, and English
  * in every locale: the other catalogs carry the English text on purpose.
  */

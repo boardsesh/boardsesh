@@ -6,7 +6,7 @@
  * or a status, it comes from here rather than from a one-off `sx` block, so the
  * four pages cannot drift into four design systems again.
  *
- * The visual system these implement is documented in `docs/build-plans-design.md`.
+ * The visual system these implement is documented in `docs/design/build-plans-design.md`.
  */
 export { default as PageFrame, type PageFrameProps } from './page-frame';
 export { default as PageSection, type PageSectionProps } from './section';

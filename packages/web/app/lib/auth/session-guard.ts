@@ -27,7 +27,7 @@ import { reloadAfterAccountChange } from './reload-after-account-change';
  * `better-auth` writes; until then a marker of any value is ignored, so with
  * the mode off a planted marker costs nothing. A toast or navigation asked for
  * while a check runs waits for it (`runIfCurrent`) instead of being dropped.
- * See "One guard" in docs/better-auth-browser-session.md.
+ * See "One guard" in docs/auth/better-auth-browser-session.md.
  */
 export const WEB_SESSION_CHECK_EVENT = 'boardsesh-web-session-check';
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');

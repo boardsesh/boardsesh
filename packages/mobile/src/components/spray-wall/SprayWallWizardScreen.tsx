@@ -5,7 +5,7 @@
 // name it (prefilled) → publish. One route: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
-// pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
+// pan-and-pinch surfaces, which `docs/mobile/mobile-sheets-vs-routes.md` rule 3 puts on
 // a route rather than in a sheet.
 //
 // Everything that can fail, fails into somewhere the climber can act:
@@ -19,13 +19,13 @@
 //
 // And leaving mid-flow is not a failure at all: from the upload onwards the wall
 // and its one draft version live on the server, so closing the app and coming
-// back tomorrow finds the work waiting (`docs/spray-walls.md`, "One open draft
+// back tomorrow finds the work waiting (`docs/product/spray-walls.md`, "One open draft
 // per wall").
 //
 // The same flow builds a RESET (`resetOfWallUuid`). `resetSprayWall` clones the
 // old wall's settings into a new, unfinished wall, so the run skips the details
 // step and rejoins at the photo like any resumed wall. Its first publish
-// archives the old wall (`docs/spray-walls.md`, "Archive and reset").
+// archives the old wall (`docs/product/spray-walls.md`, "Archive and reset").
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {

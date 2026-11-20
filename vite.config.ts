@@ -28,7 +28,7 @@ export default defineConfig({
     //
     // Markdown is not formatted at all. The formatter rewrites emphasis spans,
     // and its pairing does not follow CommonMark's intraword-underscore rule:
-    // on docs/websocket-implementation.md it paired the `_` inside the bare
+    // on docs/backend/websocket-implementation.md it paired the `_` inside the bare
     // identifier `NOT_FOUND` with a later `_signed-in_` and emitted
     // `NOT*FOUND` + `\_signed-in*`, silently corrupting an identifier in prose.
     // Reproducible on every run. Prose gains little from auto-formatting and
@@ -71,7 +71,7 @@ export default defineConfig({
       // Catch unmemoized React context values (the inline `value={{ ... }}`
       // anti-pattern that re-renders every consumer). Warn repo-wide so the
       // pre-existing web/test violations don't fail CI; promoted to `error` for
-      // the mobile + shared-react surfaces below. See docs/react-native-performance.md.
+      // the mobile + shared-react surfaces below. See docs/mobile/react-native-performance.md.
       //
       // NOTE: vite-plus's bundled linter (@oxlint/plugins) does not currently
       // *execute* these two off-by-default `react/*` rules — they show in
@@ -249,7 +249,7 @@ export default defineConfig({
         command: 'tsx packages/backend/src/scripts/auth-reconcile-identities.ts',
         cache: false,
       },
-      // BA-04 web writer fence (docs/better-auth-writer-fence-proof.md). `plan` is the
+      // BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). `plan` is the
       // default and read-only; `verify` is read-only; `apply` needs the plan's SHA-256.
       'auth:fence': {
         command: 'tsx packages/backend/src/scripts/auth-fence.ts',
@@ -658,14 +658,14 @@ export default defineConfig({
       // Silent screen recordings, for the gestures a still cannot teach. The raw
       // .mov files are gitignored device captures under .boardsesh/help-clips/raw;
       // this writes the committed mp4/webm pair plus a webp poster frame.
-      // Recording contract and size budget: docs/help-clips.md.
+      // Recording contract and size budget: docs/marketing/help-clips.md.
       'help:convert-clips': {
         command: 'tsx scripts/help-convert-clips.ts',
         cache: false,
       },
       // Homepage showcase video. `video:record` drives the simulators and
       // writes the footage + anchors under .boardsesh/showcase-video/work
-      // (runbook: docs/showcase-video.md); `video:render` renders
+      // (runbook: docs/marketing/showcase-video.md); `video:render` renders
       // marketing/showcase-video/ frame by frame in Chromium and encodes
       // its targets: homepage + social by default, `--target all` for the store
       // and ad cuts (see its --help). `video` runs both.
@@ -734,13 +734,13 @@ export default defineConfig({
       },
       // One-shot migration of the Railway object-storage bucket into the two
       // Cloudflare R2 buckets. Needs both credential sets; see
-      // docs/user-media-storage.md for the runbook.
+      // docs/operations/user-media-storage.md for the runbook.
       'storage:migrate-user-media': {
         command: 'tsx scripts/migrate-user-media.ts',
         cache: false,
       },
       // One-shot, no-delete copy of the live XPRem bucket from Tigris to R2.
-      // Source credentials are read from Railway; see docs/mobile-ota-updates.md.
+      // Source credentials are read from Railway; see docs/operations/mobile-ota-updates.md.
       'storage:migrate-ota': {
         command: 'tsx scripts/migrate-ota-storage.ts',
         cache: false,
@@ -801,7 +801,7 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
-      // The token tables in docs/ai-design-guidelines.md, generated from the real
+      // The token tables in docs/design/ai-design-guidelines.md, generated from the real
       // token sources between `velvet-tokens` markers. `check:` is the drift gate.
       'docs:velvet-tokens': {
         command: 'node --import tsx scripts/generate-velvet-token-tables.ts',
@@ -809,6 +809,10 @@ export default defineConfig({
       },
       'check:velvet-tokens': {
         command: 'node --import tsx scripts/generate-velvet-token-tables.ts --check',
+        cache: false,
+      },
+      'check:docs': {
+        command: 'node --import tsx scripts/check-docs.ts',
         cache: false,
       },
       // The public /v1 contract as a committed document, so a contract change is
@@ -1241,7 +1245,7 @@ export default defineConfig({
         cache: false,
       },
       // BA-04 identity mirror boot and import preconditions, end to end on a copy
-      // of the fresh canonical proof database (docs/better-auth-identity-import.md).
+      // of the fresh canonical proof database (docs/auth/better-auth-identity-import.md).
       'test:identity-import-proof': {
         command:
           'vp test run --config packages/backend/vite.identity-import-proof.config.ts --maxWorkers=1 --reporter=agent',
@@ -1406,13 +1410,13 @@ export default defineConfig({
       },
       // The record/replay backend the store capture points the app at, so the
       // screenshots are a pure function of the JS bundle rather than of what
-      // PROD happened to answer. See docs/mobile-screenshot-fixtures.md.
+      // PROD happened to answer. See docs/qa/mobile-screenshot-fixtures.md.
       'mobile:screenshot-backend': {
         command: 'tsx scripts/screenshot-backend.ts',
         cache: false,
       },
       // Fold the per-shard fixture sets a recording fan-out produced into the
-      // single snapshot published to dev storage. See docs/mobile-screenshot-fixtures.md.
+      // single snapshot published to dev storage. See docs/qa/mobile-screenshot-fixtures.md.
       'mobile:screenshot-fixtures-fetch': {
         command: 'tsx scripts/screenshot-fixtures-fetch.ts',
         cache: false,
@@ -1429,7 +1433,7 @@ export default defineConfig({
       // across an already-recorded set. The recorder does this itself now; this
       // is the one-off for a set recorded before it did (and the `--check` a
       // downloaded recording artifact should pass). See
-      // docs/mobile-screenshot-fixtures.md.
+      // docs/qa/mobile-screenshot-fixtures.md.
       'mobile:screenshot-fixtures-pseudonymise': {
         command: 'tsx scripts/screenshot-fixtures-pseudonymise.ts',
         cache: false,
@@ -1495,7 +1499,7 @@ export default defineConfig({
         cache: false,
       },
       // The verdict of mobile-e2e-gate.yml: reads each job's result and prints
-      // the one line and the table. See docs/mobile-e2e-gate.md.
+      // the one line and the table. See docs/qa/mobile-e2e-gate.md.
       'mobile:e2e-gate-verdict': {
         command: 'tsx scripts/mobile-e2e-gate-verdict.ts',
         cache: false,
@@ -1538,7 +1542,7 @@ export default defineConfig({
       // Installs a release build on a booted simulator or emulator, pinned to
       // an update branch, launches it twice and fails unless the second launch
       // ran the update staged for the given commit. No credentials.
-      // See scripts/mobile-ota-boot-check.ts + docs/mobile-ota-updates.md.
+      // See scripts/mobile-ota-boot-check.ts + docs/operations/mobile-ota-updates.md.
       'mobile:ota-boot-check': {
         command: 'tsx scripts/mobile-ota-boot-check.ts',
         cache: false,
@@ -1574,7 +1578,7 @@ export default defineConfig({
       // Cloudflare config-as-code for the boardsesh.com zone (DNS proxied flag,
       // the edge-cache rules and the WAF crawler rules). Dry-run by default;
       // forward `-- --apply` (and optionally `--allow-zone-ssl`) to converge.
-      // See scripts/cloudflare-apply.ts + docs/cloudflare.md.
+      // See scripts/cloudflare-apply.ts + docs/operations/cloudflare.md.
       'cf:apply': {
         command: 'tsx scripts/cloudflare-apply.ts',
         cache: false,
@@ -1584,7 +1588,7 @@ export default defineConfig({
       // settings, domains, variables and the ClickHouse retention check). Dry-run
       // by default and exits non-zero on drift; forward `-- --apply` to converge,
       // and `--allow-image-change` to let it roll a new server image.
-      // See scripts/railway-apply.ts + docs/railway.md.
+      // See scripts/railway-apply.ts + docs/operations/railway.md.
       'railway:apply': {
         command: 'tsx scripts/railway-apply.ts',
         cache: false,
@@ -1594,7 +1598,7 @@ export default defineConfig({
       // Surfing, and the long-lived branches and their protection. Plans by
       // default and exits non-zero on drift; forward `-- --apply` to converge.
       // Never deletes and never touches a per-PR preview branch.
-      // See scripts/ota-apply.ts + docs/mobile-ota-updates.md.
+      // See scripts/ota-apply.ts + docs/operations/mobile-ota-updates.md.
       'ota:apply': {
         command: 'tsx scripts/ota-apply.ts',
         cache: false,
@@ -1602,7 +1606,7 @@ export default defineConfig({
 
       // Read and steer per-update rollouts on the xprem server: status, set,
       // finish, revert, health. Needs the dashboard admin login.
-      // See scripts/mobile-ota-rollout.ts + docs/mobile-ota-updates.md.
+      // See scripts/mobile-ota-rollout.ts + docs/operations/mobile-ota-updates.md.
       'ota:rollout': {
         command: 'tsx scripts/mobile-ota-rollout.ts',
         cache: false,
@@ -1618,7 +1622,7 @@ export default defineConfig({
       // has, runs start / set / finish / revert against the LIVE server and
       // prints what it did. Needs the admin login and the publish token. Run it
       // through .github/workflows/ota-rollout-proof.yml, not from a laptop.
-      // See scripts/ota-rollout-proof.ts + docs/mobile-ota-updates.md.
+      // See scripts/ota-rollout-proof.ts + docs/operations/mobile-ota-updates.md.
       'ota:rollout-proof': {
         command: 'tsx scripts/ota-rollout-proof.ts',
         cache: false,
@@ -1635,7 +1639,7 @@ export default defineConfig({
       // Reports newer xprem releases — stable and prerelease tracked separately so
       // a beta never displaces a stable upgrade — and rewrites the repo onto one
       // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.
-      // See scripts/ota-image-bump.ts + docs/railway.md.
+      // See scripts/ota-image-bump.ts + docs/operations/railway.md.
       'ota:image-bump': {
         command: 'tsx scripts/ota-image-bump.ts',
         cache: false,
@@ -1696,7 +1700,7 @@ export default defineConfig({
       // Partner OAuth journey (#6981 F18): starts its own backend and www with
       // partner OAuth on, behind a local edge that answers as the production
       // hosts, and drives register → consent → sync → disconnect in Chromium and WebKit.
-      // See docs/integration-platform.md, "End-to-end journey".
+      // See docs/integrations/integration-platform.md, "End-to-end journey".
       'test:e2e:partner-oauth': {
         command: 'cd packages/web && vp exec playwright test --config=playwright.partner-oauth.config.ts',
         dependsOn: ['db:up'],
@@ -1705,7 +1709,7 @@ export default defineConfig({
       // Browser-session harness (#7596, B7a): www and the Expo web app on two
       // HTTPS subdomains of one parent domain, in Chromium and WebKit, against
       // the real backend and database. See scripts/browser-session-e2e.ts and
-      // docs/better-auth-browser-session.md, "Browser-session e2e harness".
+      // docs/auth/better-auth-browser-session.md, "Browser-session e2e harness".
       'test:e2e:browser-session': {
         command: 'tsx scripts/browser-session-e2e.ts',
         dependsOn: ['db:up', 'mobile:web-runtime:install'],

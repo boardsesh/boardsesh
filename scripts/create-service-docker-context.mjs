@@ -74,7 +74,7 @@ const services = {
     // the union of these roots' transitive workspace deps; the daemon/CLI to run
     // is chosen by the container command, not baked into the image. The
     // scheduler rides along because it is another long-lived Node CLI with the
-    // same shape — see docs/scheduler.md for the split-it-out follow-up.
+    // same shape — see docs/backend/scheduler.md for the split-it-out follow-up.
     rootPackageNames: [
       '@boardsesh/kilter-sync',
       '@boardsesh/aurora-sync',

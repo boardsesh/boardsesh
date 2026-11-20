@@ -26,7 +26,7 @@ import { sameSecret } from './provider-security-flow.server';
  * account with no password and a Google or Apple identity asks for an email
  * (decision of 2026-11-18 on #7596); the emailed link opens
  * `/auth/confirm-first-password` in the same browser, where the same session
- * chooses the password. See docs/better-auth-browser-session.md.
+ * chooses the password. See docs/auth/better-auth-browser-session.md.
  *
  * - Mode unset, empty or `legacy`: 404. `better-auth` unavailable, or www's
  *   `CURRENT_STORE_FIRST_PASSWORD_MODE` not `backend-staging`: 503.

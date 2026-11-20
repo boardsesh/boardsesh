@@ -19,7 +19,7 @@ import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
  * a rolling deploy with two healthy containers — stops doing everything twice.
  *
  * A row-with-TTL rather than `pg_try_advisory_lock` because application traffic
- * goes through PgBouncer in transaction-pooling mode (docs/neon-migration.md),
+ * goes through PgBouncer in transaction-pooling mode (docs/operations/database-portability.md),
  * where a session-scoped advisory lock leaks onto a server connection the
  * holder no longer owns. `postgres-js`'s `idle_timeout` reaping and drizzle's
  * round-robin over the pool break it independently of the pooler. This table

@@ -69,7 +69,7 @@ Sentry.init({
   // Off, like the web service (#2644). Sentry runs under legitimate interest
   // whatever a climber's analytics consent, so it must not collect personal
   // data by default: no IP address and no IP headers. The backend never
-  // attaches a user identity to Sentry events. See docs/analytics-consent.md.
+  // attaches a user identity to Sentry events. See docs/analytics/analytics-consent.md.
   sendDefaultPii: false,
   // `sendDefaultPii` does not cover request bodies. Sign-in and token routes
   // carry passwords and refresh tokens there, so keep bodies out of every event.

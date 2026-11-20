@@ -424,7 +424,7 @@ const INTERNAL_SERVER_ERROR_CODE = 'INTERNAL_SERVER_ERROR';
  *
  * The decision is on STATUS only. That outage also set an `x-railway-fallback`
  * response header, which would identify the case precisely — and is exactly the
- * kind of single-host detail this code must not learn (docs/railway.md: nothing
+ * kind of single-host detail this code must not learn (docs/operations/railway.md: nothing
  * Railway-specific in code, `pg_dump` and a `docker run` must be enough to move
  * hosts). The header is recorded in the test comment as evidence instead.
  */

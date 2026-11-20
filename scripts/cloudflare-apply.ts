@@ -43,7 +43,7 @@
  *   CLOUDFLARE_ZONE_ID    (optional) Skip the name→id lookup. When unset, the zone id is
  *                         resolved by name "boardsesh.com" via the API (needs Zone.Zone Read).
  *
- * See docs/og-climb.md ("Cloudflare in front of ws.boardsesh.com").
+ * See docs/web/og-climb.md ("Cloudflare in front of ws.boardsesh.com").
  */
 
 import { pathToFileURL } from 'node:url';
@@ -92,7 +92,7 @@ const TOKEN_SCOPES = [
 // ALONE authenticates here and fails with `Authentication error [code: 10000]`
 // there — which reads as a bad credential, not a missing scope, since
 // `wrangler whoami` still succeeds. That regression took app.boardsesh.com off
-// the deploy train on 2026-08-25. See the token section of docs/cloudflare.md.
+// the deploy train on 2026-08-25. See the token section of docs/operations/cloudflare.md.
 const SHARED_TOKEN_SCOPES = ['Account.Cloudflare Pages Edit — wrangler pages deploy (deploy-app-web)'];
 
 export interface CliOptions {

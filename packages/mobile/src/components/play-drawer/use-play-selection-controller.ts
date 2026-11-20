@@ -82,7 +82,7 @@ type SimilarClimbsTrack = {
   label: string;
 };
 /**
- * The #4979 hold (docs/current-climb-outside-queue.md, section 6), as the
+ * The #4979 hold (docs/product/current-climb-outside-queue.md, section 6), as the
  * selection controller needs it: which queue item the hold keeps dark, and the
  * held climb's Put on the wall.
  */

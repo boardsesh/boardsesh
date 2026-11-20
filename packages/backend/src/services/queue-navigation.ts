@@ -135,7 +135,7 @@ function planNowSlotWrite(
  * resulting queue event. The GraphQL `setCurrentClimb` resolver and the widget
  * re-assert handler share it.
  *
- * F3 (#6666, docs/current-climb-outside-queue.md, sections 1-3): with
+ * F3 (#6666, docs/product/current-climb-outside-queue.md, sections 1-3): with
  * `placement`, or in a session inside `QUEUE_NOW_SLOT_PERCENT`, the request
  * goes through `placeOnWall` from `@boardsesh/queue` (an existing entry moves
  * into the Now slot instead of being copied, nothing jumps over unclimbed

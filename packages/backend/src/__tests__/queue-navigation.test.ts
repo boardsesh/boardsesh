@@ -283,7 +283,7 @@ describe('setCurrentClimbAndPublish — non-null item', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F3: the Now slot (#6666, docs/current-climb-outside-queue.md, sections 1-3,
+// F3: the Now slot (#6666, docs/product/current-climb-outside-queue.md, sections 1-3,
 // 8 and 9). A stateful in-memory room so the placement, the cap and the event
 // choice can be read off what was stored and published.
 // ---------------------------------------------------------------------------

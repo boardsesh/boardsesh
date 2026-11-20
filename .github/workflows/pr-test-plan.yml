@@ -3,8 +3,8 @@ name: PR Test Plan
 # Fails a PR whose description has no usable `## Test plan` (1–5 numbered steps)
 # or no `Risk: N/5 — why` line, and a PR that changes the phone's SQLite migration
 # list without a ticked statement that the previous stable bundle can read the
-# result (docs/offline-sync-plan.md, "Older JS on a newer database"). Testers read the plan verbatim in the mobile app
-# (the crowdsourced-QA flow, docs/crowdsourced-qa.md), so the rules are the
+# result (docs/data/offline-sync.md, "Older JS on a newer database"). Testers read the plan verbatim in the mobile app
+# (the crowdsourced-QA flow, docs/qa/crowdsourced-qa.md), so the rules are the
 # reader's: short, numbered, one action and one expected result per step. The
 # rule set is `validatePrBody` in @boardsesh/pr-body, run by
 # scripts/check-pr-test-plan.ts — the same parser the backend uses to serve the

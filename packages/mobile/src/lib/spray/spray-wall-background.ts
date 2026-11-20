@@ -1,5 +1,5 @@
 // What a spray wall is drawn on: its photo, or one of the generated looks the
-// backend makes per published version (`sprayWallArt`, `docs/spray-walls.md`).
+// backend makes per published version (`sprayWallArt`, `docs/product/spray-walls.md`).
 //
 // Pure and import-light: the registry (on the draw path) and the look picker
 // both read it.

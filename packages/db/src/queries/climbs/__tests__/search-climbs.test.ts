@@ -917,7 +917,7 @@ void describe('stats-driven path: Boardsesh grades joined after the page is cut'
 /**
  * C9: once a board's `board_climb_popularity` build has finished, the popular
  * sort walks that table in index order instead of aggregating every stats row
- * of the board (docs/climb-popularity.md).
+ * of the board (docs/data/climb-popularity.md).
  */
 void describe('popular sort: board_climb_popularity walk', () => {
   // The readiness answer is cached per process for 60 s; every case resets it

@@ -48,7 +48,7 @@ export type LogbookSnapshotChunkTick = {
 export type LogbookSnapshotStatus = 'building' | 'ready' | 'too_large' | 'stalled' | 'retired';
 
 /**
- * Temporary snapshots behind the logbook bootstrap (docs/integration-platform.md,
+ * Temporary snapshots behind the logbook bootstrap (docs/integrations/integration-platform.md,
  * "Complete bootstrap and transition"). A complete copy of a climber's visible
  * ticks, bound to one app/climber connection, that an app downloads once before
  * following the change feed from `(horizon_txid, 0)`.

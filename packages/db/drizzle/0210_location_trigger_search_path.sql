@@ -77,7 +77,7 @@
 --
 -- Found by scripts/postgres18-spatial-rehearsal.sh, which copies data into a
 -- target whose schema is already loaded and so takes the broken path. See
--- #4699 and docs/postgres-18-postgis-rehearsal.md.
+-- #4699 and docs/operations/postgres-18-postgis-rehearsal.md.
 
 -- The two that fire on INSERT and so run during COPY.
 ALTER FUNCTION set_location_from_coordinates() SET search_path = public, pg_catalog;--> statement-breakpoint

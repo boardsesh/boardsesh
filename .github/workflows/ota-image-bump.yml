@@ -18,7 +18,7 @@ name: OTA Server Image Bump
 # inside YAML with every backtick hand-escaped, which is a quoting hazard that only
 # ever fails at 07:15 on a Monday.
 #
-# See scripts/ota-image-bump.ts and docs/railway.md.
+# See scripts/ota-image-bump.ts and docs/operations/railway.md.
 on:
   schedule:
     - cron: '15 7 * * 1' # Mondays 07:15 UTC, after the nightly drift check

@@ -44,7 +44,7 @@ export type QueueState = {
   stateHashOrdered?: string | null;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
-  /** Entries before Up next (F3, docs/current-climb-outside-queue.md). Equals the
+  /** Entries before Up next (F3, docs/product/current-climb-outside-queue.md). Equals the
    *  current index while a climb is current. Absent or null from a pre-F3 server. */
   historyCount?: number | null;
   /** When the current climb last changed to a different climb, ISO 8601. Absent

@@ -1,6 +1,6 @@
 /**
  * MEASUREMENT BUILDS ONLY. Injected by scripts/mobile-probe-kit/probe/apply_probes.py;
- * the shipping app never imports this file. See docs/mobile-visible-performance.md.
+ * the shipping app never imports this file. See docs/mobile/mobile-visible-performance.md.
  *
  * Events are buffered and written as JSON chunks to Documents/perf-probe/, which
  * the host pulls after a run. A Release build drops console.log, so a file is

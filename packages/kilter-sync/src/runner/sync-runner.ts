@@ -210,7 +210,7 @@ export class SyncRunner {
       // PgBouncer in transaction mode, which is incompatible with prepared
       // statements. Direct (non-pooled) URLs work either way, so this is
       // the safe default for both. `DB_POOL_MAX` caps it the way it caps
-      // `createDb()`: 5 when unset, never below 2. See docs/db-connectivity.md,
+      // `createDb()`: 5 when unset, never below 2. See docs/operations/db-connectivity.md,
       // "Pool budgets".
       const client = postgres(connectionString, {
         max: resolvePoolMax(),
@@ -943,7 +943,7 @@ export class SyncRunner {
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
     // The worker families own routine syncs once this is set; see
-    // docs/kilter-sync.md. Checked before the lease or the pool is touched.
+    // docs/data/kilter-sync.md. Checked before the lease or the pool is touched.
     if (isSyncDaemonDisabled(process.env)) {
       this.log(`[KilterSyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
       return;

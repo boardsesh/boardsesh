@@ -26,7 +26,7 @@
 --
 -- NOTE: assumes the conversion has NOT already been applied out-of-band. If an
 -- environment ran the old manual `quality_average * 5/3` SQL from
--- docs/kilter-sync.md, mark those rows normalized first so this migration skips
+-- docs/data/kilter-sync.md, mark those rows normalized first so this migration skips
 -- them (see docs); otherwise they would be scaled twice.
 
 -- 1. Scale the Aurora-sourced 1-3 rows to 1-5 and mark them normalized.

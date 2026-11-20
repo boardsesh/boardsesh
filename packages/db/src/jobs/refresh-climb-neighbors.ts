@@ -5,11 +5,11 @@
  *
  * Watermark-driven per board (board_climb_neighbor_runs.last_sync_seq), so a
  * normal night only touches new and edited climbs plus the lists they land in.
- * Spray walls are never materialised. Design + runbook: docs/similar-climbs.md.
+ * Spray walls are never materialised. Design + runbook: docs/data/similar-climbs.md.
  *
  * Callers: the CLI `packages/db/scripts/refresh-climb-neighbors.ts` (every
  * board, or `--board=a,b`) and the batch worker's `refresh-climb-neighbors`
- * family, one board per job (docs/background-workers.md).
+ * family, one board per job (docs/backend/background-workers.md).
  *
  * Every write batch goes through `transact`: the build-state row, the
  * work-set delete, each chunk of up to 1,000 lists, each finished group, and

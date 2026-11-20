@@ -409,7 +409,7 @@ describe('Better Auth dependency boundary', () => {
  * (`users`, `user_credentials`, provider `accounts`, `verificationTokens`,
  * `mobile_refresh_tokens` or any `auth_*` table) outside the two authority
  * folders must be reviewed into this list, with the gate it sits behind. The
- * reasons are in docs/better-auth-writer-inventory.md, "Writer gate
+ * reasons are in docs/auth/better-auth-writer-inventory.md, "Writer gate
  * classification". The auth `sessions` table is left out: NextAuth issues JWTs
  * and never writes it, and the backend's `sessions` is board sessions. Web
  * writers are catalogued under #7596; mobile has no database.

@@ -6,7 +6,7 @@
  * run under legitimate interest and do not read it. It lives in two places: on
  * the device (a cookie on web, local storage in the app) and on the account
  * (`user_analytics_consent_events`, newest row wins). The two are merged by
- * {@link resolveConsent}. See `docs/analytics-consent.md`.
+ * {@link resolveConsent}. See `docs/analytics/analytics-consent.md`.
  */
 
 /**
@@ -26,7 +26,7 @@ export const CONSENT_VERSION = 1;
  * have asked every climber again. It must be no earlier than the production
  * deploy that ships the new copy; a later date is the safe direction (Allows
  * in between just get no pixels). Never move it earlier.
- * See docs/analytics-consent.md#ad-pixels.
+ * See docs/analytics/analytics-consent.md#ad-pixels.
  */
 export const AD_MEASUREMENT_COPY_SINCE = '2026-11-10T00:00:00.000Z';
 

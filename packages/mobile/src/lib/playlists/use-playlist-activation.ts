@@ -1649,7 +1649,7 @@ export function usePlaylistActivation({
         // so just reopen. No `committedExternally`: nothing dispatched
         // `setCurrentClimb`, and the drawer already skips its own commit for the
         // current climb. Left as a plain open, it is a pick, so it lights a climb
-        // the #4979 hold kept dark (docs/current-climb-outside-queue.md, decision 10).
+        // the #4979 hold kept dark (docs/product/current-climb-outside-queue.md, decision 10).
         if (isAlreadyActive && suggestionsAlreadyFollowThisList) {
           openPlayDrawer(schemaClimb, openingArtOptions);
           return Promise.resolve();

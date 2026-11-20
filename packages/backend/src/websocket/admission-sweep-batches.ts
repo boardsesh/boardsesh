@@ -1,7 +1,7 @@
 /**
  * Reads one sweep round may start. One, because the round shares two admission
  * connections with ordinary requests: at a slow statement a larger round queues
- * those requests past their deadline (docs/db-connectivity.md). A round is one
+ * those requests past their deadline (docs/operations/db-connectivity.md). A round is one
  * second, so a full pass takes one second per 128 connected users.
  */
 export const MAX_SWEEP_BATCHES_PER_ROUND = 1;

@@ -22,7 +22,7 @@ export type Tick = {
   // mutation responses don't compute it.
   effectiveQuality?: number | null;
   // Raw user grade override; null means "use the climb's consensus grade".
-  // See docs/ascents-and-attempts.md.
+  // See docs/data/ascents-and-attempts.md.
   difficulty: number | null;
   // COALESCE(difficulty, ROUND(consensus_difficulty)) — what charts, leaderboards,
   // and grade-range filters should bucket on. Null when neither the user nor

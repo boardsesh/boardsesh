@@ -120,7 +120,7 @@ export const MAX_REVISIONS_PER_CLIMB = 50;
  * accidental delete can still be walked back by hand, short enough that a
  * climber who deleted a wall to get the photo off our disks is not waiting a
  * quarter for it. The scheduler's `purge-spray-wall-photos` job is what acts on
- * it (`docs/scheduler.md`).
+ * it (`docs/backend/scheduler.md`).
  */
 export const SPRAY_WALL_PHOTO_RETENTION_DAYS = 30;
 

@@ -1,7 +1,7 @@
 import { gql } from 'graphql-request';
 import type { QaPreview, QaVerdict, SubmitQaVerdictInput } from '@boardsesh/shared-schema';
 
-// Crowdsourced QA (docs/crowdsourced-qa.md): the mobile app lists a tester's
+// Crowdsourced QA (docs/qa/crowdsourced-qa.md): the mobile app lists a tester's
 // loadable `pr-<n>` OTA branches, asks the backend what each PR is and what to
 // test, and files the verdict back through submitQaVerdict.
 

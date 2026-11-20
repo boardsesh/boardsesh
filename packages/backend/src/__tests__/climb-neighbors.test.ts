@@ -2,7 +2,7 @@
  * The materialised similar-climbs index end to end, against the real test
  * Postgres: the in-memory scorer, the watermark-driven refresh job, the read
  * path the `similarClimbs` resolver serves non-admins from, and the
- * `updateClimb` invalidation. Design: docs/similar-climbs.md.
+ * `updateClimb` invalidation. Design: docs/data/similar-climbs.md.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, or, sql } from 'drizzle-orm';

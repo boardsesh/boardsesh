@@ -137,7 +137,7 @@ export function resolveCrowdDifficulty(
  * standardized `universalGrade` when the model could anchor one, falling back
  * to the within-board `localGrade` only for the small boards that never earn
  * an anchor (Decoy, Grasshopper, So iLL, Touchstone — see
- * docs/boardsesh-grade.md §3 "Cross-board offset"). Mirrors the model's own
+ * docs/data/boardsesh-grade.md §3 "Cross-board offset"). Mirrors the model's own
  * definition of the surfaced grade (`packages/db/src/queries/grade-model/blend.ts`,
  * the `surfaced` value returned by `computePosteriorGrade`) and every
  * server-side expression, which flattens the same pair into

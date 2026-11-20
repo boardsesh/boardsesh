@@ -180,7 +180,7 @@ export const resolveCrowdDifficultyId = resolveCrowdDifficulty;
  * crowd already thinks; an estimate is the MODEL's number, and pre-filling that
  * would feed the model's own output back into the ascent grades it is estimated
  * from. The echo problem the whole model is built to correct for
- * (docs/boardsesh-grade.md §2) is exactly this loop, and the first ascents at a
+ * (docs/data/boardsesh-grade.md §2) is exactly this loop, and the first ascents at a
  * new angle are the ones with the least reason to be anchored.
  */
 export function resolveTickDefaultGradeName(

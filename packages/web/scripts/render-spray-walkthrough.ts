@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Render the stage and three current-app takes; recording steps are in docs/help-clips.md.
+// Render the stage and three current-app takes; recording steps are in docs/marketing/help-clips.md.
 import { chromium, type Page } from '@playwright/test';
 import sharp from 'sharp';
 import { spawn, spawnSync } from 'node:child_process';
@@ -57,7 +57,8 @@ function run(command: string, commandArgs: string[]): void {
 /** Cuts one take into numbered JPEGs at the video's frame rate, once. */
 function extractTake(take: EditTake, reExtract: boolean): { dir: string; count: number } {
   const source = resolve(RAW_DIR, take.file);
-  if (!existsSync(source)) throw new Error(`Missing take ${relative(REPO_ROOT, source)} (see docs/help-clips.md)`);
+  if (!existsSync(source))
+    throw new Error(`Missing take ${relative(REPO_ROOT, source)} (see docs/marketing/help-clips.md)`);
   const dir = resolve(WORK_DIR, 'footage', take.id);
   const stamp = resolve(dir, '.source-mtime');
   const mtime = String(statSync(source).mtimeMs);

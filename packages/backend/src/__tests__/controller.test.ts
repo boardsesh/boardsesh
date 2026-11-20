@@ -394,7 +394,7 @@ describe('Controller Mutations', () => {
       );
     });
 
-    // F3 (#6666, docs/current-climb-outside-queue.md section 5): the climb on
+    // F3 (#6666, docs/product/current-climb-outside-queue.md section 5): the climb on
     // the wall doesn't count toward the 500 cap, so an LED read with nothing
     // current and Up next full stores 501 entries and drops nothing.
     it('stores 501 entries when nothing is current and Up next holds 500 (inside the percent)', async () => {

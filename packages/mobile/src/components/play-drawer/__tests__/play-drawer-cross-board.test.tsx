@@ -1795,7 +1795,7 @@ describe('PlayDrawer controls position (#6229)', () => {
   });
 });
 
-// #4979 (docs/current-climb-outside-queue.md, section 6, decision 9): the board
+// #4979 (docs/product/current-climb-outside-queue.md, section 6, decision 9): the board
 // connected but the hold kept the current climb dark. The wall button reads it
 // as dark and re-lights it, and the player says when the climb was last on the
 // wall, so the dark board doesn't read as a Bluetooth failure.

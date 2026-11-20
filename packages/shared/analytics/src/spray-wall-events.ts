@@ -27,7 +27,7 @@
 //    builder for it here. A wall built through a reset says so with
 //    `isReset`, so activation numbers can leave clones out.
 //
-// Full contract and the rollout gates read off these: `docs/spray-walls.md`
+// Full contract and the rollout gates read off these: `docs/product/spray-walls.md`
 // ("Telemetry" and "Rolling the flag out").
 
 import { SHARED_EVENTS } from './events';
@@ -192,7 +192,7 @@ export function climbRemixedFromBroken(
 }
 
 /**
- * The ratio the flag rollout is gated on (`docs/feature-flags.md`).
+ * The ratio the flag rollout is gated on (`docs/operations/feature-flags.md`).
  *
  * Exported as functions rather than written into a dashboard description so the
  * numbers in the doc and the numbers in the code cannot drift, and so a reader

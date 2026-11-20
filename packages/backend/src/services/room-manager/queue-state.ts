@@ -29,7 +29,7 @@ async function casWithDormancyFloor(
     stateHash: string;
     stateHashOrdered: string;
     /**
-     * The History / Up next line (F3, docs/current-climb-outside-queue.md,
+     * The History / Up next line (F3, docs/product/current-climb-outside-queue.md,
      * section 2). Required, so the compiler finds every writer: a write that
      * left it to a default would erase the line while nothing is current.
      */

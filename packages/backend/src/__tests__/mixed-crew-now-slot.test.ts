@@ -1,5 +1,5 @@
 /**
- * F3 mixed crew (#6666, docs/current-climb-outside-queue.md, sections 3 and 9).
+ * F3 mixed crew (#6666, docs/product/current-climb-outside-queue.md, sections 3 and 9).
  *
  * S1 to S18 from the "Step by step" table, through the real resolvers and a
  * real Redis, with three subscribers fed every published event in order:

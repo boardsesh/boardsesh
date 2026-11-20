@@ -2,7 +2,7 @@ name: Publish Current Main PostgreSQL Images
 
 # This workflow is a protected-main authority boundary. It publishes only the
 # exact commit that currently owns this workflow on protected main. See
-# docs/postgres-image-publishing.md before configuring or dispatching it.
+# docs/operations/postgres-image-publishing.md before configuring or dispatching it.
 on:
   workflow_dispatch:
     inputs:

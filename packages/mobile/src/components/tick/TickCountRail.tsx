@@ -42,7 +42,7 @@ type TickCountChipProps = {
  * `onLayout` identities on every render. Inline arrows in the map defeat
  * `TickChip`'s `React.memo` outright: every count change re-rendered all 16
  * chips (and their `PressableSurface` + `Text` subtrees) instead of the two that
- * actually changed tone. See docs/react-native-performance.md.
+ * actually changed tone. See docs/mobile/react-native-performance.md.
  */
 const TickCountChip = React.memo(function TickCountChip({
   count,

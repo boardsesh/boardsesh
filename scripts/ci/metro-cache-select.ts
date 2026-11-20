@@ -12,7 +12,7 @@
  * workflow downloads by that id, never by name.
  *
  * Only the publish job of a trusted run uploads a `metro-ota-store-*` artifact
- * (see docs/mobile-ota-updates.md, "Metro transform cache"). So this starts
+ * (see docs/operations/mobile-ota-updates.md, "Metro transform cache"). So this starts
  * from the runs, not the artifacts: it lists recent successful runs of the
  * trusted workflows, newest first, and asks each one for an artifact with the
  * expected name. Artifacts uploaded anywhere else under the same name are

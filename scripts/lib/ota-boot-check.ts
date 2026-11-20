@@ -14,7 +14,7 @@
  *   3. Did the second launch run that update and draw its first screen?
  *      (`judgeBoot`)
  *
- * See docs/mobile-ota-updates.md ("Boot check").
+ * See docs/operations/mobile-ota-updates.md ("Boot check").
  */
 
 export const BOOT_PLATFORMS = ['ios', 'android'] as const;

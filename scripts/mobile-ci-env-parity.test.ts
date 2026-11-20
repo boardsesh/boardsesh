@@ -162,7 +162,7 @@ describe('Expo web export telemetry (app.boardsesh.com)', () => {
 
   it('pins the browser app auth origin to www, not app.boardsesh.com', () => {
     // The SPA does credentialed cross-origin auth against www.boardsesh.com
-    // (see docs/expo-web-deployment.md, "Browser authentication"). Pointing
+    // (see docs/operations/expo-web-deployment.md, "Browser authentication"). Pointing
     // this at app.boardsesh.com is a plausible-looking "fix" — the bundle IS
     // the app subdomain — that would break sign-in for every browser-app user.
     // The in-workflow post-export grep (checks the emitted JS for the
@@ -817,7 +817,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     const s3Prefix = `${appId}/${branchConst}`;
     expect(s3Prefix.endsWith(branchPrefix), 'the composed S3 prefix must end with the branch-name prefix').toBe(true);
 
-    const docs = readFileSync(resolve(REPO_ROOT, 'docs/mobile-ota-updates.md'), 'utf8');
+    const docs = readFileSync(resolve(REPO_ROOT, 'docs/operations/mobile-ota-updates.md'), 'utf8');
     expect(docs.toLowerCase(), 'docs must describe the S3 lifecycle rule').toContain('lifecycle');
     expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });

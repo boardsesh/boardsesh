@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 /**
- * Rewrite the token tables in docs/ai-design-guidelines.md from the real token
+ * Rewrite the token tables in docs/design/ai-design-guidelines.md from the real token
  * sources, so the doc cannot drift from the code.
  *
  * Usage:
@@ -38,7 +38,7 @@ import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shar
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 
-export const DOC_PATH = 'docs/ai-design-guidelines.md';
+export const DOC_PATH = 'docs/design/ai-design-guidelines.md';
 const COLORS_PATH = 'packages/mobile/src/theme/colors.ts';
 const TYPOGRAPHY_PATH = 'packages/mobile/src/theme/typography.ts';
 const TOKENS_PATH = 'packages/mobile/src/theme/tokens.ts';

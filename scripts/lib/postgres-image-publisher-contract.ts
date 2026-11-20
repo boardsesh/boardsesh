@@ -238,7 +238,7 @@ const CONTRACT_PATHS = [
   'scripts/lib/postgres-image-publisher-contract.ts',
   'scripts/postgres-image-publisher-contract.test.ts',
   'scripts/vite.config.ts',
-  'docs/postgres-image-publishing.md',
+  'docs/operations/postgres-image-publishing.md',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
@@ -251,7 +251,7 @@ const CONTRACT_STEPS: ExpectedStep[] = [
   { name: 'Verify publisher authority and artifact contracts' },
 ];
 
-const CONTRACT_WORKFLOW_METADATA_SHA256 = '9f53ade79a7ae06ae71c8938bb4476c2ad6905667ef34f8150c16caed55374af';
+const CONTRACT_WORKFLOW_METADATA_SHA256 = 'fcf5f2979e0c104a1125a68d69315e2fbcc24fc81d9262a54f3b48d59ac75620';
 const CONTRACT_JOB_METADATA_SHA256 = '9e0f951e6bceb41814be7e67f5cfe5cf5d808315af99a39bc312cbce1c7f0cfb';
 const CONTRACT_STEP_SHA256: Record<string, string> = {
   'Checkout repository without persisted credentials':

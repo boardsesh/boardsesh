@@ -1,7 +1,7 @@
 appId: ${APP_ID}
 name: e2e gate smoke android
 ---
-# The mobile E2E gate's navigation smoke (docs/mobile-e2e-gate.md), not a store
+# The mobile E2E gate's navigation smoke (docs/qa/mobile-e2e-gate.md), not a store
 # capture: it takes no screenshots. It asks one question of the commit's JS:
 # does the app boot, sign in, and put real content on its main screens?
 #

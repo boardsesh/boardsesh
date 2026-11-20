@@ -2,7 +2,7 @@
 // scripts, send page views and the Lead conversion, and withdraw. Every call
 // asks `resolveAdPixels` (ad-pixels.ts) first, against the live consent
 // cookie, so nothing loads or fires without consent and a withdrawal stops the
-// very next event. See docs/analytics-consent.md#ad-pixels.
+// very next event. See docs/analytics/analytics-consent.md#ad-pixels.
 //
 // No advanced matching anywhere: no email, no phone, no account id, no hashed
 // identifiers. Meta's automatic events (button-click scraping, page metadata)

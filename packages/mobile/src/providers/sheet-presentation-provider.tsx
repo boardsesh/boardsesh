@@ -9,7 +9,7 @@
  * animation finishes). UIKit forbids presenting/dismissing a view controller
  * while another transition is in flight on the same presenter — overlap them and
  * UIKit DEADLOCKS: the close animation never completes and the whole app freezes
- * (renders, ignores every tap/gesture). See docs/mobile-sheets-vs-routes.md.
+ * (renders, ignores every tap/gesture). See docs/mobile/mobile-sheets-vs-routes.md.
  *
  * This provider is a pure-JS scheduler (no native view, no React state, no
  * re-renders) that enforces three invariants PER presenter group:

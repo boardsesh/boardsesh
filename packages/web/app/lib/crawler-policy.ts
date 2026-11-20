@@ -148,7 +148,7 @@ export const CRAWLER_ALLOW_TOKENS = [
   // `httpclient` signature. Flashed devices cannot be patched from here.
   'esp32httpclient',
   // LZRvision, a laser projector that lights Boardsesh climbs on a spray wall
-  // (docs/wall-devices.md). Its Python client opens the ws /graphql socket, and
+  // (docs/boards/wall-devices.md). Its Python client opens the ws /graphql socket, and
   // the upgrade is a GET, so the `python` signature refused it before the
   // backend saw its controller key: `Python/3.12 websockets/13.1` got a 403
   // from Cloudflare on 2026-11-03, where the same handshake with no UA got 101.

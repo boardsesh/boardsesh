@@ -2,10 +2,10 @@
 #
 # postgres18-spatial-surface.test.sh — keep the PostGIS blocker's evidence honest.
 #
-# docs/postgres-18-postgis-rehearsal.md records that the application's entire
+# docs/operations/postgres-18-postgis-rehearsal.md records that the application's entire
 # PostGIS surface crosses the 3.7.0dev -> 3.6.4 step intact, and that record is
 # the justification for narrowing the version-equality gate in
-# docs/postgres-18-migration.md to a capability check. That argument holds only
+# docs/operations/postgres-18-migration.md to a capability check. That argument holds only
 # while "the entire surface" is still the surface
 # scripts/postgres18-spatial-rehearsal.sh actually exercises.
 #
@@ -37,7 +37,7 @@ REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPOSITORY_ROOT"
 
 readonly REHEARSAL_SCRIPT='scripts/postgres18-spatial-rehearsal.sh'
-readonly REHEARSAL_RECORD='docs/postgres-18-postgis-rehearsal.md'
+readonly REHEARSAL_RECORD='docs/operations/postgres-18-postgis-rehearsal.md'
 
 fail() {
   printf 'PostGIS spatial surface check failed: %s\n' "$*" >&2
@@ -101,7 +101,7 @@ if [[ -n "$unrehearsed" ]]; then
       '' \
       "$REHEARSAL_RECORD claims the rehearsal covers the application's whole spatial" \
       'surface, and that claim is what justifies the narrowed PostGIS gate in' \
-      'docs/postgres-18-migration.md. Extend the fixture in' \
+      'docs/operations/postgres-18-migration.md. Extend the fixture in' \
       "$REHEARSAL_SCRIPT, re-run \`vp run test:postgres18-spatial-rehearsal\`," \
       'update the record with the new result, and only then add the function to' \
       'REHEARSED_FUNCTIONS here.'

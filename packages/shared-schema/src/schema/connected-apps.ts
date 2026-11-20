@@ -1,5 +1,5 @@
 export const connectedAppsTypeDefs = /* GraphQL */ `
-  "An app the signed-in climber connected to their account (docs/integration-platform.md, Connected apps)."
+  "An app the signed-in climber connected to their account (docs/integrations/integration-platform.md, Connected apps)."
   type ConnectedApp {
     "Pass to disconnectApp."
     connectionId: ID!

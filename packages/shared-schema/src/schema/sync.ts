@@ -4,7 +4,7 @@ export const syncTypeDefs = /* GraphQL */ `
   # ============================================
   #
   # The sync pull resolvers return opaque snake_case JSON documents (the keys are
-  # the mobile SQLite column names — see docs/sync-table-manifest.md). The cursor
+  # the mobile SQLite column names — see docs/data/sync-table-manifest.md). The cursor
   # is a composite (updatedAt, syncSeq) so timestamp collisions during Aurora bulk
   # updates never skip rows. Timestamps are ISO-8601 String, never a DateTime
   # scalar (the codebase has none).
@@ -65,7 +65,7 @@ export const syncTypeDefs = /* GraphQL */ `
   type SyncDeletion {
     "Postgres table the row was deleted from."
     tableName: String!
-    "Natural-key encoding of the deleted row (see docs/sync-table-manifest.md)."
+    "Natural-key encoding of the deleted row (see docs/data/sync-table-manifest.md)."
     recordId: String!
     "When the row was deleted (ISO 8601)."
     deletedAt: String!

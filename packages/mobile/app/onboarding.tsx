@@ -38,7 +38,7 @@ import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until
  * Presented as a `transparentModal` over the live tabs (see app/_layout.tsx),
  * with the swipe-to-dismiss gesture disabled. The mandatory steps swallow Android
  * hardware back; optional linking treats Back as a decline. Transparent so UIKit
- * never snapshots the iOS 26 tab bar (hard rule 2 in docs/mobile-sheets-vs-routes.md),
+ * never snapshots the iOS 26 tab bar (hard rule 2 in docs/mobile/mobile-sheets-vs-routes.md),
  * which is why one `OnboardingBacking` paints an opaque page under every step: the
  * live tabs must not show through.
  * The steps are variant-agnostic — this route resolves the palette from the

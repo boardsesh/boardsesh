@@ -129,7 +129,7 @@ function gatherFingerprintTags(): RawFingerprintTag[] {
 }
 
 // The branches a user-facing PR can merge into: regular work lands on main,
-// native store work on the release train (docs/mobile-store-release.md).
+// native store work on the release train (docs/operations/mobile-store-release.md).
 const CHANGELOG_BASE_BRANCHES = ['main', 'release/next'] as const;
 
 // Merged PRs against one base branch, newest-updated first so the crawl can stop

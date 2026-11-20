@@ -152,7 +152,7 @@ export type JoinSessionOptions = {
  * A `board_sessions` row that can back live party mode.
  *
  * `board_path` is nullable in the schema because inferred sessions (reconstructed
- * from tick timing — see docs/inferred-sessions.md) have none. Every live path needs
+ * from tick timing — see docs/data/inferred-sessions.md) have none. Every live path needs
  * one, so the session loaders scope to `origin = 'explicit'` and hand back this
  * narrowed shape, letting callers keep the plain `string` they have always had.
  */
@@ -183,7 +183,7 @@ export type QueueState = {
   stateHash: string;
   stateHashOrdered: string;
   /**
-   * The History / Up next line (F3, docs/current-climb-outside-queue.md,
+   * The History / Up next line (F3, docs/product/current-climb-outside-queue.md,
    * section 1): the current climb's index while one is current, else the
    * stored line. Always resolved and within `[0, queue.length]`.
    */

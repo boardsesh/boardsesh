@@ -71,7 +71,7 @@ function parseCountInput(serialized: string | undefined): ClimbSearchInput | nul
  * - The back chevron or swipe-back hands the selection back on blur, and the
  *   sheet merges it into its draft and re-presents.
  * A pushed route is used (not a stacked sheet) because native sheets can't stack
- * above the filter sheet — see docs/mobile-sheets-vs-routes.md.
+ * above the filter sheet — see docs/mobile/mobile-sheets-vs-routes.md.
  */
 export default function SettersFilterScreen() {
   const params = useLocalSearchParams<Params>();

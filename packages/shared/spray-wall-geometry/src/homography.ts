@@ -5,7 +5,7 @@
  * at a different pixel in every version's photo. The four anchors are the wall's
  * corners as tapped in THAT photo; mapping them onto a rectangle gives the one
  * transform that makes two photographs agree on where a hold is, which is what a
- * reset needs (`docs/spray-walls.md`).
+ * reset needs (`docs/product/spray-walls.md`).
  *
  * The stored photo is never warped: this matrix is stored and the renderer maps
  * holds through its inverse at draw time. The generated wall looks

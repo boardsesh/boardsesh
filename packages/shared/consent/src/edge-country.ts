@@ -9,7 +9,7 @@ import { normalizeConsentCountry } from './consent-region';
  * through the package index.
  *
  * The backend (`packages/backend/src/utils/flag-country.ts`) and the web server
- * both read `CF-IPCountry` through these ranges. See docs/cloudflare.md,
+ * both read `CF-IPCountry` through these ranges. See docs/operations/cloudflare.md,
  * "Observe country header".
  */
 

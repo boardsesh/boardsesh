@@ -2,7 +2,7 @@
  * Boardsesh grade model — versions and thresholds.
  *
  * Full model spec, data rationale, and the adversarial-review findings behind
- * every number here: docs/boardsesh-grade.md. Bump MODEL_VERSION on any change
+ * every number here: docs/data/boardsesh-grade.md. Bump MODEL_VERSION on any change
  * to the blend/tier/hysteresis logic; COEFF versions are stamped per weekly
  * refit by the refresh job.
  */
@@ -170,7 +170,7 @@ export const OFFSET_MIN_GRADED_SENDS_PER_BOARD = 10;
 /** Leave-one-user-out instability above this blocks publishing universal grades. */
 export const OFFSET_LOO_MAX_DELTA = 0.5;
 
-/** Gates (see docs/boardsesh-grade.md → Validation gates). */
+/** Gates (see docs/data/boardsesh-grade.md → Validation gates). */
 export const GATE_TAIL_MAE_IMPROVEMENT = 0.2; // aspirational improvement bar, reported not enforced
 export const GATE_BACKTEST_REGRESSION_TOLERANCE = 0.01; // shrunk MAE may not exceed raw by more than this
 export const GATE_NO_SHOCK_MAX_MOVE = 1.0; // no ≥50-ascent climb moves further than this from its raw mean

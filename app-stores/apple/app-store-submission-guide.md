@@ -35,8 +35,8 @@ This replays the pinned fixture rather than depending on changing production
 content. It writes framed PNGs to
 `app-stores/apple/screenshots/<app-store-locale>/<device>/` and retains the
 native sources under `app-stores/apple/raw-screenshots/`. See the
-[iOS capture guide](../../docs/ios-simulator-screenshots.md) for simulator and
-cached native-client prerequisites, and the [fixture guide](../../docs/mobile-screenshot-fixtures.md)
+[iOS capture guide](../../docs/qa/ios-simulator-screenshots.md) for simulator and
+cached native-client prerequisites, and the [fixture guide](../../docs/qa/mobile-screenshot-fixtures.md)
 for capture data.
 
 ### Device and language coverage
@@ -100,7 +100,7 @@ The **Mobile Screenshots (iOS)** workflow's manual dispatch defaults to capture
 only (`upload = false`, `publish_baseline = false`). Inspect the artifact before
 requesting an upload. Automatic runs after a qualifying native release-train
 build can upload a complete verified default set; see the
-[release workflow](../../docs/mobile-store-release.md) before dispatching.
+[release workflow](../../docs/operations/mobile-store-release.md) before dispatching.
 
 `fastlane ios screenshots` uploads only the staged screenshot tree, with
 `skip_binary_upload`, `skip_metadata` and `submit_for_review: false`. Filename
@@ -137,7 +137,7 @@ or metadata lanes.
 Header and Search Results are organic App Store creative placements on
 iOS/iPadOS 27 and later. Review and submit them through App Store Connect's
 Asset Library, then assign the approved assets to the intended version and
-localizations. See the [creative asset runbook](../../docs/app-store-creative-assets.md)
+localizations. See the [creative asset runbook](../../docs/marketing/app-store-creative-assets.md)
 for the manual review/publication sequence. Do not infer Apple Ads placement
 eligibility from the presence of these organic assets.
 

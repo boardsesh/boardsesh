@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Seal and verify the Metro transform store that mobile-ota-production.yml
 # carries between OTA publishes as a `metro-ota-store-*` artifact. See
-# docs/mobile-ota-updates.md, "Metro transform cache".
+# docs/operations/mobile-ota-updates.md, "Metro transform cache".
 #
 #   metro-cache-seal.sh seal   <store-dir>   before the store is packed and uploaded
 #   metro-cache-seal.sh verify <store-dir>   after the store is unpacked, before any export

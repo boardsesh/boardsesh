@@ -33,12 +33,12 @@ const fullSchema = { ...schema, ...relations };
  * budget: postgres.js round-robins over every open connection, so a pool sits at
  * its `max` even though fleet-wide concurrency averages under one active
  * statement. 5 per process keeps the whole fleet well under
- * `max_connections`; see docs/db-connectivity.md, "Connection budget".
+ * `max_connections`; see docs/operations/db-connectivity.md, "Connection budget".
  */
 export const DEFAULT_POOL_MAX = 5;
 /** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
 export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
-/** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/db-connectivity.md § pool sizing. */
+/** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/operations/db-connectivity.md § pool sizing. */
 export const SERVERLESS_DEFAULT_POOL_MAX = 3;
 export const SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S = 5;
 /**
@@ -216,7 +216,7 @@ function readIdleInTransactionTimeoutMs(): number | undefined {
  *   Request-serving processes set it through `applyRequestPoolDefaults()`. It
  *   has the same PgBouncer hazard.
  *
- * See docs/db-connectivity.md.
+ * See docs/operations/db-connectivity.md.
  */
 function startupParameterOptions(): {
   connection?: { statement_timeout?: number; idle_in_transaction_session_timeout?: number };
@@ -237,7 +237,7 @@ function startupParameterOptions(): {
 /**
  * How long a request-serving process lets a session sit idle inside an open
  * transaction before Postgres ends the session. The reasoning for 60 s is in
- * docs/db-connectivity.md, "Idle transactions end after 60 s on request pools".
+ * docs/operations/db-connectivity.md, "Idle transactions end after 60 s on request pools".
  */
 export const REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
 

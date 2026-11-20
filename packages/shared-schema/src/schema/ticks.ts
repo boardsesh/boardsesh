@@ -56,7 +56,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     quality: Int
     "Effective quality for display: COALESCE(quality, the climber's own synced star rating for this climb+angle from board_climb_ratings). Both are 1-5 native (no rescaling). Still nullable when neither exists. Populated by read queries; mutation responses don't compute it."
     effectiveQuality: Int
-    "User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read \`effectiveDifficulty\` for the value to display (it falls back to the climb's consensus). See docs/ascents-and-attempts.md."
+    "User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read \`effectiveDifficulty\` for the value to display (it falls back to the climb's consensus). See docs/data/ascents-and-attempts.md."
     difficulty: Int
     "Effective grade for display and aggregation: COALESCE(difficulty, ROUND(consensus_difficulty)). Still nullable when the climb has no consensus yet."
     effectiveDifficulty: Int

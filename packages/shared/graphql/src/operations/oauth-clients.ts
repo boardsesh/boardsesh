@@ -8,7 +8,7 @@ import type {
 
 // ============================================
 // Developer console: partner apps a signed-in developer registered
-// (docs/integration-platform.md, "Self-service registration").
+// (docs/integrations/integration-platform.md, "Self-service registration").
 // ============================================
 
 const OAUTH_CLIENT_FIELDS = `

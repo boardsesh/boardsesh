@@ -19,7 +19,7 @@ import type { BackgroundJobFamilyModule } from './types';
  * dashboard: per UTC month, lighting and sending totals, new accounts, the ten
  * busiest public gyms and the ten climbers with the most sends, sent as
  * personless events (`services/analytics/community-monthly-events.ts`,
- * docs/growth-metrics.md "Community monthly recap"). Nothing is written to the
+ * docs/analytics/growth-metrics.md "Community monthly recap"). Nothing is written to the
  * database.
  *
  * Re-sent on purpose, under the same uuids: daily the current and previous

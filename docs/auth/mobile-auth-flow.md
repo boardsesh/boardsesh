@@ -1,0 +1,285 @@
+# Mobile Auth Flow
+
+This guide describes the current authentication system. The accepted replacement
+and its compatibility requirements are in [Better Auth migration](better-auth-migration.md);
+that migration is planned, not yet deployed.
+
+For implementation progress and default-off staging contracts, see the
+[review guide](better-auth-review-guide.md),
+[native registration](better-auth-native-registration.md) and
+[native OAuth](better-auth-native-oauth.md) notes. Native OAuth endpoint adoption
+does not include the existing iOS browser fallback; its web writers remain an
+activation gate. The flows below describe released behavior.
+
+## Overview
+
+The native mobile auth flow lets React Native (Expo) clients authenticate with the Boardsesh backend. Native iOS and Android cannot share the NextAuth session cookie used by the web app because there is no embedded WebView hosting the Next.js origin. Instead, the native app completes OAuth with the provider SDK (or its system-browser fallback), then receives Boardsesh access and refresh tokens.
+
+The Expo browser target is different: it shares the `.boardsesh.com` NextAuth
+cookie with `www.boardsesh.com`, keeps its backend JWE in memory, and returns
+from Google/Apple OAuth directly to the `/app` or `app.boardsesh.com` export.
+See [`expo-web-deployment.md`](../operations/expo-web-deployment.md#browser-authentication).
+
+## Sign-in screen
+
+`app/auth/login.tsx` puts the two provider buttons first (#5654). Apple and Google are about 80% of successful sign-ins, and each finds or creates the account, so one button serves newcomers and returning climbers. From the top:
+
+1. **Continue with Apple** (iOS only). The system `AppleAuthenticationButton` with `AppleAuthenticationButtonType.CONTINUE`, so it labels and localises itself. Android never shows Apple.
+2. **Continue with Google.** A custom button in Google's published branding colours with the standard "G" (`src/components/auth/GoogleLogo.tsx`, shared with the web variant). The SDK's `GoogleSigninButton` can only say "Sign in", so it is no longer rendered. Sign-in still runs through the Google SDK and its browser fallback, unchanged.
+3. An "or use email" divider, then the email and password form. It stays open because about 19% of sign-ins use it.
+
+Apple and Google failures show under those buttons and credential failures under **Sign in**, so neither lands off screen on a small phone. Register uses the same two buttons and asks for the password once. Its Confirm Password check was client-only (`/auth/native/register` takes one password), and the password field keeps its show-password toggle. Web's register form still asks twice.
+
+A climber who signed up with email and now taps **Continue with Apple** with Hide My Email on gets a second, empty account. Apple hands over a relay address, and `findOrCreateOAuthUser` (`packages/backend/src/handlers/native-auth.ts`) links an existing account only by a verified email equal to its own. Watch the weekly share of `Login Succeeded` with `auth_method: 'apple'` and `is_new_account: true` on devices that were signed in before, and duplicate `Board Created` per person.
+
+### Sign-in telemetry
+
+- From 2.6.0, `Signup Completed` uses an authenticated server receipt: `{ userId, accountCreated, provider, createdAt }`. Only an actual account insert sets `accountCreated: true`; a returning or linked account stays false. The browser fallback includes a receipt only with fresh attempt/session proof (see [OAuth setup](oauth-setup.md#expo-native-browser-fallback-and-signup-proof)). The native provider compares the committed credential owner before publishing under current Allow. Missing proof stays unknown, and historical account-age estimates below never substitute for it. A stable account UUID and persisted marker deduplicate the creation event; late Apple Ads attribution updates person properties without another signup.
+- `Auth Option Tapped` `{ option, screen }` fires on every tap of a way in, before anything else runs. `option` is `apple`, `google`, `email_sign_in` (a filled-in form submitted), `create_account` or `forgot_password`. `screen` is `login`, or `register` for Apple and Google taps on the sign-up screen.
+- Every login event (`Login Attempted`, `Login Succeeded`, `Login Failed`, `Login Cancelled`, `Signup Completed`) carries `auth_method` (`credentials`, `google`, `apple`) and `provider` (`email`, `google`, `apple`). They are the same fact: `provider` spells the email value the way an analyst looks for it. Both come from `loginProviderProperties` in `@boardsesh/analytics`, so they cannot disagree.
+- `Login Succeeded` also carries `screen` (`login` or `register`), `is_new_account` (the account is 24 h old or less), `account_age_hours` (whole hours, rounded down, from `src/lib/account-age.ts`, the one definition every event carrying that prop uses) and `account_age_read`. From 2.7.0, native `AuthProvider` owns success publication after verifying the committed credential owner; screens no longer duplicate it. Browser credentials/register keep `useTrackLoginSucceeded` in `src/lib/login-analytics.ts`, and cookie OAuth keeps its confirmed-return path.
+- These historical age estimates remain profile-based, so `login-analytics.ts` gets `createdAt` from the `['profile']` query that `PartyProfileProvider` fetches on sign-in anyway. It does not rest on one read. `watchAccountCreatedAt` subscribes to the `['profile']` cache entry, so a creation time fetched by any reader settles it, and it makes its own reads alongside: one at once, then again after 1 s, 3 s, 10 s, 30 s and 60 s (`PROFILE_REREAD_DELAYS_MS`) for as long as a read comes back empty or fails. A cached profile is taken as is only when it names `createdAt` and is under a minute old, because the cache is not cleared at sign-in and a screen read while signed out leaves `{ profile: null }` there.
+- `Login Succeeded` waits for that answer for up to 5 s (`PROFILE_READ_TIMEOUT_MS`), and PostHog's `timestamp` capture option backdates it to the moment sign-in succeeded, so funnels that start at it keep their order. With no answer in 5 s it fires with both age props null. `account_age_read` says how the 5 s went: `ok` (the creation time is known), `timeout` (no read of its own had answered), `empty` (the last one answered with no profile) or `error` (the last one failed).
+- The watch outlives the 5 s. If `Login Succeeded` went out null and the creation time arrives within two minutes of sign-in (`LATE_RESOLVE_WINDOW_MS`), `Login Account Age Resolved` follows: the same sign-in props, the two age props filled, `resolved_after_ms` (sign-in to answer), and the same backdated timestamp. It fires at most once per sign-in and never when `Login Succeeded` already knew the age, new account or not. The watch ends early when the `['profile']` entry is removed, which sign-out does, so the next account cannot answer for this one. Before 2.6.0, the historical sign-up estimate is `is_new_account = true` on either event; the query is in `docs/analytics/growth-metrics.md`. From 2.6.0, `Signup Completed` uses the authoritative account-creation receipt.
+- The web export's cookie OAuth return still fires `Login Succeeded` straight from `AuthProvider` (`flow: 'web'`), with `auth_method`, `provider` and `screen` but without the age props or `account_age_read`, and no follow-up event.
+- Backdating moves only the timestamp. PostHog adds session and super properties when the event is captured, after the wait, so `$screen_name` on `Login Succeeded` usually names the first signed-in screen, and super properties registered after sign-in can appear on it. Split it by `screen`, not `$screen_name`.
+
+The 2.7.0 native success path records the original success time and existing
+analytics choice before resolving the authenticated session. A memory-only
+handoff can wait two minutes through an unanswered-account consent prompt,
+then publishes only after the matching account's consent and SDK identity are
+ready. Explicit denial, sign-out, account replacement, the emergency kill
+switch and timeout cancel it permanently. Email, Apple, Google and browser
+fallback use the same path; returning accounts emit login success without
+inventing a signup. Older token-only backend responses can still prove login
+through the committed credential owner, while a missing creation receipt keeps
+signup unknown. Native registration requiring verification emits no login
+success. The 2.6.0 historical success/signup gap is incomplete measurement;
+missing events are not reconstructed from account age or registration intent.
+
+Released-source compatibility checks and their limits are described in
+[released native and Garmin contracts](better-auth-released-client-contracts.md).
+
+## Token exchange flow
+
+1. The mobile app first uses the native Google/Apple provider SDK. If that SDK hits a supported presentation/configuration failure, the browser fallback opens the web app's `/auth/native-start` flow with `expo-web-browser`'s `openBrowserAsync` (`packages/mobile/src/lib/auth.ts`).
+2. The OAuth callback on the Next.js web app creates a **transfer token** -- an HMAC-SHA256 signed payload containing the authenticated `userId`, `iat`, and `exp`. The token is valid for 120 seconds.
+3. The web app redirects to `com.boardsesh.app://auth/callback?transferToken=...`. How that callback reaches the app differs by platform -- see [Callback delivery](#callback-delivery-ios-vs-android) below.
+4. The mobile app sends the transfer token to `POST /auth/native/exchange`.
+5. The backend verifies the HMAC signature and expiry, checks for replay, then issues a JWT + refresh token pair.
+6. The mobile app stores both tokens in `expo-secure-store` and uses the JWT for all authenticated requests.
+
+## Callback delivery (iOS vs Android)
+
+The browser fallback registers its `Linking` callback listener before opening the browser on both platforms. `app/+native-intent.ts` returns an empty route for this callback so Expo Router does not also navigate to a non-existent `/auth/callback` screen. `raceBrowserSignIn` owns parsing and exchanging the one-time transfer token.
+
+- **iOS:** `openBrowserAsync` remains pending until its `SFSafariViewController` closes. A matching `Linking` callback wins the race and dismisses the controller. A terminal browser resolution without a callback is a user cancel, and a browser rejection is `browser_unavailable`. The Android AppState and timeout rules are not registered on iOS.
+- **Android:** `openBrowserAsync` resolves with `{ type: 'opened' }` as soon as the Custom Tab launches. That result is nonterminal: the callback and AppState listeners stay registered. Only an observed post-registration `background` -> `active` transition starts a one-second callback grace; a matching callback wins, otherwise the attempt is cancelled. Unrelated URLs and lone `active` events are ignored. A second `background` event cancels a pending grace until the app becomes active again.
+
+Android also has a five-minute bound. If it expires while the app is backgrounded, settlement waits for the next foreground plus the same one-second callback grace so a resumed `Linking` event can still win. Otherwise it gives one final one-second grace and returns the distinct `browser_timeout` failure. Browser rejections remain `browser_unavailable`; terminal cancel/dismiss and unknown terminal results cancel without hanging.
+
+While either browser fallback wrapper is pending, `AuthProvider` reference-counts the attempts and skips only its generic foreground auth read. This prevents Android's early `active` event from reading credentials before the transfer-token exchange. A successful wrapper still performs its explicit auth read after exchange; cancellation and failure release the suppression.
+
+A `?error=...` query param on the callback (for example `session_missing` or `token_issue_failed`) means the web side could not issue a token; the login screen surfaces it as a translated error.
+
+## Token format
+
+### JWT (access token)
+
+- **Algorithm:** HS256
+- **Signing key:** `NEXTAUTH_SECRET` (raw bytes via `TextEncoder`)
+- **Claims:**
+  - `sub` -- user ID
+  - `iss` -- `"boardsesh"`
+  - `aud` -- `"boardsesh-mobile"`
+  - `iat` -- issued-at (Unix seconds)
+  - `exp` -- expiration (Unix seconds)
+- **Lifetime:** 7 days
+- **Header:** `{ "alg": "HS256", "typ": "JWT" }`
+
+### Refresh token
+
+- Opaque 256-bit hex string (`crypto.randomBytes(32).toString('hex')`)
+- Stored in the database as a SHA-256 hash (`mobileRefreshTokens` table)
+- **Lifetime:** 90 days from issuance
+
+## Refresh token rotation
+
+Every refresh request atomically revokes the presented refresh token and issues a new JWT + refresh token pair. The `WHERE ... AND revoked_at IS NULL` clause in the update query prevents TOCTOU races: if two concurrent requests present the same token, only one gets the row back.
+
+If a revoked or expired refresh token is presented, the backend returns `401` and does not issue new tokens.
+
+## Dual token validation
+
+The backend accepts both NextAuth web tokens and mobile JWTs on the same WebSocket and HTTP endpoints. It distinguishes them by segment count:
+
+| Token type         | Format | Segments (split on `.`) |
+| ------------------ | ------ | ----------------------- |
+| NextAuth JWE (web) | JWE    | 5                       |
+| Mobile JWS         | JWT    | 3                       |
+
+`validateToken()` in `packages/backend/src/middleware/auth.ts` dispatches to the correct verifier based on this heuristic. Both paths cache results in an in-process map (60s TTL) to avoid repeated cryptographic operations.
+
+## Rate limiting
+
+`/auth/native/exchange` uses an IP-based rate limiter. Refresh requests use the
+SHA-256 digest of the presented secret, so unrelated phones and watches sharing
+a proxy address do not exhaust one another's quota:
+
+- **Limit:** 10 requests per minute per IP for exchange, or per secret for refresh
+- **Window:** 60 seconds from the first request in each bucket
+- **Response when exceeded:** `429` with `Retry-After` header
+- **Map bounds:** 50,000 entries per map. Exchange, existing refresh secrets and
+  missing refresh secrets each have separate capacity. Full capacity returns `503`.
+
+Previously seen refresh digests are throttled before database access. An unseen
+digest first gets a non-locking lookup, then enters the existing-secret or
+missing-secret map. Filling missing-secret capacity cannot reject an unseen
+existing secret before its lookup. This bounds quota memory; it does not prevent
+a flood of distinct invalid inputs from causing database reads. The normal
+transaction still rechecks the user and token before rotation. Expired entries
+are cleaned up every 60 seconds and when a full map needs capacity. Overflow of
+the missing-secret map checks for expired entries at most once per second.
+
+The `/auth/native/revoke` endpoint is exempt from rate limiting because it requires a valid refresh token (a secret) and exempting it prevents aggressive retry loops from locking a user out of sign-out.
+
+> **Note:** Rate limiting is per-instance. With N backend instances behind a load balancer, the effective limit is 10 x N requests per minute per bucket. The high-risk replay prevention path uses Redis and is multi-instance safe.
+
+## Transfer token replay prevention
+
+After a transfer token is verified, its signature is stored in an in-memory `Map<string, number>` keyed by the base64url signature portion of the token, with the consumption timestamp as the value.
+
+- **TTL:** 125 seconds (slightly longer than the 120s token lifetime so replays within the validity window are always caught)
+- **Eviction:** stale entries are cleaned every 60 seconds
+- **Map bounds:** 10,000 entries max. An early eviction pass runs when the limit is reached. If still full, the endpoint returns `503`.
+
+A replayed token receives a `409` response with the body `{ "error": "Transfer token has already been used" }`.
+
+## Client-side behavior
+
+### Token storage
+
+Tokens are stored in `expo-secure-store` under three keys:
+
+| Key                          | Value                  |
+| ---------------------------- | ---------------------- |
+| `boardsesh_jwt`              | JWT access token       |
+| `boardsesh_refresh_token`    | Refresh token (UUID)   |
+| `boardsesh_token_expires_at` | ISO 8601 expiry string |
+
+### Proactive refresh
+
+`isTokenExpiringSoon()` returns `true` when the JWT is within 24 hours of expiry or when its stored expiry metadata is missing. `ensureFreshToken()` is called before every authenticated request and triggers a refresh if needed. Keeping the missing-expiry case refreshable lets older or partially migrated credentials repair their metadata as soon as the backend is reachable.
+
+On app startup and foreground revalidation, a successfully read JWT establishes the local session before the expiry and refresh checks run. If the expiry read, refresh request, or post-refresh keychain read is temporarily unavailable, native keeps that JWT authenticated in a degraded state. This preserves downloaded boards and other account-scoped offline data even when the JWT is already past its server expiry; it does not bypass backend authorization, so online requests still fail until refresh succeeds. The provider retries a degraded session when the app becomes active or connectivity transitions from offline to online. Reconnect checks are coalesced and stop after a clean authentication result.
+
+### 401 retry with deduplication
+
+If a request returns `401`, `authenticatedFetch()` triggers a token refresh and retries the request once with the new JWT. Concurrent refresh attempts are deduplicated via a shared `refreshPromise` -- only one network call is made regardless of how many requests hit `401` simultaneously.
+
+Refresh outcomes are deliberately split:
+
+- A `401` or `403` rejection (or a confirmed missing refresh credential) means the session cannot be renewed. The provider transitions to anonymous and runs the normal account-isolation cleanup.
+- A transport error, timeout, rate limit, backend failure, or transient keychain read error is `unavailable`, not rejected. Existing credentials remain stored and the established local session stays rendered while native waits to retry.
+
+Every native auth resolution carries the credential generation it started with. The resolver checks that generation after each asynchronous step, and `AuthProvider` checks it again immediately before applying state, so a delayed offline/refresh result cannot revive an account after sign-out or overwrite a newer login.
+
+## Endpoint reference
+
+### POST /auth/native/exchange
+
+Exchange a transfer token for a JWT + refresh token pair.
+
+**Request:**
+
+```json
+{
+  "transferToken": "<payload>.<signature>"
+}
+```
+
+**Success response (200):**
+
+```json
+{
+  "jwt": "<signed-jwt>",
+  "refreshToken": "<uuid>",
+  "expiresAt": "2026-06-22T12:00:00.000Z"
+}
+```
+
+**Error responses:**
+
+| Status | Body                                                  | Condition                        |
+| ------ | ----------------------------------------------------- | -------------------------------- |
+| 400    | `{ "error": "transferToken is required" }`            | Missing or empty `transferToken` |
+| 401    | `{ "error": "Invalid or expired transfer token" }`    | Bad signature or expired         |
+| 409    | `{ "error": "Transfer token has already been used" }` | Replay of a consumed token       |
+| 429    | `{ "error": "Rate limit exceeded..." }`               | IP rate limit hit                |
+| 503    | `{ "error": "Service temporarily overloaded" }`       | Internal map capacity exceeded   |
+
+### POST /auth/native/refresh
+
+Rotate a refresh token for a new JWT + refresh token pair.
+
+**Request:**
+
+```json
+{
+  "refreshToken": "<uuid>"
+}
+```
+
+**Success response (200):**
+
+```json
+{
+  "jwt": "<signed-jwt>",
+  "refreshToken": "<uuid>",
+  "expiresAt": "2026-06-22T12:00:00.000Z"
+}
+```
+
+**Error responses:**
+
+| Status | Body                                            | Condition                        |
+| ------ | ----------------------------------------------- | -------------------------------- |
+| 400    | `{ "error": "refreshToken is required" }`       | Missing or empty `refreshToken`  |
+| 401    | `{ "error": "Invalid refresh token" }`          | Unknown or already-revoked token |
+| 401    | `{ "error": "Refresh token expired" }`          | Token past 90-day expiry         |
+| 429    | `{ "error": "Rate limit exceeded..." }`         | IP rate limit hit                |
+| 503    | `{ "error": "Service temporarily overloaded" }` | Internal map capacity exceeded   |
+
+### POST /auth/native/revoke
+
+Revoke all refresh tokens for the user associated with the submitted token (full sign-out).
+
+**Request:**
+
+```json
+{
+  "refreshToken": "<uuid>"
+}
+```
+
+**Success response (200):**
+
+```json
+{
+  "revoked": true
+}
+```
+
+**Error responses:**
+
+| Status | Body                                      | Condition                        |
+| ------ | ----------------------------------------- | -------------------------------- |
+| 400    | `{ "error": "refreshToken is required" }` | Missing or empty `refreshToken`  |
+| 401    | `{ "error": "Invalid refresh token" }`    | Unknown or already-revoked token |
+
+## Known limitations
+
+- **Cold-start/process-death callback recovery is not implemented.** The fallback listeners and in-flight state live in the app process. If Android kills the process while the Custom Tab is open, a later callback can cold-start the app without the original race available to exchange it. Recovering that callback needs a durable pending-attempt record plus cold-start token handoff and is a separate follow-up; this change only fixes warm-process Custom Tab returns.
+- **JWTs cannot be revoked before expiry (7-day window).** Once issued, a JWT is valid until it expires. If a JWT is stolen, it can be used for up to 7 days. Mitigation: short lifetime (7 days instead of 30) combined with refresh token rotation means the window is bounded and a revoke call invalidates future refreshes immediately.
+- **Token validation results are cached for up to 60 seconds.** Successful validation results are cached in-process for up to 60 seconds. A revoked JWT may continue to authenticate for up to 60 seconds after revocation. This is standard for JWT-based systems and is the trade-off for avoiding cryptographic verification on every request. Failed validations are not cached, so transient errors (e.g. secret unset during restart) resolve as soon as the underlying issue is fixed.
+- **Rate limiting is per-instance when not behind a single proxy.** The IP-based rate limiter uses an in-memory map, so each backend instance maintains its own counters. In a multi-instance deployment without a shared proxy, an attacker could spread requests across instances to exceed the intended limit. Mitigation: Redis-backed replay prevention covers the highest-risk path (transfer token exchange), and refresh token rotation is inherently safe against replay.

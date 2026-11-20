@@ -1,7 +1,7 @@
 // The one glyph button for top bars and headers: close (xmark), back (chevron),
 // minimise (chevron down), more (ellipsis). Sized and coloured from
 // `topBarFor(variant)` so a sheet's X, a native header's X and a hand-built header's
-// chevron are the same object. See docs/mobile-chrome.md, "Top-bar buttons".
+// chevron are the same object. See docs/design/mobile-chrome.md, "Top-bar buttons".
 //
 // Liquid Glass: a 17pt semibold glyph in the label colour, in a 44pt target. `filled`
 // draws the target as a `systemColors.fill` circle, for chrome we draw ourselves

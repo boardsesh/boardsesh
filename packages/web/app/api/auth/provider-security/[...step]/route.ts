@@ -5,7 +5,7 @@ import { routeProviderSecurity } from '@/app/lib/auth/provider-security-route.se
  * Provider link, unlink and reauthentication under
  * `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B5e1). 404 with the mode
  * unset. See `provider-security-route.server.ts` and
- * docs/better-auth-browser-session.md.
+ * docs/auth/better-auth-browser-session.md.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

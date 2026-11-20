@@ -211,7 +211,7 @@ export type SprayOverlayMark = {
  * placed photograph.
  *
  * `invert` is the canonical→photo direction (no image is ever warped, see
- * `docs/spray-walls.md`); `photoToPlaced` then scales that into whatever
+ * `docs/product/spray-walls.md`); `photoToPlaced` then scales that into whatever
  * rectangle the photo was resized into on the card.
  */
 export function buildSprayOverlayMarks(params: {

@@ -30,7 +30,7 @@ else falls through to the shell.
   search indexes. Since W-24 (#4438) retired the `/app` static path this file is
   the only production source of that header for the browser app; the dev `/app`
   proxy gets its own from `packages/web/middleware.ts` (see "Retired: the /app
-  static path" in `docs/expo-web-deployment.md`).
+  static path" in `docs/operations/expo-web-deployment.md`).
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
   — standard hardening.
 - Reset-password documents override the referrer policy with `no-referrer` and
@@ -171,11 +171,11 @@ the only gate that selects a test suite for a workflow-only diff, since Vitest's
 `--changed` can never relate an fs read to a diff of the file being read. (Other
 gates do fire on such a diff — `service-deploy-inputs.yml` lists the workflow in
 its paths filter — they just run no tests over it.) See
-`docs/expo-web-deployment.md`.
+`docs/operations/expo-web-deployment.md`.
 
 ## Why `EXPO_PUBLIC_WEB_URL` is www, not app
 
 The production export bakes `EXPO_PUBLIC_WEB_URL=https://www.boardsesh.com` — the
 **auth origin**, deliberately www and not app.boardsesh.com. The SPA does
 credentialed cross-origin auth against www; app.boardsesh.com is only where the
-static shell is served. See `docs/expo-web-deployment.md`.
+static shell is served. See `docs/operations/expo-web-deployment.md`.

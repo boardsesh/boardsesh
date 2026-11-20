@@ -20,7 +20,7 @@ export type ControllerBoardRow = {
 export const controllerBoardQueries = {
   /**
    * The key owner's own boards, for a wall device's setup screen
-   * (docs/wall-devices.md). Without it the owner had nowhere to read a board's
+   * (docs/boards/wall-devices.md). Without it the owner had nowhere to read a board's
    * id: no screen shows it, and a private wall has no share link.
    *
    * Controller-key only. `controllerId` / `controllerApiKey` are set solely by the

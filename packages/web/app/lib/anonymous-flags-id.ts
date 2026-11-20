@@ -11,11 +11,11 @@ import { getPreference, setPreference } from './user-preferences-db';
  * so the rollout re-rolled every page load, and Allow switched to the SDK's
  * persisted anonymous id and re-rolled it once more. One id per browser keeps
  * the bucket across loads and across Allow / No thanks. Signed in, flags use
- * the account id instead. docs/feature-flags.md, "Anonymous bucketing".
+ * the account id instead. docs/operations/feature-flags.md, "Anonymous bucketing".
  *
  * It is replaced {@link FLAGS_ID_LIFETIME_MONTHS} months after it was minted,
  * CNIL's ceiling for a tracker that needs no consent
- * (docs/analytics-consent.md, "Legal basis per tracker").
+ * (docs/analytics/analytics-consent.md, "Legal basis per tracker").
  */
 
 const ANONYMOUS_FLAGS_ID_KEY = 'anonymousFlagsId';

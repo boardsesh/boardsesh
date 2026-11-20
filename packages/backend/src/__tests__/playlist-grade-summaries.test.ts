@@ -2,7 +2,7 @@
  * Discover's grade and "Following" filters and the playlist grade band, end to
  * end against the real test Postgres: how a summary is computed, kept fresh by
  * the playlist mutations and the daily refresh, and how discoverPlaylists
- * filters on it (#6217, docs/playlist-grade-summaries.md).
+ * filters on it (#6217, docs/data/playlist-grade-summaries.md).
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';

@@ -160,7 +160,7 @@ ensure_job_queue_schema() {
 }
 
 # 0272_sync_deletions_cutoff_guard refuses to run until an administrator has installed the
-# deletion-sync cutoff helper and its NOLOGIN owner (docs/sync-deletions-cutoff.md):
+# deletion-sync cutoff helper and its NOLOGIN owner (docs/data/sync-deletions-cutoff.md):
 # the migration login cannot grant the statistics role the helper needs. A dev
 # volume created before that migration has neither, so install them first, with
 # the same development adapter CI, E2E and the dev-db image build use. It returns

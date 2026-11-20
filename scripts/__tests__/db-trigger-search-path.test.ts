@@ -33,7 +33,7 @@ import { DRIZZLE_DIR, JOURNAL_PATH, parseJournal } from '../lib/drizzle-migratio
  *   ALTER FUNCTION <name>() SET search_path = public, pg_catalog;
  *
  * Never edit an applied migration — the ledger holds the hash of the file as it
- * ran (`docs/db-migrations.md`, "The recorded baseline").
+ * ran (`docs/operations/db-migrations.md`, "The recorded baseline").
  */
 
 /**
@@ -344,7 +344,7 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
 
 /**
  * Read the migrations IN JOURNAL ORDER. Journal order is what actually runs
- * (`docs/db-migrations.md`: order comes from `when`, and a `.sql` with no
+ * (`docs/operations/db-migrations.md`: order comes from `when`, and a `.sql` with no
  * journal entry is inert), so a `readdir` sweep would be the wrong sequence and
  * would also count orphans.
  */

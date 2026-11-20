@@ -53,7 +53,7 @@ let hasReportedIdentityFailure = false;
  *    and stamps `$is_identified: true` on every later anonymous event. Mobile
  *    did exactly that with its party-profile UUID until #6078, and it split
  *    returning climbers across two persons (see "Identity-split pitfall" in
- *    `docs/growth-metrics.md`). Letting the SDK mint its own anonymous id
+ *    `docs/analytics/growth-metrics.md`). Letting the SDK mint its own anonymous id
  *    after a reset keeps `distinctId === anonymousId` a truthful test for
  *    "anonymous".
  */

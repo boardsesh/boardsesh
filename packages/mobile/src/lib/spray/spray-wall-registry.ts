@@ -18,11 +18,11 @@ import type { SprayArtVariant, SprayVersionIdentity } from './spray-photo-keys';
 // Publishing a hold edit writes
 // a new `spray_wall_versions` row and a new generation of `spray_wall_holds`
 // under the SAME layout and size: the wall keeps its `(board_type, layout_id)`
-// partition so every climb set on it stays findable (`docs/spray-walls.md`,
+// partition so every climb set on it stays findable (`docs/product/spray-walls.md`,
 // "What the version is not"), and encoding the version in `sizeId` was rejected
 // because it would leak into `compatible_size_ids`, the offline key,
 // `board_sessions.board_path` and share URLs. (A reset is a different thing: a
-// new wall with its own layout, `docs/spray-walls.md`, "Archive and reset".)
+// new wall with its own layout, `docs/product/spray-walls.md`, "Archive and reset".)
 //
 // So the version has to reach the caches some other way, and `sprayCacheToken`
 // is it. Every cache key on the spray render path — the render-data memo, the
@@ -51,7 +51,7 @@ export const SPRAY_BOARD_NAME = 'spray';
 export type SprayWallRenderSettingsValue = BoardRenderDefault;
 
 /**
- * Where a wall stands in the reset lifecycle (`docs/spray-walls.md`, "Archive
+ * Where a wall stands in the reset lifecycle (`docs/product/spray-walls.md`, "Archive
  * and reset"), as the wall payload said it last.
  *
  * - `archivedAt`: when a reset replaced this wall, or null for a live wall. An

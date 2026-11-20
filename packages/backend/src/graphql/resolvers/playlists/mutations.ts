@@ -102,7 +102,7 @@ function climbFitsPlaylistBoard(
  * card and Discover's grade filter see the change now instead of after the
  * daily job. After the write commits and outside its transaction: a failure
  * here is logged, never surfaced, because the climb was added or removed and
- * the daily job repairs the summary (docs/playlist-grade-summaries.md).
+ * the daily job repairs the summary (docs/data/playlist-grade-summaries.md).
  */
 async function refreshGradeSummaryAfterClimbChange(playlistId: bigint): Promise<void> {
   try {

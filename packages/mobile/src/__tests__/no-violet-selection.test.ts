@@ -85,7 +85,7 @@ const HOW_TO_FIX =
   'A selected or current item is a state, not a link: use theme.selection (text: label, ' +
   'checkmark: accent, fill: the brand wash behind the row) instead of brandColors.primary. ' +
   'Violet text and icons only on things you can tap. See "Velvet Send v2 roles" in ' +
-  'docs/ai-design-guidelines.md.';
+  'docs/design/ai-design-guidelines.md.';
 
 describe('the selection-ternary scanner', () => {
   it.each([

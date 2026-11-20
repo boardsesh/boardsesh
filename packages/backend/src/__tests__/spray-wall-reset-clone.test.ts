@@ -8,7 +8,7 @@ import { BATCH_SYSTEM_USERS, SYSTEM_BOARD_OWNER_ID } from '@boardsesh/db/queries
 
 /**
  * Archive and reset, end to end against the real database
- * (docs/spray-walls.md, "Archive and reset").
+ * (docs/product/spray-walls.md, "Archive and reset").
  *
  * `resetSprayWall` clones a published wall's settings into a new, unfinished
  * wall. The clone's first publish archives the old wall and carries its follows

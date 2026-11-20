@@ -17,7 +17,7 @@ name: OTA Config Drift
 # with different messages: the first is usually an outage or a rotated password,
 # the second is somebody's change.
 #
-# See docs/mobile-ota-updates.md, "Managing xprem as code".
+# See docs/operations/mobile-ota-updates.md, "Managing xprem as code".
 on:
   schedule:
     - cron: '17 5 * * *' # 05:17 UTC daily; off the hour, where scheduled runs queue

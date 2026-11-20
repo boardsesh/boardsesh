@@ -383,7 +383,7 @@ jobs:
 
       # The Android half of a recording run. Merged with the iOS shard artifacts
       # via `vp run mobile:screenshot-fixtures-merge` and published — see
-      # docs/mobile-screenshot-fixtures.md.
+      # docs/qa/mobile-screenshot-fixtures.md.
       #
       # Uploaded from a copy OUTSIDE the work tree, for the same reason the PNGs
       # are staged: with commit_to_main the commit step below runs `git reset --hard

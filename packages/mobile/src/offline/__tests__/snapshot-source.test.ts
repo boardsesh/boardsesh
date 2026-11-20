@@ -1466,7 +1466,7 @@ describe('downloadGradesArtifact', () => {
   });
 
   // The exact decoded-size gate on the GRADES file. A grades block published in
-  // artifact shape 2 carries `uncompressedBytes` (docs/board-snapshots.md,
+  // artifact shape 2 carries `uncompressedBytes` (docs/data/board-snapshots.md,
   // "Artifact shape"); one published in shape 1 does not. The gate is the layout
   // artifact's, reached through the same `expectedDecodedBytesFor`, so the app
   // starts holding grades downloads to their exact size the moment the export

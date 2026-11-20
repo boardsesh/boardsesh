@@ -34,7 +34,7 @@ type HoldSetRow = {
  * The climb set is the climbs list's own — `buildJoinAndWhere` from
  * search-climbs-local.ts, with the same owner stamp and followed-authors
  * condition the list passes, so the personal-progress filters obey the
- * auth-scoping contract in docs/offline-reads.md — joined to the packed hold sets
+ * auth-scoping contract in docs/data/offline-reads.md — joined to the packed hold sets
  * of the device-derived holds index. The rows are folded in JS by
  * `aggregateHoldUsage` instead of a GROUP BY over per-hold rows (the index has
  * none; see holds-index/query.ts in @boardsesh/offline-sync).

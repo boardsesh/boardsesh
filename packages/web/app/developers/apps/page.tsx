@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * The developer console (docs/integration-platform.md, "Self-service
+ * The developer console (docs/integrations/integration-platform.md, "Self-service
  * registration"). A utility page: noindex, and behind the server flag
  * `developer-console` (`requireDeveloperConsoleAccess`). The backend gates
  * every operation again (PARTNER_OAUTH_MODE, then the same flag), and the page

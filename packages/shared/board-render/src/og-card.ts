@@ -13,7 +13,7 @@ import {
 /**
  * The climb's identity on a `/og/climb` card, laid out on the share-card family's
  * `full` slot: the grade as the hero in its grade colour, then the climb name, the
- * setter, and the board line with the wall angle. See docs/og-climb.md.
+ * setter, and the board line with the wall angle. See docs/web/og-climb.md.
  *
  * This module only decides WHAT the card says; `og-family.ts` typesets it through
  * Pango, which escapes every string for markup and measures every fit.

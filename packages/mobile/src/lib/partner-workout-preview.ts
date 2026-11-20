@@ -124,7 +124,7 @@ export async function buildPartnerWorkoutPreview({
  * another; a row whose climb is not keeps its queue item. No request goes out.
  * A crewmate's add that reaches the server between this read and the append
  * can still double a climb: the same race "Add a block" has
- * (`docs/workout-stages.md`).
+ * (`docs/product/workout-stages.md`).
  */
 export function reselectPartnerWorkoutPreview(
   preview: PartnerWorkoutPreview,

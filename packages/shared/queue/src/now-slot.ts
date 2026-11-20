@@ -2,7 +2,7 @@
  * The Now slot: where the current climb sits in the flat queue, and the one
  * rule for putting a climb on the wall (F3, #6666).
  *
- * Design: `docs/current-climb-outside-queue.md`, section 1. The queue keeps its
+ * Design: `docs/product/current-climb-outside-queue.md`, section 1. The queue keeps its
  * wire and storage shape, one flat array plus `currentClimbQueueItem`. The
  * climber sees three parts of it:
  *

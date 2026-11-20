@@ -9,7 +9,7 @@ on:
       - 'scripts/lib/postgres-image-publisher-contract.ts'
       - 'scripts/postgres-image-publisher-contract.test.ts'
       - 'scripts/vite.config.ts'
-      - 'docs/postgres-image-publishing.md'
+      - 'docs/operations/postgres-image-publishing.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'

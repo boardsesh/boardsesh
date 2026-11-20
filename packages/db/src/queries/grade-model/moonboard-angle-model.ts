@@ -15,7 +15,7 @@
  * MoonBoard is excluded from `CROWD_MEAN_BOARDS` on purpose. What follows works
  * from setter labels alone: a same-board transpose, not a community
  * projection, and it shares no types with the main pipeline so it can never
- * perturb it. See docs/boardsesh-grade.md.
+ * perturb it. See docs/data/boardsesh-grade.md.
  *
  * Robustness, because setter labels are noisy:
  *  - **Median, not mean.** ~15% of dual-graded pairs don't even get harder with
@@ -131,7 +131,7 @@ export interface MoonboardDualAngleSampleRow {
  * both angles. Reads `difficulty_average` rather than `display_difficulty` —
  * the app's own `userGrade` (a real, independent community opinion distinct
  * from the setter's `grade`; confirmed against OCR'd app screenshots, see
- * docs/boardsesh-grade.md) is imported into `difficulty_average` when present,
+ * docs/data/boardsesh-grade.md) is imported into `difficulty_average` when present,
  * falling back to the setter's grade when it is not — so this is a strict
  * upgrade over the setter label wherever the community has actually weighed
  * in, and a no-op everywhere else. Held-out validation on the real capture:

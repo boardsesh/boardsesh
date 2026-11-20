@@ -65,7 +65,7 @@ function sprayResourceVisibility(viewer: string | null, wallUuid?: string | null
  * A spray climb is stored as an ordinary `board_climbs` row —
  * `board_type = 'spray'`, `is_listed = true`, `is_draft = false` — because that is
  * what makes queue, play, ticks, stats, playlists, search and the duplicate gate
- * work on a wall unchanged (`docs/spray-walls.md`). The cost of that decision is
+ * work on a wall unchanged (`docs/product/spray-walls.md`). The cost of that decision is
  * that **every existing predicate in the codebase reads a spray climb as public**:
  * `is_listed` was the visibility rule for eight catalogue boards, and it is not the
  * visibility rule for a photograph of somebody's living room.

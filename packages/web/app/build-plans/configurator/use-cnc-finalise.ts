@@ -64,7 +64,7 @@ export function isCheckoutRedirectUrl(url: string, siteOrigin: string | null = c
     const { origin } = new URL(url);
     if (origin === STRIPE_CHECKOUT_ORIGIN) return true;
     // The dev-only checkout bypass (`CNC_CHECKOUT_BYPASS`, see
-    // docs/cnc-packs.md) skips Stripe and sends the buyer straight to their
+    // docs/product/cnc-packs.md) skips Stripe and sends the buyer straight to their
     // order page on this site. Our own origin is the only other place a
     // checkout URL may point.
     return siteOrigin !== null && siteOrigin !== 'null' && origin === siteOrigin;

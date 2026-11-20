@@ -42,7 +42,7 @@
  *   EXPO_UPDATES_FINGERPRINT_OVERRIDE  optional — used when --runtime-version is absent.
  *     (One value for every platform, same as the flag, so pair it with --platform.)
  *
- * See docs/mobile-ota-updates.md ("Per-PR preview branches"). Distinct from
+ * See docs/operations/mobile-ota-updates.md ("Per-PR preview branches"). Distinct from
  * scripts/mobile-ota-health-check.ts, which asks PostHog whether shipped updates
  * BOOT; this one asks the server whether they are OFFERED.
  */

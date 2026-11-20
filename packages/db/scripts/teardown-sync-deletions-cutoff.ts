@@ -5,7 +5,7 @@ import postgres from 'postgres';
 // Removes what bootstrap-sync-deletions-cutoff.ts installed: the
 // sync_deletions_safe_cutoff helper and its NOLOGIN owner role. Run it only
 // after migrations 0274 and 0275 have dropped every object that used them
-// (docs/sync-deletions-cutoff.md).
+// (docs/data/sync-deletions-cutoff.md).
 //
 // Plan by default. With SYNC_CUTOFF_ADMIN_DATABASE_URL set, the plan inspects
 // that database in a read-only transaction and prints what --apply would do.

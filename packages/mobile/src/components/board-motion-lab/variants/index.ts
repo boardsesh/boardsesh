@@ -1,6 +1,6 @@
 /**
  * Every transition the lab can show, in the order the lab lists them. Adding a
- * design idea is one file here and one line below; see docs/board-motion-lab.md.
+ * design idea is one file here and one line below; see docs/rendering/board-motion-lab.md.
  * I, the round-2 pick, comes first among the swap looks and opens by default.
  */
 import type { BoardMotionVariant } from '../types';

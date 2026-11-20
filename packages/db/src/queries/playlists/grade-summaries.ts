@@ -23,7 +23,7 @@ import {
  *
  * Every write is an upsert that skips unchanged rows, plus a delete of the
  * rows whose playlist no longer has a graded climb. A rerun over unchanged
- * data costs reads and no writes (docs/postgres-query-costs.md).
+ * data costs reads and no writes (docs/operations/postgres-query-costs.md).
  */
 
 export type PlaylistGradeSummaryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;

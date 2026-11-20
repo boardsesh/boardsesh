@@ -41,7 +41,7 @@ import { escapePangoMarkup } from './validation';
 /**
  * The share-card family: one layout contract the playlist, join and later card
  * surfaces render through, so every link pasted into a chat reads like the climb
- * card and survives a square crop at 110px. See docs/og-climb.md.
+ * card and survives a square crop at 110px. See docs/web/og-climb.md.
  *
  * The surface supplies an art slot and a stack of text; the ground, the scrim,
  * the column and the wordmark are fixed here. The climb card draws through it

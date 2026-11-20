@@ -78,11 +78,11 @@ export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>
   // purpose. Without them each run succeeds as a logged skip (#3863).
 };
 
-/** Defaults for one `provider-routine-cycle` run; see docs/background-workers.md. */
+/** Defaults for one `provider-routine-cycle` run; see docs/backend/background-workers.md. */
 // 120 s a cycle (also the maximum): two providers every 5 minutes then offer
 // the one-at-a-time routine worker 240 s of cycles per 300 s plus the last
 // credentials' overrun, leaving room for the board-wide jobs
-// (docs/background-workers.md, "Queue share").
+// (docs/backend/background-workers.md, "Queue share").
 export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } as const;
 
 /**
@@ -91,7 +91,7 @@ export const ROUTINE_CYCLE_DEFAULTS = { maxCredentials: 4, budgetMs: 120_000 } a
  * the budget is soft: the credential running when it passes finishes (up to
  * the lease). So 2 x 120 s plus that last credential's overrun must fit the
  * 300 s window, with room left for the board-wide jobs
- * (docs/background-workers.md, "Queue share").
+ * (docs/backend/background-workers.md, "Queue share").
  */
 export const ROUTINE_CYCLE_BUDGET_MAX_MS = 120_000;
 

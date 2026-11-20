@@ -1,6 +1,6 @@
 /**
  * Keeps `board_climb_popularity`, the popular sort's ranking table, in step
- * with `board_climb_stats` (docs/climb-popularity.md).
+ * with `board_climb_stats` (docs/data/climb-popularity.md).
  *
  * - **Hourly, on the job queue.** `CLIMB_POPULARITY_REFRESH_QUEUE` is created by
  *   the migrator with the `exclusive` policy, so one run is queued or running

@@ -1,5 +1,5 @@
 /**
- * Backend-owned schedules for background job families (docs/background-workers.md).
+ * Backend-owned schedules for background job families (docs/backend/background-workers.md).
  *
  * - **On by default, with a kill switch.** Every family runs. `BATCH_FAMILIES_DISABLED`
  *   is a comma list of family names to turn off, or `all`; an unknown name

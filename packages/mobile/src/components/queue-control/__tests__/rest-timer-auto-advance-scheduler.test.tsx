@@ -766,7 +766,7 @@ describe('cues', () => {
     expect(nextClimb).not.toHaveBeenCalled();
   });
 
-  // The gap SEAM pinned in "one terminal cue per deadline" (docs/rest-timer.md,
+  // The gap SEAM pinned in "one terminal cue per deadline" (docs/product/rest-timer.md,
   // Cues): a dead end used to show the toast and play neither `advance` nor
   // `reached`. The countdown closes it: the rest ran out and the wall did not
   // move, so it is `reached`.

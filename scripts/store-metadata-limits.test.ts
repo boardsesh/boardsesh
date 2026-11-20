@@ -117,7 +117,7 @@ describe('App Store listing copy', () => {
   });
 });
 
-// docs/i18n-spanish-glossary.md keeps the brand product names in English and in
+// docs/i18n/i18n-spanish-glossary.md keeps the brand product names in English and in
 // FULL: `Kilter Board`, `Tension Board`, `MoonBoard`. The 2.6 release notes said
 // «Un Kilter junto a un Tension», which uses a shortened trademark as a noun —
 // the exact usage LEGAL.md and /legal say we do not make. Only the determiner

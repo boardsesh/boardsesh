@@ -6,7 +6,7 @@ import { invalidateRestTimerControlIntent } from './rest-timer-foreground-state'
 // machine state (discrete events), the mm:ss display (1 Hz), and the auto-advance
 // fire (once per cycle). A context whose value changed every second would
 // re-render the whole app tree, which is the exact trap
-// `docs/react-native-performance.md` §1 exists to prevent. So the machine state
+// `docs/mobile/react-native-performance.md` §1 exists to prevent. So the machine state
 // lives here, the 1 Hz ticker is local to the pill, and the fire is one
 // `setTimeout` in a null-render component.
 //

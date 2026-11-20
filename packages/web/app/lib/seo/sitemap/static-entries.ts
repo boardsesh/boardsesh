@@ -47,7 +47,7 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
 ];
 
 /**
- * The developer docs (docs/partner-api.md made public). Listed only while
+ * The developer docs (docs/integrations/partner-api.md made public). Listed only while
  * PARTNER_OAUTH_MODE is `open`, the one state the page itself is indexable in;
  * `off`, `hold` and `allowlist` serve a 404 or a noindex page, and a sitemap
  * must never advertise either. The shard is `force-dynamic`, so the mode is

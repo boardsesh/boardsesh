@@ -12,7 +12,7 @@
 # `no-restricted-imports` rule (so editors / raw oxlint flag it), but `vp check`
 # runs a reduced oxlint ruleset that silently drops `no-restricted-imports` — so it
 # is NOT enforced by `vp check` or the pre-commit hook. This CI guard is the real
-# backstop. See docs/expo-ui-components.md.
+# backstop. See docs/design/expo-ui-components.md.
 #
 # Mirrors scripts/mobile-variant-guard.sh. Exit 1 (CI failure) on any misplaced
 # import; 0 when clean.
@@ -85,7 +85,7 @@ if [ "$fail" -ne 0 ]; then
   echo "  platform (\"Unable to get view config\"). Move the import into the matching"
   echo "  .ios.tsx / .android.tsx file, or pass plain values through a shared"
   echo "  *.logic.ts / *.types.ts helper. Import the universal Host and shared"
-  echo "  components from the '@expo/ui' root instead. See docs/expo-ui-components.md."
+  echo "  components from the '@expo/ui' root instead. See docs/design/expo-ui-components.md."
   exit 1
 fi
 

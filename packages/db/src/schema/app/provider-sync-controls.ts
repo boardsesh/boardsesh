@@ -6,7 +6,7 @@ import { users } from '../auth/users';
  * One row per (user, board) link: the fences and bookkeeping that let a
  * background worker sync a climber's provider account without racing the
  * account being relinked, unlinked or synced by someone else
- * (docs/background-workers.md, "Provider sync families").
+ * (docs/backend/background-workers.md, "Provider sync families").
  *
  * - `link_generation` changes on every link, relink and unlink. A sync job
  *   carries the generation it was queued for; every write batch re-checks it

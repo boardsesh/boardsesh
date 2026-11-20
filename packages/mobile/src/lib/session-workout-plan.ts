@@ -1,6 +1,6 @@
 // The phone's run as the server stores it (#6903): `recordSessionWorkout`'s
 // input, built from the run record (stages, captured climbs, tick log). Pure,
-// so the write path is tested without a database. docs/workout-stages.md,
+// so the write path is tested without a database. docs/product/workout-stages.md,
 // "Workouts on the server".
 
 import type { ClimbQueueItem } from '@boardsesh/queue';

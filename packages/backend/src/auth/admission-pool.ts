@@ -3,7 +3,7 @@ import { createDedicatedPool, withConnectRetry, type PoolInstance } from '@board
 import { logger } from '../utils/logger';
 import { AUTH_ADMISSION_RESPONSE_DEADLINE_MS } from './admission-read-runner';
 
-/** Connections per backend replica. Counted in docs/db-connectivity.md, "Connection budget". */
+/** Connections per backend replica. Counted in docs/operations/db-connectivity.md, "Connection budget". */
 export const AUTH_ADMISSION_POOL_MAX_CONNECTIONS = 2;
 
 /**
@@ -59,7 +59,7 @@ export const AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS =
 /** Seconds a pool replaced for one dead socket keeps going, so reads on its healthy connection finish. */
 export const AUTH_ADMISSION_REPLACEMENT_GRACE_S = 1;
 
-/** Lets the "count connections" query in docs/db-connectivity.md see this pool. */
+/** Lets the "count connections" query in docs/operations/db-connectivity.md see this pool. */
 export const AUTH_ADMISSION_APPLICATION_NAME = 'boardsesh-auth-admission';
 
 /** Seconds before a shutdown severs what is still open, well inside the force-exit timer. */

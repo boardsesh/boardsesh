@@ -30,7 +30,7 @@ import { markDeletedSprayWallPhotoRetry } from '../services/spray-photo-erasure-
  * picture of the inside of someone's home**:
  *
  *  1. **The `private` bucket, never `media`.** `media` is world-readable under
- *     guessable keys (`docs/user-media-storage.md`), so a wall photo there is
+ *     guessable keys (`docs/operations/user-media-storage.md`), so a wall photo there is
  *     public the moment anyone guesses a uuid. Reads go through 15-minute
  *     presigned URLs instead (`presignGetObject`).
  *  2. **No local-dev disk fallback.** The gym handlers write to `./gym-photos`

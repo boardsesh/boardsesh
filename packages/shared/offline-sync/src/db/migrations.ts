@@ -11,7 +11,7 @@
 // node-based fake (or node:sqlite) can exercise the version bookkeeping without
 // loading native expo-sqlite.
 //
-// DOWNGRADE RULE (docs/offline-sync-plan.md, "Older JS on a newer database"): JS can
+// DOWNGRADE RULE (docs/data/offline-sync.md, "Older JS on a newer database"): JS can
 // go backwards on a device. A reverted canary OTA, or a climber leaving the
 // early-updates track, puts an older bundle on a database a newer bundle already
 // migrated. This runner only moves forward, so it REFUSES such a database instead
@@ -81,7 +81,7 @@ export const MIGRATIONS: Migration[] = [
     // per-board reference table, so it's a v4 CREATE rather than an edit to v1's
     // SCHEMA_STATEMENTS (which would be editing a shipped migration). Columns +
     // types mirror board_climb_stats' declaration in schema.ts and the syncClimbGrades
-    // resolver's selectList (docs/sync-table-manifest.md): grades are floats (REAL),
+    // resolver's selectList (docs/data/sync-table-manifest.md): grades are floats (REAL),
     // ascensionist_count an INTEGER snapshot, computed_at the ISO cursor timestamp,
     // sync_seq the bigserial cursor. PK (board_type, climb_uuid, angle) matches the
     // table-config primaryKeyColumns so INSERT OR REPLACE dedupes on re-sync. Kept

@@ -95,7 +95,7 @@ export function useBoardLookSettings(): BoardLookSettings {
    *
    * Silent without a preview board: the common props are built around a board
    * identity, and an event with no `board_name` cannot be stratified — the one
-   * rule `docs/board-render-analytics.md` says never to break. Same bail
+   * rule `docs/analytics/board-render-analytics.md` says never to break. Same bail
    * `applyPreset` makes.
    */
   const reportFieldChange = useCallback(

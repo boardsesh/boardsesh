@@ -5,7 +5,7 @@
  * another consent-based privacy law makes product analytics consent-based. Everywhere else analytics starts on as a
  * device-local default the climber can switch off in Settings (see
  * `createRegionDefaultConsent`). An unknown or unreadable location always asks:
- * when in doubt, prompt. See docs/analytics-consent.md.
+ * when in doubt, prompt. See docs/analytics/analytics-consent.md.
  */
 
 /** Narrow origin header overwritten by the configured Cloudflare edge rule. */

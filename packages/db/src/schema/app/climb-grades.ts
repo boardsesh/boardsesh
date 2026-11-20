@@ -22,7 +22,7 @@ import {
  * `moonboard_angle_estimate`. MoonBoard has no crowd mean, so it is excluded
  * from the nightly job entirely and those rows are the only ones it ever gets.
  *
- * Model spec + rationale: docs/boardsesh-grade.md. Coefficients live in
+ * Model spec + rationale: docs/data/boardsesh-grade.md. Coefficients live in
  * `board_grade_coefficients`; every row records the model/coefficient versions
  * that produced it so a surfaced grade is reproducible.
  *

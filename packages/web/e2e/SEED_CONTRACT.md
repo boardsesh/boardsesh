@@ -63,4 +63,4 @@ rebuilt automatically: that takes a manual dispatch of
 `.github/workflows/postgres-image-publisher.yml` with the exact `main` SHA, plus
 an environment approval, and then bumping the pinned digest where it is
 referenced (`docker-compose.yml`, `ci.yml`, `e2e-tests.yml`,
-`db-migration-renumber.yml`, `docs/postgres-image-digests.json`).
+`db-migration-renumber.yml`, `docs/operations/postgres-image-digests.json`).

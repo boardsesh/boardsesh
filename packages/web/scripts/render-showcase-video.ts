@@ -194,7 +194,7 @@ Renders the showcase video's targets from marketing/showcase-video/ and the reco
                                     (default homepage + social, what vp run video ships)
                            android: ${SHOWCASE_ANDROID_TARGET_NAMES.join(', ')}
                                     (default homepage-android + social-android)
-                         Outputs: docs/showcase-video.md, "Targets" and "Android cuts (renderer)"
+                         Outputs: docs/marketing/showcase-video.md, "Targets" and "Android cuts (renderer)"
   --variant <name>       Search creative: default|kilter|tension|moonboard|spray
   --locale <locale|all>  Native recordings and captions for en-US|es|fr|de
   --stills               Contact sheets only (settled + mid-transition frames per scene)

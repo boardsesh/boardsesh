@@ -193,7 +193,7 @@ function isBypassEnabled(env: AuthEnv): boolean {
  * applyCanonicalAuthUrl(), which can delete a loopback NEXTAUTH_URL and so turn
  * a warn into a spurious fatal.
  *
- * Full rationale and the deployment checklist: docs/web-canonical-origin.md.
+ * Full rationale and the deployment checklist: docs/web/web-canonical-origin.md.
  */
 export type CanonicalOriginDiagnosis =
   | { level: 'ok' }

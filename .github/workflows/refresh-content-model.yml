@@ -5,7 +5,7 @@ name: Refresh Content Model
 # workflow that runs Python — training genuinely needs a framework — and it only
 # WRITES board_climb_embeddings; the nightly grade job (pure TS) reads from it.
 # Weekly cadence mirrors the grade-model coefficient refit. It no longer rebuilds
-# board_climb_similar: nothing reads that table (see docs/climb2vec.md, phase 3a).
+# board_climb_similar: nothing reads that table (see docs/data/climb2vec.md, phase 3a).
 on:
   schedule:
     - cron: '30 5 * * 0' # 05:30 UTC Sundays (before the daily grade/recs jobs)

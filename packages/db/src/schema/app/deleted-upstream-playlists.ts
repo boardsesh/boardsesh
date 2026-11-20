@@ -53,7 +53,7 @@ export type UpstreamPlaylistSource = (typeof UPSTREAM_PLAYLIST_SOURCES)[number];
  * linked to two Boardsesh accounts (#3526), and one climber deleting their
  * copy says nothing about the other's.
  *
- * See docs/kilter-sync.md and docs/aurora-sync.md, "Deleted circuits".
+ * See docs/data/kilter-sync.md and docs/data/aurora-sync.md, "Deleted circuits".
  */
 export const userDeletedUpstreamPlaylists = pgTable(
   'user_deleted_upstream_playlists',

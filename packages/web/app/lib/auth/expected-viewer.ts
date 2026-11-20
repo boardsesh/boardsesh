@@ -8,7 +8,7 @@
  * shows in this header; a route whose cookie names another account answers 409
  * with `ViewerChangedBody` before it reads or writes anything. The value is
  * `sessionViewerKey` from `session-guard.ts`: `<userId>:<authSessionId>` when
- * signed in, `anonymous` when signed out. See docs/better-auth-browser-session.md.
+ * signed in, `anonymous` when signed out. See docs/auth/better-auth-browser-session.md.
  */
 export const EXPECTED_VIEWER_HEADER = 'X-Boardsesh-Expected-Viewer';
 export const VIEWER_CHANGED_CODE = 'viewer_changed';

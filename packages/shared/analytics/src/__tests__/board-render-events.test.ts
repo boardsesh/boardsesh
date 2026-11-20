@@ -76,7 +76,7 @@ describe('board-render event builders', () => {
 
 describe('stratification guard', () => {
   // Every builder's properties must always carry board_name and
-  // glow_falloff_source — the two dimensions docs/board-render-analytics.md
+  // glow_falloff_source — the two dimensions docs/analytics/board-render-analytics.md
   // says a query must never pool across. A future builder that forgets to
   // spread the common props would silently produce an unstratifiable event.
   it('every payload above carries board_name and glow_falloff_source', () => {

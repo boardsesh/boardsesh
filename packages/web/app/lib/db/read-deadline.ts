@@ -16,7 +16,7 @@ export const DEFAULT_READ_DEADLINE_MS = 6000;
  * that passes no explicit `ms` gets the whole thing for a single read.
  *
  * 6 s is deliberately *below* `DB_CONNECT_RETRY_BUDGET_MS` (10 s, see
- * docs/db-connectivity.md). On a brownout we want the front door to shed load,
+ * docs/operations/db-connectivity.md). On a brownout we want the front door to shed load,
  * not to spend a second and third connect attempt holding a pool slot while a
  * crawler waits. It is also far inside Vercel's function limit and inside
  * Googlebot's patience.

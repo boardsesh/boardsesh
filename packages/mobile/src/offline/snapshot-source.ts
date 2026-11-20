@@ -723,7 +723,7 @@ async function downloadSnapshotFile(
  * `board-snapshots/v1/` rollback prefix); a gzip entry needs
  * `uncompressedBytes`, which a pre-#4311 layout entry and a grades block
  * published in artifact shape 1 lack. A shape-2 grades block carries it
- * (docs/board-snapshots.md, "Artifact shape"), so a grades file is then held to
+ * (docs/data/board-snapshots.md, "Artifact shape"), so a grades file is then held to
  * its exact size like a layout file.
  */
 function expectedDecodedBytesFor(entry: {

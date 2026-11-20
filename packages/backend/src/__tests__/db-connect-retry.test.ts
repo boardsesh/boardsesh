@@ -323,7 +323,7 @@ function deadPool(port: number, max: number) {
     // no wrapper at all, nine sequential connects take 7, 2, 17, 43, 131, 637,
     // 1305, 2540, 14204 ms. Pinning it to 0 keeps these tests measuring OUR
     // retry loop instead of that ramp. The production consequence is real and
-    // documented in docs/db-connectivity.md — it is what the wall-clock budget
+    // documented in docs/operations/db-connectivity.md — it is what the wall-clock budget
     // exists to bound, and it is why an ECONNREFUSED is only "fast" for the
     // first few failures of an outage.
     backoff: () => 0,

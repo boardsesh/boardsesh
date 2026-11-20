@@ -6,7 +6,7 @@ import { trackSprayEvent } from './spray-telemetry';
 
 /**
  * Asking before a hold save removes (or moves) a hold that published climbs use
- * (`docs/spray-walls.md`, "Editing holds on a live wall").
+ * (`docs/product/spray-walls.md`, "Editing holds on a live wall").
  *
  * A live wall's holds stay editable whatever has been set on them. What the
  * owner is told is the cost: a published climb that used a removed hold is

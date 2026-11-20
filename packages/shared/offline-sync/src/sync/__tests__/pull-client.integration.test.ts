@@ -11,7 +11,7 @@
 //   1. Standing up the real DDL via `runMigrations` against node:sqlite (the same
 //      adapter migrations.test.ts uses).
 //   2. Driving the exported `pullSync` with backend-shaped, snake_case documents
-//      whose keys are pinned by docs/sync-table-manifest.md and emitted verbatim
+//      whose keys are pinned by docs/data/sync-table-manifest.md and emitted verbatim
 //      by packages/backend/.../sync/queries.ts.
 //   3. SELECT-ing the rows back out to prove they landed with the right values.
 //

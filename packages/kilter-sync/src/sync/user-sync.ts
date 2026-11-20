@@ -1199,7 +1199,7 @@ export async function applyLogs(
  * Logs and ratings flush in separate transactions in either order, so both
  * phases call this for the keys they wrote. A tick is written only when:
  *   - it is a send or flash (attempts never carry a grade —
- *     docs/ascents-and-attempts.md);
+ *     docs/data/ascents-and-attempts.md);
  *   - it is linked to Kilter (`kilter_id` set) and carries no local edit
  *     newer than its last sync (`updated_at <= kilter_synced_at`, the same
  *     guard applyLogs uses) — a Boardsesh-side grade edit is never stomped;

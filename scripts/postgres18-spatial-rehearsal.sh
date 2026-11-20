@@ -3,7 +3,7 @@
 # postgres18-spatial-rehearsal.sh — prove the PostGIS half of the PG16 -> PG18
 # cutover, without touching production.
 #
-# `docs/postgres-18-migration.md` blocks the catalog audit unless the source and
+# `docs/operations/postgres-18-migration.md` blocks the catalog audit unless the source and
 # target PostGIS versions are equal. Railway production reports `3.7.0dev`,
 # because the service tracks the mutable `postgis/postgis:16-master` tag; the
 # attested PG18 image ships stable 3.6.4, and PGDG publishes no stable 3.7 for
@@ -378,7 +378,7 @@ target_client bash -euo pipefail -c "
 # And COPY votes populates vote_counts through the trigger, so a later
 # COPY vote_counts collides on vote_counts_entity_type_entity_id_pk -- today
 # only because pg_dump emits TABLE DATA alphabetically and vote_counts sorts
-# before votes. See docs/postgres-18-postgis-rehearsal.md.
+# before votes. See docs/operations/postgres-18-postgis-rehearsal.md.
 data_status=0
 data_stderr="$(docker exec -i -u postgres "$TARGET_CONTAINER" bash -c "
   pg_restore --exit-on-error --data-only --disable-triggers --dbname $DATABASE_NAME /tmp/spatial.dump 2>&1 >/dev/null
@@ -447,7 +447,7 @@ for spatial_table in gyms user_boards; do
     "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = '$spatial_table'::regclass AND a.attname = 'location';"
 
   # ST_AsEWKB over every populated row, in a stable order. This is the
-  # comparison docs/postgres-18-migration.md asks for by name: it reads the
+  # comparison docs/operations/postgres-18-migration.md asks for by name: it reads the
   # on-the-wire binary of each geography, not a rendering of it. ST_AsEWKB is
   # defined over geometry, hence the cast -- passing a geography raises
   # "function st_asewkb(geography) does not exist", which is what made the first
@@ -554,5 +554,5 @@ printf '\nEvery spatial check matched across PostGIS %s -> %s.\n' "$source_postg
 printf 'This is evidence about the application spatial surface only: two geography(Point,4326)\n'
 printf 'columns, two partial GiST indexes, the lat/lng trigger, and ST_MakePoint/ST_Distance/\n'
 printf 'ST_DWithin/ST_Y. scripts/postgres18-spatial-surface.test.sh keeps that list honest.\n'
-printf 'It is NOT the docs/postgres-18-migration.md section 4 rehearsal: no whole-catalog\n'
+printf 'It is NOT the docs/operations/postgres-18-migration.md section 4 rehearsal: no whole-catalog\n'
 printf 'fingerprint diff, no sequence fence, no failback drill, and no real production data.\n'

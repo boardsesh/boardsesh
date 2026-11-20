@@ -8,14 +8,14 @@ import { PASSWORD_GUESS_DEADLINE_MS } from './password-guess-windows';
  * counter only queues behind other counter work, which the in-flight cap bounds.
  */
 export const PASSWORD_GUESS_POOL_MAX_ENV = 'AUTH_ACCOUNT_GUESS_LIMIT_POOL_MAX';
-/** Connections per backend replica. Counted in docs/db-connectivity.md, "Connection budget". */
+/** Connections per backend replica. Counted in docs/operations/db-connectivity.md, "Connection budget". */
 /**
  * One by default: with the mode on it adds 1 connection per replica (2 steady,
  * 4 while an old fleet drains), which the connection budget can carry.
  */
 export const PASSWORD_GUESS_POOL_DEFAULT_MAX = 1;
 const PASSWORD_GUESS_POOL_LARGEST_MAX = 4;
-/** Lets the "count connections" query in docs/db-connectivity.md see this pool. */
+/** Lets the "count connections" query in docs/operations/db-connectivity.md see this pool. */
 export const PASSWORD_GUESS_APPLICATION_NAME = 'boardsesh-auth-guess-limit';
 /** A dial slower than this cannot help a caller that gives up at 250 ms. */
 const CONNECT_TIMEOUT_S = 2;

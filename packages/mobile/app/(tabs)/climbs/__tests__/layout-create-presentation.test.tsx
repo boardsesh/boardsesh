@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // How New climb is presented. A focused, full-height modal task (HIG
 // "Modality"; M3 full-screen dialog on Android), never a drawer over the list
-// and never fullScreenModal (docs/mobile-sheets-vs-routes.md, rule 2). Swipe to
+// and never fullScreenModal (docs/mobile/mobile-sheets-vs-routes.md, rule 2). Swipe to
 // dismiss stays off because painting and pinching the board are drags (rule 3).
 
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', isPad: false }));

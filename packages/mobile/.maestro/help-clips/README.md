@@ -7,7 +7,7 @@ and what every coordinate in the flow is aiming at.
 
 These flows do not record anything themselves. They drive the app while
 `xcrun simctl io <udid> recordVideo` runs beside them. Conversion, encoder
-settings and the size budget live in [docs/help-clips.md](../../../../docs/help-clips.md).
+settings and the size budget live in [docs/marketing/help-clips.md](../../../../docs/marketing/help-clips.md).
 
 ## Booting the simulator
 
@@ -31,7 +31,7 @@ The filenames are unchanged; the old board-history deep link is not used for 09.
 Simulated-board footage shows the app's actual controls, not a physical BLE test.
 The refreshed help takes use main source `3b1d9be90c`, captured 2026-11-02
 on the dedicated `Boardsesh Help 7208` simulator against local Docker data.
-See [capture provenance and omissions](../../../../docs/help-screenshots.md).
+See [capture provenance and omissions](../../../../docs/marketing/help-screenshots.md).
 Normalize raw `recordVideo` takes to constant 30 fps before choosing trims:
 the variable-frame-rate sources do not seek accurately during conversion.
 
@@ -167,4 +167,4 @@ state. Stop driving before the preview take. After recording, put Settings ›
 Board back to the defaults: Always drive the wall off, Stop driving after 45 seconds,
 In a session too on, Disconnect Bluetooth when driving ends off, and
 Tapping a playlist loads it into my queue off. Keep each refreshed take's source commit and capture date in
-[the capture notes](../../../../docs/help-clips.md#capturing-the-wall-controls).
+[the capture notes](../../../../docs/marketing/help-clips.md#capturing-the-wall-controls).

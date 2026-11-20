@@ -64,7 +64,7 @@ describe('findOfflineMigrationProblem', () => {
   it('is silent when the migration list is untouched, whatever the body says', () => {
     expect(findOfflineMigrationProblem('', [])).toBeNull();
     expect(
-      findOfflineMigrationProblem(null, ['packages/mobile/app/_layout.tsx', 'docs/offline-sync-plan.md']),
+      findOfflineMigrationProblem(null, ['packages/mobile/app/_layout.tsx', 'docs/data/offline-sync.md']),
     ).toBeNull();
   });
 

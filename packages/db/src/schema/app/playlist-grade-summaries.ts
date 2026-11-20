@@ -24,7 +24,7 @@ import { playlists } from './playlists';
  * `refreshPlaylistGradeSummariesFor` on every climb add or remove, and
  * `refreshAllPlaylistGradeSummaries` from the backend's daily
  * `playlist-grade-summary-refresh` job, which skips rows whose values did not
- * change. See docs/playlist-grade-summaries.md.
+ * change. See docs/data/playlist-grade-summaries.md.
  */
 export const playlistGradeSummaries = pgTable('playlist_grade_summaries', {
   playlistId: bigint('playlist_id', { mode: 'bigint' })

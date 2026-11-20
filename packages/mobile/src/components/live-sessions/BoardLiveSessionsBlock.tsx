@@ -50,7 +50,7 @@ export type BoardLiveSessionsBlockProps = {
   holderUserId: string | null;
   /**
    * Close the sheet and wait for it to settle before routing away: pushing the
-   * native /join modal mid-dismiss is the handoff docs/mobile-sheets-vs-routes.md
+   * native /join modal mid-dismiss is the handoff docs/mobile/mobile-sheets-vs-routes.md
    * warns about. Resolves false when the handoff was aborted.
    */
   onBeforeNavigate?: () => Promise<boolean>;

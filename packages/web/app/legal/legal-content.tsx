@@ -87,7 +87,7 @@ export default function LegalContent() {
         <Prose>
           {t('legal.hostedService.p4Start')}{' '}
           <MuiLink
-            href="https://github.com/boardsesh/boardsesh/blob/main/docs/board-snapshots-dataset.md"
+            href="https://github.com/boardsesh/boardsesh/blob/main/docs/data/board-snapshots-dataset.md"
             target="_blank"
             rel="noopener noreferrer"
           >

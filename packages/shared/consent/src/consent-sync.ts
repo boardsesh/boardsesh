@@ -43,7 +43,7 @@ export type PendingConsentDecision = { record: ConsentRecord; basedOnDecidedAt: 
  * (signed out, or the shared cookie) still wins on this device and drops the
  * restored grant without writing either; see the restore step in
  * {@link createConsentSyncCoordinator} and "Whose answer is it" in
- * docs/analytics-consent.md.
+ * docs/analytics/analytics-consent.md.
  */
 export function parsePendingConsentDecision(candidate: unknown): PendingConsentDecision | null {
   if (typeof candidate !== 'object' || candidate === null) return null;

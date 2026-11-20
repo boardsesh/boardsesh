@@ -2,7 +2,7 @@
  * The generated wall looks of a spray wall version: where they are stored, how
  * a job is keyed, and the quality verdict both the producer and the worker
  * read. No database, queue or HTTP imports, so the worker family and the
- * resolvers can both use it (`docs/spray-walls.md`, "Generated wall looks").
+ * resolvers can both use it (`docs/product/spray-walls.md`, "Generated wall looks").
  */
 import {
   ART_RECIPE,

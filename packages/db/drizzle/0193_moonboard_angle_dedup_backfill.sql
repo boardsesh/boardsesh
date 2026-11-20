@@ -202,7 +202,7 @@
 --     CROWD_MEAN_BOARDS (packages/db/src/queries/grade-model/constants.ts:
 --     kilter, tension, grasshopper, decoy, soill, touchstone — MoonBoard is
 --     deliberately absent because Moon's feed carries only integer labels, so
---     there is no crowd mean to model; see docs/boardsesh-grade.md §5). There
+--     there is no crowd mean to model; see docs/data/boardsesh-grade.md §5). There
 --     is no --board override. PR #4347 (2026-08-12) changed only the CLIENT
 --     import of the grades snapshot artifact, not who produces grade rows, and
 --     its own measurements record production as "moonboard:2 … zero grade
@@ -265,7 +265,7 @@
 -- stack, merged 2026-08-13; they were numbered 0193/0194 while that PR was
 -- open, and the analysis below keeps those historical numbers). Both rewrite
 -- exactly the rows this migration moves. Order comes from the journal's
--- `when`, not from the filename number (docs/db-migrations.md), so this was a
+-- `when`, not from the filename number (docs/operations/db-migrations.md), so this was a
 -- NUMBERING constraint on a fresh database, not just a merge-order
 -- preference. SATISFIED as merged: this file sits above both by filename
 -- number AND journal `when`.
@@ -1099,7 +1099,7 @@ BEGIN
   -- would never be reaped by anything. Unique key (board_type, climb_uuid,
   -- angle); survivor policy left at "canonical's own, else lowest
   -- computed_at" for the same reason as 5b. NOTE: this table has no delete
-  -- trigger and no tombstone stream (docs/sync-table-manifest.md), so a device
+  -- trigger and no tombstone stream (docs/data/sync-table-manifest.md), so a device
   -- that somehow already held a MoonBoard grade row would keep the stale key
   -- until its next snapshot bootstrap.
   WITH ranked AS (

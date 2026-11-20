@@ -10,7 +10,7 @@
  *      sync daemon snapshots.
  *
  * Callers: the CLI `packages/db/scripts/refresh-recommendations.ts` and the
- * batch worker's `refresh-recommendations` family (docs/background-workers.md).
+ * batch worker's `refresh-recommendations` family (docs/backend/background-workers.md).
  * Reads go through `db`; every write batch goes through `transact`; the PostHog
  * request goes through neither, so no transaction is ever held open across it.
  *

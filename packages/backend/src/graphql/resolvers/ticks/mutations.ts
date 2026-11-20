@@ -339,7 +339,7 @@ async function reportTickClimbCatalogPresence(
       // looping on one bad UUID — and that distinction is the answer #3942 needs.
       // Count distinct climbUuid. Not PII: a catalog identifier, and the same
       // value the warn log carries. No user id: backend events are operational
-      // telemetry and never identify a climber (docs/analytics-consent.md).
+      // telemetry and never identify a climber (docs/analytics/analytics-consent.md).
       properties: { boardType, angle, climbUuid },
     });
   } catch (error) {

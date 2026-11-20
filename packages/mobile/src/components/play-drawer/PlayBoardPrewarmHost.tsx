@@ -73,7 +73,7 @@ export function PlayBoardPrewarmHost() {
 
 /**
  * Once the live GPU drawing is warm in this process it draws the player's first
- * holds itself (docs/gpu-climb-overlay-experiment.md), so the tap renders no new
+ * holds itself (docs/rendering/gpu-climb-overlay-experiment.md), so the tap renders no new
  * PNG; the photo and any cached PNG are still decoded ahead. While it is cold
  * (the first open after a launch) the tap renders the PNG as it always did.
  */

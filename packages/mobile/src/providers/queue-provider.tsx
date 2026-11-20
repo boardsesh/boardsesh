@@ -354,7 +354,7 @@ export const SHARED_SESSION_DWELL_MS = 3_000;
 export function QueueProvider({ children }: { children: ReactNode }) {
   const authTransportRevision = useAuthTransportRevision();
   const [state, reducerDispatch] = useReducer(queueReducer, defaultSearchParams, initialState);
-  // The #4979 hold's clock (docs/current-climb-outside-queue.md, section 6): when
+  // The #4979 hold's clock (docs/product/current-climb-outside-queue.md, section 6): when
   // the current climb last became a different climb. The Bluetooth auto-sender
   // reads it to keep a stale climb off the wall on connect. `dispatch` is the
   // reducer's, reseeding the clock from every FullSync's `currentChangedAt` on
@@ -366,7 +366,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   } = useCurrentChangeClock(state.currentClimbQueueItem?.uuid ?? null, reducerDispatch);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  // F3 now-slot mode (docs/current-climb-outside-queue.md, section 7). Solo it
+  // F3 now-slot mode (docs/product/current-climb-outside-queue.md, section 7). Solo it
   // is the `queue-now-slot` flag; in a session it is the flag AND the
   // per-connect server probe, decided at each join (so a flag change
   // mid-session takes effect on the next join or reconnect). `nowSlotModeRef`

@@ -51,7 +51,7 @@ const DEFAULT_MAX_DELAY_MS = 600;
  * seconds, and issuing three connects per statement ramps that counter faster.
  * The budget check after each attempt is what keeps a single request from
  * absorbing more than roughly two of those. Details and measurements:
- * docs/db-connectivity.md.
+ * docs/operations/db-connectivity.md.
  */
 const DEFAULT_BUDGET_MS = 10_000;
 

@@ -194,7 +194,7 @@ type BoardImageNativeProps = {
  * measured on the reference phones (swipe callbacks 62–80 ms on an iPhone 13 Pro
  * and a Pixel 8 Pro, edits 28–53 ms) and below every first open of a fresh
  * process (680–1080 ms to the ready callback; field `prepare_ms` alone runs
- * 280–310 ms on iPhones). See docs/gpu-climb-overlay-experiment.md.
+ * 280–310 ms on iPhones). See docs/rendering/gpu-climb-overlay-experiment.md.
  */
 export const GPU_PNG_HEDGE_DELAY_MS = 300;
 

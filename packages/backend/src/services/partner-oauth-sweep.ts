@@ -1,6 +1,6 @@
 /**
  * Runs the partner OAuth retention sweep (`auth/partner/retention.ts`,
- * docs/integration-platform.md "Retention sweep").
+ * docs/integrations/integration-platform.md "Retention sweep").
  *
  * - **Hourly, on the job queue.** `PARTNER_OAUTH_SWEEP_QUEUE` is created by the
  *   migrator with the `exclusive` policy, so one run is queued or running across

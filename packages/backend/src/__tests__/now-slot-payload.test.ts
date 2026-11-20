@@ -30,7 +30,7 @@ function composeError(compose: () => unknown): unknown {
   return null;
 }
 
-describe('composeQueuePayload caps (docs/current-climb-outside-queue.md, section 5)', () => {
+describe('composeQueuePayload caps (docs/product/current-climb-outside-queue.md, section 5)', () => {
   it('rejects a 600-climb Up next with nothing current instead of dropping its first climbs', () => {
     const playlist = itemsNamed('p', 600);
     const error = composeError(() =>

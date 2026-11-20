@@ -102,7 +102,7 @@ export function sizeFilterAvailability(
 }
 
 // Spray walls have no benchmarks (#5960), and the Woods, SoILL and Touchstone
-// catalogues hold none (docs/workout-catalogue-depth.md), so a Benchmarks only
+// catalogues hold none (docs/product/workout-catalogue-depth.md), so a Benchmarks only
 // block there could only come back empty.
 const BOARDS_WITHOUT_BENCHMARKS: ReadonlySet<BoardName> = new Set<BoardName>(['spray', 'woods', 'soill', 'touchstone']);
 

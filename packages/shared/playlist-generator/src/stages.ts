@@ -6,7 +6,7 @@ import { generateWarmUp, generateWorkoutPlan } from './generate';
 import { pacingForOptions, type WorkoutStagePacing } from './pacing';
 import type { GeneratorGradeScale, GeneratorOptions, PlannedClimbSlot, WarmUpType, WorkoutType } from './types';
 
-// Stage kinds use the partner API block type names (docs/partner-api.md, "Blocks"),
+// Stage kinds use the partner API block type names (docs/integrations/partner-api.md, "Blocks"),
 // so a partner block maps onto a stage without renames.
 export type WorkoutStageKind = 'warmUp' | WorkoutType;
 

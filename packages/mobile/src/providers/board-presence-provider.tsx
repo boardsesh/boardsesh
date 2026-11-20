@@ -822,7 +822,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       <BoardPresenceProvider boardId={visibleBoardId} boardUuid={visibleBoardUuid} client={liveClient}>
         <BoardPresenceForegroundSync />
         {/* Dev builds only: a story can fake a live value (a crew in the session)
-            for everything below. A pass-through in production. docs/mobile-stories.md */}
+            for everything below. A pass-through in production. docs/mobile/mobile-stories.md */}
         {children}
       </BoardPresenceProvider>
       <BoardDisambiguationSheet

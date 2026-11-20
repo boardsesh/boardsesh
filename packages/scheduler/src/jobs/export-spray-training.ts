@@ -7,7 +7,7 @@ import { hasNonNegativeCounts, runBackendCronMutation } from './backend-cron-mut
  * The work is a backend mutation, like `purge-spray-wall-photos`: the scheduler
  * has no database client and no storage credentials, and the private photo
  * bucket stays behind one service. What it owns is the SCHEDULE, and the
- * schedule is the promise in `docs/spray-walls.md`: a wall whose owner switches
+ * schedule is the promise in `docs/product/spray-walls.md`: a wall whose owner switches
  * "Help train hold finding" off (or deletes it, or an admin hides it) leaves
  * every stored export within 24 hours, because each run first retires any
  * export holding a version that is no longer eligible and approved. The job

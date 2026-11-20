@@ -4,7 +4,7 @@
 // <CapsuleRow>; the row only maps each descriptor to the platform's native
 // control. It knows nothing about climbs, logbooks or any filter state.
 //
-// Platform-split like SwitchRow (docs/expo-ui-components.md):
+// Platform-split like SwitchRow (docs/design/expo-ui-components.md):
 //   CapsuleRow.ios.tsx      SwiftUI glass buttons + menus in one <Host>
 //   CapsuleRow.android.tsx  Compose M3 FilterChips + DropdownMenus in one <Host>
 //   CapsuleRow.web.tsx      react-native-paper Chips + Menus
@@ -12,7 +12,7 @@
 // builders and their tests can import it.
 //
 // Active capsules use the filled brand colour (`primaryFill`) with `onPrimary`
-// text on every platform (docs/ai-design-guidelines.md, "Brand colours").
+// text on every platform (docs/design/ai-design-guidelines.md, "Brand colours").
 
 import type { ReactElement } from 'react';
 

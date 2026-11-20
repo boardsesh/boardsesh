@@ -31,7 +31,7 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
 // Gates the developer console at /developers/apps, where a developer registers
-// partner OAuth apps (docs/integration-platform.md, milestone 1.6). Server-side
+// partner OAuth apps (docs/integrations/integration-platform.md, milestone 1.6). Server-side
 // and failing closed: with the flag off, or PostHog unreachable, the route is a
 // 404. The backend asks the same flag again before every console operation
 // (after PARTNER_OAUTH_MODE), so the key lives in @boardsesh/auth-protocol and
@@ -53,6 +53,6 @@ export const CNC_PACKS_FLAG = 'cnc-packs';
 
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
 // route renders at all — a different gate from the client keys above (see
-// docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
+// docs/operations/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
 // browser provider would fetch a flag no client component reads.
 export const SERVER_FEATURE_FLAG_KEYS = [DEVELOPER_CONSOLE_FLAG, CNC_PACKS_FLAG] as const;

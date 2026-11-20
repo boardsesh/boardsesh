@@ -1018,7 +1018,7 @@ describe('the photo purge', () => {
     // Pinned as a literal beside the boundary tests, which are all written
     // relative to the constant: without this, moving the window moves the tests
     // with it and they go on passing while the promise in the release notes and
-    // `docs/spray-walls.md` quietly becomes false.
+    // `docs/product/spray-walls.md` quietly becomes false.
     expect(SPRAY_WALL_PHOTO_RETENTION_DAYS).toBe(30);
   });
 

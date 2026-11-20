@@ -35,7 +35,7 @@ function parseSelectedSetters(serialized: string | undefined): string[] {
  * list's own climbs, most climbs first, as a multi-select. A pushed route in the
  * Discover stack rather than a stacked sheet (native sheets can't stack); the
  * list's filter sheet suspends while it is on top
- * (docs/mobile-sheets-vs-routes.md).
+ * (docs/mobile/mobile-sheets-vs-routes.md).
  *
  * Two ways out: "Show climbs" hands the picks back and returns to the list; the
  * back chevron or swipe-back hands them back too, and the suspended sheet comes

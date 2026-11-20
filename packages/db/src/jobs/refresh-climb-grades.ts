@@ -13,11 +13,11 @@
  *      has no crowd signal; the UI explains instead). Publish hysteresis keeps
  *      surfaced grades stable.
  *
- * Model spec and the reasoning behind every threshold: docs/boardsesh-grade.md.
+ * Model spec and the reasoning behind every threshold: docs/data/boardsesh-grade.md.
  *
  * Callers: the CLI `packages/db/scripts/refresh-climb-grades.ts` (`vp run
  * db:refresh-climb-grades --`, flags documented there) and the batch worker's
- * `refresh-climb-grades` family (docs/background-workers.md). Every read runs
+ * `refresh-climb-grades` family (docs/backend/background-workers.md). Every read runs
  * with parallel workers off in its own short transaction (see `readRows`);
  * the publish and the honesty report go through `transact`. A blocking gate
  * failure throws {@link GradeGatesFailedError}: nothing is written, and a
@@ -1467,7 +1467,7 @@ export async function runRefreshClimbGrades(options: RefreshClimbGradesOptions):
   // The backtest is reused when nothing it depends on changed since it last
   // ran: the same frozen coefficient set, GRADE_MODEL_VERSION and grade-model
   // code. A refit, a code change, a dry run or a candidate-prior file always
-  // evaluates it for real. See grade-backtest-reuse.ts and docs/boardsesh-grade.md §4.
+  // evaluates it for real. See grade-backtest-reuse.ts and docs/data/boardsesh-grade.md §4.
   const codeHash = gradeModelCodeHash();
   const reusableBacktest =
     persistCoefficientSet || dryRun || contentPriorFile

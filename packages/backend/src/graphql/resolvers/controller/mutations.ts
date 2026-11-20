@@ -246,7 +246,7 @@ export const controllerMutations = {
     // so that snapshot is old, and writing a queue derived from it would discard
     // anything a party member added meanwhile (#3906).
     //
-    // F3 (docs/current-climb-outside-queue.md, sections 3 and 5): inside
+    // F3 (docs/product/current-climb-outside-queue.md, sections 3 and 5): inside
     // `QUEUE_NOW_SLOT_PERCENT` the LED read goes through `placeOnWall`, so a
     // climb already queued is reused (moved into the Now slot) instead of
     // copied, and History is capped. Outside it, today's insert after the

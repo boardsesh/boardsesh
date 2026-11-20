@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inject the measurement probes into a Boardsesh checkout. See docs/mobile-visible-performance.md.
+"""Inject the measurement probes into a Boardsesh checkout. See docs/mobile/mobile-visible-performance.md.
 
     apply_probes.py <repo-root> [--settle-consent]
 

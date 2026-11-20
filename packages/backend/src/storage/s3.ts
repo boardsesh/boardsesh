@@ -499,7 +499,7 @@ export async function deleteGymPhotosFromS3(gymUuid: string, keepExt?: string): 
  * short enough that a leaked URL out of a screenshot, a log line or a shared
  * debug payload stops working before it is useful to anyone. Photographs of
  * someone's home live in the `private` bucket precisely because `media` is
- * world-readable under guessable keys (`docs/user-media-storage.md`), so the
+ * world-readable under guessable keys (`docs/operations/user-media-storage.md`), so the
  * signature IS the access control and its lifetime is the whole story.
  */
 export const PRESIGNED_URL_TTL_SECONDS = 15 * 60;

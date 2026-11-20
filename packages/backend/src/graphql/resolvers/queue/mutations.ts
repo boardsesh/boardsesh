@@ -57,7 +57,7 @@ export const queueMutations = {
    * Add a climb to the queue at the specified position
    * Uses optimistic locking to prevent race conditions
    *
-   * F3 (docs/current-climb-outside-queue.md, sections 1 and 5): the stored
+   * F3 (docs/product/current-climb-outside-queue.md, sections 1 and 5): the stored
    * line moves by `lineAfterDelta` at every percent. Inside
    * `QUEUE_NOW_SLOT_PERCENT` a position inside History with nothing current is
    * clamped to the head of Up next, a full Up next is refused with
@@ -594,7 +594,7 @@ export const queueMutations = {
     const sessionId = await requireSessionWithReconnectGrace(ctx);
     const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
-    // F3 (docs/current-climb-outside-queue.md, sections 2, 3 and 5): a
+    // F3 (docs/product/current-climb-outside-queue.md, sections 2, 3 and 5): a
     // client-sent line goes through `QueueIndexSchema` first, then
     // `composeQueuePayload` clamps it. The caps apply to a `setQueue` that
     // carries `historyCount` whatever the percent says, and to every other

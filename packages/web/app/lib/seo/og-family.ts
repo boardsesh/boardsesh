@@ -4,7 +4,7 @@ import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 /**
  * The share cards the backend draws for everything that is not a climb
  * (`/og/playlist`, `/og/profile`, `/og/setter`, `/og/session`, `/og/place`).
- * See "The share-card family" in docs/og-climb.md.
+ * See "The share-card family" in docs/web/og-climb.md.
  */
 export type OgFamilySurface = 'playlist' | 'profile' | 'setter' | 'session' | 'place';
 

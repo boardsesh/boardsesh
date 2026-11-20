@@ -1,6 +1,6 @@
 /**
  * How a client tells the backend which platform it is, for the first-party
- * active-user count (`user_activity_days`, see docs/analytics-consent.md).
+ * active-user count (`user_activity_days`, see docs/analytics/analytics-consent.md).
  *
  * HTTP requests send the header; graphql-ws connections send the connection
  * param in `connection_init`. A request with neither is counted as `unknown`.

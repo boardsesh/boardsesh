@@ -14,7 +14,7 @@ import { getPostHogClient } from './posthog-client';
 // What it gives up — per-navigation counts and ordered A→B→A paths — is already
 // recorded in full elsewhere: expo-observe writes a row per navigation per
 // device into `observe_metrics` on the xprem ClickHouse, at 100% sampling
-// (OBSERVE_DEFAULT_SAMPLE_RATE = 1 in observe-config.ts). See docs/railway.md.
+// (OBSERVE_DEFAULT_SAMPLE_RATE = 1 in observe-config.ts). See docs/operations/railway.md.
 //
 // Sessions are the epoch on purpose: PostHog rotates a session id after 30
 // minutes idle (`sessionExpirationTimeSeconds`, SDK default, which

@@ -45,7 +45,7 @@ for PLATFORM in ios android; do
     echo "[mobile-bundle] $PLATFORM bundle: OK (bundle file not found for size check)"
   fi
 
-  # The story harness is dev-only (docs/mobile-stories.md). Either of its
+  # The story harness is dev-only (docs/mobile/mobile-stories.md). Either of its
   # markers in a production bundle means a require escaped the __DEV__ gate in
   # packages/mobile/src/dev/stories/load.ts: `[stories] ready` is the story
   # screens, `[stories] registry` the registry that pulls in every story file.

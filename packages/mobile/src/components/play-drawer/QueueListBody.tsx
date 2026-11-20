@@ -101,7 +101,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
 ) {
   const { t } = useTranslation('session');
   // A native sheet clears the WINDOW's bottom inset, never the mount point's
-  // (#3776; docs/mobile-sheets-vs-routes.md). The panel's footer already sits
+  // (#3776; docs/mobile/mobile-sheets-vs-routes.md). The panel's footer already sits
   // above the home indicator.
   const windowBottomInset = useWindowBottomInset();
   const bottomInset = presentation === 'sheet' ? windowBottomInset : 0;

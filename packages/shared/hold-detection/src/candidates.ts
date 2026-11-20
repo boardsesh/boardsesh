@@ -12,7 +12,7 @@ import type { Detection, HoldCandidate } from './types';
  *
  * A detection-only model has none, and this used to be the whole story: boxes in,
  * circles out, and the renderer falling back to a ring exactly as
- * `docs/board-art-geometry.md` already does for a catalogue hold with no traced
+ * `docs/rendering/board-art-geometry.md` already does for a catalogue hold with no traced
  * art. A segmentation config (`mask_source: "model"`) predicts a silhouette per
  * query, `decodeRfDetr` traces it in the tile's frame, and it arrives here
  * already in units of `r` — so this function only has to pass it on.

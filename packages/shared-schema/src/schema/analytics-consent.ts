@@ -1,5 +1,5 @@
 export const analyticsConsentTypeDefs = /* GraphQL */ `
-  "The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics-consent.md."
+  "The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics/analytics-consent.md."
   type AnalyticsConsent {
     "granted or denied."
     analytics: String!
@@ -37,7 +37,7 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
 
   """
   Whether this visitor is asked before analytics runs, from the Cloudflare
-  country of the request. See docs/analytics-consent.md.
+  country of the request. See docs/analytics/analytics-consent.md.
   """
   type ConsentRegion {
     "The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted."

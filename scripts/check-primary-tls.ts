@@ -11,7 +11,7 @@
  * cap, invalidates the slot in about two days and costs a full re-bootstrap.
  *
  *   vp exec tsx scripts/check-primary-tls.ts
- *   vp exec tsx scripts/check-primary-tls.ts --manifest docs/pg-primary-tls.json
+ *   vp exec tsx scripts/check-primary-tls.ts --manifest docs/operations/pg-primary-tls.json
  */
 
 import { readFileSync } from 'node:fs';
@@ -269,7 +269,7 @@ function annotate(level: 'warning' | 'error', message: string): string {
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const manifestFlag = argv.indexOf('--manifest');
-  const manifestPath = manifestFlag === -1 ? 'docs/pg-primary-tls.json' : argv[manifestFlag + 1];
+  const manifestPath = manifestFlag === -1 ? 'docs/operations/pg-primary-tls.json' : argv[manifestFlag + 1];
   if (!manifestPath) throw new Error('--manifest needs a path');
 
   const manifest = readManifest(manifestPath);

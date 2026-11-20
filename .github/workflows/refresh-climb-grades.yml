@@ -5,7 +5,7 @@ name: Refresh Climb Grades
 # into board_climb_grades. Validation gates run first and abort the run — no
 # coefficients, gate results, or grades are written on a gate failure.
 # Coefficients refit weekly, frozen in between. Idempotent.
-# Model spec: docs/boardsesh-grade.md.
+# Model spec: docs/data/boardsesh-grade.md.
 # Scheduled runs moved to the homelab batch worker (pg-boss family, #5800);
 # this workflow is manual-only for backfills and dry runs.
 on:

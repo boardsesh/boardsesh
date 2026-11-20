@@ -4,7 +4,7 @@
  * The batch families and the GitHub Actions workflows they replace must fire at
  * the same minute while both exist: the cutover enables a family, waits for
  * three green ledger rows, then deletes the workflow's `schedule:` in its own
- * PR (docs/background-workers.md, "Batch families"). A PR that changes either
+ * PR (docs/backend/background-workers.md, "Batch families"). A PR that changes either
  * cron, or deletes a workflow schedule, has to update this pin. `cutOver`
  * marks a family whose workflow schedule is gone: the family alone owns it.
  */

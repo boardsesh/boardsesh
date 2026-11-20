@@ -53,7 +53,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 /**
  * `GET /v1/logbook/changes`, `GET /v1/logbook/ticks/{id}` and
  * `GET /v1/openapi.json` through the real handler, real Postgres and real Redis,
- * against docs/partner-api.md section 3 and the `@boardsesh/public-api` schemas.
+ * against docs/integrations/partner-api.md section 3 and the `@boardsesh/public-api` schemas.
  *
  * Remove these protections to prove the tests fail:
  * - the scope check: the insufficient-scope tests fail.

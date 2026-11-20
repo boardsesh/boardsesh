@@ -100,7 +100,7 @@ function isUnknownBaselineArgumentError(error: unknown): boolean {
 
 /**
  * The names an F3 `_NOW_SLOT` document carries that a backend without F3 does
- * not know (docs/current-climb-outside-queue.md, section 2).
+ * not know (docs/product/current-climb-outside-queue.md, section 2).
  */
 const NOW_SLOT_SCHEMA_NAMES = [
   'placement',

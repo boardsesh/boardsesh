@@ -19,7 +19,7 @@
  *
  * To change the look, change `PLAYER_SWAP_LOOK`. The lab's I starts from it, so
  * the lab shows the player's look and its sliders retune it live
- * (docs/board-motion-lab.md).
+ * (docs/rendering/board-motion-lab.md).
  *
  * Pure and worklet-safe; `use-player-board-transition.ts` reads the switches.
  */

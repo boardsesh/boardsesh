@@ -120,7 +120,7 @@ export type StoredShardRefresh = {
  * The stored answer, or null when nothing has been refreshed yet.
  *
  * `dbz`, NOT `dbzRead`. `createReadDb()` is a separate pool that can be pointed at
- * a replica (`READ_REPLICA_URL`, docs/neon-migration.md), and replication lag here
+ * a replica (`READ_REPLICA_URL`, docs/operations/database-portability.md), and replication lag here
  * would make the shrink guard compare a fresh count against a stale one and make
  * the staleness self-heal re-fire against a row that was already written.
  */

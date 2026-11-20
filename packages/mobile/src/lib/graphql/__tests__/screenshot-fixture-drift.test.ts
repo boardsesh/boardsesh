@@ -907,7 +907,7 @@ describe('queries the capture flows can reach', () => {
         '(packages/mobile/.maestro) send it? If NOT, add it to QUERIES_NO_CAPTURE_SENDS in ' +
         'screenshot-unsent-queries.ts. If it DOES and its answer for the screenshots account never depends on ' +
         'recorded data, add it to REPLAY_DEFAULT_RESPONSES in scripts/lib/screenshot-fixtures.ts. Otherwise the set ' +
-        'needs it recorded — see "When to re-record" in docs/mobile-screenshot-fixtures.md.',
+        'needs it recorded — see "When to re-record" in docs/qa/mobile-screenshot-fixtures.md.',
     ).toEqual([]);
   });
 

@@ -96,7 +96,7 @@ export const SPRAY_VERSION_STATUS_WIRE_NAME = {
 /**
  * The retired climb-edit policy (#6025). Older apps still send it, so it is
  * accepted on create and update and then ignored: only a climb's setter edits
- * it, within 24 hours of first publish (docs/spray-walls.md, "Editing a climb").
+ * it, within 24 hours of first publish (docs/product/spray-walls.md, "Editing a climb").
  */
 const RetiredSprayClimbEditPolicySchema = z.enum(['SETTER', 'COLLABORATORS']);
 
@@ -163,7 +163,7 @@ export const CreateSprayWallInputSchema = z.object({
   // firmware to encode for, and BLE suppression today is the per-row
   // `has_leds` data rather than the board type (`scanFamilyForBoard('spray')`
   // still answers 'aurora'), so the column is written false by the resolver and
-  // never taken from a client. See docs/spray-walls.md.
+  // never taken from a client. See docs/product/spray-walls.md.
 });
 
 /** Most holds one `sprayWallHoldUsage` call may ask about: a hold editor removes a few at a time. */
@@ -259,7 +259,7 @@ export const PublishSprayWallVersionInputSchema = z.object({
  * `commitSprayWallVersion`, which older apps use to publish. Only the wall and the
  * draft are read. The reset decisions are shape-checked by GraphQL and bounded
  * here so a hostile payload is not parsed into memory, then ignored: the
- * in-place reset they described is retired (docs/spray-walls.md).
+ * in-place reset they described is retired (docs/product/spray-walls.md).
  */
 export const CommitSprayWallVersionInputSchema = z.object({
   wallUuid: UUIDSchema,

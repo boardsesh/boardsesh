@@ -19,7 +19,7 @@
 //    board types or null, via `boardTypeProperty`) or a layout id. A spray wall's
 //    layout id is minted per wall, so it is sent as null on a spray wall: the
 //    spray telemetry rule is that no event identifies a wall
-//    (docs/spray-walls.md, "Telemetry").
+//    (docs/product/spray-walls.md, "Telemetry").
 //  * `heldArtState` and `heldMs` ride only on the rare swipe that went before
 //    the next climb's board had painted (the dead-swipe fix, November 2026). Every other
 //    step sends neither, so the event costs nothing more and an ordinary

@@ -16,8 +16,8 @@
  * between two letters), which costs the buyer a nudge they did not strictly
  * need. Being wrong in the other direction would sell a pack that cannot be cut.
  *
- * Coordinates are the generator's wall space throughout (see `docs/coordinates.md`
- * in the generator repo): millimetres, origin at the bottom-left corner of the
+ * Coordinates are the generator's wall space throughout (see `docs/product/cnc-packs.md`
+ * for the manufacturing contract): millimetres, origin at the bottom-left corner of the
  * bottom-left main panel, `+y` up, kicker panels at negative `y`, rotation
  * counter-clockwise. Nothing here knows about SVG or pixels.
  */

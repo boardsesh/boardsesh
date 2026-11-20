@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// #4979 (docs/current-climb-outside-queue.md, sections 6 and 9): the clock the
+// #4979 (docs/product/current-climb-outside-queue.md, sections 6 and 9): the clock the
 // Bluetooth auto-sender's stale-climb hold reads. Solo it lives in the queue
 // snapshot as `lastCurrentChangeAt`, which the save effect writes unchanged
 // while `savedAt` moves on every write; in a session every FullSync reseeds it

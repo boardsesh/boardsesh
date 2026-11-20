@@ -656,7 +656,7 @@ describe('trusted PostgreSQL image publisher contract', () => {
   it('rejects an altered protected-main trigger path', () => {
     const weakened = replaceRequired(
       contractWorkflow,
-      "      - 'docs/postgres-image-publishing.md'",
+      "      - 'docs/operations/postgres-image-publishing.md'",
       "      - 'docs/unrelated.md'",
     );
     expect(failuresFor(publisherWorkflow, weakened)).toMatch(

@@ -103,7 +103,7 @@ export function resolveKeepLightingPlan({
  * board follows that rule, MoonBoards included.
  *
  * Never with the `wall-swipe-to-drive` flag off: it is driving's kill switch
- * (docs/feature-flags.md), and Always drive the wall's drive is a drive like any
+ * (docs/operations/feature-flags.md), and Always drive the wall's drive is a drive like any
  * other, so turned off nothing drives the wall and every pick is a preview.
  *
  * Whether this phone holds the board (its own Bluetooth link, never a relay)

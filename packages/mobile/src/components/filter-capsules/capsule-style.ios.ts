@@ -3,7 +3,7 @@
 // labelled in the on-fill colour (`primaryFill` + `onPrimary`), the same pair the
 // Compose FilterChip uses, so every platform lights a filter the same way. The
 // text brand colour (`primary`) is a light lavender in dark mode and is not a
-// fill (docs/ai-design-guidelines.md, "Brand colours").
+// fill (docs/design/ai-design-guidelines.md, "Brand colours").
 //
 // Two drawings, picked by `useGlassCapability()` like Button.ios.tsx:
 //   iOS 26 Liquid Glass  resting = neutral glass with secondary grey labels,

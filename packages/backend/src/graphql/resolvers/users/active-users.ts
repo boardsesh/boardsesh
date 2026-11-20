@@ -17,7 +17,7 @@ function requireCronAuthentication(ctx: ConnectionContext): void {
 
 /**
  * The scheduler's `snapshot-active-users` and `purge-user-activity` jobs
- * (packages/scheduler) are the only callers. See docs/analytics-consent.md.
+ * (packages/scheduler) are the only callers. See docs/analytics/analytics-consent.md.
  */
 export const activeUsersMutations = {
   snapshotActiveUsers: async (

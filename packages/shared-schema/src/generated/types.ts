@@ -307,7 +307,7 @@ export type AllUserPlaylistsResult = {
   totalCount: Scalars['Int']['output'];
 };
 
-/** The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics-consent.md. */
+/** The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics/analytics-consent.md. */
 export type AnalyticsConsent = {
   __typename?: 'AnalyticsConsent';
   /** granted or denied. */
@@ -2418,7 +2418,7 @@ export type CommunityStats = {
   litLast30Days: Scalars['Int']['output'];
 };
 
-/** An app the signed-in climber connected to their account (docs/integration-platform.md, Connected apps). */
+/** An app the signed-in climber connected to their account (docs/integrations/integration-platform.md, Connected apps). */
 export type ConnectedApp = {
   __typename?: 'ConnectedApp';
   /** ISO 8601. When the app first used its access, or first used it again after a reconnect. */
@@ -2457,7 +2457,7 @@ export type ConnectedApps = {
 
 /**
  * Whether this visitor is asked before analytics runs, from the Cloudflare
- * country of the request. See docs/analytics-consent.md.
+ * country of the request. See docs/analytics/analytics-consent.md.
  */
 export type ConsentRegion = {
   __typename?: 'ConsentRegion';
@@ -2872,7 +2872,7 @@ export type CurrentClimbChanged = {
 };
 
 /**
- * How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+ * How setCurrentClimb puts a climb on the wall (docs/product/current-climb-outside-queue.md, section 1).
  * NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
  * STEP: Previous on the queue walk; the pointer steps back into History.
  * Omitted by shipped clients, the native socket and the LED path.
@@ -6916,7 +6916,7 @@ export type OAuthClient = {
 /**
  * Where an app's OAuth redirect lands. WEB apps use https:// redirect URIs only;
  * NATIVE apps may also use http://127.0.0.1 or http://[::1] and private-use
- * schemes such as com.example.app:/oauth/boardsesh. See docs/partner-api.md.
+ * schemes such as com.example.app:/oauth/boardsesh. See docs/integrations/partner-api.md.
  */
 export type OAuthClientApplicationType = 'NATIVE' | 'WEB';
 
@@ -7711,7 +7711,7 @@ export type QaVerdict = {
 
 /**
  * A tester's verdict on a pull-request preview (crowdsourced QA; see
- * docs/crowdsourced-qa.md).
+ * docs/qa/crowdsourced-qa.md).
  */
 export type QaVerdictKind = 'approved' | 'declined';
 
@@ -8464,7 +8464,7 @@ export type Query = {
    * matching separately — see findExactDuplicateMatch.
    * Admins get the live query. Everyone else reads the nightly precomputed
    * index (top 25 per climb at 0.5 and above), and a frames-only lookup
-   * (no climbUuid) is admin-only. See docs/similar-climbs.md.
+   * (no climbUuid) is admin-only. See docs/data/similar-climbs.md.
    */
   similarClimbs: Array<SimilarClimb>;
   /**
@@ -12229,7 +12229,7 @@ export type SprayWallMoveSuggestion = {
  *
  * Spray-wall photos live in the PRIVATE bucket, never the public `media` one:
  * the photograph is of somebody's home, and `media` is world-readable under
- * guessable keys (`docs/user-media-storage.md`). So there is no stable URL to
+ * guessable keys (`docs/operations/user-media-storage.md`). So there is no stable URL to
  * store on a row — every read mints a fresh signature, and `expiresAt` is when
  * the one in hand stops working.
  */
@@ -12714,7 +12714,7 @@ export type SyncDeletion = {
   __typename?: 'SyncDeletion';
   /** When the row was deleted (ISO 8601). */
   deletedAt: Scalars['String']['output'];
-  /** Natural-key encoding of the deleted row (see docs/sync-table-manifest.md). */
+  /** Natural-key encoding of the deleted row (see docs/data/sync-table-manifest.md). */
   recordId: Scalars['String']['output'];
   /** Postgres table the row was deleted from. */
   tableName: Scalars['String']['output'];
@@ -12780,7 +12780,7 @@ export type Tick = {
   commentCount?: Maybe<Scalars['Int']['output']>;
   /** When this record was created (ISO 8601) */
   createdAt: Scalars['String']['output'];
-  /** User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read `effectiveDifficulty` for the value to display (it falls back to the climb's consensus). See docs/ascents-and-attempts.md. */
+  /** User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read `effectiveDifficulty` for the value to display (it falls back to the climb's consensus). See docs/data/ascents-and-attempts.md. */
   difficulty?: Maybe<Scalars['Int']['output']>;
   /** Number of downvotes on this tick. Null unless populated by a read query. */
   downvotes?: Maybe<Scalars['Int']['output']>;

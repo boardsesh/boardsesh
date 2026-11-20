@@ -17,7 +17,7 @@ name: OTA Rollout Proof
 #
 # It leaves the branch behind. Deleting it afterwards is the owner's call.
 #
-# See docs/mobile-ota-updates.md, "Running the throwaway-branch proof".
+# See docs/operations/mobile-ota-updates.md, "Running the throwaway-branch proof".
 on:
   workflow_dispatch:
     inputs:

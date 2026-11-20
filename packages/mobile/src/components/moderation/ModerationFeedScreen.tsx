@@ -3,7 +3,7 @@
 //
 // Hosted by ONE route, `app/moderation.tsx`, a root-stack modal: the play
 // drawer links in here and `/play` is itself a root transparentModal, so a
-// tab-stack copy would sit beneath the player. See docs/mobile-sheets-vs-routes.md.
+// tab-stack copy would sit beneath the player. See docs/mobile/mobile-sheets-vs-routes.md.
 //
 // Deep links: a notification about a proposal lands here with that proposal's
 // uuid. If it is in the loaded pages the list scrolls to it and outlines it; if
@@ -204,7 +204,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
   );
 
   // A card menu's Add to playlist presents HERE, inside this modal route: the
-  // root sheet would open under the modal and vanish (docs/mobile-sheets-vs-routes.md,
+  // root sheet would open under the modal and vanish (docs/mobile/mobile-sheets-vs-routes.md,
   // rule 1). Kept mounted through its dismiss animation, like the root host.
   const credentialScope = usePrivacyCredentialScope();
   const {

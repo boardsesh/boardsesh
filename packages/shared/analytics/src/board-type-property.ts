@@ -8,7 +8,7 @@
 //
 // The value is a CLOSED set: the nine board types, or null. Nothing else can
 // get through, which is what keeps this inside the spray telemetry rule that no
-// event may identify a wall (`docs/spray-walls.md`, "Telemetry"). A wall's
+// event may identify a wall (`docs/product/spray-walls.md`, "Telemetry"). A wall's
 // name, slug or uuid passed here by mistake comes out as null, not as a value.
 //
 // The property is named `boardType` to match `Board Created`, the event these

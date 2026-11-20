@@ -121,7 +121,7 @@ under `fastlane/metadata/android/<locale>/changelogs/default.txt`.
 
 After Play accepts a `main` candidate, the same run publishes the exact signed
 arm64 sideload APK as the newest **Boardsesh Android Beta** GitHub prerelease.
-See `docs/android-sideload-build.md` for the one-time Play bootstrap and signing
+See `docs/operations/android-sideload-build.md` for the one-time Play bootstrap and signing
 details.
 
 The Play AAB comes from `.github/workflows/android-apk-rn.yml` (native changes on

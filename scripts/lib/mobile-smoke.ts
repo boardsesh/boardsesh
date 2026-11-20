@@ -7,7 +7,7 @@
  * Pure functions only: what the app's pings say, what the device log says about
  * a native crash, and which single class a failed run belongs to. The
  * orchestrator does the I/O and hands the text in, so every decision here is
- * unit-tested without a simulator. See docs/mobile-e2e-gate.md.
+ * unit-tested without a simulator. See docs/qa/mobile-e2e-gate.md.
  */
 
 import { NO_GRAPHQL_HIT_PROBLEM } from './screenshot-fixtures';
@@ -238,7 +238,7 @@ export function findIosNativeCrashes(logText: string): NativeCrash[] {
  * the crash is named and the consequences are not.
  *
  * `native-crash-at-launch` is its own class because it is a known flake of the
- * dev-client on the CI emulator (docs/mobile-e2e-gate.md): the process dies on
+ * dev-client on the CI emulator (docs/qa/mobile-e2e-gate.md): the process dies on
  * the app surface's first Fabric commit, before any screen is up, with nothing
  * wrong on the backend side. "At launch" therefore means "before the app
  * signalled home", not a number of seconds: across nine recorded crashes it

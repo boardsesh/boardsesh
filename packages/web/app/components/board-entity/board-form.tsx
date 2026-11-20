@@ -87,7 +87,7 @@ type BoardFormProps = {
    * When provided, the form reports its submit affordance here (for a header
    * action bar) instead of rendering the inline submit/cancel buttons. Bottom
    * drawers carry actions in the header because the iOS keyboard buries a
-   * footer — see docs/mobile-sheets-vs-routes.md.
+   * footer — see docs/mobile/mobile-sheets-vs-routes.md.
    *
    * Must be referentially stable (a setState or `useCallback`) — it sits in the
    * report effect's deps, so a per-render identity re-fires the effect every render.

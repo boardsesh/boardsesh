@@ -19,7 +19,7 @@ import { integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
  *
  * `path` is RENDERED at refresh time. A deploy that changes climb URL shape
  * serves the old shape for up to six hours unless someone runs the manual
- * refresh — docs/sitemap.md flags this.
+ * refresh — docs/web/sitemap.md flags this.
  *
  * Refreshed wholesale — `DELETE` then re-insert inside the same transaction that
  * writes the summary row, so the count the index advertises and the rows the

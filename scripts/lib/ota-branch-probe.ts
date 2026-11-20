@@ -16,7 +16,7 @@
  * means. Everything here is dependency-free and `fetch` is injectable, so both
  * the pure interpretation and the request path are unit-testable.
  *
- * See docs/mobile-ota-updates.md ("Per-PR preview branches").
+ * See docs/operations/mobile-ota-updates.md ("Per-PR preview branches").
  */
 
 // The app id the V3 server routes on (the `expo-app-id` header the client sends).

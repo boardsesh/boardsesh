@@ -360,7 +360,7 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  * wins. Concurrent callers share one lifecycle (see `activeInitialization`).
  *
  * Board reference data is filled in on demand by the per-scope download (nightly
- * CDN snapshot, then paged deltas — see docs/board-snapshots.md). The old bundled
+ * CDN snapshot, then paged deltas — see docs/data/board-snapshots.md). The old bundled
  * seed-database import that used to run here was retired in #3646: it never had a
  * producer, and the snapshot bootstrap covers the same head start per (board,
  * layout, size) scope.
@@ -422,7 +422,7 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     // FIRST, before the WAL switch and before any DDL, and read-only: a database a
     // newer bundle migrated must be recognised before this one changes anything
     // about it. JS goes backwards when a canary OTA is reverted or a climber
-    // leaves the early-updates track (docs/offline-sync-plan.md, "Older JS on a
+    // leaves the early-updates track (docs/data/offline-sync.md, "Older JS on a
     // newer database").
     //
     // The busy timeout comes first because it is connection-local (it changes

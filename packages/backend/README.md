@@ -49,7 +49,7 @@ Environment variables:
 | `POSTHOG_PROJECT_KEY` | `NEXT_PUBLIC_POSTHOG_KEY`, then unset                             | Enables backend PostHog events for Live Activity usage |
 | `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                 |
 | `POSTHOG_ENVIRONMENT` | `resolveSentryEnvironment()`                                      | Environment for backend PostHog analytics — see below  |
-| `POSTHOG_ERASURE_API_KEY` | unset | **Must be set on Railway before this backend deploys.** A dedicated PostHog personal API key, scoped to project 412845 with `person:write` and `query:read` only, for erasing a deleted or withdrawn climber's PostHog person. Unset (or outside production): no erasure worker runs, jobs wait up to 14 days, and boot logs `posthog_person_deletion_unconfigured`. Not `POSTHOG_PERSONAL_API_KEY`, which is read-only and shared (docs/analytics-consent.md, "Erasure") |
+| `POSTHOG_ERASURE_API_KEY` | unset | **Must be set on Railway before this backend deploys.** A dedicated PostHog personal API key, scoped to project 412845 with `person:write` and `query:read` only, for erasing a deleted or withdrawn climber's PostHog person. Unset (or outside production): no erasure worker runs, jobs wait up to 14 days, and boot logs `posthog_person_deletion_unconfigured`. Not `POSTHOG_PERSONAL_API_KEY`, which is read-only and shared (docs/analytics/analytics-consent.md, "Erasure") |
 | `POSTHOG_PROJECT_ID` | `412845` | PostHog project the erasure job deletes from |
 | `POSTHOG_API_HOST` | `https://us.posthog.com` | PostHog private API host for the erasure job (not the ingestion host) |
 | `POSTHOG_SESSION_HASH_SALT` | unset | **Set on Railway before deploy.** Any long random string; keys the `sessionHash` on Live Activity events. Unset: the hash is omitted. Rotating it breaks joins across the rotation |
@@ -180,4 +180,4 @@ Primary WebSocket operations:
 - Queue mutations: `addQueueItem`, `removeQueueItem`, `setQueue`, `setCurrentClimb`, `mirrorCurrentClimb`.
 - Subscriptions: `queueUpdates(sessionId)` and `sessionUpdates(sessionId)`.
 
-Passive disconnects mark participants `RECONNECTING`, elect a new leader immediately when needed, and keep the session recoverable during the reconnect grace period. See [docs/websocket-implementation.md](../../docs/websocket-implementation.md) for the current protocol and failure-recovery details.
+Passive disconnects mark participants `RECONNECTING`, elect a new leader immediately when needed, and keep the session recoverable during the reconnect grace period. See [docs/backend/websocket-implementation.md](../../docs/backend/websocket-implementation.md) for the current protocol and failure-recovery details.

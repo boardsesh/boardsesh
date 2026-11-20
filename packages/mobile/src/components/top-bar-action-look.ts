@@ -1,6 +1,6 @@
 // How a top-bar trailing action looks: a sheet's Cancel or confirm (SheetTopBar)
 // and a native header's (HeaderActionButtons). One pure resolver so the two can't
-// drift. See docs/mobile-chrome.md, "Top-bar buttons".
+// drift. See docs/design/mobile-chrome.md, "Top-bar buttons".
 import type { ColorValue } from 'react-native';
 import type { IconName } from './icon-map';
 import type { TopBarSpec } from '../theme/top-bar';

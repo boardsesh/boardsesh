@@ -32,7 +32,7 @@ type WeekActivityRow = {
  * both draw on a cold start and with no signal, where the You tab's network
  * stats show a skeleton.
  *
- * Follows the auth-scoping contract in docs/offline-reads.md, as
+ * Follows the auth-scoping contract in docs/data/offline-reads.md, as
  * `readTickRowsLocal` does: it serves only when `canServeLocalUserData` says the
  * rows are complete and belong to this climber, filters to the owner stamp (or a
  * legacy row with no owner), and declines with `null` rather than claiming an

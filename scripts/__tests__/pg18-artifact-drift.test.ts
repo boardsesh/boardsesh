@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * `docs/postgres-image-digests.json` — the handoff copy of the publisher's
+ * `docs/operations/postgres-image-digests.json` — the handoff copy of the publisher's
  * digest manifest, which names the exact images every consumer is pinned to —
  * is checked into the repo and read by nothing at run time, so nothing notices
  * when the tree drifts out from under it: a consumer pin can be edited to a
@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
  * from their own gated job in `ci.yml`; see the `pg18Artifacts` paths filter.
  */
 
-const DIGEST_MANIFEST_PATH = 'docs/postgres-image-digests.json';
+const DIGEST_MANIFEST_PATH = 'docs/operations/postgres-image-digests.json';
 const PORTABLE_IMAGE = 'ghcr.io/boardsesh/boardsesh-postgres-postgis';
 const SEEDED_IMAGE = 'ghcr.io/boardsesh/boardsesh-dev-db';
 

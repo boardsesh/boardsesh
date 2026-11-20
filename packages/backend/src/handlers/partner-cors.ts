@@ -1,6 +1,6 @@
 /**
  * CORS for the partner OAuth routes. Separate from `applyCorsHeaders`, which
- * allows credentials and preview origins. `docs/integration-platform.md`,
+ * allows credentials and preview origins. `docs/integrations/integration-platform.md`,
  * "Browser access", sets the policy:
  *
  * - token and revoke never take credentials, and only the HTTPS origins of

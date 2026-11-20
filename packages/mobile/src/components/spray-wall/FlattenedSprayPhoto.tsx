@@ -1,5 +1,5 @@
 // A spray wall photo flattened into a preview tile, on the phone: what "Wall
-// only" will look like before the backend has made it (`docs/spray-walls.md`,
+// only" will look like before the backend has made it (`docs/product/spray-walls.md`,
 // "Previewing a look on the phone").
 //
 // Two renderers behind one component, because the platforms disagree on what a

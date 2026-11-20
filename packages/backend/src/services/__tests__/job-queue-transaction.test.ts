@@ -1,7 +1,7 @@
 /**
  * Does `boss.send(..., { db })` really run inside a caller-supplied transaction?
  *
- * `docs/partner-workouts-internal.md` leans its whole design on this — a job
+ * `docs/integrations/partner-workouts-internal.md` leans its whole design on this — a job
  * committing with the state change is the reason pg-boss beat BullMQ there,
  * because it is what removes the outbox-and-relay. The doc says so, and then
  * says to verify it against the installed version before leaning on it. This is

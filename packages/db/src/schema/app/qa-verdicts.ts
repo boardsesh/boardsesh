@@ -15,7 +15,7 @@ import type { ReleaseContext } from '@boardsesh/shared-schema';
 
 /**
  * A user's call on a pull-request preview: it works, or it doesn't. See
- * docs/crowdsourced-qa.md.
+ * docs/qa/crowdsourced-qa.md.
  */
 export const qaVerdictKindEnum = pgEnum('qa_verdict_kind', ['approved', 'declined']);
 
@@ -25,7 +25,7 @@ export const qaVerdictKindEnum = pgEnum('qa_verdict_kind', ['approved', 'decline
  * this one counts toward the label. The row is the record; the GitHub comment
  * and the qa-approved/qa-declined label are a best-effort mirror written
  * afterwards, so `github_comment_id IS NULL` means the sync did not land (see
- * the runbook in docs/crowdsourced-qa.md), never that the verdict was lost.
+ * the runbook in docs/qa/crowdsourced-qa.md), never that the verdict was lost.
  *
  * Device context (platform, handset, OS, app version, update id, runtime,
  * bundle date) is what the GitHub comment reports as "tested where" — and
@@ -55,7 +55,7 @@ export const qaVerdicts = pgTable(
      *
      * Defaults TRUE, which looks backwards until you follow the deploy order.
      * Migrations run before the backend deploys, and an Instant Rollback leaves
-     * the migrated schema serving the old code (docs/branch-deploys.md), so in
+     * the migrated schema serving the old code (docs/operations/branch-deploys.md), so in
      * both windows the PREVIOUS resolver writes rows — and that resolver is the
      * tester-only one, which cannot name this column. Defaulting false would
      * record those legitimate tester verdicts as non-tester and silently drop

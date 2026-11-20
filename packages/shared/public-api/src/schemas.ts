@@ -1,6 +1,6 @@
 /**
  * The public /v1 contract as zod schemas: what a request may send and what a
- * response may contain. docs/partner-api.md is the prose version of this file.
+ * response may contain. docs/integrations/partner-api.md is the prose version of this file.
  *
  * Response objects are strict on purpose. Validating a response (contract tests,
  * the handlers) then fails when a field outside the contract appears, such as

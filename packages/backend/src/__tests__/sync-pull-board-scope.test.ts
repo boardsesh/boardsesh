@@ -7,7 +7,7 @@ import { syncQueries } from '../graphql/resolvers/sync/queries';
 /**
  * Covers the layout/size scoping added to syncClimbs / syncClimbStats so a
  * downloaded board is a fixed (boardType, layout, size) superset — all sets.
- * See docs/sync-table-manifest.md.
+ * See docs/data/sync-table-manifest.md.
  */
 
 const USER_ID = 'sync-scope-user';

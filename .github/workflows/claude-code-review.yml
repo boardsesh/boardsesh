@@ -68,7 +68,7 @@ jobs:
             - Check if the PR changes any systems documented in the `docs/` directory
             - If changes affect documented systems (e.g., WebSocket party sessions, architecture), verify the docs are updated accordingly
             - Flag if significant changes to documented features lack corresponding documentation updates
-            - Reference the specific doc file that needs updating (e.g., `docs/websocket-implementation.md`)
+            - Reference the specific doc file that needs updating (e.g., `docs/backend/websocket-implementation.md`)
 
             TEST QUALITY CHECK:
             - Verify that new features or bug fixes include appropriate tests

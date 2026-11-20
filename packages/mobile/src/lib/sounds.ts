@@ -63,7 +63,7 @@ export type SoundNativeBindings = {
   loadExpoAudio(): ExpoAudio;
 };
 
-/** Bundled WAVs (docs/rest-timer.md, "Sound (native train)", lists how they were made). */
+/** Bundled WAVs (docs/product/rest-timer.md, "Sound (native train)", lists how they were made). */
 const SOUND_SOURCES: Readonly<Record<CueSound, number>> = {
   tick: tickSoundAsset,
   final: finalSoundAsset,

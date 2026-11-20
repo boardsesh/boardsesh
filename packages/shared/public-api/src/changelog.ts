@@ -1,9 +1,9 @@
 /**
  * The public API changelog: one entry per change to the published contract,
  * newest first. It is the source for `www.boardsesh.com/developers/changelog`
- * (docs/partner-api.md, section 6) and the input to the CI gate that fails a PR
+ * (docs/integrations/partner-api.md, section 6) and the input to the CI gate that fails a PR
  * changing `generated/openapi.json` without an entry
- * (docs/integration-platform.md, "Versioning").
+ * (docs/integrations/integration-platform.md, "Versioning").
  *
  * The newest entry names the SHA-256 of the committed document it describes,
  * so a document change without a new entry is caught on every run, and

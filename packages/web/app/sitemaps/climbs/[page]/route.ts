@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 // `/sitemap.xml` dropped its own (#4648). 300 was Vercel's Pro ceiling, bought
 // for the one request that pays the fallback: before the first refresh — the
 // deploy that adds a board, a truncation, local dev — `buildClimbShardPage`
-// falls back to the live grouped build, the 51 s path `docs/sitemap.md`
+// falls back to the live grouped build, the 51 s path `docs/web/sitemap.md`
 // documents (64.9 s cold and 20-28 s warm on the dev image with MoonBoard's
 // groups in; only the first request pays it, because the fallback is TTL-cached
 // per instance). www serves from a Railway container now, where there is no

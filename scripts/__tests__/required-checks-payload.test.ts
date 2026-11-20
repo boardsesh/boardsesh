@@ -7,7 +7,7 @@ import { githubYamlPaths, jobBlocks, isWorkflow, withoutCommentLines } from './h
 
 /**
  * `.github/rulesets/main-require-ci-status.json` records the original creation
- * payload for main's required `ci-status` check (docs/ci-required-checks.md). It
+ * payload for main's required `ci-status` check (docs/qa/ci-required-checks.md). It
  * does not mirror live policy and is not automatically reapplied — which is
  * exactly why it needs a spec: every mistake it can contain is silent until it
  * is either useless or wedges the repo.

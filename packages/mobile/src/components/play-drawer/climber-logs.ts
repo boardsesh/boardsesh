@@ -142,7 +142,7 @@ export type CrewCounts = {
 
 /**
  * Rows the card shows inline. The play drawer body is a plain ScrollView, so
- * this cap is what keeps the card's `.map()` legal (docs/react-native-performance.md
+ * this cap is what keeps the card's `.map()` legal (docs/mobile/react-native-performance.md
  * section 2). The full list lives in a virtualised sheet.
  */
 export const INLINE_CLIMBER_LOG_CAP = 4;

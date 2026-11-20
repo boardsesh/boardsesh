@@ -2,7 +2,7 @@
  * The popular sort's ranking table end to end, against the real test Postgres:
  * the full and incremental refresh, the readiness gate that keeps the old
  * aggregation until a board is built, and the walk plus its tail fallback.
- * Design: docs/climb-popularity.md.
+ * Design: docs/data/climb-popularity.md.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';

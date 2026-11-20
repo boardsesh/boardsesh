@@ -10,7 +10,7 @@ import { assertLocalUserDataOwner, type OfflineDatabase } from '@boardsesh/offli
  * registry is memory only, so a cold launch in a basement has nothing to draw
  * from. `syncSprayWalls` puts the same payload on disk, and this reads it back.
  *
- * ## The auth-scoping contract (docs/offline-reads.md)
+ * ## The auth-scoping contract (docs/data/offline-reads.md)
  *
  * A wall photograph is somebody's garage, so this read is gated harder than any
  * other board reference read, all three layers:
@@ -90,7 +90,7 @@ type SprayWallRow = {
  * asked for.
  *
  * Every array column in the mirror is stored as a JSON string
- * (docs/sync-table-manifest.md), and a truncated or hand-edited row must degrade
+ * (docs/data/sync-table-manifest.md), and a truncated or hand-edited row must degrade
  * to "no geometry" rather than throw on the draw path.
  */
 function parseJsonArray(value: string | null): unknown[] | null {
