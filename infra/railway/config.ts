@@ -1,5 +1,8 @@
 /// <reference types="node" />
 
+import { OTA_SERVER_VERSION, OTA_IMAGE_REPOSITORY, OTA_HOSTING_PROVIDER } from '../ota/server';
+import type { OtaHostingProvider } from '../ota/server';
+
 // Declarative desired-state for the Railway project that runs the self-hosted xprem
 // OTA server. This is plain typed data — no side effects, no API calls.
 // scripts/railway-apply.ts reads it, diffs it against the live project, and (only
@@ -59,33 +62,10 @@ export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
 /** The dedicated Postgres holding xprem's control plane — and the app's signing key. */
 export const OTA_POSTGRES_SERVICE_NAME = 'Postgres';
 
-/**
- * The xprem release declared for deployment.
- *
- * This is the one place the desired server version is written down. Before it
- * lived here it was prose in four files, kept honest by a self-expiring marker in
- * scripts/__tests__/eoas-version-parity.test.ts — a convention that existed only
- * because nothing in the repo could perform the dashboard action. Now the apply
- * script can, so the constant is the source of truth and the test compares against
- * it. The declaration alone does not prove that a deployment has succeeded;
- * railway-apply reads the configured and running images before reporting sync.
- *
- * Bumping this is an upgrade. scripts/ota-image-bump.ts opens that PR, and moves
- * EOAS_PACKAGE_SPEC (scripts/lib/eoas.ts) in the same commit.
- */
-export const OTA_SERVER_VERSION = '3.2.6';
-
-/**
- * The repository path Railway pulls from.
- *
- * Deliberately the PRE-RENAME name. Upstream renamed expo-open-ota → xprem at
- * v3.1.0 and still publishes both names for the same release, and the Railway
- * service was created against the old path. So a service that does not say
- * `xprem` is not a sign the server is behind — see docs/mobile-ota-updates.md.
- */
-export const OTA_IMAGE_REPOSITORY = 'ghcr.io/mercuretechnologies/expo-open-ota';
-
-/** The exact image the OTA service must run. */
+// The portable release is the source of version/CLI parity. Railway retains its
+// existing tag reference until the hosting switch, avoiding an incidental rollout
+// while the homelab copy is rehearsed. The homelab deploys the immutable digest.
+export { OTA_SERVER_VERSION, OTA_IMAGE_REPOSITORY } from '../ota/server';
 export const OTA_IMAGE = `${OTA_IMAGE_REPOSITORY}:v${OTA_SERVER_VERSION}`;
 
 /** Public origin of the OTA server. Also the value of its own BASE_URL. */
@@ -676,7 +656,7 @@ export const INVENTORY_SERVICES: ServiceDesired[] = [
   },
 ];
 
-export const desiredRailwayState: RailwayDesiredState = {
+const railwayHostedState: RailwayDesiredState = {
   environmentName: RAILWAY_ENVIRONMENT_NAME,
   services: [
     {
@@ -854,3 +834,17 @@ export const desiredRailwayState: RailwayDesiredState = {
   clickhouseRetention: CLICKHOUSE_RETENTION,
   clickhouseVolumeUsageLimitPercent: CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
 };
+
+/** Hosting ownership is explicit. Retained rollback resources are never reconciled. */
+export function railwayStateForHosting(provider: OtaHostingProvider): RailwayDesiredState {
+  if (provider === 'railway') return railwayHostedState;
+  if (provider !== 'homelab') throw new Error('Unknown OTA hosting provider');
+  const retired = new Set([OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME, OTA_POSTGRES_SERVICE_NAME]);
+  return {
+    ...railwayHostedState,
+    services: railwayHostedState.services.filter((service) => !retired.has(service.name)),
+    clickhouseRetention: [],
+  };
+}
+
+export const desiredRailwayState = railwayStateForHosting(OTA_HOSTING_PROVIDER);

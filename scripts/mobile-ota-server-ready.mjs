@@ -1,41 +1,24 @@
 #!/usr/bin/env node
 // Fail-closed wait used immediately before anything on main uploads to the OTA server.
 //
-// The eoas CLI and the xprem server speak an upload protocol that has broken in both
-// directions before (3.2.0 replaced `fileNames` with `files`, with no fallback either
-// way). So a PR that bumps EOAS_PACKAGE_SPEC and OTA_SERVER_VERSION together is only
-// safe if the server image has actually rolled before the new CLI publishes. On that
-// push, two workflows run at once: Railway Config (railway-drift.yml) rolls the image,
-// and production-deploy.yml stages and promotes an OTA. This makes the OTA side wait
-// for the Railway side on the same commit.
-//
-// Most pushes never touch infra/railway/, so no Railway Config run exists and this
-// returns at once. When one exists, it waits for it to finish and fails unless it
-// succeeded: a failed apply has rolled the server back, and publishing with a CLI the
-// server does not speak would fail anyway, only later and less clearly.
+// The CLI/server upload protocol must move together. The committed hosting
+// provider selects the exact main-commit deployment workflow to wait for.
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { otaDeployment, readOtaHosting, RAILWAY_APPLY_PATHS, touchesDeployment } from './lib/ota-hosting.mjs';
 
 const SHA = /^[0-9a-f]{40}$/;
-const RAILWAY_WORKFLOW_FILE = 'railway-drift.yml';
-/** The only ref whose pushes trigger the Railway Config apply job (railway-drift.yml `on.push.branches`). */
-const RAILWAY_APPLY_REF = 'refs/heads/main';
-/** Paths whose change on a push to main triggers the Railway Config apply job. */
-const RAILWAY_APPLY_PATHS = [
-  'infra/railway/',
-  'scripts/railway-apply.ts',
-  'scripts/railway-deployment-rollback.mjs',
-  '.github/workflows/railway-drift.yml',
-];
 const POLL_INTERVAL_MS = 20_000;
-/** Above the apply job's own 80-minute timeout, so a slow migration or rollback is waited out rather than raced. */
-const WAIT_BUDGET_MS = 85 * 60_000;
+/** Above the homelab sender's 100-minute job ceiling, including queue/setup time. */
+const WAIT_BUDGET_MS = 110 * 60_000;
+const RAILWAY_WAIT_BUDGET_MS = 85 * 60_000;
 /** How long a run that should exist may take to appear after the push; GitHub can queue for minutes. */
 const APPEAR_BUDGET_MS = 10 * 60_000;
 /** Consecutive failed reads of the run list tolerated before giving up. */
 const MAX_CONSECUTIVE_READ_FAILURES = 5;
 
 /**
- * What to do given the Railway Config runs for this commit.
+ * What to do given the selected deployment workflow runs for this commit.
  *
  * @param {{ runs: { status: string; conclusion: string | null }[]; expectRun: boolean; appearDeadlinePassed: boolean }} input
  * @returns {'proceed' | 'wait' | 'fail'}
@@ -43,7 +26,7 @@ const MAX_CONSECUTIVE_READ_FAILURES = 5;
 export function serverReadiness({ runs, expectRun, appearDeadlinePassed }) {
   if (runs.length === 0) {
     if (!expectRun) return 'proceed';
-    // The commit changed the Railway config, so a run is coming. Refuse to guess.
+    // The commit changed deployment inputs, so a run is coming. Refuse to guess.
     return appearDeadlinePassed ? 'fail' : 'wait';
   }
   if (runs.some((run) => run.status !== 'completed')) return 'wait';
@@ -62,30 +45,95 @@ export function touchesRailwayApply(changedFiles) {
  * trigger one. Other refs never start infrastructure deployment workflows.
  */
 export function expectsRailwayRun({ ref, changedFiles }) {
-  return ref === RAILWAY_APPLY_REF && touchesRailwayApply(changedFiles);
+  return ref === 'refs/heads/main' && touchesRailwayApply(changedFiles);
+}
+
+export function expectsOtaDeployment({ provider, ref, changedFiles }) {
+  return ref === 'refs/heads/main' && touchesDeployment(changedFiles, otaDeployment(provider).paths);
+}
+
+export function pushBase(event) {
+  // A push may contain several commits. HEAD~1 misses an upgrade in an earlier
+  // commit and would allow publishing before its deployment run appears.
+  return SHA.test(event?.before ?? '') && !/^0+$/.test(event.before) ? event.before : 'HEAD~1';
 }
 
 function changedFilesInHead() {
   try {
-    const output = execFileSync('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], {
+    const event = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) : {};
+    const output = execFileSync('git', ['diff', '--name-only', pushBase(event), 'HEAD'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return output.split('\n').filter(Boolean);
   } catch {
-    // Without the parent commit this cannot tell whether a Railway Config run is
+    // Without the parent commit this cannot tell whether a deployment run is
     // coming, and guessing "no" would let the publish race the rollout. Both callers
     // check out full history, so this only fires on a misconfigured checkout.
     throw new Error('Cannot diff HEAD against its parent; check out with fetch-depth: 0 before this gate.');
   }
 }
 
-async function railwayRunsFor(sha) {
+/** Select the latest deployment of the release inherited by this main commit.
+ * A mobile-only push must wait for an earlier server upgrade, and a multi-commit
+ * push deploys at its head rather than at the individual commit that changed it.
+ */
+export function selectHomelabRuns(runs, requirement, git) {
+  const eligible = runs.filter(
+    (run) =>
+      run.event === 'push' &&
+      run.head_branch === 'main' &&
+      SHA.test(run.head_sha ?? '') &&
+      git.isAncestor(requirement.requiredSha, run.head_sha) &&
+      git.isAncestor(run.head_sha, requirement.targetSha),
+  );
+  if (eligible.length === 0) return [];
+  eligible.sort(
+    (a, b) => git.distance(a.head_sha, requirement.targetSha) - git.distance(b.head_sha, requirement.targetSha),
+  );
+  const newestSha = eligible[0].head_sha;
+  const release = git.releaseAt(newestSha);
+  if (
+    git.providerAt(newestSha) !== 'homelab' ||
+    ['version', 'repository', 'digest'].some((field) => release?.[field] !== requirement.release[field])
+  ) {
+    throw new Error('Ancestor OTA deployment does not match the required homelab release');
+  }
+  return eligible.filter((run) => run.head_sha === newestSha);
+}
+
+function gitOutput(args) {
+  return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+const sourceEvidence = {
+  isAncestor: (ancestor, descendant) => {
+    try {
+      gitOutput(['merge-base', '--is-ancestor', ancestor, descendant]);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  distance: (ancestor, descendant) => Number(gitOutput(['rev-list', '--count', `${ancestor}..${descendant}`])),
+  releaseAt: (sha) => JSON.parse(gitOutput(['show', `${sha}:infra/ota/server.json`])),
+  providerAt: (sha) => JSON.parse(gitOutput(['show', `${sha}:infra/ota/hosting.json`])).provider,
+};
+
+function inheritedReleaseRequirement(sha, deployment) {
+  const requiredSha = gitOutput(['log', '--first-parent', '-1', '--format=%H', sha, '--', ...deployment.paths]);
+  if (!SHA.test(requiredSha)) throw new Error('Cannot find the required OTA deployment ancestor; fetch full history.');
+  return { targetSha: sha, requiredSha, release: sourceEvidence.releaseAt(sha) };
+}
+
+async function deploymentRunsFor(sha, workflow, ancestor = false) {
   const repository = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
   if (!repository || !token) throw new Error('GITHUB_REPOSITORY and GITHUB_TOKEN are required');
-  const url = new URL(`https://api.github.com/repos/${repository}/actions/workflows/${RAILWAY_WORKFLOW_FILE}/runs`);
-  url.searchParams.set('head_sha', sha);
+  const url = new URL(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/runs`);
+  if (!ancestor) url.searchParams.set('head_sha', sha);
+  url.searchParams.set('branch', 'main');
+  url.searchParams.set('per_page', '100');
   url.searchParams.set('event', 'push');
   const response = await fetch(url, {
     headers: {
@@ -98,23 +146,44 @@ async function railwayRunsFor(sha) {
   if (!response.ok) {
     // Name the reason: a 403 is either a missing `actions: read` or a secondary rate limit.
     const reason = await response.text().catch(() => '');
-    throw new Error(`GitHub API answered HTTP ${response.status} listing Railway Config runs: ${reason.slice(0, 200)}`);
+    throw new Error(`GitHub API answered HTTP ${response.status} listing OTA deployment runs: ${reason.slice(0, 200)}`);
   }
   const body = await response.json();
   if (!Array.isArray(body.workflow_runs)) throw new Error('GitHub API returned no workflow_runs array');
-  return body.workflow_runs.map((run) => ({ id: run.id, status: run.status, conclusion: run.conclusion }));
+  return body.workflow_runs.filter(
+    (run) =>
+      run.event === 'push' &&
+      run.head_branch === 'main' &&
+      SHA.test(run.head_sha ?? '') &&
+      (ancestor || run.head_sha === sha),
+  );
 }
 
 async function main() {
   const sha = process.env.GITHUB_SHA;
   if (!sha || !SHA.test(sha)) throw new Error('GITHUB_SHA must be a full commit SHA');
-  const expectRun = expectsRailwayRun({ ref: process.env.GITHUB_REF ?? '', changedFiles: changedFilesInHead() });
+  const provider = readOtaHosting();
+  const deployment = otaDeployment(provider);
+  const requirement =
+    provider === 'homelab' && process.env.GITHUB_REF === 'refs/heads/main'
+      ? inheritedReleaseRequirement(sha, deployment)
+      : null;
+  const expectRun =
+    requirement !== null ||
+    expectsOtaDeployment({
+      provider,
+      ref: process.env.GITHUB_REF ?? '',
+      changedFiles: changedFilesInHead(),
+    });
+  // Private run: 80 minutes + 10 to appear; sender: 95, outer job: 100.
+  const waitBudgetMs = provider === 'homelab' ? WAIT_BUDGET_MS : RAILWAY_WAIT_BUDGET_MS;
   const started = Date.now();
   let consecutiveReadFailures = 0;
   for (;;) {
     let runs;
     try {
-      runs = await railwayRunsFor(sha);
+      runs = await deploymentRunsFor(sha, deployment.workflow, requirement !== null);
+      if (requirement) runs = selectHomelabRuns(runs, requirement, sourceEvidence);
       consecutiveReadFailures = 0;
     } catch (error) {
       // A transient 5xx or timeout must not abort a publish mid-wait. Keep polling,
@@ -133,8 +202,8 @@ async function main() {
     if (decision === 'proceed') {
       console.log(
         runs.length === 0
-          ? `OTA server ready: no Railway Config run for ${sha}.`
-          : `OTA server ready: Railway Config for ${sha} succeeded.`,
+          ? `OTA server ready: no ${deployment.name} run required for ${sha}.`
+          : `OTA server ready: ${deployment.name} at ${runs[0].head_sha ?? sha} verified the release required by ${sha}.`,
       );
       return;
     }
@@ -142,14 +211,14 @@ async function main() {
       const summary =
         runs.length === 0 ? 'never started' : runs.map((run) => `${run.id}: ${run.conclusion}`).join(', ');
       throw new Error(
-        `Railway Config for ${sha} did not succeed (${summary}); the OTA server may not run the ` +
+        `${deployment.name} for ${sha} did not succeed (${summary}); the OTA server may not run the ` +
           'version this commit publishes with. Fix or revert the apply before publishing.',
       );
     }
-    if (Date.now() - started > WAIT_BUDGET_MS) {
-      throw new Error(`Railway Config for ${sha} was still running after 85 minutes.`);
+    if (Date.now() - started > waitBudgetMs) {
+      throw new Error(`${deployment.name} for ${sha} was still running after ${waitBudgetMs / 60_000} minutes.`);
     }
-    console.log(`Waiting for Railway Config on ${sha} to finish rolling the OTA server...`);
+    console.log(`Waiting for ${deployment.name} on ${sha} to finish rolling the OTA server...`);
     await new Promise((done) => setTimeout(done, POLL_INTERVAL_MS));
   }
 }

@@ -69,6 +69,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   CLICKHOUSE_DATABASE,
+  CLICKHOUSE_SERVICE_NAME,
   CLICKHOUSE_VOLUME_NAME,
   OTA_SERVER_VERSION,
   desiredRailwayState,
@@ -1101,6 +1102,7 @@ interface AppliedDeployment {
 }
 
 export interface MainDependencies {
+  desired?: RailwayDesiredState;
   rollbackDeployment?: RollbackDeployment;
   sleep?: (milliseconds: number) => Promise<void>;
   /** Resolves to null when the URL answers, or to the reason it did not. */
@@ -1225,7 +1227,7 @@ export async function main(
     return 1;
   }
 
-  const desired = desiredRailwayState;
+  const desired = dependencies.desired ?? desiredRailwayState;
   const rollbackDeployment = dependencies.rollbackDeployment ?? defaultRollbackDeployment;
   const deploymentSleep = dependencies.sleep ?? ((milliseconds: number) => delay(milliseconds));
   const supplied = collectSuppliedVars(process.env);
@@ -1240,14 +1242,23 @@ export async function main(
   }
   console.log('');
 
-  const clickhouseTtl = await fetchClickHouseTtl(process.env.CLICKHOUSE_URL?.trim(), CLICKHOUSE_DATABASE);
-  if (clickhouseTtl === null) {
+  const ownsClickHouse = desired.services.some(
+    (service) => service.name === CLICKHOUSE_SERVICE_NAME && service.management === 'managed',
+  );
+  const clickhouseTtl = ownsClickHouse
+    ? await fetchClickHouseTtl(process.env.CLICKHOUSE_URL?.trim(), CLICKHOUSE_DATABASE)
+    : null;
+  if (ownsClickHouse && clickhouseTtl === null) {
     console.log('[railway-apply] Retention check skipped: no CLICKHOUSE_URL in this environment.');
   }
 
   // Railway's API answers this even from CI, unlike ClickHouse itself.
   const volumes = await fetchVolumes(token, projectId, project.environmentId, CLICKHOUSE_VOLUME_NAME);
-  if (volumes.clickhouse === null) {
+  if (!ownsClickHouse) {
+    // Continue reading mounts for the remaining services, but ignore retained OTA
+    // disks completely: their checks now belong to the homelab deployment.
+    volumes.clickhouse = null;
+  } else if (volumes.clickhouse === null) {
     console.log(`[railway-apply] Disk check skipped: no volume named "${CLICKHOUSE_VOLUME_NAME}".`);
   } else {
     const usedPercent = (volumes.clickhouse.usedMb / volumes.clickhouse.capacityMb) * 100;

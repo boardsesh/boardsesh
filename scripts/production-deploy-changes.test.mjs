@@ -691,3 +691,16 @@ void test('deploys both web and Cloudflare when the shared crawler policy change
   assert.equal(targets.web, true);
   assert.equal(targets.cloudflare, true);
 });
+
+void test('the OTA ownership switch converges the tunnel DNS without rebuilding apps', () => {
+  for (const filePath of ['infra/ota/hosting.json', 'infra/ota/server.ts']) {
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: false,
+      backend: false,
+      app: false,
+      ota: false,
+      cloudflare: true,
+      staticAssets: false,
+    });
+  }
+});

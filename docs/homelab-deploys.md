@@ -113,3 +113,14 @@ shows what your current token has.
 without a homelab dispatch step. They're expected to get the same
 `dispatch-homelab` job shape once their consumers move to the homelab, as
 part of the rest of the pg-boss worker rollout (#5800).
+
+
+## OTA server deployment
+
+OTA uses the same private-repository boundary but requires a synchronous,
+verified acknowledgment before publishing. `ota-server-deploy.yml` dispatches
+an immutable upstream release and waits for the exact receiver run and receipt;
+the worker workflow's HTTP 204 fire-and-forget behavior is not sufficient here.
+The shared `HOMELAB_DISPATCH_TOKEN` additionally needs Actions read on the
+private Ansible repository. See [OTA homelab deployment](ota-homelab.md) for the
+hosting switch, failure behavior and rollback procedure.

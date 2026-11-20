@@ -1,5 +1,14 @@
 # Railway cost reduction — September 2026
 
+> **OTA homelab migration (#5841):** `infra/ota/hosting.json` declares the current
+> deployment owner. The [migration runbook](ota-homelab.md) covers the dedicated
+> VM, Cloudflare Tunnel, preservation of active ClickHouse and OTA Postgres,
+> unchanged R2 assets/signing identity, and the verified deployment receipt.
+> Railway resources remain fenced rollback copies for seven clean days after
+> cutover; deletion requires confirmation. The Railway deployment instructions
+> remain active until that switch; afterward use the homelab runbook.
+
+
 The production project is `afceee45-0af1-46b3-abbe-8b9094c23bc6`, environment
 `8cd7204e-8ba4-4790-bb64-6a150971eacd`. All amounts below are US dollars.
 

@@ -16,7 +16,7 @@ permissions:
 jobs:
   promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 175
     environment: Production
     permissions:
       contents: read
