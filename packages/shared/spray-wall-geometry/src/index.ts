@@ -101,6 +101,23 @@ export {
 } from './tnut-layout';
 export { migrateTnutLayoutColumns } from './tnut-layout';
 export {
+  DEFAULT_STRIPE_LED_COUNT,
+  MAX_LED_STRIPES,
+  createLedStripes,
+  addLedStripe,
+  removeLedStripe,
+  setLedStripeCount,
+  moveLedStripeEndpoint,
+  addLedStripeLed,
+  removeLedStripeLed,
+  readLedStripes,
+  isValidStripeWiring,
+  stripeCableUnits,
+  stripeProgress,
+  type SprayLedStripe,
+  type SprayLedStripes,
+} from './led-stripes';
+export {
   readTnutLedLinks,
   setTnutLedLink,
   clearTnutLedLink,
@@ -134,6 +151,9 @@ export {
   buildSprayLedMapping,
   findSprayHoldAtPoint,
   migrateHoldLedLinksToTnuts,
+  prepareSprayNutLedEdit,
+  setSprayHoldLedSelection,
+  clearSprayHoldLedSelection,
   type SprayHoleLedMapping,
   type SprayHoldLedMapping,
   type SprayLedMapping,

@@ -11,7 +11,7 @@ import {
   pruneTnutLedLinks,
   separateLedPair,
   setWiringInitialSkip,
-  withLedPartners,
+  stripeCableUnits,
   setWiringSkip,
   traceLedPath,
   MAX_LED_POSITIONS,
@@ -34,7 +34,7 @@ import { SpraySetupOverlay, SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
 import { SprayPhotoToolButton, SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
 import { sprayCableDisplayGeometry } from './spray-cable-display';
 import { planCableUnitEdits } from './spray-cable-unit-edits';
-import { mapLedPairsById } from './spray-led-units';
+import { expandCableUnits, mapCableUnitsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 const NO_LEDS: LedPosition[] = [];
@@ -302,7 +302,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const [selected, setSelected] = useState<string[]>([]);
   const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
   const pairs = useMemo(() => ledPairs(layout), [layout]);
-  const pairsById = useMemo(() => mapLedPairsById(pairs), [pairs]);
+  const unitsById = useMemo(() => mapCableUnitsById(layout), [layout]);
+  const indivisibleMembers = useMemo(() => new Set(stripeCableUnits(layout).flat()), [layout]);
   const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
@@ -379,7 +380,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       acknowledgedIndex.current !== litIndex
     )
       return;
-    const additions = withLedPartners([id], pairs, new Set(indices.keys())).filter((member) => !indices.has(member));
+    const additions = expandCableUnits([id], unitsById, new Set(indices.keys()), indivisibleMembers);
     let next = extendWiring(wiring, additions);
     if (next === wiring) return;
     if (pendingSkip) {
@@ -407,10 +408,12 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     validatingPair.current = attempt;
     setPairPreviewFailed(false);
     void (async () => {
-      const received = await preview.showPair(litIndex);
+      const received = indivisibleMembers.has(id)
+        ? await preview.showUnit(litIndex, additions.length)
+        : await preview.showPair(litIndex);
       if (validatingPair.current !== attempt) return;
       validatingPair.current = null;
-      if (received === 'pair') {
+      if (received === 'pair' || received === 'unit') {
         commit();
       } else if (received === 'single') {
         acknowledgedIndex.current = litIndex;
@@ -419,7 +422,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     })();
   }
 
-  const selectedUnits = mode === 'select' ? selected.map((id) => pairsById.get(id) ?? ([id] as const)) : [];
+  const selectedUnits = mode === 'select' ? selected.map((id) => unitsById.get(id) ?? [id]) : [];
   const twoUnits = selectedUnits.length === 2;
   const { cut, joined } =
     wiring && twoUnits
@@ -429,7 +432,11 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const lightError = preview.error
     ? t(preview.error === 'invalid-indices' ? 'sprayLedSetup.lightAndTapEnd' : 'sprayLed.lightFailed')
     : pairPreviewFailed
-      ? t('sprayLedSetup.lightAndTapPairFailed')
+      ? t(
+          layout.ledPlacement === 'stripe'
+            ? 'sprayLedSetup.lightAndTapUnitFailed'
+            : 'sprayLedSetup.lightAndTapPairFailed',
+        )
       : null;
 
   function extend(ids: string[]) {
@@ -440,7 +447,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     const wiredIds = new Set(indices.keys());
     let current = wiring;
     for (const id of ids) {
-      const members = withLedPartners([id], pairs, wiredIds);
+      const members = expandCableUnits([id], unitsById, wiredIds, indivisibleMembers);
+      if (!members.length) continue;
       const next = extendWiring(current, members);
       if (next === current) continue;
       steps.push({ wiring: next });
@@ -454,7 +462,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     if (mode !== 'draw' || !wiring) return;
     const next = extendWiring(
       wiring,
-      withLedPartners(traceLedPath(leds, points, tolerance), pairs, new Set(indices.keys())),
+      expandCableUnits(traceLedPath(leds, points, tolerance), unitsById, new Set(indices.keys()), indivisibleMembers),
     );
     setPreviewWiring(next === wiring ? null : next);
   }
@@ -466,7 +474,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     if (mode === 'draw') extend([id]);
     else if (mode === 'light') assignLit(id);
     else if (mode === 'select') {
-      const unitId = pairsById.get(id)?.[0] ?? id;
+      const unitId = unitsById.get(id)?.[0] ?? id;
       setSelected((previous) =>
         previous.includes(unitId) ? previous.filter((entry) => entry !== unitId) : [...previous.slice(-1), unitId],
       );
@@ -539,7 +547,16 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           {selected.length ? (
             <Text accessibilityLiveRegion="polite">
               {t('sprayLedSetup.selectedLeds', {
-                ids: selectedUnits.map((unit) => unit.map((id) => indices.get(id) ?? '—').join(' + ')).join(' → '),
+                ids: selectedUnits
+                  .map((unit) => {
+                    if (unit.length <= 2) return unit.map((id) => indices.get(id) ?? '—').join(' + ');
+                    const first = indices.get(unit[0]);
+                    const last = indices.get(unit[unit.length - 1]);
+                    return first === undefined || last === undefined
+                      ? '—'
+                      : `${Math.min(first, last)}–${Math.max(first, last)}`;
+                  })
+                  .join(' → '),
               })}
             </Text>
           ) : null}
@@ -731,11 +748,19 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
   const pairs = useMemo(() => ledPairs(layout), [layout]);
+  const unitsById = useMemo(() => mapCableUnitsById(layout), [layout]);
+  const indivisibleMembers = useMemo(() => new Set(stripeCableUnits(layout).flat()), [layout]);
   const indices = useMemo(
     () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
     [wiring],
   );
-  const connections = useMemo(() => sprayCableDisplayGeometry(leds, wiring, pairs).edges, [leds, wiring, pairs]);
+  const connections = useMemo(
+    () =>
+      sprayCableDisplayGeometry(leds, wiring, pairs).edges.filter(
+        ({ fromId, toId }) => !indivisibleMembers.has(fromId) || unitsById.get(fromId) !== unitsById.get(toId),
+      ),
+    [leds, wiring, pairs, indivisibleMembers, unitsById],
+  );
   // Undo, or a cable changed on the previous step, can remove the selected connection.
   const selected = connection
     ? connections.find(({ fromId, toId }) => fromId === connection.from && toId === connection.to)
@@ -745,12 +770,10 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const endLedIds = selected
     ? [
         ...new Set([
-          selected.fromId,
-          ledPartner(pairs, selected.fromId),
-          selected.toId,
-          ledPartner(pairs, selected.toId),
+          ...(unitsById.get(selected.fromId) ?? [selected.fromId]),
+          ...(unitsById.get(selected.toId) ?? [selected.toId]),
         ]),
-      ].filter((id) => id !== null)
+      ]
     : [];
   const ends = endLedIds
     .map((id) => indices.get(id))

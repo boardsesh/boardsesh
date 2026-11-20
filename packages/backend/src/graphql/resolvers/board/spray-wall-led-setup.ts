@@ -41,6 +41,7 @@ const READ_RATE_LIMIT = 60;
 const SAVE_RATE_LIMIT = 120;
 
 export const SPRAY_WALL_LED_EDIT_DENIED_CODE = 'SPRAY_WALL_LED_EDIT_DENIED';
+export const SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE = 'SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED';
 
 type LedSetupRow = typeof dbSchema.sprayWallLedSetups.$inferSelect;
 
@@ -109,6 +110,7 @@ export const sprayWallLedSetupMutations = {
     const sentPairs = typeof sentLayout === 'object' && sentLayout !== null && 'ledGroups' in sentLayout;
     const sentTnutLinks = typeof sentLayout === 'object' && sentLayout !== null && 'tnutLeds' in sentLayout;
     const sentUpperLinks = typeof sentLayout === 'object' && sentLayout !== null && 'holdAboveLeds' in sentLayout;
+    const sentStripes = typeof sentLayout === 'object' && sentLayout !== null && 'ledStripes' in sentLayout;
     return db.transaction(async (transaction) => {
       // Lock the stable parent even before the first setup exists. All writers
       // share the lock, so an older client cannot read stale modern links and
@@ -119,12 +121,17 @@ export const sprayWallLedSetupMutations = {
         .where(eq(dbSchema.userBoards.id, board.id))
         .for('update');
       let savedLayout: TnutLayout | null | undefined = layout;
-      if (layout != null && (!sentPairs || !sentTnutLinks || !sentUpperLinks)) {
+      if (layout != null && (!sentPairs || !sentTnutLinks || !sentUpperLinks || !sentStripes)) {
         const [stored] = await transaction
           .select({ layout: dbSchema.sprayWallLedSetups.layout })
           .from(dbSchema.sprayWallLedSetups)
           .where(eq(dbSchema.sprayWallLedSetups.boardId, board.id))
           .limit(1);
+        if (!sentStripes && stored?.layout?.ledPlacement === 'stripe') {
+          throw new GraphQLError('Update Boardsesh before changing the LED setup of a wall using LED stripes.', {
+            extensions: { code: SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE },
+          });
+        }
         const storedLayout = stored?.layout ? readTnutLayout(stored.layout) : null;
         savedLayout = keepLedLinksFromOlderApp(
           keepLedPairsFromOlderApp(layout, sentPairs, storedLayout),

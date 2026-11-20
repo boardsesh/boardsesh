@@ -467,6 +467,7 @@ async function buildUploadInput(
       ledGroups: layout.ledGroups ?? null,
       tnutLeds: layout.tnutLeds ?? [],
       holdAboveLeds: layout.holdAboveLeds ?? [],
+      ledStripes: layout.ledStripes ?? null,
     };
   }
   return fields.length > 0 ? input : null;

@@ -52,8 +52,9 @@ describe('hand-made hold to LED links', () => {
     const mapping = buildSprayLedMapping(linked, frame, holds);
     expect(mapping.holds[1]).toMatchObject({ holdId: 2, indices: [0, 4] });
     expect(mapping.holds[0]).toMatchObject({ holdId: 1, indices: [], ledIds: [] });
-    // Holes keep their geometric LEDs: the Holes test view is about mounting holes.
-    expect(mapping.holes[4].indices).toEqual([4]);
+    // Nut editors show the effective legacy assignment before an explicit edit.
+    expect(mapping.holes[4].indices).toEqual([]);
+    expect(mapping.holes[0].indices).toEqual([0, 4]);
   });
 
   it('can mark a hold as having no LED, and give it back to the automatic mapping', () => {

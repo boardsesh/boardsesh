@@ -215,8 +215,8 @@ describe('durable T-nut LED roles', () => {
     expect(migrateHoldLedLinksToTnuts(anotherNut, frame, [hold]).tnutLeds).toEqual(anotherNut.tnutLeds);
   });
 
-  it('leaves exactly tied candidate nuts unmigrated regardless of hole order', () => {
-    const configured = setHoldLedLink(layout(), 1, [idAt(layout(), 0)]);
+  it('leaves exactly tied LED distributions unmigrated regardless of hole order', () => {
+    const configured = setHoldLedLink(layout(), 1, [idAt(layout(), 4)]);
     for (const holes of [
       [
         { x: 0.45, y: 0.5 },

@@ -85,14 +85,26 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
    placement pairs the LEDs it generated per hole, and an explicit empty list
    keeps every pair separated. Rebuilding the LEDs returns to those defaults.
+   **LED strip** uses the approved continuous-strip diagram. Next asks for
+   horizontal or vertical strips and a default LED count (20 initially).
+   Vertical starts with one strip per calibrated column, horizontal with one
+   per row. Each line extends to the rectified photo's boundaries. The next
+   photo editor can move either endpoint, change a selected strip's LED count,
+   add/remove strips, and add, move or remove individual LEDs. Its tools start
+   inactive and use the usual fullscreen icon rail. The limits are 100 strips
+   and 6000 LEDs in total. Removing the last LED removes its strip. Changing
+   membership/count asks before resetting an existing cable; endpoint moves
+   preserve LED identities and the cable. Undo restores the complete layout.
 8. Next opens **Holds and LEDs**. Switch between **Holds** and **T-nuts** to
    choose what to link, then tap LEDs to add or remove them from that selection.
    Several LEDs can belong to the same hold or T-nut. Dashed lines join the LEDs
    to their hold or nut, and red outlines show missing assignments.
    T-nuts already matched to a hold are dimmed but remain selectable. Editing
    one updates the hold too. Manual assignments for mounted holds are stored
-   at their nut position, so a subsequently detected hold at that position
-   inherits them even when its hold ID changes.
+   at their nut positions, so subsequently detected holds inherit the local
+   assignments even when hold IDs change. A hold can cover several nuts; an
+   explicit whole-hold edit distributes its LEDs among those nuts rather than
+   copying the entire list to every nut. Editing one nut keeps its siblings.
    **Next hold without LEDs** becomes **Next T-nut without LEDs** in T-nut mode.
    The unassigned LED picker treats a pair as one stop and lights both wired
    members. The hold count and picker include only holds whose centers appear
@@ -175,15 +187,27 @@ every signed-in climber who can open the wall lights it from their own phone. Se
     zero-based indices include skipped LEDs. The normal wall controls use the
     saved setup to illuminate routes after you deliberately take the wall.
 
+For **LED strip**, the cable tools treat every strip as an indivisible ordered
+unit. Tap or trace any member to add the complete strip, entering at the nearer
+end. Undo removes the complete addition. Automatic cable paths visit every
+member consecutively and may reverse a complete strip to enter its nearer end.
+Select two strips (or a strip and a single LED) to cut/connect their boundary;
+there is no cut or skipped-LED gap inside a strip. **Light and tap** validates
+all consecutive physical indices before saving the unit. If its last index
+exceeds the controller's capacity, no part is saved and the starting LED stays
+available. The skipped-LED step selects connections between units and highlights
+and lights their complete ends. Partial wiring is allowed only between complete
+strips; their members cannot be split into separate cable sections.
+
 ## Hold mapping and route lighting
 
 Hole positions are normalized in the rectified wall frame. Matching converts
-them into canonical pixels, where the detected holds already live. A hold's
-mounting hole is the nearby T-nut closest to its center, inside its outline or
-stored radius. A large hold no longer takes every hole its outline covers.
-Overlapping claims resolve by normalized center distance, then hold ID. The
-outline still controls tapping the hold. Manual links can assign several LEDs
-to one hold, including LEDs outside this automatic mounting-hole choice.
+them into canonical pixels, where the detected holds already live. A hold owns
+the T-nuts inside its actual outline, or its stored radius when no outline is
+available. Several covered nuts can therefore belong to one hold. Overlapping
+claims resolve by distance to the hold center in canonical pixels; ambiguous ties can
+remain unassigned. The outline still controls tapping the hold. Manual links
+can assign several LEDs, including ones outside the automatic choice.
 
 Generated LEDs retain their hole association when moved. Older generated IDs
 recover their original positions. Manual LEDs bind to nearby placement slots
@@ -192,10 +216,25 @@ center or paired positions. **Below the hold** and **Complementary positions**
 each assign one aligned LED below a mounting hole when that slot exists. A
 sideways or upper LED never substitutes for a missing lower slot. These two
 placements also keep a separate upper reference, independent of manual primary
-links. Matching uses the calibrated grid plane, including staggered rows and
+links. A vertical chain of nuts covered by one hold uses the main indicator
+below its lowest nut and the optional upper one above its highest nut. Several
+columns can contribute their own outer indicators. Internal indicators do not
+multiply merely because the hold covers more rows. Automatic ownership is
+exclusive within each role: a worse competing match stays unassigned, while a
+main LED for one hold may still be another hold's optional upper reference.
+Matching uses the calibrated grid plane, including staggered rows and
 perspective, rather than the screen's vertical axis. The references
 retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
+
+**LED strip** instead partitions each strip along its axis at the midpoints
+between neighboring nuts. Empty nuts still bound the intervals; their LEDs do
+not get borrowed by a more distant hold. A multi-nut hold receives the union of
+its intervals, and end intervals extend to the strip's edited endpoints. All
+assigned strip LEDs use the hold's normal role color. The optional dim upper
+lighting remains specific to Below/Complementary placement. Actual marker
+positions are used after individual edits. Removed/missing lines do not pull
+unrelated columns into a strip's assignment.
 
 The mapping exposes primary `ledIds`/`indices` and separate
 `aboveLedIds`/`aboveIndices` for both holes and holds. Saved positions retain the
@@ -252,15 +291,35 @@ columns changed, and so did the LEDs), the stored pairs would name the wrong
 LEDs, so the new layout's default pairs apply. A current app always sends
 `ledGroups`, `null` for the default pairs, which the reader treats like no list.
 
+Strips use `ledStripes`: an orientation, monotonically increasing strip/LED ID
+counters, and ordered `{ id, start, end, ledIds }` entries. Actual LED coordinates
+remain in `ledPositions`. A strict reader checks unique membership, existing IDs,
+bounded endpoints/counters, at most 100 strips and 6000 total LED positions. Saved
+cables must contain each strip completely and consecutively, in forward or reverse
+order, with no internal skipped count. Removing and re-adding an individual LED
+allocates a new ID so old manual references cannot attach to a replacement.
+Modern uploads always include `ledStripes` (null when switching away). An older
+app cannot read the new placement at all: a stale layout write without that
+capability marker cannot overwrite an already stored strip setup. The server
+returns an upgrade-required error rather than silently acknowledging an ignored
+save. Settings-only updates remain independent; a modern confirmed pattern change
+can replace the setup. The same board-row transaction lock covers this check.
+
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
 previews use the same wall sender. The route editor shows its lightbulb on a
 spray wall only while that wall's LEDs are enabled; there it takes the wall, so
-the holds light as they are painted. All used holds must have wired LED mappings.
+the holds light as they are painted. Holds with assigned primary LEDs need a
+wired primary index; a deliberately unassigned hold stays dark.
 An incomplete or stale setup produces an error instead of confirming the route.
 The setup photo identity must match the current canonical frame and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
+Known route holds with deliberately empty/geometrically unmatched LED lists
+remain dark while the other mapped holds light. A known assigned hold with no
+wired primary index still reports an incomplete cable setup; unknown route hold
+IDs remain an error. If every requested position is empty, the sender clears
+only its own existing lighting session and never takes another preview's lane.
 
 For **Below the hold** and **Complementary positions**, **Light the hold above**
 appears in the lightbulb's control sheet and Settings > Board, in the same places

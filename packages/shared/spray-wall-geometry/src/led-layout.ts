@@ -1,5 +1,6 @@
 import { homographyFromAnchors, invert, mapPoint } from './homography';
-import type { SprayLedPair } from './led-pairs';
+import { MAX_LED_POSITIONS } from './led-limits';
+export { MAX_LED_POSITIONS } from './led-limits';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
 
 export type LedPosition = TnutPoint & {
@@ -21,7 +22,6 @@ export type TnutWiring = {
   /** Unused physical LEDs before the first visible LED. Missing in older saves. */
   initialSkip?: number;
 };
-export const MAX_LED_POSITIONS = 6000;
 export const MAX_WIRING_SKIP = 10000;
 export const MAX_WIRING_TOTAL_SKIPS = 1000000;
 const validSkipCount = (count: unknown): count is number =>
@@ -149,6 +149,7 @@ function wallFrame(layout: TnutLayout) {
 /** Offsets are applied in the calibrated grid plane, as in CRUX, before projection. */
 export function generateLedPositions(layout: TnutLayout): LedPosition[] {
   if (!layout.ledPlacement) return [];
+  if (layout.ledPlacement === 'stripe') return layout.ledPositions ?? [];
   let points: (TnutPoint & { hole?: TnutPoint })[] = [];
   if (layout.ledPlacement === 'alternating' && layout.pattern === 'offset')
     points = generateTnutGrid({ ...layout, pattern: 'offset', firstRowOffset: !layout.firstRowOffset });
@@ -250,29 +251,41 @@ export function createWiring(
   direction: CableDirection,
   startCorner: CableStartCorner,
   layout?: TnutLayout,
-  pairs: readonly SprayLedPair[] = [],
+  units: readonly (readonly string[])[] = [],
 ): TnutWiring {
   const wiring: TnutWiring = { direction, startCorner, paths: [], skips: [] };
   if (direction === 'custom' || !leds.length) return wiring;
   const byId = new Map(leds.map((led) => [led.id, led]));
-  const pairStarts = new Map<string, { midpoint: LedPosition; members: string[] }>();
-  const pairEnds = new Set<string>();
-  const frame = pairs.length && layout ? wallFrame(layout) : null;
-  for (const [firstId, secondId] of pairs) {
-    const first = byId.get(firstId);
-    const second = byId.get(secondId);
-    if (!first || !second) continue;
+  const stripes =
+    layout?.ledPlacement === 'stripe' ? (layout.ledStripes?.stripes.map((stripe) => stripe.ledIds) ?? []) : [];
+  const stripeMembers = new Set(stripes.flat());
+  const cableUnits = [...stripes, ...units.filter((unit) => !unit.some((id) => stripeMembers.has(id)))];
+  const unitStarts = new Map<string, { midpoint: LedPosition; members: string[] }>();
+  const unitEnds = new Set<string>();
+  const usedMembers = new Set<string>();
+  const frame = cableUnits.length && layout ? wallFrame(layout) : null;
+  for (const unit of cableUnits) {
+    if (!unit.length || new Set(unit).size !== unit.length || unit.some((id) => !byId.has(id) || usedMembers.has(id)))
+      continue;
+    const firstId = unit[0];
+    const first = byId.get(firstId)!;
+    const second = byId.get(unit[unit.length - 1])!;
     const [firstX, firstY] = frame ? mapPoint(frame.toUnit, first.x, first.y) : [first.x, first.y];
     const [secondX, secondY] = frame ? mapPoint(frame.toUnit, second.x, second.y) : [second.x, second.y];
     const along = direction === 'horizontal' ? firstX - secondX : firstY - secondY;
     const across = direction === 'horizontal' ? firstY - secondY : firstX - secondX;
-    pairStarts.set(firstId, {
-      midpoint: { id: firstId, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
-      members: (Math.abs(along) > 1e-8 ? along : across) <= 0 ? [firstId, secondId] : [secondId, firstId],
+    unitStarts.set(firstId, {
+      midpoint: {
+        id: firstId,
+        x: unit.reduce((total, id) => total + byId.get(id)!.x, 0) / unit.length,
+        y: unit.reduce((total, id) => total + byId.get(id)!.y, 0) / unit.length,
+      },
+      members: (Math.abs(along) > 1e-8 ? along : across) <= 0 ? [...unit] : [...unit].reverse(),
     });
-    pairEnds.add(secondId);
+    for (const id of unit) usedMembers.add(id);
+    for (const id of unit.slice(1)) unitEnds.add(id);
   }
-  const stops = leds.filter(({ id }) => !pairEnds.has(id)).map((led) => pairStarts.get(led.id)?.midpoint ?? led);
+  const stops = leds.filter(({ id }) => !unitEnds.has(id)).map((led) => unitStarts.get(led.id)?.midpoint ?? led);
   const groups = ledGroups(stops, direction, layout);
   const reversePrimary = direction === 'horizontal' ? startCorner[0] === 'b' : startCorner[1] === 'r';
   const reverseSecondary = direction === 'horizontal' ? startCorner[1] === 'r' : startCorner[0] === 'b';
@@ -282,8 +295,20 @@ export function createWiring(
     const backwards = reverseSecondary !== (index % 2 === 1);
     if (backwards) group.reverse();
     for (const { id } of group) {
-      const members = pairStarts.get(id)?.members;
-      path.push(...(members ? (backwards ? [...members].reverse() : members) : [id]));
+      const members = unitStarts.get(id)?.members;
+      if (members && stripeMembers.has(id)) {
+        const entry = byId.get(path[path.length - 1]) ?? {
+          x: startCorner[1] === 'r' ? 1 : 0,
+          y: startCorner[0] === 'b' ? 1 : 0,
+        };
+        const first = byId.get(members[0])!;
+        const last = byId.get(members[members.length - 1])!;
+        const firstDistance = (first.x - entry.x) ** 2 + (first.y - entry.y) ** 2;
+        const lastDistance = (last.x - entry.x) ** 2 + (last.y - entry.y) ** 2;
+        path.push(...(lastDistance < firstDistance ? [...members].reverse() : members));
+      } else {
+        path.push(...(members ? (backwards ? [...members].reverse() : members) : [id]));
+      }
     }
   });
   wiring.paths = [path];

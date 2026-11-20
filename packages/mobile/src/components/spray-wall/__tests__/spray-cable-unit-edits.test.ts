@@ -11,6 +11,32 @@ const wiring: TnutWiring = {
 };
 
 describe('cable edits for selected LED units', () => {
+  it('cuts and reconnects whole reversed stripes without changing their physical numbers', () => {
+    const original: TnutWiring = {
+      direction: 'custom',
+      startCorner: 'tl',
+      paths: [['c', 'b', 'a', 'd', 'e', 'f']],
+      initialSkip: 2,
+      skips: [{ from: 'a', to: 'd', count: 3 }],
+    };
+    const first = ['a', 'b', 'c'];
+    const second = ['d', 'e', 'f'];
+    const split = planCableUnitEdits(original, first, second).cut;
+    expect(split.paths).toEqual([
+      ['c', 'b', 'a'],
+      ['d', 'e', 'f'],
+    ]);
+    // Cutting removes that connection's skipped segment, as for existing pairs.
+    const connected = planCableUnitEdits(split, second, first).joined;
+    expect(connected.paths).toEqual(original.paths);
+    expect(assignLedIndices(connected).map(({ id }) => id)).toEqual(assignLedIndices(original).map(({ id }) => id));
+  });
+
+  it('never edits a stripe whose saved members were reordered or split', () => {
+    const invalid = { ...wiring, paths: [['a', 'c', 'b', 'd']] };
+    expect(planCableUnitEdits(invalid, ['a', 'b', 'c'], ['d'])).toEqual({ cut: invalid, joined: invalid });
+  });
+
   it.each([
     [
       ['a', 'b'],

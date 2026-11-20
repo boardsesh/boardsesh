@@ -1,34 +1,41 @@
-import {
-  connectWiring,
-  cutWiring,
-  MAX_LED_POSITIONS,
-  type SprayLedPair,
-  type TnutWiring,
-} from '@boardsesh/spray-wall-geometry';
+import { connectWiring, cutWiring, MAX_LED_POSITIONS, type TnutWiring } from '@boardsesh/spray-wall-geometry';
 
 type CableUnitLocation = { section: number; start: number; end: number };
-type CableUnit = readonly [string] | SprayLedPair;
+type CableUnit = readonly string[];
+type CableMemberLocation = { section: number; position: number };
 
 /** Saved pairs may predate unit wiring. Their members must already be together to edit the unit. */
-function locateUnit(paths: TnutWiring['paths'], unit: CableUnit): CableUnitLocation | null {
-  const locations = unit.map((id) => {
-    const section = paths.findIndex((path) => path.includes(id));
-    return { section, position: section < 0 ? -1 : paths[section].indexOf(id) };
-  });
+function locateUnit(known: ReadonlyMap<string, CableMemberLocation>, unit: CableUnit): CableUnitLocation | null {
+  if (new Set(unit).size !== unit.length) return null;
+  const locations = unit.map((id) => known.get(id) ?? { section: -1, position: -1 });
   if (locations.every(({ section }) => section < 0)) return { section: -1, start: 0, end: unit.length - 1 };
-  const [first, ...others] = locations.sort((left, right) => left.position - right.position);
-  if (
-    first.section < 0 ||
-    others.some(({ section, position }, index) => section !== first.section || position !== first.position + index + 1)
-  )
-    return null;
-  return { section: first.section, start: first.position, end: first.position + unit.length - 1 };
+  const first = locations[0];
+  if (first.section < 0 || locations.some(({ section }) => section !== first.section)) return null;
+  if (locations.length > 1) {
+    const step = locations[1].position - locations[0].position;
+    if (
+      Math.abs(step) !== 1 ||
+      locations.some(({ position }, index) => index > 0 && position - locations[index - 1].position !== step)
+    )
+      return null;
+  }
+  const last = locations[locations.length - 1];
+  return {
+    section: first.section,
+    start: Math.min(first.position, last.position),
+    end: Math.max(first.position, last.position),
+  };
 }
 
 export function planCableUnitEdits(wiring: TnutWiring, first: CableUnit, second: CableUnit) {
   const unchanged = { cut: wiring, joined: wiring };
-  const firstLocation = locateUnit(wiring.paths, first);
-  const secondLocation = locateUnit(wiring.paths, second);
+  if (!first.length || !second.length) return unchanged;
+  const secondMembers = new Set(second);
+  if (first.some((id) => secondMembers.has(id))) return unchanged;
+  const known = new Map<string, CableMemberLocation>();
+  wiring.paths.forEach((path, section) => path.forEach((id, position) => known.set(id, { section, position })));
+  const firstLocation = locateUnit(known, first);
+  const secondLocation = locateUnit(known, second);
   if (!firstLocation || !secondLocation) return unchanged;
 
   if (firstLocation.section === secondLocation.section && firstLocation.section >= 0) {

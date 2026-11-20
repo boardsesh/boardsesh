@@ -251,7 +251,10 @@ export function useSprayLedRouteSender({
           const includeUpper = upperLightingForWrite && ['below', 'alternating'].includes(layout.ledPlacement ?? '');
           for (const [id, hold] of Object.entries(litHolds)) {
             const match = byHold.get(Number(id));
-            if (!match?.indices.length) return fail();
+            // A conservative geometric/manual empty assignment is intentional.
+            // A known assigned LED without any physical index still means the
+            // cable setup is incomplete; a missing hold means stale route data.
+            if (!match || (match.ledIds.length > 0 && !match.indices.length)) return fail();
             const override = colors.current?.[hold.state as keyof HoldColorOverrides];
             const rgb = hexToRgb(override ?? hold.color);
             if (!rgb) return fail();
@@ -270,7 +273,10 @@ export function useSprayLedRouteSender({
           if (!isCurrent()) return false;
           if (refreshSession && (current.session !== refreshSession || !refreshSession.isOwner())) return false;
           if (wrote && !current.session.isOwner()) return false;
-          const acknowledged = await current.session.show([...pixels.keys()], [...pixels.values()]);
+          if (!pixels.size && !current.session.isOwner()) return false;
+          const acknowledged = pixels.size
+            ? await current.session.show([...pixels.keys()], [...pixels.values()])
+            : await current.session.clear();
           if (!acknowledged || !isCurrent()) return false;
           wrote = true;
           if (upperLighting.current === upperLightingForWrite) return settled(true);

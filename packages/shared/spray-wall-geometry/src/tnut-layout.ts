@@ -3,6 +3,7 @@ import { readLedPositions, readTnutWiring, type LedPosition, type TnutWiring } f
 import { readHoldLedLinks, type SprayHoldLedLink } from './hold-led-links';
 import { readLedPairs, type SprayLedPair } from './led-pairs';
 import { readTnutLedLinks, type SprayTnutLedLink } from './tnut-led-links';
+import { isValidStripeWiring, readLedStripes, type SprayLedStripes } from './led-stripes';
 
 /** Rectified wall-only frame coordinates in [0, 1], with the origin at the top left. */
 export type TnutPoint = { x: number; y: number };
@@ -14,7 +15,7 @@ export type TnutCorners = {
 };
 export type TnutPattern = 'grid' | 'offset' | 'custom';
 /** Placement choice only; physical LED indices are assigned separately. */
-export type SprayLedPlacement = 'center' | 'sides' | 'below' | 'alternating';
+export type SprayLedPlacement = 'center' | 'sides' | 'below' | 'alternating' | 'stripe';
 
 export const MIN_TNUT_DIMENSION = 1;
 export const MAX_TNUT_DIMENSION = 50;
@@ -58,6 +59,7 @@ export type TnutLayout = {
   ledPlacement?: SprayLedPlacement;
   columnConvention?: 'all';
   ledPositions?: LedPosition[];
+  ledStripes?: SprayLedStripes;
   wiring?: TnutWiring;
   /** Holds whose LEDs the climber linked by hand; they override the automatic mapping. */
   holdLeds?: SprayHoldLedLink[];
@@ -292,7 +294,8 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
       candidate.ledPlacement !== 'center' &&
       candidate.ledPlacement !== 'sides' &&
       candidate.ledPlacement !== 'below' &&
-      candidate.ledPlacement !== 'alternating') ||
+      candidate.ledPlacement !== 'alternating' &&
+      candidate.ledPlacement !== 'stripe') ||
     (candidate.ledPlacement === 'alternating' && candidate.pattern !== 'offset') ||
     (candidate.pattern !== 'grid' && candidate.pattern !== 'offset' && candidate.pattern !== 'custom') ||
     !isDimension(candidate.rows) ||
@@ -314,6 +317,17 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   if (ledPositions === null) return null;
   const wiring = candidate.wiring === undefined ? undefined : readTnutWiring(candidate.wiring, ledPositions ?? []);
   if (wiring === null) return null;
+  const ledStripes =
+    candidate.ledStripes === undefined || candidate.ledStripes === null
+      ? undefined
+      : readLedStripes(candidate.ledStripes, ledPositions ?? []);
+  if (
+    ledStripes === null ||
+    (candidate.ledPlacement === 'stripe' && !ledStripes) ||
+    (candidate.ledPlacement !== 'stripe' && ledStripes !== undefined) ||
+    (ledStripes && !isValidStripeWiring(ledStripes, wiring))
+  )
+    return null;
   const holdLeds =
     candidate.holdLeds === undefined ? undefined : readHoldLedLinks(candidate.holdLeds, ledPositions ?? []);
   if (holdLeds === null) return null;
@@ -349,6 +363,7 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     ...(candidate.ledPlacement !== undefined ? { ledPlacement: candidate.ledPlacement } : {}),
     ...(candidate.columnConvention === 'all' ? { columnConvention: 'all' as const } : {}),
     ...(ledPositions !== undefined ? { ledPositions } : {}),
+    ...(ledStripes !== undefined ? { ledStripes } : {}),
     ...(wiring !== undefined ? { wiring } : {}),
     // An empty list is kept: it says every link was cleared on purpose. A layout
     // with no list at all comes from an app that does not know about links.

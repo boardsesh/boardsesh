@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
-import { DEFAULT_TNUT_CORNERS, MAX_TNUT_LAYOUT_BYTES, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  createLedStripes,
+  DEFAULT_TNUT_CORNERS,
+  MAX_TNUT_LAYOUT_BYTES,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import { gymMembers, gyms, resourcePrivacy, sprayWallLedSetups, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -19,8 +24,12 @@ vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().moc
 const { db } = await import('../db/client');
 const { sprayWallMutations, sprayWallArchivedError } = await import('../graphql/resolvers/board/spray-walls');
 const { socialBoardMutations } = await import('../graphql/resolvers/social/boards');
-const { SPRAY_WALL_LED_EDIT_DENIED_CODE, sprayWallLedSetupMutations, sprayWallLedSetupQueries } =
-  await import('../graphql/resolvers/board/spray-wall-led-setup');
+const {
+  SPRAY_WALL_LED_EDIT_DENIED_CODE,
+  SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE,
+  sprayWallLedSetupMutations,
+  sprayWallLedSetupQueries,
+} = await import('../graphql/resolvers/board/spray-wall-led-setup');
 
 const OWNER = 'led-owner';
 const STRANGER = 'led-stranger';
@@ -165,6 +174,35 @@ describe('reading a wall’s LED setup', () => {
 });
 
 describe('saving a wall’s LED setup', () => {
+  it('rejects an older layout writer rather than silently erasing a configured stripe wall', async () => {
+    const uuid = await createWall();
+    const configured = createLedStripes(layout(), 'vertical', 3);
+    if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
+    await save(uuid, OWNER, { layout: configured });
+    const older = { ...layout(), ledGroups: [], tnutLeds: [], holdAboveLeds: [] };
+    await expect(save(uuid, OWNER, { layout: older })).rejects.toMatchObject({
+      extensions: { code: SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE },
+    });
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({
+      ledPlacement: 'stripe',
+      ledStripes: configured.ledStripes,
+    });
+    // A settings-only change from that phone remains independent of geometry.
+    await expect(save(uuid, OWNER, { enabled: false })).resolves.toMatchObject({ enabled: false });
+    expect((await read(uuid, OWNER))?.setup?.layout).toHaveProperty('ledPlacement', 'stripe');
+  });
+
+  it('accepts an explicit modern change away from stripes and its later legacy saves', async () => {
+    const uuid = await createWall();
+    const configured = createLedStripes(layout(), 'horizontal', 4);
+    if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
+    await save(uuid, OWNER, { layout: configured });
+    await save(uuid, OWNER, { layout: { ...layout(), ledPlacement: 'center', ledStripes: null } });
+    expect((await read(uuid, OWNER))?.setup?.layout).toHaveProperty('ledPlacement', 'center');
+    expect((await read(uuid, OWNER))?.setup?.layout).not.toHaveProperty('ledStripes');
+    await expect(save(uuid, OWNER, { layout: layout() })).resolves.toBeDefined();
+  });
+
   it('keeps each field through saves that touch only another', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, { enabled: true, controllerUrl: 'http://wled.local' });

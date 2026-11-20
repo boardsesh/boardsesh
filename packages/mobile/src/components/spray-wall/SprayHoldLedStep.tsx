@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import {
   assignLedIndices,
   buildSprayLedMapping,
-  clearHoldLedLink,
   clearTnutLedLink,
   findSprayHoldAtPoint,
   ledPairs,
-  setHoldLedLink,
   setTnutLedLink,
+  setSprayHoldLedSelection,
+  clearSprayHoldLedSelection,
+  prepareSprayNutLedEdit,
   type CanonicalSprayHold,
   type SprayLedLinkLayer,
   type TnutLayout,
@@ -76,9 +77,14 @@ export function SprayHoldLedStep({
   type Entry = (typeof mapping.holds)[number] | (typeof mapping.holes)[number];
   const ledIdsFor = (entry: Entry) => (layer === 'above' ? entry.aboveLedIds : entry.ledIds);
   const indicesFor = (entry: Entry) => (layer === 'above' ? entry.aboveIndices : entry.indices);
+  const nutRoleKey = layer === 'above' ? 'aboveLedIds' : 'ledIds';
+  const nutLinksByPoint = useMemo(
+    () => new Map((layout.tnutLeds ?? []).map((link) => [`${link.hole.x}:${link.hole.y}`, link])),
+    [layout.tnutLeds],
+  );
+  const holdLinks = layer === 'above' ? layout.holdAboveLeds : layout.holdLeds;
   const effectiveNutEntry = (holeIndex: number) => {
-    const nut = mapping.holes[holeIndex];
-    return nut.holdId === null ? nut : (holdsById.get(nut.holdId) ?? nut);
+    return mapping.holes[holeIndex];
   };
   const selectedHoldId = selection && 'holdId' in selection ? selection.holdId : null;
   const selectedNutIndex = selection && 'holeIndex' in selection ? selection.holeIndex : null;
@@ -88,17 +94,18 @@ export function SprayHoldLedStep({
       : selectedNutIndex !== null
         ? effectiveNutEntry(selectedNutIndex)
         : undefined;
-  const mountedNutIndex =
-    selectedHoldId !== null ? (holdsById.get(selectedHoldId)?.holeIndices[0] ?? null) : selectedNutIndex;
+  const selectedNutIndices =
+    selectedHoldId !== null
+      ? (holdsById.get(selectedHoldId)?.holeIndices ?? [])
+      : selectedNutIndex === null
+        ? []
+        : [selectedNutIndex];
   const matchedHoldId = selectedHoldId ?? (selectedNutIndex === null ? null : mapping.holes[selectedNutIndex].holdId);
-  const holdLinks = layer === 'above' ? layout.holdAboveLeds : layout.holdLeds;
-  const nutRoleKey = layer === 'above' ? 'aboveLedIds' : 'ledIds';
-  const selectedNut = mountedNutIndex === null ? undefined : layout.holes[mountedNutIndex];
   const linkedByHand = Boolean(
-    (selectedNut &&
-      layout.tnutLeds?.some(
-        (link) => link.hole.x === selectedNut.x && link.hole.y === selectedNut.y && link[nutRoleKey] !== undefined,
-      )) ||
+    selectedNutIndices.some((index) => {
+      const point = layout.holes[index];
+      return nutLinksByPoint.get(`${point.x}:${point.y}`)?.[nutRoleKey] !== undefined;
+    }) ||
     (matchedHoldId !== null && holdLinks?.some((link) => link.holdId === matchedHoldId)),
   );
   const unmappedHoldIds = mapping.holds
@@ -147,10 +154,9 @@ export function SprayHoldLedStep({
             ledIds: layer === 'above' ? holdsById.get(hold.id)?.aboveLedIds : holdsById.get(hold.id)?.ledIds,
           }))
         : mapping.holes.map((nut) => {
-            const effective = nut.holdId === null ? nut : (holdsById.get(nut.holdId) ?? nut);
             return {
               point: layout.holes[nut.holeIndex],
-              ledIds: layer === 'above' ? effective.aboveLedIds : effective.ledIds,
+              ledIds: layer === 'above' ? nut.aboveLedIds : nut.ledIds,
             };
           });
     return targets.flatMap(({ point, ledIds }) =>
@@ -178,10 +184,13 @@ export function SprayHoldLedStep({
     choose(null);
   }
   function editLink(ledIds: readonly string[]) {
-    if (mountedNutIndex !== null) {
-      const withoutLegacy = matchedHoldId === null ? layout : clearHoldLedLink(layout, matchedHoldId, layer);
-      commit(setTnutLedLink(withoutLegacy, mountedNutIndex, ledIds, layer));
-    } else if (selectedHoldId !== null) commit(setHoldLedLink(layout, selectedHoldId, ledIds, layer));
+    if (selectedHoldId !== null)
+      commit(setSprayHoldLedSelection(layout, source.frame, holds, selectedHoldId, ledIds, layer));
+    else if (selectedNutIndex !== null)
+      commit(setTnutLedLink(beforeNutEdit(selectedNutIndex), selectedNutIndex, ledIds, layer));
+  }
+  function beforeNutEdit(holeIndex: number) {
+    return prepareSprayNutLedEdit(layout, source.frame, holds, holeIndex, layer);
   }
   function tap(point: TnutPoint, photoWidth: number, photoHeight: number) {
     // While editing, LEDs win even where a target sits underneath one. The
@@ -200,11 +209,9 @@ export function SprayHoldLedStep({
     if (target === 'tnuts') {
       const holeIndex = nearestPhotoPointIndex(layout.holes, point, photoWidth, photoHeight, 22);
       if (holeIndex >= 0 && unassignedMembers.length) {
-        const owner = mapping.holes[holeIndex].holdId;
-        const withoutLegacy = owner === null ? layout : clearHoldLedLink(layout, owner, layer);
         commit(
           setTnutLedLink(
-            withoutLegacy,
+            beforeNutEdit(holeIndex),
             holeIndex,
             [...ledIdsFor(effectiveNutEntry(holeIndex)), ...unassignedMembers],
             layer,
@@ -217,12 +224,7 @@ export function SprayHoldLedStep({
       if (holdId !== null && unassignedMembers.length) {
         const mapped = holdsById.get(holdId);
         const ids = [...(mapped ? ledIdsFor(mapped) : []), ...unassignedMembers];
-        const nutIndex = mapped?.holeIndices[0];
-        commit(
-          nutIndex === undefined
-            ? setHoldLedLink(layout, holdId, ids, layer)
-            : setTnutLedLink(clearHoldLedLink(layout, holdId, layer), nutIndex, ids, layer),
-        );
+        commit(setSprayHoldLedSelection(layout, source.frame, holds, holdId, ids, layer));
       }
       choose(holdId !== null ? { holdId } : null);
     }
@@ -266,9 +268,9 @@ export function SprayHoldLedStep({
     });
   }
   function resetLink() {
-    const withoutLegacy = matchedHoldId === null ? layout : clearHoldLedLink(layout, matchedHoldId, layer);
-    if (mountedNutIndex !== null) commit(clearTnutLedLink(withoutLegacy, mountedNutIndex, layer));
-    else if (selectedHoldId !== null) commit(withoutLegacy);
+    if (selectedHoldId !== null) commit(clearSprayHoldLedSelection(layout, source.frame, holds, selectedHoldId, layer));
+    else if (selectedNutIndex !== null)
+      commit(clearTnutLedLink(beforeNutEdit(selectedNutIndex), selectedNutIndex, layer));
   }
   const nextLabel = target === 'holds' ? t('sprayLedSetup.holdLedsNextUnmapped') : t('sprayLedSetup.holdLedsNextTnut');
   const chooseLabel =
