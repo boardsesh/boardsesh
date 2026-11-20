@@ -1,5 +1,7 @@
 'use client';
 
+import { isBoardTypeVisible, type BoardVisibilityFlags } from '@boardsesh/board-config/visibility';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -57,6 +59,7 @@ const WIDE_LAYOUT = '@media (min-width: 960px)';
 type GymDirectoryNearMeProps = {
   /** Server-rendered filters stay inside the search form; map state stays in this island. */
   searchForm?: Omit<GymDirectorySearchFormProps, 'locale' | 'actions'>;
+  visibilityFlags?: BoardVisibilityFlags;
   selectedArea?: { facet: DirectoryFacet; query: DirectoryQuery };
   /**
    * The board filter the surrounding route is already applying — types,
@@ -115,6 +118,7 @@ type GymDirectoryNearMeProps = {
 export default function GymDirectoryNearMe({
   searchForm,
   selectedArea,
+  visibilityFlags = {},
   boardFilter,
   searchQuery,
   locale,
@@ -227,7 +231,14 @@ export default function GymDirectoryNearMe({
   // a pill describing them — two surfaces answering different questions.
   const showingNearMeResults = nearMeActive && nearMeData !== undefined;
 
-  const nearMeGyms = useMemo(() => (showingNearMeResults ? nearMeData.gyms : []), [showingNearMeResults, nearMeData]);
+  const nearMeGyms = useMemo(
+    () =>
+      (showingNearMeResults ? nearMeData.gyms : []).map((gym) => ({
+        ...gym,
+        boardSummaries: gym.boardSummaries.filter((summary) => isBoardTypeVisible(summary.boardType, visibilityFlags)),
+      })),
+    [showingNearMeResults, nearMeData, visibilityFlags],
+  );
   const nearMePins = useMemo(() => toMapPins(nearMeGyms), [nearMeGyms]);
   const nearMeCoverage = useMemo(() => pinCoverage(nearMeGyms), [nearMeGyms]);
 

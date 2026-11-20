@@ -57,6 +57,20 @@ afterEach(() => {
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
 });
 describe('web analytics consent lifecycle', () => {
+  it.each([true, false, 'true', 'false', 'control'])(
+    'keeps board rollout SDK values strictly boolean (%s)',
+    async (rawFlag) => {
+      const analytics = await import('../analytics');
+      analytics.readPosthogFeatureFlags([]);
+      const client = harness.clients[0];
+      expect(client).toBeTruthy();
+      Object.assign(client!, { getFeatureFlag: () => rawFlag });
+      expect(analytics.readPosthogFeatureFlags(['quantum-board'])).toEqual(
+        typeof rawFlag === 'boolean' ? { 'quantum-board': rawFlag } : {},
+      );
+    },
+  );
+
   it('preserves consented acquisition and conversions through anonymous sign-in authority checks', async () => {
     harness.granted = true;
     harness.deviceGranted = true;

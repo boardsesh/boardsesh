@@ -34,6 +34,11 @@
       "types": "./src/woods-metadata.ts",
       "import": "./src/woods-metadata.ts",
       "default": "./src/woods-metadata.ts"
+    },
+    "./visibility": {
+      "types": "./src/board-visibility.ts",
+      "import": "./src/board-visibility.ts",
+      "default": "./src/board-visibility.ts"
     }
   },
   "scripts": {

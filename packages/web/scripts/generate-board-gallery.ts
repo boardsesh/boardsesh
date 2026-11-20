@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { getBoardSetsForLayoutAndSize } from '@boardsesh/board-config';
+import { getBoardSetsForLayoutAndSize, supportsStaticBoardRender } from '@boardsesh/board-config';
 import { getBoardImageDetailsForBoard } from '@boardsesh/board-config/image-metadata';
 import { getBackgroundRelPaths, resolveArtPath, type RenderableBoardDetails } from '@boardsesh/board-render';
 import { composeBoardBaseBuffer } from '@boardsesh/board-render/pipeline';
@@ -25,7 +25,7 @@ async function generateGallery() {
   await mkdir(outputDirectory, { recursive: true });
   const layouts = [];
   for (const boardName of SUPPORTED_BOARDS) {
-    if (boardName === 'spray') continue;
+    if (boardName === 'spray' || !supportsStaticBoardRender(boardName)) continue;
     for (const layout of getOrderedGalleryLayouts(boardName)) {
       const size = getLargestGalleryBoardSize(boardName, layout.id);
       const sizeId = size.id;

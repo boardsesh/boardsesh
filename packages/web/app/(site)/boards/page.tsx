@@ -5,6 +5,9 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
+import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import { PageShell, PageSection } from '@/app/components/ui/page-shell';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -30,12 +33,17 @@ export async function generateMetadata() {
 }
 
 export default async function SupportedBoardsPage() {
-  const [{ t, locale }, labels] = await Promise.all([getServerTranslation('website'), getStoreButtonLabels()]);
+  const [{ t, locale }, labels, visibilityFlags] = await Promise.all([
+    getServerTranslation('website'),
+    getStoreButtonLabels(),
+    getBoardVisibilityFlags(),
+  ]);
+  const visibleBoards = SUPPORTED_BOARDS.filter((board) => isBoardTypeVisible(board, visibilityFlags));
   return (
     <PageShell title={t('boardsTitle')} lead={t('boardsLead')} width="wide">
       <Box component="ul" role="list" className={styles.gallery}>
-        {SUPPORTED_BOARDS.map((board) => {
-          const layouts = board === 'spray' ? [] : getBoardGalleryLayouts(board);
+        {visibleBoards.map((board) => {
+          const layouts = board !== 'spray' && supportsStaticBoardRender(board) ? getBoardGalleryLayouts(board) : [];
           const multipleLayouts = layouts.length > 1;
           const headingId = `board-${board}-title`;
           const boardLabel = boardTypeLabel(board);
@@ -108,11 +116,11 @@ export default async function SupportedBoardsPage() {
                 >
                   {figures}
                 </BoardLayoutRail>
-              ) : (
+              ) : figures.length > 0 ? (
                 <Box component="ul" role="list" sx={{ listStyle: 'none', p: 0, m: 0 }}>
                   {figures}
                 </Box>
-              )}
+              ) : null}
               <Box>
                 <BoardAppGuideLink board={board} />
               </Box>

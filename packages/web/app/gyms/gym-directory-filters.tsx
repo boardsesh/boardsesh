@@ -1,3 +1,4 @@
+import { isBoardTypeVisible, type BoardVisibilityFlags } from '@boardsesh/board-config/visibility';
 import 'server-only';
 import React from 'react';
 import Box from '@mui/material/Box';
@@ -50,12 +51,14 @@ export default function GymDirectoryFilters({
   t,
   facetCounts,
   locale,
+  visibilityFlags = {},
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   t: TFunction<'gyms'>;
   facetCounts?: FacetCounts;
   locale?: string;
+  visibilityFlags?: BoardVisibilityFlags;
 }) {
   const layoutOptions = buildLayoutOptions(query);
   const sizeOptions = buildSizeOptions(query);
@@ -77,7 +80,7 @@ export default function GymDirectoryFilters({
           '& > *': { flexShrink: 0 },
         }}
       >
-        {FILTERABLE_BOARD_TYPES.map((boardType) => {
+        {FILTERABLE_BOARD_TYPES.filter((boardType) => isBoardTypeVisible(boardType, visibilityFlags)).map((boardType) => {
           const selected = query.boardTypes.includes(boardType);
           return (
             <Chip

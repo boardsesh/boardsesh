@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vite-plus/test';
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import { getStaticAssetObjectKey } from '@boardsesh/static-assets';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { getLargestGalleryBoardSize, getOrderedGalleryLayouts } from '../board-gallery-config';
@@ -45,7 +46,9 @@ const EXPECTED_LAYOUTS = [
 ] as const satisfies readonly ExpectedLayout[];
 
 const PUBLIC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
-const catalogBoards = SUPPORTED_BOARDS.filter((boardName): boardName is CatalogBoardName => boardName !== 'spray');
+const catalogBoards = SUPPORTED_BOARDS.filter(
+  (boardName): boardName is CatalogBoardName => boardName !== 'spray' && supportsStaticBoardRender(boardName),
+);
 const sha256 = (contents: Buffer): string => createHash('sha256').update(contents).digest('hex');
 
 describe('board gallery catalog', () => {

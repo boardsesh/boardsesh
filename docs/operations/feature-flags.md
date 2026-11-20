@@ -446,11 +446,13 @@ Turning a board on in production waits for the index-ordered query #5412 tracks.
 
 ### Quantum Board rollout
 
-`quantum-board` is a positive mobile rollout flag, off by default. Only an explicit
+`quantum-board` is a positive web/mobile rollout flag, off by default. Only an explicit
 boolean `true` offers Quantum Board in catalogue discovery, the board builder,
 saved/offline board lists, Home board choices, scan results, and gym rosters.
 Wall Finder hides its type chip, board rows, and gym type labels while disabled. Missing, unresolved, false, or invalid values keep
-it hidden. The common catalogue boundary owns the policy, so rows and renderers
+it hidden. Public compatibility lists and directory filters use the same shared policy;
+server rendering resolves it for the admitted viewer (anonymous visitors included).
+The common catalogue boundary owns the policy, so rows and renderers
 need no board-specific flag checks. A selected setup cannot be submitted after
 the flag turns off.
 
