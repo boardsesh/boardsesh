@@ -1,0 +1,15 @@
+Observed browser error excerpts; no pointer success is claimed from these probes.
+
+Baseline native-checkbox probe:
+locator.uncheck: Timeout 30000ms exceeded.
+locator('input[name="angle"][value="40"]') resolved to the checked angle40 input.
+<input value="70" name="angle" type="checkbox" class="MuiBox-root mui-592zck"/> from a label subtree intercepts pointer events.
+The four candidate source files were restored byte for byte in finally.
+
+Candidate chip pointer probe:
+locator.click: Timeout 30000ms exceeded.
+locator('#gym-directory-search a[aria-pressed]').filter({ hasText: 'Tension' }) resolved to /gyms?q=QA&boardType=kilter&boardType=tension.
+<input value="8" name="layout" type="checkbox" class="MuiBox-root mui-592zck"/> from <details open=""> subtree intercepts pointer events.
+The fixed marketing-header logo also intercepted some retries after automatic scrolling.
+
+The final bounded candidate flow used real keyboard Space on the native checkboxes and Enter on map/chip controls, without forced clicks or programmatic checked values. It passed. Existing hidden-input CSS and pointer behavior were not changed in this follow-up.

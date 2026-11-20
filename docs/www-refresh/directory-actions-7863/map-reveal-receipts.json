@@ -1,0 +1,55 @@
+{
+  "head": "b35ca088a701505010afd216b4e6099fdaac29dc",
+  "receipts": [
+    {
+      "reducedMotion": "no-preference",
+      "status": 200,
+      "initialStatus": 200,
+      "initialUrlScrollY": 0,
+      "beforeTap": {
+        "x": 131.703125,
+        "y": 460.484375,
+        "width": 133.59375,
+        "height": 44
+      },
+      "measurement": {
+        "scrollY": 724,
+        "top": 69.484375,
+        "bottom": 489.484375,
+        "height": 420,
+        "visibleHeight": 420,
+        "viewportHeight": 664,
+        "headerBottom": 53.109375,
+        "rootScrollBehavior": "auto",
+        "reducedMotion": false
+      },
+      "errors": [],
+      "passed": true
+    },
+    {
+      "reducedMotion": "reduce",
+      "status": 200,
+      "initialStatus": 200,
+      "initialUrlScrollY": 0,
+      "beforeTap": {
+        "x": 131.703125,
+        "y": 460.484375,
+        "width": 133.59375,
+        "height": 44
+      },
+      "measurement": {
+        "scrollY": 724,
+        "top": 69.484375,
+        "bottom": 489.484375,
+        "height": 420,
+        "visibleHeight": 420,
+        "viewportHeight": 664,
+        "headerBottom": 53.109375,
+        "rootScrollBehavior": "auto",
+        "reducedMotion": true
+      },
+      "errors": [],
+      "passed": true
+    }
+  ]
+}

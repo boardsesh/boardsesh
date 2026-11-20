@@ -254,6 +254,7 @@ function CheckboxChipGroup({
                 component="label"
                 sx={{
                   ...filterChipSx({ selected: false }),
+                  position: 'relative',
                   display: 'inline-flex',
                   alignItems: 'center',
                   px: 2,
@@ -285,12 +286,16 @@ function CheckboxChipGroup({
                   value={option.value}
                   defaultChecked={option.selected}
                   sx={{
-                    // Visually hidden, not `display: none` — a `none` control is
-                    // neither submitted nor focusable, and this one must be both.
+                    // Visually hidden keeps this native form control focusable
+                    // while its label supplies the visible pointer target.
                     position: 'absolute',
-                    width: 1,
-                    height: 1,
+                    top: 0,
+                    left: 0,
+                    // MUI treats numeric 1 as 100%, so use explicit pixel units.
+                    width: '1px',
+                    height: '1px',
                     opacity: 0,
+                    pointerEvents: 'none',
                   }}
                 />
                 {option.label}

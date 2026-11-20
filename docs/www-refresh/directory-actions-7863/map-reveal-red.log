@@ -1,0 +1,31 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.1.0 /home/developer/.codex/worktrees/bugbash7844-gym-actions/main
+
+ ❯ |web| app/gyms/__tests__/gym-directory-near-me.test.tsx (28 tests | 1 failed | 27 skipped) 545ms
+   ❯ browse mode (7)
+     × reveals the map only after an explicit open, preserving history scroll positions 539ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |web| app/gyms/__tests__/gym-directory-near-me.test.tsx > browse mode > reveals the map only after an explicit open, preserving history scroll positions
+AssertionError: expected "vi.fn()" to be called once with arguments: [ { block: 'start', …(2) } ]
+
+Number of calls: 0
+
+ ❯ app/gyms/__tests__/gym-directory-near-me.test.tsx:227:28
+    225|     fireEvent(window, new PopStateEvent('popstate'));
+    226|     fireEvent.click(await screen.findByRole('button', { name: 'Show ma…
+    227|     expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 's…
+       |                            ^
+    228|     expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByTestId('m…
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 27 skipped (28)
+   Start at  15:54:13
+   Duration  2.55s (import 29%, environment 26%, tests 23%, transform 22%)
+

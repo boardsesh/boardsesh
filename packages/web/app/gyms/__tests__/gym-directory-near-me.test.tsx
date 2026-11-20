@@ -4,6 +4,9 @@ import React from 'react';
 import type { GymDirectoryCard } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { parseDirectoryQuery } from '../directory-facets';
+import GymDirectoryClaimLink from '../gym-directory-claim-link';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: React.forwardRef<HTMLAnchorElement, React.ComponentProps<'a'>>(function Link(props, ref) {
@@ -60,6 +63,7 @@ type QueryResult = {
 
 let queryResult: QueryResult;
 let lastQueryOptions: QueryOptions | null = null;
+const scrollIntoView = vi.fn();
 
 function gym(overrides: Partial<GymDirectoryCard> = {}): GymDirectoryCard {
   return {
@@ -122,6 +126,9 @@ function defineGeolocationSupport(supported: boolean) {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  scrollIntoView.mockReset();
+  window.history.replaceState({}, '', '/gyms');
   defineGeolocationSupport(true);
   analytics.trackGymFunnelEvent.mockReset();
   geolocation.requestPermission.mockReset();
@@ -137,6 +144,30 @@ beforeEach(() => {
 });
 
 describe('browse mode', () => {
+  it('points the closing claim link at the single rendered search anchor', () => {
+    render(
+      <>
+        <GymDirectoryNearMe
+          searchForm={{ facet: 'all', query: parseDirectoryQuery('all', {}) }}
+          boardFilter={{ boardTypes: [] }}
+          searchQuery=""
+          locale="en-US"
+          browsePins={[]}
+          browsePinnedCount={0}
+          browseShownCount={0}
+        >
+          <div>Gym results</div>
+        </GymDirectoryNearMe>
+        <GymDirectoryClaimLink viewerState="signed-out" />
+      </>,
+    );
+    const fragment = screen.getByRole('link', { name: tFromCatalog('gyms', 'claim.action') }).getAttribute('href');
+    if (!fragment?.startsWith('#')) throw new Error('Missing in-page claim destination');
+    const anchors = document.querySelectorAll(fragment);
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]?.contains(screen.getByRole('combobox'))).toBe(true);
+  });
+
   it('uses server-rendered place results and radius links without requesting device location', () => {
     render(
       <GymDirectoryNearMe
@@ -182,6 +213,26 @@ describe('browse mode', () => {
     const map = screen.getByTestId('map-stub');
     expect(map.getAttribute('data-pinned')).toBe('15');
     expect(map.getAttribute('data-shown')).toBe('24');
+  });
+
+  it('reveals the map only after an explicit open, preserving history scroll positions', async () => {
+    window.history.replaceState({}, '', '/gyms?view=map');
+    renderNearMe();
+    await screen.findByRole('button', { name: 'Hide map' });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    window.history.replaceState({}, '', '/gyms');
+    fireEvent(window, new PopStateEvent('popstate'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show map' }));
+    expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', inline: 'nearest', behavior: 'auto' });
+    expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByTestId('map-stub').parentElement);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide map' }));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    window.history.replaceState({}, '', '/gyms?view=map');
+    fireEvent(window, new PopStateEvent('popstate'));
+    await screen.findByRole('button', { name: 'Hide map' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
   it('offers a map toggle for the narrow layout, with no matchMedia read', () => {

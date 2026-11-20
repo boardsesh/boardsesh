@@ -1,0 +1,323 @@
+{
+  "head": "fdf2ba8de978643cdc755072b6b6cc1f68d4f015",
+  "baseMain": "f4f504253dff167918796b41ca805d2cc7e48549",
+  "receipts": [
+    {
+      "phase": "before",
+      "width": 390,
+      "height": 664,
+      "status": 200,
+      "metrics": {
+        "scroll": 0,
+        "documentWidth": 390,
+        "mapControls": [
+          {
+            "x": 24,
+            "y": 793.484375,
+            "width": 133.59375,
+            "height": 44,
+            "bottom": 837.484375,
+            "text": "Show map",
+            "href": null
+          }
+        ],
+        "search": {
+          "x": 41,
+          "y": 460.484375,
+          "width": 82.703125,
+          "height": 44,
+          "bottom": 504.484375,
+          "text": "Search",
+          "href": null
+        },
+        "firstListing": {
+          "x": 24,
+          "y": 893.46875,
+          "width": 342,
+          "height": 180,
+          "bottom": 1073.46875,
+          "text": "Bug bash 7844 QA gymRun by this gymQA fixture (fictional address), Sydney, AustraliaKilter 40°",
+          "href": null
+        },
+        "chips": [
+          {
+            "x": 41,
+            "y": 520.484375,
+            "width": 83.390625,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Kilter · 1",
+            "href": "/gyms/kilter"
+          },
+          {
+            "x": 132.390625,
+            "y": 520.484375,
+            "width": 101.25,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Tension · 0",
+            "href": "/gyms/tension"
+          },
+          {
+            "x": 241.640625,
+            "y": 520.484375,
+            "width": 127.90625,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "MoonBoard · 0",
+            "href": "/gyms/moonboard"
+          },
+          {
+            "x": 377.546875,
+            "y": 520.484375,
+            "width": 68.5625,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Decoy",
+            "href": "/gyms?boardType=decoy"
+          },
+          {
+            "x": 454.109375,
+            "y": 520.484375,
+            "width": 107.015625,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Touchstone",
+            "href": "/gyms?boardType=touchstone"
+          },
+          {
+            "x": 569.125,
+            "y": 520.484375,
+            "width": 116.390625,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Grasshopper",
+            "href": "/gyms?boardType=grasshopper"
+          },
+          {
+            "x": 693.515625,
+            "y": 520.484375,
+            "width": 69.359375,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "So iLL",
+            "href": "/gyms?boardType=soill"
+          },
+          {
+            "x": 770.875,
+            "y": 520.484375,
+            "width": 73.203125,
+            "height": 44,
+            "bottom": 564.484375,
+            "text": "Woods",
+            "href": "/gyms?boardType=woods"
+          }
+        ],
+        "filled": [
+          {
+            "x": 41,
+            "y": 460.484375,
+            "width": 82.703125,
+            "height": 44,
+            "bottom": 504.484375,
+            "text": "Search",
+            "href": null
+          },
+          {
+            "x": 24,
+            "y": 1405.453125,
+            "width": 150.015625,
+            "height": 48,
+            "bottom": 1453.453125,
+            "text": "App Store",
+            "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=gyms-directory&mt=8"
+          }
+        ],
+        "stores": [
+          {
+            "x": 24,
+            "y": 1405.453125,
+            "width": 150.015625,
+            "height": 48,
+            "bottom": 1453.453125,
+            "text": "App Store",
+            "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=gyms-directory&mt=8",
+            "outlined": false
+          },
+          {
+            "x": 190.015625,
+            "y": 1405.453125,
+            "width": 170.03125,
+            "height": 48,
+            "bottom": 1453.453125,
+            "text": "Google Play",
+            "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=gyms-directory&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dgyms-directory",
+            "outlined": true
+          }
+        ]
+      },
+      "failures": ["map-below-first-fold-or-outside-search-row", "search-not-sole-filled-main-action"],
+      "flow": {},
+      "errors": []
+    },
+    {
+      "phase": "before",
+      "width": 1440,
+      "height": 664,
+      "status": 200,
+      "metrics": {
+        "scroll": 0,
+        "documentWidth": 1440,
+        "mapControls": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "bottom": 0,
+            "text": "Show map",
+            "href": null
+          }
+        ],
+        "search": {
+          "x": 1184.296875,
+          "y": 288.5,
+          "width": 82.703125,
+          "height": 44,
+          "bottom": 332.5,
+          "text": "Search",
+          "href": null
+        },
+        "firstListing": {
+          "x": 152,
+          "y": 657.484375,
+          "width": 667.1875,
+          "height": 144,
+          "bottom": 801.484375,
+          "text": "Bug bash 7844 QA gymRun by this gymQA fixture (fictional address), Sydney, AustraliaKilter 40°",
+          "href": null
+        },
+        "chips": [
+          {
+            "x": 173,
+            "y": 392.5,
+            "width": 83.390625,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Kilter · 1",
+            "href": "/gyms/kilter"
+          },
+          {
+            "x": 264.390625,
+            "y": 392.5,
+            "width": 101.25,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Tension · 0",
+            "href": "/gyms/tension"
+          },
+          {
+            "x": 373.640625,
+            "y": 392.5,
+            "width": 127.90625,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "MoonBoard · 0",
+            "href": "/gyms/moonboard"
+          },
+          {
+            "x": 509.546875,
+            "y": 392.5,
+            "width": 68.5625,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Decoy",
+            "href": "/gyms?boardType=decoy"
+          },
+          {
+            "x": 586.109375,
+            "y": 392.5,
+            "width": 107.015625,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Touchstone",
+            "href": "/gyms?boardType=touchstone"
+          },
+          {
+            "x": 701.125,
+            "y": 392.5,
+            "width": 116.390625,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Grasshopper",
+            "href": "/gyms?boardType=grasshopper"
+          },
+          {
+            "x": 825.515625,
+            "y": 392.5,
+            "width": 69.359375,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "So iLL",
+            "href": "/gyms?boardType=soill"
+          },
+          {
+            "x": 902.875,
+            "y": 392.5,
+            "width": 73.203125,
+            "height": 44,
+            "bottom": 436.5,
+            "text": "Woods",
+            "href": "/gyms?boardType=woods"
+          }
+        ],
+        "filled": [
+          {
+            "x": 1184.296875,
+            "y": 288.5,
+            "width": 82.703125,
+            "height": 44,
+            "bottom": 332.5,
+            "text": "Search",
+            "href": null
+          },
+          {
+            "x": 152,
+            "y": 1302.484375,
+            "width": 150.015625,
+            "height": 48,
+            "bottom": 1350.484375,
+            "text": "App Store",
+            "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=gyms-directory&mt=8"
+          }
+        ],
+        "stores": [
+          {
+            "x": 152,
+            "y": 1302.484375,
+            "width": 150.015625,
+            "height": 48,
+            "bottom": 1350.484375,
+            "text": "App Store",
+            "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=gyms-directory&mt=8",
+            "outlined": false
+          },
+          {
+            "x": 318.015625,
+            "y": 1302.484375,
+            "width": 170.03125,
+            "height": 48,
+            "bottom": 1350.484375,
+            "text": "Google Play",
+            "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=gyms-directory&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dgyms-directory",
+            "outlined": true
+          }
+        ]
+      },
+      "failures": ["search-not-sole-filled-main-action"],
+      "flow": {},
+      "errors": []
+    }
+  ],
+  "contentSource": "f4f504253dff167918796b41ca805d2cc7e48549"
+}
