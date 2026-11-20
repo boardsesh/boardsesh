@@ -11,7 +11,7 @@ This is an interoperability assessment. It changes documentation, not the Blueto
 | Priority | Finding | Consequence |
 | --- | --- | --- |
 | High | Third legacy profile missing | Its service and write characteristic are not discovered by our transports. |
-| High | Pro protocol missing | A new UUID alone cannot enable its binary writes, configuration and status lifecycle. |
+| High | Pro protocol missing | A new UUID alone cannot enable its binary writes, client registration, configuration and session/status lifecycle. |
 | High for optional features | Legacy flags omit `*`; conditional `M` and `B` absent | Our optional commands differ from the analyzed app's format. |
 | Identity evidence needed | Documented 12-digit controller ID lacks a dedicated parser | Automatic board identification depends on the generic name suffix or peripheral ID. |
 | Medium | Gym fixture drops official flags and mishandles partial retries | Existing fixture tests can miss compatibility and recovery problems. |
@@ -73,11 +73,47 @@ The shared security widget 18992 (`0x84f3c8`) displays PIN entry for locked/uncl
 
 The controller-management payloads are three bytes. Builder 19025 (`0x852140`) constructs a selected-user disconnect message; builder 19047 (`0x8544d4`) constructs disconnect-all and factory-reset messages with distinct call-site arguments. The reset event requests a write response; that transport acknowledgement is not evidence the reset completed. The disconnect-all sender also has a legacy command branch. These are statically recovered commands, not commands sent to a controller during this investigation.
 
-Settings also have an application-level completion mechanism. Helper 41894 (`0xdef2a8`) registers a pending result keyed by operation kind and command before dispatching the write, then waits with a timeout. Name, LED-count, brightness and screensaver writers use it. This differs from an ATT write acknowledgement and does not establish a per-climb-frame acknowledgement; the complete status-to-result/error mapping remains untraced.
+Settings also have an application-level completion mechanism. Helper 41894 (`0xdef2a8`) registers a pending result keyed by operation kind and command before dispatching the write, then waits with a timeout. Name, LED-count, brightness and screensaver writers use it. This differs from an ATT write acknowledgement and does not establish a per-climb-frame acknowledgement. The follow-up below traces reply completion and a status-coded timeout; meanings of the controller's numeric result codes remain unresolved.
 
 **Firmware updates remain unestablished.** No dedicated firmware-transfer characteristic appeared in the recovered four-profile registry. Bounded searches of recovered Dart strings, all 36,638 base-DEX strings and the APK member names did not establish a controller updater. The `bootloader` reference resolves to Android phone metadata (method 16325), and the DEX `Firmware Revision String` literal is in a static characteristic-name initializer; neither is an update call path. Filename searches for firmware/update terms and `.bin`/`.hex`/`.uf2` assets matched only Flutter's asset manifest and Kotlin debug-probe metadata. This does not rule out an updater in another build, an external tool or a dynamically constructed path.
 
 The evidence therefore supports a settings/mapping purpose for the PIN. Firmware updating is not needed to explain it. These management capabilities remain absent from the audited Boardsesh client and should be assessed separately from basic climb-lighting compatibility.
+
+## Further interoperability findings
+
+### Automatic client registration and multi-user sessions
+
+`chrUserName` (`…ee26`) carries a **16-byte UUID**, despite its name. Builder 19083 (`0x856710`) removes hyphens, requires 32 hexadecimal characters and decodes sixteen byte pairs. Writer 40808 (`0xde3d14`) sends those bytes with a response requested. Callback 19082 (`0x85650c`) triggers it once the connection is `connected` and `discoveredReady`, provided an application identity object exists. Its one-shot guard resets when disconnected. The source field's semantic name is not recovered; do not equate this client/user identity with a display name or the manufacturer's 12-digit controller identifier.
+
+This is additional application traffic after service discovery and belongs in a Pro interoperability implementation. Static evidence does not prove that the controller requires registration before accepting every climb write. The official callback sets its one-shot guard before checking whether the identity is available, so a client implementation should distinguish registration attempted from registration completed and allow a safe retry when the identity becomes available.
+
+The multi-user toggle calls 40791 (`0xde3260`) and writes two bytes to `cfgMultiUserMode` (`…ee25`): a generated token byte and a boolean mode byte, with a response requested. The token derives from a native integer divided by 1,000 and masked to eight bits; its exact meaning is not established. `chrSessionStatus` (`…ee24`) reports single-climber versus multi-climber mode through byte zero. Neither the configuration-like key nor its name proves the operation requires the setup PIN.
+
+`connectionStatus` (`…ee05`) carries fragmented connected-client lists. Reassembler 17421 (`0x7a365c`) reads a five-byte header containing transfer ID, little-endian offset and little-endian total length. Body parser 17422 (`0x7a3cd4`) reads a three-byte header and entries containing a slot, identity length and UUID bytes. Nonempty identities must be 16 bytes. This connects session membership to the previously traced disconnect-by-slot command; it is more than a generic connected/disconnected flag.
+
+### Settings replies, timeouts and reconnect cleanup
+
+The `cfgStatus` (`…ee09`) callback 17426 (`0x7a4730`) requires at least five bytes and constructs a result from kind, command, status and two additional bytes. Registered handler 17283 → 17284 (`0x79cb38`) removes the pending request with key `(kind << 8) | command`, completes it with the result and publishes status into state. The last two bytes' meanings and the complete controller status-code table remain unresolved. This matching key has no request sequence or connection identifier; a new implementation should account for late replies and reconnects instead of assuming any matching response belongs to the newest attempt.
+
+**Static success-reporting issue in the official app:** timeout callback 21939 (`0x92c8d0`) removes the pending entry and returns a synthetic result with status `255`; it does not throw. The inspected name writer 42012, LED-count writer 42017 and screensaver writer 41893 await that result and then report success without checking its status. These paths can therefore display success without a timely matching acknowledgement. This does not establish that the controller failed to save: its reply could have been delayed or lost. Other thrown errors have separate failure paths. An independent client should explicitly validate returned status and handle timeout as an uncertain outcome, rather than copy the success-message behavior.
+
+The app does have useful cleanup. Method 39907 (`0xdc5cb0`) cancels the three automatic status subscriptions, fails pending requests with `Disconnected` and clears their map. Method 17287 (`0x79cd04`) clears discovered characteristic maps, restores the 20-byte payload default and replaces the serial-write future tail. Clearing a queue tail alone does not establish cancellation of old in-flight work; Boardsesh's existing connection-generation guards remain relevant when adding this protocol.
+
+**Reassembly robustness to preserve:** the inspected connection-status reassembler invokes the full-body parser after copying each fragment into a zero-filled buffer, without first checking complete byte coverage. A structurally valid partial body can therefore be a candidate for premature parsing. Its transfer ID and accumulator also use static storage; no clearing of those fields was found in the inspected disconnect/reset methods. The session-status callback reads four indices without an explicit minimum-length check. These are static edge-case candidates, not observed controller failures. Implement explicit length/coverage checks and connection-scoped reassembly state, and test truncation, fragmentation, transfer-ID reuse and reconnects.
+
+### Richer LED roles and conditional neighbouring LEDs
+
+The ordinary Pro converter 17909 (`0x7c7708`) actively consumes marker map 17912 and numeric-value map 17914. It distinguishes start, end, left, right, foot and match roles. These are richer than our legacy start/intermediate/end model. The numeric values are neither proven displayed colors nor Boardsesh's persisted role IDs. A dual value exists in the table, but the inspected marker mapper does not emit that role, so the table alone does not establish full dual-role input coverage.
+
+The same converter can insert a same-column neighbouring LED before the original pixel. It checks an additional argument and geometry, uses 12-row or 18-row layouts and prevents crossing the column boundary. This is an actual packet-construction path, not merely a configuration string. Its upstream preference/capability meaning remains unresolved; do not enable it unconditionally or assume its physical effect from the arithmetic alone.
+
+### Preview commands and names are separate from identity
+
+Brightness has a separate `brightnessPreview` characteristic (`…ee0E`) and a saved brightness setting (`…ee0A`). The traced UI helper 41291 calls preview builder 20578 → writer 24929 and then save callback 43049. The preview contains brightness plus three color-like components; exact channel order and displayed colors remain unverified. The saved-setting path uses the settings reply mechanism. The existence of a preview command does **not** mean all slider changes are preview-only or that saving is deferred until release.
+
+The advertising-name writer accepts 2–12 UTF-8 bytes and lets users rename the controller. That byte limit is not evidence for the 12-digit manufacturer ID. Profile discovery should use verified service capabilities as well as names, and identity persistence should not assume the advertised name is immutable.
+
+Finally, the concrete `chrBasePixelBatch` caller traced in 43067 (`0xe2fdfc`) belongs to the LED mapping editor. It does not establish a mandatory base layer for ordinary climbs. `frameCommit` and `maskSet` still have registered characteristics but no established invocation in this bounded pass; a client should not append guessed commit or mask messages.
 
 ## Legacy flags and Mini behavior
 
