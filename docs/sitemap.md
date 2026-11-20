@@ -33,8 +33,13 @@ one file cannot hold them at any expansion.
 
 The index advertises gzip files for the large climb and setter shards, as supported
 by the [sitemap protocol](https://www.sitemaps.org/protocol.html). A request for
-`/sitemaps/climbs/1.xml.gz` builds and privacy-filters the same XML as the existing
-`1.xml` URL, then compresses it asynchronously. Existing `.xml` URLs still work.
+`/sitemaps/climbs/1.xml.gz` builds and privacy-filters the XML, then compresses it
+asynchronously. Legacy `.xml` URLs return a `307` redirect to the equivalent
+`.xml.gz` file. The handler checks the publication switch, page syntax and current
+page count before redirecting, but does not build the XML or read its candidate
+URLs. Disabled climbs still return `410`; invalid pages return `404`, and a failed
+summary returns `503`. The temporary redirect uses `private, no-store` so a later
+withdrawal or rollback takes effect at the legacy URL immediately.
 Fixed shards and `/sitemap.xml` keep their current URLs.
 
 These are gzip **files** (`Content-Type: application/gzip`), without HTTP
@@ -43,7 +48,7 @@ These are gzip **files** (`Content-Type: application/gzip`), without HTTP
 a proxy. The production smoke downloads and decompresses the advertised climb
 file, then validates the XML, source header and privacy cache policy.
 
-Both representations retain `Cache-Control: private, no-store`: publication,
+The gzip response retains `Cache-Control: private, no-store`: publication,
 moderation and spray-wall visibility are checked on every request. Nothing stores
 compressed output between requests. Byte and URL budgets still apply to the
 uncompressed XML before compression; the fixture test requires a full climb shard

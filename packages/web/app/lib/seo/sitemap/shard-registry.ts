@@ -163,7 +163,7 @@ function xmlResponse(
 
 /** A gzip sitemap file, rather than HTTP content encoding: even crawlers that
  * omit Accept-Encoding download the small representation advertised by the index.
- * Its XML is built and privacy-filtered afresh, just like the legacy .xml URL.
+ * Its XML is built and privacy-filtered afresh on every request.
  */
 async function gzipXmlResponse(
   body: string,
@@ -520,6 +520,20 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
       return notFoundResponse();
     }
 
+    // Crawlers keep requesting the old .xml files even after the index advertises
+    // .xml.gz. Send them to the compressed file before building the large body.
+    // The destination checks current publication visibility on every request;
+    // no-store keeps withdrawal and rollback visible at the legacy URL too.
+    if (!parsed[2]) {
+      return new Response(null, {
+        status: 307,
+        headers: {
+          Location: shard.pagePath(page),
+          'Cache-Control': shard.cacheControl,
+        },
+      });
+    }
+
     const { items, totalItems, source: pageSource } = await shard.buildPage(page);
     // The page's own answer wins over the summary's: they read different tables,
     // and a populated summary row against an empty URL table is exactly the state
@@ -568,9 +582,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
 
     // Compression changes delivery only: never cache the privacy-filtered XML.
     const headers = sourceHeaders(shard, source);
-    return parsed[2]
-      ? await gzipXmlResponse(body, shard.cacheControl, headers)
-      : xmlResponse(body, shard.cacheControl, headers);
+    return await gzipXmlResponse(body, shard.cacheControl, headers);
   } catch (err) {
     console.error(
       `[sitemap] paged shard "${id}" page "${rawPage}" failed to build:`,
