@@ -125,7 +125,7 @@ The profile is consumed by discovery. The earlier classification of this pair as
 | Suffix | Profile key | Static role |
 | ------ | ----------- | ----------- |
 | `02` | `pixelSingle` | Single-pixel command characteristic |
-| `30` | `authClaim` | Claim characteristic; exact initialization semantics unverified |
+| `30` | `authClaim` | Initial PIN provisioning from the app's `unclaimed` branch; writes encoded PIN bytes |
 | `31` | `authSalt` | Read during PIN unlock |
 | `32` | `authChallenge` | Read during PIN unlock |
 | `33` | `authUnlock` | Written with the derived unlock response |
@@ -372,6 +372,8 @@ REA's Android adapter lacked its configured JADX MCP JAR, and macOS denied Hoppe
 **Cryptographic identification.** The hash constructor loads the eight SHA-256 initial-state words at `0x691e0c`. The response path initializes matching hash states and calls a padding helper with `0x36` at `0x691710` / `0x691714` and `0x5c` at `0x691870` / `0x691874`. Helper `0x691954` XORs input bytes with that pad (`0x691a04`) and fills the remaining block with pad bytes, consistent with [HMAC's inner/outer padding](https://www.rfc-editor.org/rfc/rfc2104). This strongly supports HMAC-SHA-256. The PIN encoder copies ASCII code units directly (`0xb4a694`–`0xb4a6c4`), covering the six decimal digits accepted by the validator.
 
 The traced input construction copies encoded PIN bytes, appends the salt (`0xd73734`–`0xd7374c`), then hashes (`0xd7375c`). The resulting digest is wrapped at `0xd73770`–`0xd737b4`; it and the challenge are passed separately into the MAC path at `0xd737bc`–`0xd737c4`. This is consistent with a SHA-256 PIN-and-salt digest used as the HMAC key over the challenge. Treat that full derivation as a static inference until independently checked with a synthetic test vector or an authorized hardware exchange; the native app was not executed, and no PIN implementation is shipped by this investigation.
+
+**Setup and management follow-up.** The [settings/PIN trace](./moonboard-bluetooth-audit-2026-11-20.md#settings-controller-management-and-the-setup-pin) establishes explicit UI copy protecting settings and LED mapping, initial PIN provisioning through `authClaim`, concrete settings writes, and disconnect-user/factory-reset control messages. Initial provisioning sends the encoded PIN; subsequent unlock uses the derived response above. Protected mapping-editor actions do not establish that ordinary climb lighting requires a PIN. No controller firmware-update flow was established.
 
 ### Relevance to the Sofia disconnect
 

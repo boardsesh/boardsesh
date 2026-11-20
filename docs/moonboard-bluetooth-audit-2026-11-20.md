@@ -55,6 +55,30 @@ After discovery, method 17402 (`0x7a23f8`) cancels old subscriptions and conditi
 
 Boardsesh has no corresponding Pro integration in the audited paths. Implement profile discovery, configuration/mapping, required authorization, binary encoding and notification cleanup before exposing Pro as ready. Controller-management features can then be scoped separately.
 
+## Settings, controller management and the setup PIN
+
+The follow-up trace gives the PIN a concrete purpose. UI methods 13492 (`0x6970dc`) and 20852 (`0x8f1258`) describe a setup PIN that protects device settings and LED mapping and is needed for later configuration changes. This is stronger evidence than inferring purpose from the authentication characteristic names.
+
+| Message group | Recovered operations | Evidence and limits |
+| --- | --- | --- |
+| Persistent settings | Advertising name (`…ee0C`), LED count (`…ee0D`), brightness (`…ee0A`), screensaver (`…ee0B`) | Writers 42012, 42017, 43049 and 41893 dispatch named BLE writes; registration alone is no longer the only evidence for these operations. |
+| Board/LED mapping | `holdAssign` (`…ee07`) and `chrBoardConfig` (`…ee20`) | Mapping save/send actions 43051 and 43058 check gate 43053 (`0xe2f27c`); predicate 24939 (`0xa00be8`) requires authorization state `unlocked`. Save closure 43054 checks again before dispatch. |
+| Session management | Disconnect one selected user or all users through `chrControl` (`…ee22`); multi-user mode has a separate mapped characteristic (`…ee25`) | Confirmation dialogs 40777/40789 call senders 19024/19046. Multi-user mode's mapping alone does not prove its complete UI lifecycle. |
+| Factory reset | Reset controller settings through `chrControl` (`…ee22`) | Factory Reset widget 22132 → dialog 22133 → Reset closure 22134 → sender 22136. Its settings panel is behind the shared authorization widget; peripheral enforcement remains unverified. |
+| Security provisioning | Set an initial PIN with `authClaim` (`…ee30`); later unlock with salt/challenge/response (`…ee31`–`…ee33`) | The `unclaimed` branch in 37981 calls 38050, which encodes the supplied PIN and writes `authClaim` through 13421, then refreshes security status. |
+
+The shared security widget 18992 (`0x84f3c8`) displays PIN entry for locked/unclaimed states and invokes its child builder for `unlocked`. The settings-panel path 24921 → child builder 24924 → panel 24972 includes the `wlb` class that owns the Factory Reset callbacks. This binds that UI to the authorization gate. It does not establish that every settings/control writer independently checks authorization, or that the peripheral rejects unauthenticated writes. Ordinary climb lighting's `pixelBatch` path has not been shown to require the setup PIN; the protected “send LED data” action traced here belongs to the mapping editor.
+
+**Initial PIN setup is a distinct message.** Method 38050 (`0xd74d8c`) passes the encoded PIN bytes directly to `authClaim`; there is no hash/MAC construction on that branch. For the six accepted decimal digits, these are the six ASCII bytes. The later `authUnlock` path uses the derived response described in the protocol specification. This finding is about the GATT payload, not whether the BLE link is encrypted. It does not establish an existing-PIN change or recovery procedure.
+
+The controller-management payloads are three bytes. Builder 19025 (`0x852140`) constructs a selected-user disconnect message; builder 19047 (`0x8544d4`) constructs disconnect-all and factory-reset messages with distinct call-site arguments. The reset event requests a write response; that transport acknowledgement is not evidence the reset completed. The disconnect-all sender also has a legacy command branch. These are statically recovered commands, not commands sent to a controller during this investigation.
+
+Settings also have an application-level completion mechanism. Helper 41894 (`0xdef2a8`) registers a pending result keyed by operation kind and command before dispatching the write, then waits with a timeout. Name, LED-count, brightness and screensaver writers use it. This differs from an ATT write acknowledgement and does not establish a per-climb-frame acknowledgement; the complete status-to-result/error mapping remains untraced.
+
+**Firmware updates remain unestablished.** No dedicated firmware-transfer characteristic appeared in the recovered four-profile registry. Bounded searches of recovered Dart strings, all 36,638 base-DEX strings and the APK member names did not establish a controller updater. The `bootloader` reference resolves to Android phone metadata (method 16325), and the DEX `Firmware Revision String` literal is in a static characteristic-name initializer; neither is an update call path. Filename searches for firmware/update terms and `.bin`/`.hex`/`.uf2` assets matched only Flutter's asset manifest and Kotlin debug-probe metadata. This does not rule out an updater in another build, an external tool or a dynamically constructed path.
+
+The evidence therefore supports a settings/mapping purpose for the PIN. Firmware updating is not needed to explain it. These management capabilities remain absent from the audited Boardsesh client and should be assessed separately from basic climb-lighting compatibility.
+
 ## Legacy flags and Mini behavior
 
 Method 23913 (`0x9ac694`) constructs an empty prefix or `~` + comma-joined flags + `*`. Wrappers 23912, 24001 and 24016 concatenate that prefix with `l#`, payload and `#` into one string. Separate ATT writes for the flags are not required by this evidence.
