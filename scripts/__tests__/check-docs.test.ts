@@ -157,18 +157,19 @@ describe('documentation references', () => {
     ]);
   });
 
-  it.each(['.github/workflows/mobile-ota-boot-check.yml', 'scripts/mobile-ota-boot-check.ts'])(
-    'resolves the retained OTA guide reference in %s without ignoring other references',
-    (filename) => {
-      const checkout = repository({
-        [filename]: '# See docs/mobile-ota-updates.md#boot-check.\n# See docs/missing-guide.md.',
-        'docs/operations/mobile-ota-updates.md': '# Boot check',
-      });
-      expect(checkDocumentation(checkout)).toEqual([
-        { source: filename, line: 2, target: 'docs/missing-guide.md', reason: 'missing file docs/missing-guide.md' },
-      ]);
-    },
-  );
+  it.each([
+    '.github/workflows/mobile-ota-boot-check.yml',
+    'scripts/mobile-ota-boot-check.ts',
+    'scripts/lib/ota-boot-check.ts',
+  ])('resolves the retained OTA guide reference in %s without ignoring other references', (filename) => {
+    const checkout = repository({
+      [filename]: '# See docs/mobile-ota-updates.md#boot-check.\n# See docs/missing-guide.md.',
+      'docs/operations/mobile-ota-updates.md': '# Boot check',
+    });
+    expect(checkDocumentation(checkout)).toEqual([
+      { source: filename, line: 2, target: 'docs/missing-guide.md', reason: 'missing file docs/missing-guide.md' },
+    ]);
+  });
 
   it('does not alias the retained OTA guide reference in neighboring source files', () => {
     const checkout = repository({

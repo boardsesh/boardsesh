@@ -28,6 +28,7 @@ const DOC_FILE_REFERENCE =
 const RETAINED_OTA_GUIDE_SOURCES = new Set([
   '.github/workflows/mobile-ota-boot-check.yml',
   'scripts/mobile-ota-boot-check.ts',
+  'scripts/lib/ota-boot-check.ts',
 ]);
 
 /** Preserve offsets and line numbers while removing illustrative fenced/indented code. */

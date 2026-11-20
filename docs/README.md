@@ -44,6 +44,6 @@ references are historical provenance: preserve them when moving current guides.
 The documentation checker excludes these artifacts; migration and released-client
 provenance tests verify them separately.
 
-The OTA boot checker and its workflow keep their existing verification inputs.
-Their two historical guide references are explicitly mapped to the current OTA
+The OTA boot checker, shared helper and workflow keep their existing verification inputs.
+Their three historical guide references are explicitly mapped to the current OTA
 runbook by the documentation checker, which still validates that destination.
