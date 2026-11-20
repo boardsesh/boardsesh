@@ -44,6 +44,7 @@ const rememberDownloadedBoardsMock = vi.hoisted(() => vi.fn());
 const willFollowMock = vi.hoisted(() => vi.fn((): boolean => false));
 
 const state = vi.hoisted(() => ({
+  quantumEnabled: false,
   isOffline: false,
   // Which side is actually down. The notice reads differently for each, so the
   // reason travels alongside `isOffline` instead of being inferred from it.
@@ -273,7 +274,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
-  useFeatureFlag: () => false,
+  useFeatureFlag: () => state.quantumEnabled,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
 }));
@@ -397,6 +398,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   setActiveBoardMock.mockResolvedValue(undefined);
   willFollowMock.mockReturnValue(false);
+  state.quantumEnabled = false;
   state.isOffline = false;
   state.connectivityReason = null;
   state.offlineCards = [];
@@ -414,6 +416,32 @@ function headerPlusSet(): boolean {
 }
 
 describe('board picker with no usable network list', () => {
+  it('hides a cached Quantum board while disabled and restores it when enabled', () => {
+    const quantum = board({
+      uuid: 'q',
+      name: 'Quantum garage',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+    });
+    state.isOffline = true;
+    state.offlineCards = [downloadedBoard, quantum];
+    state.downloadedScopeKeys = ['kilter:8:17', 'quantum:9101:9201'];
+    state.activeBoard = quantum;
+    const view = render(createElement(BoardSelection));
+    expect(screen.queryByRole('button', { name: 'Quantum garage' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Marco garage' })).toBeTruthy();
+    state.quantumEnabled = true;
+    view.rerender(createElement(BoardSelection));
+    expect(screen.getByRole('button', { name: 'Quantum garage' })).toBeTruthy();
+    state.quantumEnabled = false;
+    view.rerender(createElement(BoardSelection));
+    expect(screen.queryByRole('button', { name: 'Quantum garage' })).toBeNull();
+    expect(state.offlineCards).toHaveLength(2);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
   it('lists the downloaded board and switches to it on tap', async () => {
     state.isOffline = true;
     state.connectivityReason = 'device_offline';

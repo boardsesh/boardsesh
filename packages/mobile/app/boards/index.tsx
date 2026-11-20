@@ -56,6 +56,7 @@ import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCt
 import { ShelfSection, type ShelfHeaderAction } from '../../src/components/ShelfHeader';
 import { Text } from '../../src/components/Text';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
+import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { trackBoardCardAction } from '../../src/lib/boards/board-card-action-analytics';
 import {
@@ -193,7 +194,10 @@ export default function BoardSelection() {
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
-  const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const { data: restoredActiveBoard, isError: boardRestoreFailed } = useActiveBoard();
+  const activeBoard =
+    restoredActiveBoard && isBoardTypeVisible(restoredActiveBoard.boardType) ? restoredActiveBoard : null;
   const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
   const { clearSession } = useQueueActions();
   const deleteBoard = useDeleteBoard();
@@ -214,7 +218,8 @@ export default function BoardSelection() {
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const currentUserId = profile?.id ?? storedUserId;
 
-  const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
+  const [storedDetailBoard, setDetailBoard] = useState<UserBoard | null>(null);
+  const detailBoard = storedDetailBoard && isBoardTypeVisible(storedDetailBoard.boardType) ? storedDetailBoard : null;
   // Where the open detail sheet was opened from, so its Climb here reports that.
   const detailPick = useRef<PickerPick>({ pickSource: 'your_boards' });
   const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
@@ -251,10 +256,14 @@ export default function BoardSelection() {
     isRefetching,
   } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
   const {
-    boards: myBoards,
+    boards: allMyBoards,
     stale: importStatusStale,
     unfinishedWallUuids,
   } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
+  const myBoards = useMemo(
+    () => allMyBoards.filter((board) => isBoardTypeVisible(board.boardType)),
+    [allMyBoards, isBoardTypeVisible],
+  );
 
   // Whether Climbs' no-board entry gets "Where do you climb?": only when the
   // account has no boards at all. Someone whose active board was merely cleared
@@ -266,7 +275,7 @@ export default function BoardSelection() {
   // of something, so the first frame is already the right branch.
   const [noBoardChoice, setNoBoardChoice] = useState<boolean | null>(null);
   if (fromNoBoard && noBoardChoice === null && boardConnection !== undefined) {
-    setNoBoardChoice(boardConnection.boards.length === 0);
+    setNoBoardChoice(myBoards.length === 0);
   }
   const firstBoardChoiceEntry: FirstBoardEntry | null = firstBoardMode
     ? 'launch_gate'
@@ -310,9 +319,9 @@ export default function BoardSelection() {
             cachedMyBoards: myBoards,
             activeBoard: activeBoard ?? null,
             downloadedScopeKeys: downloadedScopeKeys ?? [],
-          })
+          }).filter((board) => isBoardTypeVisible(board.boardType))
         : [],
-    [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys],
+    [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys, isBoardTypeVisible],
   );
 
   // The Bluetooth scan behind the top of the picker, run by itself on open
@@ -328,13 +337,22 @@ export default function BoardSelection() {
   });
   const {
     phase: scanPhase,
-    rows: scanRows,
+    rows: allScanRows,
     lookup: scanLookup,
     listenedLongEnough,
     start: startScan,
     stop: stopScan,
     retryLookup,
   } = pickerScan;
+  const scanRows = useMemo(
+    () =>
+      allScanRows.filter(
+        (row) =>
+          row.kind === 'lookup_failed' ||
+          isBoardTypeVisible(row.kind === 'board' ? row.board.boardType : row.boardType),
+      ),
+    [allScanRows, isBoardTypeVisible],
+  );
   // The top of the picker: At {gym} (the gym the scan heard, else the one the
   // board you're on is at), the one board heard somewhere else, or a box it
   // can't name. Two steps, because the gym's roster is a query keyed on the
@@ -342,7 +360,7 @@ export default function BoardSelection() {
   // Nothing a scan heard leads for its first seconds after hearing anything,
   // or while the lookup is still naming it; once it has led it stays put
   // until the results leave the screen (use-steady-picker-top.ts).
-  const steadiness = usePickerTopSteadiness(scanPhase, scanLookup);
+  const steadiness = usePickerTopSteadiness(scanPhase, scanLookup, isBoardTypeVisible);
   const drawnTop = steadiness.drawn;
   const scanHold = usePickerScanHold(scanPhase, scanHeardAnything(scanRows, scanLookup));
   const holdScanLead = scanHold || steadiness.waitsOnLookup;
@@ -409,7 +427,11 @@ export default function BoardSelection() {
   // Only in the layout it was set in, so a filter set under "Where do you
   // climb?" never follows the climber into the ordinary list.
   const nearbyBoardType =
-    nearbyFilter && nearbyFilter.inFirstBoardChoice === showFirstBoardChoice ? nearbyFilter.boardType : null;
+    nearbyFilter &&
+    nearbyFilter.inFirstBoardChoice === showFirstBoardChoice &&
+    isBoardTypeVisible(nearbyFilter.boardType)
+      ? nearbyFilter.boardType
+      : null;
   const nearbyBoardTypes = useMemo(() => (nearbyBoardType ? [nearbyBoardType] : undefined), [nearbyBoardType]);
   // Taking the filter off abandons the search for the held box, so the box goes
   // with it: a bind from the builder or the gym map after Show all must not
@@ -526,13 +548,15 @@ export default function BoardSelection() {
         // keeps showing the previous, unfiltered list.
         orderBoardsForPartnerWorkout(
           nearbyBoardType
-            ? (nearby?.boards ?? []).filter((board) => board.boardType === nearbyBoardType)
-            : (nearby?.boards ?? []),
+            ? (nearby?.boards ?? []).filter(
+                (board) => board.boardType === nearbyBoardType && isBoardTypeVisible(board.boardType),
+              )
+            : (nearby?.boards ?? []).filter((board) => isBoardTypeVisible(board.boardType)),
           preferredWorkoutBoard,
         ),
         { activeUuid: activeBoard?.uuid, labelOptions },
       ),
-    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions, preferredWorkoutBoard],
+    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions, preferredWorkoutBoard, isBoardTypeVisible],
   );
   // Near you leaves out boards already shown above it (the top and Your
   // boards). Not under "Where do you climb?", which draws Near you above Your

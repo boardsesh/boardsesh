@@ -75,6 +75,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'quantum-board',
+    label: 'Quantum Board',
+    description: 'Show Quantum Board in board discovery and setup. Off or unresolved keeps it hidden.',
+    defaultEnabled: false,
+  },
+  {
     key: 'app-workouts',
     label: 'Partner workouts',
     description: 'Open a planned session from a connected app and read back the results.',

@@ -1,3 +1,4 @@
+import { useIsBoardTypeVisible } from '../../../src/hooks/use-board-visibility';
 import { SMART_PLAYLIST_COUNTS_QUERY_KEY } from '@boardsesh/playlists-react';
 import type {
   CrewFeedItem,
@@ -111,7 +112,10 @@ export default function HomeTab() {
   // it resolves; the view stays on `crew`.
   const { board: homeBoard, isResolving: isResolvingHomeBoard, boards: ownedBoards } = useHomeBoard();
   const [mode, setMode] = useState<FeedMode>('crew');
-  const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(null);
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const [storedSelectedBoard, setSelectedBoard] = useState<UserBoard | null>(null);
+  const selectedBoard =
+    storedSelectedBoard && isBoardTypeVisible(storedSelectedBoard.boardType) ? storedSelectedBoard : null;
   // Once home-board inference settles, point the crew/gym filter at the home
   // board. The view stays on `crew`; with no home board it's the unfiltered crew.
   // During render, not in an effect: React re-renders with the board before it

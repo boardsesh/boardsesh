@@ -150,7 +150,7 @@ export function BoardForm({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
-  const { boardOptions, layoutOptions, requiresCatalogAngles, geometryReady, catalogAnglesLoading } =
+  const { boardOptions, layoutOptions, boardVisible, requiresCatalogAngles, geometryReady, catalogAnglesLoading } =
     useBoardFormCatalog(builder);
 
   const sizeOptions = useMemo(
@@ -183,7 +183,7 @@ export function BoardForm({
   // screen was the sharp edge: flipping it would put a Bluetooth scan and a
   // device picker on a photograph.
   const isSprayWall = builder.boardName === 'spray';
-  const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
+  const showPreview = boardVisible && builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
   const layoutLabel = t('mobile.custom.layout');
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding.

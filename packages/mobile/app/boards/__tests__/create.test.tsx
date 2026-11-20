@@ -222,7 +222,10 @@ vi.mock('../../../src/components/board-discovery/SerialReuseConfirmSheet', () =>
       : null,
 }));
 
-vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
+  toBoardName: (value: string) => value,
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),

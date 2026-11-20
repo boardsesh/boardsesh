@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
+
 vi.mock('../../providers/auth-provider', () => ({ useAuth: vi.fn() }));
 vi.mock('../graphql/use-active-board', () => ({ useActiveBoard: vi.fn() }));
 vi.mock('../graphql/hooks/index', () => ({ useMyBoards: vi.fn(), useProfile: vi.fn() }));
@@ -20,6 +23,7 @@ function board(overrides: Partial<UserBoard>): UserBoard {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  rollout.enabled = false;
   vi.mocked(useAuth).mockReturnValue({ isAuthenticated: true } as never);
   vi.mocked(useProfile).mockReturnValue({ data: { id: 'u1' }, isLoading: false } as never);
   vi.mocked(useActiveBoard).mockReturnValue({ data: null, isLoading: false } as never);
@@ -28,6 +32,25 @@ beforeEach(() => {
 });
 
 describe('useHomeBoard', () => {
+  it('projects saved and active Quantum boards without changing the stored list', () => {
+    const quantum = board({ uuid: 'quantum', boardType: 'quantum' });
+    const kilter = board({ uuid: 'kilter' });
+    const savedBoards = [quantum, kilter];
+    vi.mocked(useActiveBoard).mockReturnValue({ data: quantum, isLoading: false } as never);
+    vi.mocked(useMyBoards).mockReturnValue({ data: { boards: savedBoards }, isLoading: false } as never);
+    const { result, rerender } = renderHook(() => useHomeBoard());
+    expect(result.current.board).toBe(kilter);
+    expect(result.current.boards).toEqual([kilter]);
+    rollout.enabled = true;
+    rerender();
+    expect(result.current.board).toBe(quantum);
+    expect(result.current.boards).toEqual(savedBoards);
+    rollout.enabled = false;
+    rerender();
+    expect(result.current.board).toBe(kilter);
+    expect(savedBoards).toHaveLength(2);
+  });
+
   it('prefers the explicit active board over everything else', () => {
     const active = board({ uuid: 'active', boardType: 'tension' });
     vi.mocked(useActiveBoard).mockReturnValue({ data: active, isLoading: false } as never);
