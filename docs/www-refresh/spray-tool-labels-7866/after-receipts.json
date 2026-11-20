@@ -1,0 +1,87 @@
+{
+  "componentSource": "b4d044757881008f6ef3b51ad223cc1e6daf1d9f",
+  "componentSha256": "a4f7f4d0b57515575c139c72f0863d96c51e8d14d9fff8b1c7980f6158e53a3b",
+  "sourceHead": "b4d044757881008f6ef3b51ad223cc1e6daf1d9f",
+  "receipts": [
+    {
+      "phase": "after",
+      "locale": "en-US",
+      "width": 342,
+      "height": 900,
+      "status": 200,
+      "localeIntroDismissed": false,
+      "x": 24,
+      "right": 366,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "rows": [
+        {
+          "label": "Select",
+          "scope": "row",
+          "action": "tap a hold to move, resize or switch it off."
+        },
+        {
+          "label": "Add",
+          "scope": "row",
+          "action": "mark a missed hold with Draw or Corners."
+        },
+        {
+          "label": "Trace",
+          "scope": "row",
+          "action": "redraw the selected hold's outline in one loop."
+        },
+        {
+          "label": "Refine",
+          "scope": "row",
+          "action": "brush along the outline to grow or shrink it."
+        },
+        {
+          "label": "Join",
+          "scope": "row",
+          "action": "select a hold, then tap another to merge their outlines."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "zh-CN",
+      "width": 342,
+      "height": 900,
+      "status": 200,
+      "localeIntroDismissed": true,
+      "x": 24,
+      "right": 366,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "rows": [
+        {
+          "label": "选择",
+          "scope": "row",
+          "action": "点击岩点，以移动、调整大小或停用。"
+        },
+        {
+          "label": "添加",
+          "scope": "row",
+          "action": "用绘制或角点补上漏掉的岩点。"
+        },
+        {
+          "label": "描摹",
+          "scope": "row",
+          "action": "一笔闭合，重新绘制所选岩点轮廓。"
+        },
+        {
+          "label": "微调",
+          "scope": "row",
+          "action": "沿轮廓涂抹，扩大或缩小岩点。"
+        },
+        {
+          "label": "合并",
+          "scope": "row",
+          "action": "选中一个岩点，再点击另一个，合并轮廓。"
+        }
+      ],
+      "errors": []
+    }
+  ]
+}

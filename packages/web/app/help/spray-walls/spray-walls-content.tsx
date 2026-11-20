@@ -200,7 +200,7 @@ export default function SprayWallsContent() {
 }
 
 function ToolRow({ text }: { text: string }) {
-  const separator = text.indexOf(':');
+  const separator = text.search(/[:：]/u);
   return (
     <TableRow>
       <TableCell component="th" scope="row" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>

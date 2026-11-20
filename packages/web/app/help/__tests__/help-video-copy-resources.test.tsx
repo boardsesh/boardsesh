@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { createInstance } from 'i18next';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
@@ -15,6 +15,7 @@ import BoardPage from '../board-and-bluetooth/page';
 import FindingPage from '../finding-climbs/page';
 import LogbookPage from '../logbook/page';
 import SprayPage from '../spray-walls/page';
+import SprayWallsContent from '../spray-walls/spray-walls-content';
 import { HelpClip, HelpWalkthrough } from '../help-clip';
 
 const { getLocale, loadServerResources } = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ const catalogs = {
   it: itMarketing,
   'zh-CN': zhMarketing,
 };
+const toolKeys = ['select', 'add', 'trace', 'refine', 'join'] as const;
 const clipRoutes = [
   ['board-and-bluetooth', BoardPage],
   ['finding-climbs', FindingPage],
@@ -97,6 +99,33 @@ describe.each(SUPPORTED_LOCALES)('fresh help video resources in %s', (locale) =>
       if (reason === 'reduced motion') expect(play).not.toHaveBeenCalled();
       else expect(play).toHaveBeenCalled();
     });
+  });
+
+  it.each(toolKeys)('keeps the %s tool label and its action in separate table cells', async (tool) => {
+    const instance = await freshRouteInstance(SprayPage, locale);
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <SprayWallsContent />
+      </I18nextProvider>,
+    );
+    const table = container.querySelector<HTMLTableElement>('#fix-holds table');
+    if (!table) throw new Error('Missing spray-wall tools table');
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(5);
+    const row = rows[toolKeys.indexOf(tool)];
+    if (!row) throw new Error(`Missing spray-wall tool row: ${tool}`);
+    const header = within(row).getByRole('rowheader');
+    const action = within(row).getByRole('cell');
+    const toolLabel = header.textContent?.trim() ?? '';
+    const actionText = action.textContent?.trim() ?? '';
+    expect(actionText).not.toBe('');
+    expect(toolLabel).not.toBe('');
+    expect(toolLabel).not.toMatch(/[:：]/u);
+    expect(header.getAttribute('scope')).toBe('row');
+    const catalogText = catalogs[locale].help.spray.fix[tool];
+    expect(catalogText.startsWith(toolLabel)).toBe(true);
+    expect(catalogText.endsWith(actionText)).toBe(true);
+    expect(catalogText.slice(toolLabel.length, -actionText.length).trim()).toMatch(/^[:：]$/u);
   });
 
   it.each(['spray-walls-walkthrough', 'spray-holds-editor'] as const)(
