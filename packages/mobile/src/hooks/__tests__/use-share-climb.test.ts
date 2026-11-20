@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 
-const ctrl = vi.hoisted(() => ({ os: 'ios' as string }));
+const ctrl = vi.hoisted(() => ({
+  os: 'ios' as string,
+  showToast: vi.fn(),
+  setStringAsync: vi.fn(async () => true),
+  t: (key: string) => key,
+}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: ctrl.t }) }));
+vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
+vi.mock('expo-clipboard', () => ({ setStringAsync: ctrl.setStringAsync }));
 
 type IOSPayload = { message: string; url: string };
 type AndroidPayload = { message: string };
@@ -84,12 +92,14 @@ describe('useShareClimb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ctrl.os = 'ios';
+    ctrl.setStringAsync.mockResolvedValue(true);
     fetchMock.mockResolvedValue({ ok: true, text: async () => '' });
     vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, 'share');
   });
 
   it('returns a no-op when climb is null and does not call Share', async () => {
@@ -293,6 +303,29 @@ describe('useShareClimb', () => {
       expect(payload.message).not.toContain('/1/7/1,20/');
       expect(payload).not.toHaveProperty('url');
     });
+  });
+
+  it('copies the readable climb link when the browser has no share menu', async () => {
+    ctrl.os = 'web';
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
+    await act(async () => {
+      await result.current();
+    });
+    expect(shareMock).not.toHaveBeenCalled();
+    expect(ctrl.setStringAsync).toHaveBeenCalledWith(expectedReadableShareUrl);
+    expect(ctrl.showToast).toHaveBeenCalledWith('detail.shareSuccess', 'success');
+  });
+
+  it('propagates a blocked browser clipboard write for the caller error toast', async () => {
+    ctrl.os = 'web';
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    ctrl.setStringAsync.mockResolvedValue(false);
+    const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
+    await act(async () => {
+      await expect(result.current()).rejects.toThrow();
+    });
+    expect(ctrl.showToast).not.toHaveBeenCalled();
   });
 
   it('propagates rejections from Share.share so callers can surface failures', async () => {

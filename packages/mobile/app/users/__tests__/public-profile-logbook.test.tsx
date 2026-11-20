@@ -8,7 +8,11 @@ import { act, render } from '@testing-library/react';
 import { createElement, useState, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const profileState = vi.hoisted(() => ({ currentUserId: undefined as string | undefined }));
+const profileState = vi.hoisted(() => ({
+  currentUserId: undefined as string | undefined,
+  isPrivate: undefined as boolean | undefined,
+  setOptions: vi.fn(),
+}));
 const segment = vi.hoisted(() => ({ onSelect: null as null | ((key: string) => void) }));
 const logbookTab = vi.hoisted(() => ({
   mounts: [] as boolean[],
@@ -21,10 +25,13 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ userId: 'climber-1' }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: profileState.setOptions }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({ useProfilePrivacy: () => ({ data: undefined }) }));
+vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
+  useProfilePrivacy: () => ({ data: { isPrivate: profileState.isPrivate } }),
+}));
+vi.mock('../../../src/components/ShareIconButton', () => ({ ShareIconButton: () => null }));
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useProfile: () => ({ data: profileState.currentUserId ? { id: profileState.currentUserId } : undefined }),
   usePublicProfile: () => ({
@@ -72,12 +79,27 @@ import PublicProfileScreen from '../[userId]/index';
 
 beforeEach(() => {
   profileState.currentUserId = undefined;
+  profileState.isPrivate = undefined;
+  profileState.setOptions.mockClear();
   segment.onSelect = null;
   logbookTab.mounts = [];
   logbookTab.latestViewerIsOwner = undefined;
 });
 
 describe('PublicProfileScreen Logbook', () => {
+  it('adds Share only after public visibility resolves and removes it for private profiles', () => {
+    const view = render(createElement(PublicProfileScreen));
+    expect(profileState.setOptions).toHaveBeenLastCalledWith(expect.objectContaining({ headerRight: undefined }));
+    profileState.isPrivate = false;
+    view.rerender(createElement(PublicProfileScreen));
+    expect(profileState.setOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ headerRight: expect.any(Function) }),
+    );
+    profileState.isPrivate = true;
+    view.rerender(createElement(PublicProfileScreen));
+    expect(profileState.setOptions).toHaveBeenLastCalledWith(expect.objectContaining({ headerRight: undefined }));
+  });
+
   it('remounts the Logbook as your own once your profile loads', () => {
     const view = render(createElement(PublicProfileScreen));
     act(() => segment.onSelect?.('logbook'));

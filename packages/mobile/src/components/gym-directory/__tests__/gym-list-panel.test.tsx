@@ -72,6 +72,10 @@ vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+vi.mock('../../ShareIconButton', () => ({
+  ShareIconButton: ({ accessibilityLabel }: { accessibilityLabel: string }) =>
+    createElement('button', { 'aria-label': accessibilityLabel }),
+}));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
@@ -189,6 +193,31 @@ beforeEach(() => {
 });
 
 describe('GymListPanel', () => {
+  it('shows Share only in an expanded public gym without nesting it in the expand button', () => {
+    const publicGym = { ...gym, isPublic: true, slug: 'movement' };
+    const onPressGym = vi.fn();
+    const entries = makeData().map((row) => (row.kind === 'gym' ? { ...row, gym: publicGym } : row));
+    const panel = (expanded: boolean) => (
+      <GymListPanel
+        data={entries.map((row) => (row.kind === 'gym' ? { ...row, expanded } : row))}
+        mapAvailable
+        onPressGym={onPressGym}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />
+    );
+    const view = render(panel(false));
+    expect(view.queryByRole('button', { name: 'mobile.gyms.shareAriaLabel' })).toBeNull();
+    view.rerender(panel(true));
+    const share = view.getByRole('button', { name: 'mobile.gyms.shareAriaLabel' });
+    expect(share.parentElement?.closest('button')).toBeNull();
+    fireEvent.click(share);
+    expect(onPressGym).not.toHaveBeenCalled();
+  });
+
   it('renders the pinned search slot and the gym rows', () => {
     const { getByTestId, getByText } = render(
       <GymListPanel

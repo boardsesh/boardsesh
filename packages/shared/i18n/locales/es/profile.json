@@ -49,7 +49,11 @@
     "lastThreeMonths": "Últimos 3 meses",
     "activityChartLabel": "Actividad de los últimos 3 meses",
     "displayNameFallback": "Escalador",
-    "betaVideos": "Su beta"
+    "betaVideos": "Su beta",
+    "shareAriaLabel": "Compartir perfil",
+    "shareText": "Descubre a {{name}} en Boardsesh",
+    "linkCopied": "Enlace copiado",
+    "shareFailed": "No se ha podido compartir el enlace"
   },
   "nav": {
     "statistics": {

@@ -49,7 +49,11 @@
     "lastThreeMonths": "Letzte 3 Monate",
     "activityChartLabel": "Aktivität der letzten 3 Monate",
     "displayNameFallback": "Kletterer*in",
-    "betaVideos": "Beta-Videos"
+    "betaVideos": "Beta-Videos",
+    "shareAriaLabel": "Profil teilen",
+    "shareText": "Schau dir {{name}} auf Boardsesh an",
+    "linkCopied": "Link kopiert",
+    "shareFailed": "Der Link konnte nicht geteilt werden"
   },
   "nav": {
     "statistics": {

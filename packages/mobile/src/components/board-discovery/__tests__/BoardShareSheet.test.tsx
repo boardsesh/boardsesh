@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -23,9 +23,15 @@ type ModalMockProps = {
   onClose?: () => void;
   onFullyDismissed?: () => void;
 };
-const captures = vi.hoisted(() => ({ modal: undefined as ModalMockProps | undefined }));
+const captures = vi.hoisted(() => ({
+  modal: undefined as ModalMockProps | undefined,
+  platform: { OS: 'ios' },
+  showToast: vi.fn(),
+  share: vi.fn(async () => ({ action: 'sharedAction' })),
+}));
 vi.mock('react-native', () => ({
-  Share: { share: vi.fn() },
+  Platform: captures.platform,
+  Share: { share: captures.share, dismissedAction: 'dismissedAction' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
@@ -70,7 +76,10 @@ vi.mock('../../SheetTopBar', () => ({
     ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: COLORS }) }));
-vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../providers/toast-provider', () => ({
+  useToast: () => ({ showToast: captures.showToast }),
+}));
+vi.mock('../../../lib/share-prewarm', () => ({ prewarmShareCaches: vi.fn() }));
 vi.mock('../../sheet-snap-points', () => ({
   MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'],
 }));
@@ -82,11 +91,20 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 import { BoardShareSheet } from '../BoardShareSheet';
-import { Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { openExternalUrl } from '../../../lib/open-url';
 
 const URL = 'https://www.boardsesh.com/b/garage/40/list?wall=abc';
+
+beforeEach(() => {
+  captures.platform.OS = 'ios';
+  captures.share.mockResolvedValue({ action: 'sharedAction' });
+  vi.mocked(Clipboard.setStringAsync).mockResolvedValue(true);
+});
+
+afterEach(() => {
+  Reflect.deleteProperty(navigator, 'share');
+});
 
 describe('BoardShareSheet text', () => {
   beforeEach(() => {
@@ -136,7 +154,26 @@ describe('BoardShareSheet text', () => {
     await act(async () => getByText('mobile.sprayShare.copyLink').click());
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(URL);
     act(() => getByText('mobile.sprayShare.share').click());
-    expect(Share.share).toHaveBeenCalledWith({ message: URL, url: URL });
+    expect(captures.share).toHaveBeenCalledWith({ message: URL, url: URL });
+  });
+
+  it('copies the same capability link when the browser has no share menu', async () => {
+    captures.platform.OS = 'web';
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    const { getByText } = renderSheet();
+    await act(async () => getByText('mobile.sprayShare.share').click());
+    expect(captures.share).not.toHaveBeenCalled();
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(URL);
+    expect(captures.showToast).toHaveBeenCalledWith('mobile.sprayShare.copied', 'success');
+  });
+
+  it('reports a blocked browser clipboard write', async () => {
+    captures.platform.OS = 'web';
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    vi.mocked(Clipboard.setStringAsync).mockResolvedValue(false);
+    const { getByText } = renderSheet();
+    await act(async () => getByText('mobile.sprayShare.share').click());
+    expect(captures.showToast).toHaveBeenCalledWith('detail.shareError', 'error');
   });
 
   it('closes from the top bar, which carries the title', () => {

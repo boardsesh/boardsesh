@@ -12,6 +12,7 @@ import { useBulkVoteSummaries, useProfile, useSessionDetail } from '../../lib/gr
 import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
 import { spacing } from '../../theme/tokens';
+import { buildSessionRecapOgImageUrl } from '../../lib/share-prewarm';
 import { useVariantValue } from '../../theme/variants';
 import { SectionHeader } from '../SectionHeader';
 import { ShareIconButton } from '../ShareIconButton';
@@ -145,11 +146,12 @@ export default function SessionDetailScreen() {
               accessibilityLabel={t('detail.share')}
               copiedMessage={t('detail.shareSuccess')}
               errorMessage={t('detail.shareError')}
+              prewarmOgImageUrl={isDaily ? undefined : (buildSessionRecapOgImageUrl(sessionId) ?? undefined)}
             />
           )
         : undefined,
     });
-  }, [navigation, headerTitle, canShare, sessionId, t]);
+  }, [navigation, headerTitle, canShare, sessionId, isDaily, t]);
 
   if (isPending || !session)
     return (

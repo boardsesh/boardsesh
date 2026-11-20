@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { ModalSheet } from '../ModalSheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
@@ -14,7 +14,8 @@ import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { buildSessionShareUrl } from '../../lib/session-share';
-import { buildSessionInviteOgImageUrl, prewarmShareCaches } from '../../lib/share-prewarm';
+import { buildSessionInviteOgImageUrl } from '../../lib/share-prewarm';
+import { useShareLinkAction } from '../../hooks/use-share-link-action';
 
 type InviteSheetProps = {
   visible: boolean;
@@ -43,13 +44,13 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
     });
   }, [shareUrl, showToast, t]);
 
-  const handleShare = useCallback(() => {
-    hapticSelection();
-    // Warm the join page and its invite card before the sheet opens, so the
-    // friend's chat app finds both rendered. Best effort, never awaited.
-    void prewarmShareCaches(shareUrl, buildSessionInviteOgImageUrl(sessionId));
-    void Share.share({ message: shareUrl, url: shareUrl });
-  }, [sessionId, shareUrl]);
+  const handleShare = useShareLinkAction({
+    url: shareUrl,
+    message: shareUrl,
+    copiedMessage: t('mobile.session.inviteCopied'),
+    errorMessage: t('detail.shareError'),
+    prewarmOgImageUrl: buildSessionInviteOgImageUrl(sessionId),
+  });
 
   return (
     <ModalSheet

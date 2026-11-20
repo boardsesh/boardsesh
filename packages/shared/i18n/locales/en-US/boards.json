@@ -416,7 +416,11 @@
       "placesError": "Couldn't look up cities. You can still search gym names.",
       "placesEmpty": "No city matches. Press Enter to search gym names.",
       "placesHint": "Choose a city, or press Enter to search gym names.",
-      "placesAttribution": "City data: GeoNames"
+      "placesAttribution": "City data: GeoNames",
+      "shareAriaLabel": "Share {{name}}",
+      "shareText": "Climb at {{name}} on Boardsesh",
+      "linkCopied": "Link copied",
+      "shareFailed": "Couldn’t share the link"
     },
     "myGyms": {
       "moreRowTitle": "My gyms",

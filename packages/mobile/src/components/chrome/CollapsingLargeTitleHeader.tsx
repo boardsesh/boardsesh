@@ -36,6 +36,8 @@ type CollapsingLargeTitleHeaderProps = {
    * (see `NativeRootHeader`). Ignored by the floating islands.
    */
   leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
+  /** Native trailing items, including actions that move onto the iOS side rail. */
+  rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
@@ -62,6 +64,7 @@ export function CollapsingLargeTitleHeader({
   leftActions,
   rightActions,
   leftItems,
+  rightItems,
   children,
   opaqueControls,
   scrollEdge,
@@ -86,6 +89,7 @@ export function CollapsingLargeTitleHeader({
         leftActions={leftActions}
         leftActionsStandalone={Boolean(leftActions)}
         leftItems={leftItems}
+        rightItems={rightItems}
         rightActions={rightActions}
         centerContent={centerContent}
         opaqueControls={opaqueControls}

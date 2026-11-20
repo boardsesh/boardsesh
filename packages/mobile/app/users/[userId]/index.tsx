@@ -11,6 +11,8 @@ import { SegmentedControl } from '../../../src/components/SegmentedControl';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { PublicProfileHeaderBlock } from '../../../src/components/you/PublicProfileHeaderBlock';
+import { ShareIconButton } from '../../../src/components/ShareIconButton';
+import { useProfileShareOptions } from '../../../src/hooks/use-profile-share-options';
 import { ProgressTab } from '../../../src/components/you/ProgressTab';
 import { SessionsTab } from '../../../src/components/you/SessionsTab';
 import { LogbookTab } from '../../../src/components/you/LogbookTab';
@@ -40,10 +42,16 @@ export default function PublicProfileScreen() {
 
   const profile = publicProfile.data ? { ...publicProfile.data, ...profilePrivacy.data } : publicProfile.data;
   const displayName = profile?.displayName || t('mobile.unknownName');
+  const profileShare = useProfileShareOptions({
+    userId: !publicProfile.isPending && !publicProfile.isError ? profile?.id : undefined,
+    displayName: profile?.displayName,
+    isPrivate: profile?.isPrivate,
+  });
 
   // Drive the native stack header (back chevron + title). Set once the name
   // resolves so a long display name folds into the compact bar on iOS.
   useEffect(() => {
+    const shareUrl = profileShare.url;
     navigation.setOptions({
       headerShown: true,
       // Opaque (not the app's translucent push header) so the in-body avatar/name
@@ -51,8 +59,11 @@ export default function PublicProfileScreen() {
       headerTransparent: false,
       headerBlurEffect: undefined,
       title: profile ? displayName : t('mobile.profile.title'),
+      headerRight: shareUrl
+        ? () => <ShareIconButton {...profileShare} url={shareUrl} appearance="nativeHeader" />
+        : undefined,
     });
-  }, [navigation, profile, displayName, t]);
+  }, [navigation, profile, displayName, t, profileShare]);
 
   // instagramUrl rides the publicProfile query once PR #2902 (backend) merges to
   // main; until then it resolves to null and the chip stays hidden. The cast is a

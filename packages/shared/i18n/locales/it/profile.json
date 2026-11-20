@@ -49,7 +49,11 @@
     "lastThreeMonths": "Ultimi 3 mesi",
     "activityChartLabel": "Attività negli ultimi 3 mesi",
     "displayNameFallback": "Climber",
-    "betaVideos": "La sua beta"
+    "betaVideos": "La sua beta",
+    "shareAriaLabel": "Condividi il profilo",
+    "shareText": "Scopri {{name}} su Boardsesh",
+    "linkCopied": "Link copiato",
+    "shareFailed": "Impossibile condividere il link"
   },
   "nav": {
     "statistics": {

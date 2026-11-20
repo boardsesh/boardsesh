@@ -103,6 +103,20 @@ export function buildSetterOgImageUrl(username: string): string {
   return `${BACKEND_URL}/og/setter?username=${encodeURIComponent(username)}`;
 }
 
+export function buildProfileOgImageUrl(userId: string): string {
+  return `${BACKEND_URL}/og/profile?user_id=${encodeURIComponent(userId)}`;
+}
+
+export function buildPlaceOgImageUrl(kind: 'gym' | 'board', slug: string): string {
+  return `${BACKEND_URL}/og/place?kind=${kind}&slug=${encodeURIComponent(slug)}`;
+}
+
+/** Daily feed groups use the web card rather than the backend session renderer. */
+export function buildSessionRecapOgImageUrl(sessionId: string): string | null {
+  if (sessionId.startsWith('daily:')) return null;
+  return `${BACKEND_URL}/og/session?sessionId=${encodeURIComponent(sessionId)}`;
+}
+
 export function buildSessionInviteOgImageUrl(sessionId: string): string {
   return `${BACKEND_URL}/og/session?sessionId=${encodeURIComponent(sessionId)}&variant=join`;
 }

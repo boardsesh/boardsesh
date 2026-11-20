@@ -416,7 +416,11 @@
       "placesError": "Impossibile cercare le città. Puoi comunque cercare le palestre per nome.",
       "placesEmpty": "Nessuna città trovata. Premi Invio per cercare le palestre per nome.",
       "placesHint": "Scegli una città o premi Invio per cercare le palestre per nome.",
-      "placesAttribution": "Dati delle città: GeoNames"
+      "placesAttribution": "Dati delle città: GeoNames",
+      "shareAriaLabel": "Condividi {{name}}",
+      "shareText": "Arrampica da {{name}} con Boardsesh",
+      "linkCopied": "Link copiato",
+      "shareFailed": "Impossibile condividere il link"
     },
     "myGyms": {
       "moreRowTitle": "Le mie palestre",

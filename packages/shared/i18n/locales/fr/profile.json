@@ -49,7 +49,11 @@
     "lastThreeMonths": "3 derniers mois",
     "activityChartLabel": "Activité des 3 derniers mois",
     "displayNameFallback": "Grimpeur",
-    "betaVideos": "Leur beta"
+    "betaVideos": "Leur beta",
+    "shareAriaLabel": "Partager le profil",
+    "shareText": "Découvre {{name}} sur Boardsesh",
+    "linkCopied": "Lien copié",
+    "shareFailed": "Impossible de partager le lien"
   },
   "nav": {
     "statistics": {

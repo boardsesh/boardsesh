@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
-import { Platform, Share } from 'react-native';
+import { Share } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { useToast } from '../providers/toast-provider';
+import { shareLink } from '../lib/share-link';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import type { Climb } from '@boardsesh/shared-schema';
 import { CLIMB_SHARE_BASE_URL } from '../lib/env';
@@ -65,6 +68,8 @@ function resolveShareTarget(
 }
 
 export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angle }: ShareClimbArgs) {
+  const { t } = useTranslation('session');
+  const { showToast } = useToast();
   return useCallback(async () => {
     if (!climb) return;
     const { path, sprayVisibility } = resolveShareTarget(climb, { boardName, layoutId, sizeId, setIds, angle });
@@ -85,6 +90,7 @@ export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angl
     });
     void prewarmShareCaches(url, fallbackOgImageUrl);
 
-    await Share.share(Platform.OS === 'ios' ? { message: climb.name, url } : { message: `${climb.name}\n${url}` });
-  }, [climb, boardName, layoutId, sizeId, setIds, angle]);
+    const result = await shareLink({ url, message: climb.name });
+    if (result === 'copied') showToast(t('detail.shareSuccess'), 'success');
+  }, [climb, boardName, layoutId, sizeId, setIds, angle, showToast, t]);
 }

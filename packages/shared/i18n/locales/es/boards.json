@@ -416,7 +416,11 @@
       "placesError": "No pudimos buscar ciudades. Puedes seguir buscando por nombre de rocódromo.",
       "placesEmpty": "No hay ciudades que coincidan. Pulsa Intro para buscar nombres de rocódromos.",
       "placesHint": "Elige una ciudad o pulsa Intro para buscar nombres de rocódromos.",
-      "placesAttribution": "Datos de ciudades: GeoNames"
+      "placesAttribution": "Datos de ciudades: GeoNames",
+      "shareAriaLabel": "Compartir {{name}}",
+      "shareText": "Escala en {{name}} con Boardsesh",
+      "linkCopied": "Enlace copiado",
+      "shareFailed": "No se ha podido compartir el enlace"
     },
     "myGyms": {
       "moreRowTitle": "Mis rocódromos",

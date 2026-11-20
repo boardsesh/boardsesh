@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { ModalSheet } from '../ModalSheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
@@ -12,6 +12,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
+import { useShareLinkAction } from '../../hooks/use-share-link-action';
 import { openExternalUrl } from '../../lib/open-url';
 import { spacing, borderRadius } from '../../theme/tokens';
 import type { SprayWallVisibility } from '../../lib/spray/spray-share';
@@ -83,6 +84,7 @@ export function BoardShareSheet({
   posterUrl = null,
 }: BoardShareSheetProps) {
   const { t } = useTranslation('boards');
+  const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
 
@@ -94,11 +96,12 @@ export function BoardShareSheet({
     });
   }, [shareUrl, showToast, t]);
 
-  const handleShare = useCallback(() => {
-    if (!shareUrl) return;
-    hapticSelection();
-    void Share.share({ message: shareUrl, url: shareUrl });
-  }, [shareUrl]);
+  const handleShare = useShareLinkAction({
+    url: shareUrl,
+    message: shareUrl ?? '',
+    copiedMessage: t('mobile.sprayShare.copied'),
+    errorMessage: tSession('detail.shareError'),
+  });
 
   // An invite token printed and taped to a wall is no longer an invite, so the
   // sheet refuses the poster for one even if a caller passes a URL.
