@@ -62,6 +62,45 @@ afterEach(async () => {
 });
 
 describe('consent suspension with the installed PostHog SDK', () => {
+  it('retains only the request role in SDK-enriched events on landing and later visits', async () => {
+    const tagged = new URL(
+      'https://boardsesh.com/boards?utm_source=private-campaign-fixture&gclid=private-click-fixture',
+    );
+    Object.defineProperty(window, 'location', { configurable: true, value: tagged });
+    const previousReferrer = Object.getOwnPropertyDescriptor(document, 'referrer');
+    Object.defineProperty(document, 'referrer', {
+      configurable: true,
+      value: 'https://referrer.test/?fbclid=private-referrer-fixture',
+    });
+    try {
+      const analytics = await import('../analytics');
+      analytics.trackBoardRequestSubmitted('maker');
+      await harness.clients[0].register({
+        $set: { current: 'private-click-fixture' },
+        $set_once: { initial: 'private-referrer-fixture' },
+      });
+      analytics.track('Ordinary attribution fixture');
+      Object.defineProperty(window, 'location', { configurable: true, value: new URL('https://boardsesh.com/boards') });
+      analytics.trackBoardRequestSubmitted('gym');
+      const client = harness.clients[0];
+      const queued = client.getPersistedProperty('queue' as Parameters<PostHog['getPersistedProperty']>[0]) as {
+        message: { event: string; properties: Record<string, unknown>; distinct_id: string };
+      }[];
+      const requests = queued.filter(({ message }) => message.event === 'Board Request Submitted');
+      expect(requests.map(({ message }) => message.properties)).toEqual([{ role: 'maker' }, { role: 'gym' }]);
+      expect(requests.every(({ message }) => message.distinct_id === client.getDistinctId())).toBe(true);
+      expect(JSON.stringify(requests)).not.toMatch(/private-(campaign|click|referrer)-fixture/);
+      const ordinary = queued.find(({ message }) => message.event === 'Ordinary attribution fixture');
+      expect(ordinary?.message.properties).toMatchObject({
+        $current_url: tagged.href,
+        $referrer: 'https://referrer.test/?fbclid=private-referrer-fixture',
+      });
+    } finally {
+      if (previousReferrer) Object.defineProperty(document, 'referrer', previousReferrer);
+      else Reflect.deleteProperty(document, 'referrer');
+    }
+  });
+
   it('preserves identity and an interrupted conversion flush through anonymous sign-in', async () => {
     const analytics = await import('../analytics');
     analytics.track('Signup Completed');

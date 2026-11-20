@@ -30,7 +30,7 @@ A separate first-visit check temporarily applied the reviewed compact consent ba
 
 ## Privacy review
 
-The post-publication code review found that the shared analytics helper adds campaign and ad click fields to normal website events. The private request now uses the same consent gate and sends only its fixed role as an application event property. The analytics SDK retains its usual transport metadata. Tests exercise a tagged visit with both denied and granted consent and retain attribution on an ordinary event.
+The post-publication code review found that the shared analytics helper adds campaign and ad click fields to normal website events. The private request now uses the same consent gate and sends only its fixed role as an application event property. The PostHog SDK retains its event ID, timestamp and standard outer identity. Its final capture hook keeps only the role in the private event’s properties and excludes URL, referrer and person-property copies. Ordinary events retain their usual attribution. Tests exercise a tagged visit with both denied and granted consent and retain attribution on an ordinary event.
 
 The admin inbox handles failures with a fixed retry message. Neither a browser GraphQL client error nor a database driver's bound search term is sent to the diagnostic sinks. Sentry receives a fixed diagnostic for a failed inbox read. These protections cover every filter, including All.
 
@@ -44,3 +44,5 @@ The post-publication designer requested a settled Play control on the candidate�
 The five request commits start immediately after `54a95e8d8f` and end at `3fa2274db3`. Astra recommended replaying precisely that range onto the published image gallery. The two branches share an older Git ancestor (`0757401e2b`) because the gallery was rebased. Starting there would also replay the superseded directory. The gallery supplies the layout images, captions, keyboard navigation and search metadata. This change adds the invitation and private request form to that page. Shared translations and generated GraphQL types incorporate both branches’ changes.
 
 The two admin failure cases and the trusted-address quota test passed against local PostgreSQL and Redis on November 20. The fourth review fix pins the clock inside the quota test so all six submissions exercise the same minute.
+
+The Node HTTP integration records GET query parameters before GraphQL execution. For a GET that contains a private feedback operation, Sentry drops the transaction and exports only a fixed error diagnostic. The abort logger uses the route path. Ordinary GraphQL GET requests keep their existing diagnostics. The installed SDK tests use a synthetic loopback server and in-memory telemetry to verify both private and public cases.
