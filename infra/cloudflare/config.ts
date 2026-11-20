@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import { OTA_HOSTING_PROVIDER, type OtaHostingProvider } from '../ota/server';
+
 import { CONSENT_REGION_EDGE_HEADER_NAME } from '../../packages/shared/consent/src/consent-region';
 
 import {
@@ -276,6 +278,30 @@ export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
 
 /** The proxied xprem endpoint that receives Observe telemetry and OTA traffic. */
 export const UPDATES_HOSTNAME = 'updates.boardsesh.com';
+
+/** Filled from Cloudflare's created tunnel before the controlled ownership switch. */
+export const OTA_TUNNEL_ID: string | null = null;
+
+/** Preparation leaves the serving Railway record untouched; an unconfigured cutover fails closed. */
+export function otaDnsRecords(
+  provider: OtaHostingProvider,
+  tunnelId: string | null = OTA_TUNNEL_ID,
+): DnsRecordDesired[] {
+  if (provider === 'railway') return [];
+  if (provider !== 'homelab' || !tunnelId || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(tunnelId)) {
+    throw new Error('Homelab OTA DNS requires the created Cloudflare tunnel UUID before cutover');
+  }
+  return [
+    {
+      management: 'full',
+      name: UPDATES_HOSTNAME,
+      type: 'CNAME',
+      content: `${tunnelId}.cfargotunnel.com`,
+      ttl: 1,
+      proxied: true,
+    },
+  ];
+}
 
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
@@ -1136,6 +1162,14 @@ export const OTA_SOURCEMAP_LIFECYCLE_RULE: R2LifecycleRule = {
   deleteObjectsTransition: { condition: { type: 'Age', maxAge: 35 * 24 * 60 * 60 } },
 };
 
+/** Only routine backups expire. rehearsal/ and cutover/ stay until explicit retirement. */
+export const OTA_BACKUP_LIFECYCLE_RULE: R2LifecycleRule = {
+  id: 'boardsesh-ota-scheduled-backups-14d',
+  enabled: true,
+  conditions: { prefix: 'scheduled/' },
+  deleteObjectsTransition: { condition: { type: 'Age', maxAge: 14 * 24 * 60 * 60 } },
+};
+
 export const STORE_CREATIVES_CANDIDATE_LIFECYCLE_RULE: R2LifecycleRule = {
   id: 'boardsesh-store-creatives-candidates-30d',
   enabled: true,
@@ -1165,6 +1199,14 @@ export interface R2BucketDesired {
 }
 
 export const desiredR2Buckets: readonly R2BucketDesired[] = [
+  // Database copies contain sealed signing keys and device telemetry. Never public.
+  {
+    name: 'boardsesh-ota-backups',
+    customDomain: null,
+    r2DevDomainEnabled: false,
+    locationHint: 'oc',
+    lifecycleRule: OTA_BACKUP_LIFECYCLE_RULE,
+  },
   // Public review media; approved creatives and reviewed physical footage never expire.
   {
     name: 'boardsesh-store-creatives',
@@ -1225,6 +1267,7 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
   dnsRecords: [
+    ...otaDnsRecords(OTA_HOSTING_PROVIDER),
     {
       management: 'proxied-only',
       name: WS_HOSTNAME,

@@ -31,7 +31,7 @@ import {
   PLACEHOLDER_PATTERN,
   POSTGRES_PRIMARY_SERVICE_NAME,
   WEB_SERVICE_NAME,
-  desiredRailwayState,
+  railwayStateForHosting,
 } from '../infra/railway/config';
 import type { ServiceDesired } from '../infra/railway/config';
 import {
@@ -82,6 +82,8 @@ import {
   ttlFromEngineFull,
   waitForDeployment,
 } from './railway-apply';
+
+const desiredRailwayState = railwayStateForHosting('railway');
 
 /**
  * A value that is unmistakable in any output. Every secret-safety assertion looks
@@ -2333,7 +2335,7 @@ async function runCli(
   for (const [key, value] of Object.entries(env)) process.env[key] = value;
 
   try {
-    const code = await main(argv, dependencies);
+    const code = await main(argv, { desired: desiredRailwayState, ...dependencies });
     return { code, error: null, output: captured.lines.join('\n'), calls: stub.calls };
   } catch (error) {
     return { code: null, error: error as Error, output: captured.lines.join('\n'), calls: stub.calls };
@@ -2443,6 +2445,24 @@ describe('serving deployment identity', () => {
     } else {
       expect(output).toContain('No rollback target');
     }
+  });
+});
+
+describe('homelab ownership fence', () => {
+  it('does not repair or query retained OTA services after ownership transfers', async () => {
+    const stub = railwayStub({
+      missingInstances: [OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME, OTA_POSTGRES_SERVICE_NAME],
+    });
+    const { code, error, output, calls } = await runCli(
+      ['--apply'],
+      stub,
+      { CLICKHOUSE_URL: 'not-a-valid-url' },
+      { desired: railwayStateForHosting('homelab') },
+    );
+    expect(error).toBeNull();
+    expect(code).toBe(0);
+    expect(output).not.toContain('ClickHouse volume');
+    expect(calls.filter((call) => /\bmutation\b/.test(call.query))).toEqual([]);
   });
 });
 

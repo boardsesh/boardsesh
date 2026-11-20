@@ -4,7 +4,7 @@
  * One-time setup helper for the self-hosted production OTA — the green-field
  * expo-open-ota **V3** control-plane server at updates.boardsesh.com. Splits the
  * runbook in docs/mobile-ota-updates.md into scriptable phases so the error-prone
- * bits (the Railway env block, the S3 lifecycle rule, the GitHub secret/var checks)
+ * bits (the container env block, the S3 lifecycle rule, the GitHub secret/var checks)
  * aren't done by hand. Cloud actions (bucket, Postgres, Railway service, DNS) and
  * dashboard actions (create the app, export the cert, mint the eoo_ key) stay manual.
  *
@@ -17,7 +17,7 @@
  *   - Publish auth is the app-scoped EOO_TOKEN (Expo tokens are rejected).
  *
  * Phases (run in this order as infra comes online):
- *   vp run mobile:ota-setup keys            # print the V3 Railway env + cert-export steps
+ *   vp run mobile:ota-setup keys            # print the V3 container env + cert-export steps
  *   vp run mobile:ota-setup map             # map the `production` channel → branch (post first publish; `expo` alias)
  *   vp run mobile:ota-setup github --url <BASE_URL>/manifest   # set the EXPO_UPDATES_URL variable + secret checks
  *   vp run mobile:ota-setup preview         # per-PR preview infra: S3 lifecycle rule + GitHub bits
@@ -89,9 +89,10 @@ function printServerSetup(): void {
   }
 
   log('');
-  log('── Railway env for the expo-open-ota V3 service (as built) ──────────────');
+  log('── Container env for the expo-open-ota V3 service (as built) ──────────────');
   log('⚠ DB_KEYS_MASTER_KEY_B64 is the ONLY key that can unseal the app signing key.');
-  log('  Generate it ONCE: printf %s "$(openssl rand -base64 32)"  (no trailing newline,');
+  log('  Migration: preserve the EXISTING key and restore its database; never generate a replacement.');
+  log('  Green-field only, generate it ONCE: printf %s "$(openssl rand -base64 32)"  (no trailing newline,');
   log('  strict base64). Store it in 1Password + one out-of-band copy and NEVER');
   log('  regenerate it — losing it together with the Postgres backups makes the entire');
   log('  V3 fleet unsignable.');
@@ -100,7 +101,7 @@ function printServerSetup(): void {
     [
       `BASE_URL=https://updates.boardsesh.com`,
       `JWT_SECRET=<openssl rand -hex 32>`,
-      `DB_URL=<Railway Postgres internal URL, with explicit sslmode; DB must exist before first boot>`,
+      `DB_URL=<dedicated Postgres URL; homelab Compose host postgres; DB must exist before first boot>`,
       `DB_KEYS_MASTER_KEY_B64=<openssl rand -base64 32 — store safely, NEVER regenerate>`,
       `ADMIN_EMAIL=admin@boardsesh.com`,
       `ADMIN_PASSWORD=<at least 8 chars incl. upper+lower+digit+special — first boot crash-loops otherwise>`,
@@ -302,11 +303,12 @@ function printRunbook(): void {
   log('Self-hosted production OTA setup (green-field expo-open-ota V3 control-plane).');
   log('Run these phases as infra comes online:');
   log('');
-  log('  1. (cloud) create the boardsesh-ota-v3 bucket + a dedicated Railway Postgres,');
-  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.6 on Railway,');
-  log('       point updates.boardsesh.com at it (see docs/mobile-ota-updates.md).');
+  log('  1. Use the approved Ansible OTA VM stack and existing boardsesh-ota-v3 R2 bucket,');
+  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.6 at the declared immutable digest,');
+  log('       expose updates.boardsesh.com through its Cloudflare Tunnel (see docs/ota-homelab.md).');
+  log('       Migration restores the existing app/signing identity: skip new-app/certificate/native-build steps.');
   log('  2. vp run mobile:ota-setup keys');
-  log('       → prints the V3 Railway env block + the cert-export steps.');
+  log('       → prints the V3 container env block + the cert-export steps.');
   log('         Create the app in /dashboard, export certs/certificate.pem, commit it.');
   log('  3. vp run mobile:ota-setup github --url https://updates.boardsesh.com/manifest');
   log('       → sets the EXPO_UPDATES_URL repo variable + checks EOO_TOKEN / OTA_ADMIN_*.');

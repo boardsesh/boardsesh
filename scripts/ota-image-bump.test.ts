@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { parseTestPlan, parseRisk } from '../packages/shared/pr-body/src/index';
 
@@ -17,7 +17,7 @@ import {
   parseArgs,
   nextTagPageUrl,
   pullRequestBody,
-  rewriteServerVersionConstant,
+  fetchImageDigest,
   rewriteVersionMentions,
   selectCandidates,
   writeVersion,
@@ -25,6 +25,7 @@ import {
 import type { BumpReport } from './ota-image-bump';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const TEST_DIGEST = `sha256:${'a'.repeat(64)}`;
 
 /**
  * The real tag list, as GHCR returned it on 2026-09-05.
@@ -310,17 +311,24 @@ describe('rewriteVersionMentions', () => {
         mkdirSync(dirname(absolutePath), { recursive: true });
         writeFileSync(absolutePath, before);
       }
-      const configPath = join(rootDir, 'infra/railway/config.ts');
+      const configPath = join(rootDir, 'infra/ota/server.json');
       mkdirSync(dirname(configPath), { recursive: true });
-      writeFileSync(configPath, "export const OTA_SERVER_VERSION = '3.1.2';");
+      writeFileSync(
+        configPath,
+        JSON.stringify(
+          { version: '3.1.2', repository: OTA_IMAGE_REPOSITORY, digest: `sha256:${'b'.repeat(64)}` },
+          null,
+          2,
+        ) + '\n',
+      );
 
-      const touched = writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', rootDir);
+      const touched = writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', TEST_DIGEST, rootDir);
 
-      expect(touched).toEqual([...VERSION_BEARING_FILES, 'infra/railway/config.ts']);
+      expect(touched).toEqual([...VERSION_BEARING_FILES, 'infra/ota/server.json']);
       for (const relativePath of VERSION_BEARING_FILES) {
         expect(readFileSync(join(rootDir, relativePath), 'utf-8')).toBe('eoas@3.1.3 xprem:v3.1.3 expo-open-ota:v3.1.3');
       }
-      expect(writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', rootDir)).toEqual([]);
+      expect(writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', TEST_DIGEST, rootDir)).toEqual([]);
     } finally {
       rmSync(rootDir, { recursive: true, force: true });
     }
@@ -335,11 +343,14 @@ describe('rewriteVersionMentions', () => {
         mkdirSync(dirname(absolutePath), { recursive: true });
         writeFileSync(absolutePath, spellings[index % spellings.length]);
       }
-      const configPath = join(rootDir, 'infra/railway/config.ts');
+      const configPath = join(rootDir, 'infra/ota/server.json');
       mkdirSync(dirname(configPath), { recursive: true });
-      writeFileSync(configPath, "export const OTA_SERVER_VERSION = '3.1.3';");
+      writeFileSync(
+        configPath,
+        JSON.stringify({ version: '3.1.3', repository: OTA_IMAGE_REPOSITORY, digest: TEST_DIGEST }, null, 2) + '\n',
+      );
 
-      const touched = writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', rootDir);
+      const touched = writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', TEST_DIGEST, rootDir);
 
       expect(touched).toEqual([...VERSION_BEARING_FILES]);
       for (const relativePath of VERSION_BEARING_FILES) {
@@ -351,33 +362,44 @@ describe('rewriteVersionMentions', () => {
   });
 });
 
-describe('rewriteServerVersionConstant', () => {
-  // The declared server version is a bare string, so it needs its own replacement
-  // rather than one of the `eoas@` / `:v` spellings. A pattern that matched nothing
-  // would leave config.ts behind while every other file moved.
-  const DECLARATION = "export const OTA_SERVER_VERSION = '3.1.2';";
-
-  it('moves the constant to the new version', () => {
-    expect(rewriteServerVersionConstant(DECLARATION, '3.1.3')).toBe("export const OTA_SERVER_VERSION = '3.1.3';");
+describe('immutable server release', () => {
+  it('stores a version, repository and SHA-256 index digest in the portable declaration', () => {
+    const release = JSON.parse(readFileSync(join(REPO_ROOT, 'infra/ota/server.json'), 'utf8'));
+    expect(release.repository).toBe(OTA_IMAGE_REPOSITORY);
+    expect(release.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  it('matches the declaration as it is actually written in config.ts', () => {
-    // Reads the real file rather than a fixture, so a reformat or a rename of the
-    // constant fails here instead of silently no-opping in a bump PR.
-    const source = readFileSync(join(REPO_ROOT, 'infra/railway/config.ts'), 'utf-8');
-    const after = rewriteServerVersionConstant(source, '9.9.9');
-
-    expect(after).not.toBe(source);
-    expect(after).toContain("export const OTA_SERVER_VERSION = '9.9.9';");
+  it('resolves the registry digest before any rewrite', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'anonymous' })))
+      .mockResolvedValueOnce(new Response('{}', { headers: { 'docker-content-digest': TEST_DIGEST } }));
+    vi.stubGlobal('fetch', request);
+    try {
+      expect(await fetchImageDigest('3.2.6')).toBe(TEST_DIGEST);
+      expect(request.mock.calls[1][0]).toContain('/manifests/v3.2.6');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it('moves a prerelease version too', () => {
-    expect(rewriteServerVersionConstant(DECLARATION, '3.2.0-beta3')).toContain("'3.2.0-beta3'");
+  it('rejects a manifest without a valid digest', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'anonymous' })))
+        .mockResolvedValueOnce(new Response('{}')),
+    );
+    try {
+      await expect(fetchImageDigest('3.2.6')).rejects.toThrow(/immutable digest/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it('leaves other constants alone', () => {
-    const source = [DECLARATION, "export const OTA_IMAGE_REPOSITORY = 'ghcr.io/x/expo-open-ota';"].join('\n');
-    expect(rewriteServerVersionConstant(source, '3.1.3')).toContain("'ghcr.io/x/expo-open-ota'");
+  it('refuses an unresolved digest before touching any file', () => {
+    expect(() => writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', 'latest', '/missing')).toThrow(/resolved/);
   });
 });
 

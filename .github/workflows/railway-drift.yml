@@ -21,6 +21,9 @@ on:
     branches: [main]
     paths:
       - 'infra/railway/**'
+      - 'infra/ota/server.json'
+      - 'infra/ota/server.ts'
+      - 'infra/ota/hosting.json'
       - 'scripts/railway-apply.ts'
       - 'scripts/railway-deployment-rollback.mjs'
       - '.github/workflows/railway-drift.yml'
@@ -29,6 +32,9 @@ on:
   pull_request:
     paths:
       - 'infra/railway/**'
+      - 'infra/ota/server.json'
+      - 'infra/ota/server.ts'
+      - 'infra/ota/hosting.json'
       - 'scripts/railway-apply.ts'
       - 'scripts/check-primary-tls.ts'
       - 'scripts/check-primary-tls.test.ts'

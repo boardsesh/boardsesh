@@ -12,10 +12,12 @@ import {
   OTA_IMAGE,
   OTA_REQUIRED_VARS,
   OTA_SERVICE_NAME,
-  desiredRailwayState,
+  railwayStateForHosting,
   OTA_CDN_BASE_URL,
 } from '../../infra/railway/config';
 import { OTA_ASSETS_HOSTNAME, desiredR2Buckets } from '../../infra/cloudflare/config';
+
+const desiredRailwayState = railwayStateForHosting('railway');
 
 /**
  * The declared state and the human runbook describe the same server, and nothing

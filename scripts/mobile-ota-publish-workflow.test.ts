@@ -145,6 +145,10 @@ describe('production OTA workflow reliability', () => {
     const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
     const waitMinutes = Number(gateSource.match(/WAIT_BUDGET_MS = (\d+) \* 60_000/)?.[1]);
     expect(waitMinutes).toBeGreaterThan(0);
+    for (const name of ['promote-mobile-ota', 'promote-early-mobile-ota']) {
+      const promotionTimeout = Number(jobBlock(pipeline, name).match(/timeout-minutes: (\d+)/)?.[1]);
+      expect(promotionTimeout).toBeGreaterThanOrEqual(45 + waitMinutes);
+    }
     const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, false, true) + waitMinutes);
   });
@@ -267,14 +271,15 @@ describe('production OTA workflow reliability', () => {
       on: { push: { paths: string[]; branches: string[] } };
     };
     const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
-    const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
+    const hostingSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'lib', 'ota-hosting.mjs'), 'utf8');
+    const listed = hostingSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
     const gatePaths = [...listed.matchAll(/'([^']+)'/g)].map(([, path]) => path);
     expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
       [...railway.on.push.paths].sort(),
     );
     // The gate only expects a run on the one branch whose pushes start one.
     expect(railway.on.push.branches).toEqual(['main']);
-    expect(gateSource).toContain("RAILWAY_APPLY_REF = 'refs/heads/main'");
+    expect(gateSource).toContain("ref === 'refs/heads/main'");
   });
 
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {

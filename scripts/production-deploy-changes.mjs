@@ -101,6 +101,8 @@ function isProductionDeployTestFile(filePath) {
 function isCloudflareAffecting(filePath) {
   return (
     filePath.startsWith('infra/cloudflare/') ||
+    filePath === 'infra/ota/hosting.json' ||
+    filePath === 'infra/ota/server.ts' ||
     filePath === 'packages/web/app/lib/crawler-policy.ts' ||
     filePath === 'scripts/cloudflare-apply.ts' ||
     filePath === 'scripts/cloudflare-apply.test.ts'

@@ -1,5 +1,14 @@
 # Railway (OTA project config-as-code)
 
+> **OTA homelab migration (#5841):** `infra/ota/hosting.json` declares the current
+> deployment owner. The [migration runbook](ota-homelab.md) covers the dedicated
+> VM, Cloudflare Tunnel, preservation of active ClickHouse and OTA Postgres,
+> unchanged R2 assets/signing identity, and the verified deployment receipt.
+> Railway resources remain fenced rollback copies for seven clean days after
+> cutover; deletion requires confirmation. The Railway deployment instructions
+> remain active until that switch; afterward use the homelab runbook.
+
+
 Config-as-code for the Railway services that run the self-hosted xprem OTA server
 (`updates.boardsesh.com`). It is the same three-file shape as
 [cloudflare.md](./cloudflare.md): typed desired state, a pure diff, and one script

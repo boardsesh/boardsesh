@@ -1,0 +1,42 @@
+name: OTA Server Deploy
+
+on:
+  push:
+    branches: [main]
+    # Keep identical to HOMELAB_APPLY_PATHS in scripts/lib/ota-hosting.mjs.
+    paths:
+      - 'infra/ota/server.json'
+      - 'infra/ota/server.ts'
+      - 'infra/ota/hosting.json'
+      - 'scripts/ota-server-deploy.mjs'
+      - 'scripts/lib/ota-hosting.mjs'
+      - 'scripts/mobile-ota-server-ready.mjs'
+      - '.github/workflows/ota-server-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ota-server-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Homelab
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Deploy and require the matching verification receipt
+        env:
+          HOMELAB_DEPLOY_ENABLED: ${{ vars.HOMELAB_DEPLOY_ENABLED }}
+          # Fine-grained PAT: Contents write + Actions read on the private receiver repository.
+          HOMELAB_DISPATCH_TOKEN: ${{ secrets.HOMELAB_DISPATCH_TOKEN }}
+        run: node scripts/ota-server-deploy.mjs

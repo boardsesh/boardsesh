@@ -5,7 +5,7 @@
  *
  * The self-hosted OTA server has two halves that must move together: the `eoas`
  * CLI this repo publishes with (`EOAS_PACKAGE_SPEC` in scripts/lib/eoas.ts) and the
- * server image Railway runs (`OTA_SERVER_VERSION` in infra/railway/config.ts).
+ * server release in infra/ota/server.json.
  * Upstream publishes both from the same release, and since 3.2.0 their upload
  * protocol has no cross-version fallback, so they are always bumped together.
  *
@@ -41,7 +41,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { OTA_IMAGE_REPOSITORY, OTA_SERVER_VERSION } from '../infra/railway/config';
+import { OTA_IMAGE_REPOSITORY, OTA_SERVER_VERSION } from '../infra/ota/server';
 import { compareVersions } from '../infra/railway/plan';
 import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 import { VERSION_BEARING_FILES } from './lib/ota-version-files';
@@ -260,20 +260,27 @@ export function rewriteVersionMentions(
   );
 }
 
-/**
- * Move the declared-server-version constant in infra/railway/config.ts.
- *
- * That constant is a bare string rather than one of the `eoas@`/`:v` spellings the
- * other files use, so it needs its own replacement. Pure and exported so the
- * pattern is pinned by a test: a rewrite that silently matched nothing would leave
- * config.ts on the old version while every other file moved — caught by the parity
- * test, but only after a bump PR had already been opened.
- */
-export function rewriteServerVersionConstant(text: string, newVersion: string): string {
-  return text.replace(
-    /(export const OTA_SERVER_VERSION = ')[^']+(';)/,
-    (_match, prefix: string, suffix: string) => `${prefix}${newVersion}${suffix}`,
+/** Resolve a release to the immutable OCI index digest before editing any files. */
+export async function fetchImageDigest(version: string): Promise<string> {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid OTA version');
+  const tokenResponse = await fetch(
+    `${GHCR_ORIGIN}/token?scope=${encodeURIComponent(`repository:${GHCR_REPOSITORY}:pull`)}&service=ghcr.io`,
+    { signal: AbortSignal.timeout(20_000) },
   );
+  if (!tokenResponse.ok) throw new Error(`GHCR token request failed (HTTP ${tokenResponse.status}).`);
+  const { token } = (await tokenResponse.json()) as { token?: string };
+  if (!token) throw new Error('GHCR did not return an anonymous pull token.');
+  const response = await fetch(`${GHCR_ORIGIN}/v2/${GHCR_REPOSITORY}/manifests/v${version}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json',
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`GHCR manifest request failed (HTTP ${response.status}).`);
+  const digest = response.headers.get('docker-content-digest');
+  if (!digest || !/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('GHCR returned no valid immutable digest');
+  return digest;
 }
 
 /**
@@ -287,8 +294,14 @@ export function writeVersion(
   newVersion: string,
   oldVersion: string,
   oldCliSpec: string,
+  digest: string,
   rootDir: string = ROOT_DIR,
 ): string[] {
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('A resolved SHA-256 digest is required before rewriting');
+  const configPath = join(rootDir, 'infra/ota/server.json');
+  const configBefore = readFileSync(configPath, 'utf-8');
+  const release = JSON.parse(configBefore) as { version: string; repository: string; digest: string };
+  if (release.repository !== OTA_IMAGE_REPOSITORY) throw new Error('Unexpected OTA image repository');
   const touched: string[] = [];
   const oldCliVersion = oldCliSpec.replace(/^eoas@/, '');
 
@@ -302,13 +315,10 @@ export function writeVersion(
     }
   }
 
-  // The deployed-version constant is a bare string, so it needs its own edit.
-  const configPath = join(rootDir, 'infra/railway/config.ts');
-  const configBefore = readFileSync(configPath, 'utf-8');
-  const configAfter = rewriteServerVersionConstant(configBefore, newVersion);
+  const configAfter = JSON.stringify({ ...release, version: newVersion, digest }, null, 2) + '\n';
   if (configAfter !== configBefore) {
     writeFileSync(configPath, configAfter);
-    touched.push('infra/railway/config.ts');
+    touched.push('infra/ota/server.json');
   }
 
   return touched;
@@ -337,9 +347,9 @@ export function pullRequestBody(version: string, current: string): string {
           '',
         ]
       : []),
-    'Merging this is what applies it: `railway-drift.yml` rolls the new image on push to `main`,',
-    'waits for the deployment, probes the server, and rolls back automatically if it does not',
-    'answer.',
+    'Merging this applies the release through the provider declared in `infra/ota/hosting.json`.',
+    'OTA Server Deploy requires the homelab verification receipt; Railway Config owns releases',
+    'until the hosting cutover. Publishing waits for the matching commit to succeed.',
     '',
     `Release notes: https://github.com/mercuretechnologies/expo-open-ota/releases/tag/v${version}`,
     '',
@@ -349,7 +359,7 @@ export function pullRequestBody(version: string, current: string): string {
     '',
     '## After it lands',
     '',
-    '- Confirm the Railway Config run on `main` completed its deployment and probe.',
+    '- Confirm the OTA Server Deploy (or pre-cutover Railway Config) run verified this commit.',
     '- Open https://updates.boardsesh.com/hc and confirm it loads without an error.',
     '- With an available compatible update, force quit and reopen the mobile app; confirm it downloads.',
     `- Run \`vp dlx eoas@${version} doctor --channel=production\`.`,
@@ -415,7 +425,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   if (options.write) {
-    const touched = writeVersion(options.write, OTA_SERVER_VERSION, EOAS_PACKAGE_SPEC);
+    const digest = await fetchImageDigest(options.write);
+    const touched = writeVersion(options.write, OTA_SERVER_VERSION, EOAS_PACKAGE_SPEC, digest);
     if (touched.length === 0) {
       console.log(`[ota-image-bump] Nothing to rewrite — already on ${options.write}.`);
       return 0;

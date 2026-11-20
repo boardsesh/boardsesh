@@ -892,12 +892,12 @@ jobs:
       && (needs.migrate.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.detect-changes.outputs.backend_changed != 'true' && needs.migrate.result == 'skipped'))
       && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
     runs-on: ubuntu-latest
-    # 45 minutes for the promotion itself, plus up to 85 for the server-rollout wait.
-    timeout-minutes: 130
+    # 45 minutes for the promotion itself, plus up to 110 for the server-rollout wait.
+    timeout-minutes: 155
     environment: ${{ needs.detect-changes.outputs.critical_ota == 'true' && 'ota-stable-release' || 'Production' }}
     permissions:
       contents: read
-      # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
+      # scripts/mobile-ota-server-ready.mjs lists this commit's OTA deployment runs.
       actions: read
     concurrency:
       group: mobile-ota-production
@@ -945,7 +945,7 @@ jobs:
           node scripts/mobile-ota-schema-ready.mjs
 
       # Staging already waited, but promotion is a second upload to the server:
-      # re-check so a Railway Config run that failed after staging stops it here.
+      # re-check so an OTA deployment run that failed after staging stops it here.
       - name: Wait for the OTA server rollout on this commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -1069,7 +1069,7 @@ jobs:
       && (needs.migrate.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.detect-changes.outputs.backend_changed != 'true' && needs.migrate.result == 'skipped'))
       && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
     runs-on: ubuntu-latest
-    timeout-minutes: 130
+    timeout-minutes: 155
     environment: ota-stable-release
     permissions:
       contents: read

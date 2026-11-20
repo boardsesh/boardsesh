@@ -49,7 +49,7 @@ permissions:
   # bypass main's "require a pull request" rule — the default GITHUB_TOKEN can't),
   # so the workflow token just needs read for checkout/fetch.
   contents: read
-  # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
+  # scripts/mobile-ota-server-ready.mjs lists this commit's OTA deployment runs.
   actions: read
 
 # No workflow-level concurrency: the publish lane is taken by the `publish` job
@@ -262,11 +262,11 @@ jobs:
     # enforced in mobile-ota-publish-workflow.test.ts from the ladder in
     # scripts/lib/mobile-publish-retry.ts — raise both together or not at all.
     # Costs nothing on a healthy publish, which finishes in well under 10 minutes.
-    # On top of that budget: up to 85 minutes waiting for a Railway Config run on the
+    # On top of that budget: up to 110 minutes waiting for an OTA deployment run on the
     # same commit (scripts/mobile-ota-server-ready.mjs), which only happens on the
     # rare push that also rolls the OTA server. Direct publishes also reserve
     # 25 minutes for the trusted main-only unlock; staging has no such wait.
-    timeout-minutes: 280
+    timeout-minutes: 305
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
 
@@ -323,9 +323,9 @@ jobs:
         run: vp install --frozen-lockfile
 
       # eoas and the xprem server must speak the same upload protocol (3.2.0 broke
-      # it both ways). When this commit also rolls the server image, Railway Config
+      # it both ways). When this commit also rolls the server image, the selected deployment workflow
       # runs alongside this job; wait for it rather than publish against the old
-      # server. Returns at once for the ordinary push with no Railway change.
+      # server. Ordinary pushes verify the successful deployment they inherited.
       - name: Wait for the OTA server rollout on this commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
