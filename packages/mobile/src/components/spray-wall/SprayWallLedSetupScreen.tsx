@@ -273,9 +273,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const hasUpperLayer = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating';
   const [ledCardContentHeights, setLedCardContentHeights] = useState<Partial<Record<SprayLedPlacement, number>>>({});
   const ledPlacements: SprayLedPlacement[] =
-    layout.pattern === 'offset'
-      ? ['center', 'sides', 'below', 'stripe', 'alternating']
-      : ['center', 'sides', 'below', 'stripe'];
+    layout.pattern === 'custom'
+      ? ['center', 'sides', 'below']
+      : layout.pattern === 'offset'
+        ? ['center', 'sides', 'below', 'stripe', 'alternating']
+        : ['center', 'sides', 'below', 'stripe'];
+  const supportedLedPlacement = layout.ledPlacement !== undefined && ledPlacements.includes(layout.ledPlacement);
   const ledCardContentHeight = Math.max(0, ...ledPlacements.map((placement) => ledCardContentHeights[placement] ?? 0));
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -409,6 +412,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     // Rebuilding clears hand-made hold links too (the new LEDs reuse the old ids).
     if (layout.holdLeds?.length || layout.holdAboveLeds?.length || layout.tnutLeds?.length) return true;
     if (layout.ledGroups !== undefined) return true;
+    if (layout.ledStripes?.stripes.length) return true;
     if (!layout.ledPositions) return false;
     const untouched = ledBasis.current ? generateLedPositions(ledBasis.current) : [];
     return !sameLedPositions(layout.ledPositions, untouched);
@@ -535,7 +539,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'led') {
-      if (!layout.ledPlacement) return;
+      if (!supportedLedPlacement) return;
       if (layout.ledPlacement === 'stripe') {
         setStep('stripeConfig');
         return;
@@ -609,7 +613,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'stripeConfig') {
-      if (!validStripeCount) return;
+      if (!supportedLedPlacement || layout.ledPlacement !== 'stripe' || !validStripeCount) return;
       const basis = stripeConfigBasis.current;
       const unchanged = layout.ledStripes && basis?.orientation === stripeOrientation && basis.count === stripeCount;
       const draft = unchanged ? layout : createLedStripes(layout, stripeOrientation, stripeCount);
@@ -730,8 +734,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     !dragging &&
     (step !== 'align' || (validCounts && validCorners)) &&
     (step !== 'holes' || layout.holes.length > 0) &&
-    (step !== 'led' || Boolean(layout.ledPlacement)) &&
-    (step !== 'stripeConfig' || validStripeCount) &&
+    (step !== 'led' || supportedLedPlacement) &&
+    (step !== 'stripeConfig' || (supportedLedPlacement && layout.ledPlacement === 'stripe' && validStripeCount)) &&
     (step !== 'initialSkip' || validInitialSkip) &&
     ((step !== 'ledPositions' && step !== 'wiring' && step !== 'skips') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
@@ -877,7 +881,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                         pattern,
                         columns: Math.min(pattern === 'offset' ? 99 : 50, layout.columns),
                         holes: [],
-                        ledPlacement: layout.ledPlacement === 'alternating' ? undefined : layout.ledPlacement,
+                        ledPlacement:
+                          layout.ledPlacement === 'alternating' ||
+                          (pattern === 'custom' && layout.ledPlacement === 'stripe')
+                            ? undefined
+                            : layout.ledPlacement,
                       });
                       setColumnsText(String(Math.min(pattern === 'offset' ? 99 : 50, layout.columns)));
                       setHistory([]);
