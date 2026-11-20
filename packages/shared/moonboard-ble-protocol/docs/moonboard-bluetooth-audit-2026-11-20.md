@@ -157,7 +157,7 @@ The [onboarding copy](../../../../packages/shared/i18n/locales/en-US/boards.json
 
 The inspected APK scan mapper preserves plugin ID, name, manufacturer data and service data; no dedicated 12-character decoder was established in it. Selected Pro parsers consume a 13-byte numeric board configuration, a variable-length UTF-8 configuration name, 16-byte connection-status entries, and a one-byte authentication state. None was established as the documented ID. This does not prove the ID is absent: the app could simply display the existing name without a special parser.
 
-The independent [scan-row and service-data trace](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md#controller-identification) adds that the inspected row displays the name and plugin device ID, with Android obtaining that ID from `BluetoothDevice.getAddress()`. It also traces numeric board/configuration/setup fields in service data. Neither establishes their equivalence to the documented 12-digit identifier.
+The independent [scan-row and service-data trace](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md#findings-and-evidence-limits) adds that the inspected row displays the name and plugin device ID, with Android obtaining that ID from `BluetoothDevice.getAddress()`. It also traces numeric board/configuration/setup fields in service data. Neither establishes their equivalence to the documented 12-digit identifier.
 
 **Identity compatibility remains unresolved.** Obtain one real controller's name and advertisement bytes, followed by GATT reads if needed, before defining a parser. Verify stability across reconnects and platforms, and keep this identity separate from the platform connection handle and setup PIN.
 
