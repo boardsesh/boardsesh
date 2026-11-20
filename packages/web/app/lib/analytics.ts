@@ -1,3 +1,4 @@
+import type { BoardRequestRole } from '@boardsesh/shared-schema';
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
@@ -25,6 +26,7 @@ import { getFlagsBrowserDistinctId, withAnonymousFlagsIdentity } from './anonymo
 type AllowedPropertyValues = string | number | boolean | null | undefined;
 type EventProperties = Record<string, AllowedPropertyValues>;
 
+const BOARD_REQUEST_SUBMITTED = 'Board Request Submitted';
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
@@ -266,7 +268,14 @@ function getPosthog(): PostHog | null {
     // immediate) after the SDK adds them. The `/flags` request is the one call
     // that skips it; installConsentTransport scrubs its body instead.
     // share-capability.ts has the rule.
-    before_send: scrubShareCapabilitiesFromEvent,
+    before_send: (event) => {
+      if (event?.event !== BOARD_REQUEST_SUBMITTED) return scrubShareCapabilitiesFromEvent(event);
+      const role = event.properties?.role;
+      if (role !== 'climber' && role !== 'gym' && role !== 'maker') return null;
+      // The SDK adds the current URL, referrer and person properties after capture().
+      // Event routing and identity live in the outer message. Keep only the role here.
+      return { event: event.event, uuid: event.uuid, timestamp: event.timestamp, properties: { role } };
+    },
   });
 
   posthogPersisted = hasAnalyticsConsent();
@@ -365,6 +374,11 @@ function shouldSkipProductAnalytics(): boolean {
   );
 }
 const core = createAnalytics(getPosthog, { shouldSkip: shouldSkipProductAnalytics });
+
+/** The private request form measures role only, without campaign attribution. */
+export function trackBoardRequestSubmitted(role: BoardRequestRole): void {
+  core.track(BOARD_REQUEST_SUBMITTED, { role });
+}
 
 export function track(name: string, properties?: EventProperties): void {
   if (shouldSkipProductAnalytics()) return;

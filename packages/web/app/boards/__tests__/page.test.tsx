@@ -70,6 +70,8 @@ describe('supported boards public entry', () => {
     }
     expect(document.querySelector('[data-placement="board-compat"]')).not.toBeNull();
     expect(document.querySelectorAll('a[href="/bring-your-logbook"]')).toHaveLength(1);
+    expect(document.querySelector('a[href="#request-board"]')?.textContent).toBe('Tell us which one');
+    expect(document.querySelector('#request-board button[type="submit"]')?.textContent).toBe('Send board request');
   });
 
   it('declares canonical, social and all six translated alternate metadata', async () => {
@@ -77,6 +79,7 @@ describe('supported boards public entry', () => {
     expect(metadata.title).toEqual({ absolute: 'Supported boards | Boardsesh' });
     expect(metadata.openGraph).toMatchObject({ title: 'Supported boards | Boardsesh' });
     expect(metadata.twitter).toMatchObject({ title: 'Supported boards | Boardsesh' });
+    expect(metadata.description).toContain('supported climbing boards and layouts');
     expect(metadata.alternates?.canonical).toContain('/boards');
     expect(metadata.openGraph).toBeTruthy();
     expect(metadata.twitter).toBeTruthy();

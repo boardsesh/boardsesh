@@ -153,6 +153,8 @@ describe('HomePageContent', () => {
     render(<HomePageContent featureStrip={<section data-testid="features" />} />);
     const heroHeading = screen.getByRole('heading', { level: 1 });
     const hero = heroHeading.closest('section');
+    expect(screen.getByRole('link', { name: 'We’re happy to add it.' }).getAttribute('href')).toBe('/boards');
+    expect(hero?.textContent).toContain('Works with Kilter, Tension, MoonBoard and any spray wall');
     const video = screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'));
     const featureSection = screen.getByTestId('features');
     expect(hero?.contains(video)).toBe(true);

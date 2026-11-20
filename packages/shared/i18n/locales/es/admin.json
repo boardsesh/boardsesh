@@ -189,7 +189,9 @@
       "ratings": "Valoraciones",
       "all": "Todos",
       "bug": "Error",
-      "rating": "Valoración"
+      "rating": "Valoración",
+      "boardRequest": "Solicitud de plafón",
+      "boardRequests": "Solicitudes de plafones"
     },
     "status": {
       "new": "Nuevo",
@@ -247,7 +249,8 @@
       "canaryYes": "Sí",
       "canaryNo": "No",
       "canaryUnknown": "Desconocido",
-      "canaryCheckedAt": "Canary comprobado"
+      "canaryCheckedAt": "Canary comprobado",
+      "boardRequestRole": "Perfil"
     },
     "empty": "Ningún comentario coincide con estos filtros.",
     "error": "No se pudieron cargar los comentarios.",
@@ -259,6 +262,11 @@
       "updateFailed": "No se pudo actualizar el estado",
       "emailCopied": "Correo copiado",
       "copyFailed": "No se pudo copiar"
+    },
+    "boardRequestRoles": {
+      "climber": "Escalador/a",
+      "gym": "Representante de un rocódromo",
+      "maker": "Fabricante de plafones"
     }
   },
   "retention": {

@@ -78,7 +78,9 @@
       "ratings": "Ratings",
       "all": "All",
       "bug": "Bug",
-      "rating": "Rating"
+      "rating": "Rating",
+      "boardRequest": "Board request",
+      "boardRequests": "Board requests"
     },
     "status": {
       "new": "New",
@@ -136,7 +138,8 @@
       "canaryYes": "Yes",
       "canaryNo": "No",
       "canaryUnknown": "Unknown",
-      "canaryCheckedAt": "Canary checked"
+      "canaryCheckedAt": "Canary checked",
+      "boardRequestRole": "Role"
     },
     "empty": "No feedback matches these filters.",
     "error": "Couldn't load feedback.",
@@ -148,6 +151,11 @@
       "updateFailed": "Couldn't update status",
       "emailCopied": "Email copied",
       "copyFailed": "Couldn't copy"
+    },
+    "boardRequestRoles": {
+      "climber": "Climber",
+      "gym": "Gym representative",
+      "maker": "Board maker"
     }
   },
   "retention": {

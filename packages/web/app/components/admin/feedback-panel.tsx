@@ -50,7 +50,7 @@ import type {
 const PAGE_SIZE = 50;
 const COLUMN_COUNT = 8;
 const STATUS_ORDER: AppFeedbackStatus[] = ['new', 'in_progress', 'resolved', 'wont_fix'];
-const TYPE_ORDER: AppFeedbackTypeFilter[] = ['bugs', 'ratings', 'all'];
+const TYPE_ORDER: AppFeedbackTypeFilter[] = ['bugs', 'ratings', 'board_requests', 'all'];
 const EMPTY_COUNTS: AppFeedbackStatusCounts = { new: 0, inProgress: 0, resolved: 0, wontFix: 0 };
 const BUG_SOURCES = new Set(['shake-bug', 'drawer-bug']);
 
@@ -88,6 +88,8 @@ function typeTabLabel(t: Translate, type: AppFeedbackTypeFilter): string {
   switch (type) {
     case 'bugs':
       return t('feedback.type.bugs');
+    case 'board_requests':
+      return t('feedback.type.boardRequests');
     case 'ratings':
       return t('feedback.type.ratings');
     case 'all':
@@ -171,8 +173,9 @@ export default function FeedbackPanel() {
         setHasMore(data.hasMore);
         setTotalCount(data.totalCount);
         setCounts(data.statusCounts);
-      } catch (err) {
-        console.error('[FeedbackPanel] Failed to fetch feedback:', err);
+      } catch {
+        // ClientError includes the admin's private search and response in its message.
+        console.error('[FeedbackPanel] Failed to fetch feedback');
         setErrorOffset(offset);
       } finally {
         setLoading(false);
@@ -280,6 +283,7 @@ export default function FeedbackPanel() {
         <Box sx={{ flexGrow: 1 }} />
         <TextField
           size="small"
+          className="ph-no-capture ph-ignore-input rr-block sentry-block"
           placeholder={t('feedback.search.placeholder')}
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
@@ -323,16 +327,27 @@ export default function FeedbackPanel() {
           <TableBody>
             {reports.map((report) => {
               const isBug = BUG_SOURCES.has(report.source);
+              const isBoardRequest = report.source === 'board-request';
+              const contactEmail = isBoardRequest ? report.boardRequestEmail : report.reporter?.email;
               const expanded = expandedId === report.id;
               return (
                 <React.Fragment key={report.id}>
-                  <TableRow hover>
+                  <TableRow
+                    hover
+                    className={isBoardRequest ? 'ph-no-capture ph-no-capture-input rr-block sentry-block' : undefined}
+                  >
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>
                       {new Date(report.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={isBug ? t('feedback.type.bug') : t('feedback.type.rating')}
+                        label={
+                          isBoardRequest
+                            ? t('feedback.type.boardRequest')
+                            : isBug
+                              ? t('feedback.type.bug')
+                              : t('feedback.type.rating')
+                        }
                         size="small"
                         color={isBug ? 'error' : 'default'}
                         variant="outlined"
@@ -365,7 +380,8 @@ export default function FeedbackPanel() {
                             WebkitBoxOrient: 'vertical',
                           }}
                         >
-                          {report.comment || '—'}
+                          {isBoardRequest && <strong>{report.boardName} </strong>}
+                          {report.comment || (isBoardRequest ? '' : '—')}
                         </Typography>
                         <IconButton
                           size="small"
@@ -381,14 +397,14 @@ export default function FeedbackPanel() {
                       </Box>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 200 }}>
-                      {report.reporter?.email ? (
+                      {contactEmail ? (
                         <Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-                              {report.reporter.email}
+                              {contactEmail}
                             </Typography>
                             <Tooltip title={t('feedback.reporter.copyEmail')}>
-                              <IconButton size="small" onClick={() => copyEmail(report.reporter?.email ?? '')}>
+                              <IconButton size="small" onClick={() => copyEmail(contactEmail)}>
                                 <ContentCopyIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
@@ -471,7 +487,7 @@ export default function FeedbackPanel() {
                       </Stack>
                     </TableCell>
                   </TableRow>
-                  <TableRow>
+                  <TableRow className={isBoardRequest ? 'ph-no-capture rr-block sentry-block' : undefined}>
                     <TableCell colSpan={COLUMN_COUNT} sx={{ py: 0, borderBottom: expanded ? undefined : 'none' }}>
                       <Collapse in={expanded} timeout="auto" unmountOnExit>
                         <Box sx={{ py: 2, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -496,6 +512,12 @@ export default function FeedbackPanel() {
                                 : report.context?.climbUuid
                             }
                           />
+                          {report.boardRequestRole && (
+                            <DetailRow
+                              label={t('feedback.detail.boardRequestRole')}
+                              value={t(`feedback.boardRequestRoles.${report.boardRequestRole}`)}
+                            />
+                          )}
                           <DetailRow label={t('feedback.detail.session')} value={report.context?.sessionName} />
                           <DetailRow label={t('feedback.detail.url')} value={report.context?.url} />
                           <DetailRow label={t('feedback.detail.userAgent')} value={report.context?.userAgent} />
