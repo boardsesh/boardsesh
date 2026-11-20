@@ -279,8 +279,8 @@ export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
 /** The proxied xprem endpoint that receives Observe telemetry and OTA traffic. */
 export const UPDATES_HOSTNAME = 'updates.boardsesh.com';
 
-/** Filled from Cloudflare's created tunnel before the controlled ownership switch. */
-export const OTA_TUNNEL_ID: string | null = null;
+/** The boardsesh-ota-homelab tunnel; its connector credential stays in 1Password. */
+export const OTA_TUNNEL_ID: string | null = '834b2553-d21a-4cd4-9244-bedec9a52d6f';
 
 /** Preparation leaves the serving Railway record untouched; an unconfigured cutover fails closed. */
 export function otaDnsRecords(

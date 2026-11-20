@@ -19,6 +19,7 @@ import {
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
   OTA_ASSETS_HOSTNAME,
+  OTA_TUNNEL_ID,
   OTA_ASSETS_CACHE_RULE_DESCRIPTION,
   OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
   COMPRESSION_RULE_PHASE,
@@ -125,6 +126,7 @@ const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
 const apiDnsRecord = requiredFullyManagedDnsRecord(API_HOSTNAME);
 const apiVerifyDnsRecord = requiredFullyManagedDnsRecord(API_RAILWAY_VERIFY_HOSTNAME);
 const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
+const otaDnsRecord = requiredFullyManagedDnsRecord(UPDATES_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -174,6 +176,18 @@ function liveApiDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord
     content: apiDnsRecord.content,
     ttl: apiDnsRecord.ttl,
     proxied: apiDnsRecord.proxied,
+    ...overrides,
+  };
+}
+
+function liveOtaDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'ota-dns-record-id',
+    name: otaDnsRecord.name,
+    type: otaDnsRecord.type,
+    content: otaDnsRecord.content,
+    ttl: otaDnsRecord.ttl,
+    proxied: otaDnsRecord.proxied,
     ...overrides,
   };
 }
@@ -313,6 +327,7 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [apiVerifyDnsRecord.name]: liveApiVerifyDnsRecord(),
     [apexDnsRecord.name]: liveApexDnsRecord(),
     [drPrimaryDnsRecord.name]: liveDrPrimaryDnsRecord(),
+    [otaDnsRecord.name]: liveOtaDnsRecord(),
   };
 }
 
@@ -1998,6 +2013,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       [API_HOSTNAME]: [liveApiDnsRecord()],
       [API_RAILWAY_VERIFY_HOSTNAME]: [liveApiVerifyDnsRecord()],
       [DR_PRIMARY_HOSTNAME]: [liveDrPrimaryDnsRecord()],
+      [UPDATES_HOSTNAME]: [liveOtaDnsRecord()],
       // The apex carries the mail and verification records every zone has.
       // Cloudflare returns them from the same by-name lookup, and they must not
       // make the address record look ambiguous and fail the whole run.
@@ -2257,6 +2273,28 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       (request) => request.method === 'PUT' && request.pathname === phaseEntrypoint(DYNAMIC_REDIRECT_RULE_PHASE),
     );
     expect(redirectPut?.body).toEqual({ rules: desired.redirectRules });
+  });
+
+  it('moves the existing OTA record to the tunnel without changing other DNS records', async () => {
+    const dns = dnsResponses(liveApexDnsRecord());
+    dns[UPDATES_HOSTNAME] = [liveOtaDnsRecord({ content: 'old-ota.up.railway.app' })];
+    const requests = stubCloudflareApi(dns);
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    expect(requests.filter((request) => request.method === 'PATCH' || request.method === 'POST')).toEqual([
+      {
+        method: 'PATCH',
+        pathname: '/client/v4/zones/zone-1/dns_records/ota-dns-record-id',
+        body: {
+          type: 'CNAME',
+          name: UPDATES_HOSTNAME,
+          content: `${OTA_TUNNEL_ID}.cfargotunnel.com`,
+          ttl: 1,
+          proxied: true,
+        },
+      },
+    ]);
   });
 
   it('converges the apex off Vercel without tripping over its TXT, MX and CAA siblings', async () => {
