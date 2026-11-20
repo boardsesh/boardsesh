@@ -201,6 +201,7 @@ export function responseSetsSessionCookie(response: Response): boolean {
     if (separatorIndex === -1) return false;
     const cookieName = nameValuePair.slice(0, separatorIndex).trim();
     const cookieValue = nameValuePair.slice(separatorIndex + 1).trim();
-    return cookieName === name && cookieValue.length > 0;
+    const sessionChunk = cookieName.startsWith(`${name}.`) && /^\d+$/.test(cookieName.slice(name.length + 1));
+    return (cookieName === name || sessionChunk) && cookieValue.length > 0;
   });
 }

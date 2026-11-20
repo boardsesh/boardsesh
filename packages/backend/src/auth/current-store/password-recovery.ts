@@ -1,3 +1,4 @@
+import { mintNativeDeviceToken } from '../device-token';
 import { createHash, randomBytes } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
@@ -362,6 +363,7 @@ export async function consumePasswordRecovery(
   database: DbInstance,
   authorityInput: WebPasswordAuthority,
   input: ResetPasswordCommand,
+  options: { issueDeviceToken?: boolean } = {},
 ): Promise<ResetPasswordReply> {
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
@@ -412,6 +414,7 @@ export async function consumePasswordRecovery(
       : undefined;
   // The address a completed reset proved, so its guess counter can be cleared after commit.
   let resetEmail: string | undefined;
+  let resetUserId: string | undefined;
   const reply = await database.transaction(async (transaction): Promise<ResetPasswordReply> => {
     await transactionSettings(transaction);
     await revalidateIdentityAuthority(transaction, authorityReceipt);
@@ -458,7 +461,10 @@ export async function consumePasswordRecovery(
         passwordHash,
       });
       assertFresh(issuedAt);
-      if (outcome === 'reset') resetEmail = email;
+      if (outcome === 'reset') {
+        resetEmail = email;
+        resetUserId = legacyPreview.userId;
+      }
       return { ...base, outcome };
     }
     if (!initial || initial.purpose !== purpose || !initialCredential || !passwordHash)
@@ -548,10 +554,15 @@ export async function consumePasswordRecovery(
     assertFresh(issuedAt);
     await revalidateIdentityAuthority(transaction, authorityReceipt);
     resetEmail = receipt.normalizedEmail;
+    resetUserId = receipt.userId;
     return { ...base, outcome: 'reset' };
   });
   // The owner proved the inbox: the guesses charged to the address no longer
   // stand between them and a password sign-in (#7656). Fails open by itself.
   if (reply.outcome === 'reset' && resetEmail !== undefined) await passwordGuessLimiter().clearEmail(resetEmail);
+  if (reply.outcome === 'reset' && options.issueDeviceToken && resetUserId !== undefined) {
+    const deviceToken = await mintNativeDeviceToken(resetUserId);
+    if (deviceToken !== undefined) return { ...reply, deviceToken };
+  }
   return reply;
 }

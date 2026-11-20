@@ -13,6 +13,7 @@
  * sign-in ends (`presented`) is read from that GET. Nothing scripts a backend
  * reply.
  */
+import { verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { decode } from './legacy-credential-fixture';
@@ -210,6 +211,8 @@ describe('Apple sign-in under better-auth', () => {
   beforeEach(() => stubBetterAuthEnvironment(backend.origin));
 
   it('asks Apple for form_post, holds its cross-site POST with no session cookie, and publishes a carried login on the resumed GET', async () => {
+    const deviceSecret = 'combined-provider-device-token-secret-32bytes';
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', deviceSecret);
     const identity = newAppleIdentity(true);
     const jar = new CookieJar();
     const { authorizationUrl, crossSiteCookie, posted, resumeAt, resumed } = await appleSignIn(jar, identity);
@@ -229,6 +232,13 @@ describe('Apple sign-in under better-auth', () => {
 
     // The resumed GET publishes: login cookie, twin with its id, marker last.
     const { twin, session } = await expectPublishedLogin(resumed, jar);
+    const recognition = setCookies(resumed).find((cookie) => cookie.startsWith('__Host-boardsesh.device='));
+    expect(
+      await verifyDeviceToken(recognition?.split(';')[0].split('=')[1], {
+        userId: session.userId,
+        secret: deviceSecret,
+      }),
+    ).not.toBeNull();
     expect(resolveSessionRequests).toHaveLength(1);
     // Apple is never fresh: the twin has no sign-in time and no link guard, the row is carried.
     expect(twin?.auth_time).toBeUndefined();

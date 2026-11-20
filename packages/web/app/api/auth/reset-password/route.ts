@@ -1,3 +1,6 @@
+import { mintDeviceToken, readDeviceTokenSecret } from '@boardsesh/auth-protocol/device-token';
+import { createWebGuessLimitClient } from '@/app/lib/auth/guess-limit-client.server';
+import { appendDeviceTokenCookie } from '@/app/lib/auth/device-token-request.server';
 import { NextRequest, NextResponse } from 'next/server';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
@@ -167,10 +170,21 @@ async function handleResetPassword(request: NextRequest) {
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
     });
 
+    await createWebGuessLimitClient()?.clear(account.email);
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'Password reset successful. You can now sign in with your new password.',
     });
+    const secret = readDeviceTokenSecret(process.env);
+    if ('secret' in secret) {
+      try {
+        const deviceToken = await mintDeviceToken({ userId: account.id, secret: secret.secret });
+        appendDeviceTokenCookie(response, deviceToken.token);
+      } catch {
+        // A completed reset remains successful if device recognition cannot be minted.
+      }
+    }
+    return response;
   } catch (error) {
     if (staged || error instanceof AuthBackendUnavailableError) {
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);

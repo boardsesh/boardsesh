@@ -1,4 +1,5 @@
 import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
+import { verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -6,6 +7,7 @@ import type { Socket } from 'node:net';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_COMMAND_PATHS,
+  PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER,
   AUTH_PROTOCOL_VERSION,
   forgotPasswordReplySchema,
   resetPasswordReplySchema,
@@ -565,11 +567,35 @@ describe('UID-bound password recovery over the restricted current store', () => 
         'invalid_or_expired',
       );
       expect(clearEmail).not.toHaveBeenCalled();
-      expect((await consumePasswordRecovery(writers[0], authority, reset(plan.token))).outcome).toBe('reset');
+      const deviceSecret = 'recovery-browser-recognition-secret-distinct-32bytes';
+      vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', deviceSecret);
+      const completed = await consumePasswordRecovery(writers[0], authority, reset(plan.token), {
+        issueDeviceToken: true,
+      });
+      expect(completed.outcome).toBe('reset');
+      if (completed.outcome !== 'reset') throw new Error('Expected completed reset');
+      expect(await verifyDeviceToken(completed.deviceToken, { userId: user.id, secret: deviceSecret })).not.toBeNull();
+      expect(
+        await verifyDeviceToken(completed.deviceToken, { userId: 'another-owner', secret: deviceSecret }),
+      ).toBeNull();
       expect(clearEmail).toHaveBeenCalledExactlyOnceWith(normalizeAccountEmail(user.email));
     } finally {
       __setPasswordGuessLimiterForTests(undefined);
     }
+  });
+  it('keeps a seeded backend compatible with an old strict web reset caller', async () => {
+    const { plan } = await issued();
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', 'old-client-compatible-recognition-secret-32bytes');
+    const response = await rpc(reset(plan.token));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      protocolVersion: 2,
+      operation: 'reset-password',
+      requestId: expect.any(String),
+      outcome: 'reset',
+    });
+    expect(Object.keys(body).sort()).toEqual(['operation', 'outcome', 'protocolVersion', 'requestId']);
   });
   it('ends partner connections through the user_credentials trigger when the staged reset commits', async () => {
     const { user, plan } = await issued();
@@ -1335,9 +1361,16 @@ describe('UID-bound password recovery over the restricted current store', () => 
       const user = await seed();
       await seedRefreshToken(user.id);
       const link = await legacyResetLink(user.email);
-      const response = await rpc(reset(link.token, user.email));
+      const deviceSecret = 'legacy-reset-browser-recognition-secret-distinct-32bytes';
+      vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', deviceSecret);
+      const response = await rpc(reset(link.token, user.email), 0, undefined, {
+        [PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER]: '1',
+      });
       expect(response.status).toBe(200);
-      expect(resetPasswordReplySchema.parse(await response.json()).outcome).toBe('reset');
+      const reply = resetPasswordReplySchema.parse(await response.json());
+      expect(reply.outcome).toBe('reset');
+      if (reply.outcome !== 'reset') throw new Error('Expected a committed reset');
+      expect(await verifyDeviceToken(reply.deviceToken, { userId: user.id, secret: deviceSecret })).not.toBeNull();
       const changed = (await credential(user.id)).passwordHash;
       expect(await bcrypt.compare(nextPassword, changed)).toBe(true);
       expect((await db.select().from(authSecurityMutationEvents)).map((event) => [event.userId, event.kind])).toEqual([

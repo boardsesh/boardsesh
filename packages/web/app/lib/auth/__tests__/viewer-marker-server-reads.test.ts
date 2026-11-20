@@ -60,7 +60,12 @@ describe('no server code reads the viewer marker', () => {
           !path.startsWith('packages/web/auth-proofs/') &&
           MENTIONS_MARKER.test(read(path)),
       ),
-    ).toEqual(['packages/web/app/lib/auth/browser-session.server.ts', 'packages/web/app/lib/auth/session-guard.ts']);
+    ).toEqual([
+      'packages/web/app/lib/auth/browser-session.server.ts',
+      // This response-cookie builder orders recognition before the publication marker; it receives no request.
+      'packages/web/app/lib/auth/device-token-request.server.ts',
+      'packages/web/app/lib/auth/session-guard.ts',
+    ]);
   });
 
   it('only the client guard reads it; the builders write, clear and strip it', () => {

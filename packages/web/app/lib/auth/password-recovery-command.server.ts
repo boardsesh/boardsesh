@@ -5,6 +5,7 @@ import { sendPasswordResetEmail } from '@boardsesh/email';
 import type { ForgotPasswordReply, ResetPasswordReply } from '@boardsesh/auth-protocol';
 import { createPasswordCommandClient, registrationMailOrigin } from './password-command-client.server';
 import { passwordCommandUnavailableResponse } from './register-password-command.server';
+import { appendDeviceTokenCookie } from './device-token-request.server';
 import { withEmailVerificationPrivacy } from './email-verification-response.server';
 
 export const GENERIC_PASSWORD_RECOVERY_MESSAGE = 'If an account exists for this email, a reset link will be sent.';
@@ -55,8 +56,11 @@ export async function forgotPasswordWithCommand(request: NextRequest, payload: u
 export async function resetPasswordWithCommand(payload: unknown): Promise<NextResponse> {
   try {
     const reply = await createPasswordCommandClient().resetPassword(payload);
-    if (reply.outcome === 'reset')
-      return withEmailVerificationPrivacy(NextResponse.json({ message: PASSWORD_RESET_SUCCESS_MESSAGE }));
+    if (reply.outcome === 'reset') {
+      const response = withEmailVerificationPrivacy(NextResponse.json({ message: PASSWORD_RESET_SUCCESS_MESSAGE }));
+      if (reply.deviceToken) appendDeviceTokenCookie(response, reply.deviceToken);
+      return response;
+    }
     if (reply.outcome === 'invalid_or_expired')
       return withEmailVerificationPrivacy(
         NextResponse.json({ error: INVALID_PASSWORD_RESET_MESSAGE }, { status: 400 }),

@@ -11,6 +11,8 @@ export * from './batch-system-user-v1';
 export * from './web-session';
 
 export const AUTH_PROTOCOL_VERSION = 2;
+/** Old private callers get the original strict reset reply; new callers opt in through this header. */
+export const PASSWORD_RESET_DEVICE_TOKEN_CAPABILITY_HEADER = 'x-boardsesh-reset-device-token';
 export const AUTH_COMMAND_PATHS = {
   register: '/api/internal/auth/current-store/register',
   password: '/api/internal/auth/current-store/password',
@@ -376,6 +378,8 @@ export const resetPasswordReplySchema = z.union([
       operation: z.literal('reset-password'),
       requestId,
       outcome: z.enum(['reset', 'invalid_or_expired', 'legacy_unbound']),
+      /** Private-only recognition proof for the account whose reset committed. Never a login. */
+      deviceToken: z.string().min(1).max(128).optional(),
     })
     .strict(),
   recoveryValidationReply('reset-password'),

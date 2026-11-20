@@ -326,3 +326,15 @@ export function withLegacyModeFirstPartyClears(request: NextRequest, action: str
   for (const clear of clears) response.headers.append('Set-Cookie', clear);
   return response;
 }
+
+/** A device is recognized only after a real login cookie is published, never after a bridge or a clear. */
+export function responseSetsBrowserLoginCookie(
+  response: Response,
+  configuration: BrowserSessionCookieConfiguration,
+): boolean {
+  const prefix = `${browserSessionCookieName('login', configuration.secure)}=`;
+  return response.headers.getSetCookie().some((cookie) => {
+    const pair = cookie.split(';', 1)[0] ?? '';
+    return pair.startsWith(prefix) && pair.length > prefix.length && !/;\s*Max-Age=0(?:;|$)/i.test(cookie);
+  });
+}

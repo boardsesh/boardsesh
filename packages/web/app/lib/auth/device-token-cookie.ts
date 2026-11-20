@@ -3,8 +3,8 @@ import { isSecureCookieContext } from './secure-cookies';
 
 /**
  * The browser half of device recognition (#7656): the cookie that will carry a
- * device token minted on sign-in. Nothing sets or reads it yet; NextAuth
- * sign-in wires it in a later change.
+ * device token minted on sign-in and reset completion. NextAuth publishes it
+ * beside the admitted login; the password counter verifies it before a compare.
  *
  * Host-only and HttpOnly: page scripts never see it and no other host shares
  * it. Over https it takes the `__Host-` prefix, which the browser only accepts

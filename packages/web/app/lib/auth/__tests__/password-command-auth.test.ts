@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { createPasswordCommandClient } from '../password-command-client.server';
 import type { NextAuthOptions } from 'next-auth';
 import type { PasswordReply } from '@boardsesh/auth-protocol';
 vi.mock('server-only', () => ({}));
@@ -199,7 +200,7 @@ describe('a login that asks for a first-party web session (#7596)', () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     const password = vi.fn(async () => answer);
     const scoped = createPasswordCommandAuthRequest(base(), () => ({ password, register: vi.fn() }), undefined, null, {
-      presented,
+      webSession: { presented },
     });
     await provider(scoped.options)
       .authorize({ email: reply.user.email, password: 'x' }, { headers: {} })
@@ -214,7 +215,7 @@ describe('a login that asks for a first-party web session (#7596)', () => {
       credentialProof: proof,
       webSession: session,
     });
-    expect(password).toHaveBeenCalledWith(reply.user.email, 'x', undefined, { presented });
+    expect(password).toHaveBeenCalledWith(reply.user.email, 'x', undefined, { webSession: { presented } });
     await expect(scoped.options.callbacks?.signIn?.(parameters('selected'))).resolves.toBe(true);
     expect(scoped.unavailable()).toBe(false);
     expect(scoped.issuedWebSession()).toEqual(session);
@@ -358,4 +359,43 @@ describe('per-client password sign-in limit in legacy mode', () => {
     admitPasswordLogin(request({}));
     expect(warn).toHaveBeenCalledTimes(2);
   });
+});
+
+it('preserves a full daily backend refusal through the actual private client and public 429 mapping', async () => {
+  vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+  const client = createPasswordCommandClient({
+    environment: {
+      NODE_ENV: 'test',
+      CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
+      CURRENT_STORE_AUTH_BACKEND_ORIGIN: 'https://backend.example.test',
+      CURRENT_STORE_AUTH_RPC_SECRET: 'daily-private-test-rpc-secret-distinct-32bytes',
+    },
+    fetch: async (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
+      const command = JSON.parse(init.body) as { requestId: string };
+      return Response.json(
+        {
+          protocolVersion: 2,
+          operation: 'password',
+          requestId: command.requestId,
+          outcome: 'error',
+          code: 'rate_limited',
+          retryAfterSeconds: 86_400,
+        },
+        { status: 429 },
+      );
+    },
+  });
+  const scoped = createPasswordCommandAuthRequest(base(), () => client);
+  expect(
+    await provider(scoped.options).authorize({ email: 'owner@example.test', password: 'right' }, { headers: {} }),
+  ).toBeNull();
+  expect(scoped.unavailable()).toBe(false);
+  expect(scoped.limited()).toBe(86_400);
+  const response = unavailablePasswordAuthResponse(
+    'https://www.boardsesh.test/api/auth/callback/credentials',
+    scoped.limited(),
+  );
+  expect(response.status).toBe(429);
+  expect(response.headers.get('Retry-After')).toBe('86400');
 });

@@ -6,6 +6,8 @@ import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
+import { responseSetsBrowserLoginCookie } from '@/app/lib/auth/browser-session.server';
+import { createDeviceTokenAuthRequest } from '@/app/lib/auth/device-token-request.server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
@@ -194,9 +196,12 @@ async function postAuth(
       undefined,
       admission.passwordAccepted,
       cloudflareVouchedVisitorAddress(request),
+      { cookieHeader: request.headers.get('cookie') },
     );
     const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
     const response = await commandHandler(request, context);
+    const retryAfterSeconds = commandRequest.limited();
+    if (retryAfterSeconds !== undefined) return unavailablePasswordAuthResponse(request.url, retryAfterSeconds);
     return commandRequest.unavailable()
       ? unavailablePasswordAuthResponse(request.url)
       : clearLegacyCookieIfSessionWritten(response);
@@ -325,12 +330,15 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
   const browserSessionMode = browserSessionRouteMode();
   // Under `better-auth`, Google and Apple sign-ins issue a first-party session (B5b).
   const providerSessionCookies = browserSessionMode.kind === 'better-auth' ? browserSessionMode.cookies : undefined;
-  const legacyRoute = () =>
-    withAuthResponseAdmission(request, context, (completeSignOut) =>
+  const recognition = createDeviceTokenAuthRequest(authOptions, (response) =>
+    providerSessionCookies ? responseSetsBrowserLoginCookie(response, providerSessionCookies) : true,
+  );
+  const legacyRoute = async () => {
+    const response = await withAuthResponseAdmission(request, context, (completeSignOut) =>
       withWebOAuthIdentity(
         request,
         context,
-        authOptions,
+        recognition.options,
         (current, options) =>
           current.method === 'POST'
             ? postAuth(current, context, options, completeSignOut)
@@ -338,6 +346,9 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
         providerSessionCookies,
       ),
     );
+    return recognition.decorate(response);
+  };
+
   // AUTH_BROWSER_SESSION_MODE unset, empty or `legacy`: the route as it was. The
   // only difference: a login or sign-out reply also clears a first-party cookie
   // the request carried, which no browser holds before the first cutover.

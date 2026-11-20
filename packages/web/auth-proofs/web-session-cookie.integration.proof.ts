@@ -7,6 +7,8 @@
  * transport's 401 is the real handler refusing a request with an `Origin`.
  * The www cutover list is replaced through its test seam, never from the env.
  */
+import { mintDeviceToken, verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
+import { __setPasswordGuessLimiterForTests } from '../../backend/src/auth/password-guess-limit';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { decode, encode } from './legacy-credential-fixture';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -88,6 +90,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
+  __setPasswordGuessLimiterForTests(undefined);
   vi.unstubAllEnvs();
   vi.mocked(console.warn).mockRestore();
 });
@@ -101,6 +104,56 @@ type SessionJson = { user?: { id: string }; authSessionId?: string };
 const sessionOf = async (cookie: string) => (await (await readSession(cookie)).json()) as SessionJson;
 
 describe('login', () => {
+  it('carries recognition and canonical issuance together and recognizes only a fully published login', async () => {
+    const deviceSecret = 'combined-canonical-device-token-secret-32bytes';
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', deviceSecret);
+    const climberA = await climber();
+    const { token } = await mintDeviceToken({ userId: climberA.id, secret: deviceSecret });
+    const admit = vi.fn(async () => ({ outcome: 'proceed' as const, settle: async () => {} }));
+    __setPasswordGuessLimiterForTests({
+      mode: 'observe',
+      admit,
+      settleCounted: async () => {},
+      clearEmail: async () => {},
+    });
+    const jar = new CookieJar();
+    const response = await login(jar, climberA.email, undefined, `__Host-boardsesh.device=${token}`);
+    expect(response.status).toBe(200);
+    expect(admit).toHaveBeenCalledWith(expect.objectContaining({ email: climberA.email, deviceToken: token }));
+    expect(await statusOf(loginToken(jar))).toBe('admitted');
+    const recognition = setCookies(response).find((cookie) => cookie.startsWith('__Host-boardsesh.device='));
+    expect(
+      await verifyDeviceToken(recognition?.split(';')[0].split('=')[1], { userId: climberA.id, secret: deviceSecret }),
+    ).not.toBeNull();
+    expect(sessionCookieNamesIn(response)).toContain(LEGACY);
+    const session = await sessionOf(jar.header());
+    expectViewerMarkerFor(response, session.authSessionId ?? '');
+  });
+
+  it('preserves a daily counter refusal as a 429 without publishing any login or recognition cookie', async () => {
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', 'combined-refused-device-token-secret-32bytes');
+    const climberA = await climber();
+    __setPasswordGuessLimiterForTests({
+      mode: 'enforce',
+      admit: async () => ({ outcome: 'refused', retryAfterSeconds: 86_400 }),
+      settleCounted: async () => {},
+      clearEmail: async () => {},
+    });
+    const response = await login(new CookieJar(), climberA.email);
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe('86400');
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    expect(setCookies(response).some((cookie) => cookie.startsWith('__Host-boardsesh.device='))).toBe(false);
+  });
+
+  it('does not publish recognition for a wrong password under the canonical mode', async () => {
+    vi.stubEnv('AUTH_DEVICE_TOKEN_SECRET', 'combined-wrong-device-token-secret-32bytes');
+    const climberA = await climber();
+    const response = await login(new CookieJar(), climberA.email, 'wrong-password');
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    expect(setCookies(response).some((cookie) => cookie.startsWith('__Host-boardsesh.device='))).toBe(false);
+  });
+
   it('writes the login cookie, clears the bridged name and the host-only login copy, and keeps the legacy cookie on the same session', async () => {
     const climberA = await climber();
     const jar = new CookieJar();
