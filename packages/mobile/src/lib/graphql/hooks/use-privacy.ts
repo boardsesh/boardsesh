@@ -220,6 +220,8 @@ export function useProfilePrivacy(userId: string) {
           signal,
         })
       ).publicProfile,
-    enabled: !!settings && !!userId,
+    // Public profile visibility is needed by signed-out visitors too. An
+    // unavailable privacy response stays unknown rather than implying public.
+    enabled: !!userId,
   });
 }

@@ -1,12 +1,8 @@
-import { useCallback } from 'react';
-import { Platform, Share, type ColorValue } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
+import type { ColorValue } from 'react-native';
 import { GlassIconButton } from './GlassIconButton';
 import { ChromeIconButton } from './ChromeIconButton';
 import { useTheme } from '../providers/theme-provider';
-import { useToast } from '../providers/toast-provider';
-import { hapticSelection } from '../lib/haptics';
-import { prewarmShareCaches } from '../lib/share-prewarm';
+import { useShareLinkAction } from '../hooks/use-share-link-action';
 
 type ShareIconButtonProps = {
   url: string;
@@ -40,42 +36,14 @@ export function ShareIconButton({
   iconColor,
 }: ShareIconButtonProps) {
   const { systemColors } = useTheme();
-  const { showToast } = useToast();
-
-  const handlePress = useCallback(() => {
-    hapticSelection();
-    onShare?.();
-    // Fire-and-forget, the way a climb share does: it never delays the sheet.
-    if (prewarmOgImageUrl) void prewarmShareCaches(url, prewarmOgImageUrl);
-
-    // On web expo-clipboard resolves `false` rather than rejecting when the copy is blocked.
-    const copyLink = () =>
-      Clipboard.setStringAsync(url).then(
-        (copied) => (copied ? showToast(copiedMessage, 'success') : showToast(errorMessage, 'error')),
-        () => showToast(errorMessage, 'error'),
-      );
-
-    // A desktop browser has no share menu: copy straight away, while the tap
-    // still allows a clipboard write.
-    if (Platform.OS === 'web' && (typeof navigator === 'undefined' || typeof navigator.share !== 'function')) {
-      void copyLink();
-      return;
-    }
-
-    // Android's share sheet has no url field, so the link rides in the message.
-    Share.share(Platform.OS === 'android' ? { message: `${message}\n${url}` } : { message, url }).catch(
-      (error: unknown) => {
-        // Backing out of the browser's share menu rejects with AbortError: not a failure.
-        if (error instanceof Error && error.name === 'AbortError') return;
-        if (Platform.OS === 'web') {
-          void copyLink();
-          return;
-        }
-        console.warn('[ShareIconButton] share failed:', error);
-        showToast(errorMessage, 'error');
-      },
-    );
-  }, [copiedMessage, errorMessage, message, onShare, prewarmOgImageUrl, showToast, url]);
+  const handlePress = useShareLinkAction({
+    url,
+    message,
+    copiedMessage,
+    errorMessage,
+    onShare,
+    prewarmOgImageUrl,
+  });
 
   if (appearance === 'nativeHeader') {
     return (

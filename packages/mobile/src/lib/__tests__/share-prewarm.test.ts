@@ -5,11 +5,27 @@ import {
   PAGE_READ_TIMEOUT_MS,
   buildOgImageUrl,
   buildPlaylistOgImageUrl,
+  buildPlaceOgImageUrl,
+  buildProfileOgImageUrl,
+  buildSessionRecapOgImageUrl,
   buildSessionInviteOgImageUrl,
   buildSetterOgImageUrl,
   extractOgImageUrl,
   prewarmShareCaches,
 } from '../share-prewarm';
+
+describe('profile, place and recap card URLs', () => {
+  it('encodes public identities and slugs', () => {
+    expect(buildProfileOgImageUrl('u/1')).toBe(`${BACKEND_URL}/og/profile?user_id=u%2F1`);
+    expect(buildPlaceOgImageUrl('gym', 'the crag')).toBe(`${BACKEND_URL}/og/place?kind=gym&slug=the%20crag`);
+    expect(buildPlaceOgImageUrl('board', 'garage')).toBe(`${BACKEND_URL}/og/place?kind=board&slug=garage`);
+    expect(buildSessionRecapOgImageUrl('s/1')).toBe(`${BACKEND_URL}/og/session?sessionId=s%2F1`);
+  });
+
+  it('does not warm the backend session card for daily feed groups', () => {
+    expect(buildSessionRecapOgImageUrl('daily:u1:2026-11-20')).toBeNull();
+  });
+});
 
 /**
  * The app cannot compute the card URL www advertises — that angle comes from

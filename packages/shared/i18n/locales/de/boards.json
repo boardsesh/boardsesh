@@ -416,7 +416,11 @@
       "placesError": "Die Städtesuche klappt gerade nicht. Du kannst weiterhin nach Hallennamen suchen.",
       "placesEmpty": "Keine passende Stadt. Drück die Eingabetaste, um nach Hallennamen zu suchen.",
       "placesHint": "Wähl eine Stadt oder drück die Eingabetaste, um nach Hallennamen zu suchen.",
-      "placesAttribution": "Städtedaten: GeoNames"
+      "placesAttribution": "Städtedaten: GeoNames",
+      "shareAriaLabel": "{{name}} teilen",
+      "shareText": "Klettere bei {{name}} mit Boardsesh",
+      "linkCopied": "Link kopiert",
+      "shareFailed": "Der Link konnte nicht geteilt werden"
     },
     "myGyms": {
       "moreRowTitle": "Meine Hallen",

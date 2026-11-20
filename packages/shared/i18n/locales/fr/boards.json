@@ -416,7 +416,11 @@
       "placesError": "Impossible de rechercher les villes. Tu peux toujours chercher une salle par son nom.",
       "placesEmpty": "Aucune ville trouvée. Appuie sur Entrée pour chercher une salle par son nom.",
       "placesHint": "Choisis une ville ou appuie sur Entrée pour chercher une salle par son nom.",
-      "placesAttribution": "Données des villes : GeoNames"
+      "placesAttribution": "Données des villes : GeoNames",
+      "shareAriaLabel": "Partager {{name}}",
+      "shareText": "Grimpe à {{name}} avec Boardsesh",
+      "linkCopied": "Lien copié",
+      "shareFailed": "Impossible de partager le lien"
     },
     "myGyms": {
       "moreRowTitle": "Mes salles",

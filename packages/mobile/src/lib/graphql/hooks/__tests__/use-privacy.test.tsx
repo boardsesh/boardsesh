@@ -284,6 +284,16 @@ describe('privacy writes', () => {
 });
 
 describe('privacy reads during a controls rollback', () => {
+  it('reads profile visibility without a signed-in viewer', async () => {
+    state.viewerId = '';
+    const { queryClient, wrapper } = setup();
+    state.request.mockResolvedValue({ publicProfile: { isPrivate: false, canViewActivity: true } });
+    const { result } = renderHook(() => useProfilePrivacy('public-climber'), { wrapper });
+    await waitFor(() => expect(result.current.data).toEqual({ isPrivate: false, canViewActivity: true }));
+    expect(state.readSettings).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
+
   it('still reads the private profile activity boundary', async () => {
     const { queryClient, wrapper } = setup();
     queryClient.setQueryData(['privacySettings', 'viewer'], { ...original, enabled: false });

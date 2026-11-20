@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => false }));
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => ctrl.nativeBarItems }));
 vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
@@ -18,11 +18,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { ProfileTabKey, ProfileTopChromeProps } from '../ProfileTopChrome';
+import type { NativeStackHeaderItem } from 'expo-router';
 
 const ctrl = vi.hoisted(() => ({
   fontScale: 1,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   profileName: 'Sam Climber' as string | null,
+  isPrivate: false as boolean | undefined,
+  nativeBarItems: false,
+  rightItems: undefined as (() => NativeStackHeaderItem[]) | undefined,
+  shareIntent: vi.fn(),
   materialMeasure: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined,
   glassMeasure: undefined as ((height: number) => void) | undefined,
   // What the glass header was told about floating its controls over the list.
@@ -140,7 +145,19 @@ vi.mock('../../navigation/MaterialTabs', () => ({
   },
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: ctrl.profileName == null ? undefined : { displayName: ctrl.profileName } }),
+  useProfile: () => ({
+    data: ctrl.profileName == null ? undefined : { id: 'climber-1', displayName: ctrl.profileName },
+  }),
+}));
+vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({
+  usePrivacySettings: () => ({ data: { isPrivate: ctrl.isPrivate } }),
+}));
+vi.mock('../../../hooks/use-share-link-action', () => ({
+  useShareLinkAction: (options: unknown) => () => ctrl.shareIntent(options),
+}));
+vi.mock('../../ShareIconButton', () => ({
+  ShareIconButton: ({ url, accessibilityLabel }: { url: string; accessibilityLabel: string }) =>
+    createElement('button', { 'aria-label': accessibilityLabel, 'data-url': url }),
 }));
 vi.mock('../../chrome/MaterialAppBarTitle', () => ({
   MaterialAppBarTitle: ({ title }: { title: string }) => createElement('div', { 'data-appbar-title': title }),
@@ -180,6 +197,7 @@ vi.mock('../../chrome', () => ({
   CollapsingLargeTitleHeader: ({
     leftActions,
     rightActions,
+    rightItems,
     children,
     onHeightChange,
     opaqueControls,
@@ -187,12 +205,14 @@ vi.mock('../../chrome', () => ({
   }: {
     leftActions?: ReactNode;
     rightActions?: ReactNode;
+    rightItems?: () => NativeStackHeaderItem[];
     children?: ReactNode;
     onHeightChange: (height: number) => void;
     opaqueControls?: boolean;
     scrollEdge?: unknown;
   }) => {
     ctrl.glassMeasure = onHeightChange;
+    ctrl.rightItems = rightItems;
     ctrl.glassOpaqueControls = opaqueControls;
     ctrl.glassScrollEdge = scrollEdge;
     return createElement(
@@ -238,6 +258,10 @@ describe('ProfileTopChrome', () => {
     ctrl.fontScale = 1;
     ctrl.variant = 'liquidGlass';
     ctrl.profileName = 'Sam Climber';
+    ctrl.isPrivate = false;
+    ctrl.nativeBarItems = false;
+    ctrl.rightItems = undefined;
+    ctrl.shareIntent.mockClear();
     ctrl.materialMeasure = undefined;
     ctrl.glassMeasure = undefined;
     ctrl.glassOpaqueControls = undefined;
@@ -247,6 +271,33 @@ describe('ProfileTopChrome', () => {
   });
 
   describe('glass variant', () => {
+    it('offers the public profile link in the trailing island', () => {
+      const { getByRole } = render(<ProfileTopChrome {...makeProps()} />);
+      expect(getByRole('button', { name: 'page.shareAriaLabel' }).getAttribute('data-url')).toContain(
+        '/profile/climber-1',
+      );
+    });
+
+    it.each([true, undefined])('hides Share when profile privacy is %s', (isPrivate) => {
+      ctrl.isPrivate = isPrivate;
+      const { queryByRole } = render(<ProfileTopChrome {...makeProps()} />);
+      expect(queryByRole('button', { name: 'page.shareAriaLabel' })).toBeNull();
+      expect(ctrl.rightItems).toBeUndefined();
+    });
+
+    it('uses a native share item that can move onto the iOS rail', () => {
+      ctrl.nativeBarItems = true;
+      const { queryByRole } = render(<ProfileTopChrome {...makeProps()} />);
+      expect(queryByRole('button', { name: 'page.shareAriaLabel' })).toBeNull();
+      const item = ctrl.rightItems?.().at(0);
+      expect(item).toMatchObject({ type: 'button', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' } });
+      if (item?.type !== 'button') throw new Error('Expected native Share button');
+      item.onPress?.();
+      expect(ctrl.shareIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ url: expect.stringContaining('/profile/climber-1') }),
+      );
+    });
+
     it('renders the avatar menu in the left island', () => {
       const { container } = render(<ProfileTopChrome {...makeProps()} />);
       expect(filterAction(container)).toBeNull();

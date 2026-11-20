@@ -18,7 +18,9 @@ export type ProfileTabKey = 'progress' | 'sessions' | 'logbook' | 'climbs' | 'so
 export type ProfileTopChromeViewProps = {
   displayName?: string | null;
   accountAction?: ReactNode;
+  shareAction?: ReactNode;
   leftItems?: ComponentProps<typeof CollapsingLargeTitleHeader>['leftItems'];
+  rightItems?: ComponentProps<typeof CollapsingLargeTitleHeader>['rightItems'];
   /** Selected sub-tab; drives the segmented control's pill / the active tab. */
   activeTab: ProfileTabKey;
   onSelectTab: (key: ProfileTabKey) => void;
@@ -64,6 +66,7 @@ function ProfileTopChromeMaterial({
   scrollEdge,
   displayName,
   accountAction,
+  shareAction,
 }: ProfileTopChromeViewProps) {
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -97,6 +100,7 @@ function ProfileTopChromeMaterial({
       {/* The page is the climber's own profile, so it carries their name; the tabs
           below switch views inside it. Falls back to "Profile" until it loads. */}
       <MaterialAppBarTitle title={displayName || tCommon('mobile.nav.profile')} />
+      {shareAction}
     </MaterialTopAppBar>
   );
 }
@@ -110,6 +114,8 @@ function ProfileTopChromeGlass({
   scrollEdge,
   accountAction,
   leftItems,
+  rightItems,
+  shareAction,
 }: ProfileTopChromeViewProps) {
   const { t } = useTranslation('you');
   const { systemColors } = useTheme();
@@ -123,6 +129,8 @@ function ProfileTopChromeGlass({
       onHeightChange={onHeightChange}
       leftActions={accountAction}
       leftItems={leftItems}
+      rightItems={rightItems}
+      rightActions={shareAction}
       opaqueControls={opaqueControls}
       scrollEdge={scrollEdge}
     >

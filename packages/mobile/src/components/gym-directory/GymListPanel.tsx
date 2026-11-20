@@ -19,6 +19,7 @@ import { sectionHeaderText } from '../section-header-text';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';
 import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture';
 import { findRowIndex, type GymListRow } from './gym-list-rows';
+import { GymShareButton } from './GymShareButton';
 
 export type GymListPanelHandle = {
   /** Scroll the row carrying this key into view (for a marker tap). */
@@ -286,32 +287,35 @@ const GymRow = memo(function GymRow({
       ]}
     >
       {selected ? <View style={[styles.selectedAccent, { backgroundColor: selection.checkmark }]} /> : null}
-      <PressableSurface
-        onPress={handlePress}
-        accessibilityState={{ expanded }}
-        accessibilityActions={
-          gym.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editGym')) : undefined
-        }
-        onAccessibilityAction={gym.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
-        style={styles.gymRow}
-      >
-        <Icon name="pin" size={20} color={selection.text} />
-        <View style={styles.rowText}>
-          <Text variant="headline" emphasized={selected}>
-            {gym.name}
-          </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {subtitle}
-          </Text>
-          {gym.boardTypes.length > 0 ? (
-            <Text variant="caption1" color={systemColors.secondaryLabel}>
-              {gym.boardTypes.map(formatBoardDisplayName).join(' · ')}
+      <View style={styles.gymHeading}>
+        <PressableSurface
+          onPress={handlePress}
+          accessibilityState={{ expanded }}
+          accessibilityActions={
+            gym.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editGym')) : undefined
+          }
+          onAccessibilityAction={gym.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
+          style={[styles.gymRow, styles.gymHeadingMain]}
+        >
+          <Icon name="pin" size={20} color={selection.text} />
+          <View style={styles.rowText}>
+            <Text variant="headline" emphasized={selected}>
+              {gym.name}
             </Text>
-          ) : null}
-        </View>
-        {gym.canEdit ? <EditButton onPress={handleEdit} label={t('mobile.gyms.editGym')} /> : null}
-        <Icon name={expanded ? 'minus' : 'add'} size={20} color={systemColors.tertiaryLabel} />
-      </PressableSurface>
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {subtitle}
+            </Text>
+            {gym.boardTypes.length > 0 ? (
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {gym.boardTypes.map(formatBoardDisplayName).join(' · ')}
+              </Text>
+            ) : null}
+          </View>
+          {gym.canEdit ? <EditButton onPress={handleEdit} label={t('mobile.gyms.editGym')} /> : null}
+          <Icon name={expanded ? 'minus' : 'add'} size={20} color={systemColors.tertiaryLabel} />
+        </PressableSurface>
+        {expanded ? <GymShareButton gym={gym} /> : null}
+      </View>
 
       {expanded ? (
         boards.length > 0 ? (
@@ -533,6 +537,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     padding: spacing[3],
+  },
+  gymHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingEnd: spacing[2],
+  },
+  gymHeadingMain: {
+    flex: 1,
+    minWidth: 0,
   },
   rowText: {
     flex: 1,

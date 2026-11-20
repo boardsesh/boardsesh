@@ -49,7 +49,11 @@
     "lastThreeMonths": "最近 3 个月",
     "activityChartLabel": "最近 3 个月的活动",
     "displayNameFallback": "攀爬者",
-    "betaVideos": "对方的攀爬方法"
+    "betaVideos": "对方的攀爬方法",
+    "shareAriaLabel": "分享个人资料",
+    "shareText": "在 Boardsesh 上看看 {{name}}",
+    "linkCopied": "链接已复制",
+    "shareFailed": "无法分享链接"
   },
   "nav": {
     "statistics": {

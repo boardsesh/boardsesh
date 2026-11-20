@@ -57,10 +57,17 @@ vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
-vi.mock('../../../lib/env', () => ({ WEB_BASE_URL: 'https://staging.boardsesh.com' }));
+vi.mock('../../../lib/env', () => ({
+  WEB_BASE_URL: 'https://staging.boardsesh.com',
+  BACKEND_URL: 'https://backend.staging.boardsesh.com',
+}));
 vi.mock('../../ShareIconButton', () => ({
-  ShareIconButton: (props: { url: string; accessibilityLabel: string }) =>
-    createElement('button', { 'aria-label': props.accessibilityLabel, 'data-url': props.url }),
+  ShareIconButton: (props: { url: string; accessibilityLabel: string; prewarmOgImageUrl?: string }) =>
+    createElement('button', {
+      'aria-label': props.accessibilityLabel,
+      'data-url': props.url,
+      'data-og': props.prewarmOgImageUrl,
+    }),
 }));
 vi.mock('../../you/CommentSheet', () => ({ CommentSheet: () => null }));
 vi.mock('../SessionSummaryCard', () => ({
@@ -185,6 +192,11 @@ describe('SessionDetailScreen sharing', () => {
       const { getByRole } = render(options.headerRight());
       expect(getByRole('button', { name: 'detail.share' }).getAttribute('data-url')).toBe(
         `https://staging.boardsesh.com/session/${encodeURIComponent(sessionId)}`,
+      );
+      expect(getByRole('button', { name: 'detail.share' }).getAttribute('data-og')).toBe(
+        sessionId.startsWith('daily:')
+          ? null
+          : `https://backend.staging.boardsesh.com/og/session?sessionId=${encodeURIComponent(sessionId)}`,
       );
     },
   );

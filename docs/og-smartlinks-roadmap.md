@@ -1,91 +1,74 @@
-# OG Smart Links & Share Buttons Roadmap
+# OG Smart Links & Share Buttons
 
-Status of Open Graph metadata, dynamic OG images, and share buttons across all routes.
+The app shares public page URLs so chat apps can read their Open Graph metadata.
+Cards are rendered on the public backend origin (normally `https://ws.boardsesh.com`).
+[OG rendering and privacy rules](./og-climb.md) describe the full card contract.
 
-## Current Status
+## Supported links and app entry points
 
-### Routes with Dynamic OG Images + Share Buttons (Complete)
+Sharing covers iOS, Android, and Expo web. Buttons sit on detail surfaces; browsing
+rows and feed cards do not each need a Share button.
 
-| Route                                       | OG Image API                        | Share Button               | Notes                                                  |
-| ------------------------------------------- | ----------------------------------- | -------------------------- | ------------------------------------------------------ |
-| `[board_name]/.../view/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Immutable Rust-rendered board preview in Aura, no text overlay |
-| `[board_name]/.../play/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Same as view, canonical to view URL                    |
-| `/b/[board_slug]/[angle]/view/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable Aura board preview          |
-| `/b/[board_slug]/[angle]/play/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable Aura board preview          |
-| `/crusher/[user_id]`                        | `/api/og/profile`                   | Yes (header)               | Avatar + grade distribution chart                      |
-| `/setter/[setter_username]`                 | `/api/og/setter`                    | Yes (header)               | Avatar + ascents-per-grade chart for created climbs    |
-| `/session/[sessionId]`                      | `/api/og/session`                   | Yes (header)               | Session name + participants + grade chart              |
-| `/join/[sessionId]`                         | `/api/og/session?variant=join`      | N/A (redirect page)        | Same as session but with "Get on the wall" CTA         |
-| `/playlists/[playlist_uuid]`                | `/api/og/playlist`                  | Yes (hero)                 | Playlist color/icon + name + climb count               |
+| Entity | Shared page URL | Backend card | App Share entry point |
+| --- | --- | --- | --- |
+| Catalogue climb | `/{board}/{layout}/{size}/{sets}/{angle}/view/{climb}` | `/og/climb` | Player, mini player, and climb actions |
+| Spray climb | `/b/{slug}/{angle}/view/{climb}` | `/og/climb?board_name=spray&…` | Player and climb actions |
+| Climber profile | `/profile/{user_id}` | `/og/profile?user_id=` | Your Profile tab and public profile headers |
+| Setter | `/setter/{username}` | `/og/setter?username=` | Setter playlist header |
+| Playlist | `/playlists/{uuid}` | `/og/playlist?uuid=` | Public playlist header |
+| Session recap | `/session/{id}` | `/og/session?sessionId=` | Session detail header |
+| Session invitation | `/join/{id}` | `/og/session?sessionId=&variant=join` | Active session invitation sheet |
+| Gym | `/gym/{slug}` | `/og/place?kind=gym&slug=` | Expanded gym heading in Wall Finder |
+| Board or Spraywall | `/b/{slug}` | `/og/place?kind=board&slug=` | Board detail Share link and its share sheet |
 
-### Routes with Static Metadata (Default OG Image)
+A board link resolves to its angle-specific list page. Climb `/play/` URLs use
+the same card as their canonical `/view/` URL.
 
-| Route                                      | Title Pattern               | Notes                     |
-| ------------------------------------------ | --------------------------- | ------------------------- | ---------------------------- |
-| `/`                                        | `Boardsesh - ...`           | Homepage with brand image |
-| `/about`                                   | `About                      | Boardsesh`                |                              |
-| `/help`                                    | `Help                       | Boardsesh`                |                              |
-| `/docs`                                    | `Docs                       | Boardsesh`                |                              |
-| `/legal`                                   | `Legal                      | Boardsesh`                |                              |
-| `/privacy`                                 | `Privacy                    | Boardsesh`                |                              |
-| `/aurora-migration`                        | `Migration                  | Boardsesh`                |                              |
-| `/playlists`                               | `Playlists                  | Boardsesh`                | List page                    |
-| `/logbook`                                 | `Logbook                    | Boardsesh`                |                              |
-| `/b/[board_slug]/[angle]/list`             | `{Board} Climbs at {angle}° | Boardsesh`                | Dynamic title, default image |
-| `/b/[board_slug]/[angle]/create`           | `Create a Climb             | Boardsesh`                |                              |
-| `/b/[board_slug]/[angle]/import`           | `Import Climbs              | Boardsesh`                |                              |
-| `/b/[board_slug]/[angle]/playlists`        | `Playlists                  | Boardsesh`                |                              |
-| `/b/[board_slug]/[angle]/playlists/[uuid]` | `{Playlist Name}            | Boardsesh`                | Dynamic title                |
+## Visibility and preview rules
 
-### Routes with noindex
+| Entity | Share and preview availability |
+| --- | --- |
+| Climb | Drafts have no shareable link. Catalogue cards show published climbs. Spray climb cards require a public wall; an unlisted wall link carries `?wall={uuid}` and has no public card. |
+| Profile | Share appears once visibility is known and the profile is public. Private profiles have no public card, including when the viewer can read their activity. |
+| Setter | The card requires at least one publicly listable climb. |
+| Playlist | The app Share button and public card require a public playlist. |
+| Session | Recap cards require anonymous access and at least one visible tick. A live invitation has a join card; an ended invitation can fall back to a recap. `daily:` feed groups retain the web `/api/og/session` card. |
+| Gym | Share requires a public gym and a slug. The card is gated by anonymous gym access. |
+| Home board | Public and Unlisted boards share a plain link and can have a card. Owners can share Followers and Invite-only boards through a tokened invitation, which has no public card. Only-me boards have no share action. |
+| Spraywall | Public and Unlisted walls can share links. Only a public, published wall with a public photo copy gets a place card. Private walls have no share action. |
 
-| Route                             | Reason             |
-| --------------------------------- | ------------------ |
-| `/auth/login`                     | Auth flow          |
-| `/auth/error`                     | Auth flow          |
-| `/auth/native-start`              | Auth flow          |
-| `/auth/verify-request`            | Auth flow          |
-| `/feed`                           | Authenticated feed |
-| `/settings`                       | User settings      |
-| `/b/[board_slug]/[angle]/liked`   | User-specific      |
-| `/b/[board_slug]/[angle]/logbook` | User-specific      |
-| `/join/[sessionId]`               | Redirect/utility   |
+Access tokens belong only in the page URL that grants access. Never attach
+`invite` or `wall` capabilities to an OG image URL, analytics, logs, or toasts.
+Card endpoints check anonymous access before reading cached bytes.
 
-## OG Image API Routes
+Sharing opens the native or browser share menu when available. A browser without
+a share menu copies the link and confirms the copy. Cancelling a share menu is
+quiet; failed sharing or copying shows a localized error. Preview prewarming is
+best effort and never delays the share menu.
 
-| Endpoint           | Params                                                     | Renders                                                               |
-| ------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------- |
-| `/api/og/climb`    | board_name, layout_id, size_id, set_ids, angle, climb_uuid | Legacy compatibility redirect to immutable Rust-rendered board OG URL |
-| `/api/og/profile`  | user_id                                                    | Avatar + name + grade distribution bar chart                          |
-| `/api/og/setter`   | username                                                   | Avatar + name + ascents-per-grade bar chart for created climbs        |
-| `/api/og/session`  | sessionId, variant?                                        | Session name + participants + grade chart. variant=join adds CTA      |
-| `/api/og/playlist` | uuid                                                       | Playlist color/icon + name + description + climb count                |
+## App landing routes
 
-## Future Improvements
+Expo landing aliases send `/profile/{user_id}` to the Profile tab's user detail
+and `/session/{id}` to Home's session detail, with a tab root behind the screen
+for Back. Playlist and setter links have equivalent aliases into Discover.
 
-### Custom OG Images for Static Pages
+Gym pages intentionally open in the browser. The iOS association excludes
+`/gym/*`. Android's existing associations claim board, join, workout, and preview
+links; people, playlist, and recap links continue to open in the browser.
+Changing those Android associations requires a native rebuild.
 
-These pages currently use the default brand OG image. Custom images could improve click-through:
+## Web metadata and compatibility
 
-- `/aurora-migration` - Could show a visual comparison or migration flow
-- `/about` - Could show board photos or app screenshots
+Family card URLs are advertised in both `og:image` and `twitter:image`. Their
+`v` parameter combines the render version and a content version. Without a
+configured public backend origin, pages keep the site default card.
 
-### Board List Page OG
+Legacy `/api/og/{climb,playlist,profile,setter}` URLs redirect to the backend.
+`/api/og/session` redirects real session IDs and continues rendering `daily:`
+feed groups.
 
-The `/b/[board_slug]/[angle]/list` page could potentially have a custom OG image showing a sample of popular climbs on that board, but the value is low since these pages are primarily navigational.
-
-### Sitemap Updates
-
-When adding new public page types, update `packages/web/app/sitemap.ts` to include:
-
-- Popular setter profiles
-- Popular climb view URLs (slug-based)
-- Public playlists
-
-### Structured Data
-
-Consider adding JSON-LD structured data to:
-
-- Profile pages (`ProfilePage` type)
-- Session pages (event-like structured data)
-- Homepage (`Organization` + `WebSite` types)
+Marketing and utility routes such as About, Help, authentication, and settings
+are outside this app Share-button inventory. Utility and private surfaces keep
+their `noindex` rules. Any new indexable public page type must also be reviewed
+for server-rendered content, metadata, internal links, and sitemap inclusion in
+`packages/web/app/lib/seo/sitemap/shard-registry.ts`.
