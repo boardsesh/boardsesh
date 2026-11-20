@@ -237,10 +237,4 @@ describe('the closing claim prompt', () => {
 
     expect(claimPrompts(JSON.stringify(await renderGymDirectory('all', props)))).toBe(0);
   });
-
-  it('points at the search box it scrolls back to', async () => {
-    fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [listedGym], totalCount: 1 });
-
-    expect(JSON.stringify(await renderGymDirectory('all', props))).toContain('"id":"gym-directory-search"');
-  });
 });

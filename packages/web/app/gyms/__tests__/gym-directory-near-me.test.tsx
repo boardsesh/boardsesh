@@ -4,6 +4,9 @@ import React from 'react';
 import type { GymDirectoryCard } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { parseDirectoryQuery } from '../directory-facets';
+import GymDirectoryClaimLink from '../gym-directory-claim-link';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: React.forwardRef<HTMLAnchorElement, React.ComponentProps<'a'>>(function Link(props, ref) {
@@ -137,6 +140,30 @@ beforeEach(() => {
 });
 
 describe('browse mode', () => {
+  it('points the closing claim link at the single rendered search anchor', () => {
+    render(
+      <>
+        <GymDirectoryNearMe
+          searchForm={{ facet: 'all', query: parseDirectoryQuery('all', {}) }}
+          boardFilter={{ boardTypes: [] }}
+          searchQuery=""
+          locale="en-US"
+          browsePins={[]}
+          browsePinnedCount={0}
+          browseShownCount={0}
+        >
+          <div>Gym results</div>
+        </GymDirectoryNearMe>
+        <GymDirectoryClaimLink viewerState="signed-out" />
+      </>,
+    );
+    const fragment = screen.getByRole('link', { name: tFromCatalog('gyms', 'claim.action') }).getAttribute('href');
+    if (!fragment?.startsWith('#')) throw new Error('Missing in-page claim destination');
+    const anchors = document.querySelectorAll(fragment);
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]?.contains(screen.getByRole('combobox'))).toBe(true);
+  });
+
   it('uses server-rendered place results and radius links without requesting device location', () => {
     render(
       <GymDirectoryNearMe
