@@ -1,6 +1,7 @@
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertBrowserSessionModeConfiguration } from './auth/authority/browser-session-mode';
+import { assertAccountGuessLimitConfiguration } from './auth/password-guess-limit';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleCurrentStoreWebSession } from './handlers/current-store-web-session';
 import { handleProviderSecurity } from './handlers/provider-security';
@@ -94,6 +95,8 @@ import {
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
+import { handleGuessLimitCommand } from './handlers/guess-limit-commands';
+import { GUESS_LIMIT_PREFIX } from '@boardsesh/auth-protocol';
 import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
 import { handleCurrentStoreBatchSystemUsers } from './handlers/current-store-batch-system-users';
 import { handleCurrentStoreLocationSync } from './handlers/current-store-location-sync';
@@ -157,6 +160,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   assertNativeRevocationActivationConfiguration();
   assertWebSessionWriterActivationConfiguration();
   assertBrowserSessionModeConfiguration();
+  assertAccountGuessLimitConfiguration();
   // A typo in this mode would otherwise turn every adopted writer (account
   // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
   // request at a time. Refuse to serve instead, so the deploy fails visibly.
@@ -804,6 +808,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {
         await handleProviderSecurity(req, res);
+        return;
+      }
+      if (pathname.startsWith(GUESS_LIMIT_PREFIX + '/')) {
+        await handleGuessLimitCommand(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/anonymous-provider/v1/')) {

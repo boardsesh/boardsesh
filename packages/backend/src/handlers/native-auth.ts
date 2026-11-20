@@ -61,6 +61,8 @@ import {
 import { CurrentStoreFoundationError, lockIdentityManifest } from '../auth/current-store/foundation-context';
 import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
 import { withNativeDeviceToken } from '../auth/device-token';
+import { passwordGuessLimiter, type PasswordGuessAdmission } from '../auth/password-guess-limit';
+import { NATIVE_V1_DEVICE_TOKEN_HEADER } from '@boardsesh/auth-protocol/native-v1';
 import {
   resolveReservedNativeOAuthIdentity,
   resolveNativeOAuthDisplayName as resolveDisplayName,
@@ -906,12 +908,36 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     return;
   }
 
+  // The per-account guess limit (#7656): before the compare, the same for a
+  // known and an unknown address. Its refusal is the 429 the IP limit already
+  // answers, so released apps handle it.
+  let guess: PasswordGuessAdmission;
+  try {
+    const presentedDeviceToken = req.headers[NATIVE_V1_DEVICE_TOKEN_HEADER];
+    guess = await passwordGuessLimiter().admit({
+      email,
+      deviceToken: typeof presentedDeviceToken === 'string' ? presentedDeviceToken : undefined,
+    });
+  } catch {
+    // The limiter fails open by itself; this only guards a programming error.
+    guess = { outcome: 'proceed', settle: async () => {} };
+  }
+  if (guess.outcome === 'refused') {
+    res.setHeader('Retry-After', String(guess.retryAfterSeconds));
+    sendJson(res, 429, { error: `Rate limit exceeded. Try again in ${guess.retryAfterSeconds} seconds.` });
+    return;
+  }
+  let verdict: 'accepted' | 'rejected' | 'no_verdict' = 'no_verdict';
+
   try {
     const authenticatedUser = await authenticateIdentityPassword(db, email, password);
     if (!authenticatedUser) {
+      verdict = 'rejected';
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
+    // The password was right: it never uses up a guess, whatever happens next.
+    verdict = 'accepted';
 
     const authenticatedUserId = authenticatedUser.userId;
     // Issue only if the hash and generation bcrypt checked are still the
@@ -937,6 +963,8 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Credentials sign-in failed', { code: 'PASSWORD_SIGNIN_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
+  } finally {
+    await guess.settle(verdict);
   }
 }
 

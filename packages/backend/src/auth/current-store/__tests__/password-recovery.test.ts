@@ -42,6 +42,7 @@ import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-a
 import { __resetNativeAuthStateForTests, handleNativeAuthRefresh } from '../../../handlers/native-auth';
 import { logger } from '../../../utils/logger';
 import { normalizeAccountEmail } from '../../normalize-email';
+import { __setPasswordGuessLimiterForTests } from '../../password-guess-limit';
 import {
   CURRENT_EMAIL_NORMALIZER_VERSION,
   lockAuthorityGateExclusively,
@@ -554,6 +555,21 @@ describe('UID-bound password recovery over the restricted current store', () => 
     });
     expect(snapshotAfter.refresh.filter((row) => row.userId === user.id).every((row) => row.revokedAt)).toBe(true);
     expect(snapshotAfter.refresh.find((row) => row.userId === sibling.id)?.revokedAt).toBeNull();
+  });
+  it('clears the address guess counter once the reset commits, and not before (#7656)', async () => {
+    const { user, plan } = await issued();
+    const clearEmail = vi.fn(async () => {});
+    __setPasswordGuessLimiterForTests({ mode: 'observe', admit: vi.fn(), settleCounted: vi.fn(), clearEmail });
+    try {
+      expect((await consumePasswordRecovery(writers[0], authority, reset('pr1_' + 'A'.repeat(43)))).outcome).toBe(
+        'invalid_or_expired',
+      );
+      expect(clearEmail).not.toHaveBeenCalled();
+      expect((await consumePasswordRecovery(writers[0], authority, reset(plan.token))).outcome).toBe('reset');
+      expect(clearEmail).toHaveBeenCalledExactlyOnceWith(normalizeAccountEmail(user.email));
+    } finally {
+      __setPasswordGuessLimiterForTests(undefined);
+    }
   });
   it('ends partner connections through the user_credentials trigger when the staged reset commits', async () => {
     const { user, plan } = await issued();

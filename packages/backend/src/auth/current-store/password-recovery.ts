@@ -23,6 +23,7 @@ import {
 } from '@boardsesh/db/schema/auth';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
+import { passwordGuessLimiter } from '../password-guess-limit';
 import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
@@ -409,7 +410,9 @@ export async function consumePasswordRecovery(
     body && ((initial && initialCredential && !initial.consumedAt && !initial.supersededAt) || legacyPreview)
       ? await bcrypt.hash(body.password, PASSWORD_HASH_COST)
       : undefined;
-  return database.transaction(async (transaction): Promise<ResetPasswordReply> => {
+  // The address a completed reset proved, so its guess counter can be cleared after commit.
+  let resetEmail: string | undefined;
+  const reply = await database.transaction(async (transaction): Promise<ResetPasswordReply> => {
     await transactionSettings(transaction);
     await revalidateIdentityAuthority(transaction, authorityReceipt);
     const claimed = await claimCommand(transaction, { operation: 'reset-password', requestId, issuedAt });
@@ -455,6 +458,7 @@ export async function consumePasswordRecovery(
         passwordHash,
       });
       assertFresh(issuedAt);
+      if (outcome === 'reset') resetEmail = email;
       return { ...base, outcome };
     }
     if (!initial || initial.purpose !== purpose || !initialCredential || !passwordHash)
@@ -543,6 +547,11 @@ export async function consumePasswordRecovery(
       .where(and(eq(mobileRefreshTokens.userId, receipt.userId), isNull(mobileRefreshTokens.revokedAt)));
     assertFresh(issuedAt);
     await revalidateIdentityAuthority(transaction, authorityReceipt);
+    resetEmail = receipt.normalizedEmail;
     return { ...base, outcome: 'reset' };
   });
+  // The owner proved the inbox: the guesses charged to the address no longer
+  // stand between them and a password sign-in (#7656). Fails open by itself.
+  if (reply.outcome === 'reset' && resetEmail !== undefined) await passwordGuessLimiter().clearEmail(resetEmail);
+  return reply;
 }
