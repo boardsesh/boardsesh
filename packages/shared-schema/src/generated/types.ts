@@ -1164,6 +1164,8 @@ export type BoardShareLink = {
 /** What a signed-out visitor holding a share link may see: the board's name only. */
 export type BoardShareLinkPreview = {
   __typename?: 'BoardShareLinkPreview';
+  /** Board family for signed-in link holders checking rollout eligibility. */
+  boardType?: Maybe<Scalars['String']['output']>;
   name: Scalars['String']['output'];
 };
 
@@ -15700,6 +15702,7 @@ export type BoardShareLinkPreviewResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['BoardShareLinkPreview'] = ResolversParentTypes['BoardShareLinkPreview'],
 > = ResolversObject<{
+  boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

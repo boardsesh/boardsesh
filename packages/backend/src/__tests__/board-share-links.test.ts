@@ -1,5 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, count, eq } from 'drizzle-orm';
+import { createRequire } from 'node:module';
+import type * as GraphQLModule from 'graphql';
+import { GET_BOARD_SHARE_LINK_ELIGIBILITY } from '@boardsesh/graphql/operations/privacy';
+import { schema as executableSchema } from '../graphql/index';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -558,6 +562,31 @@ describe('the signed-out preview', () => {
     const preview = await boardShareLinkQueries.boardShareLinkPreview(null, { token: link!.token }, anonymous());
     expect(preview).toEqual({ name: expect.stringContaining('Share Link invite_only') });
     expect(JSON.stringify(preview)).not.toContain('Example Street');
+  });
+
+  it('returns only the board name and family for a signed-in token holder without granting access', async () => {
+    const board = await seedBoard(owner, 'invite_only', 'quantum');
+    const link = await shareLink(board.uuid);
+    const args = { token: link!.token };
+    const name = expect.stringContaining('Share Link invite_only');
+    const query = boardShareLinkQueries.boardShareLinkPreview;
+    await expect(query(null, args, context(stranger))).resolves.toEqual({ name, boardType: 'quantum' });
+    await expect(query(null, args, anonymous())).resolves.toEqual({ name });
+    await expect(query(null, args, { ...anonymous(), userId: stranger })).resolves.toEqual({ name });
+    const { graphql } = createRequire(import.meta.url)('graphql') as typeof GraphQLModule;
+    for (const [viewer, expectedType] of [
+      [anonymous(), null],
+      [context(stranger), 'quantum'],
+    ] as const) {
+      const reply = await graphql({
+        schema: executableSchema,
+        source: GET_BOARD_SHARE_LINK_ELIGIBILITY,
+        variableValues: args,
+        contextValue: viewer,
+      });
+      expect(reply).toEqual({ data: { boardShareLinkPreview: { name, boardType: expectedType } } });
+    }
+    await expect(grantRows(board.uuid, stranger)).resolves.toEqual([]);
   });
 
   it('says nothing for a revoked, unknown or malformed token, or with the controls off', async () => {

@@ -28,7 +28,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardLayers',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
-  'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.
+  'BoardShareLinkEligibility', // Signed-in invite eligibility; no screenshot flow opens one.
   'BoardseshGrade',
   'BoardseshGradesForAngles',
   'BrowseProposals',
