@@ -2,7 +2,7 @@ name: Mobile OTA Boot Check
 
 # Proves that the update a branch serves for one commit boots on a release build
 # of the app: the published bytes, loaded by the native updater, on a simulator
-# and an emulator. See docs/operations/mobile-ota-updates.md ("Boot check").
+# and an emulator. See docs/mobile-ota-updates.md ("Boot check").
 #
 # Per platform:
 #   1. Find the commit's published receipt (runtime version + bundle hash).

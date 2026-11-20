@@ -23,6 +23,12 @@ const TEXT_EXTENSIONS =
   /\.(?:md|mdx|html|tsx?|jsx?|[cm]js|json|ya?ml|toml|sh|py|swift|cpp|h|sql|xml|kts?|svg|template)$/;
 const DOC_FILE_REFERENCE =
   /(?:^|[\s`'"(=])((?:\/?docs\/)[\w./-]+\.(?:md|mdx|json|sql|html|svg|png|jpe?g|webp|gif|excalidraw)(?:#[\p{L}\p{M}\p{N}_%.-]+)?)/gmu;
+// Preserve the exact inputs of the fail-closed OTA boot selfcheck. Their retained
+// guide reference resolves to its current location; every other reference is checked normally.
+const RETAINED_OTA_GUIDE_SOURCES = new Set([
+  '.github/workflows/mobile-ota-boot-check.yml',
+  'scripts/mobile-ota-boot-check.ts',
+]);
 
 /** Preserve offsets and line numbers while removing illustrative fenced/indented code. */
 export function withoutCodeBlocks(markdown: string): string {
@@ -208,6 +214,12 @@ export function checkDocumentation({ cwd, files }: { cwd: string; files: readonl
         });
         continue;
       }
+      if (
+        reference.repositoryRelative &&
+        pathname === path.posix.join('docs', 'mobile-ota-updates.md') &&
+        RETAINED_OTA_GUIDE_SOURCES.has(source)
+      )
+        pathname = 'docs/operations/mobile-ota-updates.md';
       const resolved = !pathname
         ? absoluteSource
         : reference.repositoryRelative || pathname.startsWith('/')

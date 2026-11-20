@@ -43,3 +43,7 @@ source recordings retain their recorded bytes. Their original documentation
 references are historical provenance: preserve them when moving current guides.
 The documentation checker excludes these artifacts; migration and released-client
 provenance tests verify them separately.
+
+The OTA boot checker and its workflow keep their existing verification inputs.
+Their two historical guide references are explicitly mapped to the current OTA
+runbook by the documentation checker, which still validates that destination.

@@ -157,6 +157,48 @@ describe('documentation references', () => {
     ]);
   });
 
+  it.each(['.github/workflows/mobile-ota-boot-check.yml', 'scripts/mobile-ota-boot-check.ts'])(
+    'resolves the retained OTA guide reference in %s without ignoring other references',
+    (filename) => {
+      const checkout = repository({
+        [filename]: '# See docs/mobile-ota-updates.md#boot-check.\n# See docs/missing-guide.md.',
+        'docs/operations/mobile-ota-updates.md': '# Boot check',
+      });
+      expect(checkDocumentation(checkout)).toEqual([
+        { source: filename, line: 2, target: 'docs/missing-guide.md', reason: 'missing file docs/missing-guide.md' },
+      ]);
+    },
+  );
+
+  it('does not alias the retained OTA guide reference in neighboring source files', () => {
+    const checkout = repository({
+      'scripts/mobile-ota-boot-preview.ts': '// See docs/mobile-ota-updates.md.',
+      'docs/operations/mobile-ota-updates.md': '# Boot check',
+    });
+    expect(checkDocumentation(checkout)).toEqual([
+      {
+        source: 'scripts/mobile-ota-boot-preview.ts',
+        line: 1,
+        target: 'docs/mobile-ota-updates.md',
+        reason: 'missing file docs/mobile-ota-updates.md',
+      },
+    ]);
+  });
+
+  it('still requires the canonical destination of a retained OTA guide reference', () => {
+    const checkout = repository({
+      'scripts/mobile-ota-boot-check.ts': '// See docs/mobile-ota-updates.md.',
+    });
+    expect(checkDocumentation(checkout)).toEqual([
+      {
+        source: 'scripts/mobile-ota-boot-check.ts',
+        line: 1,
+        target: 'docs/mobile-ota-updates.md',
+        reason: 'missing file docs/operations/mobile-ota-updates.md',
+      },
+    ]);
+  });
+
   it('skips remote URLs, app routes, runtime capture files and the separate Ansible runbook', () => {
     const checkout = repository({
       'docs/guide.md': [
