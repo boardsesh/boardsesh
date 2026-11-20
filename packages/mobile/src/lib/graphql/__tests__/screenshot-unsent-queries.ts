@@ -110,6 +110,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'SearchBoards',
   'SearchClimbsCount',
   'SearchGyms',
+  'SearchPlaces', // Browser-only city suggestions; native Maestro captures keep the native geocoder.
   'SearchUsers',
   'SimilarClimbs',
   'SprayDetection',

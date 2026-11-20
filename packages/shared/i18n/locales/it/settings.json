@@ -554,7 +554,12 @@
       "stopDrivingHint": "I prossimi blocchi che scegli si aprono in anteprima"
     },
     "relayToWall": "Metti il tuo blocco in parete",
-    "peerDrivingBoard": "Qualcun altro ha il pannello"
+    "peerDrivingBoard": "Qualcun altro ha il pannello",
+    "browserUnsupported": {
+      "title": "Bluetooth nel tuo browser",
+      "message": "Questo browser non può ancora connettersi al tuo pannello. In Firefox per computer, installa WebBT e WebBT Server, poi ricarica Boardsesh. Il supporto per Linux è sperimentale. Puoi continuare a esplorare i blocchi e i loro gradi.",
+      "setup": "Configura WebBT"
+    }
   },
   "integrations": {
     "title": "App collegate",

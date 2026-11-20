@@ -1,12 +1,11 @@
-import { AccessibleTextInput as TextInput } from '../../src/components/AccessibleTextInput';
-import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
 import { PressableSurface } from '../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { BoardName, Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
+import { placeSuggestionLabel } from '@boardsesh/gym-filters';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useGymBoards } from '../../src/lib/graphql/hooks/use-gym-boards';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -22,12 +21,11 @@ import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { Text } from '../../src/components/Text';
-import { Icon } from '../../src/components/Icon';
 import { ChromeIconButton } from '../../src/components/ChromeIconButton';
-import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
+import { GymSearchField } from '../../src/components/gym-directory/GymSearchField';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
 import { buildGymListRows, filterBoardsByChips } from '../../src/components/gym-directory/gym-list-rows';
@@ -69,7 +67,6 @@ function movedEnough(a: Coords, b: Coords): boolean {
  * Selecting a board makes it active.
  */
 export default function GymDiscovery() {
-  const styles = useTypographyStyles(createStyles);
   const router = useRouter();
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -131,6 +128,8 @@ export default function GymDiscovery() {
   // so typing doesn't fire a request per keystroke.
   const [inputText, setInputText] = useState('');
   const [appliedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
+  const appliedFilterRef = useRef(appliedFilter);
+  appliedFilterRef.current = appliedFilter;
   const [viewCenter, setViewCenter] = useState<Coords | null>(null);
   const [searchLabel, setSearchLabel] = useState<string | null>(null);
 
@@ -213,11 +212,13 @@ export default function GymDiscovery() {
     if (search.center !== null) void refetchBoards();
   }, [refetchGyms, refetchBoards, search.center, search.filter.name]);
 
-  const gyms = useMemo(
-    () => (gymConnection?.gyms ?? []).filter((gym) => gym.latitude != null && gym.longitude != null),
-    [gymConnection?.gyms],
+  const gyms = useMemo(() => gymConnection?.gyms ?? [], [gymConnection?.gyms]);
+  // A name-only gym search disables board discovery. Retained data must not
+  // keep showing standalone boards from the city that was just cleared.
+  const boards = useMemo(
+    () => (search.center !== null ? (boardConnection?.boards ?? []) : []),
+    [boardConnection?.boards, search.center],
   );
-  const boards = useMemo(() => boardConnection?.boards ?? [], [boardConnection?.boards]);
 
   // Boards not attached to a gym still deserve discovery — surface them as their
   // own pins + list section so consolidating onto the gym map loses nothing.
@@ -246,12 +247,14 @@ export default function GymDiscovery() {
 
   const markers = useMemo<GymMapMarker[]>(
     () => [
-      ...gyms.map((gym) => ({
-        id: gym.uuid,
-        latitude: gym.latitude as number,
-        longitude: gym.longitude as number,
-        name: gym.name,
-      })),
+      ...gyms
+        .filter((gym) => Number.isFinite(gym.latitude) && Number.isFinite(gym.longitude))
+        .map((gym) => ({
+          id: gym.uuid,
+          latitude: gym.latitude as number,
+          longitude: gym.longitude as number,
+          name: gym.name,
+        })),
       ...standaloneBoards.map((board) => ({
         id: board.uuid,
         latitude: board.latitude as number,
@@ -318,6 +321,38 @@ export default function GymDiscovery() {
     programmaticTargetRef.current = coords;
     mapRef.current?.setCenter(coords);
   }, []);
+
+  const onSelectPlace = useCallback(
+    (place: PlaceSuggestion) => {
+      searchGenerationRef.current += 1;
+      const coords = { latitude: place.latitude, longitude: place.longitude };
+      const label = placeSuggestionLabel(place);
+      const filter = { ...appliedFilterRef.current, name: undefined };
+      setInputText(label);
+      setExpandedGymUuid(null);
+      setSelectedId(null);
+      setViewCenter(coords);
+      setSearchLabel(label);
+      setAppliedFilter(filter);
+      resetSearch({ center: coords, filter });
+      moveCameraTo(coords);
+    },
+    [appliedFilter, moveCameraTo, resetSearch],
+  );
+
+  const onChangeSearchText = useCallback(
+    (text: string) => {
+      searchGenerationRef.current += 1;
+      setInputText(text);
+      // Editing a selected city must not leave its invisible geographic filter
+      // attached to a later gym-name search.
+      if (Platform.OS === 'web' && searchLabel !== null) {
+        setSearchLabel(null);
+        setViewCenter(null);
+      }
+    },
+    [searchLabel],
+  );
 
   const activate = useCallback(
     (board: UserBoard) => {
@@ -420,19 +455,28 @@ export default function GymDiscovery() {
       });
       return;
     }
-    const coords = await geocode(text);
+    if (Platform.OS === 'web' && searchLabel !== null) {
+      // The chosen city is already applied. Submitting its display label must
+      // not reinterpret it as a gym name.
+      return;
+    }
+    // Browsers select cities explicitly through searchPlaces; Enter without a
+    // selection is always a gym-name search. Expo's geocoder is native-only.
+    const coords = Platform.OS === 'web' ? null : await geocode(text);
     if (generation !== searchGenerationRef.current) return;
     if (coords) {
       setViewCenter(coords);
       setSearchLabel(text);
-      setAppliedFilter(DEFAULT_WALL_FINDER_FILTER);
-      resetSearch({ center: coords, filter: DEFAULT_WALL_FINDER_FILTER });
+      const filter = { ...appliedFilterRef.current, name: undefined };
+      setAppliedFilter(filter);
+      resetSearch({ center: coords, filter });
       moveCameraTo(coords);
     } else {
-      setAppliedFilter({ name: text });
-      resetSearch({ center: viewCenterRef.current ?? locationCoordsRef.current ?? null, filter: { name: text } });
+      const filter = { ...appliedFilterRef.current, name: text };
+      setAppliedFilter(filter);
+      resetSearch({ center: viewCenterRef.current ?? locationCoordsRef.current ?? null, filter });
     }
-  }, [inputText, geocode, moveCameraTo, resetSearch]);
+  }, [inputText, geocode, moveCameraTo, resetSearch, appliedFilter, searchLabel]);
 
   // Clear everything and snap back to the device location.
   const clearSearch = useCallback(() => {
@@ -481,22 +525,23 @@ export default function GymDiscovery() {
 
   // Filter chips live in the panel header. Only meaningful once we have a place
   // to query, so hide them in the pre-location prompt state.
-  const filterSlot = center ? (
-    <WallFinderFilterChips
-      selected={appliedFilter.boardTypes ?? []}
-      onToggle={onToggleBoardType}
-      multiBoardTypeOnly={appliedFilter.multiBoardTypeOnly ?? false}
-      onToggleMultiBoardType={onToggleMultiBoardType}
-      multiBoardLabel={t('mobile.gyms.multiBoardChip')}
-      layoutOptions={layoutOptions}
-      selectedLayoutIds={appliedFilter.layoutIds ?? []}
-      onToggleLayout={onToggleLayout}
-      sizeOptions={sizeOptions}
-      selectedSizeIds={appliedFilter.sizeIds ?? []}
-      onToggleSize={onToggleSize}
-      onClear={onClearFilters}
-    />
-  ) : undefined;
+  const filterSlot =
+    center || appliedFilter.name?.trim() ? (
+      <WallFinderFilterChips
+        selected={appliedFilter.boardTypes ?? []}
+        onToggle={onToggleBoardType}
+        multiBoardTypeOnly={appliedFilter.multiBoardTypeOnly ?? false}
+        onToggleMultiBoardType={onToggleMultiBoardType}
+        multiBoardLabel={t('mobile.gyms.multiBoardChip')}
+        layoutOptions={layoutOptions}
+        selectedLayoutIds={appliedFilter.layoutIds ?? []}
+        onToggleLayout={onToggleLayout}
+        sizeOptions={sizeOptions}
+        selectedSizeIds={appliedFilter.sizeIds ?? []}
+        onToggleSize={onToggleSize}
+        onClear={onClearFilters}
+      />
+    ) : undefined;
 
   // The root stack hides headers globally; this screen draws its own floating
   // close button over the map. The title is kept for the back/breadcrumb affordance.
@@ -521,32 +566,15 @@ export default function GymDiscovery() {
   // The search field, pinned in the panel header so it travels with the sheet and
   // survives a blank map.
   const searchField = (
-    <View
-      style={[styles.searchField, { backgroundColor: systemColors.background, borderColor: systemColors.separator }]}
-    >
-      <Icon name="search" size={18} color={systemColors.secondaryLabel} />
-      <TextInput
-        value={inputText}
-        onChangeText={setInputText}
-        onSubmitEditing={() => void onSubmitSearch()}
-        placeholder={t('mobile.gyms.searchPlaceholder')}
-        placeholderTextColor={systemColors.tertiaryLabel}
-        style={[styles.searchInput, { color: systemColors.label }]}
-        autoCorrect={false}
-        returnKeyType="search"
-      />
-      {isGeocoding ? <ActivityIndicator /> : null}
-      {inputText.length > 0 || searchLabel ? (
-        <PressableSurface
-          onPress={clearSearch}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.gyms.clearSearch')}
-        >
-          <Icon name="close" size={18} color={systemColors.secondaryLabel} />
-        </PressableSurface>
-      ) : null}
-    </View>
+    <GymSearchField
+      text={inputText}
+      hasSelectedPlace={searchLabel !== null}
+      isGeocoding={isGeocoding}
+      onChangeText={onChangeSearchText}
+      onSubmit={() => void onSubmitSearch()}
+      onSelectPlace={onSelectPlace}
+      onClear={clearSearch}
+    />
   );
 
   const placeCaption =
@@ -591,9 +619,10 @@ export default function GymDiscovery() {
 
   // No place to show yet: prompt for location inside the panel (the header search
   // still works for browsing a typed place without granting it).
-  const locationPrompt = !center ? (
-    <GymLocationPrompt status={location.status} onRequest={() => void location.request()} />
-  ) : undefined;
+  const locationPrompt =
+    !center && !appliedFilter.name?.trim() ? (
+      <GymLocationPrompt status={location.status} onRequest={() => void location.request()} />
+    ) : undefined;
 
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
@@ -617,7 +646,7 @@ export default function GymDiscovery() {
       <GymListPanel
         ref={panelRef}
         data={rows}
-        mapAvailable={mapAvailable}
+        mapAvailable={mapAvailable && (Platform.OS !== 'web' || center !== null)}
         onPressGym={onPressGym}
         onActivateBoard={activate}
         onEditGym={onEditGym}
@@ -644,36 +673,22 @@ export default function GymDiscovery() {
   );
 }
 
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    flex: {
-      flex: 1,
-    },
-    closeWrap: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      paddingHorizontal: spacing[4],
-      alignItems: 'flex-start',
-    },
-    searchField: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[2],
-      paddingHorizontal: spacing[3],
-      minHeight: 44,
-      borderRadius: borderRadius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-    },
-    searchInput: {
-      flex: 1,
-      fontSize: textStyles.callout.fontSize,
-    },
-    placePill: {
-      alignSelf: 'flex-start',
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[1],
-      borderRadius: borderRadius.full,
-    },
-  });
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  closeWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing[4],
+    alignItems: 'flex-start',
+  },
+  placePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+  },
+});

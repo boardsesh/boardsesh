@@ -409,7 +409,14 @@
       "editBoard": "Editar plafón",
       "updating": "Actualizando resultados…",
       "refreshFailed": "No se pudieron actualizar los resultados.",
-      "retry": "Intentar de nuevo"
+      "retry": "Intentar de nuevo",
+      "searchSubmit": "Buscar rocódromos",
+      "placesLabel": "Ciudades",
+      "placesLoading": "Buscando ciudades…",
+      "placesError": "No pudimos buscar ciudades. Puedes seguir buscando por nombre de rocódromo.",
+      "placesEmpty": "No hay ciudades que coincidan. Pulsa Intro para buscar nombres de rocódromos.",
+      "placesHint": "Elige una ciudad o pulsa Intro para buscar nombres de rocódromos.",
+      "placesAttribution": "Datos de ciudades: GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "Mis rocódromos",

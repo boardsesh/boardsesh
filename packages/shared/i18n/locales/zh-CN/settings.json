@@ -554,7 +554,12 @@
       "stopDrivingHint": "之后选择的线路将只作预览"
     },
     "relayToWall": "将你的线路放上墙面",
-    "peerDrivingBoard": "其他人正在控制训练板"
+    "peerDrivingBoard": "其他人正在控制训练板",
+    "browserUnsupported": {
+      "title": "浏览器蓝牙连接",
+      "message": "此浏览器暂时无法连接你的训练板。在电脑版 Firefox 中安装 WebBT 和 WebBT Server，然后重新加载 Boardsesh。Linux 支持仍处于实验阶段。你仍然可以浏览线路和难度。",
+      "setup": "设置 WebBT"
+    }
   },
   "integrations": {
     "title": "已连接应用",

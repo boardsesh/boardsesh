@@ -449,8 +449,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Expo-web smoke — boots the full expo-web dev stack (backend + Next proxy +
-  # Metro web) via `vp run test:e2e:expo-web` and runs the `expo-web-smoke`
-  # Playwright project against it (scripts/expo-web-e2e.ts). Runs on a bare
+  # Metro web) via `vp run test:e2e:expo-web` and runs the mobile smoke plus
+  # desktop Chromium/Firefox projects (scripts/expo-web-e2e.ts). Runs on a bare
   # runner rather than the Playwright container because the vp task's `db:up`
   # dependency drives the dev-db Docker compose stack, and dev-mode Next +
   # Metro don't need the prebuilt artifact the shards consume. Non-sharded:
@@ -508,8 +508,8 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Install Playwright chromium
-        run: vp exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium and Firefox
+        run: vp exec playwright install --with-deps chromium firefox
         working-directory: packages/web
 
       - name: Run expo-web smoke suite

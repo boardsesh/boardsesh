@@ -83,7 +83,7 @@ const qaState = vi.hoisted(() => ({
   runningPrNumber: null as number | null,
   verdictSubmittedKey: null as string | null,
 }));
-const profileState = vi.hoisted(() => ({ isTester: false }));
+const profileState = vi.hoisted(() => ({ isTester: false, loaded: true }));
 // The moderation kill switch and the sign-in state, mutable per test.
 const drawerState = vi.hoisted(() => ({ climbModerationEnabled: true, isAuthenticated: true }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
@@ -163,6 +163,7 @@ vi.mock('react-i18next', () => ({
           'userDrawer.about': 'About',
           'userDrawer.joinDiscord': 'Join Discord',
           'userDrawer.logout': 'Log out',
+          'profile:mobile.signOut': 'Sign out',
           'userDrawer.myPlaylists': 'My playlists',
           'userDrawer.newBadge': 'New',
           'userDrawer.rateBoardsesh': 'Rate Boardsesh',
@@ -222,13 +223,15 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({
-    data: {
-      id: 'user-1',
-      displayName: 'Alex',
-      email: 'alex@example.com',
-      avatarUrl: null,
-      isTester: profileState.isTester,
-    },
+    data: profileState.loaded
+      ? {
+          id: 'user-1',
+          displayName: 'Alex',
+          email: 'alex@example.com',
+          avatarUrl: null,
+          isTester: profileState.isTester,
+        }
+      : undefined,
   }),
 }));
 // The QA rows read the surfing capability the root layout published and the
@@ -392,6 +395,7 @@ beforeEach(() => {
   qaState.runningPrNumber = null;
   qaState.verdictSubmittedKey = null;
   profileState.isTester = false;
+  profileState.loaded = true;
   drawerState.climbModerationEnabled = true;
   drawerState.isAuthenticated = true;
   supportState.allowed = false;
@@ -788,6 +792,47 @@ describe('UserDrawerProvider repeated avatar taps (#7124)', () => {
     render(<Harness showScreen={false} />);
     fireEvent.click(screen.getByText('Open drawer'));
     expect(routerMock.navigate).toHaveBeenCalledExactlyOnceWith('/account');
+  });
+});
+
+describe('browser sign-out discoverability', () => {
+  it.each([true, false])('places Sign out before every menu row with profile loaded: %s', (loaded) => {
+    platform.OS = 'web';
+    profileState.loaded = loaded;
+    supportState.allowed = true;
+    const { container } = render(<Harness showScreen />);
+
+    const rowTitles = Array.from(container.querySelectorAll('[data-row-title]')).map((row) =>
+      row.getAttribute('data-row-title'),
+    );
+    expect(rowTitles[0]).toBe('Sign out');
+    expect(screen.getAllByText('Sign out')).toHaveLength(1);
+    expect(screen.queryByText('Log out')).toBeNull();
+    if (loaded) {
+      const profileHeader = screen.getByLabelText('profile.editAction');
+      expect(profileHeader.nextElementSibling?.contains(screen.getByText('Sign out'))).toBe(true);
+    }
+  });
+
+  it('does not offer browser sign-out to a signed-out visitor', () => {
+    platform.OS = 'web';
+    drawerState.isAuthenticated = false;
+    profileState.loaded = false;
+    render(<Harness showScreen />);
+
+    expect(screen.queryByText('Sign out')).toBeNull();
+    expect(screen.queryByText('Log out')).toBeNull();
+  });
+
+  it.each(['ios', 'android'])('keeps %s Log out as the final menu row', (platformName) => {
+    platform.OS = platformName;
+    const { container } = render(<Harness showScreen />);
+
+    const rowTitles = Array.from(container.querySelectorAll('[data-row-title]')).map((row) =>
+      row.getAttribute('data-row-title'),
+    );
+    expect(rowTitles.at(-1)).toBe('Log out');
+    expect(screen.queryByText('Sign out')).toBeNull();
   });
 });
 
@@ -1507,7 +1552,7 @@ describe('native Account navigation', () => {
     );
     const { rerender } = render(<AccountHarness showScreen />);
 
-    fireEvent.click(screen.getByText('Log out'));
+    fireEvent.click(screen.getByText(platformName === 'web' ? 'Sign out' : 'Log out'));
 
     expect(routerMock.back).toHaveBeenCalledTimes(1);
     expect(confirmSignOutMock).not.toHaveBeenCalled();
@@ -1521,7 +1566,7 @@ describe('native Account navigation', () => {
     platform.OS = platformName;
     const { rerender } = render(<Harness showScreen />);
 
-    fireEvent.click(screen.getByText('Log out'));
+    fireEvent.click(screen.getByText(platformName === 'web' ? 'Sign out' : 'Log out'));
 
     expect(routerMock.back).not.toHaveBeenCalled();
     expect(confirmSignOutMock).not.toHaveBeenCalled();

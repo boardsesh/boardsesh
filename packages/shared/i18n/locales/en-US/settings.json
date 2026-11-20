@@ -554,7 +554,12 @@
       "stopDrivingHint": "Your next picks open as previews"
     },
     "relayToWall": "Put your climb on the wall",
-    "peerDrivingBoard": "Someone else has the board"
+    "peerDrivingBoard": "Someone else has the board",
+    "browserUnsupported": {
+      "title": "Bluetooth in your browser",
+      "message": "This browser can’t connect to your board yet. In desktop Firefox, install WebBT and WebBT Server, then reload Boardsesh. Linux support is experimental. You can still browse climbs and grades.",
+      "setup": "WebBT setup"
+    }
   },
   "integrations": {
     "title": "Connected apps",

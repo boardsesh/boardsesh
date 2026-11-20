@@ -229,6 +229,11 @@ persisted in the browser's AsyncStorage.
 
 ### Browser authentication
 
+The signed-in browser account menu puts **Sign out** immediately below the
+profile header, including while profile details are still loading. It uses the
+same confirmation and durable sign-out as Settings → Account. Closing a tab or
+restarting a computer does not request sign-out.
+
 Expo web shares the NextAuth session cookie issued by `www.boardsesh.com`; it
 does not use the native transfer-token or refresh-token flow. Credentials calls
 the narrowly CORS-enabled NextAuth endpoints on www, then
@@ -281,6 +286,21 @@ keeps the full `/api/auth/session` read it had before #7596, without a
 throttle: that read is also how a returning tab gets a fresh backend token,
 and changing it would mean changing the shared auth provider that ships to
 phones. NextAuth rewrites the session cookie on that read today.
+
+### Browser Bluetooth
+
+Board connection checks the exposed Web Bluetooth API rather than the browser
+name. When that API is missing, the app shows a Material dialog with **Close**
+and **WebBT setup**, while leaving climb and grade browsing available. Native
+permission/radio handling and the LED transport are unchanged.
+
+Firefox on desktop can expose the API through
+[WebBT](https://github.com/stevennyman/webbt#installation). Its official setup
+requires both the Firefox extension and the companion WebBT Server, followed by
+a page reload. WebBT calls its Linux support experimental because of BlueZ
+connection reliability. An exposed API or a mocked write does not prove a real
+board lit: Firefox/Linux lighting still needs a physical-board check. This
+change does not add an extension-specific transport or claim that check passed.
 
 ### Signed-out read-only routes (the `?next=` return)
 

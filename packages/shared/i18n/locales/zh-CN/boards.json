@@ -409,7 +409,14 @@
       "editBoard": "编辑训练板",
       "updating": "正在更新结果…",
       "refreshFailed": "无法更新结果。",
-      "retry": "重试"
+      "retry": "重试",
+      "searchSubmit": "搜索岩馆",
+      "placesLabel": "城市",
+      "placesLoading": "正在查找城市…",
+      "placesError": "无法查找城市。你仍可以按岩馆名称搜索。",
+      "placesEmpty": "没有匹配的城市。按回车键搜索岩馆名称。",
+      "placesHint": "选择城市，或按回车键搜索岩馆名称。",
+      "placesAttribution": "城市数据：GeoNames"
     },
     "myGyms": {
       "moreRowTitle": "我的岩馆",

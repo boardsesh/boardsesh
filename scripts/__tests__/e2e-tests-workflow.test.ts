@@ -13,7 +13,14 @@ import { parse } from 'yaml';
  * eight e2e shards, or a gate call skips the one job it asked for.
  */
 
-type Step = { name?: string; if?: string; uses?: string; with?: Record<string, string> };
+type Step = {
+  name?: string;
+  if?: string;
+  uses?: string;
+  with?: Record<string, string>;
+  run?: string;
+  'working-directory'?: string;
+};
 type Job = { if?: string; needs?: string[]; environment?: string; steps?: Step[] };
 type Workflow = {
   on: {
@@ -58,6 +65,21 @@ describe('e2e-tests.yml triggers', () => {
     expect(smoke.if).toBe(
       "${{ !cancelled() && (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') }}",
     );
+  });
+
+  it('installs both browsers for the Expo job and runs every Expo browser project', () => {
+    const smokeSteps = workflow.jobs['expo-web-smoke'].steps ?? [];
+    expect(smokeSteps).toContainEqual(
+      expect.objectContaining({
+        run: 'vp exec playwright install --with-deps chromium firefox',
+        'working-directory': 'packages/web',
+      }),
+    );
+    expect(smokeSteps).toContainEqual(expect.objectContaining({ run: 'vp run test:e2e:expo-web' }));
+
+    const runnerSource = readFileSync('scripts/expo-web-e2e.ts', 'utf8');
+    const selectedProjects = Array.from(runnerSource.matchAll(/['"]--project=([^'"]+)['"]/g), ([, project]) => project);
+    expect(selectedProjects).toEqual(['expo-web-smoke', 'expo-web-chromium', 'expo-web-firefox']);
   });
 
   it('refuses a call with an empty ref before checking anything out', () => {

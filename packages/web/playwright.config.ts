@@ -142,7 +142,16 @@ export default defineConfig({
       // headroom over COLD_LOAD_TIMEOUT_MS.
       timeout: 240_000,
       testMatch: ['**/expo-web/*.spec.ts'],
+      testIgnore: ['**/expo-web/bob-regressions.spec.ts'],
     },
+
+    // Desktop browser regressions share the externally managed Expo-web stack.
+    ...(['chromium', 'firefox'] as const).map((browserName) => ({
+      name: `expo-web-${browserName}`,
+      use: { browserName, viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false },
+      timeout: 240_000,
+      testMatch: ['**/expo-web/bob-regressions.spec.ts'],
+    })),
 
     // Board-layout screenshots - iPhone 16 Pro Max viewport.
     // Captures every supported Kilter/Tension layout so board-rendering
