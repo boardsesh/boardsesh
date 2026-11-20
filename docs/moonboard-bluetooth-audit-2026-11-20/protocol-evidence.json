@@ -27,10 +27,7 @@
       "primary_characteristics": {
         "pixelSingle": "713d0003-503e-4c75-ba94-3148f18d941e"
       },
-      "constructor_range": [
-        "0x792944",
-        "0x7929e8"
-      ]
+      "constructor_range": ["0x792944", "0x7929e8"]
     },
     {
       "protocol": "legacy",
@@ -38,10 +35,7 @@
       "primary_characteristics": {
         "pixelSingle": "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
       },
-      "constructor_range": [
-        "0x7929ec",
-        "0x792a90"
-      ]
+      "constructor_range": ["0x7929ec", "0x792a90"]
     },
     {
       "protocol": "legacy",
@@ -49,10 +43,7 @@
       "primary_characteristics": {
         "pixelSingle": "5b2bf25f-9a69-4a5a-8788-6f3ddcb97fc4"
       },
-      "constructor_range": [
-        "0x792a94",
-        "0x792b38"
-      ]
+      "constructor_range": ["0x792a94", "0x792b38"]
     },
     {
       "protocol": "pro",
@@ -85,10 +76,7 @@
         "chrSessionStatus": "7a112233-4455-6677-8899-aabbccddee24",
         "authState": "7a112233-4455-6677-8899-aabbccddee28"
       },
-      "constructor_range": [
-        "0x792b3c",
-        "0x793284"
-      ],
+      "constructor_range": ["0x792b3c", "0x793284"],
       "note": "Primary map is used by writes AND reads, including authentication reads; notification map is separate. Map presence is not proof every operation is invoked."
     }
   ],
@@ -107,59 +95,28 @@
     "gate_terminal": "method17921 @0x7c87d4 checks registry service equality and pro enum at0x7c8828",
     "builder": "method17909 @0x7c7708",
     "packet": {
-      "header_bytes": [
-        "0x03",
-        "count"
-      ],
-      "entry_bytes": [
-        "index low8",
-        "index high8",
-        "value low8",
-        "value high8"
-      ],
+      "header_bytes": ["0x03", "count"],
+      "entry_bytes": ["index low8", "index high8", "value low8", "value high8"],
       "entry_size": 4,
       "length": "2 + 4*count",
-      "count_range": [
-        1,
-        255
-      ],
-      "index_range": [
-        0,
-        65535
-      ],
+      "count_range": [1, 255],
+      "index_range": [0, 65535],
       "note": "Header03 is observed directly; do not mislabel it as an opcode. Base batch construction below identifies first/last flag semantics."
     },
     "event": "TS cid4285 constructed at0x7c769c; name pixelBatch @0x7c76a8, bytes field0xb, forceResponse=false field0xf",
     "handler_registration": "constructor17277 @0x79bf60..0x79bf80 binds fn98098 to TypeArguments80344 containing Type71696(cid4285)",
-    "handler_chain": [
-      "17399 @0x7a228c",
-      "39943 @0xdc7d48",
-      "closure98100 /39945 @0xdc7e48",
-      "writer39935 @0xdc772c"
-    ]
+    "handler_chain": ["17399 @0x7a228c", "39943 @0xdc7d48", "closure98100 /39945 @0xdc7e48", "writer39935 @0xdc772c"]
   },
   "pro_base_pixels": {
     "producer": "method24965 @0xa025f8",
     "builder": "method24966 @0xa027b4",
     "destination": "chrBasePixelBatch -> 7a112233-4455-6677-8899-aabbccddee27",
-    "gates": [
-      "nonempty input",
-      "connected",
-      "pro profile provider"
-    ],
+    "gates": ["nonempty input", "connected", "pro profile provider"],
     "max_entries_per_packet": "clamp(truncate((maxPayloadBytes - 2)/4), 1, 255); reject maxPayloadBytes < 6",
     "max_entries_evidence": "0xa02b84..0xa02bc8",
     "packet": {
-      "header_bytes": [
-        "flags",
-        "count"
-      ],
-      "entry_bytes": [
-        "index low8",
-        "index high8",
-        "value low8",
-        "value high8"
-      ],
+      "header_bytes": ["flags", "count"],
+      "entry_bytes": ["index low8", "index high8", "value low8", "value high8"],
       "flags": {
         "first_packet": 2,
         "last_packet": 1,
@@ -188,16 +145,8 @@
     "chunk_bytes": "clamp(state.maxPayloadBytes,20,242)",
     "order": "await each write; successive TS events chain through stored Future in39943",
     "without_response_predicate": "discovered characteristic supportsWriteWithoutResponse AND NOT event.forceResponse",
-    "without_response_chain": [
-      "39940 @0xdc7c10",
-      "39937 @0xdc7990 with false",
-      "39938 @0xdc7a90"
-    ],
-    "with_response_chain": [
-      "39936 @0xdc78f0",
-      "39937 @0xdc7990 with true",
-      "39939 @0xdc7b50"
-    ],
+    "without_response_chain": ["39940 @0xdc7c10", "39937 @0xdc7990 with false", "39938 @0xdc7a90"],
+    "with_response_chain": ["39936 @0xdc78f0", "39937 @0xdc7990 with true", "39939 @0xdc7b50"],
     "extra_without_response_delay_microseconds": 5000,
     "delay_evidence": "0xdc7878 loads Duration instance126965(value5000), calls Future.delayed-shaped445028 then awaits; SDK layout and independent reviewer identify microseconds, not measured pacing",
     "readiness": "39945 requires named discovered characteristic; connected; phase discoveredReady,ready,or sending; otherwise emits error state; successful await increments counter and returns ready",
@@ -233,11 +182,7 @@
   "subscriptions": {
     "startup": "39946 @0xdc8244 calls17402 after installing matched maps",
     "method": "17402 @0x7a23f8",
-    "automatic_keys": [
-      "cfgStatus",
-      "connectionStatus",
-      "chrSessionStatus"
-    ],
+    "automatic_keys": ["cfgStatus", "connectionStatus", "chrSessionStatus"],
     "binding": {
       "cfgStatus": {
         "uuid": "7a112233-4455-6677-8899-aabbccddee09",
