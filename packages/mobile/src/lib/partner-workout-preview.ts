@@ -12,8 +12,8 @@ import {
   type WorkoutRun,
 } from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { PartnerSlot } from './partner-workout-plan';
 import { MAX_SESSION_WORKOUT_ITEMS } from '@boardsesh/workout-summary';
+import type { PartnerSlot } from './partner-workout-plan';
 import {
   buildPreview,
   selectItemsFromPools,
@@ -41,13 +41,34 @@ type PartnerPlan = { plan: WorkoutPlan; slots: readonly PartnerSlot[] };
  * The run for `rows`. An untimed partner block can ask for a rest the app's own
  * builder does not offer yet; its stage paces the rest timer with it.
  */
-function partnerRunFor(rows: readonly PreviewItem[], spec: CreateWorkout, plan: WorkoutPlan): WorkoutRun {
+function partnerRunFor(
+  rows: readonly PreviewItem[],
+  spec: CreateWorkout,
+  plan: WorkoutPlan,
+  slots: readonly PartnerSlot[],
+): WorkoutRun {
   const run = buildWorkoutRun(
     rows.map((row) => ({ uuid: row.item.uuid, stageId: row.slot.stageId! })),
     plan,
   );
   for (const stage of run.stages) {
     const block = spec.blocks[Number(stage.id.split(':').at(-1))];
+    if (block?.type === 'fourByFour') {
+      stage.kind = 'fourByFour';
+      const stageRows = rows.filter((row) => row.slot.stageId === stage.id);
+      const firstSlot = slots.find((slot) => slot.stageId === stage.id)?.index ?? 0;
+      stage.pacing = {
+        mode: 'afterTick',
+        restSeconds: block.restBetweenClimbsSeconds,
+        advanceOn: 'round',
+        rounds: {
+          climbCount: block.climbCount,
+          roundCount: block.rounds,
+          restBetweenRoundsSeconds: block.restBetweenRoundsSeconds,
+          positionByItemUuid: Object.fromEntries(stageRows.map((row) => [row.item.uuid, row.slot.index - firstSlot])),
+        },
+      };
+    }
     if (block && 'restSeconds' in block && block.restSeconds !== undefined) {
       stage.pacing = { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'tick' };
     }
@@ -63,7 +84,7 @@ function toPartnerPreview(
 ): PartnerWorkoutPreview {
   return {
     items: built.items.map((row) => row.item),
-    run: partnerRunFor(built.items, spec, plan),
+    run: partnerRunFor(built.items, spec, plan, slots),
     selectionSlots: slots.length,
     slots,
     built,
@@ -90,7 +111,8 @@ export async function buildPartnerWorkoutPreview({
   fetchPool: FetchGradePool;
   getAvoidedClimbUuids?: () => ReadonlySet<string>;
 }): Promise<PartnerWorkoutPreview> {
-  const slots = partnerPlan.slots.slice(0, MAX_SESSION_WORKOUT_ITEMS);
+  const slots = partnerPlan.slots;
+  if (slots.length > MAX_SESSION_WORKOUT_ITEMS) throw new Error('Partner workout exceeds queue capacity');
   const built = await buildPreview(slots, ctx, fetchPool, grades, { getAvoidedClimbUuids });
   return toPartnerPreview(slots, built, spec, partnerPlan.plan);
 }

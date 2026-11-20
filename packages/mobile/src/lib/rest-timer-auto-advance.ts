@@ -31,6 +31,7 @@ export function isTickFreshEnoughToArm(tickMs: number | null, nowMs: number): bo
 export const AUTO_ADVANCE_OVERDUE_GRACE_MS = 5_000;
 
 type DeadlineInput = {
+  qualifyingTickAcceptedAtMs?: number | null;
   mode: RestTimerMode;
   anchorMs: number | null;
   targetSeconds: number | null;
@@ -109,10 +110,19 @@ export function getAfterTickRestFloorMs({
  */
 export function getAutoAdvanceDeadlineMs(input: DeadlineInput): number | null {
   const { mode, anchorMs, targetSeconds, nowMs, lastFiredDeadlineMs = null } = input;
-  if (anchorMs === null || targetSeconds === null || targetSeconds <= 0) return null;
+  if (
+    anchorMs === null ||
+    targetSeconds === null ||
+    (targetSeconds <= 0 && !(mode === 'afterTick' && input.qualifyingTickAcceptedAtMs != null))
+  )
+    return null;
   const intervalMs = targetSeconds * 1000;
 
-  if (mode === 'afterTick') return (getAfterTickRestFloorMs(input) ?? anchorMs) + intervalMs;
+  if (mode === 'afterTick')
+    return Math.max(
+      (getAfterTickRestFloorMs(input) ?? anchorMs) + intervalMs,
+      input.qualifyingTickAcceptedAtMs ?? -Infinity,
+    );
 
   const beatsElapsed = Math.floor((nowMs - anchorMs) / intervalMs);
   const deadlineMs = anchorMs + (beatsElapsed + 1) * intervalMs;
@@ -155,7 +165,7 @@ type ScheduleInput = {
 export function shouldScheduleAutoAdvance({ state, targetSeconds, autoAdvance, canDriveWall }: ScheduleInput): boolean {
   if (!state.armed || !state.isRunning) return false;
   if (!autoAdvance || !canDriveWall) return false;
-  if (targetSeconds === null || targetSeconds <= 0) return false;
+  if (targetSeconds === null || (targetSeconds <= 0 && state.qualifyingTickAcceptedAtMs == null)) return false;
   if (state.anchorMs === null) return false;
   // Already found the end of the queue; don't beat against it every interval.
   if (state.queueEnded) return false;

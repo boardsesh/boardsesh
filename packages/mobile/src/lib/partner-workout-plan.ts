@@ -91,7 +91,7 @@ function rangeForBlock(
 export type PartnerSlot = StagedSlot & { band?: readonly number[] };
 
 export function partnerBlockRunsNatively(block: WorkoutBlock): boolean {
-  return block.type !== 'fourByFour' && block.type !== 'limitBouldering' && block.type !== 'freeClimbing';
+  return block.type !== 'limitBouldering' && block.type !== 'freeClimbing';
 }
 
 /** One stage per native block, retaining explicit warm-up ranges and exact requested counts. */
@@ -170,12 +170,14 @@ export function buildPartnerWorkoutPlan(
         };
     }
     stages.push(stage);
+    const firstSlotIndex = slots.length;
+    const slotCount = block.climbCount * (block.type === 'fourByFour' ? block.rounds : 1);
     const { bands } = range;
     // How many slots each band has given a grade so far: a band's slots take
     // turns across its Font grades, so a V grade draws from each of them and a
     // short one fills from its band mates first (`PreviewSlot.band`).
     const usesByBand = bands.map(() => 0);
-    for (let position = 0; position < block.climbCount; position++) {
+    for (let position = 0; position < slotCount; position++) {
       const progress = block.climbCount === 1 ? 1 : position / (block.climbCount - 1);
       const peakHeight = block.climbCount % 2 === 0 ? (block.climbCount - 2) / (block.climbCount - 1) : 1;
       const ramp =
@@ -185,6 +187,9 @@ export function buildPartnerWorkoutPlan(
       const grade = band[usesByBand[bandIndex]++ % band.length];
       slots.push({
         index: slots.length,
+        ...(block.type === 'fourByFour' && position >= block.climbCount
+          ? { repeatOfIndex: firstSlotIndex + (position % block.climbCount) }
+          : {}),
         grade,
         section: block.type === 'warmUp' ? 'warmUp' : 'main',
         stageId: id,

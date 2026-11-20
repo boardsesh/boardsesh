@@ -1335,6 +1335,8 @@ describe('stored doc codec and wire projection', () => {
       lastFiredBeatAt: String(NOW - 1),
       lastTickQueueItemUuid: 'item-1',
       lastTickStatus: 'flash',
+      tickAcceptedAt: null,
+      tickAcceptanceId: null,
       setByParticipantId: PEER,
     });
     expect(toWireRestCadence(null)).toBeNull();
@@ -1701,4 +1703,108 @@ describe('commitRestCadenceAction', () => {
     expect(commit.stored.revision).toBe(1 + REST_CADENCE_CAS_ATTEMPTS);
     expect(writes).toEqual([]);
   });
+});
+
+describe('zero and short workout rests', () => {
+  const stageClock = (seconds: number) =>
+    clock({
+      source: 'stage',
+      advanceOn: 'tick',
+      targetSeconds: seconds,
+      anchorMs: null,
+    });
+
+  it.each([0, 1, 9])('claims a fresh %i second rest once', (seconds) => {
+    const ticked = applyRestCadenceAction(
+      stageClock(seconds),
+      {
+        action: 'TICK',
+        tickStatus: 'send',
+        tickQueueItemUuid: 'visit-one',
+        elapsedMs: 0,
+        tickAgeAtLogMs: 0,
+      },
+      NOW,
+      ME,
+    );
+    expect(ticked.applicable).toBe(true);
+    if (!ticked.applicable || !ticked.next) throw new Error('Missing accepted tick');
+    const due = NOW + seconds * 1000;
+    expect(claimableRestCadenceBeatMs(ticked.next, due)).toBe(due);
+    const fired = applyRestCadenceAction(ticked.next, { action: 'FIRE', expectedRevision: 1 }, due, ME);
+    expect(fired.applicable).toBe(true);
+    if (!fired.applicable || !fired.next) throw new Error('Missing fire');
+    expect(fired.next.qualifyingTickAcceptedAtMs).toBeNull();
+    expect(applyRestCadenceAction(fired.next, { action: 'FIRE', expectedRevision: 2 }, due, ME).applicable).toBe(false);
+  });
+
+  it('lets a newly accepted slow save claim an already elapsed rest', () => {
+    const ticked = applyRestCadenceAction(
+      stageClock(1),
+      {
+        action: 'TICK',
+        tickStatus: 'attempt',
+        tickQueueItemUuid: 'visit-one',
+        elapsedMs: 90_000,
+        tickAgeAtLogMs: 0,
+      },
+      NOW,
+      ME,
+    );
+    if (!ticked.applicable || !ticked.next) throw new Error('Missing accepted tick');
+    expect(claimableRestCadenceBeatMs(ticked.next, NOW)).toBe(NOW);
+    expect(claimableRestCadenceBeatMs(ticked.next, NOW + 5_001)).toBeNull();
+  });
+
+  it('never gives historical ticks or reset clocks a zero-rest advance', () => {
+    const ticked = applyRestCadenceAction(
+      stageClock(0),
+      {
+        action: 'TICK',
+        tickStatus: 'send',
+        tickQueueItemUuid: 'visit-one',
+        elapsedMs: 90_000,
+      },
+      NOW,
+      ME,
+    );
+    if (!ticked.applicable || !ticked.next) throw new Error('Missing tick clock');
+    expect(claimableRestCadenceBeatMs(ticked.next, NOW)).toBeNull();
+    const fresh = { ...stageClock(0), qualifyingTickAcceptedAtMs: NOW, anchorMs: NOW };
+    const reset = applyRestCadenceAction(fresh, { action: 'RESET' }, NOW, ME);
+    if (!reset.applicable || !reset.next) throw new Error('Missing reset');
+    expect(claimableRestCadenceBeatMs(reset.next, NOW)).toBeNull();
+  });
+});
+
+describe('tick acceptance correlation', () => {
+  it.each([undefined, 'current-process-generation-event'])(
+    'replaces a prior acceptance ID with %s',
+    (tickAcceptanceId) => {
+      const previous = clock({
+        source: 'stage',
+        advanceOn: 'tick',
+        targetSeconds: 0,
+        qualifyingTickAcceptedAtMs: NOW - 1_000,
+        tickAcceptanceId: 'previous-process-generation-event',
+      });
+      const result = applyRestCadenceAction(
+        previous,
+        {
+          action: 'TICK',
+          tickQueueItemUuid: 'visit-two',
+          tickStatus: 'send',
+          elapsedMs: 0,
+          tickAgeAtLogMs: 0,
+          ...(tickAcceptanceId === undefined ? {} : { tickAcceptanceId }),
+        },
+        NOW,
+        ME,
+      );
+      if (!result.applicable || !result.next) throw new Error('Missing accepted tick');
+      expect(result.next.tickAcceptanceId).toBe(tickAcceptanceId ?? null);
+      expect(toWireRestCadence(result.next)?.tickAcceptanceId).toBe(tickAcceptanceId ?? null);
+      expect(parseRestCadence(serializeRestCadence(result.next))).toEqual(result.next);
+    },
+  );
 });

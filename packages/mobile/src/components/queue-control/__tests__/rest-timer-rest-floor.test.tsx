@@ -181,7 +181,7 @@ const FOUR_BY_FOUR: WorkoutRun = {
   ],
 };
 
-/** 4x4: 3 sets of 2 reps with no rest between sets, so the 10 s changeover. */
+/** 4x4: 3 sets of 2 reps with an explicitly requested 10 second rest. */
 const FOUR_BY_FOUR_CHANGEOVER: WorkoutRun = {
   stages: [
     {
@@ -192,7 +192,7 @@ const FOUR_BY_FOUR_CHANGEOVER: WorkoutRun = {
         mode: 'afterTick',
         restSeconds: 0,
         advanceOn: 'set',
-        sets: { repsPerSet: 2, restBetweenSetsSeconds: 0 },
+        sets: { repsPerSet: 2, restBetweenSetsSeconds: 10 },
       },
     },
   ],

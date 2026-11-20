@@ -33,6 +33,12 @@ import { nowMs } from '../../lib/clock';
 import { getRestTimerStartMs } from '../../lib/rest-timer';
 import { isTickFreshEnoughToArm } from '../../lib/rest-timer-auto-advance';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
+import {
+  restTimerForegroundGeneration,
+  sameRestTimerForeground,
+  restTimerControlGeneration,
+  sameRestTimerControlGeneration,
+} from '../../lib/rest-timer-foreground-state';
 import { attributeTickToQueueItem, type TickAttributionCandidate } from '../../lib/tick-attribution';
 import { noteWorkoutRunTick } from '../../lib/workout-run-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -190,6 +196,8 @@ export function useTickSaver({
       // it, not when the save lands, so a go whose save is slow still counts;
       // the rest timer is handed the same instant below.
       const loggedAtMs = nowMs();
+      const foregroundAtLog = restTimerForegroundGeneration();
+      const controlAtLog = restTimerControlGeneration();
       const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? loggedAtMs, loggedAtMs);
 
       saveSurvivingUnmount(
@@ -256,13 +264,14 @@ export function useTickSaver({
             // judges the tick fresh or history at `loggedAtMs`, as `isWorkoutGo`
             // does, so a rep whose save is slow still earns the set rest's
             // advance; `landedAtMs` only caps the anchor.
-            noteRestTimerTick(
-              climbedAtIso,
-              getEffectiveRestPacing().mode,
-              landedAtMs,
-              { status, queueItemUuid },
-              loggedAtMs,
-            );
+            if (sameRestTimerForeground(foregroundAtLog) && sameRestTimerControlGeneration(controlAtLog))
+              noteRestTimerTick(
+                climbedAtIso,
+                getEffectiveRestPacing().mode,
+                landedAtMs,
+                { status, queueItemUuid },
+                loggedAtMs,
+              );
             const tickUuid = result?.savedTick.uuid ?? null;
             // The workout's own count of tries and sends, by queue item: only a
             // go of the workout (`isWorkoutGo`, above) on a climb of this

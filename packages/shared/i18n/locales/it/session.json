@@ -934,7 +934,9 @@
       "browseClimbs": "Sfoglia i blocchi",
       "changeBoard": "Cambia pannello",
       "chooseBoard": "Scegli il pannello",
-      "noBoardSelected": "Nessun pannello selezionato"
+      "noBoardSelected": "Nessun pannello selezionato",
+      "workoutStageRoundCount": "Giro {{round}}/{{rounds}} · Blocco {{climb}}/{{climbs}}",
+      "workoutStageRoundPosition": "{{stage}} · Giro {{round}}/{{rounds}} · Blocco {{climb}}/{{climbs}}"
     }
   },
   "playView": {
@@ -1170,6 +1172,7 @@
   },
   "partnerWorkouts": {
     "openWebsite": "Apri sul sito",
+    "newSessionRequired": "Termina la sessione attuale, poi avvia questo allenamento a giri in una nuova sessione.",
     "personalSessionRequired": "Avvia una sessione personale per usare questo allenamento.",
     "routeTitle": "Allenamento da un’app",
     "from": "Da {{app}}",

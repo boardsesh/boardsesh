@@ -234,12 +234,19 @@ export const SessionWorkoutPacingSchema = z
     advanceOn: z.string().optional(),
     repsPerSet: z.number().int().positive().optional(),
     restBetweenSetsSeconds: z.number().int().nonnegative().optional(),
+    roundCount: z.number().int().positive().optional(),
+    climbsPerRound: z.number().int().positive().optional(),
+    restBetweenRoundsSeconds: z.number().int().nonnegative().optional(),
   })
   .openapi('SessionWorkoutPacing', { additionalProperties: true, example: SESSION_PACING_EXAMPLE });
 
 export const SessionWorkoutClimbSchema = z
   .strictObject({
     index: z.number().int().nonnegative(),
+    position: z.number().int().nonnegative().optional().openapi({
+      description:
+        'Original zero-based visit ordinal in a round-based block, preserved through queue edits. Omitted when not recorded.',
+    }),
     climbId: z.string().min(1),
     name: z.string().nullable(),
     boardType: BoardTypeSchema.nullable(),

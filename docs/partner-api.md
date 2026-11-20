@@ -712,6 +712,7 @@ Idempotency-Key: 0f4d6a2e-...        (uuid, required)
     },
     {
       "type": "fourByFour",
+      "externalRef": "day_88213_exercise_4x4",
       "targetGrade": { "scale": "v", "value": 4 },
       "climbCount": 4,
       "rounds": 4,
@@ -746,6 +747,7 @@ unknown fields are ignored, and a block the app cannot run yet is still shown
 | Field                      | Type                       | Used by                                        |
 | -------------------------- | -------------------------- | ---------------------------------------------- |
 | `type`                     | string                     | all                                            |
+| `externalRef`              | string, 1–200 chars        | all; optional exercise ID, unique within this workout |
 | `label`                    | string, 40 chars           | all, overrides the default block name          |
 | `instructions`             | string, 1000 chars         | all, shown on the block card                   |
 | `targetGrade`              | `{ scale, value }`         | `volume`, `gradeFocus`, `onTheMinute`, `fourByFour`, `limitBouldering` |
@@ -768,7 +770,7 @@ Block types, and how Boardsesh runs each one today:
 | `ladder`          | Up the grades, then stop                                                  | yes                 |
 | `gradeFocus`      | N climbs all at the target grade                                          | yes                 |
 | `onTheMinute`     | One climb per interval, the wall advances on its own                      | yes                 |
-| `fourByFour`      | A card with your label and instructions, climbed freestyle (see below)    | no, freeform        |
+| `fourByFour`      | The same climbs repeated round by round, with the requested rests        | yes                 |
 | `limitBouldering` | A few hard problems, long rests, attempts count more than sends           | later               |
 | `freeClimbing`    | Just the instructions text and a timer; the climber picks their own climbs| yes                 |
 
@@ -780,15 +782,24 @@ in the results, so nothing is lost; the app just does not pace those blocks
 for them yet. The create response tells you which is which per block, so you
 can say so in your UI.
 
-A 4x4 built in the app is reps × sets on one climb: a set is one climb done
-once for every rep (a fall counts as a rep), with an optional rest between
-reps, then the rest between sets, and the wall moves to the next climb for the
-next set. There are no rounds of several climbs. A `fourByFour` block keeps
-the fields above and stays freeform, a card with your `label` and
-`instructions`, until we decide how `climbCount`, `rounds` and the two rests
-map onto reps per set, sets and the two rests (tracked in
-[#6734](https://github.com/boardsesh/boardsesh/issues/6734)). That mapping is
-announced before `fourByFour` runs natively.
+A partner `fourByFour` repeats `climbCount` selected climbs for `rounds`
+rounds: four climbs A, B, C, D become ABCD, ABCD, ABCD, ABCD. A send or fall
+finishes one visit. `restBetweenClimbsSeconds` applies inside a round;
+`restBetweenRoundsSeconds` applies before the next round. Zero means no rest;
+there is no forced ten-second changeover. App-created Rep/Set workouts keep
+their separate meaning: repeat one climb for its reps before the next set.
+
+Give a block an optional `externalRef` to identify the planned exercise in
+your app. Supplied block references must be unique within the workout, but can
+repeat in other workouts. They are echoed on block descriptors and in results,
+including `planned.externalRef`. The workout-level reference keeps its existing
+uniqueness and idempotency rules. Block references are returned only by the
+creating app’s workout endpoints; generalized session/logbook exports omit
+them, including when another app supplied the workout.
+
+Partner 4×4 plans must fit the 500-visit session/queue budget. The app explains
+when a complete plan cannot fit and leaves it unstarted; it does not silently
+shorten the exercise. Native round support requires a compatible mobile release.
 
 ### Grades in a request
 
@@ -818,7 +829,7 @@ results with a community grade one away, such as V3 or V5.
   "expiresAt": "2026-09-25T00:00:00Z",
   "blocks": [
     { "index": 0, "type": "warmUp", "support": "native" },
-    { "index": 1, "type": "fourByFour", "support": "freeform" },
+    { "index": 1, "type": "fourByFour", "externalRef": "day_88213_exercise_4x4", "support": "native" },
     { "index": 2, "type": "freeClimbing", "support": "native" }
   ]
 }
@@ -928,7 +939,9 @@ A few cases worth handling in your UI:
   switch. This does not change the workout's status; `GET` shows
   `"openedByMismatch": true`, so you can prompt them to reconnect.
 - Already in the middle of a session. Boardsesh offers to end that session or
-  add the workout to it. Permanent gym sessions cannot accept a workout;
+  add the workout to it. Partner 4×4 rounds require a fresh personal session:
+  end the current session first so the full round queue and plan can be saved
+  together. Permanent gym sessions cannot accept a workout;
   the climber must start a personal session instead. A rejected attachment
   leaves the workout unstarted.
 
@@ -959,7 +972,7 @@ includes:
       { "id": "0d6c4a2e-…", "climbedAt": "2026-09-18T17:51:03Z", "status": "send", "attempts": 2, "…": "…", "blockIndex": 1 }
     ],
     "blocks": [
-      { "index": 1, "type": "fourByFour", "support": "freeform", "planned": { "climbCount": 4, "rounds": 4 } }
+      { "index": 1, "type": "fourByFour", "externalRef": "day_88213_exercise_4x4", "support": "native", "planned": { "climbCount": 4, "rounds": 4 }, "progress": { "status": "completed", "completedRounds": 4, "plannedRounds": 4, "sends": 14, "falls": 2 } }
     ]
   }
 }
@@ -970,7 +983,7 @@ includes:
   start, or later when the climber added your workout to a session that was
   already running. `durationSeconds` runs from `startedAt` to `endedAt`.
 - `ticks` are the climber's own ticks from this workout, in time order, in
-  the tick shape from section 3, plus `blockIndex`. A tick belongs to the
+  the tick shape from section 3, plus `blockIndex` and, when recorded unambiguously, `position`. A tick belongs to the
   workout when the climber logged it (`climbedAt`) after the workout started,
   or when the climber's session recorded it against one of the workout's
   blocks. Ticks from earlier in the same session are left out, even on a
@@ -984,6 +997,50 @@ includes:
   exactly one block queued that climb. Compute rest gaps and per-block counts
   from `climbedAt` and `blockIndex`.
 - `blocks[].planned` echoes the block as you sent it.
+- `ticks[].position` identifies a native 4×4 visit with zero-based
+  `roundIndex` and `climbIndex`. It is omitted when the original visit cannot
+  be established. `blockIndex` retains its existing fallback behavior.
+- Each 4×4 result block includes `progress`: `status` (`not_started`,
+  `partial`, or `completed`), `completedRounds`, `plannedRounds`, `sends`, and
+  `falls`. A completed round has a logged outcome at every original planned
+  visit. Skipped visits do not count; extra ticks at one visit cannot fill a
+  different visit. Sends count flash/send ticks; falls count attempt ticks,
+  rather than multiplying visits by a tick's `attempts` field. Historical or
+  ambiguous round attribution returns `progress: null`.
+- Workout `status: completed` means the Boardsesh session ended, even when an
+  exercise is partial. Ending after three rounds returns `3/4` and `partial`.
+  Results are recalculated on read after late sync, edits, and deletions.
+
+Use the block's `externalRef` to update the planned exercise, and keep the
+individual ticks in your logbook. For example:
+
+```json
+{
+  "index": 1,
+  "type": "fourByFour",
+  "externalRef": "day_88213_exercise_4x4",
+  "support": "native",
+  "progress": {
+    "status": "completed",
+    "completedRounds": 4,
+    "plannedRounds": 4,
+    "sends": 14,
+    "falls": 2
+  }
+}
+```
+
+Combine the board/angle, planned target grade, and progress to write a note
+such as **Kilter at 40°, V4 · 4/4 rounds · 14 sends, 2 falls**. This is your
+exercise note; `results.session.notes` remains the climber's recap. If actual
+angles or boards differ across the ticks, describe those differences instead
+of labeling every tick with the session's starting configuration.
+
+After the climber ends the Boardsesh session and returns to your app, refresh
+with `GET`, or respond to `workout.completed`. Re-read results after logbook
+sync to pick up late offline ticks; the completion event is not an immutable
+results snapshot. No automatic return URL is required.
+
 - `session.notes`, `session.timezone` and `session.board.name` describe the
   session creator's recap, timezone and board label. They are returned only
   when that creator is the climber who received the workout. When the climber

@@ -8,7 +8,7 @@ import type {
 
 /** Caps on one stored workout. A plan or tick map over any of them is rejected, not trimmed. */
 export const MAX_SESSION_WORKOUT_STAGES = 30;
-export const MAX_SESSION_WORKOUT_ITEMS = 300;
+export const MAX_SESSION_WORKOUT_ITEMS = 500;
 export const MAX_SESSION_WORKOUT_TICK_MAP_ENTRIES = 4000;
 export const MAX_SESSION_WORKOUT_STRING_LENGTH = 64;
 
@@ -78,6 +78,18 @@ function readPacing(candidate: unknown): Read<SessionWorkoutPacing> {
   if (advanceOn !== undefined) pacing.advanceOn = advanceOn;
   if (repsPerSet !== undefined) pacing.repsPerSet = repsPerSet;
   if (restBetweenSetsSeconds !== undefined) pacing.restBetweenSetsSeconds = restBetweenSetsSeconds;
+  const roundCount = readOptionalWholeNumber(candidate.roundCount, 1, 10);
+  const climbsPerRound = readOptionalWholeNumber(candidate.climbsPerRound, 1, 40);
+  const restBetweenRoundsSeconds = readOptionalWholeNumber(candidate.restBetweenRoundsSeconds, 0, MAX_SECONDS);
+  if (roundCount === INVALID || climbsPerRound === INVALID || restBetweenRoundsSeconds === INVALID) return INVALID;
+  if (
+    advanceOn === 'round' &&
+    (roundCount === undefined || climbsPerRound === undefined || restBetweenRoundsSeconds === undefined)
+  )
+    return INVALID;
+  if (roundCount !== undefined) pacing.roundCount = roundCount;
+  if (climbsPerRound !== undefined) pacing.climbsPerRound = climbsPerRound;
+  if (restBetweenRoundsSeconds !== undefined) pacing.restBetweenRoundsSeconds = restBetweenRoundsSeconds;
   return pacing;
 }
 
@@ -90,6 +102,9 @@ function readItem(candidate: unknown): SessionWorkoutPlanItem | null {
   if (isMirror === INVALID) return null;
   const item: SessionWorkoutPlanItem = { queueItemUuid, climbUuid, angle };
   if (isMirror !== undefined) item.isMirror = isMirror;
+  const position = readOptionalWholeNumber(candidate.position, 0, 399);
+  if (position === INVALID) return null;
+  if (position !== undefined) item.position = position;
   return item;
 }
 
@@ -106,6 +121,14 @@ function readStage(candidate: unknown): SessionWorkoutPlanStage | null {
     const parsedItem = readItem(item);
     if (!parsedItem) return null;
     parsedItems.push(parsedItem);
+  }
+  if (pacing?.advanceOn === 'round') {
+    const positions = parsedItems.map((item) => item.position);
+    if (
+      positions.some((position) => position === undefined || position >= pacing.roundCount! * pacing.climbsPerRound!) ||
+      new Set(positions).size !== positions.length
+    )
+      return null;
   }
   const stage: SessionWorkoutPlanStage = { id, kind, items: parsedItems };
   if (coolDown !== undefined) stage.coolDown = coolDown;

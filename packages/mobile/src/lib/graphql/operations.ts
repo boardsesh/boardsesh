@@ -1187,6 +1187,8 @@ export type SessionRestCadenceWire = {
   lastFiredBeatAt?: string | null;
   lastTickQueueItemUuid?: string | null;
   lastTickStatus?: string | null;
+  tickAcceptedAt?: string | null;
+  tickAcceptanceId?: string | null;
   setByParticipantId?: string | null;
 };
 

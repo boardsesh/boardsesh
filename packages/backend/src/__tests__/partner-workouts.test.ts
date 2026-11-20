@@ -9,6 +9,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
+import { appWorkoutMutations } from '../graphql/resolvers/app-workouts';
 import { roomManager } from '../services/room-manager';
 import { getQueueState } from '../services/room-manager/queue-state';
 import { parseAppWorkoutSeed } from '../services/public-api/workout-seed';
@@ -20,6 +21,8 @@ import {
   boardSessionParticipants,
   boardseshTicks,
   boardSessionQueues,
+  boardClimbs,
+  boardClimbAliases,
   sessionWorkouts,
   userBoards,
 } from '@boardsesh/db/schema';
@@ -141,6 +144,58 @@ function initialSeed(workoutId: string) {
 }
 
 describe('partner workouts', () => {
+  it('rejects attaching round workouts before marking them started', async () => {
+    const { principal } = await connected();
+    const workout = await create(principal, {
+      ...spec(),
+      blocks: [
+        {
+          type: 'fourByFour',
+          climbCount: 4,
+          rounds: 4,
+          targetGrade: { scale: 'v', value: 4 },
+          restBetweenClimbsSeconds: 0,
+          restBetweenRoundsSeconds: 180,
+        },
+      ],
+    });
+    const previousMode = process.env.PARTNER_OAUTH_MODE;
+    process.env.PARTNER_OAUTH_MODE = 'allowlist';
+    try {
+      await expect(
+        appWorkoutMutations.attachAppWorkout(null, { workoutId: workout.id, sessionId: randomUUID() }, {
+          userId: principal.userId,
+          isAuthenticated: true,
+          connectionId: randomUUID(),
+          transport: 'http',
+        } as ConnectionContext),
+      ).rejects.toMatchObject({ extensions: { code: 'CONFLICT', reason: 'APP_WORKOUT_NEW_SESSION_REQUIRED' } });
+      const [stored] = await db.select().from(appWorkouts).where(eq(appWorkouts.id, workout.id));
+      expect(stored.status).toBe('created');
+      expect(stored.sessionId).toBeNull();
+      expect(stored.planSnapshot).toBeNull();
+    } finally {
+      if (previousMode === undefined) delete process.env.PARTNER_OAUTH_MODE;
+      else process.env.PARTNER_OAUTH_MODE = previousMode;
+    }
+  });
+
+  it('echoes block references across create, read, replay and separate workouts', async () => {
+    const { principal } = await connected();
+    const input = spec();
+    input.blocks[0].externalRef = 'planned-exercise';
+    const key = randomUUID();
+    const created = await create(principal, input, key);
+    expect(created.blocks[0].externalRef).toBe('planned-exercise');
+    expect(await create(principal, input, key)).toEqual(created);
+    expect((await read(principal, created.id)).spec.blocks[0].externalRef).toBe('planned-exercise');
+    const otherWorkout = await create(principal, { ...input, externalRef: randomUUID() });
+    expect(otherWorkout.blocks[0].externalRef).toBe('planned-exercise');
+    await expect(
+      create(principal, { ...input, blocks: [{ ...input.blocks[0], externalRef: 'changed' }] }, key),
+    ).rejects.toMatchObject({ code: 'idempotency_mismatch' });
+  });
+
   it('preserves a solo History line on first Start and replay, then ignores the initial hint after edits', async () => {
     const { principal } = await connected();
     const workout = await create(principal);
@@ -179,7 +234,7 @@ describe('partner workouts', () => {
     }
   });
 
-  it('normalizes an orphan solo Now at the history boundary and keeps the v1 plan cap', () => {
+  it('normalizes an orphan solo Now at the history boundary and keeps the plan cap', () => {
     const seed = initialSeed(randomUUID());
     const solo = { uuid: randomUUID(), climb: { uuid: randomUUID(), angle: 40 } };
     const orphan = { uuid: randomUUID(), climb: { uuid: randomUUID(), angle: 40 } };
@@ -192,7 +247,7 @@ describe('partner workouts', () => {
     expect(parsed.queue.map((item) => item.uuid)).toEqual([solo.uuid, orphan.uuid, seed.queue[0].uuid]);
     expect(parsed.historyCount).toBe(1);
     expect(parsed.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
-    const oversizedItems = Array.from({ length: 301 }, () => ({
+    const oversizedItems = Array.from({ length: 501 }, () => ({
       queueItemUuid: randomUUID(),
       climbUuid: randomUUID(),
       angle: 40,
@@ -920,6 +975,199 @@ describe('partner workouts', () => {
 });
 
 describe('partner workout results', () => {
+  it.each([
+    { boardType: 'kilter', path: '/b/named-kilter/25/list', angle: 25 },
+    { boardType: 'tension', path: '/b/named-tension/25/list', angle: 25 },
+    { boardType: 'kilter', path: 'kilter/1/1/1/45', angle: 45 },
+    { boardType: 'tension', path: '/es/tension/1/1/1/35/list', angle: 35 },
+  ])('uses actual session angle instead of the saved board default for $path', async ({ boardType, path, angle }) => {
+    const { principal } = await connected();
+    const workout = await create(principal);
+    const sessionId = await start(principal.userId, workout.id);
+    const [board] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: principal.userId,
+        name: 'Configured wall',
+        boardType,
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        angle: 40,
+      })
+      .returning();
+    await db.update(boardSessions).set({ boardId: board.id, boardPath: path }).where(eq(boardSessions.id, sessionId));
+    await endSession(sessionId);
+    expect((await read(principal, workout.id)).results?.session.board).toMatchObject({
+      type: boardType,
+      angle,
+      name: 'Configured wall',
+    });
+  });
+
+  it.each([false, true])(
+    'resolves pinned alias visits and follows later alias reassignment (original row: %s)',
+    async (originalRow) => {
+      const { principal } = await connected();
+      const input = CreateWorkoutSchema.parse({
+        externalRef: randomUUID(),
+        title: 'Alias round',
+        blocks: [
+          {
+            type: 'fourByFour',
+            climbCount: 1,
+            rounds: 1,
+            targetGrade: { scale: 'v', value: 4 },
+            restBetweenClimbsSeconds: 0,
+            restBetweenRoundsSeconds: 0,
+          },
+        ],
+      });
+      const workout = await create(principal, input);
+      const sessionId = await start(principal.userId, workout.id);
+      const aliasUuid = randomUUID();
+      const canonicalUuid = randomUUID();
+      const replacementUuid = randomUUID();
+      await db
+        .insert(boardClimbs)
+        .values([
+          { uuid: canonicalUuid, boardType: 'kilter', layoutId: 1, name: 'Canonical' },
+          { uuid: replacementUuid, boardType: 'kilter', layoutId: 1, name: 'Replacement' },
+          ...(originalRow ? [{ uuid: aliasUuid, boardType: 'kilter', layoutId: 1, name: 'Original' }] : []),
+        ]);
+      await db.insert(boardClimbAliases).values({ boardType: 'kilter', aliasUuid, canonicalUuid, source: 'test' });
+      // A live original catalog row identifies the board even if another board
+      // happens to use the same alias. Never select that board's mapping.
+      if (originalRow)
+        await db.insert(boardClimbAliases).values({
+          boardType: 'tension',
+          aliasUuid,
+          canonicalUuid: replacementUuid,
+          source: 'test',
+        });
+      const tickUuid = await logTick(principal.userId, sessionId, canonicalUuid, new Date());
+      const queueItemUuid = randomUUID();
+      await db.insert(sessionWorkouts).values({
+        sessionId,
+        userId: principal.userId,
+        revision: 1,
+        plan: {
+          version: 1,
+          stages: [
+            {
+              id: `${workout.id}:0`,
+              kind: 'fourByFour',
+              items: [{ queueItemUuid, climbUuid: aliasUuid, angle: 40, position: 0 }],
+              pacing: {
+                mode: 'afterTick',
+                advanceOn: 'round',
+                restSeconds: 0,
+                roundCount: 1,
+                climbsPerRound: 1,
+                restBetweenRoundsSeconds: 0,
+              },
+            },
+          ],
+        },
+        tickMap: [{ tickUuid, queueItemUuid }],
+      });
+      await endSession(sessionId);
+      const completed = (await read(principal, workout.id)).results;
+      expect(completed?.blocks[0].progress).toMatchObject({ status: 'completed', completedRounds: 1, sends: 1 });
+      expect(completed?.ticks[0]).toMatchObject({ id: tickUuid, position: { roundIndex: 0, climbIndex: 0 } });
+      await db
+        .update(boardClimbAliases)
+        .set({ canonicalUuid: replacementUuid })
+        .where(and(eq(boardClimbAliases.aliasUuid, aliasUuid), eq(boardClimbAliases.boardType, 'kilter')));
+      const changed = (await read(principal, workout.id)).results;
+      expect(changed?.blocks[0].progress).toBeNull();
+      expect(changed?.ticks[0]).not.toHaveProperty('position');
+      // A tick still carrying the alias resolves to the new survivor on read too.
+      await db.update(boardseshTicks).set({ climbUuid: aliasUuid }).where(eq(boardseshTicks.uuid, tickUuid));
+      expect((await read(principal, workout.id)).results?.blocks[0].progress).toMatchObject({
+        status: 'completed',
+        completedRounds: 1,
+        sends: 1,
+      });
+    },
+  );
+
+  it('returns mapped round progress and block references, then updates it after deletion', async () => {
+    const { principal } = await connected();
+    const input = CreateWorkoutSchema.parse({
+      externalRef: randomUUID(),
+      title: 'Four rounds',
+      blocks: [
+        {
+          externalRef: 'today-four',
+          type: 'fourByFour',
+          climbCount: 4,
+          rounds: 4,
+          targetGrade: { scale: 'v', value: 4 },
+          restBetweenClimbsSeconds: 0,
+          restBetweenRoundsSeconds: 180,
+        },
+      ],
+    });
+    const workout = await create(principal, input);
+    const sessionId = await start(principal.userId, workout.id);
+    const climbs = Array.from({ length: 4 }, () => randomUUID());
+    const items = Array.from({ length: 16 }, (_, position) => ({
+      queueItemUuid: randomUUID(),
+      climbUuid: climbs[position % 4],
+      angle: 40,
+      position,
+    }));
+    const tickUuids: string[] = [];
+    for (const item of items) tickUuids.push(await logTick(principal.userId, sessionId, item.climbUuid, new Date()));
+    for (const uuid of tickUuids.slice(0, 2))
+      await db.update(boardseshTicks).set({ status: 'attempt' }).where(eq(boardseshTicks.uuid, uuid));
+    await db.insert(sessionWorkouts).values({
+      sessionId,
+      userId: principal.userId,
+      revision: 1,
+      plan: {
+        version: 1,
+        stages: [
+          {
+            id: `${workout.id}:0`,
+            kind: 'fourByFour',
+            items,
+            pacing: {
+              mode: 'afterTick',
+              advanceOn: 'round',
+              restSeconds: 0,
+              roundCount: 4,
+              climbsPerRound: 4,
+              restBetweenRoundsSeconds: 180,
+            },
+          },
+        ],
+      },
+      tickMap: tickUuids.map((tickUuid, index) => ({ tickUuid, queueItemUuid: items[index].queueItemUuid })),
+    });
+    await endSession(sessionId);
+    const completed = (await read(principal, workout.id)).results;
+    expect(completed?.blocks[0]).toMatchObject({
+      externalRef: 'today-four',
+      support: 'native',
+      progress: { status: 'completed', completedRounds: 4, plannedRounds: 4, sends: 14, falls: 2 },
+    });
+    expect(completed?.ticks.find((tick) => tick.id === tickUuids[15])).toMatchObject({
+      blockIndex: 0,
+      position: { roundIndex: 3, climbIndex: 3 },
+    });
+    await db.delete(boardseshTicks).where(eq(boardseshTicks.uuid, tickUuids[15]));
+    expect((await read(principal, workout.id)).results?.blocks[0].progress).toMatchObject({
+      status: 'partial',
+      completedRounds: 3,
+      sends: 13,
+      falls: 2,
+    });
+  });
+
   const minutes = (count: number) => count * 60_000;
   const twoVolumeBlocks = () =>
     CreateWorkoutSchema.parse({

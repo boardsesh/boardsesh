@@ -120,6 +120,19 @@ export function estimateWorkoutMinutes(run: WorkoutRun): number | null {
   let totalSeconds = 0;
   let lastRestSeconds = 0;
   for (const stage of run.stages) {
+    if (stage.pacing?.mode === 'afterTick' && stage.pacing.advanceOn === 'round') {
+      const { rounds, restSeconds } = stage.pacing;
+      for (const uuid of stage.itemUuids) {
+        const ordinal = rounds.positionByItemUuid[uuid];
+        if (ordinal === undefined) continue;
+        const finalVisit = ordinal === rounds.climbCount * rounds.roundCount - 1;
+        const closesRound = (ordinal + 1) % rounds.climbCount === 0;
+        const restAfter = finalVisit ? 0 : closesRound ? rounds.restBetweenRoundsSeconds : restSeconds;
+        totalSeconds += ESTIMATE_SECONDS_PER_TRY + restAfter;
+        lastRestSeconds = restAfter;
+      }
+      continue;
+    }
     const { seconds, restAfter } = climbTime(stage.pacing);
     totalSeconds += seconds * stage.itemUuids.length;
     if (stage.itemUuids.length > 0) lastRestSeconds = restAfter;

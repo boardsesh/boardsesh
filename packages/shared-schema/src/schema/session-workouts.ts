@@ -10,6 +10,7 @@
 export const sessionWorkoutsTypeDefs = /* GraphQL */ `
   "One queued climb of a workout block, captured when the run is written."
   input SessionWorkoutItemInput {
+    position: Int
     queueItemUuid: ID!
     climbUuid: String!
     angle: Int!
@@ -24,6 +25,9 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     advanceOn: String
     repsPerSet: Int
     restBetweenSetsSeconds: Int
+    roundCount: Int
+    climbsPerRound: Int
+    restBetweenRoundsSeconds: Int
   }
 
   input SessionWorkoutStageInput {
@@ -163,7 +167,7 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     or joined the session. Tick-map entries naming another climber's tick, the
     caller's tick in another session, or a queue item the plan doesn't hold are
     dropped; an entry naming a tick the server doesn't have yet is kept (up to
-    300, the newest), so a tick that arrives later lands on its block.
+    500, the newest), so a tick that arrives later lands on its block.
     """
     recordSessionWorkout(input: RecordSessionWorkoutInput!): Boolean!
   }

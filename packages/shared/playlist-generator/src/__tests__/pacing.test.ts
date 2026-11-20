@@ -131,17 +131,14 @@ describe('stageRestSeconds', () => {
     expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 180, advanceOn: 'send' }, false)).toBe(180);
   });
 
-  it('never runs a rest that moves the wall under the changeover, a rest of 0 included', () => {
-    expect(STAGE_CHANGEOVER_SECONDS).toBe(10);
-    expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 0, advanceOn: 'send' }, false)).toBe(
-      STAGE_CHANGEOVER_SECONDS,
-    );
-    expect(stageRestSeconds({ ...fourByFourPacing, sets: { repsPerSet: 4, restBetweenSetsSeconds: 4 } }, true)).toBe(
-      STAGE_CHANGEOVER_SECONDS,
-    );
-    expect(stageRestSeconds({ ...fourByFourPacing, sets: { repsPerSet: 4, restBetweenSetsSeconds: 0 } }, true)).toBe(
-      STAGE_CHANGEOVER_SECONDS,
-    );
+  it('honors zero and short configured rests without a changeover floor', () => {
+    expect(STAGE_CHANGEOVER_SECONDS).toBe(0);
+    for (const restSeconds of [0, 1, 4, 9, 180]) {
+      expect(stageRestSeconds({ mode: 'afterTick', restSeconds, advanceOn: 'send' }, false)).toBe(restSeconds);
+      expect(
+        stageRestSeconds({ ...fourByFourPacing, sets: { repsPerSet: 4, restBetweenSetsSeconds: restSeconds } }, true),
+      ).toBe(restSeconds);
+    }
   });
 
   it('runs an interval as it is, and never under 15 s', () => {
@@ -253,4 +250,23 @@ describe('a 4x4 read by a bundle from before sets', () => {
     expect(isPacingForABundleBeforeSets(pacingForOptions(onTheMinute))).toBe(true);
     expect(isPacingForABundleBeforeSets(pacingForOptions(limitBouldering))).toBe(true);
   });
+});
+
+it('accepts round pacing with immutable positions, while rejecting colliding positions', () => {
+  const pacing = {
+    mode: 'afterTick',
+    restSeconds: 0,
+    advanceOn: 'round',
+    rounds: {
+      climbCount: 4,
+      roundCount: 4,
+      restBetweenRoundsSeconds: 180,
+      positionByItemUuid: { first: 0, nextRound: 4 },
+    },
+  };
+  expect(isWorkoutStagePacing(pacing)).toBe(true);
+  expect(
+    isWorkoutStagePacing({ ...pacing, rounds: { ...pacing.rounds, positionByItemUuid: { first: 0, other: 0 } } }),
+  ).toBe(false);
+  expect(isWorkoutStagePacing({ ...pacing, advanceOn: 'tick' })).toBe(false);
 });

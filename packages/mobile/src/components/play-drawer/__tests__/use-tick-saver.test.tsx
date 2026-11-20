@@ -157,6 +157,8 @@ import {
   armRestTimer,
   getRestTimerState,
   noteRestTimerTick,
+  pauseRestTimer,
+  resetRestTimer,
   resetRestTimerStoreForTests,
 } from '../../../lib/rest-timer-store';
 import { noteWorkoutRunTick } from '../../../lib/workout-run-store';
@@ -376,6 +378,20 @@ describe('useTickSaver board', () => {
 });
 
 describe('useTickSaver after a save', () => {
+  it.each(['pause', 'reset'] as const)('does not restart a timer %sd while the tick save was pending', (control) => {
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    const onSaved = vi.fn();
+    saveMock.state.whileSaving = () => {
+      if (control === 'pause') pauseRestTimer(NOW_MS);
+      else resetRestTimer(NOW_MS);
+    };
+    const { result } = renderSaver();
+    result.current.save(fields(), { onSaved });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(noteSessionTimerTick).toHaveBeenCalledTimes(1);
+    expect(noteRestTimerTick).not.toHaveBeenCalled();
+  });
+
   it('runs analytics, then the session timer, then the rest timer, then hands back to the caller', () => {
     saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
     const onSaved = vi.fn(() => {

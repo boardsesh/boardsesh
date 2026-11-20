@@ -72,7 +72,12 @@ export function presentCreatedWorkout(workout: AppWorkoutRow): WorkoutCreated {
     launchUrl: `https://www.boardsesh.com/w/${workout.id}`,
     appUrl: `com.boardsesh.app://w/${workout.id}`,
     expiresAt: workout.expiresAt.toISOString(),
-    blocks: spec.blocks.map((block, index) => ({ index, type: block.type, support: workoutBlockSupport(block) })),
+    blocks: spec.blocks.map((block, index) => ({
+      index,
+      type: block.type,
+      support: workoutBlockSupport(block),
+      ...(block.externalRef === undefined ? {} : { externalRef: block.externalRef }),
+    })),
   });
 }
 

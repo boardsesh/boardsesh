@@ -20,6 +20,7 @@ const reportHandledError = vi.fn();
 let isCrewSession = true;
 let inAppBoardConnection = 'connectedByMe';
 let currentQueueItemUuid = 'queue-current';
+let currentSessionId = 'session-1';
 let settings: Record<string, unknown> = {};
 let currentNowMs = 0;
 let appStateListener: ((state: string) => void) | null = null;
@@ -58,7 +59,11 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
     nextClimb,
-    getQueueSnapshot: () => ({ playlistSuggestionSource: null }),
+    getQueueSnapshot: () => ({
+      sessionId: currentSessionId,
+      currentClimbQueueItem: { uuid: currentQueueItemUuid },
+      playlistSuggestionSource: null,
+    }),
     refreshPlaylistSuggestionSource: vi.fn(),
     setSessionRestCadence,
   }),
@@ -97,11 +102,14 @@ import {
   armRestTimer,
   getRestTimerState,
   noteRestTimerTick,
+  pauseRestTimer,
+  resetRestTimer,
   resetRestTimerStoreForTests,
   subscribeLocalRestTimerActions,
   type LocalRestTimerAction,
 } from '../../../lib/rest-timer-store';
 import { resetServerClock } from '../../../lib/server-clock';
+import { setRestTimerForeground } from '../../../lib/rest-timer-foreground-state';
 import { RestTimerAutoAdvanceScheduler } from '../RestTimerAutoAdvanceScheduler';
 
 const T0 = Date.parse('2026-10-24T10:00:00.000Z');
@@ -192,6 +200,8 @@ beforeEach(() => {
   isCrewSession = true;
   inAppBoardConnection = 'connectedByMe';
   currentQueueItemUuid = 'queue-current';
+  currentSessionId = SESSION;
+  setRestTimerForeground(true);
   currentNowMs = T0;
   revision = 10;
   appStateListener = null;
@@ -456,6 +466,95 @@ describe('a phone alone in its session', () => {
 });
 
 describe('the wall moved while the claim was in flight', () => {
+  it.each(['pause', 'reset'] as const)('keeps a local %s made while FIRE was pending', async (control) => {
+    crewArmed();
+    let answer: (payload: SetSessionRestCadencePayload) => void = () => {};
+    setSessionRestCadence.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(60_000);
+    expect(fireCalls()).toHaveLength(1);
+    advance(100);
+    act(() => {
+      if (control === 'pause') pauseRestTimer(currentNowMs);
+      else resetRestTimer(currentNowMs);
+    });
+    const intended = getRestTimerState();
+    answer(
+      fireReply({ applied: true, clock: { anchorAt: String(T0 + 60_000), lastFiredBeatAt: String(T0 + 60_000) } }),
+    );
+    await settle();
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(getRestTimerState().isRunning).toBe(intended.isRunning);
+    expect(getRestTimerState().anchorMs).toBe(intended.anchorMs);
+  });
+
+  it.each([0, 1])('does not advance after backgrounding during a %ss FIRE', async (restSeconds) => {
+    crewArmed({
+      source: 'stage',
+      advanceOn: 'tick',
+      targetSeconds: restSeconds,
+      tickAcceptedAt: String(T0),
+      lastTickStatus: 'send',
+      lastTickQueueItemUuid: currentQueueItemUuid,
+    });
+    let answer: (payload: SetSessionRestCadencePayload) => void = () => {};
+    setSessionRestCadence.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(restSeconds * 1000);
+    expect(fireCalls()).toHaveLength(1);
+    act(() => appStateListener?.('background'));
+    act(() => appStateListener?.('active'));
+    answer(fireReply({ applied: true, clock: { anchorAt: null, lastFiredBeatAt: String(currentNowMs) } }));
+    await settle();
+    expect(getRestTimerState().crew?.revision).toBe(11);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('advance')).toBe(0);
+  });
+
+  it('does not move the queue after handing the wall to a crewmate during FIRE', async () => {
+    crewArmed();
+    let answer: (payload: SetSessionRestCadencePayload) => void = () => {};
+    setSessionRestCadence.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+    advance(60_000);
+    expect(fireCalls()).toHaveLength(1);
+    inAppBoardConnection = 'heldByPeer';
+    rerender(<RestTimerAutoAdvanceScheduler />);
+    answer(fireReply({ applied: true, clock: { lastFiredBeatAt: String(currentNowMs) } }));
+    await settle();
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt or advance an old session FIRE after switching sessions', async () => {
+    crewArmed();
+    let answer: (payload: SetSessionRestCadencePayload) => void = () => {};
+    setSessionRestCadence.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(60_000);
+    expect(fireCalls()).toHaveLength(1);
+    currentSessionId = 'another-session';
+    answer(fireReply({ applied: true, clock: { lastFiredBeatAt: String(currentNowMs) } }));
+    await settle();
+    expect(getRestTimerState().crew?.revision).toBe(10);
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to a solo advance after a background cycle during FIRE', async () => {
+    isCrewSession = false;
+    inAppBoardConnection = 'disconnected';
+    crewArmed();
+    setSessionRestCadence.mockImplementation(() => new Promise(() => {}));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(60_000);
+    expect(fireCalls()).toHaveLength(1);
+    act(() => appStateListener?.('background'));
+    act(() => appStateListener?.('active'));
+    advance(2_000);
+    await settle();
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('reached')).toBe(0);
+  });
+
   it('spends the beat on the move rather than skipping the climb just lit', async () => {
     crewArmed();
     const { rerender } = render(<RestTimerAutoAdvanceScheduler />);

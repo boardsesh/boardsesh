@@ -17,15 +17,17 @@ import {
   deriveWorkoutStages,
   mainWorkoutStages,
   MAX_SESSION_WORKOUT_ITEMS,
+  MAX_SESSION_WORKOUT_TICK_MAP_ENTRIES,
   parseSessionWorkoutPlan,
   parseSessionWorkoutTickMap,
   restrictDerivedWorkout,
   workoutHeadline,
   type DerivedWorkoutClimb,
+  type SessionWorkoutPlan,
   type SessionWorkoutRepOutcome as RepOutcome,
 } from '@boardsesh/workout-summary';
 import { db } from '../../../db/client';
-import { recoverAppWorkoutPlan } from '../../../services/public-api/workouts';
+import { lockAppWorkoutSession, recoverAppWorkoutPlan } from '../../../services/public-api/workouts';
 import type { PartnerDatabase } from '../../../auth/partner/tables';
 import { canAccessResource } from '../../../services/privacy';
 import { sessionsOwnSurfaceVisibleUserIds, sessionVisibleUserIds } from '../../../services/board-session-privacy';
@@ -177,6 +179,41 @@ async function fetchConsensusDifficulty(
   return byKey;
 }
 
+/** Older bundles keep visit UUIDs but drop pacing they cannot read. Preserve
+ * recorded round identity for surviving stages/items, while accepting removals
+ * and unrelated new stages. The caller reads `recorded` under the session fence.
+ */
+function preserveRecordedRoundMetadata(
+  recorded: SessionWorkoutPlan | null,
+  incoming: SessionWorkoutPlan,
+): SessionWorkoutPlan {
+  if (!recorded) return incoming;
+  const previousById = new Map(recorded.stages.map((stage) => [stage.id, stage]));
+  const merged = {
+    ...incoming,
+    stages: incoming.stages.map((stage) => {
+      const previous = previousById.get(stage.id);
+      if (previous?.pacing?.advanceOn !== 'round') return stage;
+      const positionsByUuid = new Map(previous.items.map((item) => [item.queueItemUuid, item.position]));
+      return {
+        ...stage,
+        kind: previous.kind,
+        pacing: previous.pacing,
+        ...(previous.targetGrade === undefined ? {} : { targetGrade: previous.targetGrade }),
+        items: stage.items.map((item) => {
+          const position = positionsByUuid.get(item.queueItemUuid);
+          return position === undefined ? item : { ...item, position };
+        }),
+      };
+    }),
+  };
+  // An incoming new visit still needs its own valid ordinal. Never invent a
+  // position from queue order, or accept one colliding with a preserved visit.
+  const parsed = parseSessionWorkoutPlan(merged);
+  if (!parsed) throw badInput('Invalid workout');
+  return parsed;
+}
+
 export const sessionWorkoutMutations = {
   /**
    * Upserts the caller's own workout for a session. Only the session's creator
@@ -224,53 +261,82 @@ export const sessionWorkoutMutations = {
       throw new GraphQLError('Not a participant of this session', { extensions: { code: 'FORBIDDEN' } });
     }
 
-    // An entry naming a queue item the plan doesn't hold does nothing on read
-    // (the tick falls back to climb matching), and the phone never sends one.
-    const planQueueItemUuids = new Set(plan.stages.flatMap((stage) => stage.items.map((item) => item.queueItemUuid)));
-    const planTickMap = tickMap.filter((entry) => planQueueItemUuids.has(entry.queueItemUuid));
-
-    // Looked up by uuid alone: a tick still on its way (a retried dead letter,
-    // or a spray tick held behind its climb write) has no row yet, and its
-    // entry is kept so the tick lands on its block when it arrives. Readers only
-    // ever apply the map to the owner's ticks in this session, so a pending
-    // entry does nothing until then. An entry naming a tick that exists but is
-    // someone else's, or the caller's in another session, is dropped. Pending
-    // entries are capped, keeping the last ones in submitted order.
-    const namedTicks =
-      planTickMap.length === 0
-        ? []
-        : await db
-            .select({
-              uuid: dbSchema.boardseshTicks.uuid,
-              userId: dbSchema.boardseshTicks.userId,
-              sessionId: dbSchema.boardseshTicks.sessionId,
-            })
-            .from(dbSchema.boardseshTicks)
-            .where(
-              inArray(
-                dbSchema.boardseshTicks.uuid,
-                planTickMap.map((entry) => entry.tickUuid),
-              ),
-            );
-    const namedTickByUuid = new Map(namedTicks.map((tick) => [tick.uuid, tick]));
-    const keptPendingTickUuids = new Set(
-      planTickMap
-        .filter((entry) => !namedTickByUuid.has(entry.tickUuid))
-        .slice(-MAX_PENDING_TICK_MAP_ENTRIES)
-        .map((entry) => entry.tickUuid),
-    );
-    const ownTickMap = planTickMap.filter((entry) => {
-      const namedTick = namedTickByUuid.get(entry.tickUuid);
-      if (!namedTick) return keptPendingTickUuids.has(entry.tickUuid);
-      return namedTick.userId === userId && namedTick.sessionId === sessionId;
-    });
-
     const now = new Date();
     await db.transaction(async (tx) => {
-      await recoverAppWorkoutPlan(tx as unknown as PartnerDatabase, userId, sessionId, plan);
+      // The same fence as atomic app-workout Start covers absent-row races too.
+      // Read only after acquiring it, so a newer write cannot merge a stale plan.
+      await lockAppWorkoutSession(tx as unknown as PartnerDatabase, sessionId);
+      const [previous] = await tx
+        .select({
+          plan: dbSchema.sessionWorkouts.plan,
+          tickMap: dbSchema.sessionWorkouts.tickMap,
+          revision: dbSchema.sessionWorkouts.revision,
+        })
+        .from(dbSchema.sessionWorkouts)
+        .where(and(eq(dbSchema.sessionWorkouts.sessionId, sessionId), eq(dbSchema.sessionWorkouts.userId, userId)));
+      if (previous && previous.revision >= revision) return;
+      const previousPlan = parseSessionWorkoutPlan(previous?.plan);
+      const mergedPlan = preserveRecordedRoundMetadata(previousPlan, plan);
+      // A restored phone initially holds only its own new tick log. Retain
+      // earlier round pins unless this write explicitly remaps/removes that
+      // tick. Ownership and the final plan are checked again below.
+      const previousRoundItems = new Set(
+        previousPlan?.stages
+          .filter((stage) => stage.pacing?.advanceOn === 'round')
+          .flatMap((stage) => stage.items.map((item) => item.queueItemUuid)) ?? [],
+      );
+      const explicitTickUuids = new Set(tickMap.map((entry) => entry.tickUuid));
+      const carriedPins = (parseSessionWorkoutTickMap(previous?.tickMap) ?? []).filter(
+        (entry) => previousRoundItems.has(entry.queueItemUuid) && !explicitTickUuids.has(entry.tickUuid),
+      );
+      const candidateTickMap = [...carriedPins, ...tickMap].slice(-MAX_SESSION_WORKOUT_TICK_MAP_ENTRIES);
+      // An entry naming a queue item the plan doesn't hold does nothing on read
+      // (the tick falls back to climb matching), and the phone never sends one.
+      const planQueueItemUuids = new Set(
+        mergedPlan.stages.flatMap((stage) => stage.items.map((item) => item.queueItemUuid)),
+      );
+      const planTickMap = candidateTickMap.filter((entry) => planQueueItemUuids.has(entry.queueItemUuid));
+
+      // Looked up by uuid alone: a tick still on its way (a retried dead letter,
+      // or a spray tick held behind its climb write) has no row yet, and its
+      // entry is kept so the tick lands on its block when it arrives. Readers only
+      // ever apply the map to the owner's ticks in this session, so a pending
+      // entry does nothing until then. An entry naming a tick that exists but is
+      // someone else's, or the caller's in another session, is dropped. Pending
+      // entries are capped, keeping the last ones in submitted order.
+      const namedTicks =
+        planTickMap.length === 0
+          ? []
+          : await tx
+              .select({
+                uuid: dbSchema.boardseshTicks.uuid,
+                userId: dbSchema.boardseshTicks.userId,
+                sessionId: dbSchema.boardseshTicks.sessionId,
+              })
+              .from(dbSchema.boardseshTicks)
+              .where(
+                inArray(
+                  dbSchema.boardseshTicks.uuid,
+                  planTickMap.map((entry) => entry.tickUuid),
+                ),
+              );
+      const namedTickByUuid = new Map(namedTicks.map((tick) => [tick.uuid, tick]));
+      const keptPendingTickUuids = new Set(
+        planTickMap
+          .filter((entry) => !namedTickByUuid.has(entry.tickUuid))
+          .slice(-MAX_PENDING_TICK_MAP_ENTRIES)
+          .map((entry) => entry.tickUuid),
+      );
+      const ownTickMap = planTickMap.filter((entry) => {
+        const namedTick = namedTickByUuid.get(entry.tickUuid);
+        if (!namedTick) return keptPendingTickUuids.has(entry.tickUuid);
+        return namedTick.userId === userId && namedTick.sessionId === sessionId;
+      });
+
+      await recoverAppWorkoutPlan(tx as unknown as PartnerDatabase, userId, sessionId, mergedPlan);
       await tx
         .insert(dbSchema.sessionWorkouts)
-        .values({ sessionId, userId, plan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
+        .values({ sessionId, userId, plan: mergedPlan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
         .onConflictDoUpdate({
           target: [dbSchema.sessionWorkouts.sessionId, dbSchema.sessionWorkouts.userId],
           set: {

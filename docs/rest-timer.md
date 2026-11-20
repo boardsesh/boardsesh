@@ -27,6 +27,35 @@ The durable preferences (rest length, cadence, auto-advance, sound, countdown cu
 `packages/mobile/src/settings`. Arming never survives a cold start, with one exception: a live crew
 clock comes back from the session's seed, whoever set it (see "The crew's clock" under "Which phone moves the wall").
 
+## Zero and short workout rests
+
+Workout after-tick rests have no forced ten-second changeover. `null` remains
+Off; a literal zero on an eligible stage tick/send clock is immediately due.
+Zero rest between reps on the same climb does not move the wall. On-the-minute
+intervals keep their existing minimum.
+
+A fresh successful foreground tick save, including a durable offline enqueue,
+earns a qualifying acceptance instant. TICK carries its age when logged as
+well as actual elapsed time; older clients retain the existing age behavior.
+The claim deadline is the later of the original rest deadline and acceptance.
+An already-elapsed short rest therefore advances once when accepted, while a
+future rest retains its requested duration. The existing five-second claim
+window, queue identity, foreground cycle, driver and revision fences remain.
+FIRE consumes eligibility; pause, reset, clear and manual advancement invalidate
+it. Hydration, resume and offline outbox replay never create fresh eligibility.
+Each new TICK also carries an opaque `tickAcceptanceId`, echoed on its
+accepted clock. The receiving phone rejects its own IDs from an invalidated
+foreground or local-control generation, including a subscription update arriving before the
+mutation reply. This prevents an in-flight request from renewing eligibility
+after backgrounding or a pause/reset/manual queue change. A pending FIRE
+also captures foreground/control generations, session, queue visit and driver
+identity; stale replies may not navigate, retry or use the solo fallback.
+Queued positive rests retain their original deadline even after a slow ARM;
+only an already-expired stage claim loses its immediate-advance eligibility.
+A cold/rejoin snapshot retains the authoritative clock and future deadlines,
+but an expired snapshot cannot create a new tick-backed advance.
+Backend support must deploy before the compatible mobile bundle.
+
 ## Effective pacing
 
 A workout prepared on the Workout tab does not take over pacing until **Start

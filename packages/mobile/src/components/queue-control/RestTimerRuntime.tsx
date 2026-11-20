@@ -12,6 +12,10 @@
 // is a session: a crewmate can turn the shared rest clock on for this phone, so
 // it has to be listening before this phone is armed (see RestTimerCrewPublisher).
 
+import { useEffect } from 'react';
+import { AppState } from 'react-native';
+import { setRestTimerForeground } from '../../lib/rest-timer-foreground-state';
+import { invalidateRestTimerAcceptedTick } from '../../lib/rest-timer-store';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { RestTimerSessionSync } from './RestTimerSessionSync';
 import { RestTimerAutoAdvanceScheduler } from './RestTimerAutoAdvanceScheduler';
@@ -20,6 +24,14 @@ import { RestTimerCrewPublisher } from './RestTimerCrewPublisher';
 
 export function RestTimerRuntime() {
   const armed = useRestTimerArmed();
+  useEffect(() => {
+    if (AppState.currentState != null) setRestTimerForeground(AppState.currentState === 'active');
+    const subscription = AppState.addEventListener('change', (state) => {
+      setRestTimerForeground(state === 'active');
+      if (state !== 'active') invalidateRestTimerAcceptedTick();
+    });
+    return () => subscription.remove();
+  }, []);
 
   return (
     <>

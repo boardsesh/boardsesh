@@ -56,21 +56,15 @@ describe('atomic partner first seed', () => {
     expect(result.historyCount).toBe(1);
   });
 
-  it('trims accepted queue items and both plans to the same v1 item budget', () => {
+  it('rejects oversized plans without truncating their requested visits', () => {
     const items = Array.from({ length: MAX_SESSION_WORKOUT_ITEMS + 1 }, (_, index) => item(`partner-${index}`));
-    const result = seed(items);
-    expect(result.landedItems).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
-    expect(result.seed.queue).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
-    expect(result.seed.sessionPlan.stages[0].items).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
-    expect(result.seed.plan[0].climbUuids).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
+    expect(() => seed(items)).toThrow('capacity');
   });
 
-  it('preserves the solo queue when only one generated climb fits', () => {
+  it('refuses Start when the complete workout does not fit beside the solo queue', () => {
     const old = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 1 }, (_, index) => item(`old-${index}`));
-    const result = seed([item('first'), item('second')], old);
-    expect(result.seed.queue.slice(0, old.length)).toEqual(old);
-    expect(result.landedItems.map(({ uuid }) => uuid)).toEqual(['first']);
-    expect(result.seed.plan[0].climbUuids).toEqual(['climb-first']);
+    expect(() => seed([item('first'), item('second')], old)).toThrow('capacity');
+    expect(old).toHaveLength(MAX_SYNCED_QUEUE_ITEMS - 1);
   });
 
   it('after restart restores the persisted winner and pacing, excluding a regenerated preview', () => {
@@ -90,5 +84,41 @@ describe('atomic partner first seed', () => {
       { index: 1, climbUuids: [] },
     ]);
     expect(result.sessionPlan).toEqual({ version: 1, stages: [] });
+  });
+});
+
+it('restores exact round ordinals after a lost Start reply even when a visit was removed', () => {
+  const winning = {
+    version: 1,
+    stages: [
+      {
+        id: 'wk:0',
+        kind: 'fourByFour',
+        pacing: {
+          mode: 'afterTick',
+          restSeconds: 0,
+          advanceOn: 'round',
+          roundCount: 4,
+          climbsPerRound: 4,
+          restBetweenRoundsSeconds: 180,
+        },
+        items: [
+          { queueItemUuid: 'round-two-A', climbUuid: 'A', angle: 40, position: 4 },
+          { queueItemUuid: 'round-four-D', climbUuid: 'D', angle: 40, position: 15 },
+        ],
+      },
+    ],
+  };
+  const restored = restorePartnerWorkoutRun(JSON.parse(JSON.stringify(winning)));
+  expect(restored?.run.stages[0].pacing).toEqual({
+    mode: 'afterTick',
+    restSeconds: 0,
+    advanceOn: 'round',
+    rounds: {
+      climbCount: 4,
+      roundCount: 4,
+      restBetweenRoundsSeconds: 180,
+      positionByItemUuid: { 'round-two-A': 4, 'round-four-D': 15 },
+    },
   });
 });

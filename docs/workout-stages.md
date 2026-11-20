@@ -48,10 +48,16 @@ wide only). Each block becomes one **stage**. The code lives in
   (`advanceOn: 'set'`) after any tick once the set's every rep is logged. Limit bouldering
   paces `afterTick` with its rest and moves on only after a flash or a send, so a fall
   rests and stays on the climb. Every other kind has no pacing: the climber's own rest-timer settings apply.
-  `stageRestSeconds` never runs a rest that moves the wall under `STAGE_CHANGEOVER_SECONDS`
-  (10 s), a rest of 0 included, so a tick saved a few seconds late can't land past the
-  timer's 5 s overdue grace. A 4x4's rest between reps never moves the wall, so it runs as
-  set, and 0 there is no rest at all.
+  Requested after-tick rests run without a forced changeover minimum. Zero
+  means no rest. A fresh accepted tick can claim an already-due rest once;
+  restoring a clock never renews that eligibility (see `docs/rest-timer.md`).
+- **Partner 4×4s use rounds.** The partner contract repeats selected climbs
+  ABCD, ABCD rather than the app builder's AAAA, BBBB Rep/Set model. Each visit
+  has its own queue UUID and immutable original ordinal. Round pacing uses
+  `advanceOn: 'round'` with requested dimensions and per-visit positions.
+  Stored session plans flatten those dimensions into pacing and keep `position`
+  on each item. Queue edits never renumber them. The stored item cap is 500;
+  partner starts refuse insufficient capacity rather than shortening the plan.
 - **A 4x4 set is one climb done for every rep** (Marco, 2026-10-25; it replaced the round
   model, A B C D climbed once per round). A 4x4 plans one slot per set, one climb fills
   each slot, and Start queues each climb once under its own queue item. Its reps are the
@@ -83,8 +89,8 @@ too (`intervalSeconds`, `restSeconds`); only the partner's `climbCount` becomes
 `numberOfClimbs`. A 4x4 is the exception: its fields name sets and reps (`sets`,
 `repsPerSet`, `restBetweenRepsSeconds`, `restBetweenSetsSeconds`), since a set is one
 climb done for every rep. The partner `fourByFour` block (`climbCount`, `rounds` and two
-rests) is still freeform, and how its fields map onto sets and reps is settled when it runs
-natively. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
+rests) runs native repeated rounds with separate visit positions and round pacing;
+it is not converted to the app builder’s per-climb reps and sets. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
 Every build offers the three timed kinds (see "Timed blocks" below), so the block card has
@@ -162,7 +168,7 @@ on delete):
 
 The kind is any camelCase identifier up to 32 characters (`^[a-zA-Z][a-zA-Z0-9]{0,31}$`),
 so a kind newer than the server survives a round trip. Caps:
-30 stages, 300 climbs, 4000 tick-map entries, strings up to 64 characters; anything over
+30 stages, 500 climbs, 4000 tick-map entries, strings up to 64 characters; anything over
 is rejected, not trimmed. `parseSessionWorkoutPlan` and `parseSessionWorkoutTickMap`
 check the input on write and every stored row on read.
 
@@ -176,7 +182,7 @@ tick retried later, or a spray-wall tick held behind its climb write) still land
 block. Readers only apply the map to the owner's ticks in the session, so a kept entry does
 nothing until its tick lands. Two limits keep free entries small. An entry naming a queue
 item the plan doesn't hold is dropped: a reader would ignore it, and the phone never sends
-one. Entries for ticks the server doesn't have yet are capped at 300
+one. Entries for ticks the server doesn't have yet are capped at 500
 (`MAX_PENDING_TICK_MAP_ENTRIES`, the plan's item cap), keeping the last ones in submitted
 order, which is the phone's newest-last log order. Entries for the caller's own ticks in
 the session have only the 4000-entry cap. A write
@@ -300,7 +306,7 @@ land in the next account's outbox.
 
 Each write carries the whole workout: the plan built from the run and its captured
 climbs (`buildSessionWorkoutPlan`, which leaves out an item with no captured climb, keeps
-an item named by two stages in the first, and keeps the first 30 stages and 300 items
+an item named by two stages in the first, and keeps the first 30 stages and 500 items
 rather than have the write refused), and the tick map from the run's tick log
 (`tickUuid → queueItemUuid`, one entry per tick, the newest 4000; the server's cap,
 never reached, since the log keeps only the newest 2000). The revision is a
@@ -473,7 +479,7 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   outside its armed gate) locates the current climb in the run once per queue change, counts
   the ticks the run's log holds for it, and resolves both with `resolveStageRestPacing` into a
   `RestTimerStagePacing`: the stage, the queue item, the cadence, the rest after the climb's
-  latest tick (`stageRestSeconds`: the 10 s changeover for a rest of 0, the interval on the
+  latest tick (`stageRestSeconds`: the requested rest, including zero, the interval on the
   minute, on a 4x4 the rest between reps until the set's last rep and then the set rest,
   `closesSet`) and the advance rule (`tick` for a 4x4, from its stored `set`; `send` for
   limit; `deadline` on the minute). A 4x4 also carries its rep count (`reps`: logged, capped at the set, and per set), and a rest of 0
@@ -783,7 +789,7 @@ stage's grade (`defaultMidSessionBlock`).
   even when it is the only block. The summary line counts the queue Start hands over (4 for
   the default 4x4), and for a workout with a timed block adds "about N min"
   (`estimateWorkoutMinutes` in `plan-summary.ts`): 45 s a try plus the rest the stage paces
-  after it (`stageRestSeconds`, so the 10 s changeover counts), one interval a climb on the
+  after it (`stageRestSeconds`, without a changeover minimum), one interval a climb on the
   minute, every rep of a 4x4 set with the rests between them and then the set rest (the
   default 4 reps × 4 sets with 3:00 between sets reads "about 20 min"), three tries a climb
   where the stage moves on only after a send (3 × (45 s + rest), since the rest timer starts

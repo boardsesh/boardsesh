@@ -131,3 +131,32 @@ describe('parseSessionWorkoutTickMap', () => {
     expect(parseSessionWorkoutTickMap(entries(MAX_SESSION_WORKOUT_TICK_MAP_ENTRIES + 1))).toBeNull();
   });
 });
+
+it('round-trips immutable round positions and rejects duplicated or missing positions', () => {
+  const stage = {
+    id: 'partner:0',
+    kind: 'fourByFour',
+    pacing: {
+      mode: 'afterTick',
+      restSeconds: 0,
+      advanceOn: 'round',
+      roundCount: 4,
+      climbsPerRound: 4,
+      restBetweenRoundsSeconds: 180,
+    },
+    items: [{ queueItemUuid: 'visit-5', climbUuid: 'A', angle: 40, position: 4 }],
+  };
+  expect(parseSessionWorkoutPlan({ version: 1, stages: [stage] })).toEqual({ version: 1, stages: [stage] });
+  expect(
+    parseSessionWorkoutPlan({
+      version: 1,
+      stages: [{ ...stage, items: [...stage.items, { ...stage.items[0], queueItemUuid: 'other' }] }],
+    }),
+  ).toBeNull();
+  expect(
+    parseSessionWorkoutPlan({
+      version: 1,
+      stages: [{ ...stage, items: [{ queueItemUuid: 'visit', climbUuid: 'A', angle: 40 }] }],
+    }),
+  ).toBeNull();
+});

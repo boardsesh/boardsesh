@@ -190,6 +190,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
 import { QueueProvider, usePlaylistSuggestionSource, useQueue, useQueueSessionId } from '../queue-provider';
 import { track } from '../../lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { restTimerControlGeneration } from '../../lib/rest-timer-foreground-state';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -198,6 +199,8 @@ type Snapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
+  nextClimb: ReturnType<typeof useQueue>['nextClimb'];
+  previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   appendQueueItems: ReturnType<typeof useQueue>['appendQueueItems'];
   clearQueue: ReturnType<typeof useQueue>['clearQueue'];
   removeQueueItems: ReturnType<typeof useQueue>['removeQueueItems'];
@@ -225,6 +228,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       setCurrentClimb: queue.setCurrentClimb,
+      nextClimb: queue.nextClimb,
+      previousClimb: queue.previousClimb,
       appendQueueItems: queue.appendQueueItems,
       clearQueue: queue.clearQueue,
       removeQueueItems: queue.removeQueueItems,
@@ -246,6 +251,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     playlistSuggestionSource,
     queue.addToQueue,
     queue.setCurrentClimb,
+    queue.nextClimb,
+    queue.previousClimb,
     queue.appendQueueItems,
     queue.clearQueue,
     queue.removeQueueItems,
@@ -378,6 +385,31 @@ describe('QueueProvider local solo queue', () => {
     });
     http.request.mockReset();
     http.request.mockResolvedValue({ createSession: { id: 'session-new' } });
+  });
+
+  it('invalidates pending timer work on manual navigation but preserves automatic advancement', async () => {
+    const first = makeQueueItem('timer-first');
+    const second = makeQueueItem('timer-second');
+    const third = makeQueueItem('timer-third');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([first, second, third], first));
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(first.uuid));
+    const beforeManual = restTimerControlGeneration();
+    act(() => snapshots.at(-1)?.nextClimb());
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(second.uuid);
+    expect(restTimerControlGeneration()).not.toBe(beforeManual);
+    const beforeAutomatic = restTimerControlGeneration();
+    act(() => snapshots.at(-1)?.nextClimb('rest_timer'));
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(third.uuid);
+    expect(restTimerControlGeneration()).toBe(beforeAutomatic);
+    act(() => snapshots.at(-1)?.previousClimb());
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(second.uuid);
+    expect(restTimerControlGeneration()).not.toBe(beforeAutomatic);
+    const beforeSelection = restTimerControlGeneration();
+    act(() => snapshots.at(-1)?.setCurrentClimb(first));
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(first.uuid);
+    expect(restTimerControlGeneration()).not.toBe(beforeSelection);
   });
 
   it('saves solo flips per occurrence before navigation, including explicit false', async () => {

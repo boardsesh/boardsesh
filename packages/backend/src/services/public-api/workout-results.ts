@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import {
   BoardTypeSchema,
   CreateWorkoutSchema,
@@ -6,18 +7,23 @@ import {
   WorkoutResultsSchema,
   workoutBlockSupport,
   type WorkoutResults,
+  type WorkoutBlock,
+  type WorkoutBlockProgress,
 } from '@boardsesh/public-api';
 import {
   deriveWorkoutStages,
   parseSessionWorkoutPlan,
   parseSessionWorkoutTickMap,
   type SessionWorkoutRepOutcome,
+  type SessionWorkoutPlanStage,
+  type SessionWorkoutTickMapEntry,
 } from '@boardsesh/workout-summary';
 import {
   appWorkouts,
   boardSessions,
   boardseshTicks,
   boardClimbAliases,
+  boardClimbs,
   sessionWorkouts,
   userBoards,
   boardLayouts,
@@ -51,6 +57,93 @@ type SessionTick = Pick<
   'uuid' | 'climbUuid' | 'canonicalClimbUuid' | 'angle' | 'isMirror' | 'climbedAt'
 > & { status: SessionWorkoutRepOutcome };
 
+type WorkoutTickPosition = { roundIndex: number; climbIndex: number };
+type StoredWorkoutPlacement = {
+  workoutTickUuids: Set<string>;
+  blockIndexByTick: Map<string, number>;
+  positionByTick: Map<string, WorkoutTickPosition>;
+  progressByBlock: Map<number, WorkoutBlockProgress | null>;
+};
+
+/** Exact visit progress requires the recorded occurrence, never a guess from a repeated climb. */
+export function derivePartnerRoundProgress(
+  block: Extract<WorkoutBlock, { type: 'fourByFour' }>,
+  stage: SessionWorkoutPlanStage | undefined,
+  ticks: ReadonlyArray<Pick<SessionTick, 'uuid' | 'status' | 'climbUuid' | 'angle' | 'isMirror'>>,
+  tickMap: ReadonlyArray<SessionWorkoutTickMapEntry>,
+): { progress: WorkoutBlockProgress | null; positionByTick: Map<string, WorkoutTickPosition> } {
+  const positionByTick = new Map<string, WorkoutTickPosition>();
+  const unknown = { progress: null, positionByTick };
+  const pacing = stage?.pacing;
+  if (
+    !stage ||
+    stage.kind !== 'fourByFour' ||
+    pacing?.advanceOn !== 'round' ||
+    pacing.roundCount !== block.rounds ||
+    pacing.climbsPerRound !== block.climbCount
+  )
+    return unknown;
+  const plannedVisits = block.rounds * block.climbCount;
+  const itemsByUuid = new Map(stage.items.map((item) => [item.queueItemUuid, item]));
+  const positions = new Set<number>();
+  for (const item of stage.items) {
+    if (
+      item.position === undefined ||
+      item.position < 0 ||
+      item.position >= plannedVisits ||
+      positions.has(item.position)
+    )
+      return unknown;
+    positions.add(item.position);
+  }
+  const itemByTick = new Map(tickMap.map((entry) => [entry.tickUuid, entry.queueItemUuid]));
+  const occupied = new Set<number>();
+  let sends = 0;
+  let falls = 0;
+  let ambiguous = false;
+  for (const tick of ticks) {
+    const itemUuid = itemByTick.get(tick.uuid);
+    const item = itemUuid === undefined ? undefined : itemsByUuid.get(itemUuid);
+    if (
+      !item ||
+      item.position === undefined ||
+      item.climbUuid !== tick.climbUuid ||
+      item.angle !== tick.angle ||
+      (item.isMirror !== undefined && tick.isMirror != null && item.isMirror !== tick.isMirror)
+    ) {
+      ambiguous = true;
+      continue;
+    }
+    occupied.add(item.position);
+    positionByTick.set(tick.uuid, {
+      roundIndex: Math.floor(item.position / block.climbCount),
+      climbIndex: item.position % block.climbCount,
+    });
+    if (tick.status === 'attempt') falls += 1;
+    else sends += 1;
+  }
+  if (ambiguous) return unknown;
+  let completedRounds = 0;
+  for (let roundIndex = 0; roundIndex < block.rounds; roundIndex++) {
+    if (
+      Array.from({ length: block.climbCount }, (_, climbIndex) => roundIndex * block.climbCount + climbIndex).every(
+        (position) => occupied.has(position),
+      )
+    )
+      completedRounds += 1;
+  }
+  return {
+    positionByTick,
+    progress: {
+      status: completedRounds === block.rounds ? 'completed' : ticks.length > 0 ? 'partial' : 'not_started',
+      completedRounds,
+      plannedRounds: block.rounds,
+      sends,
+      falls,
+    },
+  };
+}
+
 /**
  * The workout's ticks and the block each landed on, by the climber's stored
  * session workout: the same plan, tick map and `deriveWorkoutStages` the app's
@@ -66,16 +159,59 @@ type SessionTick = Pick<
 async function placeTicksByStoredTickMap(
   transaction: PartnerDatabase,
   { workoutId, userId, sessionId }: { workoutId: string; userId: string; sessionId: string },
-  blockCount: number,
+  blocks: ReadonlyArray<WorkoutBlock>,
   ticks: ReadonlyArray<SessionTick>,
   loggedDuringWorkout: (tick: SessionTick) => boolean,
-): Promise<{ workoutTickUuids: Set<string>; blockIndexByTick: Map<string, number> } | null> {
+): Promise<StoredWorkoutPlacement | null> {
   const [stored] = await transaction
     .select({ plan: sessionWorkouts.plan, tickMap: sessionWorkouts.tickMap })
     .from(sessionWorkouts)
     .where(and(eq(sessionWorkouts.sessionId, sessionId), eq(sessionWorkouts.userId, userId)));
-  const sessionPlan = parseSessionWorkoutPlan(stored?.plan);
-  if (!sessionPlan) return null;
+  const recordedPlan = parseSessionWorkoutPlan(stored?.plan);
+  if (!recordedPlan) return null;
+  // Catalog merges can leave an old alias in the saved plan while tick reads
+  // already expose the surviving id. Resolve both in this same read snapshot.
+  // A plan item has no board type: use its original catalog row when present,
+  // otherwise only follow a single unambiguous board-specific alias.
+  const plannedIds = [...new Set(recordedPlan.stages.flatMap((stage) => stage.items.map((item) => item.climbUuid)))];
+  const aliases = plannedIds.length
+    ? await transaction
+        .select({
+          aliasUuid: boardClimbAliases.aliasUuid,
+          canonicalUuid: boardClimbAliases.canonicalUuid,
+          boardType: boardClimbAliases.boardType,
+        })
+        .from(boardClimbAliases)
+        .where(inArray(boardClimbAliases.aliasUuid, plannedIds))
+    : [];
+  const catalogRows = aliases.length
+    ? await transaction
+        .select({
+          uuid: boardClimbs.uuid,
+          boardType: boardClimbs.boardType,
+        })
+        .from(boardClimbs)
+        .where(inArray(boardClimbs.uuid, plannedIds))
+    : [];
+  const boardByStoredId = new Map(catalogRows.map((row) => [row.uuid, row.boardType]));
+  const canonicalByStoredId = new Map<string, string>();
+  for (const climbUuid of plannedIds) {
+    const boardType = boardByStoredId.get(climbUuid);
+    const candidates = aliases.filter(
+      (alias) => alias.aliasUuid === climbUuid && (boardType === undefined || alias.boardType === boardType),
+    );
+    if (candidates.length === 1) canonicalByStoredId.set(climbUuid, candidates[0].canonicalUuid);
+  }
+  const sessionPlan = {
+    ...recordedPlan,
+    stages: recordedPlan.stages.map((stage) => ({
+      ...stage,
+      items: stage.items.map((item) => ({
+        ...item,
+        climbUuid: canonicalByStoredId.get(item.climbUuid) ?? item.climbUuid,
+      })),
+    })),
+  };
   const stagePrefix = `${workoutId}:`;
   const blockIndexByStage = new Map<string, number>();
   const workoutQueueItems = new Set<string>();
@@ -83,7 +219,7 @@ async function placeTicksByStoredTickMap(
     if (!stage.id.startsWith(stagePrefix)) continue;
     const blockIndexText = stage.id.slice(stagePrefix.length);
     const blockIndex = Number(blockIndexText);
-    if (/^\d+$/.test(blockIndexText) && blockIndex < blockCount) {
+    if (/^\d+$/.test(blockIndexText) && blockIndex < blocks.length) {
       blockIndexByStage.set(stage.id, blockIndex);
       for (const item of stage.items) workoutQueueItems.add(item.queueItemUuid);
     }
@@ -100,7 +236,7 @@ async function placeTicksByStoredTickMap(
     tickMap,
     workoutTicks.map((tick) => ({
       uuid: tick.uuid,
-      climbUuid: tick.climbUuid,
+      climbUuid: tick.canonicalClimbUuid,
       angle: tick.angle,
       isMirror: tick.isMirror,
       status: tick.status,
@@ -115,7 +251,28 @@ async function placeTicksByStoredTickMap(
       for (const tickUuid of climb.tickUuids) blockIndexByTick.set(tickUuid, blockIndex);
     }
   }
-  return { workoutTickUuids: new Set(workoutTicks.map((tick) => tick.uuid)), blockIndexByTick };
+  const positionByTick = new Map<string, WorkoutTickPosition>();
+  const progressByBlock = new Map<number, WorkoutBlockProgress | null>();
+  for (const [index, block] of blocks.entries()) {
+    if (block.type !== 'fourByFour') continue;
+    const stage = sessionPlan.stages.find((candidate) => candidate.id === `${stagePrefix}${index}`);
+    const roundResults = derivePartnerRoundProgress(
+      block,
+      stage,
+      workoutTicks
+        .filter((tick) => blockIndexByTick.get(tick.uuid) === index)
+        .map((tick) => ({ ...tick, climbUuid: tick.canonicalClimbUuid })),
+      tickMap,
+    );
+    progressByBlock.set(index, roundResults.progress);
+    for (const [tickUuid, position] of roundResults.positionByTick) positionByTick.set(tickUuid, position);
+  }
+  return {
+    workoutTickUuids: new Set(workoutTicks.map((tick) => tick.uuid)),
+    blockIndexByTick,
+    positionByTick,
+    progressByBlock,
+  };
 }
 
 /**
@@ -184,7 +341,7 @@ export async function buildWorkoutResults(
   const storedPlacement = await placeTicksByStoredTickMap(
     transaction,
     { workoutId: workout.id, userId: workout.userId, sessionId },
-    spec.blocks.length,
+    spec.blocks,
     sessionTicks,
     loggedDuringWorkout,
   );
@@ -195,11 +352,16 @@ export async function buildWorkoutResults(
     ? (tick: SessionTick) => storedPlacement.blockIndexByTick.get(tick.uuid) ?? null
     : await blockIndexBySnapshotClimb(transaction, workout.planSnapshot);
   const metadata = await readLogbookClimbMetadata(transaction as unknown as FeedTransaction, workout.userId, rows);
-  const pathParts = session.boardPath?.split('/') ?? [];
-  const pathType = BoardTypeSchema.safeParse(pathParts[0]).data;
-  const pathLayoutId = pathParts[1] && /^\d+$/.test(pathParts[1]) ? Number(pathParts[1]) : null;
-  const pathSizeId = pathParts[2] && /^\d+$/.test(pathParts[2]) ? Number(pathParts[2]) : null;
-  const pathAngle = pathParts[4] && Number.isFinite(Number(pathParts[4])) ? Number(pathParts[4]) : null;
+  const namedPath = parseNamedBoardPath(session.boardPath ?? '');
+  const tuplePath = namedPath ? null : parseBoardPath(session.boardPath ?? '');
+  const pathType = BoardTypeSchema.safeParse(tuplePath?.boardName).data;
+  const pathLayoutId = tuplePath?.layoutId ?? null;
+  const pathSizeId = tuplePath?.sizeId ?? null;
+  const requestedAngle = namedPath?.angle ?? tuplePath?.angle;
+  const pathAngle =
+    requestedAngle != null && Number.isInteger(requestedAngle) && requestedAngle >= -90 && requestedAngle <= 90
+      ? requestedAngle
+      : null;
   const [board] = session.boardId
     ? await transaction
         .select({
@@ -248,12 +410,17 @@ export async function buildWorkoutResults(
     ticks: rows.map((tick) => ({
       ...serializeLogbookTick(tick, metadata),
       blockIndex: blockIndexOf(tick),
+      ...(storedPlacement?.positionByTick.has(tick.uuid)
+        ? { position: storedPlacement.positionByTick.get(tick.uuid) }
+        : {}),
     })),
     blocks: spec.blocks.map((block, index) => ({
       index,
       type: block.type,
       support: workoutBlockSupport(block),
       planned: block,
+      ...(block.externalRef === undefined ? {} : { externalRef: block.externalRef }),
+      ...(block.type === 'fourByFour' ? { progress: storedPlacement?.progressByBlock.get(index) ?? null } : {}),
     })),
   });
 }

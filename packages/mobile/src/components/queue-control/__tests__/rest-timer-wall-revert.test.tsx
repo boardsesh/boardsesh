@@ -88,7 +88,7 @@ vi.mock('../../../providers/queue-provider', async () => {
   return {
     useQueueActions: () => ({
       nextClimb,
-      getQueueSnapshot: () => ({ playlistSuggestionSource: null }),
+      getQueueSnapshot: () => ({ ...harness.getQueueData(), sessionId: SESSION, playlistSuggestionSource: null }),
       refreshPlaylistSuggestionSource: vi.fn(),
       setSessionRestCadence,
     }),
@@ -363,8 +363,9 @@ describe('a 4x4 set the wall already moved on from, put back by the rejoin', () 
       lastTickQueueItemUuid: 'a',
       lastTickStatus: 'attempt',
     });
+    // An expired rejoin seed restores the clock, not an old go's eligibility.
     expect(getRestTimerState()).toMatchObject({
-      lastTick: { queueItemUuid: 'a' },
+      lastTick: null,
       advancedFromQueueItemUuid: 'a',
       stagePacing: { queueItemUuid: 'a', closesSet: true },
     });

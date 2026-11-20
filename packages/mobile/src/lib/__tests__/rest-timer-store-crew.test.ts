@@ -2,6 +2,7 @@
 // clearing it, and announcing only what this phone did itself.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CrewRestCadence } from '../crew-rest-cadence';
+import { getAutoAdvanceDeadlineMs, shouldScheduleAutoAdvance } from '../rest-timer-auto-advance';
 import {
   adoptCrewCadence,
   applyRestTimerStagePacing,
@@ -11,6 +12,7 @@ import {
   clearRestTimerQueueEnded,
   disarmRestTimer,
   getRestTimerState,
+  invalidateRestTimerAcceptedTick,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerCrewBeatSkipped,
   noteRestTimerQueueEnded,
@@ -207,6 +209,7 @@ describe('local actions', () => {
         sessionId: SESSION,
         tick: { status: 'send', queueItemUuid: 'item-1' },
         tickStartMs: T0,
+        tickAgeAtLogMs: 500,
         tickRecorded: true,
       },
       { type: 'pause', sessionId: SESSION, pausedElapsedSeconds: 10 },
@@ -324,7 +327,7 @@ describe('a late tick under a crew clock’s tick rule (the wall climb keeps its
     expect(getRestTimerState().anchorMs).toBe(T0 + 5_000);
   });
 
-  it('judges a go whose save lands 90 s late on landing, as the server judges its TICK: not recorded', () => {
+  it('preserves age at log for a go whose save lands 90 seconds late', () => {
     setRestTimerWallQueueItemReader(() => 'item-wall');
     adoptCrewCadence({ ...sendRule, lastTick: null });
     const actions = recordActions();
@@ -336,10 +339,12 @@ describe('a late tick under a crew clock’s tick rule (the wall climb keeps its
       { status: 'send', queueItemUuid: 'item-wall' },
       T0 + 5_000,
     );
-    // The server reads its TICK (elapsedMs 90 s) as history, so the phone must
-    // too, or it would fire beats the server refuses, one every rest.
-    expect(getRestTimerState()).toMatchObject({ lastTick: null, anchorMs: T0 });
-    expect(actions).toEqual([expect.objectContaining({ type: 'tick', tickRecorded: false })]);
+    // TICK carries age at log separately, so slow delivery does not turn a fresh go into history.
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'item-wall' },
+      anchorMs: T0 + 5_000,
+    });
+    expect(actions).toEqual([expect.objectContaining({ type: 'tick', tickRecorded: true, tickAgeAtLogMs: 0 })]);
   });
 
   it('takes the same late go when it lands inside a minute of its climb', () => {
@@ -553,5 +558,61 @@ describe('crewPacingDraft', () => {
     setCrewRestPacingDraft(draft);
     disarmRestTimer();
     expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+});
+
+describe('invalidated zero-rest acceptance', () => {
+  const acceptedClock = (acceptedAt = T0): CrewRestCadence =>
+    crewClock({
+      config: {
+        mode: 'afterTick',
+        targetSeconds: 0,
+        autoAdvance: true,
+        advanceOn: 'tick',
+        source: 'stage',
+        setByParticipantId: 'participant-me',
+      },
+      anchorMs: acceptedAt,
+      anchorServerMs: acceptedAt,
+      qualifyingTickAcceptedAtMs: acceptedAt,
+      qualifyingTickAcceptedAtServerMs: acceptedAt,
+      lastTick: { status: 'send', queueItemUuid: 'item-1' },
+    });
+
+  it('cannot regain a consumed acceptance from an old crew echo after background reanchoring', () => {
+    adoptCrewCadence(acceptedClock());
+    invalidateRestTimerAcceptedTick();
+    reanchorRestTimerAfterBackground(T0 + 1_000, T0);
+    adoptCrewCadence({ ...acceptedClock(), revision: 6 });
+    const state = getRestTimerState();
+    expect(state.anchorMs).toBe(T0 + 1_000);
+    expect(state.qualifyingTickAcceptedAtMs).toBeNull();
+    expect(shouldScheduleAutoAdvance({ state, targetSeconds: 0, autoAdvance: true, canDriveWall: true })).toBe(false);
+    expect(
+      getAutoAdvanceDeadlineMs({
+        mode: 'afterTick',
+        anchorMs: state.anchorMs,
+        targetSeconds: 0,
+        nowMs: T0 + 1_000,
+        qualifyingTickAcceptedAtMs: state.qualifyingTickAcceptedAtMs,
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts a genuinely newer crew tick after invalidating the previous one', () => {
+    adoptCrewCadence(acceptedClock());
+    invalidateRestTimerAcceptedTick();
+    adoptCrewCadence({ ...acceptedClock(T0 + 2_000), revision: 6 });
+    const state = getRestTimerState();
+    expect(state.qualifyingTickAcceptedAtMs).toBe(T0 + 2_000);
+    expect(
+      getAutoAdvanceDeadlineMs({
+        mode: 'afterTick',
+        anchorMs: state.anchorMs,
+        targetSeconds: 0,
+        nowMs: T0 + 2_000,
+        qualifyingTickAcceptedAtMs: state.qualifyingTickAcceptedAtMs,
+      }),
+    ).toBe(T0 + 2_000);
   });
 });

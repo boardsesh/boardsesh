@@ -70,6 +70,7 @@ import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { nowMs } from '../lib/clock';
+import { invalidateRestTimerControlIntent } from '../lib/rest-timer-foreground-state';
 import { noteOwnMove } from '../lib/relay-receipt';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
@@ -3075,6 +3076,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
       if (credentialGeneration !== getCredentialGeneration()) return;
+      invalidateRestTimerControlIntent();
       // Source is client-only provider state (see note above) — set it whenever
       // the caller passes options. Activation passes a source; a fresh
       // climb-list/search open passes null to clear playlist context; re-opening
@@ -3334,6 +3336,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // the Next button and the widget path can still land here.)
       reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem, committable?.item.uuid ?? null);
       if (!committable) return;
+      if (caller !== 'rest_timer') invalidateRestTimerControlIntent();
       const { item, converted } = committable;
       storeTrackResume(walkedSource, trackResume, currentClimbQueueItem?.uuid);
       // New suggestions must match the server's insertion immediately after current.
@@ -3374,6 +3377,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       historyCount,
     );
     if (!prevItem) return;
+    invalidateRestTimerControlIntent();
     const { item, converted } = resolveCommittableQueueItem(prevItem);
     // No stepped-off climb: Previous clears a resume only when it lands on the
     // list entry the walk left, and a detour is never read from there.

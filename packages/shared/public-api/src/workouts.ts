@@ -11,7 +11,23 @@ export const CreateWorkoutSchema = z
     scheduledFor: z.iso.date().optional(),
     notes: z.string().max(2000).optional(),
     preferredBoard: z.object({ type: BoardTypeSchema, angle: z.number().int().min(0).max(90).optional() }).optional(),
-    blocks: z.array(WorkoutBlockSchema).min(1).max(12),
+    blocks: z
+      .array(WorkoutBlockSchema)
+      .min(1)
+      .max(12)
+      .superRefine((blocks, context) => {
+        const references = new Set<string>();
+        for (const [index, block] of blocks.entries()) {
+          if (block.externalRef === undefined) continue;
+          if (references.has(block.externalRef))
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'externalRef'],
+              message: 'Each supplied block externalRef must be unique within the workout',
+            });
+          references.add(block.externalRef);
+        }
+      }),
   })
   .openapi('CreateWorkout', {
     example: {
@@ -39,6 +55,7 @@ const WORKOUT_CREATED_EXAMPLE = {
 export const WorkoutBlockSupportSchema = z
   .strictObject({
     index: z.number().int().min(0).max(11),
+    externalRef: z.string().optional(),
     type: extensibleEnum(WORKOUT_BLOCK_TYPES, {
       description: 'Block type. New values may be added.',
       example: 'volume',
@@ -50,7 +67,7 @@ export const WorkoutBlockSupportSchema = z
   })
   .openapi('WorkoutBlockSupport', { additionalProperties: true, example: BLOCK_SUPPORT_EXAMPLE });
 export function workoutBlockSupport(block: WorkoutBlock): 'native' | 'freeform' {
-  return block.type === 'fourByFour' || block.type === 'limitBouldering' ? 'freeform' : 'native';
+  return block.type === 'limitBouldering' ? 'freeform' : 'native';
 }
 export const WorkoutCreatedSchema = z
   .strictObject({
@@ -78,6 +95,19 @@ export const WorkoutConflictSchema = z
       existing: WORKOUT_CREATED_EXAMPLE,
     },
   });
+export const WorkoutBlockProgressSchema = z
+  .strictObject({
+    status: extensibleEnum(['not_started', 'partial', 'completed'] as const, {
+      description: 'Exercise progress, separate from session-ended status. New statuses may be added.',
+      example: 'completed',
+    }),
+    completedRounds: z.number().int().nonnegative(),
+    plannedRounds: z.number().int().positive(),
+    sends: z.number().int().nonnegative(),
+    falls: z.number().int().nonnegative(),
+  })
+  .openapi({ additionalProperties: true });
+export type WorkoutBlockProgress = z.infer<typeof WorkoutBlockProgressSchema>;
 export const WorkoutResultsSchema = z
   .strictObject({
     completion: z.enum(['ended', 'auto_closed']),
@@ -107,6 +137,17 @@ export const WorkoutResultsSchema = z
         z
           .strictObject({
             ...TickSchema.shape,
+            position: z
+              .strictObject({
+                roundIndex: z.number().int().nonnegative(),
+                climbIndex: z.number().int().nonnegative(),
+              })
+              .openapi({
+                additionalProperties: true,
+                description:
+                  'Zero-based round and climb within a native 4×4. Omitted when the exact visit was not recorded.',
+              })
+              .optional(),
             blockIndex: z.number().int().min(0).max(11).nullable().openapi({
               description:
                 "The block the climber logged this tick on, as their session recorded it. `null` when the tick is on none of this workout's blocks, or the block cannot be told.",
@@ -120,7 +161,14 @@ export const WorkoutResultsSchema = z
       }),
     blocks: z.array(
       z
-        .strictObject({ ...WorkoutBlockSupportSchema.shape, planned: WorkoutBlockSchema })
+        .strictObject({
+          ...WorkoutBlockSupportSchema.shape,
+          planned: WorkoutBlockSchema,
+          progress: WorkoutBlockProgressSchema.nullable().optional().openapi({
+            description:
+              'Present for 4×4 blocks. Null when recorded data cannot establish round progress. Sends include flashes; falls are attempt ticks, not the tick attempts count.',
+          }),
+        })
         .openapi({ additionalProperties: true }),
     ),
   })

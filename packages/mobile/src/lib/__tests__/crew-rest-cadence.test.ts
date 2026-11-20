@@ -15,6 +15,7 @@ import {
   getLastCrewCadenceSnapshot,
   handleCrewCadenceChange,
   noteCrewClockArmedHere,
+  noteLiveCrewTickAcceptance,
   noteCrewClockTurnedOffHere,
   parseCrewRestCadence,
   planCrewFireOutcome,
@@ -288,7 +289,7 @@ describe('the subscribe seed', () => {
 
 describe('inputs', () => {
   it('clamps a rest length into the server’s bounds for the mode', () => {
-    expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 5 }).targetSeconds).toBe(10);
+    expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 5 }).targetSeconds).toBe(5);
     expect(toCrewConfigInput({ ...ownSettings, mode: 'onTheMinute', targetSeconds: 10 }).targetSeconds).toBe(15);
     expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 9_000 }).targetSeconds).toBe(3600);
     expect(toCrewConfigInput({ ...ownSettings, targetSeconds: null }).targetSeconds).toBeNull();
@@ -736,5 +737,72 @@ describe('a once-only advance (autoAdvanceOnce)', () => {
     expect(
       buildCrewPacingEditInput({ draft: { ...setRest, source: 'settings' }, held: { ...spent, source: 'settings' } }),
     ).toBeNull();
+  });
+});
+
+describe('restoring workout clocks without catching up old goes', () => {
+  const oldTick = () =>
+    wireClock({
+      source: 'stage',
+      advanceOn: 'tick',
+      targetSeconds: 0,
+      anchorAt: String(T0),
+      tickAcceptedAt: String(T0),
+      tickAcceptanceId: 'previous-process-acceptance',
+      lastTickQueueItemUuid: 'item-1',
+      lastTickStatus: 'send',
+    });
+
+  it('restores a previous-process zero clock but never its recent expired acceptance', () => {
+    const seed = change({ isSnapshot: true, restCadence: oldTick() });
+    expect(handleCrewCadenceChange(seed, context)).toBe('adopted');
+    expect(getRestTimerState().crew?.config?.targetSeconds).toBe(0);
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs).toBeNull();
+    expect(getRestTimerState().lastTick).toBeNull();
+    handleCrewCadenceChange({ ...seed, revision: 11, isSnapshot: false }, context);
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs).toBeNull();
+    expect(getRestTimerState().lastTick).toBeNull();
+  });
+
+  it('preserves future positive rest deadlines from the same seed', () => {
+    handleCrewCadenceChange(change({ isSnapshot: true, restCadence: { ...oldTick(), targetSeconds: 120 } }), context);
+    expect(getRestTimerState().crew?.anchorServerMs).toBe(T0);
+    expect(getRestTimerState().lastTick?.queueItemUuid).toBe('item-1');
+  });
+
+  it('preserves a known live local claim across duplicate seeds', () => {
+    const tickAcceptanceId = 'known-live-acceptance';
+    noteLiveCrewTickAcceptance(tickAcceptanceId);
+    const seed = change({ isSnapshot: true, restCadence: { ...oldTick(), tickAcceptanceId } });
+    handleCrewCadenceChange(seed, context);
+    const acceptedAt = getRestTimerState().qualifyingTickAcceptedAtMs;
+    expect(acceptedAt).not.toBeNull();
+    handleCrewCadenceChange(seed, context);
+    expect(getRestTimerState().qualifyingTickAcceptedAtMs).toBe(acceptedAt);
+    expect(getRestTimerState().lastTick?.queueItemUuid).toBe('item-1');
+  });
+
+  it('keeps eligible zero rest in both outgoing config builders', () => {
+    const own: OwnRestPacing = {
+      mode: 'afterTick',
+      source: 'stage',
+      targetSeconds: 0,
+      autoAdvance: true,
+      advanceOn: 'tick',
+    };
+    armRestTimer('afterTick', T0, SESSION);
+    expect(buildArmInput(own, getRestTimerState(), T0).config?.targetSeconds).toBe(0);
+    expect(
+      buildConfigureInput({
+        own,
+        previous: ownSettings,
+        anchor: 'KEEP',
+        boundaryAtMs: null,
+        state: getRestTimerState(),
+        nowMs: T0,
+      })?.config?.targetSeconds,
+    ).toBe(0);
+    expect(toCrewConfigInput({ ...own, source: 'settings' }).targetSeconds).toBeNull();
+    expect(toCrewConfigInput({ ...own, advanceOn: 'deadline' }).targetSeconds).toBeNull();
   });
 });

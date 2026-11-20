@@ -934,7 +934,9 @@
       "browseClimbs": "Parcourir les blocs",
       "changeBoard": "Changer de board",
       "chooseBoard": "Choisir une board",
-      "noBoardSelected": "Aucune board sélectionnée"
+      "noBoardSelected": "Aucune board sélectionnée",
+      "workoutStageRoundCount": "Tour {{round}}/{{rounds}} · Bloc {{climb}}/{{climbs}}",
+      "workoutStageRoundPosition": "{{stage}} · Tour {{round}}/{{rounds}} · Bloc {{climb}}/{{climbs}}"
     }
   },
   "playView": {
@@ -1170,6 +1172,7 @@
   },
   "partnerWorkouts": {
     "openWebsite": "Ouvrir sur le site",
+    "newSessionRequired": "Termine ta séance actuelle, puis démarre cet entraînement par tours dans une nouvelle séance.",
     "personalSessionRequired": "Démarre une session personnelle pour utiliser cet entraînement.",
     "routeTitle": "Séance d’une application",
     "from": "De {{app}}",

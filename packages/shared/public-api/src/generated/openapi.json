@@ -729,6 +729,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -865,6 +870,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -969,6 +979,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1110,6 +1125,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1251,6 +1271,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1355,6 +1380,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1460,6 +1490,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1577,6 +1612,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1681,6 +1721,11 @@
           {
             "type": "object",
             "properties": {
+              "externalRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "label": {
                 "type": "string",
                 "minLength": 1,
@@ -1863,6 +1908,18 @@
           "restBetweenSetsSeconds": {
             "type": "integer",
             "minimum": 0
+          },
+          "roundCount": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "climbsPerRound": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "restBetweenRoundsSeconds": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -1881,6 +1938,11 @@
           "index": {
             "type": "integer",
             "minimum": 0
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Original zero-based visit ordinal in a round-based block, preserved through queue edits. Omitted when not recorded."
           },
           "climbId": {
             "type": "string",
@@ -2339,6 +2401,9 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 11
+          },
+          "externalRef": {
+            "type": "string"
           },
           "type": {
             "type": "string",
@@ -2836,6 +2901,25 @@
                   "description": "When Boardsesh last changed this tick, UTC.",
                   "example": "2026-10-20T18:42:15Z"
                 },
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "roundIndex": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "climbIndex": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "roundIndex",
+                    "climbIndex"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zero-based round and climb within a native 4×4. Omitted when the exact visit was not recorded."
+                },
                 "blockIndex": {
                   "type": [
                     "integer",
@@ -2876,6 +2960,9 @@
                   "minimum": 0,
                   "maximum": 11
                 },
+                "externalRef": {
+                  "type": "string"
+                },
                 "type": {
                   "type": "string",
                   "x-extensible-enum": [
@@ -2903,6 +2990,49 @@
                 },
                 "planned": {
                   "$ref": "#/components/schemas/WorkoutBlock"
+                },
+                "progress": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "x-extensible-enum": [
+                        "not_started",
+                        "partial",
+                        "completed"
+                      ],
+                      "description": "Exercise progress, separate from session-ended status. New statuses may be added.",
+                      "example": "completed"
+                    },
+                    "completedRounds": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "plannedRounds": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "sends": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "falls": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "completedRounds",
+                    "plannedRounds",
+                    "sends",
+                    "falls"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Present for 4×4 blocks. Null when recorded data cannot establish round progress. Sends include flashes; falls are attempt ticks, not the tick attempts count."
                 }
               },
               "required": [

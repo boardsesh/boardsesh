@@ -5212,7 +5212,7 @@ export type Mutation = {
    * or joined the session. Tick-map entries naming another climber's tick, the
    * caller's tick in another session, or a queue item the plan doesn't hold are
    * dropped; an entry naming a tick the server doesn't have yet is kept (up to
-   * 300, the newest), so a tick that arrives later lands on its block.
+   * 500, the newest), so a tick that arrives later lands on its block.
    */
   recordSessionWorkout: Scalars['Boolean']['output'];
   /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
@@ -10792,8 +10792,12 @@ export type SessionRestCadence = {
   setByParticipantId?: Maybe<Scalars['ID']['output']>;
   /** 'settings' (someone's rest timer settings) or 'stage' (a workout stage's pacing) */
   source: Scalars['String']['output'];
-  /** Rest length in seconds, or null when the length is Off (count up). afterTick 10..3600, onTheMinute 15..3600. */
+  /** Rest length in seconds, or null when the length is Off (count up). afterTick 0..3600, onTheMinute 15..3600. */
   targetSeconds?: Maybe<Scalars['Int']['output']>;
+  /** Opaque correlation for a tick acceptance, if supplied by the sender. */
+  tickAcceptanceId?: Maybe<Scalars['String']['output']>;
+  /** When a qualifying workout tick was accepted, server epoch milliseconds. */
+  tickAcceptedAt?: Maybe<Scalars['String']['output']>;
 };
 
 /** What a `setSessionRestCadence` call does to the session's shared rest clock. */
@@ -10872,7 +10876,7 @@ export type SessionRestCadenceConfigInput = {
   mode: Scalars['String']['input'];
   /** 'settings' or 'stage' */
   source: Scalars['String']['input'];
-  /** Rest length in seconds, or null for Off. afterTick 10..3600, onTheMinute 15..3600. */
+  /** Rest length in seconds, or null for Off. afterTick 0..3600, onTheMinute 15..3600. */
   targetSeconds?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -10907,7 +10911,9 @@ export type SessionRestCadenceInput = {
   isRunning?: InputMaybe<Scalars['Boolean']['input']>;
   /** PAUSE only: the frozen elapsed, 0..14400. Defaults to the elapsed the server computes from its anchor. */
   pausedElapsedSeconds?: InputMaybe<Scalars['Int']['input']>;
+  tickAcceptanceId?: InputMaybe<Scalars['String']['input']>;
   /** TICK only: the queue item the tick was logged against, when it was the current queue item. Without one the tick keeps the last tick. */
+  tickAgeAtLogMs?: InputMaybe<Scalars['Int']['input']>;
   tickQueueItemUuid?: InputMaybe<Scalars['ID']['input']>;
   /** TICK only (required): 'flash', 'send' or 'attempt' */
   tickStatus?: InputMaybe<Scalars['String']['input']>;
@@ -11085,17 +11091,21 @@ export type SessionWorkoutItemInput = {
   angle: Scalars['Int']['input'];
   climbUuid: Scalars['String']['input'];
   isMirror?: InputMaybe<Scalars['Boolean']['input']>;
+  position?: InputMaybe<Scalars['Int']['input']>;
   queueItemUuid: Scalars['ID']['input'];
 };
 
 /** A timed block's pacing. 4x4 adds repsPerSet and restBetweenSetsSeconds. */
 export type SessionWorkoutPacingInput = {
   advanceOn?: InputMaybe<Scalars['String']['input']>;
+  climbsPerRound?: InputMaybe<Scalars['Int']['input']>;
   /** onTheMinute or afterTick. */
   mode: Scalars['String']['input'];
   repsPerSet?: InputMaybe<Scalars['Int']['input']>;
+  restBetweenRoundsSeconds?: InputMaybe<Scalars['Int']['input']>;
   restBetweenSetsSeconds?: InputMaybe<Scalars['Int']['input']>;
   restSeconds: Scalars['Int']['input'];
+  roundCount?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** How one rep or climb of a workout ended. */
@@ -20674,6 +20684,8 @@ export type SessionRestCadenceResolvers<
   setByParticipantId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   source?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   targetSeconds?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  tickAcceptanceId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  tickAcceptedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

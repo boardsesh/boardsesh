@@ -37,10 +37,18 @@ import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
+import {
+  restTimerForegroundGeneration,
+  restTimerControlGeneration,
+  sameRestTimerControlGeneration,
+  sameRestTimerForeground,
+  setRestTimerForeground,
+} from '../../lib/rest-timer-foreground-state';
 import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import { anchorAfterFire, restAdvanceAllowed } from '../../lib/rest-timer-pacing';
 import {
   clearRestTimerQueueEnded,
+  invalidateRestTimerAcceptedTick,
   floorRestTimerAnchorAtLastAdvance,
   getRestTimerState,
   noteRestTimerAdvancedFrom,
@@ -291,17 +299,27 @@ export function RestTimerAutoAdvanceScheduler() {
         noteRestTimerCrewBeatSkipped(localDeadlineMs);
         return;
       }
+      const foregroundGeneration = restTimerForegroundGeneration();
+      const controlGeneration = restTimerControlGeneration();
       scheduleCrewTimer(
         () => {
           const currentCrew = getRestTimerState().crew;
-          if (currentCrew === null || !pacesTheCrew()) return;
+          if (
+            !mountedRef.current ||
+            !sameRestTimerForeground(foregroundGeneration) ||
+            !sameRestTimerControlGeneration(controlGeneration) ||
+            currentCrew?.sessionId !== crew.sessionId ||
+            getQueueSnapshot().sessionId !== crew.sessionId ||
+            !pacesTheCrew()
+          )
+            return;
           if (!crewBeatStillDue(currentCrew, localDeadlineMs, beatServerMs)) return;
           reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
         },
         serverToLocalMs(beatServerMs + CREW_FIRE_LATE_TOLERANCE_MS) + CREW_REPAIR_MARGIN_MS - nowMs(),
       );
     },
-    [pacesTheCrew, scheduleCrewTimer],
+    [getQueueSnapshot, pacesTheCrew, scheduleCrewTimer],
   );
 
   const fireCrewBeat = useCallback(
@@ -320,6 +338,23 @@ export function RestTimerAutoAdvanceScheduler() {
       if (crewFireInFlightRef.current) return;
       const beatServerMs = crewBeatServerMs(crew, localDeadlineMs);
       if (beatServerMs === null) return;
+      const foregroundGeneration = restTimerForegroundGeneration();
+      const controlGeneration = restTimerControlGeneration();
+      const wallQueueItemUuid = advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null;
+      const sameSession = () =>
+        getRestTimerState().crew?.sessionId === crew.sessionId && getQueueSnapshot().sessionId === crew.sessionId;
+      const canFinishFire = () =>
+        mountedRef.current &&
+        sameRestTimerForeground(foregroundGeneration) &&
+        sameRestTimerControlGeneration(controlGeneration) &&
+        (AppState.currentState == null || AppState.currentState === 'active') &&
+        sameSession() &&
+        getRestTimerState().armed &&
+        getRestTimerState().isRunning &&
+        getRestTimerState().crew?.isRunning === true &&
+        pacesTheCrew() &&
+        (getQueueSnapshot().currentClimbQueueItem?.uuid ?? null) === wallQueueItemUuid;
+      if (!canFinishFire()) return;
       // Too close to the last beat the server took for it ever to take this one
       // (its spacing fence, #6754): a FIRE, or a retry, would only be refused.
       // The beat goes as one refused would.
@@ -330,12 +365,12 @@ export function RestTimerAutoAdvanceScheduler() {
       }
       // The climb this beat moves on from: a crewmate who moves the wall by hand
       // while the claim is in flight has already spent the beat.
-      const wallQueueItemUuid = advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null;
       const alone = roleRef.current === 'solo';
 
       // No answer: an error, the 2 s timeout, or no session to send it on.
       const beatGotNoAnswer = () => {
-        if (alone) {
+        if (!canFinishFire()) return;
+        if (alone && roleRef.current === 'solo') {
           // Nobody else to claim it: the wall moves from here, as long as the
           // beat is still one the climber is watching.
           if (!isAutoAdvanceDeadlineStale(localDeadlineMs, nowMs())) advanceLocally(expectedCycleId, localDeadlineMs);
@@ -374,6 +409,11 @@ export function RestTimerAutoAdvanceScheduler() {
         return;
       }
 
+      // A reply may consume the server beat after this phone backgrounded or
+      // handed over the wall. Keep its authoritative clock only in the same
+      // session; navigation and retries still belong to the original context.
+      if (!sameSession() || !sameRestTimerControlGeneration(controlGeneration)) return;
+
       handleCrewCadenceChange(payload.change, {
         sessionId: crew.sessionId,
         // Only this phone's own clock fires, so it is armed for it: the
@@ -382,6 +422,7 @@ export function RestTimerAutoAdvanceScheduler() {
         receivedAtMs: nowMs(),
         sentAtMs,
       });
+      if (!canFinishFire()) return;
       const outcome = planCrewFireOutcome({ applied: payload.applied, change: payload.change, beatServerMs, attempt });
       switch (outcome.kind) {
         case 'advance':
@@ -394,7 +435,9 @@ export function RestTimerAutoAdvanceScheduler() {
           const retryCycleId = getRestTimerState().cycleId;
           const retryDeadlineMs = serverToLocalMs(beatServerMs);
           scheduleCrewTimer(
-            () => fireAdvanceRef.current?.(retryCycleId, retryDeadlineMs, false, attempt + 1),
+            () => {
+              if (canFinishFire()) fireAdvanceRef.current?.(retryCycleId, retryDeadlineMs, false, attempt + 1);
+            },
             serverToLocalMs(outcome.atServerMs) - nowMs(),
           );
           return;
@@ -414,11 +457,20 @@ export function RestTimerAutoAdvanceScheduler() {
         }
       }
     },
-    [advanceLocally, letCrewBeatGo, nextClimb, scheduleCrewTimer, setSessionRestCadence],
+    [
+      advanceLocally,
+      getQueueSnapshot,
+      letCrewBeatGo,
+      nextClimb,
+      pacesTheCrew,
+      scheduleCrewTimer,
+      setSessionRestCadence,
+    ],
   );
 
   const fireAdvance = useCallback(
     (expectedCycleId: number, scheduledDeadlineMs: number, afterPage = false, crewAttempt = 0) => {
+      if (AppState.currentState != null && AppState.currentState !== 'active') return;
       // A beat that waited for a page came due while the climber watched, so
       // its deadline is late on purpose, not stale.
       //
@@ -535,6 +587,7 @@ export function RestTimerAutoAdvanceScheduler() {
         targetSeconds,
         nowMs: renderNowMs,
         lastFiredDeadlineMs: lastBeatHandledMs,
+        qualifyingTickAcceptedAtMs: timerState.qualifyingTickAcceptedAtMs,
       })
     : null;
 
@@ -592,12 +645,12 @@ export function RestTimerAutoAdvanceScheduler() {
     // Due within the grace window but already past — schedule nothing rather
     // than firing on the spot. Anything further past than the grace never gets
     // here: `deadlineStale` above already read it as not-scheduled.
-    if (remainingMs <= 0) return undefined;
+    if (remainingMs <= 0 && timerState.qualifyingTickAcceptedAtMs == null) return undefined;
 
     const timeouts = scheduleLeadCues(deadlineMs, leadSeconds, scheduledAtMs, chooseCountdown);
-    timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs));
+    timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), Math.max(0, remainingMs)));
     return () => clearCueTimeouts(timeouts);
-  }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds]);
+  }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds, timerState.qualifyingTickAcceptedAtMs]);
 
   // A crew rest after a tick whose deadline this phone paces but will never fire
   // on: it was already past when the phone took the board over, or when the
@@ -765,7 +818,11 @@ export function RestTimerAutoAdvanceScheduler() {
   // when the listener was set up, since the board can change hands meanwhile.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState !== 'active') return;
+      setRestTimerForeground(nextAppState === 'active');
+      if (nextAppState !== 'active') {
+        invalidateRestTimerAcceptedTick();
+        return;
+      }
       if (getRestTimerState().crew !== null && !pacesTheCrew()) return;
       reanchorRestTimerAfterBackground(nowMs(), deadlineMs);
     });
