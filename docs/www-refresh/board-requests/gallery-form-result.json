@@ -4,6 +4,54 @@
     "height": 900,
     "images": 18,
     "boardPanels": 9,
+    "rails": [
+      {
+        "board": "kilter",
+        "overflow": true,
+        "buttons": [
+          {
+            "width": 44,
+            "height": 44
+          },
+          {
+            "width": 44,
+            "height": 44
+          }
+        ],
+        "keyboardEndHome": true
+      },
+      {
+        "board": "tension",
+        "overflow": true,
+        "buttons": [
+          {
+            "width": 44,
+            "height": 44
+          },
+          {
+            "width": 44,
+            "height": 44
+          }
+        ],
+        "keyboardEndHome": true
+      },
+      {
+        "board": "moonboard",
+        "overflow": true,
+        "buttons": [
+          {
+            "width": 44,
+            "height": 44
+          },
+          {
+            "width": 44,
+            "height": 44
+          }
+        ],
+        "keyboardEndHome": true
+      }
+    ],
+    "inputColor": "rgb(47, 35, 74)",
     "invitation": "#request-board",
     "submitHeight": 44,
     "syntheticRequestsIntercepted": 1,
@@ -15,6 +63,44 @@
     "height": 900,
     "images": 18,
     "boardPanels": 9,
+    "rails": [
+      {
+        "board": "kilter",
+        "overflow": false,
+        "buttons": []
+      },
+      {
+        "board": "tension",
+        "overflow": true,
+        "buttons": [
+          {
+            "width": 44,
+            "height": 44
+          },
+          {
+            "width": 44,
+            "height": 44
+          }
+        ],
+        "keyboardEndHome": true
+      },
+      {
+        "board": "moonboard",
+        "overflow": true,
+        "buttons": [
+          {
+            "width": 44,
+            "height": 44
+          },
+          {
+            "width": 44,
+            "height": 44
+          }
+        ],
+        "keyboardEndHome": true
+      }
+    ],
+    "inputColor": "rgb(47, 35, 74)",
     "invitation": "#request-board",
     "submitHeight": 44,
     "syntheticRequestsIntercepted": 1,

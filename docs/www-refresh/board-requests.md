@@ -57,3 +57,5 @@ The parent gallery is `3cd6fac4ba`. The final request source is `b6b161e162`. At
 | 1440 × 900 | [Before](boards-gallery/after-en-US-desktop.png) | [After](board-requests/gallery-form-1440.png) |
 
 The final source passed all 65 workspace checks. Eight focused suites passed 88 assertions on the integrated gallery and private inbox. The two installed-SDK suites then passed eight checks, including both new transport-level privacy regressions. The earlier screenshots in this document show the pre-gallery directory. [Final browser receipt](board-requests/gallery-form-result.json)
+
+The final gallery screenshots were taken after hydration and the rail measurements settled. The Kilter, Tension and MoonBoard controls each measured 44 × 44px on the phone. At desktop width Kilter fits without controls. Tension and MoonBoard still scroll, with 44 × 44px controls. End and Home moved each overflowing rail to its last and first layout. The form’s computed input background matched the site’s dark input token, `#2F234A`.
