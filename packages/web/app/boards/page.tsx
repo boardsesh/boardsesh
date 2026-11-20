@@ -36,6 +36,7 @@ export default async function SupportedBoardsPage() {
             <Box component="li" key={layout.layoutId} className={styles.layout}>
               <Box component="figure" className={styles.figure}>
                 <Box className={styles.stage}>
+                  {/* Box consumes width/height as styling; native attributes preserve the image ratio in first HTML. */}
                   <img
                     src={resolveStaticAssetUrl(layout.src)}
                     width={layout.width}

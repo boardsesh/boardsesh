@@ -1,37 +1,37 @@
-# Supported-board directory readability
+# Supported-board image gallery
 
-The owner found the live compatibility cards hard to scan and rejected the repeated lighting, app, import and controller paragraphs. Astra recommended a separate presentation change before the private board-request form: one server-rendered list in the existing supported-board order, with a board heading, its real catalog layouts and one destination. Desktop rows align those three columns; phone rows stack them. A spray wall has its own row and setup destination. The list keeps the existing directory links and compatibility events.
+`/boards` shows the eight supported catalog brands through their 17 real layout images, plus the existing spray-wall photo. Kilter and Tension sit beside one another on desktop, MoonBoard gets a full-width rail, and the remaining brands and spray wall use three columns. On phones each multi-layout rail fills the page width with about one and a half cards visible; single-layout cards use two columns.
 
-Astra recommended the visible lead “Find your board and layout, then find a wall to climb on.” The metadata description is “See supported climbing boards and layouts, and find gyms with a wall you can climb on.” Both are translated in all six shipping locales. The existing page title, metadata builder and app-store actions remain. One existing logbook-guide link follows the list; detailed sync and connection instructions stay in their guides. Unused compatibility-only catalog paragraphs are removed.
+The owner-approved heading is “Your board, on Boardsesh”, translated in all six shipping locales. Captions retain the details that distinguish a layout: Original, Homewall, Board 2 Mirror, Board 2 Spray, Masters 2017 and Mini 2025. Tension shows Board 2 Mirror and Spray before Original. MoonBoard runs newest first: 2025, 2024, 2020, 2019, 2017, 2016 and 2010. The section names its brand once.
 
-The separate request-form change adds the invitation to request another board.
+The page keeps server-rendered headings, its descriptive lead, localized crawlable gym and spray-wall links, canonical/social/language metadata, app-store buttons and one global logbook-guide link. Repeated lighting, controller and import paragraphs are removed. The homepage hero and About page are outside this change. The private board-request form remains a separate stacked change.
 
-The local designer rubric assigns zero, one or two points to each of: finding a board, understanding its layouts, phone wrapping, action hierarchy and text readability. The work-item target is at least eight of ten with no critical functional or accessibility failure. This is a local expert assessment, not the original research panel score.
+## Native artwork and physical sizes
 
-## Matched browser evidence
+The generator calls the existing `composeBoardBaseBuffer` pipeline against the same catalog/background layers used by native board rendering. It adds no climb overlay and creates no synthetic artwork. Woods uses its existing dark artwork; other brands keep their original layers. Each output is a 480px-wide WebP with its complete aspect ratio, displayed with `object-fit: contain` and declared intrinsic dimensions. The spray image is the existing 1752 × 2047 photo.
 
-Chromium compared the original page from `0757401e2b6d66a96a077bff7432e524210a1025` with application source `3ff5f6352899051a46dff06771757fc0dee39702` at 390 × 900 and 1440 × 900. Each phase covered all six shipping locales against the same local seeded database with optional analytics denied. The original page and six website catalogs were temporarily overlaid in the candidate checkout, then restored byte for byte before candidate capture. Both phases hid only `nextjs-portal` and the development-only `[data-translation-editor]` controls. Production page styling was unchanged by the harness.
+Each layout selects the largest physical catalog area: `(edgeRight - edgeLeft) × (edgeTop - edgeBottom)`. Equal areas prefer more supported hold sets, then stable catalog order. Default sizes and height-biased size ranks are deliberately not used. Independently checked selected size IDs are Kilter Original 28 and Homewall 25; Tension Original 1 and both Board 2 layouts 10; all seven MoonBoard layouts 1; Decoy 1; Touchstone 1; Grasshopper 4; So iLL 2; Woods 2. Homewall Full Ride 25 wins its equal-area tie with four hold sets versus three.
 
-| English page | Before | After |
-| --- | ---: | ---: |
-| Visible words in main content | 511 | 147 |
-| Main content height at 390px | 4,072px | 2,134px |
-| Main content height at 1440px | 2,313px | 1,460px |
-| Smallest board-row action height | 17px | 44px |
+The manifest records layout and size names, physical extents, hold-set IDs, output dimensions/bytes/SHA-256 and each native source layer's path/SHA-256. Its 17 images total 1,578,542 bytes. The immutable static-asset catalog includes every new image so production CDN resolution uses its content hash too.
 
-The nine rows retain the eight catalog brands and the separate spray-wall destination. All 24 page visits returned HTTP 200 without horizontal overflow or JavaScript page errors. All 108 after-state board-row action measurements are at least 44px tall. The 432 row-text samples have computed contrast of at least 6.48:1 after ancestor background alpha composition; none of those samples required image or gradient estimation. Keyboard navigation on the English phone and desktop renders gives the first board action a visible 2px focus outline. These receipts cover the directory rows, not every component elsewhere on the site.
+Regenerate artwork and production lookup entries with:
 
-The displayed gym counts are local seed data, not production coverage figures. The owner's screenshot remains a cropped live reference; the images below are the matched local comparison. The initial captures with development controls visible are retained in the campaign scratch directory; durable captures use the same exclusions in both phases.
+```sh
+vp exec tsx packages/web/scripts/generate-board-gallery.ts
+vp run generate:static-assets
+vp run check:static-assets
+```
 
-- Phone: [before](boards-readability/before-phone.png), [after](boards-readability/after-phone.png), [keyboard focus](boards-readability/after-phone-focus.png).
-- Desktop: [before](boards-readability/before-desktop.png), [after](boards-readability/after-desktop.png), [first screen](boards-readability/after-desktop-viewport.png), [keyboard focus](boards-readability/after-desktop-focus.png).
-- Long translated phone rows: [French](boards-readability/after-fr-phone.png), [German](boards-readability/after-de-phone.png).
-- All six locale measurements: [before](boards-readability/before-receipts.json), [after](boards-readability/after-receipts.json).
+Format the generated manifest and changed catalog JSON with `vp check --fix` before committing. Preserve obsolete generated artifacts in scratch while checking a new set; only manifest-referenced images ship in the gallery directory.
+
+## Rails and useful actions
+
+Overflowing rails expose 44 × 44px previous/next controls. The settled first and last positions disable their matching control. Native horizontal swipes and Arrow Left, Arrow Right, Home and End work without intercepting keys from nested links. Rails and markerless lists preserve explicit list semantics, visible keyboard focus and reduced-motion behavior. A 4px snap gutter keeps the first card and its focus ring inside the scroller.
+
+## Gallery review gate
+
+The gallery requires two independent Astra reviews of the published revision. The current rubric gives zero to two points each for image-led recognition/visual appeal, caption clarity, layout discovery, keyboard/touch use, and useful actions. The target is at least eight of ten, with a mandatory two of two for image-led recognition on both phone and desktop. Earlier text-only assessments do not score this gallery. No gallery design score is claimed here before those reviews.
 
 ## Verification
 
-The application source passed all 65 required repository typecheck tasks, the existing board-page tests and 264 catalog/terminology checks (267 focused tests total), scoped formatting/lint/type checks and the normal commit hooks. A confirmed base-branch CI failure in the profile metadata test was reproduced (one failed, nine passed), then fixed by adding only the explicit supported `zh-CN` alternate to its expectation. All ten profile cases then passed; canonical, indexability and privacy assertions remain.
-
-The separate code-quality and designer Astra reviews run on the published PR. No work-item design score is claimed before that review.
-
-The independent code review found that both markerless list containers needed explicit `role="list"`, matching the existing Help steps pattern and [WebKit's documented list heuristic](https://bugs.webkit.org/show_bug.cgi?id=259487#c3). The minimal attribute fix passed scoped formatting, lint and type checks and all three existing board-page tests. Actual server-rendered HTML exposes one nine-item directory list and eight nested layout lists, all with the explicit role. The layout captures remain applicable. Physical Safari/VoiceOver behavior was not tested; current-head CI and Astra re-review cover the follow-up.
+Final browser receipts and exact source identities are added after the matched capture run. The earlier text-only screenshots remain historical evidence and do not establish gallery quality or behavior.

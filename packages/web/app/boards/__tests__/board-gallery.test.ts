@@ -7,6 +7,8 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vite-plus/test';
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { getStaticAssetObjectKey } from '@boardsesh/static-assets';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { getLargestGalleryBoardSize, getOrderedGalleryLayouts } from '../board-gallery-config';
 import { compactBoardLayoutName, getBoardGalleryLayouts } from '../board-gallery';
 import manifest from '../board-gallery-manifest.json';
@@ -117,6 +119,19 @@ describe('board gallery catalog', () => {
 });
 
 describe('generated native board art', () => {
+  it('resolves every gallery image through the production immutable asset catalog', () => {
+    const productionOrigin = 'https://assets.boardsesh.com';
+    for (const image of manifest.layouts) {
+      const objectKey = getStaticAssetObjectKey(image.src);
+      expect(objectKey, image.src).toBeDefined();
+      expect(objectKey, image.src).toMatch(/^static\/v1\/[a-f0-9]{64}\.webp$/);
+      expect(objectKey, image.src).toContain(image.sha256);
+      const productionUrl = new URL(resolveStaticAssetUrl(image.src, productionOrigin));
+      expect(productionUrl.origin).toBe(productionOrigin);
+      expect(productionUrl.pathname.slice(1)).toBe(objectKey);
+    }
+  });
+
   it('publishes all 17 unique images in gallery order at the selected physical sizes', () => {
     expect(manifest.renderer).toBe('composeBoardBaseBuffer');
     expect(manifest.layouts).toHaveLength(17);
