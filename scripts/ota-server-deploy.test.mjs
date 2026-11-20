@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { deploymentRequest, dispatchAndWait, matchingReceiverRun, validateReceipt } from './ota-server-deploy.mjs';
+import {
+  deploymentRequest,
+  dispatchAndWait,
+  matchingReceiverRun,
+  preflightRailwayHosting,
+  validateReceipt,
+} from './ota-server-deploy.mjs';
 import { HOMELAB_APPLY_PATHS, otaDeployment, parseOtaHosting } from './lib/ota-hosting.mjs';
 import { expectsOtaDeployment } from './mobile-ota-server-ready.mjs';
 
@@ -29,6 +35,112 @@ const run = {
   conclusion: 'success',
 };
 const receipt = { ...request, receiver_run_id: 42, status: 'verified' };
+
+await test('Railway preflight reads both private Actions endpoints and never dispatches', async () => {
+  const calls = [];
+  const logs = [];
+  assert.equal(
+    await preflightRailwayHosting(env, {
+      callApi: async (path, token, options) => {
+        calls.push({ path, token, options });
+        return { json: async () => (path.includes('/workflows/') ? { workflow_runs: [] } : { artifacts: [] }) };
+      },
+      log: (message) => logs.push(message),
+    }),
+    true,
+  );
+  assert.deepEqual(calls, [
+    {
+      path: '/actions/workflows/boardsesh-ota-deploy.yml/runs?branch=main&per_page=1',
+      token: env.HOMELAB_DISPATCH_TOKEN,
+      options: { method: 'GET' },
+    },
+    { path: '/actions/artifacts?per_page=1', token: env.HOMELAB_DISPATCH_TOKEN, options: { method: 'GET' } },
+  ]);
+  assert.match(logs.at(-1), /preflight passed.*No deployment dispatched/);
+  assert.ok(logs.every((message) => !message.includes(env.HOMELAB_DISPATCH_TOKEN)));
+});
+
+await test('disabled Railway preflight makes no API call and does not claim credential verification', async () => {
+  const logs = [];
+  const checked = await preflightRailwayHosting(
+    { ...env, HOMELAB_DEPLOY_ENABLED: 'false', HOMELAB_DISPATCH_TOKEN: '' },
+    {
+      callApi: async () => {
+        throw new Error('unexpected request');
+      },
+      log: (message) => logs.push(message),
+    },
+  );
+  assert.equal(checked, false);
+  assert.match(logs.at(-1), /preflight not run/);
+  assert.ok(logs.every((message) => !message.includes('preflight passed')));
+});
+
+await test('Railway preflight rejects missing credentials and foreign contexts before any API call', async () => {
+  let calls = 0;
+  for (const patch of [
+    { HOMELAB_DISPATCH_TOKEN: '' },
+    { GITHUB_REF: 'refs/heads/feature' },
+    { GITHUB_REPOSITORY: 'fork/boardsesh' },
+  ]) {
+    await assert.rejects(
+      preflightRailwayHosting(
+        { ...env, ...patch },
+        {
+          callApi: async () => {
+            calls++;
+          },
+          log: () => {},
+        },
+      ),
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+await test('both preflight reads must succeed; permission errors expose only a safe status', async () => {
+  for (const refused of ['/workflows/', '/artifacts']) {
+    const logs = [];
+    await assert.rejects(
+      preflightRailwayHosting(env, {
+        callApi: async (path) => {
+          if (path.includes(refused))
+            throw new Error(`GitHub API HTTP 403 for ${path}: private body ${env.HOMELAB_DISPATCH_TOKEN}`);
+          return { json: async () => ({ workflow_runs: [] }) };
+        },
+        log: (message) => logs.push(message),
+      }),
+      (error) =>
+        /HTTP 403/.test(error.message) &&
+        /Actions: read/.test(error.message) &&
+        !error.message.includes(env.HOMELAB_DISPATCH_TOKEN) &&
+        !error.message.includes('private body'),
+    );
+    assert.ok(logs.every((message) => !message.includes('preflight passed')));
+  }
+});
+
+await test('malformed list and transport responses cannot pass the credential preflight', async () => {
+  for (const field of ['workflow_runs', 'artifacts']) {
+    await assert.rejects(
+      preflightRailwayHosting(env, {
+        callApi: async () => ({ json: async () => ({ workflow_runs: [], artifacts: [], [field]: null }) }),
+        log: () => {},
+      }),
+      /invalid/,
+    );
+  }
+  await assert.rejects(
+    preflightRailwayHosting(env, {
+      callApi: async () => {
+        throw new Error(env.HOMELAB_DISPATCH_TOKEN);
+      },
+      log: () => {},
+    }),
+    (error) => /preflight could not read/.test(error.message) && !error.message.includes(env.HOMELAB_DISPATCH_TOKEN),
+  );
+});
 
 await test('request binds main source, version and digest to a unique sender attempt', () => {
   assert.equal(request.request_id, '1234-2');

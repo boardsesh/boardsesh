@@ -17,10 +17,14 @@ const SHA = /^[0-9a-f]{40}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-export function deploymentRequest(release, env) {
+function requireMain(env) {
   if (env.GITHUB_REF !== 'refs/heads/main' || env.GITHUB_REPOSITORY !== 'boardsesh/boardsesh') {
     throw new Error('OTA deployment requires boardsesh/boardsesh refs/heads/main');
   }
+}
+
+export function deploymentRequest(release, env) {
+  requireMain(env);
   if (env.HOMELAB_DEPLOY_ENABLED !== 'true')
     throw new Error('HOMELAB_DEPLOY_ENABLED must be true; deployment is required');
   if (!env.HOMELAB_DISPATCH_TOKEN) throw new Error('HOMELAB_DISPATCH_TOKEN is missing');
@@ -79,6 +83,39 @@ async function api(path, token, options = {}) {
   });
   if (!response.ok) throw new Error(`GitHub API HTTP ${response.status} for ${path.split('?')[0]}`);
   return response;
+}
+
+/** Prove the receiver's read permissions before the outage, without dispatching anything. */
+export async function preflightRailwayHosting(env, { callApi = api, log = console.log } = {}) {
+  log('OTA hosting remains Railway; Railway Config owns this release.');
+  if (env.HOMELAB_DEPLOY_ENABLED !== 'true') {
+    log('Homelab credential preflight not run: HOMELAB_DEPLOY_ENABLED is not true.');
+    return false;
+  }
+  requireMain(env);
+  if (!env.HOMELAB_DISPATCH_TOKEN) throw new Error('HOMELAB_DISPATCH_TOKEN is missing');
+  for (const [path, field, label] of [
+    [`/actions/workflows/${RECEIVER_WORKFLOW}/runs?branch=main&per_page=1`, 'workflow_runs', 'receiver workflow runs'],
+    ['/actions/artifacts?per_page=1', 'artifacts', 'receiver artifacts'],
+  ]) {
+    let body;
+    try {
+      body = await (await callApi(path, env.HOMELAB_DISPATCH_TOKEN, { method: 'GET' })).json();
+    } catch (error) {
+      // The API wrapper's HTTP status is safe. Never echo response bodies,
+      // transport errors, token values, private run names or artifact metadata.
+      const status = /^GitHub API HTTP (\d{3}) for /.exec(error?.message ?? '')?.[1];
+      throw new Error(
+        `Homelab credential preflight could not read ${label}${status ? ` (HTTP ${status})` : ''}; ` +
+          `HOMELAB_DISPATCH_TOKEN needs Actions: read on ${TARGET_REPOSITORY}, with the receiver registered on main.`,
+      );
+    }
+    if (!Array.isArray(body?.[field])) throw new Error(`Homelab credential preflight received invalid ${label}`);
+  }
+  log(
+    'Homelab credential preflight passed: receiver workflow runs and artifacts are readable. No deployment dispatched.',
+  );
+  return true;
 }
 
 async function receiptFor(run, request, token) {
@@ -153,7 +190,7 @@ export async function dispatchAndWait(
 
 async function main() {
   if (readOtaHosting() === 'railway') {
-    console.log('OTA hosting remains Railway; Railway Config owns this release.');
+    await preflightRailwayHosting(process.env);
     return;
   }
   const release = JSON.parse(readFileSync(new URL('../infra/ota/server.json', import.meta.url), 'utf8'));
