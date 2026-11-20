@@ -286,8 +286,8 @@ function CheckboxChipGroup({
                   value={option.value}
                   defaultChecked={option.selected}
                   sx={{
-                    // Visually hidden, not `display: none` — a `none` control is
-                    // neither submitted nor focusable, and this one must be both.
+                    // Visually hidden keeps this native form control focusable
+                    // while its label supplies the visible pointer target.
                     position: 'absolute',
                     top: 0,
                     left: 0,
