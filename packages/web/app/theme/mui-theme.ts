@@ -77,6 +77,9 @@ const sharedComponents: Components<Theme> = {
         // media query on this element.
         '&:not(:disabled):not(.MuiButton-contained):hover': {
           backgroundColor: 'var(--semantic-selected-hover)',
+          '&.MuiButton-colorPrimary': {
+            color: 'var(--color-primary-hover)',
+          },
         },
       },
       // Contained PRIMARY buttons render the FILL violet (white text), not the

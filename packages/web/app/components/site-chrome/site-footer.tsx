@@ -23,6 +23,7 @@ const LINK_SX = {
   textDecoration: 'none',
   display: 'inline-flex',
   alignItems: 'center',
+  minWidth: 44,
   minHeight: 44,
   fontSize: 14,
   lineHeight: 1.5,
@@ -113,6 +114,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
             onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', '/'))}
             aria-label={t('ariaLabels.home')}
             underline="none"
+            sx={{ display: 'inline-flex', alignItems: 'center', minWidth: 44, minHeight: 44 }}
           >
             <BrandLockup />
           </MuiLink>
@@ -125,6 +127,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
               ariaLabel={t('ariaLabels.startClimbing')}
               placement="footer"
               variant="outlined"
+              sx={{ minHeight: 44 }}
             />
           )}
         </Box>

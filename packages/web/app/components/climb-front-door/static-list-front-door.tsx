@@ -76,11 +76,11 @@ const paginationSx = {
   },
 };
 
-// `minWidth: 0` overrides both the track's `auto` minimum and MUI's 64px button
-// minimum; `maxWidth: 100%` plus wrapping keeps a long label inside its track
-// instead of spilling out of the container.
+// The 44px target floor still overrides MUI's 64px button minimum;
+// `maxWidth: 100%` plus wrapping keeps a long label inside its track.
 const paginationControlSx = {
-  minWidth: 0,
+  minWidth: 44,
+  minHeight: 44,
   maxWidth: '100%',
   whiteSpace: 'normal' as const,
   gridRow: 1,

@@ -73,12 +73,22 @@ const metaSx = {
 
 const chipsSx = { display: 'flex', gap: `${themeTokens.spacing[2]}px`, flexWrap: 'wrap', my: 1 };
 
+const navigationLinkSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minWidth: 44,
+  minHeight: 44,
+  maxWidth: '100%',
+  overflowWrap: 'anywhere' as const,
+};
+
 const paginationSx = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: `${themeTokens.spacing[4]}px`,
   margin: `${themeTokens.spacing[6]}px 0`,
+  '& > a': navigationLinkSx,
 };
 
 const relatedLinksSx = {
@@ -86,6 +96,7 @@ const relatedLinksSx = {
   flexDirection: 'column',
   gap: `${themeTokens.spacing[2]}px`,
   margin: `${themeTokens.spacing[5]}px 0`,
+  '& > a': navigationLinkSx,
 };
 
 /** Below this many sends the card's hero is the climb count, and so is the share title. */
