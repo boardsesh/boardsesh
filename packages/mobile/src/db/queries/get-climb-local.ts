@@ -64,7 +64,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       EXISTS (SELECT 1 FROM pending_mutations mutation WHERE mutation.table_name = 'board_climbs'
         AND mutation.entity_key = 'climb:' || c.board_type || ':' || c.uuid) AS local_write_pending,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.controller_route_uuid, c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${effectiveDisplayDifficultySql(boardName, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,

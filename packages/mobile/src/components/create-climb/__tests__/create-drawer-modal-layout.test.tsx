@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../AccessibleHoldList', () => ({
   AccessibleHoldList: ({ roles, onPaint }: { roles: unknown; onPaint: (id: number) => void }) =>
     createElement(
@@ -213,9 +214,15 @@ function makeController(overrides: Record<string, unknown>): Controller {
     startingCount: 0,
     finishCount: 0,
     focusNameSignal: 0,
-    bleConnected: false,
-    bleConnecting: false,
-    handleToggleBle: vi.fn(),
+    wallControl: {
+      available: false,
+      connected: false,
+      pending: false,
+      onPress: vi.fn(),
+      controlsVisible: false,
+      closeControls: vi.fn(),
+      controlClimbTarget: null,
+    },
     litUpHoldsMap: {},
     handlePaint: vi.fn(),
     selectedBrush: 'HAND',

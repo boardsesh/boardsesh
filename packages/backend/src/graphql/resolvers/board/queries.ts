@@ -1,6 +1,7 @@
-import { eq, asc, and } from 'drizzle-orm';
+import { eq, asc, and, isNotNull } from 'drizzle-orm';
 import type { QueryResolvers } from '@boardsesh/shared-schema/generated';
 import { ANGLES } from '@boardsesh/board-config';
+import { quantumCatalogClimbCondition } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
@@ -27,8 +28,15 @@ export const boardQueries: Pick<QueryResolvers, 'grades' | 'angles'> = {
     }));
   },
 
-  angles: async (_, { boardName }) => {
+  angles: async (_, { boardName, layoutId }) => {
     const validatedBoardName = validateInput(BoardNameSchema, boardName, 'boardName');
+
+    // Quantum's supported angles are catalogue data rather than a fixed
+    // manufacturer-wide table. Return only angles present in the last signed,
+    // successfully imported snapshot; an empty catalogue truthfully yields [].
+    if (validatedBoardName === 'quantum') {
+      return getQuantumCatalogAngles(layoutId);
+    }
 
     // Aurora doesn't sync a per-layout angle table (deliberately excluded —
     // see packages/aurora-sync/src/sync/shared-sync.ts). Every layout for a
@@ -38,3 +46,20 @@ export const boardQueries: Pick<QueryResolvers, 'grades' | 'angles'> = {
     return ANGLES[validatedBoardName].map((angle) => ({ angle }));
   },
 };
+
+/** Angles represented by signed-catalog routes, excluding Boardsesh-authored rows. */
+export async function getQuantumCatalogAngles(layoutId: number): Promise<Array<{ angle: number }>> {
+  const rows = await db
+    .selectDistinct({ angle: dbSchema.boardClimbs.angle })
+    .from(dbSchema.boardClimbs)
+    .where(
+      and(
+        quantumCatalogClimbCondition(),
+        eq(dbSchema.boardClimbs.layoutId, layoutId),
+        eq(dbSchema.boardClimbs.isListed, true),
+        isNotNull(dbSchema.boardClimbs.angle),
+      ),
+    )
+    .orderBy(asc(dbSchema.boardClimbs.angle));
+  return rows.filter((row): row is { angle: number } => row.angle !== null);
+}

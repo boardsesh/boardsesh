@@ -423,6 +423,7 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          controller_route_uuid: tables.climbs.controllerRouteUuid,
           // The sizes this climb fits on; the client's size-compatibility check
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
@@ -488,6 +489,7 @@ export const setterFollowQueries = {
         frames: result.frames || '',
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
+        controllerRouteUuid: result.controller_route_uuid ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
         requiredSetIds: result.required_set_ids ?? null,
         missingHoldCount: result.missing_hold_count ?? null,
@@ -551,6 +553,7 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          controller_route_uuid: tables.climbs.controllerRouteUuid,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
           required_set_ids: tables.climbs.requiredSetIds,
           // How many of the climb's holds have come off the wall — see get-climb.ts.
@@ -621,6 +624,7 @@ export const setterFollowQueries = {
           frames: result.frames || '',
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
+          controllerRouteUuid: result.controller_route_uuid ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
           requiredSetIds: result.required_set_ids ?? null,
           missingHoldCount: result.missing_hold_count ?? null,

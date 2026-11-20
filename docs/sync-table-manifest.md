@@ -288,10 +288,20 @@ composite-keyed sync table must keep this true (or version the encoding).
   published spray climbs, so every cached reader can remove the deleted row (0283).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
+  `controller_route_uuid` (nullable TEXT, schema v15), `is_boardsesh_authored` (nullable INTEGER, schema v15),
   `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`,
   `missing_hold_count` (schema v7), `revision_number` and `holds_revision_number` (schema v11), `updated_at`,
   `sync_seq`.
+- `controller_route_uuid` is the stable Quantum controller route identity, preserved in offline rows so
+  an explicitly selected layer can light a saved climb without a network connection. Other board types
+  leave it NULL. It raises the artifact schema requirement to v15; existing non-Quantum downloads need
+  no re-crawl because they have no controller route identity to backfill. Exact signed geometry is cached
+  separately in the device-only `quantum_geometry` table (schema v16), keyed by layout and size, and is
+  excluded from transferable board snapshots.
+- `is_boardsesh_authored` preserves app origin after account deletion. Quantum roster recovery accepts
+  only explicit false with a NULL user ID; true or missing provenance is unknown, so a stable route UUID
+  cannot certify mutable app geometry. No existing Quantum rows need backfill because this is its first release.
 - `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall, written when
   a hold-edit publish removes a hold the climb uses — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a

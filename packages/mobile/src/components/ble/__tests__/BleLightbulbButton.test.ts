@@ -101,6 +101,11 @@ describe('getBleLightbulbLabelKind', () => {
     expect(getBleLightbulbLabelKind('disconnect', true)).toBe('disconnect');
   });
 
+  it('names explicit controls without promising a disconnect', () => {
+    expect(getBleLightbulbLabelKind('openControls', false)).toBe('openControls');
+    expect(getBleLightbulbLabelKind('openControls', true)).toBe('openControls');
+  });
+
   it('names the relay when the tap puts a climb on a peer wall', () => {
     expect(getBleLightbulbLabelKind('relay', true)).toBe('relay');
   });

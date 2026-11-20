@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({ getBoardVisibilityFlags: async () => ({}) }));
 
 const notFound = vi.hoisted(() =>
   vi.fn(() => {

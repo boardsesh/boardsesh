@@ -285,6 +285,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true) }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => state.autoScanEnabled,
 }));

@@ -36,6 +36,8 @@ import {
 } from '../../src/lib/boards/serial-reuse';
 import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
+import { useAvailableCatalogBoards } from '../../src/hooks/use-board-catalog';
+import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
@@ -142,12 +144,20 @@ export default function CreateBoard() {
   );
   const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
   // Only a preset open names a board type to start on.
-  const initialBoardName = presetRequested ? (toBoardName(params.presetBoardType) ?? undefined) : undefined;
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const requestedBoardName = toBoardName(params.presetBoardType);
+  const initialBoardName =
+    presetRequested && requestedBoardName && isBoardTypeVisible(requestedBoardName) ? requestedBoardName : undefined;
   const builder = useBoardBuilder(null, {
     preset: presetRequested ? presetForBoard : undefined,
     initialBoardName,
     privacyEnabled: privacySettings?.enabled,
   });
+
+  const availableBoards = useAvailableCatalogBoards();
+  useEffect(() => {
+    if (!isBoardTypeVisible(builder.boardName)) builder.selectBoard(availableBoards[0]);
+  }, [builder.boardName, builder.selectBoard, availableBoards, isBoardTypeVisible]);
 
   // Auto-generated default name, e.g. "Marco's Kilter Original 12×12", from the
   // user's display name + config. Used as the placeholder and the create-time

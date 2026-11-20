@@ -33,7 +33,8 @@ export const BOARD_TYPES: readonly BoardName[] = SUPPORTED_BOARDS;
  * partition are gated until SW-05 — so it is fetched and charted but not listed
  * here. SW-11 (#5444) gives the filter a real spray story.
  */
-export const BOARD_FILTER_TYPES: readonly BoardName[] = PICKER_BOARDS;
+// Quantum can carry profile ticks before its browse geometry has hydrated.
+export const BOARD_FILTER_TYPES: readonly BoardName[] = [...PICKER_BOARDS, 'quantum'];
 
 /** Stable ordering for layout series/legends across charts. */
 export const LAYOUT_ORDER = [
@@ -48,6 +49,11 @@ export const LAYOUT_ORDER = [
   'moonboard-4',
   'moonboard-5',
   'woods-1',
+  'quantum-9101',
+  'quantum-9102',
+  'quantum-9103',
+  'quantum-9104',
+  'quantum-9105',
 ];
 
 // Display name overrides for layouts whose constant name doesn't match the
@@ -67,6 +73,11 @@ const LAYOUT_DISPLAY_OVERRIDES: Record<string, string> = {
   // Woods is code-driven: no rows in the Aurora layout tables for `getLayout` to
   // read, so without this the profile charts would label it "Woods (Layout 1)".
   'woods-1': 'Woods Board',
+  'quantum-9101': 'Quantum Board XL',
+  'quantum-9102': 'Quantum Board L',
+  'quantum-9103': 'Quantum Board M',
+  'quantum-9104': 'Quantum Board S Fitness',
+  'quantum-9105': 'Quantum Board Belay Board',
 };
 
 export const getLayoutKey = (boardType: string, layoutId: number | null | undefined): string => {

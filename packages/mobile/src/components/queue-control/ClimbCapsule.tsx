@@ -87,7 +87,7 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   const { openPlay, preparePlay, currentItem, pick } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
-  const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
+  const { inAppBoardConnection, controlAvailable } = useBoardConnectionState();
 
   // The climber's last pick (its mirror flip drawn) or the queue's current
   // (owner decision A). Never the wall's lit climb: that lives in the top "On
@@ -100,7 +100,7 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   const pickBulb = usePickBulb(pick);
   // Show the connect control once a board is bound (the BLE context exists),
   // and not for a pick no board here can light.
-  const hasBoardControl = bluetooth != null && pickBulb?.kind !== 'none';
+  const hasBoardControl = controlAvailable && pickBulb?.kind !== 'none';
   // Only "you are driving the wall" lights the bar up.
   const connected = inAppBoardConnection === 'connectedByMe';
 

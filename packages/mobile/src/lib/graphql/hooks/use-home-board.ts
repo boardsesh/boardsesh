@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useIsBoardTypeVisible } from '../../../hooks/use-board-visibility';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuth } from '../../../providers/auth-provider';
 import { useActiveBoard } from '../use-active-board';
@@ -44,11 +45,16 @@ function boardActivity(board: UserBoard): number {
  */
 export function useHomeBoard(): HomeBoardResult {
   const { isAuthenticated } = useAuth();
-  const { data: activeBoard, isLoading: activeBoardLoading } = useActiveBoard();
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const { data: savedActiveBoard, isLoading: activeBoardLoading } = useActiveBoard();
+  const activeBoard = savedActiveBoard && isBoardTypeVisible(savedActiveBoard.boardType) ? savedActiveBoard : null;
   const { data: myBoardsConn, isLoading: boardsLoading } = useMyBoards(undefined, { enabled: isAuthenticated });
   const { data: profile, isLoading: profileLoading } = useProfile({ enabled: isAuthenticated });
 
-  const boards = myBoardsConn?.boards;
+  const boards = useMemo(
+    () => myBoardsConn?.boards.filter((board) => isBoardTypeVisible(board.boardType)),
+    [myBoardsConn?.boards, isBoardTypeVisible],
+  );
   // Only pay for the per-board-type tick scan when it can actually change the
   // answer: no active board AND more than one owned board to disambiguate.
   const needsTicks = !activeBoard && (boards?.length ?? 0) > 1;
@@ -97,5 +103,5 @@ export function useHomeBoard(): HomeBoardResult {
   // the crew fallback before the tick-based inference has had its inputs.
   const isResolving =
     activeBoardLoading || (!activeBoard && (boardsLoading || (needsTicks && (profileLoading || ticksLoading))));
-  return { board, boards: myBoardsConn?.boards ?? EMPTY_BOARDS, isResolving };
+  return { board, boards: boards ?? EMPTY_BOARDS, isResolving };
 }

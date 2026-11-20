@@ -18,6 +18,7 @@ import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } fro
 import { CreateDraftStatusRow, statusRowStyles } from './CreateDraftStatusRow';
 import { useRateLimitedAnnouncer } from './use-rate-limited-announcer';
 import type { DraftStatusView } from './draft-status-view';
+import type { AuthoringLightbulb } from './use-authoring-wall-lightbulb';
 
 // Looked up dynamically by role below; mark each resolvable key (one per line,
 // namespace-qualified) so the orphan checker keeps them.
@@ -25,13 +26,6 @@ import type { DraftStatusView } from './draft-status-view';
 // i18n-keep climbs.mobile.create.brush.hand
 // i18n-keep climbs.mobile.create.brush.finish
 // i18n-keep climbs.mobile.create.brush.foot
-
-/** The editor's Bluetooth toggle: connect lights the draft, a tap again disconnects. */
-type CreateLightbulb = {
-  connected: boolean;
-  connecting: boolean;
-  onToggle: () => void;
-};
 
 type CreateDrawerActionBarProps = {
   boardName: BoardName;
@@ -57,7 +51,7 @@ type CreateDrawerActionBarProps = {
    * The wall's Bluetooth lightbulb. Omitted on a board with no lights to
    * connect to (a spray wall, #5960), where it could only ever start a connect.
    */
-  lightbulb?: CreateLightbulb;
+  lightbulb?: AuthoringLightbulb;
   /** The persistent "is my work safe?" line, or null for an empty editor. */
   draftStatus: DraftStatusView | null;
   /** The hold heatmap toggle; omitted → no button. */
@@ -319,28 +313,26 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
  * as every bulb does (owner, 2026-11-03; `useBulbDriveTap`), and the bulb says
  * "Stop driving". With no drive it connects or hangs up, as before.
  */
-function CreateBoardLightbulb({ lightbulb }: { lightbulb: CreateLightbulb }) {
+function CreateBoardLightbulb({ lightbulb }: { lightbulb: AuthoringLightbulb }) {
   const { t: tSettings } = useTranslation('settings');
-  const { t: tCommon } = useTranslation('common');
   const { inAppBoardConnection, localConnected, ledless } = useBoardConnectionState();
   const { driving, takeTap } = useBulbDriveTap({
     drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
     linked: localConnected,
     control: 'create_climb',
   });
-  const { onToggle } = lightbulb;
+  const { onPress } = lightbulb;
   const handlePress = useCallback(() => {
     // A stop buzzes light on its own; a dropped tap (just after a stop) does nothing.
     if (takeTap()) return;
     hapticMedium();
-    onToggle();
-  }, [takeTap, onToggle]);
-  let accessibilityLabel = lightbulb.connected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
-  if (driving) accessibilityLabel = tSettings('ble.barControl.stopDrivingLabel');
+    onPress();
+  }, [takeTap, onPress]);
+  const accessibilityLabel = driving ? lightbulb.drivingAccessibilityLabel : lightbulb.accessibilityLabel;
   return (
     <BleLightbulbButton
       isConnected={lightbulb.connected}
-      isScanning={lightbulb.connecting}
+      isScanning={lightbulb.pending}
       onPress={handlePress}
       accessibilityLabel={accessibilityLabel}
       accessibilityTapHint={driving ? tSettings('ble.barControl.stopDrivingHint') : undefined}

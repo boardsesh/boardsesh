@@ -49,6 +49,7 @@ const CLIMB_SEARCH_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   statsAngle
   ascensionist_count
@@ -82,6 +83,7 @@ const CLIMB_DETAIL_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   statsAngle
   ascensionist_count
@@ -1274,6 +1276,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   setter_username
   angle
   ascensionist_count

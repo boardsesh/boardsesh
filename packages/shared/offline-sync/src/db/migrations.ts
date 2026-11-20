@@ -264,6 +264,16 @@ export const MIGRATIONS: Migration[] = [
     statements: [],
     run: ensureMutationQueueDependencies,
   },
+  {
+    // Route identity used by controller-backed catalogs such as Quantum. Kept
+    // in the reference-data row so offline browse can still light a climb.
+    version: 15,
+    statements: [
+      'ALTER TABLE board_climbs ADD COLUMN controller_route_uuid TEXT;',
+      // Unknown provenance must never authorize recovery of mutable route geometry.
+      'ALTER TABLE board_climbs ADD COLUMN is_boardsesh_authored INTEGER;',
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

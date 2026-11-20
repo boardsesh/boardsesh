@@ -81,3 +81,11 @@ describe('getBoardDetailsForBoard (Woods calibration)', () => {
     }
   });
 });
+
+describe('getBoardDetailsForBoard (runtime geometry)', () => {
+  it('fails explicitly instead of treating Quantum as Aurora geometry', () => {
+    expect(() =>
+      getBoardDetailsForBoard({ board_name: 'quantum', layout_id: 9101, size_id: 9201, set_ids: [1] }),
+    ).toThrow(/runtime catalogue data/);
+  });
+});

@@ -7,6 +7,9 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // Controllable active-board read. The whole point of the regression is the
 // async undefined -> board transition, so the test drives it explicitly.
 const activeBoard = vi.hoisted(() => ({ data: undefined as UserBoard | undefined }));
+const quantumProvider = vi.hoisted(() => ({
+  props: null as null | { selectedBoardUuid?: string | null; preferredSerial?: string | null },
+}));
 const provider = vi.hoisted(() => ({ props: undefined as { boardSerialNumber?: string | null } | undefined }));
 // The gym roster behind this is a React Query hook reaching the GraphQL client,
 // which pulls react-native's Flow source into a harness that mocks it narrowly.
@@ -23,6 +26,17 @@ vi.mock('../bluetooth-provider', () => ({
   BluetoothProvider: (props: { children: ReactNode; boardSerialNumber?: string | null }) => {
     provider.props = props;
     return createElement('div', { 'data-testid': 'bluetooth-provider' }, props.children);
+  },
+}));
+
+vi.mock('../quantum-bluetooth-provider', () => ({
+  QuantumBluetoothProvider: (props: {
+    children: ReactNode;
+    selectedBoardUuid?: string | null;
+    preferredSerial?: string | null;
+  }) => {
+    quantumProvider.props = props;
+    return createElement('div', { 'data-testid': 'quantum-bluetooth-provider' }, props.children);
   },
 }));
 
@@ -82,6 +96,28 @@ describe('BluetoothProviderWrapper', () => {
     activeBoard.data = { ...board, serialNumber: 'roster-B' };
     render(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
     expect(provider.props?.boardSerialNumber).toBe('roster-B');
+  });
+
+  it('keeps Quantum inactive across ordinary saved-board serial changes', () => {
+    activeBoard.data = { ...board, serialNumber: 'KILTER-A' };
+    const view = render(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
+    expect(quantumProvider.props?.selectedBoardUuid).toBeNull();
+    expect(quantumProvider.props?.preferredSerial).toBeUndefined();
+    activeBoard.data = { ...board, uuid: 'board-2', serialNumber: 'KILTER-B' };
+    view.rerender(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
+    expect(quantumProvider.props?.selectedBoardUuid).toBeNull();
+    expect(quantumProvider.props?.preferredSerial).toBeUndefined();
+    expect(mountCounter).toHaveBeenCalledOnce();
+  });
+
+  it('passes the selected saved Quantum board identity independently of its model', () => {
+    activeBoard.data = { ...board, boardType: 'quantum', layoutId: 9101, sizeId: 9201, uuid: 'board-A' };
+    const view = render(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
+    expect(quantumProvider.props?.selectedBoardUuid).toBe('board-A');
+    activeBoard.data = { ...activeBoard.data, uuid: 'board-B' };
+    view.rerender(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
+    expect(quantumProvider.props?.selectedBoardUuid).toBe('board-B');
+    expect(mountCounter).toHaveBeenCalledOnce();
   });
 
   it('only mounts the LiveActivityBridge once a board is present', () => {

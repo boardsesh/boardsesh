@@ -263,3 +263,25 @@ describe('the top while one scan runs', () => {
     expect(result.current.top).toBe('at_gym:Bloc[bloc-kilter,bloc-moon,bloc-tension]');
   });
 });
+
+describe('picker visibility scope', () => {
+  it('drops a retained hero immediately when visibility changes', () => {
+    const { result, rerender } = renderHook(({ scope }) => usePickerTopSteadiness('done', 'resolved', scope), {
+      initialProps: { scope: 'enabled' },
+    });
+    const hero = buildPickerTopView(
+      decidePickerTop({
+        phase: 'done',
+        rows: [heard(homeWall)],
+        lookup: 'resolved',
+        activeBoard: null,
+        holdScanLead: false,
+      }),
+      [],
+    );
+    act(() => result.current.record(hero));
+    expect(result.current.drawn?.kind).toBe('hero');
+    rerender({ scope: 'disabled' });
+    expect(result.current.drawn).toBeNull();
+  });
+});

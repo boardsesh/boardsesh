@@ -567,3 +567,18 @@ describe('cache key', () => {
     expect(cacheKeyParts[0]).toContain(ANONYMOUS_DISTINCT_ID);
   });
 });
+
+describe('strict board launch flags', () => {
+  it.each([true, false, 'true', 'false', 'control'])('accepts only an actual legacy boolean (%s)', async (rawFlag) => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { featureFlags: { 'quantum-board': rawFlag } } });
+    const { getServerFeatureFlag } = await loadModule();
+    expect(await getServerFeatureFlag('quantum-board', { distinctId: 'viewer' })).toBe(rawFlag === true);
+  });
+  it('refuses a multivariate v2 payload even when its enrollment is enabled', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: { 'quantum-board': { enabled: true, variant: 'control' } } } });
+    const { getServerFeatureFlag } = await loadModule();
+    expect(await getServerFeatureFlag('quantum-board', { distinctId: 'viewer' })).toBe(false);
+  });
+});

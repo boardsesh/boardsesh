@@ -39,6 +39,7 @@ import {
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
   RecordBoardSerialInputSchema,
+  boardAngleInputSchemaFor,
   UUIDSchema,
   BOARD_ANGLE_VALIDATION_MESSAGE,
   isBoardAngleSupported,
@@ -1921,6 +1922,9 @@ export async function updateBoardRecord(
     throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
       extensions: { code: 'BAD_USER_INPUT' },
     });
+  }
+  if (validatedInput.angle !== undefined) {
+    validateInput(boardAngleInputSchemaFor(board.boardType), validatedInput.angle, 'input.angle');
   }
 
   // Editing a soft-deleted board restores it (see `updateValues.deletedAt`

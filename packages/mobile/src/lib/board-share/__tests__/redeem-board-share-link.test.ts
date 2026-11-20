@@ -20,7 +20,7 @@ const MEMBER_BOARD = { uuid: 'board-uuid', slug: 'renamed-garage' } as unknown a
 const PLAIN_BOARD = { uuid: 'plain', slug: 'the-garage' } as unknown as UserBoard;
 
 beforeEach(() => {
-  request.mockReset().mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Friends Garage' } });
+  request.mockReset().mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Friends Garage', boardType: 'kilter' } });
   confirmJoin.mockReset().mockResolvedValue(true);
   fetchBoardByUuid.mockReset().mockResolvedValue(MEMBER_BOARD);
   credential.current = true;
@@ -140,5 +140,77 @@ describe('fetchBoardFromShareLink', () => {
     await expect(fetchBoardFromShareLink(TOKEN, 'the-garage', fallback, confirmJoin)).resolves.toBeNull();
     expect(fetchBoardByUuid).not.toHaveBeenCalled();
     expect(fallback).not.toHaveBeenCalled();
+  });
+});
+
+describe('board launch eligibility before invite redemption', () => {
+  it('does not prompt or grant membership for a disabled Quantum board', async () => {
+    request
+      .mockReset()
+      .mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Quantum wall', boardType: 'quantum' } });
+    const fallback = vi.fn(async () => PLAIN_BOARD);
+    await expect(
+      fetchBoardFromShareLink(
+        TOKEN,
+        'quantum-wall',
+        fallback,
+        confirmJoin,
+        () => true,
+        (type) => type !== 'quantum',
+      ),
+    ).resolves.toBeNull();
+    expect(confirmJoin).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(fetchBoardByUuid).not.toHaveBeenCalled();
+  });
+
+  it('allows an explicitly enabled Quantum board', async () => {
+    request
+      .mockReset()
+      .mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Quantum wall', boardType: 'quantum' } })
+      .mockResolvedValueOnce({ redeemBoardShareLink: { boardUuid: 'board-uuid', slug: 'quantum-wall' } });
+    await expect(
+      fetchBoardFromShareLink(
+        TOKEN,
+        'quantum-wall',
+        vi.fn(),
+        confirmJoin,
+        () => true,
+        () => true,
+      ),
+    ).resolves.toBe(MEMBER_BOARD);
+    expect(confirmJoin).toHaveBeenCalledWith('Quantum wall');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechecks visibility after a delayed confirmation before issuing any grant', async () => {
+    let enabled = true;
+    request
+      .mockReset()
+      .mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Quantum wall', boardType: 'quantum' } });
+    confirmJoin.mockImplementationOnce(async () => {
+      enabled = false;
+      return true;
+    });
+    await expect(
+      fetchBoardFromShareLink(
+        TOKEN,
+        'quantum-wall',
+        vi.fn(),
+        confirmJoin,
+        () => true,
+        () => enabled,
+      ),
+    ).resolves.toBeNull();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(fetchBoardByUuid).not.toHaveBeenCalled();
+  });
+
+  it('never joins when an older preview cannot establish board-type eligibility', async () => {
+    request.mockReset().mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Unknown wall' } });
+    const fallback = vi.fn(async () => null);
+    await expect(fetchBoardFromShareLink(TOKEN, 'wall', fallback, confirmJoin)).resolves.toBeNull();
+    expect(confirmJoin).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

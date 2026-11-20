@@ -227,6 +227,7 @@ vi.mock('../../lib/analytics', () => ({
 // The real hook needs a QueryClientProvider this suite doesn't mount, so stub it.
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => vi.fn(async () => {}),
+  useActiveBoard: () => ({ data: undefined }),
 }));
 
 // The recorded-config switch path imports the GraphQL HTTP client, which
@@ -244,6 +245,7 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
   },
 }));
 
+vi.mock('../../components/ble/QuantumBleControlSheet', () => ({ QuantumBleControlSheet: () => null }));
 vi.mock('../../components/ble/BleControlSheet', () => ({
   BleControlSheet: ({
     lightAdjacentHoldsEnabled,
@@ -267,6 +269,7 @@ vi.mock('../feature-flags-provider', async (importOriginal) => ({
 }));
 
 vi.mock('../queue-provider', () => ({
+  useQueueData: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem }),
   useQueue: () => ({
     sessionId: queue.sessionId,
     state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items },

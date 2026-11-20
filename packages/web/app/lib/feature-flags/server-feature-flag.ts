@@ -1,3 +1,4 @@
+import { isBoardLaunchFlag } from '@boardsesh/board-config/visibility';
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
@@ -174,13 +175,16 @@ function reportUnevaluableFlag(key: string, resolution: ServerFeatureFlagResolut
  * has stopped serving for the project.
  */
 type PosthogFlagsResponse = {
-  flags?: Record<string, { enabled?: boolean } | undefined>;
+  flags?: Record<string, { enabled?: boolean; variant?: string | null } | undefined>;
   featureFlags?: Record<string, boolean | string | undefined>;
   quotaLimited?: string[];
 };
 
 function readFlagResolution(payload: PosthogFlagsResponse, key: string): ServerFeatureFlagResolution {
   const v2 = payload.flags?.[key];
+  if (isBoardLaunchFlag(key) && (v2?.variant != null || typeof payload.featureFlags?.[key] === 'string')) {
+    return { enabled: false, reason: 'posthog-disabled', detail: null };
+  }
   if (v2 && typeof v2.enabled === 'boolean') {
     return { enabled: v2.enabled, reason: v2.enabled ? 'posthog-enabled' : 'posthog-disabled', detail: null };
   }

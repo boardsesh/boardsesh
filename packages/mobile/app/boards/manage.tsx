@@ -22,6 +22,7 @@ import {
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
 } from '../../src/providers/feature-flags-provider';
+import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { getSyncStatusSnapshot, useSyncStatusMetadata } from '../../src/sync/sync-status';
 import { useDownloadActivity } from '../../src/sync/download-activity-store';
@@ -143,6 +144,7 @@ export default function ManageBoards() {
   // cold start with no signal (and an online profile fetch that simply fails).
   const { userId: storedUserId, isLoading: isStoredUserIdLoading } = useStoredUserId(isAuthenticated && !profile?.id);
   const currentUserId = profile?.id ?? storedUserId;
+  const isBoardTypeVisible = useIsBoardTypeVisible();
   const { data: activeBoard } = useActiveBoard();
   const activeUuid = activeBoard?.uuid;
 
@@ -156,10 +158,14 @@ export default function ManageBoards() {
     isRefetching,
   } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
   const {
-    boards: myBoards,
+    boards: allMyBoards,
     stale: importStatusStale,
     unfinishedWallUuids,
   } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
+  const myBoards = useMemo(
+    () => allMyBoards.filter((board) => isBoardTypeVisible(board.boardType)),
+    [allMyBoards, isBoardTypeVisible],
+  );
 
   const openImport = useCallback(
     (board: UserBoard) => {
@@ -565,7 +571,7 @@ export default function ManageBoards() {
       cachedMyBoards: myBoards,
       activeBoard: activeBoard ?? null,
       downloadedScopeKeys: downloadedScopeKeys ?? [],
-    });
+    }).filter((board) => isBoardTypeVisible(board.boardType));
     if (currentUserId !== undefined) {
       return buildManageItems(rows, currentUserId, activeUuid, {
         ownedHeader: t('mobile.manage.ownedHeader'),
@@ -581,7 +587,17 @@ export default function ManageBoards() {
       isOwned: board.isOwned === true,
       isActive: board.uuid === activeUuid,
     }));
-  }, [shouldUseOfflineList, offlineCards, myBoards, activeBoard, downloadedScopeKeys, activeUuid, currentUserId, t]);
+  }, [
+    shouldUseOfflineList,
+    offlineCards,
+    myBoards,
+    activeBoard,
+    downloadedScopeKeys,
+    activeUuid,
+    currentUserId,
+    t,
+    isBoardTypeVisible,
+  ]);
   // Only take over the screen when there is actually something to show; otherwise the
   // existing loading/error states still tell the more honest story.
   const showOfflineList = shouldUseOfflineList && offlineItems.length > 0;

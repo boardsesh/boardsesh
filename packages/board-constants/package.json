@@ -79,6 +79,11 @@
       "types": "./src/woods-dimensions.ts",
       "import": "./src/woods-dimensions.ts",
       "default": "./src/woods-dimensions.ts"
+    },
+    "./quantum": {
+      "types": "./src/quantum.ts",
+      "import": "./src/quantum.ts",
+      "default": "./src/quantum.ts"
     }
   },
   "scripts": {

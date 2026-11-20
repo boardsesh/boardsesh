@@ -89,7 +89,10 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 
-vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
+  toBoardName: (value: string) => value,
+}));
 vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: () => null }));
 
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));

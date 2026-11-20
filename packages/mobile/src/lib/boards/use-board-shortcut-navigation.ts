@@ -1,3 +1,4 @@
+import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 import { useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useActiveBoard } from '../graphql/use-active-board';
@@ -13,7 +14,8 @@ import type { BoardReturnTo } from './board-return-to';
 export function useBoardShortcutNavigation(returnTo: BoardReturnTo, returnAfterFirstPick = false) {
   const router = useRouter();
   const boardQuery = useActiveBoard();
-  const activeBoard = boardQuery.data;
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const activeBoard = boardQuery.data && !isBoardTypeVisible(boardQuery.data.boardType) ? null : boardQuery.data;
   const hasNoBoard = boardQuery.isSuccess && activeBoard === null;
 
   const browseClimbs = useCallback(() => {
@@ -35,5 +37,5 @@ export function useBoardShortcutNavigation(returnTo: BoardReturnTo, returnAfterF
     void refetch();
   }, [refetch]);
 
-  return { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard };
+  return { boardQuery: { ...boardQuery, data: activeBoard }, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard };
 }

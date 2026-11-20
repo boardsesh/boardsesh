@@ -226,7 +226,7 @@ function queryFooterNote(note: string): HTMLElement | null {
 }
 
 describe('export screen and board choices', () => {
-  it('offers all nine board families in display order, including spray walls', () => {
+  it('offers all ten board families in display order, including spray walls', () => {
     render(<UserDataExportScreen />);
     const [boardGroup, formatGroup] = screen.getAllByRole('radiogroup');
     expect(boardGroup.getAttribute('aria-label')).toBe('export.boardType');
@@ -250,13 +250,13 @@ describe('export screen and board choices', () => {
     expect(getFooterNote('export.expiry')).not.toBeNull();
   });
 
-  it('offers Aurora for its six boards and only Boardsesh for the other three', () => {
+  it('offers Aurora for its six boards and only Boardsesh for the other four', () => {
     render(<UserDataExportScreen />);
     for (const boardType of BOARD_DISPLAY_ORDER) {
       fireEvent.click(screen.getByRole('radio', { name: boardType === 'spray' ? 'export.sprayWalls' : boardType }));
       expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', boardType);
       expect(screen.queryByRole('radio', { name: 'export.auroraFormat' }) !== null).toBe(
-        !['moonboard', 'woods', 'spray'].includes(boardType),
+        !['moonboard', 'woods', 'spray', 'quantum'].includes(boardType),
       );
     }
   });

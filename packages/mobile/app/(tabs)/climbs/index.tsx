@@ -20,6 +20,8 @@ import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
 import { toClimbSearchInput, mergeBoardFilters } from '@boardsesh/climb-filters';
 import { boardSupportsMirroring, getBoardCapabilities } from '@boardsesh/board-config';
+import { buildOccupiedPlacementIndexFromSnapshot } from '@boardsesh/board-layers';
+import { useBoardPresenceLayers } from '@boardsesh/board-presence-react';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../../src/providers/climb-progress-provider';
 import { ActiveAwareClimbListRow } from '../../../src/components/ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
@@ -231,6 +233,8 @@ function ClimbListInner() {
   // difficulty sort is active — `toClimbSearchInput` owns that scoping — so an
   // unfiltered browse is unaffected and stays Redis-cacheable.
   const personalGrades = usePersonalGradesActive();
+  const boardLayers = useBoardPresenceLayers();
+  const occupiedPlacements = useMemo(() => buildOccupiedPlacementIndexFromSnapshot(boardLayers), [boardLayers]);
   const searchInput = useMemo(
     () =>
       mergeBoardFilters(
@@ -241,8 +245,20 @@ function ClimbListInner() {
           { name, personalGrades },
         ),
         queryBoardFilters,
+        occupiedPlacements,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, queryFilters, queryBoardFilters, personalGrades],
+    [
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      name,
+      queryFilters,
+      queryBoardFilters,
+      personalGrades,
+      occupiedPlacements,
+    ],
   );
   const {
     data: searchPages,
@@ -344,6 +360,7 @@ function ClimbListInner() {
   });
   const { handleClimbPress, handlePlayNext, handleOpenClimbActions, handleOpenAddToPlaylist } =
     useClimbSearchActivation({
+      occupiedPlacements,
       filters,
       boardFilters,
       name,
@@ -788,6 +805,7 @@ function ClimbListInner() {
                   boardConfig={boardConfig}
                   currentFilters={filters}
                   currentBoardFilters={boardFilters}
+                  occupiedPlacements={occupiedPlacements}
                   searchName={name}
                   lastUsedGradeId={lastUsedGrade}
                   onSelectionChange={handleLiveFilterSelectionChange}

@@ -298,7 +298,10 @@
         "addAnotherHint": "如果是另一面墙，例如不同岩馆或房间，请选择此项。",
         "cancel": "继续编辑",
         "switchError": "无法切换到这块训练板，请重试。"
-      }
+      },
+      "geometryLoading": "正在加载此型号的岩点位置…",
+      "catalogAnglesLoading": "正在加载目录角度…",
+      "catalogAnglesUnavailable": "目录角度暂不可用。"
     },
     "custom": {
       "board": "训练板",

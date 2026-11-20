@@ -67,6 +67,8 @@ const SAMPLE_VALUES: { [Key in PlaylistFilterParamKey]: PlaylistFilterParams[Key
   projectsOnly: true,
   holdIntegrity: 'intact',
   crossAngleStats: true,
+  occupiedPlacementIds: [1000001],
+  maxOccupiedOverlap: 0,
   gradeSource: 'boardsesh',
   boulders: true,
   routes: true,

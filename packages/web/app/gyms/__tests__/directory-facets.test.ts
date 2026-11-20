@@ -225,7 +225,7 @@ describe('paginationWindow', () => {
 });
 
 describe('the filterable board-type vocabulary', () => {
-  it('covers the eight catalogue boards and excludes spray', () => {
+  it('covers the nine catalogue boards and excludes spray', () => {
     // A spray wall is one climber's own wall, not a board model a gym is found
     // by, so it must never become a `?boardType=` value or a directory facet —
     // even though it has a `BOARD_TYPE_LABELS` row for the places that DO name
@@ -235,6 +235,7 @@ describe('the filterable board-type vocabulary', () => {
       'grasshopper',
       'kilter',
       'moonboard',
+      'quantum',
       'soill',
       'tension',
       'touchstone',
@@ -245,6 +246,14 @@ describe('the filterable board-type vocabulary', () => {
 
   it('drops spray from a requested boardType filter', () => {
     expect(parseDirectoryQuery('all', { boardType: 'spray' }).boardTypes).toEqual([]);
+  });
+
+  it('retains Quantum in a requested boardType filter only after rollout', () => {
+    expect(parseDirectoryQuery('all', { boardType: 'quantum' }).boardTypes).toEqual([]);
+    expect(parseDirectoryQuery('all', { boardType: ' QuAnTuM ', layout: '9101' }).boardTypes).toEqual([]);
+    expect(parseDirectoryQuery('all', { boardType: 'quantum' }, { 'quantum-board': true }).boardTypes).toEqual([
+      'quantum',
+    ]);
   });
 });
 

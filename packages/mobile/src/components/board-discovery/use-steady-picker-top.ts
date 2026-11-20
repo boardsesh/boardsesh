@@ -95,16 +95,23 @@ export type PickerTopSteadiness = {
 };
 
 /** Keeps what one scan led the top with, so the next render holds it (`stabilizePickerTop`). */
-export function usePickerTopSteadiness(phase: PickerScanPhase, lookup: QuickstartLookupState): PickerTopSteadiness {
+export function usePickerTopSteadiness(
+  phase: PickerScanPhase,
+  lookup: QuickstartLookupState,
+  visibilityScope?: unknown,
+): PickerTopSteadiness {
   const stretch = scanStretch(phase);
   // Counts each stretch of one scan's results on screen: a new one starts with
   // every scan, and whenever they leave the screen. A scan ending is the same
   // stretch. Worked out for this render too, so nothing drawn last stretch
   // shows, or is kept, while the count catches up.
-  const [tracked, setTracked] = useState({ stretch, count: 0 });
-  const sameStretch = tracked.stretch === stretch || (tracked.stretch === 'scanning' && stretch === 'done');
+  const [tracked, setTracked] = useState({ stretch, count: 0, visibilityScope });
+  const sameStretch =
+    tracked.visibilityScope === visibilityScope &&
+    (tracked.stretch === stretch || (tracked.stretch === 'scanning' && stretch === 'done'));
   const currentStretch = sameStretch ? tracked.count : tracked.count + 1;
-  if (tracked.stretch !== stretch) setTracked({ stretch, count: currentStretch });
+  if (tracked.stretch !== stretch || tracked.visibilityScope !== visibilityScope)
+    setTracked({ stretch, count: currentStretch, visibilityScope });
   const [drawn, setDrawn] = useState<Drawn | null>(null);
   const holds = stretch !== 'idle';
   const drawnNow = holds && drawn !== null && drawn.stretch === currentStretch ? drawn : null;

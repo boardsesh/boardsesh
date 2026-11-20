@@ -6,6 +6,24 @@ import { useBoardBuilder } from '../use-board-builder';
 // Kilter layout 1 = "Original"; selecting it auto-picks a default size + all its
 // sets, which is the behaviour that lets the per-set toggles stay behind Advanced.
 describe('useBoardBuilder', () => {
+  it('keeps loaded model angles when the selected model, size, or identical board preset is tapped again', () => {
+    const preset = { layoutId: 9101, sizeId: 9201, setIds: [1] };
+    const { result } = renderHook(() => useBoardBuilder(null, { initialBoardName: 'quantum', preset: () => preset }));
+    act(() => result.current.setCatalogAngleOptions([20, 30, 40]));
+    act(() => result.current.setAngle(30));
+
+    for (const reselect of [
+      () => result.current.selectLayout(9101),
+      () => result.current.selectSize(9201),
+      () => result.current.selectBoard('quantum'),
+    ]) {
+      act(reselect);
+      expect(result.current.angles).toEqual([20, 30, 40]);
+      expect(result.current.angle).toBe(30);
+      expect(result.current.canCreate).toBe(true);
+    }
+  });
+
   it('starts a new board public with its location hidden, with or without privacy controls', () => {
     const { result, rerender } = renderHook(({ privacyEnabled }) => useBoardBuilder(null, { privacyEnabled }), {
       initialProps: { privacyEnabled: false },
@@ -63,6 +81,62 @@ describe('useBoardBuilder', () => {
       sizeId: 1,
       setIds: '1',
     });
+  });
+
+  it('selects exact Quantum models and waits for signed catalogue angles', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }),
+    );
+
+    expect(result.current.layouts.map((layout) => layout.id)).toEqual([9101, 9104, 9105]);
+    expect(result.current.angles).toEqual([]);
+    expect(result.current.canCreate).toBe(false);
+    expect(result.current.buildCreateInput()).toBeNull();
+
+    act(() => result.current.setCatalogAngleOptions([45, 20, 45, Number.NaN, 120]));
+    expect(result.current.angles).toEqual([20, 45]);
+    expect(result.current.angle).toBe(20);
+    expect(result.current.canCreate).toBe(true);
+
+    act(() => result.current.selectLayout(9104));
+    expect(result.current.sizeId).toBe(9204);
+    expect(result.current.setIds).toEqual([1]);
+    expect(result.current.angles).toEqual([]);
+    expect(result.current.canCreate).toBe(false);
+
+    act(() => result.current.setCatalogAngleOptions([35]));
+    expect(result.current.buildCreateInput()).toMatchObject({
+      boardType: 'quantum',
+      layoutId: 9104,
+      sizeId: 9204,
+      setIds: '1',
+      angle: 35,
+      isAngleAdjustable: true,
+    });
+  });
+
+  it('preserves a valid Quantum edit angle after catalogue hydration', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'quantum', layoutId: 9101, sizeId: 9203, setIds: '1', angle: 40 }),
+    );
+
+    act(() => result.current.setCatalogAngleOptions([20, 40, 50]));
+
+    expect(result.current.angle).toBe(40);
+    expect(result.current.buildUpdateInput('quantum-board')).toMatchObject({ angle: 40 });
+  });
+
+  it('requires fresh catalog angles when a downloaded edit seed changes models', () => {
+    const first = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: '1', angle: 40 };
+    const { result, rerender } = renderHook(({ seed }) => useBoardBuilder(seed), { initialProps: { seed: first } });
+    act(() => result.current.setCatalogAngleOptions([20, 40]));
+    expect(result.current.canCreate).toBe(true);
+    rerender({ seed: { ...first, layoutId: 9104, sizeId: 9204 } });
+    expect(result.current.angles).toEqual([]);
+    expect(result.current.buildCreateInput()).toBeNull();
+    act(() => result.current.setCatalogAngleOptions([25, 50]));
+    expect(result.current.angle).toBe(25);
+    expect(result.current.buildCreateInput()).toMatchObject({ layoutId: 9104, sizeId: 9204, angle: 25 });
   });
 
   it('resets downstream selections when the board changes', () => {

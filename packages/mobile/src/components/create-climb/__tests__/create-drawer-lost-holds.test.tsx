@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
@@ -123,6 +124,15 @@ const boardHolds = { holdTargets: [], boardWidth: 650, boardHeight: 1000 };
 type Controller = Parameters<typeof CreateDrawer>[0]['controller'];
 
 const controller = {
+  wallControl: {
+    available: false,
+    connected: false,
+    pending: false,
+    onPress: vi.fn(),
+    controlsVisible: false,
+    closeControls: vi.fn(),
+    controlClimbTarget: null,
+  },
   name: 'Old blue remix',
   setName: vi.fn(),
   focusNameSignal: 0,

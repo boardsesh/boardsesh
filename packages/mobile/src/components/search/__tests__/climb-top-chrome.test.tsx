@@ -336,6 +336,11 @@ vi.mock('../../../lib/boards/use-set-board-angle', () => ({
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ctrl.bluetooth,
 }));
+vi.mock('../../../providers/quantum-bluetooth-context', () => ({
+  useOptionalQuantumBluetoothState: () => null,
+  useOptionalQuantumBluetoothActions: () => null,
+}));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../providers/ble-control-sheet-provider', () => ({
   useBleControlSheet: () => ({ open: vi.fn(), close: vi.fn() }),
 }));

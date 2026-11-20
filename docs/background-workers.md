@@ -390,9 +390,10 @@ module. The module declares:
 | `community-monthly-stats` | `batch` | 900 s | 1, after 300 s | 20 h | `months`, `+retireMonths` when set, `:dry-run` on a dry run (`2` daily, `13+1` Mondays) |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
-| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 55 800 s (the fan-out budget) | `aurora` / `kilter` |
-| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 55 800 s (the fan-out budget) | the board |
-| `kilter-catalog-sync` | `routine-provider` | 7200 s (heartbeat 300 s) | 1, after 300 s | 55 800 s (the fan-out budget) | `kilter` |
+| `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 57 060 s (the fan-out budget) | `aurora` / `kilter` |
+| `aurora-shared-sync` | `routine-provider` | 3600 s (heartbeat 300 s) | 1, after 300 s | 57 060 s (the fan-out budget) | the board |
+| `kilter-catalog-sync` | `routine-provider` | 7200 s (heartbeat 300 s) | 1, after 300 s | 57 060 s (the fan-out budget) | `kilter` |
+| `quantum-catalog-sync` | `routine-provider` | 600 s (heartbeat 300 s) | 1, after 60 s | 57 060 s (the fan-out budget) | `quantum` |
 | `moonboard-locations-sync` | `routine-provider` | 1800 s (heartbeat 120 s) | 1, after 600 s | 24 h | `moonboard` |
 | `climb-stats-self-heal` | `maintenance-delivery` | 900 s (heartbeat 120 s) | 1, after 300 s | 1 h | `climb-stats` |
 | `user-data-export` | `maintenance-delivery` | 300 s (heartbeat 30 s) | 1, after 15 s | 30 min | `userId:boardType:ISO-week` |
@@ -937,8 +938,8 @@ clears the control rows.
 
 ## Routine provider sync
 
-Five families take over what the Aurora and Kilter daemons do on their own
-clock, plus MoonBoard's locations, which had no schedule at all. All run on the
+Six families cover the Aurora and Kilter daemon work, MoonBoard's locations,
+the Quantum catalog and the stats self-heal. All run on the
 `routine-provider` worker except the self-heal, which runs on
 `maintenance-delivery`. Worker startup refuses a role that serves
 `provider-routine-cycle`, `aurora-shared-sync` or `kilter-catalog-sync` without
@@ -950,6 +951,7 @@ Kilter); MoonBoard's credentials are optional.
 | `provider-routine-cycle` | `*/5 * * * *` | `{ provider: 'aurora' }`, `{ provider: 'kilter' }` | Syncs the next due credentials of one provider |
 | `aurora-shared-sync` | `7 * * * *` | one per Aurora board but Kilter, least recently synced first | Shared `/sync`, history snapshot, gym locations, one wall-crawl slice |
 | `kilter-catalog-sync` | `23 */6 * * *` | one | Kilter catalog, weekly stats repair, weekly history snapshot |
+| `quantum-catalog-sync` | `43 */6 * * *` | one | Bootstraps and applies scoped catalogue deltas directly from eWalls |
 | `moonboard-locations-sync` | `41 3 * * *` | one | MoonBoard gyms and boards |
 | `climb-stats-self-heal` | `13 * * * *` | one | Re-derives stats rows a dropped or deferred recompute left behind |
 
@@ -998,8 +1000,8 @@ they were queued. The arithmetic that keeps the board-wide jobs moving:
   maximum). The budget is soft: the credential running when it passes
   finishes, up to the lease. So each cycle takes 120 s plus that last
   credential's overrun, and 2 x 120 s plus the overruns has to fit the 300 s
-  window with room left for `aurora-shared-sync`, `kilter-catalog-sync` and
-  `moonboard-locations-sync`;
+  window with room left for `aurora-shared-sync`, `kilter-catalog-sync`,
+  `quantum-catalog-sync` and `moonboard-locations-sync`;
 - those are singleton-keyed (one queued per board), so a board-wide job
   queued at :07 waits for at most the cycles queued before it, never for the
   cycles queued after it.
@@ -1012,12 +1014,12 @@ with `ROUTINE_CYCLE_BUDGET_MS` above 120 000, and the error states this
 arithmetic; lower is safer.
 
 The run's absolute deadline is the full-fan-out budget
-(`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, 13.5 hours today), not the
+(`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, 15 hours 51 minutes today), not the
 lease's 10 minutes: the routine worker runs one job at
 a time, and a cycle queued just after :07 waits behind the whole hourly
 `aurora-shared-sync` fan-out, one run for every board in `AURORA_BOARDS` except
-Kilter (and the `kilter-catalog-sync` at :23), each with an
-hour's lease, at the same priority. With a shorter deadline such a cycle would
+Kilter, the `kilter-catalog-sync` at :23 and the `quantum-catalog-sync` at :43,
+with their own leases and retries at the same priority. With a shorter deadline such a cycle would
 already be past it when fetched and fail at claim, and the later ticks would
 coalesce onto that doomed run. A cycle that waited that long simply runs late;
 the next one is queued behind it (one queued plus one active per provider). A
@@ -1056,15 +1058,27 @@ one is 5 minutes away.
 except Kilter at :07, least recently synced board first (by its
 `board_shared_syncs` cooldown stamp; never-run boards lead). The routine worker
 runs one job at a time, so the last board can wait behind every other board's
-run and the Kilter catalog's. Aurora has a one-hour lease, Kilter a two-hour
-lease, and each may retry once. The deadline (`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, in
-`workers/families/fan-out-budget.ts`) is derived from both families' own
-options: boards x worst(shared) + worst(catalog) + an hour of slack for the
-routine cycles, where worst = lease x (1 + retryLimit) + retryDelay x
-retryLimit. Five boards give 5 x 7500 + 14 700 + 3600 = 55 800 s, 15.5 hours. A
+run and both catalogs. Aurora has a one-hour lease, Kilter a two-hour
+lease and Quantum a ten-minute lease; each may retry once. The deadline
+(`BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS`, in `workers/families/fan-out-budget.ts`)
+is derived from the families' own options: boards x worst(shared) +
+worst(kilter) + worst(quantum) + an hour of slack for the routine cycles,
+where worst = lease x (1 + retryLimit) + retryDelay x retryLimit.
+Five boards give 5 x 7500 + 14 700 + 1260 + 3600 = 57 060 s. A
 late board runs late instead of expiring at claim, and a test fails if the
-options ever outgrow the budget. The Kilter catalog (queued at :23) and the routine
-cycle can wait behind the same runs, so they carry the same deadline.
+options ever outgrow the budget. Both catalogs and the routine cycle can wait
+behind the same runs, so they carry the same deadline.
+
+`quantum-catalog-sync` owns the Quantum refresh schedule; there is no separate
+Quantum daemon. The acquisition package reads the direct eWalls API through an
+explicitly configured shared-catalogue identity. Bounded bootstrap pagination
+must complete before publication; later reads use an opaque per-model server
+checkpoint. Acquisition runs outside transactions; import
+batches and the `board_shared_syncs.metadata` checkpoint use the job's attempt
+fence. Bundled hardware geometry must match before a catalog can be accepted.
+Personal account collections and outbound uploads are separate from this shared
+catalogue job. Credential configuration, scope rebinding, and remaining partner
+validation are described in [quantumboard.md](quantumboard.md).
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the

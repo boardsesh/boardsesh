@@ -611,6 +611,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     ): BoardConnectionHolder
 
     """
+    Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+    controller reports readback. Controller identities are never exposed.
+    """
+    boardLayers(boardId: Int!, boardUuid: ID): BoardLayersSnapshot
+
+    """
     Redacted "Up next" snapshot of the party-session queue bound to a shared
     board, for anonymous public displays (gym kiosks). Auth-optional; a board
     the caller may not read is NOT_FOUND (same existence hiding as

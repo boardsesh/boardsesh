@@ -57,6 +57,8 @@ const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] 
   { version: 11, table: 'board_climbs', column: 'revision_number' },
   { version: 11, table: 'board_climbs', column: 'holds_revision_number' },
   { version: 12, table: 'board_climbs', column: 'retired_by_reset' },
+  { version: 15, table: 'board_climbs', column: 'controller_route_uuid' },
+  { version: 15, table: 'board_climbs', column: 'is_boardsesh_authored' },
 ];
 
 async function rollBackAlterColumnsAbove(
@@ -67,6 +69,27 @@ async function rollBackAlterColumnsAbove(
     if (added.version <= version) continue;
     await database.execAsync(`ALTER TABLE ${added.table} DROP COLUMN ${added.column}`);
   }
+}
+
+async function createDatabaseAtVersion(version: number): Promise<ReturnType<typeof createTestDatabase>> {
+  const db = createTestDatabase();
+  await db.execAsync(
+    'CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
+  );
+
+  for (const migration of MIGRATIONS.filter((candidate) => candidate.version <= version)) {
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      for (const statement of migration.statements) {
+        await transaction.execAsync(statement);
+      }
+      await migration.run?.(transaction);
+      await transaction.runAsync('INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)', [
+        migration.version,
+      ]);
+    });
+  }
+
+  return db;
 }
 
 describe('runMigrations', () => {
@@ -95,7 +118,7 @@ describe('runMigrations', () => {
       expect(indexes.map((index) => index.name)).toEqual(
         expect.arrayContaining(['idx_pending_mutations_entity', 'idx_pending_mutations_dependency']),
       );
-      expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+      expect(ARTIFACT_SCHEMA_VERSION).toBe(15);
       expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(13);
       await runMigrations(database);
       expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM pending_mutations')).toEqual({ count: 1 });
@@ -462,6 +485,7 @@ describe('runMigrations', () => {
         ('kilter', 'b', 40, 7), ('kilter', 'a', 40, 7), ('kilter', 'c', 40, 90), ('kilter', 'd', 40, NULL),
         ('kilter', 'f', 40, 0), ('kilter', 'c', 45, 1), ('tension', 'e', 40, 500);
     `);
+    await rollBackAlterColumnsAbove(upgradedDb, 12);
     await upgradedDb.runAsync('UPDATE schema_version SET version = 12 WHERE id = 1');
     expect(await rankingIndex(upgradedDb)).toBeNull();
     await runMigrations(upgradedDb);
@@ -508,6 +532,26 @@ describe('runMigrations', () => {
     }
   });
 
+  it('v15 adds controller identity and nullable provenance on fresh and v14-stamped databases', async () => {
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    expect(await tableColumns(freshDb, 'board_climbs')).toContain('controller_route_uuid');
+    expect(await tableColumns(freshDb, 'board_climbs')).toContain('is_boardsesh_authored');
+
+    const upgradedDb = await createDatabaseAtVersion(14);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('controller_route_uuid');
+    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('is_boardsesh_authored');
+    await runMigrations(upgradedDb);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('controller_route_uuid');
+    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('is_boardsesh_authored');
+    await upgradedDb.runAsync("INSERT INTO board_climbs (uuid, board_type) VALUES ('unknown-provenance', 'quantum')");
+    expect(
+      await upgradedDb.getFirstAsync('SELECT is_boardsesh_authored FROM board_climbs WHERE uuid = ?', [
+        'unknown-provenance',
+      ]),
+    ).toEqual({ is_boardsesh_authored: null });
+  });
+
   it('applies a newly appended migration on top of an older version', async () => {
     const db = createTestDatabase();
 
@@ -541,8 +585,8 @@ describe('runMigrations', () => {
 });
 
 describe('ARTIFACT_SCHEMA_VERSION', () => {
-  it('is the last migration that changed an artifact table: v12, the full-reset retired flag', () => {
-    expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+  it('is the last migration that changed an artifact table: v15, the Quantum controller route identity', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(15);
   });
 
   it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {

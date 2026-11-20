@@ -5,7 +5,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { useVisibleBoardTypes } from '@/app/lib/boards/use-visible-board-types';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
@@ -31,6 +31,7 @@ const LINK_SX = {
 type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean };
 
 export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
+  const visibleBoards = useVisibleBoardTypes();
   const { t } = useTranslation('common');
   const { t: consentTranslation } = useTranslation('consent');
   const { openChoices } = useConsent();
@@ -100,9 +101,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
       ],
     },
   ];
-  const boards = SUPPORTED_BOARDS.filter((board) => board !== 'spray')
-    .map(boardTypeLabel)
-    .join(', ');
+  const boards = visibleBoards.map(boardTypeLabel).join(', ');
   return (
     <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>

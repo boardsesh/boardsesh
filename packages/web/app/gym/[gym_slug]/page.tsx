@@ -31,6 +31,8 @@ import GymPopularClimbPreview, {
 } from '@/app/components/gym-entity/gym-popular-climb-preview';
 import { gymMapsUrl } from '@/app/lib/gym-maps-url';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
+import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
@@ -130,6 +132,12 @@ const fetchGymBoards = cache(async (gymUuid: string, token: string | undefined):
   }
 });
 
+async function visibleGymBoards(boards: UserBoard[]): Promise<UserBoard[]> {
+  if (boards.every((board) => isBoardTypeVisible(board.boardType))) return boards;
+  const flags = await getBoardVisibilityFlags();
+  return boards.filter((board) => isBoardTypeVisible(board.boardType, flags));
+}
+
 /**
  * The gym's spray walls, as its members and the open web respectively may see them.
  *
@@ -212,7 +220,8 @@ async function buildGymShareCard(
   locale: string,
   t: KioskTranslate,
 ): Promise<{ ogTitle: string; ogDescription: string; imagePath?: string }> {
-  const boards = await fetchGymBoards(gym.uuid, undefined);
+  const roster = await fetchGymBoards(gym.uuid, undefined);
+  const boards = await visibleGymBoards(roster);
   const boardTypes = [...new Set(boards.map((board) => board.boardType))];
   const labels = boardTypes.map(boardTypeLabel);
 
@@ -237,7 +246,8 @@ async function buildGymShareCard(
   return {
     ogTitle: labels.length > 0 ? t('gymPage.ogTitle', { gymName: gym.name, boards: labels.join(' + ') }) : gym.name,
     ogDescription: gym.description?.trim() || generated,
-    ...(imageUrl ? { imagePath: imageUrl } : {}),
+    // The public image renderer reads the full roster independently.
+    ...(imageUrl && boards.length === roster.length ? { imagePath: imageUrl } : {}),
   };
 }
 
@@ -325,12 +335,14 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
+  const [kiosk, roster, gymSprayWalls, discoveryBoards] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
     fetchGymSprayWalls(gym.uuid, token),
     getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
   ]);
+  const allBoards = await visibleGymBoards(roster);
+  const visibleBoardCount = Math.max(0, gym.boardCount - (roster.length - allBoards.length));
   const sprayWalls = gymSprayWalls ?? [];
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
     (board) =>
@@ -500,11 +512,11 @@ export default async function GymPage(props: GymRouteProps) {
             )}
 
             <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
-              {gym.boardCount > 0 && (
+              {visibleBoardCount > 0 && (
                 <GymStatChip
                   icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
-                  value={gym.boardCount}
-                  label={tBoards('gymEntity.stats.boards', { count: gym.boardCount })}
+                  value={visibleBoardCount}
+                  label={tBoards('gymEntity.stats.boards', { count: visibleBoardCount })}
                 />
               )}
               {gym.memberCount > 0 && (

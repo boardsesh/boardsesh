@@ -1,4 +1,5 @@
 import { AccessibleTextInput as TextInput } from '../../src/components/AccessibleTextInput';
+import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
 import { PressableSurface } from '../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -129,8 +130,17 @@ export default function GymDiscovery() {
   // `viewCenter` is the authoritative map/query center (a searched place or a panned
   // location); `searchLabel` drives the "Showing X" caption. Filters apply on submit
   // so typing doesn't fire a request per keystroke.
+  const isBoardTypeVisible = useIsBoardTypeVisible();
   const [inputText, setInputText] = useState('');
-  const [appliedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
+  const [storedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
+  const appliedFilter = useMemo(() => {
+    if (storedFilter.boardTypes?.some((type) => !isBoardTypeVisible(type))) {
+      const boardTypes = storedFilter.boardTypes.filter(isBoardTypeVisible);
+      return { ...clearWallFinderChipFilters(storedFilter), boardTypes };
+    }
+    return storedFilter;
+  }, [storedFilter, isBoardTypeVisible]);
+  if (storedFilter !== appliedFilter) setAppliedFilter(appliedFilter);
   const [viewCenter, setViewCenter] = useState<Coords | null>(null);
   const [searchLabel, setSearchLabel] = useState<string | null>(null);
 
@@ -214,10 +224,17 @@ export default function GymDiscovery() {
   }, [refetchGyms, refetchBoards, search.center, search.filter.name]);
 
   const gyms = useMemo(
-    () => (gymConnection?.gyms ?? []).filter((gym) => gym.latitude != null && gym.longitude != null),
-    [gymConnection?.gyms],
+    () =>
+      (gymConnection?.gyms ?? [])
+        .filter((gym) => gym.latitude != null && gym.longitude != null)
+        .map((gym) => ({ ...gym, boardTypes: gym.boardTypes.filter(isBoardTypeVisible) }))
+        .filter((gym) => !search.filter.multiBoardTypeOnly || gym.boardTypes.length > 1),
+    [gymConnection?.gyms, isBoardTypeVisible, search.filter.multiBoardTypeOnly],
   );
-  const boards = useMemo(() => boardConnection?.boards ?? [], [boardConnection?.boards]);
+  const boards = useMemo(
+    () => (boardConnection?.boards ?? []).filter((board) => isBoardTypeVisible(board.boardType)),
+    [boardConnection?.boards, isBoardTypeVisible],
+  );
 
   // Boards not attached to a gym still deserve discovery — surface them as their
   // own pins + list section so consolidating onto the gym map loses nothing.

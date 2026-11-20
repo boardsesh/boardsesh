@@ -1,4 +1,4 @@
-import { ANGLES, toBoardName } from '@boardsesh/board-config';
+import { ANGLES, supportsStaticBoardRender, toBoardName } from '@boardsesh/board-config';
 import { isIndexableBoardType } from './indexable-boards';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { popularConfigListUrl } from '@/app/lib/url-utils';
@@ -56,7 +56,7 @@ export function boardConfigsToItems(configs: readonly PopularBoardConfig[]): Sit
 
   for (const config of configs) {
     const boardName = toBoardName(config.boardType);
-    if (!boardName) continue;
+    if (!boardName || !supportsStaticBoardRender(boardName)) continue;
 
     // Never submit a private board type for crawling (see `isIndexableBoardType`).
     if (!isIndexableBoardType(config.boardType)) continue;

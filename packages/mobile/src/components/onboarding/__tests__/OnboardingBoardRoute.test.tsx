@@ -48,6 +48,7 @@ vi.mock('../../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: undefined, isLoading: false }),
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => envCtrl.offlineDownloadsEnabled,
 }));
 vi.mock('../../../offline/use-confirm-board-download', () => ({

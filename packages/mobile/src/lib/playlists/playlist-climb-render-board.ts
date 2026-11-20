@@ -4,7 +4,12 @@ import {
   type BoardCompatibilityTarget,
   type ClimbCompatibilityInput,
 } from '@boardsesh/board-config';
-import { getProductSize, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
+import {
+  getProductSize,
+  getSetsForLayoutAndSize,
+  getSizesForLayoutId,
+  hasProductSizeEdges,
+} from '@boardsesh/board-constants/product-sizes';
 import { getBoardRenderData } from '../board-details';
 import { ensureSprayWallLoaded, sprayCacheToken } from '../spray/spray-wall-registry';
 import { getBoardConfigForClimb } from './board-details-for-playlist';
@@ -156,12 +161,13 @@ function resolveUpsizedRenderBoard(
 ): PlaylistClimbRenderBoardResult | null {
   const boardName = activeBoard.boardName as BoardName;
   const activeSize = getProductSize(boardName, activeBoard.sizeId);
-  if (!activeSize) return null;
+  if (!activeSize || !hasProductSizeEdges(activeSize)) return null;
 
   const activeArea = (activeSize.edgeRight - activeSize.edgeLeft) * (activeSize.edgeTop - activeSize.edgeBottom);
   const activeSetIds = parseSetIds(activeBoard.setIds);
 
   const candidates = getSizesForLayoutId(boardName, activeBoard.layoutId)
+    .filter(hasProductSizeEdges)
     .filter((size) => size.id !== activeBoard.sizeId)
     .map((size) => ({
       size,

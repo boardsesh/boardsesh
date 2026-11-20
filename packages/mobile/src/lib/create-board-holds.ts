@@ -3,7 +3,7 @@ import type { BoardEdges } from '@boardsesh/climb-filters';
 import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 import { woodsSizeIdToDimension } from '@boardsesh/board-config';
 import { getBoardRenderData } from './board-details';
-import { ensureSprayWallLoaded, sprayCacheToken } from './spray/spray-wall-registry';
+import { ensureBoardGeometryLoaded, getBoardGeometryVersion } from './board-geometry-adapters';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
@@ -26,7 +26,7 @@ export type BoardHoldTarget = { id: number; cx: number; cy: number; r: number };
  * "this board's holds are a runtime fact" from "this board's holds shipped in the
  * binary".
  */
-export type CreateBoardFamily = 'aurora' | 'moonboard' | 'woods' | 'spray';
+export type CreateBoardFamily = 'aurora' | 'moonboard' | 'woods' | 'spray' | 'quantum';
 
 export type CreateBoardHolds = BoardEdges & {
   holdTargets: BoardHoldTarget[];
@@ -46,10 +46,7 @@ const CREATE_BOARD_HOLDS_CACHE_LIMIT = 16;
 const createBoardHoldsCache = new Map<string, CreateBoardHolds | null>();
 
 function createBoardHoldsCacheKey(cfg: CreateBoardHoldsConfig): string {
-  // Empty for every catalogue board; the wall version for a spray wall, so a
-  // reset cannot be answered out of this memo with the holds that came off.
-  const sprayToken = sprayCacheToken(cfg.boardName, cfg.layoutId);
-  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}${sprayToken}`;
+  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}-${getBoardGeometryVersion(cfg)}`;
 }
 
 /**
@@ -66,6 +63,7 @@ function resolveCreateBoardFamily(boardName: BoardName): CreateBoardFamily {
   if (boardName === 'moonboard') return 'moonboard';
   if (boardName === 'woods') return 'woods';
   if (boardName === 'spray') return 'spray';
+  if (boardName === 'quantum') return 'quantum';
   return 'aurora';
 }
 
@@ -151,7 +149,7 @@ export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHol
   // climb set on somebody else's wall, or a cold start straight into the create
   // screen. Ask for it; a no-op for a catalogue board and for a wall already in
   // hand.
-  if (cfg.boardName === 'spray') ensureSprayWallLoaded(cfg.layoutId);
+  ensureBoardGeometryLoaded(cfg);
 
   const cacheKey = createBoardHoldsCacheKey(cfg);
   if (createBoardHoldsCache.has(cacheKey)) {

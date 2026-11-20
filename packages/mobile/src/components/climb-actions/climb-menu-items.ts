@@ -9,7 +9,7 @@
 // Menus offer no Preview: every list tap already opens one.
 import type { TFunction } from 'i18next';
 import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
+import { getBoardCapabilities, supportsPublicClimbLinks, toAuroraBoardName } from '@boardsesh/board-config';
 import { canEditClimb } from '@boardsesh/create-climb-react';
 import type { useTheme } from '../../providers/theme-provider';
 import { ownClimbIsReportable } from '../play-drawer/can-report-climb';
@@ -140,7 +140,7 @@ export function buildClimbMenuItems(
   // A draft is visible to its setter alone, so a link to it opens nowhere for
   // anyone it is sent to (#5960).
   const isDraft = climb.is_draft === true;
-  if (!isDraft) push('share', t('share.actionLabel'), 'share', accentColor);
+  if (!isDraft && supportsPublicClimbLinks(boardName)) push('share', t('share.actionLabel'), 'share', accentColor);
   // Only boards with an official app page get the row.
   if (climbAuroraAppUrl(boardName, climb)) {
     push('openInApp', t('mobile.climbActions.openInApp'), 'open.external', accentColor);
