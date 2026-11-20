@@ -19,8 +19,13 @@ import { getBoardGalleryLayouts } from './board-gallery';
 import styles from './boards-gallery.module.css';
 
 export async function generateMetadata() {
-  const { t, locale } = await getServerTranslation('website');
-  return createPageMetadata({ title: t('boardsTitle'), description: t('boardsDescription'), path: '/boards', locale });
+  const { t, locale } = await getServerTranslation(['website', 'common']);
+  return createPageMetadata({
+    title: t('common:footer.journeys.supportedBoards'),
+    description: t('boardsDescription'),
+    path: '/boards',
+    locale,
+  });
 }
 
 export default async function SupportedBoardsPage() {
@@ -41,7 +46,7 @@ export default async function SupportedBoardsPage() {
                     src={resolveStaticAssetUrl(layout.src)}
                     width={layout.width}
                     height={layout.height}
-                    alt={t('boardLayoutAlt', { board: boardTypeLabel(board), layout: layout.layoutName })}
+                    alt={t('boardLayoutAlt', { board: boardTypeLabel(board), layout: layout.caption })}
                     loading={board === 'kilter' && index === 0 ? 'eager' : 'lazy'}
                     fetchPriority={board === 'kilter' && index === 0 ? 'high' : undefined}
                     className={styles.image}

@@ -16,7 +16,11 @@ type BoardLayoutRailProps = {
 
 export default function BoardLayoutRail({ labelledBy, previousLabel, nextLabel, children }: BoardLayoutRailProps) {
   const scrollerRef = useRef<HTMLUListElement>(null);
-  const [edges, setEdges] = useState({ overflow: false, start: true, end: false });
+  const [edges, setEdges] = useState<{ overflow: boolean | null; start: boolean; end: boolean }>({
+    overflow: null,
+    start: true,
+    end: false,
+  });
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -70,11 +74,12 @@ export default function BoardLayoutRail({ labelledBy, previousLabel, nextLabel, 
         component="ul"
         role="list"
         aria-labelledby={labelledBy}
-        tabIndex={0}
+        // Keep native keyboard scrolling before hydration; measured fitting lists need no extra tab stop.
+        tabIndex={edges.overflow === false ? undefined : 0}
         ref={scrollerRef}
         className={styles.scroller}
         onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return;
+          if (!edges.overflow || event.target !== event.currentTarget) return;
           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
             event.preventDefault();
             move(event.key === 'ArrowLeft' ? -1 : 1);
