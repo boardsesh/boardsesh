@@ -244,6 +244,28 @@ export type NativeBuildRun = {
 };
 export type NativeRecovery = { action: 'done' | 'wait' | 'dispatch' | 'inspect'; reason: string; runId?: number };
 
+/** Queued successors cannot block; every completed matching run may hide an uncertain upload. */
+export function nativeGateAdmissionRuns(
+  runs: readonly NativeBuildRun[],
+  currentRunId: number,
+  currentAttempt: number,
+): { activeRun?: NativeBuildRun; inspectRuns: NativeBuildRun[] } {
+  if (
+    !Number.isSafeInteger(currentRunId) ||
+    currentRunId <= 0 ||
+    !Number.isSafeInteger(currentAttempt) ||
+    currentAttempt <= 0
+  )
+    throw new Error('Native gate admission needs a valid GitHub run ID and attempt.');
+  const inspectRuns = runs.filter(
+    (run) => run.status === 'completed' || run.id < currentRunId || (run.id === currentRunId && currentAttempt > 1),
+  );
+  return {
+    activeRun: inspectRuns.find((run) => run.id < currentRunId && run.status !== 'completed'),
+    inspectRuns,
+  };
+}
+
 export type PreparedNativeSnapshot = {
   mainSha: string;
   stampSha: string | null;
@@ -300,22 +322,25 @@ export function nativeRecoveryDecision(input: {
   taggedBuilds: readonly TaggedNativeBuild[];
   runs: readonly NativeBuildRun[];
   uploadAttempted?: boolean;
+  uploadAttemptedRunId?: number;
+  relatedStampShas?: readonly string[];
   now: number;
 }): NativeRecovery {
   if (exactNativeBuilds(input.taggedBuilds, input.platform, input.stamp).length > 0)
     return { action: 'done', reason: 'The exact stamped binary is tagged.' };
-  const matching = input.runs
-    .filter((run) => run.title === nativeBuildRunName(input.platform, input.stamp.sha))
-    .sort((left, right) => right.id - left.id);
+  const relatedRunNames = new Set(
+    [input.stamp.sha, ...(input.relatedStampShas ?? [])].map((source) => nativeBuildRunName(input.platform, source)),
+  );
+  const matching = input.runs.filter((run) => relatedRunNames.has(run.title)).sort((left, right) => right.id - left.id);
   const active = matching.find((run) => run.status !== 'completed');
   if (active)
-    return { action: 'wait', reason: 'A build of this exact stamp is already queued or running.', runId: active.id };
+    return { action: 'wait', reason: 'A build of this native runtime is already queued or running.', runId: active.id };
   const latest = matching[0];
   if (latest && input.uploadAttempted)
     return {
       action: 'inspect',
       reason: 'An upload started without a final build tag. Reconcile that upload before rebuilding.',
-      runId: latest.id,
+      runId: input.uploadAttemptedRunId ?? latest.id,
     };
   if (latest && input.now - Date.parse(latest.createdAt) < 60 * 60_000)
     return { action: 'wait', reason: 'A deferred or failed build waits one hour before recovery.', runId: latest.id };

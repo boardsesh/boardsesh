@@ -13,6 +13,7 @@ import {
   coordinateNativeSnapshots,
   exactNativeBuilds,
   nativeRecoveryDecision,
+  nativeGateAdmissionRuns,
   nativeReleaseMessage,
   nextNativeVersion,
   nativeStampKind,
@@ -30,6 +31,9 @@ import {
 } from './lib/native-release';
 import {
   getSupersededNativeStampShas,
+  findUploadedNativePlatform,
+  nativePlatformBuildDecision,
+  nativePlatformHistory,
   prepareNativeVersionRestoration,
   prepareNativeVersionStamp,
   validateNativeStampSource,
@@ -322,6 +326,47 @@ describe('native tester build recovery', () => {
     expect(nativeRecoveryDecision({ ...input, runs: [{ ...nativeRun, status: 'pending' }] }).action).toBe('wait');
     expect(nativeRecoveryDecision({ ...input, now: Date.parse('2026-11-01T10:30:00Z') }).action).toBe('wait');
   });
+  it('waits for active predecessor builds and inspects uncertain uploads in the same unchanged runtime', () => {
+    const predecessorSha = 'e'.repeat(40);
+    const predecessorRun = { ...nativeRun, title: `ios:${predecessorSha}` };
+    const related = { ...input, runs: [predecessorRun], relatedStampShas: [predecessorSha] };
+    expect(nativeRecoveryDecision({ ...related, runs: [{ ...predecessorRun, status: 'in_progress' }] })).toMatchObject({
+      action: 'wait',
+      runId: predecessorRun.id,
+    });
+    expect(
+      nativeRecoveryDecision({ ...related, uploadAttempted: true, uploadAttemptedRunId: predecessorRun.id }),
+    ).toMatchObject({ action: 'inspect', runId: predecessorRun.id });
+    expect(nativeRecoveryDecision(related).action).toBe('dispatch');
+    expect(nativeRecoveryDecision({ ...input, runs: [{ ...predecessorRun, status: 'in_progress' }] }).action).toBe(
+      'dispatch',
+    );
+  });
+  it('admits reruns and older queued workflows while retaining previous-attempt upload inspection', () => {
+    const current = { ...nativeRun, status: 'in_progress' };
+    const successor = { ...current, id: current.id + 1, status: 'queued' };
+    expect(nativeGateAdmissionRuns([current, successor], current.id, 1)).toEqual({
+      activeRun: undefined,
+      inspectRuns: [],
+    });
+    expect(nativeGateAdmissionRuns([current, successor], current.id, 2)).toEqual({
+      activeRun: undefined,
+      inspectRuns: [current],
+    });
+    const completedSuccessor = { ...successor, status: 'completed' };
+    expect(nativeGateAdmissionRuns([current, completedSuccessor], current.id, 2)).toEqual({
+      activeRun: undefined,
+      inspectRuns: [current, completedSuccessor],
+    });
+    expect(nativeGateAdmissionRuns([current, completedSuccessor], current.id, 1)).toEqual({
+      activeRun: undefined,
+      inspectRuns: [completedSuccessor],
+    });
+    expect(() => nativeGateAdmissionRuns([current], Number.NaN, 1)).toThrow('valid GitHub run ID');
+    expect(() => nativeGateAdmissionRuns([current], current.id, 0)).toThrow('valid GitHub run ID');
+    const predecessor = { ...current, id: current.id - 1 };
+    expect(nativeGateAdmissionRuns([predecessor, current, successor], current.id, 1).activeRun).toEqual(predecessor);
+  });
   it('ignores unrelated raw main runs and stops once the exact upload is tagged', () => {
     expect(
       nativeRecoveryDecision({ ...input, runs: [{ ...nativeRun, title: `ios:${'f'.repeat(40)}`, status: 'queued' }] })
@@ -442,6 +487,158 @@ function forgedStamp(
     },
   ).trim();
 }
+
+function platformHistory() {
+  const repository = nativeHistory();
+  const first = writeNativeStamp(repository.directory, repository.sourceSha, fingerprints, '2.7.0', 'version-adoption');
+  repository.setHead(first.sha);
+  const append = (pair: typeof fingerprints, version = '2.7.1') => {
+    const parent = repository.git(['rev-parse', 'HEAD']);
+    const previousVersion = /version: '([^']+)'/.exec(repository.git(['show', `${parent}:${APP_CONFIG_PATH}`]))![1];
+    const next = writeNativeStamp(
+      repository.directory,
+      parent,
+      pair,
+      version,
+      version === previousVersion ? 'version-adoption' : 'version-bump',
+    );
+    repository.setHead(next.sha);
+    repository.git(['update-ref', 'refs/remotes/origin/main', next.sha]);
+    return next;
+  };
+  const tagIosUpload = (uploaded: NativeStamp, buildNumber = 1) => {
+    const tag = `build-ios-v${uploaded.version}-${buildNumber}-${uploaded.ios.slice(0, 12)}`;
+    repository.git(['tag', tag, uploaded.sha]);
+    return { tag, sha: uploaded.sha };
+  };
+  return { ...repository, first, append, tagIosUpload };
+}
+
+describe('per-platform native upload reuse', { timeout: 30_000 }, () => {
+  it('skips TestFlight for an Android-only patch after the previous iOS version was accepted', () => {
+    const repository = platformHistory();
+    const receipt = repository.tagIosUpload(repository.first);
+    repository.git(['tag', 'release/ios-v2.7.0-aaaaaaaaaaaa', repository.first.sha]);
+    const next = repository.append({ ...fingerprints, android: 'c'.repeat(40) });
+    expect(findUploadedNativePlatform('ios', next, repository.directory)).toEqual(receipt);
+    expect(findUploadedNativePlatform('android', next, repository.directory)).toBeNull();
+    expect(
+      nativePlatformBuildDecision(
+        { platform: 'ios', sourceSha: next.sha, fingerprint: next.ios, version: next.version, forced: false },
+        repository.directory,
+      ),
+    ).toMatchObject({ shouldBuild: false });
+    expect(
+      nativePlatformBuildDecision(
+        { platform: 'android', sourceSha: next.sha, fingerprint: next.android, version: next.version, forced: false },
+        repository.directory,
+      ),
+    ).toMatchObject({ shouldBuild: true });
+  });
+
+  it('keeps reusing the uploaded iOS runtime across multiple Android-only stamps and repeated recovery checks', () => {
+    const repository = platformHistory();
+    const receipt = repository.tagIosUpload(repository.first);
+    repository.append({ ...fingerprints, android: 'c'.repeat(40) });
+    const latest = repository.append({ ...fingerprints, android: 'd'.repeat(40) });
+    for (let recovery = 0; recovery < 2; recovery += 1)
+      expect(findUploadedNativePlatform('ios', latest, repository.directory)).toEqual(receipt);
+    expect(findUploadedNativePlatform('android', latest, repository.directory)).toBeNull();
+  });
+
+  it('recovers a missing unchanged-platform upload instead of treating matching fingerprints as success', () => {
+    const repository = platformHistory();
+    repository.append({ ...fingerprints, android: 'c'.repeat(40) });
+    const latest = repository.append({ ...fingerprints, android: 'd'.repeat(40) });
+    expect(findUploadedNativePlatform('ios', latest, repository.directory)).toBeNull();
+    expect(
+      nativePlatformBuildDecision(
+        { platform: 'ios', sourceSha: latest.sha, fingerprint: latest.ios, version: latest.version, forced: false },
+        repository.directory,
+      ).shouldBuild,
+    ).toBe(true);
+  });
+
+  it('builds native rollbacks and never borrows a pre-transition receipt for a missing rollback upload', () => {
+    const repository = platformHistory();
+    repository.tagIosUpload(repository.first);
+    const changed = repository.append({ ...fingerprints, ios: 'c'.repeat(40) });
+    repository.tagIosUpload(changed, 2);
+    const rollback = repository.append(fingerprints);
+    expect(findUploadedNativePlatform('ios', rollback, repository.directory)).toBeNull();
+    const androidOnly = repository.append({ ...fingerprints, android: 'd'.repeat(40) });
+    expect(findUploadedNativePlatform('ios', androidOnly, repository.directory)).toBeNull();
+    const rollbackReceipt = repository.tagIosUpload(rollback, 3);
+    expect(findUploadedNativePlatform('ios', androidOnly, repository.directory)).toEqual(rollbackReceipt);
+  });
+
+  it('tracks uncertain-build lineage through unchanged stamps and stops at native transitions', () => {
+    const repository = platformHistory();
+    const sameIos = repository.append({ ...fingerprints, android: 'c'.repeat(40) });
+    const changedIos = repository.append({ ...fingerprints, ios: 'd'.repeat(40), android: 'c'.repeat(40) });
+    const latest = repository.append({ ...fingerprints, ios: 'd'.repeat(40), android: 'e'.repeat(40) });
+    expect(nativePlatformHistory('ios', sameIos, repository.directory).map((previous) => previous.sha)).toEqual([
+      sameIos.sha,
+      repository.first.sha,
+    ]);
+    expect(nativePlatformHistory('ios', latest, repository.directory).map((previous) => previous.sha)).toEqual([
+      latest.sha,
+      changedIos.sha,
+    ]);
+  });
+
+  it('requires the full validated fingerprint even when an older receipt has a colliding short prefix', () => {
+    const repository = platformHistory();
+    repository.tagIosUpload(repository.first);
+    const latest = repository.append({ ...fingerprints, ios: `${'a'.repeat(12)}${'c'.repeat(28)}` });
+    expect(findUploadedNativePlatform('ios', latest, repository.directory)).toBeNull();
+  });
+
+  it('accepts a confirmed upload at the exact baseline source for an unchanged platform', () => {
+    const repository = nativeHistory();
+    const baselineSha = repository.git(['rev-parse', `${NATIVE_BASELINE_TAG}^{commit}`]);
+    const tag = 'build-ios-v2.6.0-1-eeeeeeeeeeee';
+    repository.git(['tag', tag, baselineSha]);
+    const next = writeNativeStamp(
+      repository.directory,
+      repository.sourceSha,
+      { ...fingerprints, ios: baselineFingerprints.ios },
+      '2.7.0',
+      'version-adoption',
+    );
+    expect(findUploadedNativePlatform('ios', next, repository.directory)).toEqual({ tag, sha: baselineSha });
+  });
+
+  it('preserves forced hotfix builds and the closed iOS marketing-version guard', () => {
+    const repository = platformHistory();
+    repository.tagIosUpload(repository.first);
+    const latest = repository.append({ ...fingerprints, android: 'c'.repeat(40) });
+    const input = { platform: 'ios' as const, sourceSha: latest.sha, fingerprint: latest.ios, version: latest.version };
+    expect(nativePlatformBuildDecision({ ...input, forced: false }, repository.directory).shouldBuild).toBe(false);
+    expect(nativePlatformBuildDecision({ ...input, forced: true }, repository.directory).shouldBuild).toBe(true);
+    repository.git(['tag', 'release/ios-v2.7.1-aaaaaaaaaaaa', latest.sha]);
+    expect(nativePlatformBuildDecision({ ...input, forced: false }, repository.directory).shouldBuild).toBe(false);
+    expect(() => nativePlatformBuildDecision({ ...input, forced: true }, repository.directory)).toThrow(
+      'Apple already approved',
+    );
+  });
+
+  it('does not inherit a receipt from an explicitly superseded stamp', () => {
+    const repository = mistakenBump();
+    repository.git(['tag', 'build-ios-v2.7.1-1-aaaaaaaaaaaa', repository.bad.sha]);
+    const restored = prepareNativeVersionRestoration(
+      repository.directory,
+      repository.bad.sha,
+      '2.7.0',
+      repository.bad.sha,
+      fingerprints,
+    ).stamp;
+    expect(findUploadedNativePlatform('ios', restored, repository.directory)).toBeNull();
+    expect(nativePlatformHistory('ios', restored, repository.directory).map((previous) => previous.sha)).toEqual([
+      restored.sha,
+    ]);
+  });
+});
 
 describe('pre-raised native version adoption and explicit restoration', { timeout: 30_000 }, () => {
   it('adopts cutover 2.7.0 from the 2.6.0 baseline without modifying its tree', () => {
