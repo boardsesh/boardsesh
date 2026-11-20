@@ -3,7 +3,7 @@
 **Covered version**: Kilter Board Android 2.10.1, versionCode 65 (`com.kiltergrips.kilter_board_app`)
 **Re-verified**: 2026-09-07 against the Google Play APK installed on the connected Android phone, using readable Dart AOT strings and call-path analysis of `libapp.so` (SHA-256 `f5191fdbf466cf2082a9ae5e076c43cf69d13e6b5ca9aeca3eebb79f9222eeed`; 30,922 strings at minimum length 5).
 **Additional package check**: 2026-10-14, Android 2.10.1 ARMv7 `libapp.so` SHA-256 `8af06628260bb3c8284d63ac8e2ec8684522d40f28a96a763df8a6d8846aa4a1`. It contains all three live REST URLs and `live_climbs_pool_interval`; this string check alone does not repeat the ARM64 call-path verification or establish identical behavior.
-**Sibling docs**: [HTTP API](KILTER_HTTP_API_SPEC.md), [PowerSync](KILTER_POWERSYNC_SPEC.md), [Bluetooth](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [Kilter sync](kilter-sync.md), [live history integration](kilter-live-history.md)
+**Sibling docs**: [HTTP API](KILTER_HTTP_API_SPEC.md), [PowerSync](KILTER_POWERSYNC_SPEC.md), [Bluetooth](../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [Kilter sync](kilter-sync.md), [live history integration](kilter-live-history.md)
 
 > The live feature reads recently displayed climbs through authenticated REST polling and publishes display events through a separate REST endpoint. Its observed contract is a wall-scoped recent-climb feed. A feed entry does not establish that a climber is still present or that a climb is still lit.
 >
@@ -175,7 +175,7 @@ The following examples are consequences of the parser, not captured controller a
 | `Kilter Board@2` | null |
 | `Kilter Board` | null |
 
-**Confidence: HIGH.** The parser does not validate a numeric API version or restrict the serial to alphanumeric characters. This is a different parsing rule from the older Aurora regex described in [Bluetooth §4](AURORA_BLUETOOTH_PROTOCOL_SPEC.md#4-device-name-format), although both recognize the familiar `Name#serial@version` format.
+**Confidence: HIGH.** The parser does not validate a numeric API version or restrict the serial to alphanumeric characters. This is a different parsing rule from the older Aurora regex described in [Bluetooth §4](../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md#4-device-name-format), although both recognize the familiar `Name#serial@version` format.
 
 **Confidence: HIGH for the inspected paths.** No serial characteristic read or manufacturer-data decoder supplies this connection value. The provider's notification callback prints the received bytes and notifies listeners; it does not decode a serial or replace the stored serial. A separate device-label path matches a name-derived serial against saved wall serials to find a wall name; it does not supply a missing serial to the connection path.
 
