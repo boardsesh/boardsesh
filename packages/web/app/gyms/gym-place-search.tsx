@@ -25,12 +25,15 @@ export default function GymPlaceSearch({
   query,
   locale,
   children,
+  actions,
   focusSearch = false,
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
   focusSearch?: boolean;
+  /** Secondary controls in the submit row; they must use type="button". */
+  actions?: React.ReactNode;
   /**
    * The board filter panel, rendered INSIDE this form.
    *
@@ -181,9 +184,12 @@ export default function GymPlaceSearch({
           {selectedPlace && <input type="hidden" name="place" value={query.place} />}
         </>
       )}
-      <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
-        {t('search.submit')}
-      </Button>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
+          {t('search.submit')}
+        </Button>
+        {actions}
+      </Box>
       {/* Full-width below the search row, so the filter tiers get the measure
           they need while the text field and its button stay on one line. */}
       <Box sx={{ flex: '1 1 100%', minWidth: 0, width: '100%', maxWidth: '100%' }}>{children}</Box>

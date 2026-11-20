@@ -18,7 +18,7 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
-import { PageCard, PageShell, StatePanel } from '@/app/components/ui/page-shell';
+import { PageShell, StatePanel } from '@/app/components/ui/page-shell';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
@@ -40,7 +40,6 @@ import GymDirectoryClaimLink from './gym-directory-claim-link';
 import GymDirectoryFilters from './gym-directory-filters';
 import GymDirectoryNearMe from './gym-directory-near-me';
 import GymDirectoryPagination from './gym-directory-pagination';
-import GymDirectorySearchForm from './gym-directory-search-form';
 import GymDirectorySearchTracker from './gym-directory-search-tracker';
 import { pinCoverage, toMapPins } from './near-me-model';
 
@@ -206,31 +205,20 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           </MuiLink>
         </Typography>
 
-        {/* The anchor the closing claim prompt jumps back to. Same clearance
-            the shell gives every other anchored block, so the fixed header does
-            not land on top of the search field. */}
-        <PageCard
-          id="gym-directory-search"
-          sx={{
-            mb: 2,
-            '& form': { mb: 1.5 },
-            scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
-          }}
-        >
-          <GymDirectorySearchForm facet={facet} query={query} locale={locale} focusSearch={focusSearch}>
-            {/* Inside the form on purpose: layout, size and angle are
-                checkboxes, and a closed <details> still submits them, so one
-                "Show gyms" applies the text, the place and the wall together. */}
-            <GymDirectoryFilters facet={facet} query={query} t={t} facetCounts={facetCounts} locale={locale} />
-          </GymDirectorySearchForm>
-        </PageCard>
-
         {/* The map column and near-me mode wrap the results block rather than
             sitting above it: the map is a second COLUMN beside this list at
             960px and up, and near-me swaps the list out for its own. The list
             stays first in the DOM either way. */}
         <GymDirectoryNearMe
           key={buildFacetSwitchHref(facet, query)}
+          searchForm={{
+            facet,
+            query,
+            focusSearch,
+            children: (
+              <GymDirectoryFilters facet={facet} query={query} t={t} facetCounts={facetCounts} locale={locale} />
+            ),
+          }}
           selectedArea={origin ? { facet, query } : undefined}
           boardFilter={query}
           // Threaded through, not dropped: the search box keeps rendering what
@@ -332,7 +320,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: '68ch' }}>
             {t('install.body')}
           </Typography>
-          <StoreInstallButtons placement="gyms-directory" labels={storeButtonLabels} align="start" />
+          <StoreInstallButtons placement="gyms-directory" labels={storeButtonLabels} align="start" appearance="plain" />
         </Box>
 
         <Box component="section" sx={{ mt: 5 }}>

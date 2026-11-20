@@ -25,6 +25,8 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageCard } from '@/app/components/ui/page-shell';
+import GymDirectorySearchForm, { type GymDirectorySearchFormProps } from './gym-directory-search-form';
 import { buildDirectoryHref, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
 import { numberFormatFor } from './directory-card-model';
 import GymDirectoryCard from './gym-directory-card';
@@ -52,6 +54,8 @@ import {
 const WIDE_LAYOUT = '@media (min-width: 960px)';
 
 type GymDirectoryNearMeProps = {
+  /** Server-rendered filters stay inside the search form; map state stays in this island. */
+  searchForm?: Omit<GymDirectorySearchFormProps, 'locale' | 'actions'>;
   selectedArea?: { facet: DirectoryFacet; query: DirectoryQuery };
   /**
    * The board filter the surrounding route is already applying — types,
@@ -106,6 +110,7 @@ type GymDirectoryNearMeProps = {
  * is not shareable and Back does not restore it.
  */
 export default function GymDirectoryNearMe({
+  searchForm,
   selectedArea,
   boardFilter,
   searchQuery,
@@ -259,8 +264,38 @@ export default function GymDirectoryNearMe({
     }
   }, []);
 
+  const mapControl = (
+    <Button
+      type="button"
+      variant="outlined"
+      startIcon={<MapOutlined />}
+      onClick={toggleMap}
+      sx={{
+        textTransform: 'none',
+        minHeight: 44,
+        fontSize: 16,
+        mb: searchForm ? 0 : 1.5,
+        [WIDE_LAYOUT]: { display: 'none' },
+      }}
+    >
+      {mapOpen ? t('map.hideMap') : t('map.showMap')}
+    </Button>
+  );
+
   return (
     <>
+      {searchForm && (
+        <PageCard
+          id="gym-directory-search"
+          sx={{
+            mb: 2,
+            '& form': { mb: 1.5 },
+            scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
+          }}
+        >
+          <GymDirectorySearchForm {...searchForm} locale={locale} actions={mapControl} />
+        </PageCard>
+      )}
       <Box component="section" sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
           {/* Keyed on the RESULTS being on screen, not on "the button was
@@ -387,14 +422,7 @@ export default function GymDirectoryNearMe({
         )}
       </Box>
 
-      <Button
-        variant="outlined"
-        startIcon={<MapOutlined />}
-        onClick={toggleMap}
-        sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
-      >
-        {mapOpen ? t('map.hideMap') : t('map.showMap')}
-      </Button>
+      {!searchForm && mapControl}
       <Box
         sx={{
           display: 'grid',
