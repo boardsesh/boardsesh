@@ -175,8 +175,9 @@ or explicitly restore matching databases and image; do not blindly downgrade.
 ## Backups, rollback and evidence
 
 The private R2 bucket `boardsesh-ota-backups` has no public custom domain or
-`r2.dev` access. Hourly Postgres and daily ClickHouse backups use `scheduled/`
-and expire after 14 days. `rehearsal/` and `cutover/` do not expire automatically;
+`r2.dev` access. Hourly Postgres backups and daily paired Postgres/native
+ClickHouse backups use `scheduled/` and expire after 14 days. `rehearsal/` and
+`cutover/` do not expire automatically;
 keep cutover copies until retirement completes. The VM also participates in the
 existing nightly Proxmox backup job. Restore drills must prove the databases
 and their unchanged master key work together.
