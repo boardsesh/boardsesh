@@ -248,8 +248,12 @@ describe('the filterable board-type vocabulary', () => {
     expect(parseDirectoryQuery('all', { boardType: 'spray' }).boardTypes).toEqual([]);
   });
 
-  it('retains Quantum in a requested boardType filter', () => {
-    expect(parseDirectoryQuery('all', { boardType: 'quantum' }).boardTypes).toEqual(['quantum']);
+  it('retains Quantum in a requested boardType filter only after rollout', () => {
+    expect(parseDirectoryQuery('all', { boardType: 'quantum' }).boardTypes).toEqual([]);
+    expect(parseDirectoryQuery('all', { boardType: ' QuAnTuM ', layout: '9101' }).boardTypes).toEqual([]);
+    expect(parseDirectoryQuery('all', { boardType: 'quantum' }, { 'quantum-board': true }).boardTypes).toEqual([
+      'quantum',
+    ]);
   });
 });
 

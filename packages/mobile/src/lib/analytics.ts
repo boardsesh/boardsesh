@@ -1,3 +1,4 @@
+import { isBoardLaunchFlag } from '@boardsesh/board-config/visibility';
 import type { PostHog } from 'posthog-react-native';
 import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
 import { resetScreenSessionGate, shouldEmitScreenForSession } from './analytics-screen-session-gate';
@@ -204,10 +205,14 @@ export function readPosthogFeatureFlags(
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
       rawFlagValue = featureFlagClient.getFeatureFlag(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
-    } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
+    } else if (typeof featureFlagClient.isFeatureEnabled === 'function' && !isBoardLaunchFlag(definition.key)) {
       rawFlagValue = featureFlagClient.isFeatureEnabled(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagValue(rawFlagValue, definition.variants);
+    const flagValue = isBoardLaunchFlag(definition.key)
+      ? typeof rawFlagValue === 'boolean'
+        ? rawFlagValue
+        : undefined
+      : coerceFeatureFlagValue(rawFlagValue, definition.variants);
     if (flagValue !== undefined) {
       flags[definition.key] = flagValue;
     }

@@ -1,3 +1,4 @@
+import { isBoardTypeVisible, type BoardVisibilityFlags } from '@boardsesh/board-config/visibility';
 import { CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {
@@ -146,7 +147,11 @@ function parseFiniteNumber(raw: string | undefined): number | null {
  * here so the page renders its clean default instead of the backend deciding
  * what a nonsense filter means.
  */
-export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: DirectorySearchParams): DirectoryQuery {
+export function parseDirectoryQuery(
+  facet: DirectoryFacet,
+  searchParams: DirectorySearchParams,
+  visibilityFlags: BoardVisibilityFlags = {},
+): DirectoryQuery {
   const query = (firstValue(searchParams.q) ?? '').trim().slice(0, MAX_QUERY_LENGTH);
 
   // The whole board half — types, layouts, sizes, angles — comes from the shared
@@ -156,9 +161,13 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
   // `/gyms/kilter?boardType=tension` render Tension gyms under a Kilter h1, and
   // locking it is also what unlocks the layout tier on `/gyms/kilter` with no
   // query param at all (one board type, which is what layouts need).
-  const boardFilter = parseGymBoardFilter(
+  const requestedBoardFilter = parseGymBoardFilter(
     searchParams,
     facet === 'all' ? {} : { lockedBoardTypes: [facet as BoardName] },
+  );
+  const boardFilter = setBoardTypesFilter(
+    requestedBoardFilter,
+    (requestedBoardFilter.boardTypes ?? []).filter((boardType) => isBoardTypeVisible(boardType, visibilityFlags)),
   );
 
   const latitude = parseFiniteNumber(firstValue(searchParams.lat));

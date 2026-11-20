@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import { useTranslation } from 'react-i18next';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { useVisibleBoardTypes } from '@/app/lib/boards/use-visible-board-types';
 import {
   compatibilityBoardSelected,
   spraywallPathClicked,
@@ -55,6 +55,7 @@ export default function HomePageContent({
   supportBanner,
   trustFaq,
 }: HomePageContentProps) {
+  const visibleBoards = useVisibleBoardTypes();
   const { t, i18n } = useTranslation('marketing');
   const { t: website } = useTranslation('website');
   const { platform, nativeStore } = useInstallPlatform();
@@ -173,7 +174,7 @@ export default function HomePageContent({
       </PageCard>
       <PageSection title={website('boardChoices')}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {SUPPORTED_BOARDS.filter((board) => board !== 'spray').map((board) => (
+          {visibleBoards.map((board) => (
             <Chip
               key={board}
               component={LocaleLink}

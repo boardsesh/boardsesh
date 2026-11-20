@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
+const rollout = vi.hoisted(() => ({ enabled: true }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': rollout.enabled }),
+}));
 const directory = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('@/app/gyms/directory-data', () => ({ fetchFacetTotal: directory.fetch }));
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -28,9 +32,21 @@ vi.mock('@/app/lib/store-button-labels.server', () => ({
 }));
 const { default: SupportedBoardsPage, generateMetadata } = await import('../page');
 
-beforeEach(() => directory.fetch.mockReset().mockResolvedValue(12));
+beforeEach(() => {
+  rollout.enabled = true;
+  directory.fetch.mockReset().mockResolvedValue(12);
+});
 
 describe('supported boards public entry', () => {
+  it('omits Quantum and its directory count before rollout', async () => {
+    rollout.enabled = false;
+    const html = renderToStaticMarkup(await SupportedBoardsPage());
+    expect(html).not.toContain('Quantum Board');
+    expect(html).not.toContain('boardType=quantum');
+    expect(html).toContain('Kilter');
+    expect(directory.fetch).not.toHaveBeenCalledWith(['quantum']);
+  });
+
   it('server-renders each catalog board with actual import choices and directory links', async () => {
     const html = renderToStaticMarkup(await SupportedBoardsPage());
     for (const brand of [

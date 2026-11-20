@@ -237,6 +237,43 @@ describe('no geolocation API at all', () => {
 });
 
 describe('near-me results', () => {
+  it('keeps Quantum out of fresh location results until the rollout is enabled', () => {
+    queryResult = {
+      data: {
+        gyms: [
+          gym({
+            boardSummaries: [
+              { boardType: 'quantum', angle: 40 },
+              { boardType: 'kilter', angle: 40 },
+            ],
+          }),
+        ],
+        totalCount: 1,
+      },
+      isPending: false,
+      isError: false,
+    };
+    const { rerender } = renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+    expect(screen.queryByText(/Quantum Board/)).toBeNull();
+    expect(screen.getByText(/Kilter/)).toBeTruthy();
+    rerender(
+      <GymDirectoryNearMe
+        boardFilter={{}}
+        searchQuery=""
+        locale="en-US"
+        browsePins={[]}
+        browsePinnedCount={0}
+        browseShownCount={0}
+        visibilityFlags={{ 'quantum-board': true }}
+      >
+        <div />
+      </GymDirectoryNearMe>,
+    );
+    expect(screen.getByText(/Quantum Board/)).toBeTruthy();
+    expect(queryResult.data?.gyms[0].boardSummaries).toHaveLength(2);
+  });
+
   beforeEach(() => {
     setGeolocation({ coordinates: { latitude: 51.4545092, longitude: -2.5879431, accuracy: 10 } });
     queryResult = {

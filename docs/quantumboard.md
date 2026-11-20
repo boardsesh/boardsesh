@@ -12,7 +12,8 @@ Personal account synchronization and outbound writes remain tracked in
 
 ## Feature flag
 
-Quantum discovery and setup require the positive `quantum-board` feature flag.
+Quantum discovery, public compatibility lists, and setup require the positive
+`quantum-board` feature flag on web and mobile.
 It defaults off; missing or unresolved flags keep the board hidden. Testers can
 enable **Quantum Board** through Settings → Developer → Feature Flags. Catalogue
 acquisition remains backend-owned and independent of this UI rollout.

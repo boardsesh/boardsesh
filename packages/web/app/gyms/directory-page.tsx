@@ -1,3 +1,5 @@
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
+import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import 'server-only';
 import React from 'react';
 import type { Metadata } from 'next';
@@ -83,27 +85,36 @@ export async function generateGymDirectoryMetadata(facet: DirectoryFacet): Promi
  */
 export async function renderGymDirectory(facet: DirectoryFacet, props: DirectoryRouteProps) {
   const searchParams = await props.searchParams;
-  const query = parseDirectoryQuery(facet, searchParams);
+  const queryWithoutRollout = parseDirectoryQuery(facet, searchParams);
   const focusSearch = searchParams.claim === '1';
-  const currentSearchHref = buildDirectoryHref(facet, query, 1);
-  const claimSearchHref = `${currentSearchHref}${currentSearchHref.includes('?') ? '&' : '?'}claim=1#gym-directory-query`;
 
   // Past the crawl-trap ceiling, before spending a query on it. A 404 rather
   // than a clamp: clamping serves a 200 whose URL and highlighted page disagree.
-  if (query.page > DIRECTORY_MAX_PAGE) {
+  if (queryWithoutRollout.page > DIRECTORY_MAX_PAGE) {
     notFound();
   }
 
-  const { t, locale } = await getServerTranslation('gyms');
-  // The distinct id rides along with the two fetches rather than gating them:
-  // it is only needed for the claim call-out's `viewerState`, and a session read
-  // in series would add a round trip in front of every render.
-  const [pageResult, facetCountsResult, distinctId, storeButtonLabels] = await Promise.all([
-    fetchDirectoryPage(query),
-    fetchFacetCounts(),
-    getPosthogDistinctId(),
-    getStoreButtonLabels(),
-  ]);
+  const viewerPromise = getPosthogDistinctId();
+  const visibilityPromise = viewerPromise.then(getBoardVisibilityFlags);
+  const requestedTypes = Array.isArray(searchParams.boardType) ? searchParams.boardType : [searchParams.boardType];
+  const hasGatedFilter = requestedTypes.some(
+    (boardType) => boardType !== undefined && !isBoardTypeVisible(boardType.trim().toLowerCase()),
+  );
+  // Ordinary directory queries do not depend on the rollout. Start them alongside
+  // the session/flag read; only a requested gated type needs that decision first.
+  const [{ t, locale }, distinctId, visibilityFlags, storeButtonLabels, facetCountsResult, ordinaryPage] =
+    await Promise.all([
+      getServerTranslation('gyms'),
+      viewerPromise,
+      visibilityPromise,
+      getStoreButtonLabels(),
+      fetchFacetCounts(),
+      hasGatedFilter ? Promise.resolve(null) : fetchDirectoryPage(queryWithoutRollout),
+    ]);
+  const query = parseDirectoryQuery(facet, searchParams, visibilityFlags);
+  const pageResult = ordinaryPage ?? (await fetchDirectoryPage(query));
+  const currentSearchHref = buildDirectoryHref(facet, query, 1);
+  const claimSearchHref = `${currentSearchHref}${currentSearchHref.includes('?') ? '&' : '?'}claim=1#gym-directory-query`;
 
   // Either fetch failing means we cannot state the counts the body copy is
   // built around. Render the outage instead of a confident "0 gyms".
@@ -161,6 +172,10 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
 
   const numberFormat = new Intl.NumberFormat(locale);
   const formatNumber = (value: number) => numberFormat.format(value);
+  const visibleGyms = pageResult.gyms.map((gym) => ({
+    ...gym,
+    boardSummaries: gym.boardSummaries.filter((summary) => isBoardTypeVisible(summary.boardType, visibilityFlags)),
+  }));
   const origin =
     query.latitude !== null && query.longitude !== null
       ? { latitude: query.latitude, longitude: query.longitude }
@@ -175,7 +190,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   // The map's pill numbers, computed from the page the server actually
   // rendered — not from the catalog total, which would claim coverage for gyms
   // nobody on this page can see.
-  const browseCoverage = pinCoverage(pageResult.gyms);
+  const browseCoverage = pinCoverage(visibleGyms);
   const crossLinks: DirectoryFacet[] = DIRECTORY_FACETS.filter((candidate) => candidate !== facet);
 
   return (
@@ -221,7 +236,14 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             {/* Inside the form on purpose: layout, size and angle are
                 checkboxes, and a closed <details> still submits them, so one
                 "Show gyms" applies the text, the place and the wall together. */}
-            <GymDirectoryFilters facet={facet} query={query} t={t} facetCounts={facetCounts} locale={locale} />
+            <GymDirectoryFilters
+              facet={facet}
+              query={query}
+              t={t}
+              facetCounts={facetCounts}
+              locale={locale}
+              visibilityFlags={visibilityFlags}
+            />
           </GymDirectorySearchForm>
         </PageCard>
 
@@ -230,6 +252,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             960px and up, and near-me swaps the list out for its own. The list
             stays first in the DOM either way. */}
         <GymDirectoryNearMe
+          visibilityFlags={visibilityFlags}
           key={buildFacetSwitchHref(facet, query)}
           selectedArea={origin ? { facet, query } : undefined}
           boardFilter={query}
@@ -237,7 +260,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           // was typed, so near-me has to keep applying it.
           searchQuery={query.query}
           locale={locale}
-          browsePins={toMapPins(pageResult.gyms)}
+          browsePins={toMapPins(visibleGyms)}
           browsePinnedCount={browseCoverage.pinned}
           browseShownCount={browseCoverage.total}
         >
@@ -252,7 +275,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             })}
           </Typography>
 
-          {pageResult.gyms.length === 0 ? (
+          {visibleGyms.length === 0 ? (
             /* A legitimate 200 on page one, so it gets a designed answer rather
                than two bare lines: the card surface, a muted glyph, and two ways
                out. Each action only renders when it would actually change the
@@ -292,7 +315,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                 p: 0,
               }}
             >
-              {pageResult.gyms.map((gym) => (
+              {visibleGyms.map((gym) => (
                 <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
               ))}
             </Box>
@@ -311,7 +334,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             and the phrase read as a defect on each listing instead of an offer
             to one owner. Suppressed on an empty page: there is nothing to
             claim, and the search that found nothing is the thing to fix. */}
-        {pageResult.gyms.length > 0 && (
+        {visibleGyms.length > 0 && (
           <Box component="section" sx={{ mt: 4 }}>
             <GymDirectoryClaimLink viewerState={viewerState} />
           </Box>

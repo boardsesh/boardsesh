@@ -197,3 +197,13 @@ describe('no control is submitted twice', () => {
     expect(document.querySelector('input[type="hidden"][name="layout"]')).toBeNull();
   });
 });
+
+describe('Quantum rollout controls', () => {
+  it('renders Quantum filter links only when enabled on the server', () => {
+    const query = parseDirectoryQuery('all', {});
+    const { queryByText, rerender } = render(<GymDirectoryFilters facet="all" query={query} t={t} />);
+    expect(queryByText('Quantum Board')).toBeNull();
+    rerender(<GymDirectoryFilters facet="all" query={query} t={t} visibilityFlags={{ 'quantum-board': true }} />);
+    expect(queryByText('Quantum Board')).toBeTruthy();
+  });
+});

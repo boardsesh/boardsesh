@@ -1,3 +1,5 @@
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
+import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import React from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
@@ -22,9 +24,16 @@ export async function generateMetadata() {
 }
 
 export default async function SupportedBoardsPage() {
-  const [{ t, locale }, labels] = await Promise.all([getServerTranslation('website'), getStoreButtonLabels()]);
+  const [{ t, locale }, labels, visibilityFlags] = await Promise.all([
+    getServerTranslation('website'),
+    getStoreButtonLabels(),
+    getBoardVisibilityFlags(),
+  ]);
+  const visibleBoards = SUPPORTED_BOARDS.filter(
+    (board) => board !== 'spray' && isBoardTypeVisible(board, visibilityFlags),
+  );
   const counts = await Promise.all(
-    SUPPORTED_BOARDS.filter((board) => board !== 'spray').map(async (board) => {
+    visibleBoards.map(async (board) => {
       return [board, await fetchFacetTotal([board])] as const;
     }),
   );
@@ -35,7 +44,7 @@ export default async function SupportedBoardsPage() {
       <Prose>{t('platforms')}</Prose>
       <Prose>{t('controller')}</Prose>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 3, my: 4 }}>
-        {SUPPORTED_BOARDS.filter((board) => board !== 'spray').map((board) => (
+        {visibleBoards.map((board) => (
           <PageCard key={board}>
             <PageSection id={board} title={boardTypeLabel(board)}>
               <Typography component="h3" variant="subtitle1">
