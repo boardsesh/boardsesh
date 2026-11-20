@@ -21,7 +21,7 @@
 -- in an explicit session, is left alone.
 --
 -- Precondition, confirmed by the owner on 2026-10-12: the flag was never enabled
--- in production (BOARDSESH_PRIVACY_ENABLED; the default is off, docs/product/privacy.md
+-- in production (BOARDSESH_PRIVACY_ENABLED; the default is off, docs/privacy.md
 -- and #6273). With the flag off nobody could pick a tick or session audience
 -- (setContentAudience and updateResourcePrivacy go through privacyActor), so
 -- every row this touches was written by the server. It also covers two

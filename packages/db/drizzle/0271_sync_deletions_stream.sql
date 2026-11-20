@@ -1,5 +1,5 @@
 -- Two plain indexes on sync_deletions, built inside the deploy transaction on
--- purpose (docs/operations/db-migrations.md, "Indexes on a large, write-hot table").
+-- purpose (docs/db-migrations.md, "Indexes on a large, write-hot table").
 --
 -- What that holds, and for how long: `migrate` applies every pending migration
 -- in ONE transaction, so each lock below is held until the last of them

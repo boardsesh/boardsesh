@@ -17,7 +17,7 @@
 --   - a draft with no Boardsesh owner (an Aurora import). The board sync stopped
 --     sending these in #6432, but a phone that downloaded the board before then
 --     still holds them, and catalogue revalidation keeps them (they look like
---     manufacturer data; docs/product/privacy.md). The unscoped tombstone is the only
+--     manufacturer data; docs/privacy.md). The unscoped tombstone is the only
 --     thing that removes that copy, and no account or private wall is involved.
 --
 -- The draft's board_climb_stats rows leak the same way: saveClimb seeds one

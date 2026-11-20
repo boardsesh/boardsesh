@@ -127,6 +127,36 @@ describe('documentation references', () => {
     expect(checkDocumentation(checkout)).toEqual([]);
   });
 
+  it('preserves immutable migration references while checking neighboring current SQL and TypeScript', () => {
+    const checkout = repository({
+      'CHANGELOG.md': 'See docs/release-time-operations.md',
+      'packages/db/drizzle/0001_published.sql': '-- See docs/original-schema.md',
+      'packages/shared/offline-sync/src/db/migrations.ts': '// See docs/original-schema.md',
+      'packages/db/src/queries/current.sql': '-- See docs/missing-contract.md',
+      'packages/shared/offline-sync/src/db/schema.ts': '// See docs/missing-contract.md',
+    });
+    expect(checkDocumentation(checkout).map(({ source, target }) => ({ source, target }))).toEqual([
+      { source: 'packages/db/src/queries/current.sql', target: 'docs/missing-contract.md' },
+      { source: 'packages/shared/offline-sync/src/db/schema.ts', target: 'docs/missing-contract.md' },
+    ]);
+  });
+
+  it('rejects ignored local documentation assets omitted from the repository inventory', () => {
+    const checkout = repository({
+      'docs/design/guide.md': '![Capture](images/capture.png)',
+      'docs/design/images/capture.png': '',
+    });
+    checkout.files = checkout.files.filter((filename) => !filename.endsWith('.png'));
+    expect(checkDocumentation(checkout)).toEqual([
+      {
+        source: 'docs/design/guide.md',
+        line: 1,
+        target: 'images/capture.png',
+        reason: 'file absent from repository inventory: docs/design/images/capture.png',
+      },
+    ]);
+  });
+
   it('skips remote URLs, app routes, runtime capture files and the separate Ansible runbook', () => {
     const checkout = repository({
       'docs/guide.md': [

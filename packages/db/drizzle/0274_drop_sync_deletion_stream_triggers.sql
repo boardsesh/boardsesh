@@ -18,7 +18,7 @@
 -- boardsesh_sync_cutoff_owner. An administrator installed both outside any
 -- migration, the migration login cannot drop them, and 0272 still needs them
 -- to replay on a fresh database. packages/db/scripts/teardown-sync-deletions-cutoff.ts
--- removes them from production after this lands (docs/data/sync-deletions-cutoff.md).
+-- removes them from production after this lands (docs/sync-deletions-cutoff.md).
 --
 -- Locks. DROP TRIGGER takes ACCESS EXCLUSIVE on its table, and the next
 -- migration's DROP INDEX and DROP COLUMN take it on sync_deletions. Every climb

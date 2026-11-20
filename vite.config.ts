@@ -2,6 +2,11 @@ import { defineConfig } from 'vite-plus';
 
 const shellQuote = (filePath: string) => `'${filePath.replaceAll("'", "'\\''")}'`;
 const isGeneratedFile = (filePath: string) => filePath.includes('/generated/');
+// Shipped SQLite definitions preserve their recorded bytes. Validate this file
+// without letting the staged formatter rewrite historical migration content.
+const isHistoricalMigrationSource = (filePath: string) =>
+  filePath.endsWith('/packages/shared/offline-sync/src/db/migrations.ts') ||
+  filePath === 'packages/shared/offline-sync/src/db/migrations.ts';
 // board-controller is a vendored minified bundle — re-formatting it
 // in the pre-commit hook produces noisy diffs (Prettier rewraps long
 // minified lines) every time someone stages an unrelated file
@@ -206,9 +211,16 @@ export default defineConfig({
   staged: {
     '*.{ts,tsx,js,mjs,cjs}': (stagedFileNames) => {
       const lintableFileNames = stagedFileNames.filter(
-        (fileName) => !isGeneratedFile(fileName) && !isVendoredBundle(fileName),
+        (fileName) =>
+          !isGeneratedFile(fileName) && !isVendoredBundle(fileName) && !isHistoricalMigrationSource(fileName),
       );
-      return lintableFileNames.length > 0 ? `vp check --fix ${lintableFileNames.map(shellQuote).join(' ')}` : [];
+      const historicalMigrationSources = stagedFileNames.filter(isHistoricalMigrationSource);
+      return [
+        ...(lintableFileNames.length > 0 ? [`vp check --fix ${lintableFileNames.map(shellQuote).join(' ')}`] : []),
+        ...(historicalMigrationSources.length > 0
+          ? [`vp check ${historicalMigrationSources.map(shellQuote).join(' ')}`]
+          : []),
+      ];
     },
     'packages/web/app/**/*.{ts,tsx}': () => ['vp run check:i18n', 'vp run check:i18n:orphans'],
     'packages/mobile/{src,app}/**/*.{ts,tsx}': () => 'vp run check:i18n:orphans',

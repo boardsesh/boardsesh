@@ -37,3 +37,9 @@ removed plans and obsolete captures; a general archive folder is unnecessary.
 Run `vp run check:docs` after changing documentation or its paths. Scripts and CI
 consume some files here, including token tables, release documentation, manifests
 and LED map source data; update those consumers in the same change.
+
+Applied SQL migrations, historical SQLite migration definitions and released-client
+source recordings retain their recorded bytes. Their original documentation
+references are historical provenance: preserve them when moving current guides.
+The documentation checker excludes these artifacts; migration and released-client
+provenance tests verify them separately.

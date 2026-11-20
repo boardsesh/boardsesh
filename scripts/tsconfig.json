@@ -17,6 +17,7 @@
   "include": [
     "check-docs.ts",
     "__tests__/check-docs.test.ts",
+    "__tests__/immutable-migration-staging.test.ts",
     "check-homepage-budget.ts",
     "check-homepage-budget.test.ts",
     "duo-startup-diagnostics.ts",

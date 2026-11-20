@@ -18,7 +18,7 @@
 -- That default was private with the location hidden, written in one insert:
 --   * boards: not deleted, not the system catalogue owner, not a spray wall
 --     (a spray wall is created private on purpose and goes public only on its
---     first publish, see docs/product/spray-walls.md), no access grants, location
+--     first publish, see docs/spray-walls.md), no access grants, location
 --     hidden (hide_location = true), never edited (updated_at = created_at:
 --     createBoard writes both in one statement, every updateBoard bumps
 --     updated_at, the geography sync does not), and either no policy row at

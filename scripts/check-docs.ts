@@ -127,6 +127,13 @@ export function markdownAnchors(markdown: string): Set<string> {
 }
 
 function isMaintainedSource(filename: string): boolean {
+  // The production release workflow owns the generated changelog bytes.
+  if (filename === 'CHANGELOG.md') return false;
+  // Applied PostgreSQL SQL bytes and historical SQLite migrations retain their
+  // published provenance. Even a comment-only link rewrite changes their hashes
+  // or release scope; their original references remain part of those artifacts.
+  if (filename.startsWith('packages/db/drizzle/') || filename === 'packages/shared/offline-sync/src/db/migrations.ts')
+    return false;
   return (
     (TEXT_EXTENSIONS.test(filename) ||
       /(?:^|\/)(?:Dockerfile(?:\.[^/]+)?|\.env(?:\.[^/]+)?|Fastfile|\.prettierignore)$/.test(filename)) &&
@@ -157,6 +164,7 @@ function decodedTarget(target: string): string {
 /** Validate a supplied tracked-file inventory; tests use an isolated temporary repository. */
 export function checkDocumentation({ cwd, files }: { cwd: string; files: readonly string[] }): DocumentationProblem[] {
   const problems: DocumentationProblem[] = [];
+  const inventory = new Set(files);
   const anchorCache = new Map<string, Set<string>>();
   for (const source of [...files].sort()) {
     if (!isMaintainedSource(source)) continue;
@@ -213,7 +221,9 @@ export function checkDocumentation({ cwd, files }: { cwd: string; files: readonl
       let reason: string | undefined;
       if (relative.startsWith('../') || path.isAbsolute(relative)) reason = 'target leaves the repository';
       else if (!existsSync(resolved)) reason = `missing file ${relative}`;
-      else if (anchor && /\.(?:md|mdx|html)$/.test(resolved) && statSync(resolved).isFile()) {
+      else if (relative.startsWith('docs/') && statSync(resolved).isFile() && !inventory.has(relative)) {
+        reason = `file absent from repository inventory: ${relative}`;
+      } else if (anchor && /\.(?:md|mdx|html)$/.test(resolved) && statSync(resolved).isFile()) {
         let anchors = anchorCache.get(resolved);
         if (!anchors) {
           const targetContents = readFileSync(resolved, 'utf8');

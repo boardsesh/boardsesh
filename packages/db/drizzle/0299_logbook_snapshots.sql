@@ -1,5 +1,5 @@
 -- Temporary snapshots behind the partner logbook bootstrap
--- (docs/integrations/integration-platform.md, "Complete bootstrap and transition"). Two new
+-- (docs/integration-platform.md, "Complete bootstrap and transition"). Two new
 -- empty tables; nothing reads them yet.
 --
 -- ONE LOCK ON AN EXISTING TABLE: adding the foreign key to "users" takes SHARE
