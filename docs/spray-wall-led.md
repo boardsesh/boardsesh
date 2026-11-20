@@ -311,9 +311,11 @@ The setup test remains white and can take control of the same serialized lane.
 
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
-top-row inset. Switching to grid or custom clears this offset-only choice;
-the three common placement choices remain available for every wall pattern.
-LED positions and cable paths are stored alongside the placement choice.
+top-row inset. Switching to grid or custom clears this offset-only choice.
+The other placement choices remain available for every wall pattern. All LED
+placement tiles have the same size. The explanation for complementary positions appears
+below the selection only while that option is selected. LED positions and cable
+paths are stored alongside the placement choice.
 
 ## Wall image and coordinates
 

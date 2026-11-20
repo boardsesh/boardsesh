@@ -1237,7 +1237,7 @@ describe('SprayWallLedSetupScreen', () => {
   });
 
   it.each(['grid', 'offset', 'custom'] as const)(
-    'offers all three LED placements for %s and restores the saved choice',
+    'offers the LED placements for %s and restores the saved choice',
     async (pattern) => {
       storage.load.mockResolvedValue({ ...savedLayout(), pattern, ledPlacement: 'sides' });
       await open();
@@ -1248,9 +1248,20 @@ describe('SprayWallLedSetupScreen', () => {
       await screen.findByText('sprayLedSetup.ledHint');
       expect(radio('ledCenter')).toBeTruthy();
       expect(radio('ledBelow')).toBeTruthy();
+      expect(radio('ledStripe')).toBeTruthy();
       expect(radio('ledSides').getAttribute('aria-checked')).toBe('true');
       expect(screen.queryByRole('radio', { name: 'sprayLedSetup.ledAlternating' }) !== null).toBe(pattern === 'offset');
+      expect(screen.queryByText('sprayLedSetup.ledAlternatingHint')).toBeNull();
+      if (pattern === 'offset') {
+        fireEvent.click(radio('ledAlternating'));
+        expect(screen.getByText('sprayLedSetup.ledAlternatingHint')).toBeTruthy();
+        fireEvent.click(radio('ledStripe'));
+        expect(screen.queryByText('sprayLedSetup.ledAlternatingHint')).toBeNull();
+        fireEvent.click(radio('ledAlternating'));
+        expect(screen.getByText('sprayLedSetup.ledAlternatingHint')).toBeTruthy();
+      }
       fireEvent.click(radio('ledBelow'));
+      expect(screen.queryByText('sprayLedSetup.ledAlternatingHint')).toBeNull();
       back();
       next();
       await screen.findByText('sprayLedSetup.ledHint');
