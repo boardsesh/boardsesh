@@ -34,6 +34,7 @@ import {
   type TnutPoint,
   type CanonicalSprayHold,
   type LedPosition,
+  type SprayLedPlacement,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import { useHeaderActions } from '../../hooks/use-header-actions';
@@ -270,6 +271,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   });
   const [step, setStep] = useState<Step>('pattern');
   const hasUpperLayer = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating';
+  const [ledCardContentHeights, setLedCardContentHeights] = useState<Partial<Record<SprayLedPlacement, number>>>({});
+  const ledPlacements: SprayLedPlacement[] =
+    layout.pattern === 'offset'
+      ? ['center', 'sides', 'below', 'stripe', 'alternating']
+      : ['center', 'sides', 'below', 'stripe'];
+  const ledCardContentHeight = Math.max(0, ...ledPlacements.map((placement) => ledCardContentHeights[placement] ?? 0));
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [step]);
@@ -1035,41 +1042,38 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           <>
             <Text>{t('sprayLedSetup.ledHint')}</Text>
             {expansionTooLarge ? <Text color={brandColors.error}>{t('sprayLedSetup.expandLedsCapacity')}</Text> : null}
-            <View style={[styles.row, { gap: spacing[2] }]}>
-              {(['center', 'sides', 'below', 'stripe'] as const).map((placement) => (
-                <ChoiceCard
-                  key={placement}
-                  label={
-                    placement === 'center'
-                      ? t('sprayLedSetup.ledCenter')
-                      : placement === 'sides'
-                        ? t('sprayLedSetup.ledSides')
-                        : placement === 'below'
-                          ? t('sprayLedSetup.ledBelow')
-                          : t('sprayLedSetup.ledStripe')
-                  }
-                  selected={layout.ledPlacement === placement}
-                  disabled={saving}
-                  onPress={() => changeLayout({ ledPlacement: placement })}
-                >
-                  <LedPlacementThumbnail placement={placement} />
-                </ChoiceCard>
+            <View style={[styles.ledGrid, { margin: -spacing[1] }]}>
+              {ledPlacements.map((placement) => (
+                <View key={placement} style={[styles.ledCell, { padding: spacing[1] }]}>
+                  <ChoiceCard
+                    label={
+                      placement === 'center'
+                        ? t('sprayLedSetup.ledCenter')
+                        : placement === 'sides'
+                          ? t('sprayLedSetup.ledSides')
+                          : placement === 'below'
+                            ? t('sprayLedSetup.ledBelow')
+                            : placement === 'stripe'
+                              ? t('sprayLedSetup.ledStripe')
+                              : t('sprayLedSetup.ledAlternating')
+                    }
+                    selected={layout.ledPlacement === placement}
+                    disabled={saving}
+                    onPress={() => changeLayout({ ledPlacement: placement })}
+                    minimumHeight={ledCardContentHeight ? ledCardContentHeight + spacing[2] * 2 + 4 : undefined}
+                    onMeasureContent={(height) =>
+                      setLedCardContentHeights((previous) =>
+                        previous[placement] === height ? previous : { ...previous, [placement]: height },
+                      )
+                    }
+                  >
+                    <LedPlacementThumbnail placement={placement} firstRowOffset={layout.firstRowOffset} />
+                  </ChoiceCard>
+                </View>
               ))}
             </View>
-            {layout.pattern === 'offset' ? (
-              <View style={[styles.row, { gap: spacing[2], alignItems: 'center' }]}>
-                <ChoiceCard
-                  label={t('sprayLedSetup.ledAlternating')}
-                  selected={layout.ledPlacement === 'alternating'}
-                  disabled={saving}
-                  onPress={() => changeLayout({ ledPlacement: 'alternating' })}
-                >
-                  <LedPlacementThumbnail placement="alternating" firstRowOffset={layout.firstRowOffset} />
-                </ChoiceCard>
-                <View style={{ flex: 2 }}>
-                  <Text variant="footnote">{t('sprayLedSetup.ledAlternatingHint')}</Text>
-                </View>
-              </View>
+            {layout.pattern === 'offset' && layout.ledPlacement === 'alternating' ? (
+              <Text variant="footnote">{t('sprayLedSetup.ledAlternatingHint')}</Text>
             ) : null}
 
             <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -1261,14 +1265,26 @@ function ChoiceCard({
   disabled = false,
   onPress,
   children,
+  minimumHeight,
+  onMeasureContent,
 }: {
   label: string;
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
   children: ReactNode;
+  minimumHeight?: number;
+  onMeasureContent?: (height: number) => void;
 }) {
-  const { systemColors, selection, spacing } = useTheme();
+  const { systemColors, brandColors, spacing } = useTheme();
+  const content = (
+    <>
+      <View style={styles.thumbnail}>{children}</View>
+      <Text variant="footnote" style={styles.cardLabel}>
+        {label}
+      </Text>
+    </>
+  );
   return (
     <PressableSurface
       onPress={onPress}
@@ -1279,17 +1295,23 @@ function ChoiceCard({
       style={[
         styles.card,
         {
-          borderColor: selected ? selection.checkmark : systemColors.separator,
-          backgroundColor: selected ? selection.fill : systemColors.secondaryGroupedBackground,
+          borderColor: selected ? brandColors.primary : systemColors.separator,
+          backgroundColor: systemColors.secondaryGroupedBackground,
           padding: spacing[2],
           gap: spacing[2],
+          minHeight: minimumHeight,
         },
       ]}
     >
-      <View style={styles.thumbnail}>{children}</View>
-      <Text variant="footnote" style={styles.cardLabel}>
-        {label}
-      </Text>
+      {onMeasureContent ? (
+        // Measure natural content, independently of the equal card height. Long
+        // translations and Dynamic Type can grow the entire LED grid safely.
+        <View onLayout={({ nativeEvent }) => onMeasureContent(nativeEvent.layout.height)} style={{ gap: spacing[2] }}>
+          {content}
+        </View>
+      ) : (
+        content
+      )}
     </PressableSurface>
   );
 }
@@ -1347,6 +1369,8 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: { width: '100%', maxWidth: 640, alignSelf: 'center' },
   row: { flexDirection: 'row' },
+  ledGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  ledCell: { width: '33.333333%' },
   stage: { alignItems: 'center' },
   card: { flex: 1, minWidth: 0, borderWidth: 2, borderRadius: 16 },
   thumbnail: { width: '100%', aspectRatio: 1 },
