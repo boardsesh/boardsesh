@@ -59,6 +59,11 @@ vi.mock('../../../src/lib/analytics', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/lib/analytics')>()),
   track: trackMock,
 }));
+vi.mock('../../../src/hooks/use-board-visibility', () => ({
+  useIsBoardTypeVisible: () => isBoardTypeVisible,
+}));
+const isBoardTypeVisible = (boardType: string) => boardType !== 'quantum';
+
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   activateOptions: null as ActivateOptions | null,
@@ -1038,5 +1043,18 @@ describe('the two copies of the gym map', () => {
       params: { gym: 'gym-1', returnTo: '/(tabs)/climbs' },
     });
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-1' } });
+  });
+});
+
+describe('hidden board type filters', () => {
+  it('clears a disabled route preset once and preserves later filter choices', () => {
+    captured.params = { boardType: 'quantum' };
+    captured.coords = { latitude: 40.76, longitude: -111.89 };
+    render(createElement(GymDiscovery));
+    expect(captured.chips?.selected).toEqual([]);
+    act(() => captured.chips?.onToggleMultiBoardType());
+    expect(captured.chips?.multiBoardTypeOnly).toBe(true);
+    act(() => captured.chips?.onToggle('kilter'));
+    expect(captured.chips?.selected).toEqual(['kilter']);
   });
 });

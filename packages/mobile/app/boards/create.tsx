@@ -43,6 +43,8 @@ import { builderSerialParam } from '../../src/components/board-discovery/add-boa
 import { isHeardSerialOffered } from '../../src/lib/boards/heard-serial-offer';
 import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
+import { useAvailableCatalogBoards } from '../../src/hooks/use-board-catalog';
+import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { BoardForm, type BoardConfigError } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
@@ -301,11 +303,11 @@ export default function CreateBoard() {
     [popularConfigList],
   );
   const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
-  // A preset open names its board type with `presetBoardType`; the gym-first
-  // wall list with `boardType`. Nothing else names one.
-  const initialBoardName = presetRequested
-    ? (toBoardName(params.presetBoardType) ?? undefined)
-    : (toBoardName(params.boardType) ?? undefined);
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  // Preset opens use presetBoardType; the gym-first wall list uses boardType.
+  const requestedBoardName = toBoardName(presetRequested ? params.presetBoardType : params.boardType);
+  const initialBoardName =
+    requestedBoardName && isBoardTypeVisible(requestedBoardName) ? requestedBoardName : undefined;
   // Read once: the builder only takes its first value, and the offer can expire under an open form.
   const [initialSerialNumber] = useState(() =>
     presetRequested ? heardSerialForBuilder(params.serial, params.presetBoardType) : undefined,
@@ -316,6 +318,11 @@ export default function CreateBoard() {
     initialSerialNumber,
     privacyEnabled: privacySettings?.enabled,
   });
+
+  const availableBoards = useAvailableCatalogBoards();
+  useEffect(() => {
+    if (!isBoardTypeVisible(builder.boardName)) builder.selectBoard(availableBoards[0]);
+  }, [builder.boardName, builder.selectBoard, availableBoards, isBoardTypeVisible]);
 
   // Auto-generated default name, e.g. "Marco's Kilter Original 12×12", from the
   // user's display name + config. Used as the placeholder and the create-time

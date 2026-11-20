@@ -145,6 +145,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useAddBoardWizardEnabled: () => state.wizard,
   useDirectoryReportsEnabled: () => state.directoryReports,
 }));

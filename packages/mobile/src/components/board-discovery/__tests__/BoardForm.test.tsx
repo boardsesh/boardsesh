@@ -22,6 +22,8 @@ const quantumAngles = vi.hoisted(() => ({
   isPending: true,
   isFetching: false,
 }));
+const rollout = vi.hoisted(() => ({ enabled: true }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
 const headerActions = vi.hoisted(() => ({ trailingDisabled: false }));
 vi.mock('../../../lib/quantum-geometry-store', () => ({
   useHasCompleteQuantumGeometryCatalog: () => quantumCatalog.ready,
@@ -223,6 +225,7 @@ function drawnSections(container: HTMLElement): string[] {
 }
 
 beforeEach(() => {
+  rollout.enabled = true;
   privacy.settings = undefined;
   quantumCatalog.ready = false;
   quantumCatalog.selectedGeometryReady = false;
@@ -296,6 +299,16 @@ describe('BoardForm on a spray wall: Help train hold finding', () => {
 });
 
 describe('BoardForm fixed Quantum catalogue', () => {
+  it('hides Quantum and disables an already selected setup when the flag turns off', () => {
+    const view = render(formFor('quantum', false, builderFor('quantum')));
+    expect(quantumCatalog.boardOptions).toContain('quantum');
+    expect(headerActions.trailingDisabled).toBe(false);
+    rollout.enabled = false;
+    view.rerender(formFor('quantum', false, builderFor('quantum')));
+    expect(quantumCatalog.boardOptions).not.toContain('quantum');
+    expect(headerActions.trailingDisabled).toBe(true);
+  });
+
   it('offers the shipped board while catalogue angles are still loading', () => {
     const builder = { ...builderFor('quantum'), canCreate: false };
     render(formFor('quantum', false, builder));

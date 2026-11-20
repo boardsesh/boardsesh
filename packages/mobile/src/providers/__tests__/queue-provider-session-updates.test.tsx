@@ -19,6 +19,7 @@ import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
 const browseFlag = vi.hoisted(() => ({ enabled: true }));
 const queueCapabilities = vi.hoisted(() => ({ attribution: false }));
 vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useSharedSessionBrowseEnabled: () => browseFlag.enabled,
   useQueueNowSlotEnabled: () => false,
 }));

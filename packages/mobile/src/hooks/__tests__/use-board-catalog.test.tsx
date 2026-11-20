@@ -1,9 +1,46 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useIsBoardTypeVisible } from '../use-board-visibility';
 import { useAvailableCatalogBoards, useBoardCatalogReadiness } from '../use-board-catalog';
 
+const flags = vi.hoisted(() => ({ quantum: undefined as boolean | string | undefined }));
+vi.mock('../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => (key === 'quantum-board' ? flags.quantum : undefined),
+}));
+
+beforeEach(() => {
+  flags.quantum = true;
+});
+
 describe('fixed catalogue configuration boundary', () => {
+  it.each([undefined, false, 'true'])('hides Quantum unless explicitly enabled (%s)', (flag) => {
+    flags.quantum = flag;
+    const { result } = renderHook(() => ({
+      boards: useAvailableCatalogBoards(),
+      ready: useBoardCatalogReadiness('quantum', 9101, 9201).geometryReady,
+      visible: useIsBoardTypeVisible(),
+    }));
+    expect(result.current.boards).not.toContain('quantum');
+    expect(result.current.boards).toContain('kilter');
+    expect(result.current.ready).toBe(false);
+    expect(result.current.visible('quantum')).toBe(false);
+    expect(result.current.visible('spray')).toBe(true);
+  });
+
+  it('updates mounted discovery when the flag changes without changing other boards', () => {
+    flags.quantum = undefined;
+    const { result, rerender } = renderHook(() => useAvailableCatalogBoards());
+    const otherBoards = result.current;
+    flags.quantum = true;
+    rerender();
+    expect(result.current).toContain('quantum');
+    expect(result.current.filter((board) => board !== 'quantum')).toEqual(otherBoards);
+    flags.quantum = false;
+    rerender();
+    expect(result.current).toEqual(otherBoards);
+  });
+
   it('offers all bundled boards immediately and excludes personal walls', () => {
     const { result } = renderHook(() => useAvailableCatalogBoards());
     expect(result.current).toContain('kilter');

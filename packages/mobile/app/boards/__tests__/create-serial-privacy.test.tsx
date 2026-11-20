@@ -69,6 +69,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useAddBoardWizardEnabled: () => false,
   useDirectoryReportsEnabled: () => false,
 }));
@@ -108,7 +109,8 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 
-vi.mock('@boardsesh/board-config', () => ({
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   toBoardName: (value: string) => value,
   boardSetupLabelParts: () => ({ layout: null, size: null, sets: [], angle: null }),
   parseSetIds: (setIds: string) => setIds.split(',').filter(Boolean).map(Number),

@@ -10,6 +10,13 @@ Personal account synchronization and outbound writes remain tracked in
 [#7921](https://github.com/boardsesh/boardsesh/issues/7921), under the
 [Quantum support epic](https://github.com/boardsesh/boardsesh/issues/7917).
 
+## Feature flag
+
+Quantum discovery and setup require the positive `quantum-board` feature flag.
+It defaults off; missing or unresolved flags keep the board hidden. Testers can
+enable **Quantum Board** through Settings → Developer → Feature Flags. Catalogue
+acquisition remains backend-owned and independent of this UI rollout.
+
 ## Board identity and immutable geometry
 
 | Controller model | Product | Layout | Size | Source controller type |
