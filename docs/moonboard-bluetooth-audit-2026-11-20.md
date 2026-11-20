@@ -2,6 +2,8 @@
 
 MoonBoard app **1.3.77 (377)** constructs four controller profiles. Boardsesh at [5e01cb95](https://github.com/boardsesh/boardsesh/tree/5e01cb95b62573da799ac9059566c4b86a0abaa1) implements two of them. Additional gaps include legacy option framing, Pro binary commands and status handling, and extraction of the manufacturer's documented 12-digit controller identifier.
 
+This audit complements the [independent identity and Pro authorization investigation](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md#10-android-v1377-investigation-2026-11-20) merged separately into the protocol specification. Its source comparison remains scoped to the commit above.
+
 This is an interoperability assessment. It changes documentation, not the Bluetooth client. Static code findings establish packet construction and selected call paths; physical controller behavior remains unverified. Hardware model names cannot be inferred solely from these profiles.
 
 ## Findings to review first
@@ -49,7 +51,7 @@ The single-batch converter uses header `03`, with count 1–255. The segmented b
 
 After discovery, method 17402 (`0x7a23f8`) cancels old subscriptions and conditionally subscribes to `cfgStatus` (`…ee09`), `connectionStatus` (`…ee05`) and `chrSessionStatus` (`…ee24`). Missing connection status returns before the session subscription. `authState` (`…ee28`) is registered but is not subscribed by that routine. These channels do not establish a per-frame acknowledgement contract.
 
-`frameCommit` (`…ee04`) is registered; its invocation and payload semantics were not established. `authClaim`, `authSalt`, `authChallenge` and `authUnlock` are registered at `…ee30`–`…ee33`, but complete PIN derivation and authorization gates remain unresolved. Do not invent a commit or unlock sequence from characteristic names.
+`frameCommit` (`…ee04`) is registered; its invocation and payload semantics were not established. This extraction also registers `authClaim`, `authSalt`, `authChallenge` and `authUnlock` at `…ee30`–`…ee33`. The independent trace in [protocol specification §10](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md#10-android-v1377-investigation-2026-11-20) establishes salt/challenge reads, an unlock write and status checking; it supports a SHA-256/HMAC derivation with explicit inference limits. That work extends this extraction, which did not complete the PIN path. Full authorization scope and controller acceptance still need validation. Do not infer a commit or unlock sequence from characteristic names alone.
 
 Boardsesh has no corresponding Pro integration in the audited paths. Implement profile discovery, configuration/mapping, required authorization, binary encoding and notification cleanup before exposing Pro as ready. Controller-management features can then be scoped separately.
 
@@ -95,6 +97,8 @@ The [onboarding copy](../packages/shared/i18n/locales/en-US/boards.json) says �
 
 The inspected APK scan mapper preserves plugin ID, name, manufacturer data and service data; no dedicated 12-character decoder was established in it. Selected Pro parsers consume a 13-byte numeric board configuration, a variable-length UTF-8 configuration name, 16-byte connection-status entries, and a one-byte authentication state. None was established as the documented ID. This does not prove the ID is absent: the app could simply display the existing name without a special parser.
 
+The independent [scan-row and service-data trace](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md#controller-identification) adds that the inspected row displays the name and plugin device ID, with Android obtaining that ID from `BluetoothDevice.getAddress()`. It also traces numeric board/configuration/setup fields in service data. Neither establishes their equivalence to the documented 12-digit identifier.
+
 **Identity compatibility remains unresolved.** Obtain one real controller's name and advertisement bytes, followed by GATT reads if needed, before defining a parser. Verify stability across reconnects and platforms, and keep this identity separate from the platform connection handle and setup PIN.
 
 ## Transport behavior
@@ -121,7 +125,7 @@ Keep the existing guard that refuses a non-empty climb with no encodable holds. 
 
 ## Provenance and verification
 
-The input was the supplied `com.trainingboard.moon` XAPK, version 1.3.77 (377). The ARM64 APK was independently extracted and its `libapp.so` matched the analyzed bytes. Publisher-signature verification was not part of this conclusion.
+The input was the supplied `com.trainingboard.moon` XAPK, version 1.3.77 (377). The ARM64 APK was independently extracted and its `libapp.so` matched the analyzed bytes. This extraction did not verify publisher signatures. The separate investigation in protocol specification §10 records APK signature integrity and signer continuity for these same artifact hashes; it does not claim a direct Play Store download.
 
 | Artifact | SHA-256 |
 | --- | --- |

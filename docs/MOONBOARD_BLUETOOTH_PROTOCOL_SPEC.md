@@ -2,6 +2,7 @@
 
 **Source app**: Moon Climbing (`com.trainingboard.moon`) **v1.2.45** (build 265)
 **Later package check**: v1.3.68 (build 368), 2026-10-14; see §9 for coverage
+**Current package check**: v1.3.77 (build 377), 2026-11-20; ARM64 call-path findings in §10 supersede earlier string-only classifications
 **Stack**: Flutter (Dart AOT; Dart `3.8.1`, stable channel) + [`flutter_reactive_ble`](https://pub.dev/packages/flutter_reactive_ble)
 **Current static audit**: v1.3.77 (377), Dart 3.12.0, 2026-11-20; see [compatibility audit](./moonboard-bluetooth-audit-2026-11-20.md) for additional profiles, flag framing and controller identity. Earlier package observations below remain version-scoped.
 **Transport**: Bluetooth Low Energy (BLE)
@@ -25,7 +26,7 @@ It is a companion to the working code, not a replacement for it. Where the offic
 
 Each claim is tagged so you can separate what was observed in the app from what is inherited from the shared hardware behaviour:
 
-- ✅ **Observed in the official app** — present directly in the shipped app's manifest or its compiled Dart assets (string/symbol table).
+- ✅ **Observed in the official app** — present directly in the shipped app's manifest or compiled Dart assets. §10 distinguishes instruction-level observations from string-only evidence; neither establishes execution on a physical controller.
 - 🔁 **Corroborated wire format** — the byte-level LED encoding the app must speak to the same controllers. Cross-checked against Boardsesh's working `moonboard.ts`, the open-source controller firmware, and the physical LED wiring; not the part that is uniquely attributable to the official app.
 - ❓ **Present, role unconfirmed** — an artefact is present but its exact purpose is not proven by static inspection. Flagged for a live BLE capture.
 
@@ -36,13 +37,14 @@ Each claim is tagged so you can separate what was observed in the app from what 
 | Question                               | Answer                                                                                                                               | Tag  |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---- |
 | BLE library                            | `flutter_reactive_ble` (not `flutter_blue_plus`).                                                                                    | ✅   |
-| How many controller profiles? | **Four in v1.3.77**: RedBearLab, Nordic UART, a third legacy pair and Pro (§2). | ✅ |
+| Controller profiles                    | v1.3.77 defines **three legacy service profiles and one Pro profile**; profiles do not establish physical hardware generations.       | ✅   |
 | Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                                         | ✅   |
 | Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                                          | ✅   |
 | Subscribes to board notifications? | v1.3.77 Pro subscribes to configuration, connection and session status when available. Legacy notification behavior remains unresolved. | ✅❓ |
-| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.                      | ✅   |
+| Bonds / pairs with the board?          | The older v1.2.45 app warns _"DO NOT pair your phone to the board"_. Newer-app bonding behavior remains unverified.                   | ❓   |
+| Board PIN?                            | v1.3.77 implements a controller PIN challenge/unlock flow for its Pro profile; physical-controller behavior remains untested (§10).  | ✅❓ |
 | Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                                           | ✅   |
-| LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                                       | 🔁   |
+| Legacy LED payload format              | ASCII `l#<marker><pos>,<marker><pos>,…#`; Pro uses binary batches traced in the current audit; hardware unverified.                                              | 🔁   |
 | LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                                   | 🔁   |
 | Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).                        | 🔁❓ |
 | "V2" additional-LED feature | Boardsesh/community prefix `~D` differs from the app's `~D*` framing; D/M/B gates are conditional (§5.6 and current audit). | 🔁✅❓ |
@@ -96,7 +98,7 @@ This is the well-known **RedBearLab BLE Shield** UUID family, and `713d0003` is 
 
 This is the path Boardsesh already implements (see `UART_SERVICE_UUID` / `UART_WRITE_CHARACTERISTIC_UUID` in [`transport.ts`](../packages/shared/ble-protocol/src/transport.ts)).
 
-### 2.3 Legacy notification coverage
+### 2.3 Legacy notify channels remain unconfirmed
 
 ✅ Neither notify/TX characteristic appears among the readable literals in the inspected package:
 
@@ -105,7 +107,7 @@ This is the path Boardsesh already implements (see `UART_SERVICE_UUID` / `UART_W
 
 The earlier legacy check identified the two **write** characteristics. Static literal absence does not rule out dynamically constructed UUIDs or another notification path. The v1.3.77 Pro profile does have traced notification subscriptions; see §2.5.
 
-### 2.4 Third legacy profile
+### 2.4 Third legacy service profile
 
 The v1.3.77 constructor at `libapp.so:0x79292c` assigns this pair to a profile with the `legacy` enum, mapping its characteristic under `pixelSingle`:
 
@@ -116,7 +118,20 @@ The v1.3.77 constructor at `libapp.so:0x79292c` assigns this pair to a profile w
 
 The profile is consumed by discovery. The earlier classification of this pair as unrelated SDK identifiers is superseded by this executable-path evidence. Boardsesh does not yet register this pair at the audited commit. Hardware model identity and physical behavior remain unverified.
 
-### 2.5 Pro profile
+### 2.5 Pro service and authentication characteristics
+
+✅ The fourth profile is explicitly tagged `pro`. Its service is `7a112233-4455-6677-8899-aabbccddee01`. The following suffixes share the prefix `7a112233-4455-6677-8899-aabbccddee`:
+
+| Suffix | Profile key | Static role |
+| ------ | ----------- | ----------- |
+| `02` | `pixelSingle` | Single-pixel command characteristic |
+| `30` | `authClaim` | Claim characteristic; exact initialization semantics unverified |
+| `31` | `authSalt` | Read during PIN unlock |
+| `32` | `authChallenge` | Read during PIN unlock |
+| `33` | `authUnlock` | Written with the derived unlock response |
+| `28` | `authState` | Declared in the Pro notification map |
+
+These are recovered application mappings and call paths, not a hardware capture. Boardsesh does not implement this service or its PIN flow. The `pro` enum does not establish current product availability, a default controller model, or equivalence with the V5 retail product.
 
 The same constructor registers service `7a112233-4455-6677-8899-aabbccddee01` with the `pro` enum, 20 primary characteristic mappings and four notification mappings. Traced paths include binary pixel batches and three automatic status subscriptions. This requires a separate integration; adding its UUID to legacy UART discovery is insufficient. See the [packet, lifecycle and authentication limits](./moonboard-bluetooth-audit-2026-11-20.md#pro-protocol-and-lifecycle).
 
@@ -128,13 +143,29 @@ The same constructor registers service `7a112233-4455-6677-8899-aabbccddee01` wi
 
 ✅ The app scans with `flutter_reactive_ble` (symbols `ScanForDevicesRequest`, `scanMode`, `requireLocationServicesEnabled`). Discovered devices arrive as `DiscoveredDevice(id: …)`; services and characteristics are resolved per `DiscoveredService(serviceId: …)` after connect.
 
-Boardsesh recognizes the name prefixes `MoonBoard` and `Moonboard` and scans broadly for this family. Name matching is not manufacturer authentication. The v1.3.77 app's scan path (methods 39683/39684) maps its four-profile registry to service UUIDs and passes a balanced scan setting. That executable-path evidence supersedes the earlier string-only uncertainty about filter membership. The documented 12-digit identifier's encoding remains unresolved.
+Boardsesh recognizes the name prefixes `MoonBoard` and `Moonboard` and scans broadly for this family. Name matching is not manufacturer authentication. The v1.3.77 app's scan path (methods 39683/39684) maps its four-profile registry to service UUIDs and passes a balanced scan setting. That executable-path evidence supersedes the earlier string-only uncertainty about filter membership. The documented 12-digit identifier's encoding remains unresolved. The Pro profile also includes an `advertisingname` configuration characteristic, suffix `0C`.
+
+### Controller identification
+
+[Moon Climbing's V5 product page](https://us.moonclimbing.com/products/moonboard-led-control-box) describes a unique 12-digit identifier for selecting among multiple controllers. This establishes the intended identification feature, but not how those digits are transported or whether the identifier denotes Pro hardware.
+
+The v1.3.77 scan-row builder (`0x855090`) displays the discovered name and a subtitle containing `device.id` plus RSSI (`0x855110`–`0x855188`, text widgets at `0x8552dc` / `0x855304`). Its Android plugin obtains that ID from `BluetoothDevice.getAddress()` (`ReactiveBleClient.scanForDevices$lambda$1`); the advertised name is a separate field. The inspected row does not strip address separators or parse a twelve-digit serial. Whether the product identifier equals the Bluetooth address or is contained in the advertised name remains unresolved. An iOS peripheral UUID is not the Android address and cannot be converted into that identifier.
+
+An additional row path (`0xde33b8`) reads service data under `0000fff0-0000-1000-8000-00805f9b34fb`. Parser `0x855830` accepts 13 bytes with version byte `1`, then reads three little-endian 32-bit words:
+
+| Byte offset | Static consumer | Interpretation and limit |
+| ----------- | --------------- | ------------------------ |
+| `1` | `0xde3860` → `0xde3950` → `0xdced10` → `0xda3f1c` → predicate `0x735e34`; serialized field mapping `0xaf4978`–`0xaf49b8` | Generic-board `api_id` lookup; not a physical controller serial. |
+| `5` | Configuration selector in `0xd9fa4c`, comparison `0xd9fe34`–`0xd9fe5c`; serialized `configuration` mapping `0xb055c8`–`0xb05604` | Configuration API identifier in the branch where the setup word is positive; equivalence to a Boardsesh layout ID requires explicit mapping. |
+| `9` | Third record field `0xde390c`, argument `0xde3930`, positive-value branch `0xde398c`; serialized `setup` mapping `0xaf4abc`–`0xaf4af8` | Setup selector/flag; exact domain and hardware meaning remain unverified. |
+
+These fields offer a potential configuration-recognition path, not evidence of the advertised twelve-digit serial. No matching MoonBoard service-data records were returned by the bounded 30-day PostHog check; the property was absent from the project taxonomy. Hardware generation, advertisement availability and real payloads therefore remain unverified.
 
 ---
 
 ## 4. Connection lifecycle
 
-The earlier v1.2.45 strings and library surface suggested this legacy sequence. It is not the complete v1.3.77 lifecycle: that version adds profile-aware discovery, MTU negotiation and Pro status/authentication surfaces described in the [current audit](./moonboard-bluetooth-audit-2026-11-20.md).
+The earlier v1.2.45 strings and library surface suggested this legacy sequence. It is not the complete v1.3.77 lifecycle: that version adds profile-aware discovery, MTU negotiation and Pro status/authentication surfaces described in the [current audit](./moonboard-bluetooth-audit-2026-11-20.md). The independent Pro authorization trace is retained in §10.
 
 ```
 request BLE + location permissions
@@ -143,7 +174,7 @@ request BLE + location permissions
 scan for devices            (ScanForDevicesRequest)
         │
         ▼
-connect to chosen board     (ConnectToDeviceRequest)  ← NOT bonded
+connect to chosen board     (ConnectToDeviceRequest)
         │   "Do you want to connect to the board (DO NOT pair your phone to the board)?"
         ▼
 discover services           → RedBearLab 713d0000…  OR  Nordic UART 6e400001…
@@ -158,9 +189,11 @@ READY → write LED frames     (write type depends on characteristic — see §5
 disconnect
 ```
 
-✅ **Unbonded by design.** The app surfaces an explicit warning — _"Do you want to connect to the board (DO NOT pair your phone to the board)?"_ — and connects without creating an OS-level bond. An interoperable client should likewise **GATT-connect without pairing**; bonding these controllers is a known source of broken connections.
+✅ **Older-app pairing warning.** The v1.2.45 package contains the explicit warning _"Do you want to connect to the board (DO NOT pair your phone to the board)?"_. Boardsesh uses a plain GATT connection without requesting an OS-level bond. This warning alone does not establish the bonding behavior of every controller or newer app version.
 
-❓ The v1.3.68 package contains copy for an optional secured-board gate: _"Enter your board PIN to send LED data"_ and a six-digit PIN requirement. The quoted pairing warning was not found among this package's readable strings. This copy suggests a PIN flow, but does not establish its BLE messages, whether an unlock is sent over BLE, or a change to bonding behavior. Boardsesh does not implement a PIN exchange; compatibility with secured boards remains unverified.
+✅ The v1.3.68 check established only PIN-related strings. The v1.3.77 investigation now establishes an application-level BLE challenge/unlock path for the Pro profile (§10). The app reads a salt and challenge, writes an authentication response and checks the resulting controller status. This is separate from an Android pairing passkey. No direct `createBond`, `removeBond`, or `setPin` reference was found in the inspected DEX files; OS-initiated pairing and indirect/native paths are not ruled out.
+
+An Android disconnect reported by Boardsesh as ble-plx `201` with `androidErrorCode: 5` is connection-level authentication failure. It is not evidence of an ATT authentication response or a board-PIN challenge. The [native error patch](../patches/react-native-ble-plx@3.5.1.patch) preserves link statuses separately from `attErrorCode`. To establish a PIN requirement, observe the official app on the affected phone/controller and capture the relevant Bluetooth exchange; package strings and a disconnect label cannot answer that question alone.
 
 > **Boardsesh compatibility:** the client now probes Nordic UART and then RedBearLab, with the iOS write type selected from the characteristic properties. The RedBearLab path still needs a check on an original board.
 
@@ -281,7 +314,7 @@ This is the hook an interoperable client should adopt: **record which service a 
 | Original-hardware boards | RedBearLab discovery/write implemented; hardware unverified¹ | RedBearLab profile registered |
 | Per-board hardware version | Probes Nordic then RedBearLab | `led_version` persists; profile protocol is explicit |
 | Notifications | No corresponding MoonBoard status handling | Pro configuration, connection and session subscriptions traced |
-| Bonding / PIN | Plain GATT connect; no setup PIN implementation | Historical no-pairing copy; current Pro authentication surface, full gates unresolved |
+| Bonding / PIN | Plain GATT connect; no setup PIN implementation | Older pairing warning; Pro challenge/unlock path traced in §10, authorization scope and hardware behavior unverified |
 | Legacy payload | `l#…#` and optional inline `~D` | `l#…#` wrapper plus conditional `~flags*`; full coordinate parity unverified |
 | Pro payload | Absent | Binary pixel and base-pixel batches traced |
 | Controller identifier | Generic `#suffix`, otherwise peripheral ID | Manufacturer documents 12-digit ID; wire encoding unresolved |
@@ -294,13 +327,69 @@ This is the hook an interoperable client should adopt: **record which service a 
 
 ## 9. Methodology & limitations
 
-This protocol was reconstructed by **static inspection of the shipped Moon Climbing app** for the sole purpose of interoperability — identifying the BLE services, characteristics, connection model, and message shape an independent client must use to drive the same LED hardware. The original v1.2.45 inspection reported readable UUIDs, library surface, data-model symbols and connection copy. That observation is version-scoped. The v1.3.77 audit encountered obfuscated application symbols and used snapshot metadata plus ARM64 instructions to trace selected paths; readable strings alone did not establish those paths.
+This protocol was reconstructed by **static inspection of the shipped Moon Climbing app** for interoperability: identifying the BLE services, characteristics, connection model, and messages an independent client needs to drive compatible LED hardware. Earlier inspections used readable strings and symbols. v1.3.77 obfuscates Dart names and strips much method metadata; §10 uses recovered object-pool entries and ARM64 instructions instead. Readable strings alone do not establish a call path.
 
 **Why the byte-level encoding is tagged 🔁, not ✅.** The original v1.2.45 distribution analysed for this document bundles only 32-bit (`armeabi-v7a`) native code, while the available Dart-AOT method-body tooling for that check targeted 64-bit snapshots. Static inspection confirms _that_ the app frames LED commands (the `l#` literal and the hardware UUIDs are present) and selects per-board behaviour (`led_version`), but the exact field layout in §5 is taken from the corroborating sources — Boardsesh's shipped `moonboard.ts`, open-source controller firmware, and the physical LED wiring.
 
 **Later package coverage.** The APKPure v1.3.68 base APK (SHA-256 `dd0c8affe7675bfbb4fdaf3d0969b245b1c8524a4ededfbf734ed9d53fbf78ec`) and its ARM64 `libapp.so` (SHA-256 `03532ef1c5b38d4b558b271368a2dd036b45c6cd06c30af8f774789363953634`) retain the RedBearLab and Nordic UART service/write-characteristic literals, `l#`, `led_version`, and both characteristic-write API names. That corroborates their presence in the newer client. The app's call paths and exact packets were not established from this package, so earlier byte-format and controller-behavior limits still apply. A package string alone does not prove a BLE operation was executed.
 
-**Remaining hardware verification:** capture a live BLE session against available controller profiles and compare GATT activity and packet bytes. The v1.3.77 static audit resolves §2.4's profile role, but does not establish physical behavior or exhaustive encoding parity.
+**Hardware validation still required:** capture a live BLE session against each relevant controller profile and compare on-wire bytes with §5. §2.4's application mapping is now established, but its controller identity and behavior remain unverified.
+
+## 10. Android v1.3.77 investigation (2026-11-20)
+
+### Artifact identity and tools
+
+Downloaded the ARM64 XAPK from [APKPure's MoonBoard package listing](https://apkpure.net/moon-climbing-moonboard/com.trainingboard.moon/download). The package is `com.trainingboard.moon`, version `1.3.77`, build `377`, minimum SDK 26 and target SDK 36. It bundles Dart `3.12.0`, snapshot `41be3daaabd524b8aa7423bc24584957`.
+
+| Artifact | SHA-256 |
+| -------- | ------- |
+| XAPK | `331c930b0b463487897296a98400e7585e592aaf4b41b2687d91f3bdd52112bf` |
+| Base APK | `afb221bb58a6cb711bc510cf6816c21386331eb987e7bc63f49238781fbc3dd9` |
+| ARM64 split APK | `fb3f32e89b39ccc3f20881750b587bb06162528f6d5dc30e433005e7460c9636` |
+| ARM64 `libapp.so` | `521724ec57cd94024989f7d5f57927988a15b7d52ec1b6e75787c9ca27e6dc2c` |
+
+Android `ApkVerifier` verified both APKs under signature schemes v2 and v3, without errors or warnings. Their signer SHA-256 is `9903070fe6cf4674e1a8875c07c911aa859a4fee666a8c83a409084d3ec94caf`, matching the earlier inspected release. This verifies signature integrity and signer continuity; the download was from a mirror, not a direct Play Store extraction.
+
+REA inventoried and safely extracted the package. Retained Evidence:
+
+- XAPK inventory: `ev_84941e06a99d322616ae1989182dc9f67df43a04bf9bbea363f69b3d1c69185d`.
+- XAPK extraction: `ev_db4efe9ea7e621b45fbc8de5354c824991a0a5f35c10c3896a26677ab2335d91`.
+- Native split extraction: `ev_24a5a95e25b3259f77e36c163884bb63c53a236c9d7d77164a2ce358c480dc21`.
+
+REA's Android adapter lacked its configured JADX MCP JAR, and macOS denied Hopper Apple Events. The code evidence therefore comes from the installed JADX 1.5.6 CLI, Blutter commit `4a60ac648bf448c5a7596437243bcd0b9376fdf0` for Dart object-pool recovery, and LLVM ARM64 disassembly. These are shell-tool observations, not REA native-analysis Evidence. Blutter's stripped-function export failed; raw instruction references below do not rely on that export. A local annotation helper resolves direct and adjacent add/load references through Dart's pool register; it does not recover every reference or infer control flow. Frame-prologue ranges are navigation aids, not guaranteed function boundaries. The APK was not launched.
+
+### Findings and evidence limits
+
+| Question | Static finding | Instruction or class evidence | Remaining limit |
+| -------- | -------------- | ----------------------------- | --------------- |
+| Are the extra UUIDs Bluetooth-related? | Yes: a third `legacy` service/write pair; a fourth profile is `pro`. | Constructor `0x79292c`; Pro enum store `0x793284`; returned profile list `0x7932a0`–`0x7932b8`. | No physical model or compatibility test for the third legacy profile. |
+| Is the PIN only UI copy? | No: the unlock path requests `authSalt` and `authChallenge`, validates lengths, derives a response and writes `authUnlock`. It refreshes status and can report an incorrect PIN. | `0xd73550`; reads `0xd736d4` / `0xd73708`; unlock write `0xd7399c`; status refresh `0xd739b0`; failure copy `0xd739f0`. | Controller enforcement and the exact cryptographic construction need independent/live validation. |
+| What are the observed sizes? | Salt and challenge checks use tagged length `0x20` (16 bytes each); the HMAC output check uses unboxed `0x20` (32 bytes). | `0xd736f4`, `0xd73728`, `0xd73980`; distinct tagged/unboxed length handling. | These checks describe client expectations, not a captured exchange. |
+| Which operations require a PIN? | A six-digit validator and configuration/LED-mapping authorization path are present. A protected LED action checks authorization before dispatch. | Validator `0x8f0ef4` and `^\d{6}$`; LED-action closures `0xe2f794` / `0xe2f354`; status check `0xe2f27c`. | Whether ordinary climb lighting requires a PIN on a particular controller is unproven. |
+| Does Android explicitly pair or set a PIN? | No direct bonding/PIN API references were found in the DEX string tables. The plugin checks whether bonding is already in progress. | `ReactiveBleClient.discoverServices` and `setupNotification`; full DEX search for `createBond`, `removeBond`, `setPin` and pairing receiver names. | OS-initiated security, JNI and indirect reflection are not ruled out. JADX reported 63 method errors; the inspected bridge methods decompiled successfully. |
+| Is every authentication error proof of a PIN? | No. The official app itself maps several GATT permission/authentication text patterns to a generic PIN-required error. | Error mapper `0xdc609c`, return branch `0xdc625c`–`0xdc627c`. | A user-facing label does not establish the peripheral's security exchange. |
+
+**Cryptographic identification.** The hash constructor loads the eight SHA-256 initial-state words at `0x691e0c`. The response path initializes matching hash states and calls a padding helper with `0x36` at `0x691710` / `0x691714` and `0x5c` at `0x691870` / `0x691874`. Helper `0x691954` XORs input bytes with that pad (`0x691a04`) and fills the remaining block with pad bytes, consistent with [HMAC's inner/outer padding](https://www.rfc-editor.org/rfc/rfc2104). This strongly supports HMAC-SHA-256. The PIN encoder copies ASCII code units directly (`0xb4a694`–`0xb4a6c4`), covering the six decimal digits accepted by the validator.
+
+The traced input construction copies encoded PIN bytes, appends the salt (`0xd73734`–`0xd7374c`), then hashes (`0xd7375c`). The resulting digest is wrapped at `0xd73770`–`0xd737b4`; it and the challenge are passed separately into the MAC path at `0xd737bc`–`0xd737c4`. This is consistent with a SHA-256 PIN-and-salt digest used as the HMAC key over the challenge. Treat that full derivation as a static inference until independently checked with a synthetic test vector or an authorized hardware exchange; the native app was not executed, and no PIN implementation is shipped by this investigation.
+
+### Relevance to the Sofia disconnect
+
+The inspected Boardsesh connection path probes Nordic UART and RedBearLab, then reports connection success after service setup. The recorded Sofia sequence contains successful setup followed by ble-plx `201` / Android `5` disconnects. The sampled success/drop records do not carry the selected service UUID or controller firmware identity.
+
+A controller exposing only the recovered Pro service should fail the current service probes before that success event. This makes the newly found Pro PIN protocol a poor match for a **Pro-only** explanation of the recorded sequence. Dual-service firmware, another legacy security mechanism, stale Android bonding state and controller behavior remain open hypotheses. The MoonBoard hold layout year does not identify its controller model.
+
+The next discriminating evidence is the affected controller's discovered services and an official-app connection attempt on the same Pixel, including any PIN/pairing prompt. Do not add automatic pairing, guessed PINs, or broad retries based on `201/5` alone. The existing Boardsesh recovery change explains the disconnect and preserves a deliberate retry; it does not repair controller authentication.
+
+### Implementation requirements for controller IDs and Pro authorization
+
+These are follow-up requirements, not implemented capabilities. Full Pro support also needs its LED command format and mapping validated; adding a PIN dialog alone would not establish compatibility.
+
+1. **Verify the identity encoding.** Compare the physical controller label with the official app's device name/address and a BLE advertisement/service inventory. Preserve leading zeroes and the verified source. Add a distinct MoonBoard controller identity rather than reusing Aurora's `#serial` parser or deriving an ID from iOS's peripheral UUID.
+2. **Carry identity through both scanners.** The connection adapters retain manufacturer/service data, but `/boards` drops it and combines unknown MoonBoards into one row. Preserve verified identity through scan caching, show separate selectable controllers, and update remembered recognition. A newly received identity must trigger a scan-row update even when RSSI is unchanged. Controller identity does not establish hold layout or gym board configuration.
+3. **Gate Pro operations on positive authorization.** Discover the Pro service before offering PIN entry; do not infer it from a name, layout year or status `5`. Validate PIN encoding, derivation and controller acceptance against an independent test vector or hardware exchange. Keep protected operations unavailable until authorization succeeds, and discard submissions after cancellation, disconnect or connection replacement.
+4. **Cover native reconnects and credential handling.** Native iOS needs a capability-gated authorization bridge and a gate before ready/persist/relight when authorization is required. A JS-only prompt cannot cover background reconnects. Keep credentials in memory initially; any remembered credentials require account/controller-scoped secure storage and sign-out cleanup. PINs and authentication payloads must never enter analytics or error logs.
+5. **Validate the behavior on hardware.** Test two same-name controllers, identifier stability across phones, wrong/correct PIN, cancellation and reconnect, legacy controllers, and ordinary climb lighting. Keep authorization scope and protocol support explicit until those checks pass.
 
 ---
 
@@ -314,7 +403,9 @@ This protocol was reconstructed by **static inspection of the shipped Moon Climb
 | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` | Nordic UART RX (write)                 | yes (write)             |
 | `713d0002-…` / `6e400003-…`            | Notify characteristics                 | No readable literal found; use unverified |
 | `6ba7b811-9dad-11d1-80b4-00c04fd430c8` | `uuid` package NAMESPACE_URL constant  | no                      |
-| `2c9285bc-dfd0-4fd8-a13d-393660f8a060` | Third legacy service (v1.3.77) | yes |
-| `5b2bf25f-9a69-4a5a-8788-6f3ddcb97fc4` | Third legacy write characteristic (v1.3.77) | yes |
+| `2c9285bc-dfd0-4fd8-a13d-393660f8a060` | Third legacy service (v1.3.77)        | yes (profile service)   |
+| `5b2bf25f-9a69-4a5a-8788-6f3ddcb97fc4` | Third legacy `pixelSingle` characteristic | yes (profile command) |
+| `7a112233-4455-6677-8899-aabbccddee01` | Pro service (v1.3.77)                 | yes (profile service)   |
+| `7a112233-…-aabbccddee31` / `32` / `33` | Pro salt / challenge / unlock        | authorization path      |
 | `00000000-0000-0000-0000-000000000000` | Nil UUID                               | no                      |
 

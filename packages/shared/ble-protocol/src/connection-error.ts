@@ -70,13 +70,14 @@ function errorMessage(error: unknown): string {
 // to share across call sites.
 const USER_CANCEL_MESSAGE_PATTERN = /user cancell?ed|Device selection cancelled/i;
 
-// The three numeric codes `react-native-ble-plx` puts on every thrown `BleError`.
+// The numeric codes `react-native-ble-plx` puts on a thrown `BleError`.
 // Read structurally (this package is platform-agnostic pure TS and must not depend
 // on react-native-ble-plx) after gating on the error name below.
 type BlePlxErrorShape = {
   errorCode?: unknown;
   androidErrorCode?: unknown;
   iosErrorCode?: unknown;
+  attErrorCode?: unknown;
 };
 
 // ble-plx's `BleError extends Error` sets `name = 'BleError'` — the reliable
@@ -235,27 +236,50 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
   return 'unknown';
 }
 
-/** Raw ble-plx numeric codes, attached to a connect-failure analytics event. */
+/** Raw ble-plx codes, kept separate by native error domain for analytics. */
 export type BlePlxErrorCodes = {
   bleErrorCode?: number; // react-native-ble-plx BleErrorCode enum value
   androidErrorCode?: number; // low-level Android GATT status (e.g. 133 / 8 / 19)
   iosErrorCode?: number; // iOS CBError code (present only on the ble-plx iOS path)
+  attErrorCode?: number; // ATT operation status; NOT an Android link-disconnect status
 };
+
+/**
+ * A failed write on a confirmed dead link must retain the disconnect signature
+ * used by the send path, without discarding the original native error codes.
+ * Keep only numbers: native error messages can contain peripheral identifiers.
+ */
+export class BleWriteDisconnectedError extends Error {
+  readonly bleErrorCodes: Readonly<BlePlxErrorCodes>;
+
+  constructor(writeError: unknown) {
+    super('Device disconnected during write');
+    this.name = 'BleWriteDisconnectedError';
+    this.bleErrorCodes = Object.freeze(blePlxErrorCodes(writeError));
+  }
+}
 
 /**
  * Pull the raw numeric codes off a thrown ble-plx `BleError` for analytics, so a
  * connect failure's real cause — the `BleErrorCode` and the low-level Android GATT
  * status — is visible in PostHog and the Android connect-failure distribution can
  * be re-measured (#3608). Returns `{}` for any non-ble-plx error (web / native
- * iOS), and omits any platform code that isn't a number. Mirrors the field-reading
+ * iOS), and omits any platform code that isn't a finite number. A normalized
+ * dead-link write retains this numeric snapshot, including the separate ATT
+ * domain; it never promotes an ATT status into androidErrorCode. Mirrors the field-reading
  * `RNBleAdapter` already does on its disconnect path (`bleErrorToDisconnectInfo`).
  */
 export function blePlxErrorCodes(error: unknown): BlePlxErrorCodes {
+  if (error instanceof BleWriteDisconnectedError) return { ...error.bleErrorCodes };
   if (!isBlePlxError(error)) return {};
   const codes: BlePlxErrorCodes = {};
-  if (typeof error.errorCode === 'number') codes.bleErrorCode = error.errorCode;
-  if (typeof error.androidErrorCode === 'number') codes.androidErrorCode = error.androidErrorCode;
-  if (typeof error.iosErrorCode === 'number') codes.iosErrorCode = error.iosErrorCode;
+  if (typeof error.errorCode === 'number' && Number.isFinite(error.errorCode)) codes.bleErrorCode = error.errorCode;
+  if (typeof error.androidErrorCode === 'number' && Number.isFinite(error.androidErrorCode))
+    codes.androidErrorCode = error.androidErrorCode;
+  if (typeof error.iosErrorCode === 'number' && Number.isFinite(error.iosErrorCode))
+    codes.iosErrorCode = error.iosErrorCode;
+  if (typeof error.attErrorCode === 'number' && Number.isFinite(error.attErrorCode))
+    codes.attErrorCode = error.attErrorCode;
   return codes;
 }
 
