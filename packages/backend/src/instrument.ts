@@ -39,6 +39,7 @@ applyGeneratedDevDbEnv();
 dotenv.config({ path: '.env.development.local', override: true });
 
 import * as Sentry from '@sentry/node';
+import { privateFeedbackDiagnosticHooks } from './lib/private-feedback-diagnostics';
 // Leaf config module — pure env-detection helpers with no side effects and no
 // postgres/driver imports, so pulling it in here can't defeat the OTel patching
 // this file must run before.
@@ -62,6 +63,7 @@ const dsn =
   'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400';
 
 Sentry.init({
+  ...privateFeedbackDiagnosticHooks,
   dsn,
   enabled: isProductionSentryEnvironment() && Boolean(dsn),
   enableLogs: true,

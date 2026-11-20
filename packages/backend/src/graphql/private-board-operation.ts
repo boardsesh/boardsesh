@@ -1,6 +1,13 @@
 import { GraphQLError, type ExecutionResult } from 'graphql';
 import { suppressTracing } from '@sentry/node';
 import type { Plugin } from 'graphql-yoga';
+import {
+  isAdminFeedbackDocument,
+  isBoardRequestDocument,
+  isPrivateFeedbackDocument,
+} from '../lib/private-feedback-diagnostics';
+
+export { isAdminFeedbackDocument, isBoardRequestDocument } from '../lib/private-feedback-diagnostics';
 
 const TOKEN_FIELDS = ['boardShareLinkPreview', 'redeemBoardShareLink'] as const;
 const SAFE_ERROR_CODES = new Set([
@@ -14,18 +21,6 @@ const SAFE_ERROR_CODES = new Set([
   'BOARD_REQUEST_UNAVAILABLE',
   'SERVICE_UNAVAILABLE',
 ]);
-
-export function isBoardRequestDocument(document: string): boolean {
-  return document.includes('submitBoardRequest');
-}
-
-export function isAdminFeedbackDocument(document: string): boolean {
-  return document.includes('adminAppFeedback');
-}
-
-function isPrivateFeedbackDocument(document: string): boolean {
-  return isBoardRequestDocument(document) || isAdminFeedbackDocument(document);
-}
 
 function isBoardShareTokenDocument(document: string): boolean {
   return TOKEN_FIELDS.some((field) => document.includes(field));
