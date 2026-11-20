@@ -63,6 +63,7 @@ type QueryResult = {
 
 let queryResult: QueryResult;
 let lastQueryOptions: QueryOptions | null = null;
+const scrollIntoView = vi.fn();
 
 function gym(overrides: Partial<GymDirectoryCard> = {}): GymDirectoryCard {
   return {
@@ -125,6 +126,9 @@ function defineGeolocationSupport(supported: boolean) {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  scrollIntoView.mockReset();
+  window.history.replaceState({}, '', '/gyms');
   defineGeolocationSupport(true);
   analytics.trackGymFunnelEvent.mockReset();
   geolocation.requestPermission.mockReset();
@@ -209,6 +213,26 @@ describe('browse mode', () => {
     const map = screen.getByTestId('map-stub');
     expect(map.getAttribute('data-pinned')).toBe('15');
     expect(map.getAttribute('data-shown')).toBe('24');
+  });
+
+  it('reveals the map only after an explicit open, preserving history scroll positions', async () => {
+    window.history.replaceState({}, '', '/gyms?view=map');
+    renderNearMe();
+    await screen.findByRole('button', { name: 'Hide map' });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    window.history.replaceState({}, '', '/gyms');
+    fireEvent(window, new PopStateEvent('popstate'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show map' }));
+    expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', inline: 'nearest', behavior: 'auto' });
+    expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByTestId('map-stub').parentElement);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide map' }));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    window.history.replaceState({}, '', '/gyms?view=map');
+    fireEvent(window, new PopStateEvent('popstate'));
+    await screen.findByRole('button', { name: 'Hide map' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
   it('offers a map toggle for the narrow layout, with no matchMedia read', () => {
