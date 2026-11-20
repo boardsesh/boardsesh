@@ -80,6 +80,21 @@ describe('the OTA env contract', () => {
     );
   });
 
+  it('keeps source maps in a private bucket Cloudflare declares, apart from the updates bucket', () => {
+    // Two config tools, one bucket name, no shared import. xprem refuses to boot
+    // with source maps in a bucket CDN_BASE_URL fronts, and a map carries the
+    // app's source, so the bucket must exist, be another one, and have no host.
+    const valueOf = (name: string) => OTA_REQUIRED_VARS.find((variable) => variable.name === name)?.value;
+    expect(valueOf('UPLOAD_SOURCEMAPS')).toBe('true');
+    const sourcemapBucketName = valueOf('S3_BUCKET_SOURCEMAPS_NAME');
+    expect(sourcemapBucketName).toBeDefined();
+    expect(sourcemapBucketName).not.toBe(valueOf('S3_BUCKET_NAME'));
+    const sourcemapBucket = desiredR2Buckets.find((bucket) => bucket.name === sourcemapBucketName);
+    expect(sourcemapBucket, `${String(sourcemapBucketName)} should be a declared R2 bucket`).toBeDefined();
+    expect(sourcemapBucket?.customDomain).toBeNull();
+    expect(sourcemapBucket?.r2DevDomainEnabled).toBe(false);
+  });
+
   it('never redirects patches to the CDN, which does not add the headers a patch needs', () => {
     // With BUNDLE_DIFFING_CDN_REDIRECT=true and no im / expo-base-update-id
     // headers at the edge, every device with a patch available fails its update
