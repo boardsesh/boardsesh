@@ -12,6 +12,7 @@ import {
   parseSerialNumber,
   isRetryableAndroidConnectError,
   blePlxErrorCodes,
+  BleWriteDisconnectedError,
 } from '@boardsesh/ble-protocol';
 import { getBleManager } from './ble-manager';
 import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
@@ -666,7 +667,7 @@ export class RNBleAdapter implements BluetoothAdapter {
         // transient write failure on a live link must not look like a drop).
         const stillConnected = await this.connectedDevice?.isConnected().catch(() => false);
         if (!stillConnected) {
-          throw new Error('Device disconnected during write');
+          throw new BleWriteDisconnectedError(error);
         }
         throw error;
       }

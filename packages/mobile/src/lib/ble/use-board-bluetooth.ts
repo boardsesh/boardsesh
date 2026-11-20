@@ -45,6 +45,7 @@ import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermissio
 import { describeBlePermissionDenial } from './android-location-permission';
 import { alertBluetoothPermissionDenied, alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { manufacturerCompanyId } from './advertisement';
+import { classifyBleDisconnect } from './disconnect-category';
 import type {
   BleAdapterOptions,
   BleDisconnectInfo,
@@ -557,6 +558,7 @@ type ActiveBleConnectionLifetime = {
   generation: number;
   configIdentity: string;
   startedAtMs: number;
+  setupComplete: boolean;
   attribution: Omit<BleConnectionEnded, 'reason' | 'disconnectTrigger' | 'connectionDurationSec' | 'disconnectInfo'>;
 };
 
@@ -1023,11 +1025,12 @@ export function useBoardBluetooth({
 
   const beginConnectionLifetime = useCallback(
     (adapter: BluetoothAdapter, generation: number, configIdentity: string) => {
-      activeConnectionLifetimeRef.current = {
+      const lifetime: ActiveBleConnectionLifetime = {
         adapter,
         generation,
         configIdentity,
         startedAtMs: Date.now(),
+        setupComplete: false,
         attribution: {
           boardName: boardName ?? '',
           layoutId,
@@ -1036,6 +1039,8 @@ export function useBoardBluetooth({
           inSession: analyticsInSessionRef.current,
         },
       };
+      activeConnectionLifetimeRef.current = lifetime;
+      return lifetime;
     },
     [boardName, layoutId, setIds, sizeId],
   );
@@ -1349,8 +1354,14 @@ export function useBoardBluetooth({
       }
       consumeConnectionLifetime(expectedAdapter, expectedGeneration, 'unexpected', 'link_drop', info);
       clearConnectionAfterDrop(expectedAdapter);
+      // Setup failures already get a connect-failure alert. Once setup has
+      // succeeded, this drop otherwise only closes the controls and goes silent.
+      // Consuming the generation above keeps duplicate/stale callbacks silent.
+      if (lifetime.setupComplete && classifyBleDisconnect(info) === 'authentication_failed') {
+        Alert.alert(t('ble.authenticationFailedTitle'), t('ble.authenticationFailedBody'));
+      }
     },
-    [clearConnectionAfterDrop, consumeConnectionLifetime],
+    [clearConnectionAfterDrop, consumeConnectionLifetime, t],
   );
 
   const sendFramesToBoard = useCallback(
@@ -1746,9 +1757,24 @@ export function useBoardBluetooth({
           const bleFailureReason = classifyBleFailureReason(error);
           console.error('Error sending frames to board:', error);
           const writeDiagnostics = await fetchWriteDiagnostics();
+          // Diagnostics can outlive the link: a native disconnect or a deliberate
+          // reconnect may consume this generation while the fetch is pending.
+          // Keep that winner's attribution and never charge the replacement's
+          // write-failure streak or report a takeover from this stale write.
+          const currentLifetime = activeConnectionLifetimeRef.current;
+          if (
+            combinedSignal.aborted ||
+            adapterRef.current !== sendAdapter ||
+            currentLifetime?.adapter !== sendAdapter ||
+            currentLifetime?.generation !== sendGeneration
+          ) {
+            return;
+          }
+          const nativeErrorCodes = blePlxErrorCodes(error);
           track(SHARED_EVENTS.ClimbSentToBoardFailure, {
             ...boardAnalyticsProperties,
             failureReason: bleFailureReason,
+            ...nativeErrorCodes,
             ...bleWriteDiagnosticsProperties(writeDiagnostics),
           });
           // A write that fails because the link is gone is a lost link. The
@@ -1791,11 +1817,17 @@ export function useBoardBluetooth({
             // The tug-of-war signal (another device grabbed a shared board) only
             // fits the predicate-matched case; a MoonBoard link timeout isn't a
             // steal, so don't mislabel it.
-            if (lostLink) {
+            const disconnectInfo: BleDisconnectInfo = {
+              source: 'write-failure',
+              bleErrorCode: nativeErrorCodes.bleErrorCode,
+              androidErrorCode: nativeErrorCodes.androidErrorCode,
+              iosErrorCode: nativeErrorCodes.iosErrorCode,
+            };
+            if (lostLink && classifyBleDisconnect(disconnectInfo) !== 'authentication_failed') {
               track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
             }
             if (sendAdapter && sendGeneration !== null) {
-              handleDisconnection(sendAdapter, sendGeneration, { source: 'write-failure' });
+              handleDisconnection(sendAdapter, sendGeneration, disconnectInfo);
             }
           }
           return false;
@@ -2031,7 +2063,7 @@ export function useBoardBluetooth({
         unsubDisconnectRef.current = adapter.onDisconnect((info) => {
           handleDisconnection(adapter, connectionGeneration, info);
         });
-        beginConnectionLifetime(adapter, connectionGeneration, connectionIdentity);
+        const connectionLifetime = beginConnectionLifetime(adapter, connectionGeneration, connectionIdentity);
         const connectionHandle = createConnectionHandle(
           adapter,
           connectionGeneration,
@@ -2173,7 +2205,7 @@ export function useBoardBluetooth({
         //   - false is NOT returned when the adapter's onDisconnect fires during
         //     the write: write() resolves, the send reports success, and the
         //     teardown has already happened. The boolean misses that case entirely.
-        if (adapterRef.current !== adapter) {
+        if (adapterRef.current !== adapter || activeConnectionLifetimeRef.current !== connectionLifetime) {
           // clearConnectionAfterDrop already flipped isConnected to false, aborted
           // this write generation, disposed the adapter and cleared the Sentry BLE
           // tags — including onConnectionChange?.(false) without a preceding true,
@@ -2213,6 +2245,7 @@ export function useBoardBluetooth({
             ? { frames: initialFrames, mirrored: !!mirrored, colorSignature, encodingSignature }
             : null;
 
+        connectionLifetime.setupComplete = true;
         setIsConnected(true);
         onConnectionChange?.(true);
         onConnectSuccess?.(parsedSerial, connectionHandle);
@@ -2228,6 +2261,11 @@ export function useBoardBluetooth({
         // (getNativeBleConnectedDevice already swallows native errors → null, but
         // be explicit so analytics parity can't regress).
         const connectionDiagnostics = await getNativeBleConnectedDevice().catch(() => null);
+        // A disconnect or deliberate replacement can win while diagnostics are
+        // pending. Do not restore its tags or report success for a dead generation.
+        if (adapterRef.current !== adapter || activeConnectionLifetimeRef.current !== connectionLifetime) {
+          return false;
+        }
         setBleDiagnosticsTags(connectionDiagnostics);
         // apiLevel is the level parseApiLevel actually picked; deviceNamePresent
         // records whether an advertised name was even available. parseApiLevel
@@ -2693,7 +2731,7 @@ export function useBoardBluetooth({
       unsubDisconnectRef.current = adapter.onDisconnect((info) => {
         handleDisconnection(adapter, connectionGeneration, info);
       });
-      beginConnectionLifetime(adapter, connectionGeneration, currentConnectionIdentity);
+      const connectionLifetime = beginConnectionLifetime(adapter, connectionGeneration, currentConnectionIdentity);
       const connectionHandle = createConnectionHandle(
         adapter,
         connectionGeneration,
@@ -2735,6 +2773,7 @@ export function useBoardBluetooth({
       // Adoption only takes a box named for this board (or the one paired for
       // it), so a hang-up keeps whatever was just remembered.
       hangUpKeepsBoardRef.current = serial || rememberDeviceId ? currentConfigKey : null;
+      connectionLifetime.setupComplete = true;
       setIsConnected(true);
       onConnectionChange?.(true);
       onConnectSuccess?.(serial, connectionHandle);
