@@ -125,6 +125,7 @@ export default async function EmbedBoardPage(props: EmbedBoardRouteProps) {
         <KioskPresenceHub boardIds={[board.boardId]} boardUuids={{ [board.boardId]: board.uuid }}>
           <BoardSlot
             boardId={board.boardId}
+            boardUuid={board.uuid}
             boardName={board.name}
             slug={board.slug}
             angle={board.angle}

@@ -897,6 +897,25 @@ describe('queries the capture flows can reach', () => {
   const defaulted = new Set(Object.keys(REPLAY_DEFAULT_RESPONSES));
   const declaredUnsent = new Set<string>(QUERIES_NO_CAPTURE_SENDS);
 
+  it('keeps Aurora grade reads unsent only while recorded wall feeds contain no Aurora displays', () => {
+    const wallFeeds = new Set([
+      'BoardRecentHistory',
+      'BoardRecentClimbs',
+      'BoardNowPlaying',
+      'BoardHistory',
+      'BoardHistoryPage',
+    ]);
+    const recordedWallFeeds = manifest.graphql.filter((entry) => wallFeeds.has(entry.operationName));
+    expect(recordedWallFeeds.length).toBeGreaterThan(0);
+    const containsAuroraDisplay = (input: unknown): boolean => {
+      if (Array.isArray(input)) return input.some(containsAuroraDisplay);
+      if (!input || typeof input !== 'object') return false;
+      const record = input as Record<string, unknown>;
+      return record.source === 'aurora' || Object.values(record).some(containsAuroraDisplay);
+    };
+    expect(recordedWallFeeds.filter((entry) => containsAuroraDisplay(readFixture(entry.file).response))).toEqual([]);
+  });
+
   it('places every query the app can send', () => {
     const unplaced = registeredQueryNames
       .filter((name) => !recorded.has(name) && !defaulted.has(name) && !declaredUnsent.has(name))

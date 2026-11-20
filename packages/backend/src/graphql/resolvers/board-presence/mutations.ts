@@ -1,3 +1,4 @@
+import { isImportedBoardClimb } from '@boardsesh/board-presence';
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
@@ -1189,7 +1190,7 @@ export const boardPresenceMutations = {
     // Read after the seq is allocated, and only below it: a set that commits in
     // between with a higher seq outranks this clear and must not be named.
     const recentClimbs = await pubsub.getRecentBoardClimbs(boardKey);
-    const clearedClimb = recentClimbs.find((climb) => climb.seq < seq && climb.source !== 'kilter');
+    const clearedClimb = recentClimbs.find((climb) => climb.seq < seq && !isImportedBoardClimb(climb));
     const climbUuid = clearedClimb?.climbUuid ?? null;
     const clearedAt = new Date().toISOString();
     await pubsub.commitBoardClear(boardKey, { seq, clearedAt, climbUuid });

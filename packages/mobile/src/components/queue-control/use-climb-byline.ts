@@ -12,20 +12,20 @@ import { formatQuality, formatSends } from '../../lib/format-climb-stats';
  * the list rows read, keyed on the climb's own board.
  */
 export function useClimbStatsDetail(
-  climb: Climb,
+  climb: Climb | null,
   boardConfig: BoardConfig | null,
   { statsEnabled = true }: { statsEnabled?: boolean } = {},
 ): string | null {
   const { t } = useTranslation('climbs');
   const stats = useEffectiveClimbStats(
-    (climb.boardType ?? boardConfig?.boardName ?? '') as BoardName,
-    climb.layoutId ?? boardConfig?.layoutId ?? 0,
-    climb.uuid,
-    climb.angle,
-    { ascensionistCount: climb.ascensionist_count, qualityAverage: climb.quality_average },
-    { enabled: statsEnabled && boardConfig !== null },
+    (climb?.boardType ?? boardConfig?.boardName ?? '') as BoardName,
+    climb?.layoutId ?? boardConfig?.layoutId ?? 0,
+    climb?.uuid ?? '',
+    climb?.angle ?? 0,
+    { ascensionistCount: climb?.ascensionist_count, qualityAverage: climb?.quality_average },
+    { enabled: statsEnabled && climb !== null && boardConfig !== null },
   );
-  if (!statsEnabled) return null;
+  if (!statsEnabled || !climb) return null;
   const isDraft = climb.is_draft === true;
   const sends = !isDraft && stats.ascensionistCount > 0 ? formatSends(stats.ascensionistCount, t) : null;
   const rating =

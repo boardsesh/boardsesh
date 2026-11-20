@@ -55,7 +55,13 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         ) : null
       }
       renderChrome={(layout) => (
-        <WallChromeRegion {...layout} mode={mode} preview={preview} boardName={boardConfig.boardName} />
+        <WallChromeRegion
+          {...layout}
+          mode={mode}
+          preview={preview}
+          boardName={boardConfig.boardName}
+          boardConfig={boardConfig}
+        />
       )}
     />
   );

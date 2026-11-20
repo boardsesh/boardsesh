@@ -4,6 +4,7 @@ import React, { act } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import ClimbThumbnail from '@/app/components/climb-card/climb-thumbnail';
@@ -103,7 +104,10 @@ describe('backend-only board images', () => {
         showInstallQr={false}
       />
     );
-    const { container, rerender } = render(slot);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const { container, rerender } = render(slot, {
+      wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+    });
     const seededImage = container.querySelector('img');
     expect(seededImage?.getAttribute('src')).toBe(bareImageUrl);
 

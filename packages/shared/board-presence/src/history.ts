@@ -1,5 +1,20 @@
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
+/** Imported sequences describe ingestion, never native LED/clear ordering. */
+export function isImportedBoardClimb(climb: Pick<BoardPresenceClimb, 'source'>): boolean {
+  return climb.source === 'kilter' || climb.source === 'aurora';
+}
+
+/** Only the explicit native value or legacy missing provenance can order native writes. */
+export function isNativeBoardClimb(climb: Pick<BoardPresenceClimb, 'source'>): boolean {
+  return climb.source == null || climb.source === 'boardsesh';
+}
+
+/** Wire provenance is a GraphQL String; future/invalid sources must fail closed. */
+export function isSupportedBoardClimb(climb: Pick<BoardPresenceClimb, 'source'>): boolean {
+  return isNativeBoardClimb(climb) || isImportedBoardClimb(climb);
+}
+
 /** Normalize legacy naive UTC timestamps without losing upstream microseconds. */
 function sortableTimestamp(timestamp: string): string {
   const isoTimestamp = timestamp.replace(' ', 'T');
@@ -29,8 +44,8 @@ export function mergeBoardHistory(
   incoming: BoardPresenceClimb[],
   limit = Infinity,
 ): BoardPresenceClimb[] {
-  const byKey = new Map(existing.map((climb) => [boardHistoryEntryKey(climb), climb]));
-  for (const climb of incoming) {
+  const byKey = new Map(existing.filter(isSupportedBoardClimb).map((climb) => [boardHistoryEntryKey(climb), climb]));
+  for (const climb of incoming.filter(isSupportedBoardClimb)) {
     const key = boardHistoryEntryKey(climb);
     if (!byKey.has(key)) byKey.set(key, climb);
   }

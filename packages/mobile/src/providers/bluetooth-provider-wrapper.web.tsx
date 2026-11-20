@@ -20,6 +20,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
 
   return (
     <BluetoothProvider
+      angle={activeBoard?.angle}
       boardName={activeBoard?.boardType}
       layoutId={activeBoard?.layoutId}
       sizeId={activeBoard?.sizeId}

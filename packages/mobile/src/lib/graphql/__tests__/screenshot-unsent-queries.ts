@@ -24,6 +24,9 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardClimbRecentSenders',
   'BoardHistory',
   'BoardHistoryPage',
+  // Pinned wall feeds contain no Aurora imports; the grade hook stays disabled.
+  // screenshot-fixture-drift.test.ts guards that evidence before allowing this exemption.
+  'BoardPresenceClimbGrades',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
   'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.

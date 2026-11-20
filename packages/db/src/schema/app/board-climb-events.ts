@@ -31,7 +31,8 @@ export const boardClimbEvents = pgTable(
     externalOccurrenceKey: text('external_occurrence_key'),
     externalDisplayName: text('external_display_name'),
     climbUuid: text('climb_uuid').notNull(),
-    angle: integer('angle').notNull(),
+    // Upstream Aurora displays do not carry an angle; viewers supply their current angle.
+    angle: integer('angle'),
     // The member whose phone wrote the frames. Nullable so deleting a user
     // doesn't erase the board's history.
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),

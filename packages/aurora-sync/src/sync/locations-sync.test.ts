@@ -11,6 +11,8 @@ import {
 import type { AuroraGymUser } from '../api/gym-walls-api';
 import type { Wall } from '../api/sync-api-types';
 
+vi.mock('./aurora-wall-sources', () => ({ syncAuroraWallSources: vi.fn(() => Promise.resolve()) }));
+
 const BOARD_HOUSE_PIN = {
   id: 123,
   username: 'board-house',
@@ -140,7 +142,7 @@ describe('buildAuroraLocationRecords', () => {
   it('rejects a wall whose layout or size is not in the catalogue', () => {
     // Never coerce the unknown config: publishing a plausible-looking guess for
     // a wall we can't read is the failure this whole change exists to stop.
-    const { records, skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ layout_id: 4242 })])]);
+    const { skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ layout_id: 4242 })])]);
 
     expect(skipped).toContainEqual({
       sourceKey: 'tension:123',

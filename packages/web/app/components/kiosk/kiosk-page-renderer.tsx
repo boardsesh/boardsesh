@@ -200,6 +200,7 @@ export default async function KioskPageRenderer({ gymSlug, kioskSlug }: { gymSlu
                   <BoardSlot
                     key={slot.board.boardUuid}
                     boardId={slot.board.boardId}
+                    boardUuid={slot.board.boardUuid}
                     boardName={slot.board.name}
                     angle={slot.board.angle}
                     boardDetails={slot.boardDetails}

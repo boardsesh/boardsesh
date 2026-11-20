@@ -1,7 +1,9 @@
+import { isSupportedBoardClimb } from '@boardsesh/board-presence';
 import { redactBoardEvent } from '../../../services/board-session-privacy';
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { kilterLiveSync } from '../../../services/kilter-live-sync';
+import { auroraLiveSync, isAuroraLiveEnabled } from '../../../services/aurora-live-sync';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
@@ -30,7 +32,11 @@ export const boardPresenceSubscriptions = {
     subscribe: withSubscriptionCleanup(async function* (
       lifetime,
       _: unknown,
-      { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
+      {
+        boardId,
+        boardUuid,
+        includeAurora,
+      }: { boardId: number; boardUuid?: string | null; includeAurora?: boolean | null },
       ctx: ConnectionContext,
     ) {
       // Bumped to the same 60/min budget as the sibling anon-tolerant reads
@@ -97,10 +103,14 @@ export const boardPresenceSubscriptions = {
           if (activeClear) push({ __typename: 'BoardClimbCleared', ...activeClear });
           // The managed lifetime closes late setup and idle subscriptions.
           // Keep the polling lease in the same owned source as its listener.
-          const stopWatching =
-            !lifetime.closed && ctx.userId && presenceBoard?.boardType === 'kilter'
-              ? kilterLiveSync.watch(boardId, ctx.userId, ctx.connectionId)
-              : () => {};
+          let stopWatching = () => {};
+          if (!lifetime.closed && ctx.userId && presenceBoard) {
+            if (presenceBoard.boardType === 'kilter') {
+              stopWatching = kilterLiveSync.watch(boardId, ctx.userId, ctx.connectionId);
+            } else if (includeAurora === true && isAuroraLiveEnabled(presenceBoard.boardType)) {
+              stopWatching = auroraLiveSync.watch(boardId, ctx.userId, ctx.connectionId);
+            }
+          }
           return () => {
             stopWatching();
             unsubscribe();
@@ -117,7 +127,26 @@ export const boardPresenceSubscriptions = {
         await requireAnonReadableBoard(boardId, eventReaderId, boardUuid);
         const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, eventReaderId, boardUuid, db);
         if (gate && !(await gate())) return;
-        yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid, eventReaderId) };
+        // Old installed clients classify unknown sources as native. Do not
+        // deliver Aurora displays until that subscription opts into them.
+        if (
+          event.__typename === 'BoardClimbSet' &&
+          (!isSupportedBoardClimb(event.climb) || (includeAurora !== true && event.climb.source === 'aurora'))
+        )
+          continue;
+        const compatibleEvent =
+          event.__typename === 'BoardHistoryUpdated'
+            ? {
+                ...event,
+                climbs: event.climbs.filter(
+                  (climb) => isSupportedBoardClimb(climb) && (includeAurora === true || climb.source !== 'aurora'),
+                ),
+              }
+            : event;
+        if (compatibleEvent.__typename === 'BoardHistoryUpdated' && compatibleEvent.climbs.length === 0) continue;
+        yield {
+          boardNowPlaying: await redactBoardEvent(compatibleEvent, ctx.userId, boardId, boardUuid, eventReaderId),
+        };
       }
     }),
   },

@@ -640,6 +640,7 @@
         "headerSwitcherHintClose": "Hides the other boards"
       },
       "kilterHistorySource": "Displayed via Kilter",
+      "auroraHistorySource": "Displayed via {{board}}",
       "retryHistory": "Try loading history again",
       "wallDisplay": {
         "open": "Wall display",

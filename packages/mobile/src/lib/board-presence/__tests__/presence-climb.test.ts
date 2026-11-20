@@ -77,3 +77,12 @@ describe('boardPresenceClimbToClimb', () => {
     });
   });
 });
+
+it('uses each viewer selected angle for Aurora queue previews without changing the shared record', () => {
+  const imported = climb({ source: 'aurora', angle: null, grade: null });
+  expect(boardPresenceClimbToClimb(imported, 25).angle).toBe(25);
+  expect(boardPresenceClimbToClimb(imported, 50).angle).toBe(50);
+  expect(boardPresenceClimbToClimb(imported, 0).angle).toBe(0);
+  expect(imported.angle).toBeNull();
+  expect(boardPresenceClimbToClimb(climb({ source: 'kilter', angle: 40 }), 25).angle).toBe(40);
+});

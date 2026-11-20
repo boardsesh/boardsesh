@@ -1,5 +1,5 @@
 import { getGradeColor } from '@boardsesh/board-constants';
-import { and, desc, eq, gte, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { boardClimbEvents, users, userProfiles } from '@boardsesh/db/schema';
 import type { BoardHistoryPage, BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -7,7 +7,7 @@ import { db } from '../db/client';
 import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { parsePostgresUtcTimestamp } from '../utils/postgres-timestamps';
-import { mergeBoardHistory } from '@boardsesh/board-presence';
+import { isSupportedBoardClimb, mergeBoardHistory } from '@boardsesh/board-presence';
 import { logger } from '../utils/logger';
 
 export const HISTORY_TTL_SECONDS = 604_800;
@@ -33,7 +33,7 @@ type HistoryRow = {
   name: string | null;
   grade: string | null;
   frames: string | null;
-  angle: number;
+  angle: number | null;
   setter: string | null;
   source: string;
   confirmedAt: string;
@@ -47,7 +47,7 @@ type HistoryRow = {
 };
 
 export function historyRowToClimb(row: HistoryRow): BoardPresenceClimb {
-  const imported = row.source === 'kilter';
+  const imported = row.source === 'kilter' || row.source === 'aurora';
   // Postgres timestamps are UTC by convention; retain sub-millisecond ordering.
   const timestamp = row.confirmedAt.replace(' ', 'T');
   const sentAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(timestamp)
@@ -61,7 +61,7 @@ export function historyRowToClimb(row: HistoryRow): BoardPresenceClimb {
     frames: row.frames,
     angle: row.angle,
     setter: row.setter,
-    source: imported ? 'kilter' : 'boardsesh',
+    source: row.source === 'aurora' ? 'aurora' : imported ? 'kilter' : 'boardsesh',
     seq: Number(row.seq),
     sentAt,
     sentByUserId: imported ? null : row.userId,
@@ -95,6 +95,7 @@ export async function readBoardHistoryPage(
   boardId: number,
   limit = 50,
   before?: string | null,
+  includeAurora = false,
 ): Promise<BoardHistoryPage> {
   const pageSize = Math.min(100, Math.max(1, limit));
   const cursor = before ? parseHistoryPageCursor(before, boardId) : null;
@@ -106,6 +107,7 @@ export async function readBoardHistoryPage(
     .where(
       and(
         eq(boardClimbEvents.boardId, boardId),
+        inArray(boardClimbEvents.source, includeAurora ? ['boardsesh', 'kilter', 'aurora'] : ['boardsesh', 'kilter']),
         cursor
           ? or(
               lt(boardClimbEvents.confirmedAt, cursor.timestamp),
@@ -127,7 +129,10 @@ export async function readBoardHistoryPage(
   };
 }
 
-export async function readImportedRecentClimbs(boardId: number): Promise<BoardPresenceClimb[]> {
+export async function readImportedRecentClimbs(
+  boardId: number,
+  source: 'kilter' | 'aurora' = 'kilter',
+): Promise<BoardPresenceClimb[]> {
   const rows = await db
     .select(selectedHistory)
     .from(boardClimbEvents)
@@ -136,7 +141,7 @@ export async function readImportedRecentClimbs(boardId: number): Promise<BoardPr
     .where(
       and(
         eq(boardClimbEvents.boardId, boardId),
-        eq(boardClimbEvents.source, 'kilter'),
+        eq(boardClimbEvents.source, source),
         gte(boardClimbEvents.confirmedAt, new Date(Date.now() - HISTORY_TTL_SECONDS * 1000).toISOString()),
       ),
     )
@@ -145,7 +150,7 @@ export async function readImportedRecentClimbs(boardId: number): Promise<BoardPr
   return rows.map(historyRowToClimb);
 }
 
-function isImportedHistoryEntry(entry: unknown): entry is BoardPresenceClimb {
+function isImportedHistoryEntry(entry: unknown, source: 'kilter' | 'aurora'): entry is BoardPresenceClimb {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
   const cachedEntry = entry as Record<string, unknown>;
   const nullableStringFields = [
@@ -160,7 +165,7 @@ function isImportedHistoryEntry(entry: unknown): entry is BoardPresenceClimb {
     'sentByUserId',
   ];
   return (
-    cachedEntry.source === 'kilter' &&
+    cachedEntry.source === source &&
     typeof cachedEntry.climbUuid === 'string' &&
     typeof cachedEntry.sentAt === 'string' &&
     Number.isFinite(Date.parse(cachedEntry.sentAt)) &&
@@ -172,28 +177,38 @@ function isImportedHistoryEntry(entry: unknown): entry is BoardPresenceClimb {
   );
 }
 
-export async function readMergedRecentHistory(boardId: number): Promise<BoardPresenceClimb[]> {
-  const native = await pubsub.getRecentBoardClimbs(String(boardId));
-  let imported: BoardPresenceClimb[] | null = null;
+async function readImportedHistoryCache(boardId: number, source: 'kilter' | 'aurora'): Promise<BoardPresenceClimb[]> {
   if (redisClientManager.isRedisConnected()) {
     try {
-      const cached = await redisClientManager.getClients().publisher.get(`board:${boardId}:kilter-history`);
+      const cached = await redisClientManager.getClients().publisher.get(`board:${boardId}:${source}-history`);
       const parsed: unknown = cached ? JSON.parse(cached) : null;
-      if (Array.isArray(parsed) && parsed.every(isImportedHistoryEntry)) {
-        imported = parsed;
-      } else if (cached !== null) {
-        logger.warn('[BoardHistory] Invalid imported history cache; reading durable history', { boardId });
+      if (Array.isArray(parsed) && parsed.every((entry) => isImportedHistoryEntry(entry, source))) {
+        return parsed;
+      }
+      if (cached !== null) {
+        logger.warn('[BoardHistory] Invalid imported history cache; reading durable history', { boardId, source });
       }
     } catch {
       /* Durable history remains readable when Redis is unavailable. */
     }
   }
-  // Only the importer writes the cache, so a racing query cannot suppress its
-  // history-change broadcast or overwrite a newer committed cache snapshot.
-  imported ??= await readImportedRecentClimbs(boardId);
+  // Only importers write caches, so racing reads cannot replace newer snapshots.
+  return readImportedRecentClimbs(boardId, source);
+}
+
+export async function readMergedRecentHistory(boardId: number, includeAurora = false): Promise<BoardPresenceClimb[]> {
+  const [native, kilter, aurora] = await Promise.all([
+    pubsub.getRecentBoardClimbs(String(boardId)),
+    readImportedHistoryCache(boardId, 'kilter'),
+    includeAurora ? readImportedHistoryCache(boardId, 'aurora') : Promise.resolve([]),
+  ]);
+  const imported = [...kilter, ...aurora];
   const cutoff = Date.now() - HISTORY_TTL_SECONDS * 1000;
   let invalidTimestampCount = 0;
-  const recent = mergeBoardHistory(native, imported).filter((climb) => {
+  const recent = mergeBoardHistory(
+    native.filter((climb) => isSupportedBoardClimb(climb) && (includeAurora || climb.source !== 'aurora')),
+    imported,
+  ).filter((climb) => {
     const timestamp = Date.parse(climb.sentAt);
     if (!Number.isFinite(timestamp)) {
       invalidTimestampCount++;

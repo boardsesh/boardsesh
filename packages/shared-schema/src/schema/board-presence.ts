@@ -13,7 +13,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
   """
   type BoardPresenceClimb {
-    "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+    "Origin of the display: boardsesh, kilter, or aurora. Missing means boardsesh."
     source: String
     "UUID of the climb lit on the wall"
     climbUuid: String!
@@ -130,6 +130,15 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   type BoardHistoryUpdated {
     climbs: [BoardPresenceClimb!]!
     seq: Int!
+  }
+
+  "Public catalog grades for a wall at the viewer's selected angle."
+  type BoardPresenceClimbGrade {
+    "The requested climb UUID, retaining an alias when one was supplied."
+    uuid: String!
+    difficulty: String
+    boardseshDifficulty: Float
+    boardseshConfidence: String
   }
 
   type BoardHistoryPage {

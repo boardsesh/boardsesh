@@ -46,7 +46,7 @@ function WallIdentityBlockViewComponent({
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — the kiosk lights up the Boardsesh grade
   // once the backend stamps presence climbs.
-  const grade = climb.grade ? resolvedGrade.label : null;
+  const grade = climb.grade || climb.source === 'aurora' ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const gradeTextColor = readableTextColor(gradeColor);
 
