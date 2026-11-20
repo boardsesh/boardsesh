@@ -13,10 +13,13 @@ vi.mock('react-native-mmkv', () => ({
 }));
 
 /** A fresh settings store and player-buttons store over what is stored, as at launch. */
-async function launchWith(stored: Record<string, unknown> = {}) {
+async function launchWith(stored: Record<string, unknown> = {}, platform: 'native' | 'web' = 'native') {
   mockStorage.clear();
   for (const [key, value] of Object.entries(stored)) mockStorage.set(key, JSON.stringify(value));
   vi.resetModules();
+  vi.doMock('../player-navigation-default', () =>
+    vi.importActual(platform === 'web' ? '../player-navigation-default.web' : '../player-navigation-default'),
+  );
   const preference = await import('../player-buttons-preference');
   const settings = await import('../../settings/hooks');
   const buttons = await import('../player-buttons');
@@ -72,6 +75,35 @@ describe('player buttons preference', () => {
   it.each([true, false])('preserves the stored navigation choice %s', async (previousNext) => {
     const { usePlayerButtonsPreference } = await launchWith({ playerPreviousNext: previousNext });
     expect(renderHook(() => usePlayerButtonsPreference()).result.current.previousNext).toBe(previousNext);
+  });
+
+  describe('web navigation', () => {
+    it.each([
+      [undefined, true],
+      ['unrecognized', true],
+      [true, true],
+      [false, false],
+    ])('reads stored %s as %s on the first frame', async (storedPreviousNext, expectedPreviousNext) => {
+      const settings = storedPreviousNext === undefined ? {} : { playerPreviousNext: storedPreviousNext };
+      const { usePlayerButtonsPreference, isDefaultPlayerButtons, getSetting } = await launchWith(settings, 'web');
+      const { result } = renderHook(() => usePlayerButtonsPreference());
+      expect(result.current.previousNext).toBe(expectedPreviousNext);
+      expect(isDefaultPlayerButtons(result.current)).toBe(expectedPreviousNext);
+      if (storedPreviousNext === undefined) expect(getSetting('playerPreviousNext')).toBe(true);
+    });
+
+    it('restores visible navigation after hiding it or resetting settings', async () => {
+      const { usePlayerButtonsEditor, resetAllSettings, isDefaultPlayerButtons } = await launchWith({}, 'web');
+      const { result } = renderHook(() => usePlayerButtonsEditor());
+      act(() => result.current.setPreviousNext(false));
+      expect(result.current.previousNext).toBe(false);
+      act(() => result.current.restoreDefaults());
+      expect(result.current.previousNext).toBe(true);
+      expect(isDefaultPlayerButtons(result.current)).toBe(true);
+      act(() => result.current.setPreviousNext(false));
+      act(() => resetAllSettings());
+      expect(result.current.previousNext).toBe(true);
+    });
   });
 
   describe('V3 migration', () => {

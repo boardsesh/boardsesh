@@ -198,7 +198,7 @@ export function isDefaultPlayerButtons({
   );
 }
 
-/** Restore today's bar below the board, with the wall button and navigation arrows hidden. */
+/** Restore today's bar below the board, with the wall button and this platform's navigation default. */
 export function restorePlayerButtonDefaults(): void {
   setPlayerBoardControl(DEFAULT_PLAYER_BOARD_CONTROL);
   playerButtonsStore.restoreDefaults();

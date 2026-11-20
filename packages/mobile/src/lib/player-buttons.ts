@@ -1,4 +1,7 @@
 import type { SectionLayout, SectionLayoutSpec } from './section-layout';
+import { DEFAULT_PLAYER_PREVIOUS_NEXT } from './player-navigation-default';
+
+export { DEFAULT_PLAYER_PREVIOUS_NEXT };
 
 // The player buttons a climber can show, hide and put in order (#6229, #7000).
 // Pure: the store lives in `player-buttons-preference.ts`.
@@ -44,7 +47,6 @@ export const PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {
   defaults: DEFAULT_PLAYER_BUTTONS,
 };
 
-export const DEFAULT_PLAYER_PREVIOUS_NEXT = false;
 export const DEFAULT_PLAYER_BUTTONS_POSITION: PlayerButtonsPosition = 'below';
 
 /** A stored position this build doesn't know (a newer bundle's) reads as the default. */
