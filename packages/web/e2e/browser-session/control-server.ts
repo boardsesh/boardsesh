@@ -1,10 +1,12 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
-import type { EnvironmentOverrides, ServerSet } from './servers';
+import type { EdgeRequestObservation, EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
+import type { EnvironmentOverrides, RestartOverrides, ServerSet } from './servers';
 import type { SetCookieRecord } from './stack';
+import { isHarnessRetryKind, recordHarnessRetry } from './harness-retries';
+import type { CapturedMail } from './mail-sink';
 
 /**
  * How a spec, which runs in a Playwright worker, reaches the things only the
@@ -15,11 +17,86 @@ import type { SetCookieRecord } from './stack';
  *
  *   GET  /set-cookies/mark          { mark }       how many responses are logged so far
  *   GET  /set-cookies?since=<mark>  { records }    every response logged after the mark
- *   POST /restart  { env }          { state }      starts restarting both servers with `env` over their base
+ *   POST /restart  { env, backendEnv, webEnv }  { state }  starts restarting both servers with `env` (both)
+ *                                                   and `backendEnv` / `webEnv` (one each) over their base
  *                                                   environment (null unsets); answers at once
  *   GET  /restart/status            { state, error? }  `running`, then `ready` or `failed`; a restart can take
  *                                                   minutes, longer than one HTTP request should be held open
+ *   POST /harness-retry             { counted }    a worker reports a WebKit "internal error" navigation retry
+ *   GET  /mail?to=<address>         { messages }   every message the run's mail sink took for that recipient
+ *   POST /holds  { host, method, path }  { id }    the edge holds the next response to that request (one only)
+ *   GET  /holds/<id>                { state }      `armed`, `holding` (answered, not yet delivered) or `released`
+ *   POST /holds/<id>/release        { released }   delivers the held response (or disarms an unused hold)
  */
+
+/** One hold: the edge keeps the next matching response from the browser until it is released. */
+type ResponseHold = {
+  readonly rule: EdgeRequestObservation;
+  state: 'armed' | 'holding' | 'released';
+  release: () => void;
+  readonly released: Promise<void>;
+};
+
+/**
+ * Responses the edge holds for the cookie-order spec (#7596 B7c): a hold is
+ * armed for one host, method and path, takes the next response to such a
+ * request after the upstream server answered it, and lets it go on release.
+ * Teardown releases every hold, so no connection is left open.
+ */
+export class ResponseHolds {
+  private readonly holds = new Map<string, ResponseHold>();
+
+  arm(rule: EdgeRequestObservation): string {
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const id = randomUUID();
+    const hold: ResponseHold = { rule, state: 'armed', release: () => undefined, released };
+    hold.release = () => {
+      hold.state = 'released';
+      release();
+    };
+    this.holds.set(id, hold);
+    return id;
+  }
+
+  /** For the edge: the promise that holds this response, or undefined when no armed hold takes it. */
+  take(request: EdgeRequestObservation): Promise<void> | undefined {
+    for (const hold of this.holds.values()) {
+      const { host, method, path } = hold.rule;
+      if (hold.state !== 'armed' || host !== request.host || method !== request.method || path !== request.path)
+        continue;
+      hold.state = 'holding';
+      return hold.released;
+    }
+    return undefined;
+  }
+
+  state(id: string): ResponseHold['state'] | undefined {
+    return this.holds.get(id)?.state;
+  }
+
+  release(id: string): boolean {
+    const hold = this.holds.get(id);
+    if (!hold) return false;
+    hold.release();
+    return true;
+  }
+
+  releaseAll(): void {
+    for (const hold of this.holds.values()) hold.release();
+  }
+}
+
+function parseHoldRule(body: string): EdgeRequestObservation {
+  const parsed: unknown = body ? JSON.parse(body) : {};
+  const fields = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  const { host, method, path } = fields;
+  if (typeof host !== 'string' || typeof method !== 'string' || typeof path !== 'string' || !path.startsWith('/'))
+    throw new Error('a hold needs host, method and a path');
+  return { host, method: method.toUpperCase(), path };
+}
 
 export class SetCookieLog {
   private readonly records: SetCookieRecord[] = [];
@@ -52,21 +129,32 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(JSON.stringify(body));
 }
 
-function parseOverrides(body: string): EnvironmentOverrides {
-  const parsed: unknown = body ? JSON.parse(body) : {};
-  const env = typeof parsed === 'object' && parsed !== null && 'env' in parsed ? parsed.env : {};
-  if (typeof env !== 'object' || env === null || Array.isArray(env)) throw new Error('env must be an object');
+function parseEnvironment(field: string, env: unknown): EnvironmentOverrides {
+  if (env === undefined) return {};
+  if (typeof env !== 'object' || env === null || Array.isArray(env)) throw new Error(`${field} must be an object`);
   const overrides: EnvironmentOverrides = {};
   for (const [name, value] of Object.entries(env)) {
-    if (typeof value !== 'string' && value !== null) throw new Error(`env.${name} must be a string or null`);
+    if (typeof value !== 'string' && value !== null) throw new Error(`${field}.${name} must be a string or null`);
     overrides[name] = value;
   }
   return overrides;
 }
 
+function parseOverrides(body: string): RestartOverrides {
+  const parsed: unknown = body ? JSON.parse(body) : {};
+  const fields = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  return {
+    env: parseEnvironment('env', fields.env),
+    backendEnv: parseEnvironment('backendEnv', fields.backendEnv),
+    webEnv: parseEnvironment('webEnv', fields.webEnv),
+  };
+}
+
 export async function startControlServer(
   log: SetCookieLog,
   servers: ServerSet,
+  mail: readonly CapturedMail[],
+  holds: ResponseHolds,
 ): Promise<{ server: Server; url: string; token: string }> {
   const token = randomBytes(24).toString('base64url');
   const expected = Buffer.from(token);
@@ -99,8 +187,29 @@ export async function startControlServer(
           },
         );
         sendJson(response, 202, restart);
+      } else if (request.method === 'POST' && url.pathname === '/harness-retry') {
+        let kind: unknown;
+        try {
+          kind = (JSON.parse((await readBody(request)) || '{}') as { kind?: unknown }).kind;
+        } catch {
+          kind = undefined;
+        }
+        recordHarnessRetry(isHarnessRetryKind(kind) ? kind : 'webkit-internal-error');
+        sendJson(response, 200, { counted: true });
+      } else if (request.method === 'GET' && url.pathname === '/mail') {
+        const recipient = (url.searchParams.get('to') ?? '').toLowerCase();
+        sendJson(response, 200, { messages: mail.filter((message) => message.recipients.includes(recipient)) });
       } else if (request.method === 'GET' && url.pathname === '/restart/status') {
         sendJson(response, 200, restart);
+      } else if (request.method === 'POST' && url.pathname === '/holds') {
+        sendJson(response, 200, { id: holds.arm(parseHoldRule(await readBody(request))) });
+      } else if (request.method === 'GET' && url.pathname.startsWith('/holds/')) {
+        const state = holds.state(url.pathname.slice('/holds/'.length));
+        if (state === undefined) sendJson(response, 404, { error: 'unknown hold' });
+        else sendJson(response, 200, { state });
+      } else if (request.method === 'POST' && /^\/holds\/[^/]+\/release$/.test(url.pathname)) {
+        const released = holds.release(url.pathname.split('/')[2] ?? '');
+        sendJson(response, released ? 200 : 404, released ? { released } : { error: 'unknown hold' });
       } else {
         sendJson(response, 404, { error: 'unknown route' });
       }

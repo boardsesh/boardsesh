@@ -39,8 +39,16 @@ export function firstPasswordEmailBinding(
   return createHmac('sha256', runtime.emailBindingKey).update(frame, 'utf8').digest('hex');
 }
 
-/** The caller must supply a complete, locked inventory from the selected store. */
-export function isAppleOnlyFirstPasswordInventory(
+/**
+ * Whether an account may set a first password by emailed confirmation
+ * (decision of 2026-11-18 on #7596, widening the Apple-only rule of
+ * 2026-11-13): at least one identity, every row this user's at this
+ * generation with a subject, and at least one Google or Apple identity. A
+ * Facebook row beside one of those does not block; a Facebook-only account
+ * stays not eligible. The caller supplies a complete, locked inventory from
+ * the selected store; a password is refused separately (`already_set`).
+ */
+export function isFirstPasswordInventory(
   providers: readonly ProviderIdentitySnapshot[],
   userId: string,
   generation: number,
@@ -51,14 +59,19 @@ export function isAppleOnlyFirstPasswordInventory(
     generation < 2_147_483_647 &&
     providers.length > 0 &&
     providers.every(
-      (provider) =>
-        provider.provider === 'apple' &&
-        provider.subject.length > 0 &&
-        provider.userId === userId &&
-        provider.generation === generation,
-    )
+      (provider) => provider.subject.length > 0 && provider.userId === userId && provider.generation === generation,
+    ) &&
+    providers.some((provider) => provider.provider === 'google' || provider.provider === 'apple')
   );
 }
+
+/**
+ * The durable cap on first-password email (decision of 2026-11-18): an
+ * account gets at most this many challenges, counted from `issued_at`, in each
+ * window. The per-process limit of 3 a minute stays in front of it.
+ */
+export const FIRST_PASSWORD_CHALLENGES_PER_HOUR = 5;
+export const FIRST_PASSWORD_CHALLENGES_PER_DAY = 10;
 
 /** Confirmation bounds a command; it does not create an authentication age. */
 export function firstPasswordDeadline(databaseNow: Date, sourceExpiresAt: Date): Date {

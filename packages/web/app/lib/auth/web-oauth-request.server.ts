@@ -7,7 +7,11 @@ import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors
 import { AUTH_COMMAND_REQUEST_BYTES, type WebOAuthProvider } from '@boardsesh/auth-protocol';
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { createWebOAuthCommandClient, webOAuthMode } from './web-oauth-command-client.server';
-import { createWebOAuthIdentityAuthRequest, createWebOAuthLogger } from './web-oauth-auth.server';
+import {
+  createWebOAuthIdentityAuthRequest,
+  createWebOAuthLogger,
+  type WebOAuthRequestBinding,
+} from './web-oauth-auth.server';
 import { withSessionLinkGuard } from './oauth-link-guard.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import {
@@ -24,6 +28,16 @@ import { readExpoReturnForState, redirectExpoOAuthResponse } from './expo-web-oa
 import { PLAIN_SESSION_COOKIE_NAME, SECURE_SESSION_COOKIE_NAME } from './secure-cookies';
 import { checkRateLimit } from './rate-limiter';
 import { trustedClientRateLimitKey } from './trusted-client-ip.server';
+import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
+import {
+  googleSessionFlow,
+  hostOnlyNonceCookie,
+  nonceOfAuthorizationUrl,
+  presentedForProviderSignIn,
+  publishProviderSignIn,
+  readGoogleSignInNonce,
+  sessionSignInOptions,
+} from './web-oauth-session.server';
 
 type RouteContext = { params: Promise<{ nextauth: string[] }> };
 type InvokeAuth = (request: NextRequest, options: NextAuthOptions) => Promise<Response>;
@@ -43,7 +57,13 @@ function boundedFlowCookies(base: NextAuthOptions, scope: string): NextAuthOptio
   return cookies;
 }
 
-/** Retire only this authenticated flow, even when a buffered handler response is withheld. */
+/**
+ * Retire only this authenticated flow, even when a buffered handler response is
+ * withheld. Each cookie is cleared with the name and options it was written
+ * with: the session sign-in's Google nonce cookie is host-only (`__Host-` in
+ * a secure context), and a clear carrying a Domain would not delete it. Both
+ * configurations are tried, so a flow started in the other mode is retired too.
+ */
 function clearObservedFlowCookies(
   response: Response,
   request: NextRequest,
@@ -51,15 +71,18 @@ function clearObservedFlowCookies(
   scope: string,
 ): Response {
   const observed = new Set((request.headers.get('cookie') ?? '').split(';').map((part) => part.trim().split('=')[0]));
-  for (const key of flowCookieKeys) {
-    const configured = base.cookies?.[key];
+  const nonce = base.cookies?.nonce;
+  const configurations = [...flowCookieKeys.map((key) => base.cookies?.[key]), nonce && hostOnlyNonceCookie(nonce)];
+  const cleared = new Set<string>();
+  for (const configured of configurations) {
     if (!configured) continue;
     const name = `${configured.name}.${scope}`;
-    if (observed.has(name))
-      response.headers.append(
-        'Set-Cookie',
-        stringifySetCookie({ ...configured.options, name, value: '', maxAge: 0, expires: new Date(0) }),
-      );
+    if (!observed.has(name) || cleared.has(name)) continue;
+    cleared.add(name);
+    response.headers.append(
+      'Set-Cookie',
+      stringifySetCookie({ ...configured.options, name, value: '', maxAge: 0, expires: new Date(0) }),
+    );
   }
   return response;
 }
@@ -157,6 +180,12 @@ function singleState(fields: URLSearchParams): string {
   return states[0];
 }
 async function initiationState(response: Response): Promise<string | null> {
+  const destination = await initiationDestination(response);
+  if (!destination) return null;
+  const states = new URL(destination).searchParams.getAll('state');
+  return states.length === 1 && states[0] ? states[0] : null;
+}
+async function initiationDestination(response: Response): Promise<string | null> {
   let destination = response.headers.get('Location');
   if (!destination && /^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')) {
     const parsed: unknown = JSON.parse(await boundedText(response.clone().body));
@@ -165,9 +194,7 @@ async function initiationState(response: Response): Promise<string | null> {
       if (typeof candidate === 'string') destination = candidate;
     }
   }
-  if (!destination) return null;
-  const states = new URL(destination).searchParams.getAll('state');
-  return states.length === 1 && states[0] ? states[0] : null;
+  return destination ?? null;
 }
 
 function unavailableResponse(
@@ -188,12 +215,22 @@ function unavailableResponse(
   return response;
 }
 
-/** Compose the shipping route around request-local identity-only delegation. */
+/**
+ * Compose the shipping route around request-local identity-only delegation.
+ *
+ * `browserSession` is set only under `AUTH_BROWSER_SESSION_MODE=better-auth`
+ * (#7596 B5b). Every Google and Apple start through this route is then an
+ * explicit sign-in: no actor cookie on `intent` or `resolve` (linking moved to
+ * provider security), and `resolve` issues a first-party session that the
+ * callback response publishes. A reply without that session and its proof,
+ * a lost reply and a 503 change no session cookie. Without it, as before.
+ */
 export async function withWebOAuthIdentity(
   request: NextRequest,
   context: RouteContext,
   base: NextAuthOptions,
   invoke: InvokeAuth,
+  browserSession?: BrowserSessionCookieConfiguration,
 ): Promise<Response> {
   const [action, rawProvider] = (await context.params).nextauth;
   const configured = base.providers.find((candidate) => (candidate.options?.id ?? candidate.id) === rawProvider);
@@ -206,6 +243,8 @@ export async function withWebOAuthIdentity(
     return unavailableResponse(request, false, provider ?? 'google');
   }
   if (mode === 'legacy') {
+    // A provider sign-in under `better-auth` issues a session only through the backend.
+    if (browserSession) return unavailableResponse(request, false, provider ?? 'google');
     if (webCredentialProofMode(process.env) !== 'off') return unavailableResponse(request, false, provider ?? 'google');
     // Only a callback can link an account; a sign-in start never reaches the adapter.
     return invoke(request, action === 'callback' ? await withSessionLinkGuard(base, request) : base);
@@ -223,8 +262,11 @@ export async function withWebOAuthIdentity(
     return clearContinuation ? clearContinuation(cleared) : cleared;
   };
   try {
-    const actorCookie = readWebOAuthActorCookie(request);
+    // Under `better-auth` a start here is a sign-in, never a link: no actor.
+    const actorCookie = browserSession ? null : readWebOAuthActorCookie(request);
     const originalCookieHeader = request.headers.get('cookie');
+    const forSession = (options: NextAuthOptions) =>
+      browserSession ? sessionSignInOptions(options, provider) : options;
     if (action === 'signin') {
       const fields = await requestFields(request);
       json = fields.get('json') === 'true';
@@ -232,18 +274,25 @@ export async function withWebOAuthIdentity(
       if (checkRateLimit(`web-oauth-signin:${clientKey}`, OAUTH_STARTS_PER_CLIENT, 60_000).limited) return reject();
       const retiredScopes = await findWebOAuthFlowsToRetire(request, base);
       const scope = createWebOAuthCookieScope();
-      const options: NextAuthOptions = {
+      const options: NextAuthOptions = forSession({
         ...base,
         cookies: boundedFlowCookies(base, scope),
         debug: false,
         logger: createWebOAuthLogger(),
-      };
+      });
       const response = await invoke(request, options);
       state = (await initiationState(response)) ?? undefined;
       // CSRF rejection/provider cancellation is the public handler's response;
       // only its actual successful state generation can create durable intent.
       if (!state) return response;
-      const flow = webOAuthFlowHash(provider, state);
+      let flow = webOAuthFlowHash(provider, state);
+      if (browserSession && provider === 'google') {
+        // The nonce NextAuth sent Google (and sealed in this flow's cookie) is the flow.
+        const destination = await initiationDestination(response);
+        const nonce = destination ? nonceOfAuthorizationUrl(destination) : undefined;
+        if (!nonce) return reject();
+        flow = googleSessionFlow(nonce);
+      }
       const reply = await createWebOAuthCommandClient().intent({ provider, flow, actorCookie });
       if (reply.outcome !== 'recorded') return reject();
       // Only a flow that really started displaces an older one, so a refused or
@@ -274,15 +323,34 @@ export async function withWebOAuthIdentity(
     }
     verifiedScope = scope;
     if (current.headers.get('cookie') !== originalCookieHeader) return reject();
-    const delegated = createWebOAuthIdentityAuthRequest(
-      { ...base, cookies: boundedFlowCookies(base, scope) },
-      { provider, flow: webOAuthFlowHash(provider, state), actorCookie },
-    );
+    const callbackOptions = forSession({ ...base, cookies: boundedFlowCookies(base, scope) });
+    let flow = webOAuthFlowHash(provider, state);
+    let webSession: WebOAuthRequestBinding['webSession'];
+    if (browserSession) {
+      const presented = await presentedForProviderSignIn(current, browserSession);
+      let googleNonce: string | undefined;
+      if (provider === 'google') {
+        googleNonce = await readGoogleSignInNonce(current, callbackOptions);
+        if (!googleNonce) return reject();
+        flow = googleSessionFlow(googleNonce);
+      }
+      webSession = { ...(presented ? { presented } : {}), ...(googleNonce ? { googleNonce } : {}) };
+    }
+    const delegated = createWebOAuthIdentityAuthRequest(callbackOptions, {
+      provider,
+      flow,
+      actorCookie,
+      ...(webSession ? { webSession } : {}),
+    });
     const response = await invoke(current, delegated.options);
+    const issued = delegated.issuedWebSession();
+    const published = delegated.resolved() && delegated.publicationMatches(response);
     const result =
-      delegated.unavailable() || (delegated.resolved() && !delegated.publicationMatches(response))
+      delegated.unavailable() || (delegated.resolved() && !published) || (browserSession && published && !issued)
         ? unavailableResponse(current, false, provider, state)
-        : response;
+        : browserSession && published && issued
+          ? publishProviderSignIn(response, current, browserSession, issued)
+          : response;
     return finish(result);
   } catch {
     const response = unavailableResponse(current, json, provider, state);

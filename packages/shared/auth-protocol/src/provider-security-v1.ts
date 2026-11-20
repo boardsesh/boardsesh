@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { webCredentialProofSchema } from './web-credential-proof';
 import { presentedWebSessionSchema } from './web-session';
 
 export const PROVIDER_SECURITY_VERSION = 1;
@@ -10,28 +9,11 @@ export const PROVIDER_SECURITY_PROVIDERS = ['google', 'apple'] as const;
 export const providerSecurityProviderSchema = z.enum(PROVIDER_SECURITY_PROVIDERS);
 export type ProviderSecurityProvider = z.infer<typeof providerSecurityProviderSchema>;
 
-const credential = z.string().min(1).max(65_536);
 const token = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.iso.datetime();
 const subject = z.string().min(1).max(1024);
 const identityId = z.string().min(1).max(1024);
-/**
- * The browser-binding actor. Only the owned-provider sign-in commands still
- * take it, until #7596 B5a moves them to the web session and B5d deletes the
- * binding.
- */
-export const browserBindingActorSchema = z
-  .object({
-    kind: z.enum(['legacy-jwe', 'canonical-token']),
-    credential,
-    expectedUserId: identityId,
-    expectedAuthSessionId: identityId,
-    browserBindingToken: token,
-    browserVersion: z.number().int().nonnegative().max(2_147_483_646),
-  })
-  .strict();
-export type BrowserBindingActor = z.infer<typeof browserBindingActorSchema>;
 /**
  * The actor of provider link, unlink, reauthentication and first password: the first-party web
  * session www read from the cookie (the canonical token after its signature
@@ -50,58 +32,9 @@ const metadata = {
 const command = <Operation extends string, Shape extends z.ZodRawShape>(operation: Operation, payload: Shape) =>
   z.object({ ...metadata, operation: z.literal(operation), payload: z.object(payload).strict() }).strict();
 const bound = { actor, intentToken: token };
-const signinBound = {
-  actor: browserBindingActorSchema,
-  intentToken: token,
-  browserIntentToken: token,
-  flowHash: digest,
-  nonceHash: digest.nullable(),
-};
-
-/** Hash-bound backend preparation, never an independently trusted login proof. */
-export const providerOwnedSigninPreparationSchema = z
-  .object({
-    provider: providerSecurityProviderSchema,
-    subject,
-    credentialProof: webCredentialProofSchema,
-    credentialExpiresAt: timestamp,
-    expiresAt: timestamp,
-    proposedCanonicalTokenHash: digest.nullable(),
-  })
-  .strict();
-export type ProviderOwnedSigninPreparation = z.infer<typeof providerOwnedSigninPreparationSchema>;
-
 export const providerSecurityCommandSchema = z.discriminatedUnion('operation', [
   command('methods', { actor }),
   command('owned-provider', { actor, provider: providerSecurityProviderSchema, subject }),
-  command('signin-intent', {
-    actor: browserBindingActorSchema,
-    provider: providerSecurityProviderSchema,
-    flowHash: digest,
-    nonceHash: digest.nullable(),
-  }),
-  command('signin-prepare', {
-    ...signinBound,
-    providerProof: z
-      .object({
-        provider: providerSecurityProviderSchema,
-        subject,
-        idToken: z.string().min(1).max(16_384).nullable(),
-        nonce: z.string().min(1).max(1024).nullable(),
-      })
-      .strict(),
-  }),
-  command('signin-finalize', {
-    ...signinBound,
-    preparationToken: token,
-    preparation: providerOwnedSigninPreparationSchema,
-    candidate: z.object({ kind: z.enum(['legacy-jwe', 'canonical-token']), credential }).strict(),
-  }),
-  command('signin-abort', {
-    ...signinBound,
-    preparationToken: token.nullable(),
-    preparation: providerOwnedSigninPreparationSchema.nullable(),
-  }),
   command('intent', {
     actor,
     action: z.enum(['link', 'unlink']),
@@ -143,10 +76,6 @@ export type ProviderSecurityActor = z.infer<typeof actor>;
 export const PROVIDER_SECURITY_COMMAND_PATHS = {
   methods: `${PROVIDER_SECURITY_PATH_PREFIX}/methods`,
   'owned-provider': `${PROVIDER_SECURITY_PATH_PREFIX}/owned-provider`,
-  'signin-intent': `${PROVIDER_SECURITY_PATH_PREFIX}/signin-intent`,
-  'signin-prepare': `${PROVIDER_SECURITY_PATH_PREFIX}/signin-prepare`,
-  'signin-finalize': `${PROVIDER_SECURITY_PATH_PREFIX}/signin-finalize`,
-  'signin-abort': `${PROVIDER_SECURITY_PATH_PREFIX}/signin-abort`,
   intent: `${PROVIDER_SECURITY_PATH_PREFIX}/intent`,
   bind: `${PROVIDER_SECURITY_PATH_PREFIX}/bind`,
   'bind-google-reauthentication': `${PROVIDER_SECURITY_PATH_PREFIX}/bind-google-reauthentication`,
@@ -163,20 +92,9 @@ const replyMetadata = {
   providerSecurityVersion: z.literal(PROVIDER_SECURITY_VERSION),
   requestId: z.uuidv4(),
 };
-const browserCursor = z
-  .object({
-    bindingId: digest,
-    version: z.number().int().nonnegative().max(2_147_483_647),
-    bindingExpiresAt: timestamp,
-  })
-  .strict();
 const operation = z.enum([
   'methods',
   'owned-provider',
-  'signin-intent',
-  'signin-prepare',
-  'signin-finalize',
-  'signin-abort',
   'intent',
   'bind',
   'bind-google-reauthentication',
@@ -230,50 +148,6 @@ const providerUser = z
   .strict();
 export const providerSecurityReplySchema = z.union([
   failure,
-  z
-    .object({
-      ...replyMetadata,
-      operation: z.literal('signin-intent'),
-      outcome: z.literal('recorded'),
-      intentToken: token,
-      browserIntentToken: token,
-      browserCursor,
-      expiresAt: timestamp,
-    })
-    .strict(),
-  z
-    .object({
-      ...replyMetadata,
-      operation: z.literal('signin-prepare'),
-      outcome: z.literal('same-owner'),
-      credentialProof: webCredentialProofSchema,
-      credentialExpiresAt: timestamp,
-      browserCursor,
-      user: providerUser,
-    })
-    .strict(),
-  z
-    .object({
-      ...replyMetadata,
-      operation: z.literal('signin-prepare'),
-      outcome: z.literal('prepared'),
-      preparationToken: token,
-      preparation: providerOwnedSigninPreparationSchema,
-      proposedCanonicalToken: token.nullable(),
-      browserCursor,
-      user: providerUser,
-    })
-    .strict(),
-  z
-    .object({
-      ...replyMetadata,
-      operation: z.literal('signin-finalize'),
-      outcome: z.enum(['committed', 'recovered']),
-      candidateCredentialHash: digest,
-      browserCursor,
-    })
-    .strict(),
-  z.object({ ...replyMetadata, operation: z.literal('signin-abort'), outcome: z.literal('aborted') }).strict(),
   z
     .object({
       ...replyMetadata,

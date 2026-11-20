@@ -139,6 +139,29 @@ export async function grantOwnedCredentialWriterCapabilities(
         );
 }
 
+/**
+ * The dedicated credential LOGIN and the retired runtime's, each created once
+ * per cluster with its fixture password. Test-only, like the grants above: the
+ * credential proofs and the browser acceptance run (#7596 B7) call it on their
+ * own databases. Returns the writer's password for its connection URL.
+ */
+export async function ensureOwnedCredentialLogins(owner: postgres.Sql): Promise<{ writerPassword: string }> {
+  for (const [role, password] of [
+    ['boardsesh_identity_writer', writerPassword],
+    ['boardsesh_retired_runtime', legacyPassword],
+  ] as const) {
+    const existing = await owner<
+      { present: boolean }[]
+    >`SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=${role}) AS present`;
+    if (!existing[0]?.present)
+      await owner.unsafe(
+        `CREATE ROLE ${identifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
+      );
+    await owner.unsafe(`ALTER ROLE ${identifier(role)} SET search_path=pg_catalog,public`);
+  }
+  return { writerPassword };
+}
+
 /** A suite-owned template copy of the fresh canonical database, made before anything else connects to it. */
 export const OWNED_CREDENTIAL_PROOF_COPY = /^epic6975_identity_import_[0-9a-f]{32}$/;
 
@@ -208,19 +231,7 @@ export async function createCredentialWriterEnvironment(
       if (JSON.stringify([...observed]) !== JSON.stringify(expected))
         throw new Error('OWNED_CREDENTIAL_PROOF_MIGRATION_HISTORY_MISMATCH');
     }
-    for (const [role, password] of [
-      ['boardsesh_identity_writer', writerPassword],
-      ['boardsesh_retired_runtime', legacyPassword],
-    ] as const) {
-      const existing = await owner<
-        { present: boolean }[]
-      >`SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=${role}) AS present`;
-      if (!existing[0]?.present)
-        await owner.unsafe(
-          `CREATE ROLE ${identifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
-        );
-      await owner.unsafe(`ALTER ROLE ${identifier(role)} SET search_path=pg_catalog,public`);
-    }
+    await ensureOwnedCredentialLogins(owner);
     await grantOwnedCredentialWriterCapabilities(owner, contract);
     const writerTarget = new URL(target);
     writerTarget.username = 'boardsesh_identity_writer';

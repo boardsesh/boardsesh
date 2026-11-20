@@ -20,6 +20,7 @@ import {
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { getCredentialDatabase } from '../auth/credential-database';
+import { databaseErrorCode } from '../auth/current-store/database-error-code';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -169,6 +170,12 @@ export async function handleCurrentStoreWebAuth(
   // A login that asks for a web session needs its own mode, checked before any
   // limiter key, bcrypt or database work.
   if (command.operation === 'password' && command.webSession !== undefined) {
+    // A session is never issued without the proof that gives its legacy
+    // rollback cookie the same session id (#7596 B5a review, M1).
+    if (command.credentialProofVersion === undefined) {
+      sendJson(response, 400, { error: 'invalid_request' });
+      return;
+    }
     try {
       if (webSessionMode(process.env) !== 'backend-staging') {
         sendJson(response, 404, { error: 'disabled' });
@@ -308,7 +315,11 @@ export async function handleCurrentStoreWebAuth(
     }
     // SQL/Sentry/validation exceptions can contain bound credentials or the
     // private mail response. Emit only a fixed category, never the exception.
-    logger.warn('Current-store web authentication command unavailable', { operation });
+    const sqlState = databaseErrorCode(error);
+    logger.warn('Current-store web authentication command unavailable', {
+      operation,
+      ...(sqlState ? { sqlState } : {}),
+    });
     sendJson(response, 503, {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation,

@@ -13,6 +13,8 @@ import { providerSecurityConfiguration } from '../auth/authority/provider-securi
 import { executeProviderSecurityCommand } from '../auth/authority/provider-security-commands';
 import { isWebPasswordCommandFresh } from '../auth/current-store/command-context';
 import { getCredentialDatabase } from '../auth/credential-database';
+import { logger } from '../utils/logger';
+import { databaseErrorCode } from '../auth/current-store/database-error-code';
 import { checkRateLimit } from '../utils/rate-limiter';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
 import { sendJson } from './http-utils';
@@ -69,7 +71,13 @@ export async function handleProviderSecurity(
     if (Buffer.byteLength(JSON.stringify(reply), 'utf8') > PROVIDER_SECURITY_RESPONSE_BYTES)
       throw new Error('Provider reply exceeds its private transport budget');
     sendJson(response, providerSecurityReplyStatus(reply), reply);
-  } catch {
+  } catch (error) {
+    // The SQLSTATE only: the error itself can quote a token or an identity.
+    const sqlState = databaseErrorCode(error);
+    logger.warn('Provider security command unavailable', {
+      operation: command.operation,
+      ...(sqlState ? { sqlState } : {}),
+    });
     sendJson(response, 503, {
       providerSecurityVersion: PROVIDER_SECURITY_VERSION,
       operation: command.operation,

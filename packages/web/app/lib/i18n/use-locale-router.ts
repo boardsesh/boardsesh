@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { applyLocale, stripLocalePrefix } from './locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from './config';
-import { isSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
+import { runIfSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
 
 function useActiveLocale(): Locale {
   const { i18n } = useTranslation();
@@ -30,18 +30,24 @@ export function useLocaleRouter() {
 
   const push = useCallback(
     (href: string, options?: RouterPushOptions) => {
-      if (!isSessionGenerationCurrent(generation)) return;
-      const target = applyLocale(href, activeLocale);
-      return options === undefined ? router.push(target) : router.push(target, options);
+      // At once, or after a running viewer check confirms this login; never for another account.
+      runIfSessionGenerationCurrent(generation, () => {
+        const target = applyLocale(href, activeLocale);
+        if (options === undefined) router.push(target);
+        else router.push(target, options);
+      });
     },
     [router, activeLocale, generation],
   );
 
   const replace = useCallback(
     (href: string, options?: RouterReplaceOptions) => {
-      if (!isSessionGenerationCurrent(generation)) return;
-      const target = applyLocale(href, activeLocale);
-      return options === undefined ? router.replace(target) : router.replace(target, options);
+      // At once, or after a running viewer check confirms this login; never for another account.
+      runIfSessionGenerationCurrent(generation, () => {
+        const target = applyLocale(href, activeLocale);
+        if (options === undefined) router.replace(target);
+        else router.replace(target, options);
+      });
     },
     [router, activeLocale, generation],
   );

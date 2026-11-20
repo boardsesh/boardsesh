@@ -511,6 +511,78 @@ describe('private web OAuth commands over actual owned HTTP', () => {
     expect(captured).toHaveLength(2);
   });
 
+  it('asks for a session with its proof, and accepts the reply only when the proof names that session (#7596 B5b)', async () => {
+    const issued = {
+      sessionId: 'session-b',
+      token: 'opaque-session-token',
+      expiresAt: '2026-12-18T00:00:00.000Z',
+      generation: 3,
+    };
+    const proof = (command: WebOAuthCommand, sessionId: string, generation: number) => ({
+      version: 1,
+      userId: resolveReply(command).user.id,
+      authSessionId: sessionId,
+      generation,
+      authenticatedAt: null,
+      linkGuarded: false,
+    });
+    const presented = { kind: 'canonical-token' as const, token: 'presented-token' };
+    handle = (_request, response, command) =>
+      jsonReply(response, {
+        ...resolveReply(command),
+        webSession: issued,
+        credentialProof: proof(command, 'session-b', 3),
+      });
+    await expect(
+      ownedClient({ environment: environment() }).resolve(resolvePayload(), { presented }),
+    ).resolves.toMatchObject({ webSession: issued });
+    // Proof mode is off in this environment, yet a session request always asks for the proof.
+    expect(captured.at(-1)?.command).toMatchObject({ credentialProofVersion: 1, webSession: { presented } });
+    for (const [label, body] of [
+      ['no proof', (command: WebOAuthCommand) => ({ ...resolveReply(command), webSession: issued })],
+      [
+        'another session id',
+        (command: WebOAuthCommand) => ({
+          ...resolveReply(command),
+          webSession: issued,
+          credentialProof: proof(command, 'session-a', 3),
+        }),
+      ],
+      [
+        'another generation',
+        (command: WebOAuthCommand) => ({
+          ...resolveReply(command),
+          webSession: issued,
+          credentialProof: proof(command, 'session-b', 2),
+        }),
+      ],
+      [
+        'no session',
+        (command: WebOAuthCommand) => ({ ...resolveReply(command), credentialProof: proof(command, 'session-b', 3) }),
+      ],
+    ] as const) {
+      handle = (_request, response, command) => jsonReply(response, body(command));
+      expectUnavailable(
+        await ownedClient({ environment: environment() })
+          .resolve(resolvePayload(), { presented })
+          .catch((error: unknown) => error),
+      );
+      expect(label).toBeTruthy();
+    }
+    // A session nobody asked for is never accepted either.
+    handle = (_request, response, command) =>
+      jsonReply(response, {
+        ...resolveReply(command),
+        webSession: issued,
+        credentialProof: proof(command, 'session-b', 3),
+      });
+    expectUnavailable(
+      await ownedClient({ environment: environment() })
+        .resolve(resolvePayload())
+        .catch((error: unknown) => error),
+    );
+  });
+
   it.each([201, 409, 503])('rejects a resolved body returned with status %s', async (status) => {
     handle = (_request, response, command) => jsonReply(response, resolveReply(command), status);
     expectUnavailable(

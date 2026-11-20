@@ -4,14 +4,8 @@ packages/backend/src/__tests__/deletion-credential-admission.test.ts
 packages/backend/src/__tests__/helpers/partner-launch-harness.ts
 packages/backend/src/__tests__/partner-auth-routes.test.ts
 packages/backend/src/auth/__tests__/legacy-web-credentials.test.ts
-packages/backend/src/auth/authority/__tests__/anonymous-provider-http.proof.ts
-packages/backend/src/auth/authority/__tests__/anonymous-provider-signin.test.ts
-packages/backend/src/auth/authority/__tests__/browser-binding.test.ts
-packages/backend/src/auth/authority/__tests__/browser-credential-writer.proof.ts
 packages/backend/src/auth/authority/__tests__/credential-writer-http.proof.ts
-packages/backend/src/auth/authority/__tests__/provider-owned-signin.test.ts
 packages/backend/src/auth/authority/__tests__/provider-security-fixture.ts
-packages/backend/src/auth/authority/__tests__/provider-security-http.proof.ts
 packages/backend/src/auth/authority/__tests__/provider-security-reauthentication.test.ts
 packages/backend/src/auth/current-store/__tests__/account-deletion.test.ts
 packages/backend/src/auth/current-store/__tests__/app-router-compound.test.ts
@@ -129,6 +123,8 @@ packages/web/app/lib/auth/__tests__/web-provider-session-intent.test.ts
 packages/web/app/lib/auth/admitted-session.server.ts
 packages/web/app/lib/auth/auth-options.ts
 packages/web/app/lib/auth/auth-response-admission.server.ts
+packages/web/app/lib/auth/browser-session-bridge.server.ts
+packages/web/app/lib/auth/browser-session-route.server.ts
 packages/web/app/lib/auth/credential-admission.server.ts
 packages/web/app/lib/auth/nextauth-cookie-fetch-lock.ts
 packages/web/app/lib/auth/oauth-link-guard.server.ts
@@ -139,6 +135,7 @@ packages/web/app/lib/auth/types.ts
 packages/web/app/lib/auth/web-oauth-auth.server.ts
 packages/web/app/lib/auth/web-oauth-continuation.server.ts
 packages/web/app/lib/auth/web-oauth-request.server.ts
+packages/web/app/lib/auth/web-oauth-session.server.ts
 packages/web/app/lib/auth/web-session-events.ts
 packages/web/app/lib/partner-oauth/sign-in-failure-return.ts
 packages/web/app/lib/partner-oauth/sign-in-session.server.ts
@@ -154,6 +151,7 @@ packages/web/app/setter/[setter_username]/__tests__/setter-page-ssr.test.tsx
 packages/web/app/setter/[setter_username]/setter-follow-island.tsx
 packages/web/app/settings/__tests__/settings-page-content.test.tsx
 packages/web/app/settings/settings-page-content.tsx
+packages/web/auth-proofs/legacy-credential-fixture.ts
 packages/web/auth-proofs/web-credential-proof.integration.proof.ts
 packages/web/e2e/browser-session/legacy-session.ts
 packages/web/package.json

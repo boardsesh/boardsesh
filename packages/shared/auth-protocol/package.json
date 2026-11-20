@@ -12,11 +12,6 @@
       "import": "./src/native-oauth-attempt.ts",
       "default": "./src/native-oauth-attempt.ts"
     },
-    "./browser-binding-v1": {
-      "types": "./src/browser-binding-v1.ts",
-      "import": "./src/browser-binding-v1.ts",
-      "default": "./src/browser-binding-v1.ts"
-    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts",
@@ -41,6 +36,21 @@
       "types": "./src/browser-session-cookie.ts",
       "import": "./src/browser-session-cookie.ts",
       "default": "./src/browser-session-cookie.ts"
+    },
+    "./viewer-marker": {
+      "types": "./src/viewer-marker.ts",
+      "import": "./src/viewer-marker.ts",
+      "default": "./src/viewer-marker.ts"
+    },
+    "./legacy-login-precedence": {
+      "types": "./src/legacy-login-precedence.ts",
+      "import": "./src/legacy-login-precedence.ts",
+      "default": "./src/legacy-login-precedence.ts"
+    },
+    "./legacy-login-precedence-vectors": {
+      "types": "./src/legacy-login-precedence-vectors.ts",
+      "import": "./src/legacy-login-precedence-vectors.ts",
+      "default": "./src/legacy-login-precedence-vectors.ts"
     },
     "./browser-session-mode": {
       "types": "./src/browser-session-mode.ts",

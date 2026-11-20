@@ -22,6 +22,14 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
+const reloadAfterAccountChange = vi.hoisted(() => vi.fn());
+const refreshAccessTokenAfterCredentialChange = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/app/lib/auth/browser-access-token', async (original) => ({
+  ...(await original<typeof import('@/app/lib/auth/browser-access-token')>()),
+  refreshAccessTokenAfterCredentialChange,
+}));
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange }));
+
 let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -384,6 +392,45 @@ it('clears both secrets and refreshes account identity when a different tab chan
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('');
   expect((screen.getByLabelText('Confirm Password') as HTMLInputElement).value).toBe('');
+  expect(saved).not.toHaveBeenCalled();
+});
+
+function submitNewPassword(props: { onPasswordSet: () => void; onAccountChanged?: () => Promise<void> }) {
+  render(
+    <SetPasswordSection
+      hasPassword={false}
+      userEmail="synthetic@example.com"
+      linkedProviders={[]}
+      expectedSession={{ userId: 'synthetic-owner', authSessionId: 'synthetic-sid' }}
+      {...props}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'new-password' } });
+  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'new-password' } });
+  fireEvent.click(screen.getByText('Set Password'));
+}
+
+it('shows an account that already has a password as such, never as this password saved, and refreshes its token (#7596 B4b)', async () => {
+  const saved = vi.fn();
+  mockFetch.mockImplementation(async () =>
+    Response.json({ error: 'Password already set.', code: 'already_set' }, { status: 409 }),
+  );
+  submitNewPassword({ onPasswordSet: saved });
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  // The card flips to its "password login is enabled" state; no toast claims this password was saved.
+  expect(mockShowMessage).not.toHaveBeenCalled();
+  expect(refreshAccessTokenAfterCredentialChange).toHaveBeenCalledOnce();
+});
+
+it('reloads from the root when the server says the tab shows another login (#7596 B4b)', async () => {
+  const saved = vi.fn();
+  const changed = vi.fn().mockResolvedValue(undefined);
+  mockFetch.mockImplementation(async () =>
+    Response.json({ error: 'identity_changed', reload: 'root' }, { status: 409 }),
+  );
+  submitNewPassword({ onPasswordSet: saved, onAccountChanged: changed });
+  await waitFor(() => expect(reloadAfterAccountChange).toHaveBeenCalledOnce());
+  expect(changed).not.toHaveBeenCalled();
   expect(saved).not.toHaveBeenCalled();
 });
 

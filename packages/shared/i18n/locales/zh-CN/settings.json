@@ -51,6 +51,10 @@
     "settings": {
       "title": "设置",
       "description": "管理你的 Boardsesh 账户、个人资料和偏好设置"
+    },
+    "firstPassword": {
+      "title": "添加密码",
+      "description": "为你的 Boardsesh 账号添加密码"
     }
   },
   "title": "设置",
@@ -707,5 +711,59 @@
   },
   "writeRefused": {
     "tryAgain": "未能完成，请重试。"
+  },
+  "signInMethods": {
+    "title": "登录方式",
+    "description": "在这里管理 Boardsesh 的登录方式。更改时需要确认是你本人，其他设备上的账号也会退出登录。",
+    "password": "密码",
+    "passwordSet": "已设置",
+    "passwordNotSet": "未设置",
+    "connect": "关联 {{provider}}",
+    "disconnect": "解除关联",
+    "notAvailableYet": "暂不可用",
+    "onlyMethod": "这是你唯一的登录方式。请先添加另一种方式，再解除关联。",
+    "noPassword": "你还没有设置密码。添加密码后，可以用邮箱登录，也可以用密码确认对登录方式的更改。",
+    "setPassword": "设置密码",
+    "confirmLink": "请确认是你本人，以关联 {{provider}}。",
+    "confirmUnlink": "请确认是你本人，以解除与 {{provider}} 的关联。",
+    "passwordLabel": "密码",
+    "confirm": "确认",
+    "continueWithGoogle": "使用 Google 继续",
+    "cancel": "取消",
+    "wrongPassword": "密码不正确，请重试。",
+    "tryAgainSoon": "操作未完成，请在一分钟后重试。",
+    "loadFailed": "无法加载你的登录方式。",
+    "retry": "重试",
+    "results": {
+      "linked": "已关联 {{provider}}。你的其他设备需要重新登录。",
+      "unlinked": "已解除与 {{provider}} 的关联。你的其他设备需要重新登录。",
+      "cancelled": "你已在登录服务中取消操作。登录方式没有更改。",
+      "expired": "操作已超时，请重新开始。",
+      "state_mismatch": "收到的响应与这次请求不匹配。请重新开始。",
+      "session_required": "请重新登录，再从头开始。",
+      "identity_changed": "你现在登录的是另一个账号。",
+      "provider_not_verified": "登录服务无法验证这个账号，请重试。",
+      "unavailable": "操作未完成，请在一分钟后重试。",
+      "reauthentication_required": "距上次登录已过了一段时间。请再次确认是你本人。",
+      "last_usable_method": "无法移除你唯一的登录方式。",
+      "ownership_conflict": "这个账号已与另一个 Boardsesh 账号关联。",
+      "too_many_pending": "等待处理的更改过多。请在 15 分钟后重试。",
+      "provider_unavailable": "此登录服务暂不可用。",
+      "replayed": "此请求已被使用，请重新开始。",
+      "failed": "操作未完成，请重试。"
+    },
+    "disconnectProvider": "解除与 {{provider}} 的关联",
+    "cancelPending": "取消待处理的更改",
+    "pendingCancelled": "已取消。你现在可以重试；仍在等待的操作会在 15 分钟内结束。"
+  },
+  "firstPassword": {
+    "title": "添加密码",
+    "description": "我们会将链接发送到 {{email}}。请在五分钟内用这个浏览器打开链接并设置密码。",
+    "send": "将链接发送到我的邮箱",
+    "sendAgain": "重新发送链接",
+    "sent": "链接已发送到 {{email}}。请在五分钟内用这个浏览器打开。",
+    "notEligible": "无法在这里为这个账号添加密码。如果已设置密码，请用密码登录。",
+    "tryAgainSoon": "链接发送失败，请稍后重试。",
+    "back": "返回设置"
   }
 }

@@ -27,13 +27,15 @@ const CHUNK_COUNT = 3;
 
 export interface MintedLegacySession {
   shape: LegacySessionShape;
+  /** The `authSessionId` claim inside the cookie: the session id a bridge keeps. */
+  authSessionId: string;
   /** The names of the cookies added, which is all a spec should ever print. */
   cookieNames: string[];
   cookies: Cookie[];
 }
 
 /** The claims a credentials sign-in leaves on the token (auth-options.ts `jwt`), minus the avatar cache. */
-async function encodeSessionJwt(account: SeededAccount, secret: string): Promise<string> {
+async function encodeSessionJwt(account: SeededAccount, secret: string, authSessionId: string): Promise<string> {
   return encode({
     secret,
     maxAge: THIRTY_DAYS_SECONDS,
@@ -44,7 +46,7 @@ async function encodeSessionJwt(account: SeededAccount, secret: string): Promise
       email: account.email,
       picture: null,
       gen: 0,
-      authSessionId: randomUUID(),
+      authSessionId,
       auth_time: Math.floor(Date.now() / 1000),
       profileAvatarUrl: null,
       profileDisplayName: null,
@@ -58,7 +60,8 @@ export async function mintLegacySession(
   shape: LegacySessionShape,
   secret: string,
 ): Promise<MintedLegacySession> {
-  const value = await encodeSessionJwt(account, secret);
+  const authSessionId = randomUUID();
+  const value = await encodeSessionJwt(account, secret, authSessionId);
   const expires = Math.floor(Date.now() / 1000) + THIRTY_DAYS_SECONDS;
   const base = { httpOnly: true, sameSite: 'Lax' as const, expires };
   const parentDomain = { ...base, path: '/', domain: COOKIE_DOMAIN };
@@ -79,7 +82,7 @@ export async function mintLegacySession(
   } else {
     cookies = [{ ...parentDomain, name: PLAIN_NAME, value, secure: false }];
   }
-  return { shape, cookieNames: cookies.map((cookie) => cookie.name), cookies };
+  return { shape, authSessionId, cookieNames: cookies.map((cookie) => cookie.name), cookies };
 }
 
 export async function addLegacySession(

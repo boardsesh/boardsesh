@@ -150,6 +150,38 @@ export function appendSignOutSessionCookieClears(response: Response, requestCook
   }
 }
 
+/**
+ * A provider sign-in that wrote a new legacy twin (#7596 B5b): clears, in
+ * every scope, each legacy session cookie name (base or chunk, either
+ * spelling) the request carried that the response does not write again, and
+ * the host-only copy of each name it does write when the twin is Domain
+ * scoped, so no legacy cookie with another session id stays beside the new login.
+ */
+export function appendStaleLegacySessionCookieClears(response: Response, requestCookieNames: readonly string[]): void {
+  const written = new Set(
+    response.headers
+      .getSetCookie()
+      .map((header) => header.split(';', 1)[0] ?? '')
+      .filter((pair) => pair.indexOf('=') > 0 && pair.slice(pair.indexOf('=') + 1).trim() !== '')
+      .map((pair) => pair.slice(0, pair.indexOf('=')).trim()),
+  );
+  const domain = sessionCookieDomain();
+  for (const name of new Set(requestCookieNames)) {
+    const legacy = [SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME].some(
+      (baseName) => name === baseName || name.startsWith(`${baseName}.`),
+    );
+    if (!legacy) continue;
+    if (written.has(name)) {
+      // Written again in the Domain scope: a host-only copy (base or chunk) of
+      // another login, left from before the shared domain, still goes.
+      if (domain) response.headers.append('Set-Cookie', sessionCookieClear(name, undefined));
+      continue;
+    }
+    response.headers.append('Set-Cookie', sessionCookieClear(name, undefined));
+    if (domain) response.headers.append('Set-Cookie', sessionCookieClear(name, domain));
+  }
+}
+
 // True when the response installs a fresh (non-empty) value for the session
 // cookie — i.e. a login or a rolling-session refresh, as opposed to a plain
 // session read (no Set-Cookie) or the sign-out deletion (empty value). We only

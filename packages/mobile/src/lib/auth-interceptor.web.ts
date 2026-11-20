@@ -2,6 +2,9 @@ import {
   captureAuthCredentialGeneration,
   getAuthToken,
   isAuthCredentialGenerationCurrent,
+  isAuthTokenExpired,
+  isAuthTokenRefreshAllowed,
+  isTokenExpiringSoon,
   synchronizeWebSession,
   hasConfirmedAnonymousWebSession,
 } from './auth-store.web';
@@ -109,12 +112,24 @@ export async function recoverAuthRejection(): Promise<AuthRejectionResult> {
   return refreshResult.status;
 }
 
+/**
+ * A token to send, refreshed first when there is none or, for a 15-minute
+ * browser token (`better-auth`, #7596 B3b), when fewer than three minutes are
+ * left. Every caller shares the one session read in flight. A refresh that
+ * fails (503, timeout) keeps a token that has not ended yet; nothing here ever
+ * signs the page out. The legacy JWE has no end, so it is used as before.
+ */
 export async function ensureFreshToken(): Promise<boolean> {
   const generation = captureAuthCredentialGeneration();
-  if (await getAuthToken()) return isAuthCredentialGenerationCurrent(generation);
+  const held = await getAuthToken();
+  if (held && !(await isTokenExpiringSoon())) return isAuthCredentialGenerationCurrent(generation);
   if (!isAuthCredentialGenerationCurrent(generation)) return false;
+  // A failed refresh is backing off: send the held token while it lasts, read nothing.
+  if (held && !isAuthTokenRefreshAllowed()) return !isAuthTokenExpired();
   const session = await synchronizeWebSession();
-  return session.status === 'authenticated' && isAuthCredentialGenerationCurrent(generation);
+  if (!isAuthCredentialGenerationCurrent(generation)) return false;
+  if (session.status === 'authenticated') return true;
+  return (await getAuthToken()) !== null && !isAuthTokenExpired();
 }
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {

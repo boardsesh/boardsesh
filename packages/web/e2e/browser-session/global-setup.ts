@@ -3,6 +3,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { join, resolve } from 'node:path';
+import { startAppleOidcFixture } from '../../auth-proofs/apple-oidc-fixture';
+import { startGoogleOidcFixture } from '../../auth-proofs/google-oidc-fixture';
 import { startEdge, type Edge } from '../../partner-oauth-e2e/edge';
 import {
   assertLocalOnly,
@@ -11,8 +13,12 @@ import {
   type Environment,
   type EnvironmentFile,
 } from '../../partner-oauth-e2e/server-environment';
+import { startBackendRelay } from './backend-relay';
+import { betterAuthEnvironments, type BetterAuthDatabase } from './better-auth-environment';
 import { createCertificate } from './certificate';
-import { SetCookieLog, startControlServer } from './control-server';
+import { harnessRetryBudgetError } from './harness-retries';
+import { ResponseHolds, SetCookieLog, startControlServer } from './control-server';
+import { startMailSink, type MailSink } from './mail-sink';
 import { freePort, readEnvironmentFile } from './processes';
 import { startProbeServer } from './probe-server';
 import { backendReadiness, ServerSet, webReadiness, type ServerSpec } from './servers';
@@ -22,7 +28,13 @@ import {
   APP_EXPORT_ENVIRONMENT_VARIABLE,
   APP_HOST,
   APP_ORIGIN,
+  APPLE_STAND_IN_HOST,
+  APPLE_STAND_IN_ORIGIN,
+  APPLE_STAND_IN_CLIENT,
   BACKEND_ORIGIN,
+  GOOGLE_STAND_IN_CLIENT,
+  GOOGLE_STAND_IN_HOST,
+  GOOGLE_STAND_IN_ORIGIN,
   COOKIE_DOMAIN,
   GRAPHQL_URL,
   PROBE_HOST_ONE,
@@ -70,19 +82,46 @@ const LOG_DIRECTORY = resolve(WEB_DIRECTORY, 'test-results/browser-session');
 const STALE_RUN_DIRECTORY_MS = 60 * 60 * 1000;
 const WWW_BUILD_MS = 20 * 60 * 1000;
 
-/** `database.ts` under tsx, with the database URL and nothing secret. */
-function runDatabaseStep(databaseUrl: string, args: string[]): string {
-  return execFileSync('vp', ['exec', 'tsx', 'e2e/browser-session/database.ts', ...args], {
-    cwd: WEB_DIRECTORY,
+/** The backend fixture that prepares the database for `better-auth` (run from the backend package). */
+const BETTER_AUTH_DATABASE_STEP = {
+  cwd: BACKEND_DIRECTORY,
+  script: 'src/auth/authority/__tests__/fixtures/browser-session-e2e-database.ts',
+};
+
+/** A harness script under tsx, with the database URL and nothing secret. */
+function runDatabaseStep(
+  databaseUrl: string,
+  args: string[],
+  { cwd, script } = { cwd: WEB_DIRECTORY, script: 'e2e/browser-session/database.ts' },
+): string {
+  return execFileSync('vp', ['exec', 'tsx', script, ...args], {
+    cwd,
     env: {
       ...inheritedEnvironment(process.env),
       DATABASE_URL: databaseUrl,
       TEST_USER_EMAIL: process.env.TEST_USER_EMAIL,
       TEST_USER_PASSWORD: process.env.TEST_USER_PASSWORD,
+      BROWSER_SESSION_E2E_PREPARE_DATABASE: process.env.BROWSER_SESSION_E2E_PREPARE_DATABASE,
+      GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
     } as unknown as NodeJS.ProcessEnv,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
   });
+}
+
+/** The JSON a harness script printed after SEED_OUTPUT_PREFIX. */
+function printedResult<T>(output: string): T {
+  const line = output.split('\n').find((candidate) => candidate.startsWith(SEED_OUTPUT_PREFIX));
+  if (!line) throw new Error('The database step printed no result.');
+  return JSON.parse(line.slice(SEED_OUTPUT_PREFIX.length)) as T;
+}
+
+/** `legacy` (unset) unless the caller asks for `better-auth`; anything else stops the run. */
+function readBrowserSessionMode(): 'legacy' | 'better-auth' {
+  const requested = process.env.AUTH_BROWSER_SESSION_MODE ?? '';
+  if (requested === '' || requested === 'legacy') return 'legacy';
+  if (requested === 'better-auth') return requested;
+  throw new Error('AUTH_BROWSER_SESSION_MODE must be legacy or better-auth for this run.');
 }
 
 /**
@@ -139,6 +178,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     );
   }
   const wwwMode = readWwwMode();
+  const browserSessionMode = readBrowserSessionMode();
 
   mkdirSync(LOG_DIRECTORY, { recursive: true });
   for (const name of ['backend.log', 'web.log']) rmSync(join(LOG_DIRECTORY, name), { force: true });
@@ -146,22 +186,49 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   mkdirSync(runsDirectory, { recursive: true });
   sweepStaleRunDirectories(runsDirectory);
   const workDirectory = mkdtempSync(join(runsDirectory, 'run-'));
-  const accountBId = `${ACCOUNT_ID_PREFIX}${randomUUID()}`;
+  // Every account this run makes, B and each test's own, shares one prefix, so teardown removes them together.
+  const runAccountPrefix = `${ACCOUNT_ID_PREFIX}${randomUUID().slice(0, 8)}-`;
+  const accountBId = `${runAccountPrefix}${randomUUID()}`;
   const servers: Server[] = [];
   let serverSet: ServerSet | undefined;
   let edge: Edge | undefined;
   let accountBSeeded = false;
+  let mailSink: MailSink | undefined;
+  let releaseHolds: () => void = () => undefined;
+  let apple: Awaited<ReturnType<typeof startAppleOidcFixture>> | undefined;
+  let google: Awaited<ReturnType<typeof startGoogleOidcFixture>> | undefined;
   const teardown = async () => {
-    await serverSet?.stop();
+    releaseHolds();
+    await apple?.close();
+    await google?.close();
+    await serverSet?.shutdown();
     await edge?.close();
-    await Promise.all(servers.map((server) => new Promise<void>((done) => server.close(() => done()))));
-    if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', accountBId]);
+    await mailSink?.close();
+    // Kept-alive connections (www's to the relay, a worker's to the control server) would hold close() open.
+    await Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<void>((done) => {
+            server.close(() => done());
+            server.closeAllConnections();
+          }),
+      ),
+    );
+    if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', `${runAccountPrefix}%`]);
     rmSync(workDirectory, { recursive: true, force: true });
+    const overBudget = harnessRetryBudgetError();
+    if (overBudget) throw overBudget;
   };
 
   try {
     const certificate = createCertificate(workDirectory);
+    // Sign in with Apple, played by a stand-in: its page on its own site through the edge, its token and
+    // key endpoints on loopback for www (auth-proofs/apple-oidc-fixture.ts).
+    apple = await startAppleOidcFixture({ ...APPLE_STAND_IN_CLIENT, browserOrigin: APPLE_STAND_IN_ORIGIN });
+    google = await startGoogleOidcFixture(GOOGLE_STAND_IN_CLIENT.clientId, { browserOrigin: GOOGLE_STAND_IN_ORIGIN });
     const [backendPort, webPort] = [await freePort(), await freePort()];
+    const backendRelay = await startBackendRelay(certificate, backendPort);
+    servers.push(backendRelay.server);
     const nextAuthSecret = randomBytes(32).toString('base64url');
     const shared: Environment = {
       ...inheritedEnvironment(process.env),
@@ -177,13 +244,16 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       NEXTAUTH_SECRET: nextAuthSecret,
       // Never production in Sentry, whatever else the environment looks like.
       SENTRY_ENVIRONMENT: 'browser-session-e2e',
+      // Apple configured on both services: www's provider and the backend's methods.
+      APPLE_ID: APPLE_STAND_IN_CLIENT.clientId,
+      APPLE_SECRET: APPLE_STAND_IN_CLIENT.clientSecret,
+      // Google likewise. With no CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE the backend verifies no
+      // Google token, so a Google sign-in here is carried (never fresh).
+      GOOGLE_CLIENT_ID: GOOGLE_STAND_IN_CLIENT.clientId,
+      GOOGLE_CLIENT_SECRET: GOOGLE_STAND_IN_CLIENT.clientSecret,
       // No outside service, even if an environment file names one: blank wins over a file.
       READ_REPLICA_URL: '',
       SMTP_HOST: '',
-      // Today's mode (NextAuth) unless a caller asks for another one.
-      ...(process.env.AUTH_BROWSER_SESSION_MODE
-        ? { AUTH_BROWSER_SESSION_MODE: process.env.AUTH_BROWSER_SESSION_MODE }
-        : {}),
     };
 
     const backendEnvironment = serverEnvironment(
@@ -222,6 +292,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // next dev refuses its dev resources to an origin it does not know.
         DEV_ALLOWED_ORIGINS: WWW_HOST,
         NEXT_TELEMETRY_DISABLED: '1',
+        // www's Apple provider reads the stand-in's discovery document (oidc-stand-in.server.ts).
+        BOARDSESH_E2E_APPLE_OIDC_WELL_KNOWN: apple.discoveryUrl,
+        BOARDSESH_E2E_GOOGLE_OIDC_WELL_KNOWN: google.discoveryUrl,
       },
       // What `next dev` and `next start` load, first one wins.
       (wwwMode === 'production'
@@ -234,14 +307,33 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     // Account A is the dev database's test user; account B is made for this run.
     accountBSeeded = true;
-    const seedOutput = runDatabaseStep(databaseUrl, ['seed', accountBId])
-      .split('\n')
-      .find((line) => line.startsWith(SEED_OUTPUT_PREFIX));
-    if (!seedOutput) throw new Error('database.ts printed no seed result.');
-    const accounts = JSON.parse(seedOutput.slice(SEED_OUTPUT_PREFIX.length)) as {
-      accountA: SeededAccount;
-      accountB: SeededAccount;
-    };
+    const accounts = printedResult<{ accountA: SeededAccount; accountB: SeededAccount }>(
+      runDatabaseStep(databaseUrl, ['seed', accountBId]),
+    );
+
+    // `better-auth`: the database it needs, then every precondition both services check.
+    if (browserSessionMode === 'better-auth') {
+      const database = printedResult<BetterAuthDatabase>(runDatabaseStep(databaseUrl, [], BETTER_AUTH_DATABASE_STEP));
+      const betterAuth = betterAuthEnvironments(database, {
+        backendRelayOrigin: backendRelay.origin,
+        certificatePath: certificate.certificatePath,
+      });
+      Object.assign(backendEnvironment.environment, betterAuth.backend);
+      Object.assign(webEnvironment.environment, betterAuth.web);
+      // www's shared mailer sends the first-password link here, over TLS with the run's certificate.
+      mailSink = await startMailSink(certificate, {
+        user: 'browser-session-e2e',
+        password: randomBytes(18).toString('base64url'),
+      });
+      Object.assign(webEnvironment.environment, {
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: String(mailSink.port),
+        SMTP_USER: mailSink.user,
+        SMTP_PASSWORD: mailSink.password,
+      });
+      assertLocalOnly('backend', backendEnvironment);
+      assertLocalOnly('web server', webEnvironment);
+    }
 
     if (wwwMode === 'production') buildWww(webEnvironment.environment);
 
@@ -275,6 +367,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     servers.push(staticApp.server, probeApp.server);
 
     const setCookieLog = new SetCookieLog();
+    const responseHolds = new ResponseHolds();
+    releaseHolds = () => responseHolds.releaseAll();
     edge = await startEdge({
       key: certificate.key,
       cert: certificate.cert,
@@ -284,12 +378,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         [APP_HOST]: staticApp.port,
         [PROBE_HOST_ONE]: probeApp.port,
         [PROBE_HOST_TWO]: probeApp.port,
+        [APPLE_STAND_IN_HOST]: apple.port,
+        [GOOGLE_STAND_IN_HOST]: google.port,
       },
       // www's Sentry tunnel and the backend's PostHog proxy forward to the real services.
       refusedPathPrefixes: { [WWW_HOST]: ['/monitoring'], [WS_HOST]: ['/api/posthog'] },
       onResponse: (observation) => setCookieLog.observe(observation),
+      holdResponse: (request) => responseHolds.take(request),
     });
-    const control = await startControlServer(setCookieLog, serverSet);
+    const control = await startControlServer(setCookieLog, serverSet, mailSink?.messages ?? [], responseHolds);
     servers.push(control.server);
 
     await serverSet.start();
@@ -299,10 +396,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       accounts,
       nextAuthSecret,
       wwwMode,
+      browserSessionMode,
+      databaseUrl,
+      runAccountPrefix,
       control: { url: control.url, token: control.token },
     };
     process.env[STACK_ENVIRONMENT_VARIABLE] = JSON.stringify(stack);
-    console.info(`[browser-session] stack up (www: ${wwwMode}): ${WWW_ORIGIN} ${APP_ORIGIN} ${BACKEND_ORIGIN}`);
+    console.info(
+      `[browser-session] stack up (www: ${wwwMode}, mode: ${browserSessionMode}): ${WWW_ORIGIN} ${APP_ORIGIN} ${BACKEND_ORIGIN}`,
+    );
     return teardown;
   } catch (error) {
     await teardown();

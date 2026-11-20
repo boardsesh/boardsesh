@@ -5,6 +5,13 @@ import {
 } from '@boardsesh/graphql-client';
 import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
 import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import {
+  SOCKET_REFUSED_CLOSE_CODE,
+  isBrowserAccessToken,
+  noteSocketClosed,
+  socketConnectToken,
+  socketCredentialHandle,
+} from '@/app/lib/auth/browser-access-token';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
@@ -67,6 +74,11 @@ export function createGraphQLClient(
 
   const managerConnectionName = options.connectionName ?? 'primary';
   const { authToken, ...baseOptions } = options;
+  // A 15-minute browser token (#7596 B3b) is replaced while the socket lives:
+  // the socket holds the viewer's handle and reads the current token at each
+  // (re)connect. Any other token (legacy mode) is its own handle and is sent as is.
+  const socketHandle = authToken ? socketCredentialHandle(authToken) : null;
+  const browserTokenSocket = socketHandle !== null && isBrowserAccessToken(socketHandle);
 
   return createSharedGraphQLClient({
     ...baseOptions,
@@ -75,12 +87,22 @@ export function createGraphQLClient(
     // headers on the upgrade, so connectionParams is the only channel.
     // `clientPlatform` puts a signed-in socket's day in `user_activity_days`
     // under `web`, as HTTP requests already are (docs/analytics-consent.md).
-    connectionParams: async () => ({
-      ...(authToken ? { authToken } : {}),
-      ...webClientIdentityConnectionParams(),
-      [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
-    }),
-    webSocketImpl: SafeWebSocket,
+    connectionParams: async () => {
+      const connectToken = socketHandle ? await socketConnectToken(socketHandle) : null;
+      return {
+        ...(connectToken ? { authToken: connectToken } : {}),
+        ...webClientIdentityConnectionParams(),
+        [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
+      };
+    },
+    // graphql-ws gives up on a 4401 before it asks `shouldRetry`. A browser
+    // token's socket turns it into a retryable close after asking the next
+    // connect for a new token, as the app's `ws-client-core.ts` does; graphql-ws
+    // then reconnects and resubscribes. Any other socket closes on 4401 as before.
+    webSocketImpl:
+      browserTokenSocket && socketHandle !== null
+        ? retryingRefusedToken(SafeWebSocket, () => noteSocketClosed(socketHandle, SOCKET_REFUSED_CLOSE_CODE))
+        : SafeWebSocket,
     onClientCreated: (client) => {
       if (typeof window === 'undefined') return;
       // graphql-ws dispose() is async and can reject with a raw DOM Event (ErrorEvent)
@@ -93,6 +115,55 @@ export function createGraphQLClient(
       return connectionManager.registerClient(client, managerConnectionName);
     },
   });
+}
+
+/** A close graphql-ws retries (Forbidden is not in its fatal list): what a refused browser token becomes. */
+const REFRESH_AND_RETRY_CLOSE_CODE = 4403;
+
+function prototypeAccessor(prototype: object | null, property: string): PropertyDescriptor | undefined {
+  for (let level = prototype; level; level = Object.getPrototypeOf(level)) {
+    const descriptor = Object.getOwnPropertyDescriptor(level, property);
+    if (descriptor) return descriptor;
+  }
+  return undefined;
+}
+
+/**
+ * The socket class for a browser-token connection: its `onclose` handler (the
+ * one graphql-ws assigns) sees a 4401 as a retryable 4403, after `onRefused`
+ * marked the token so the reconnect sends a new one.
+ */
+function retryingRefusedToken(base: typeof WebSocket, onRefused: () => void): typeof WebSocket {
+  return class RefusedTokenRetryingSocket extends base {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      const accessor = prototypeAccessor(Object.getPrototypeOf(this), 'onclose');
+      let assigned: WebSocket['onclose'] = null;
+      Object.defineProperty(this, 'onclose', {
+        configurable: true,
+        enumerable: true,
+        get: () => assigned,
+        set: (handler: WebSocket['onclose']) => {
+          assigned = handler;
+          accessor?.set?.call(
+            this,
+            handler === null
+              ? null
+              : (event: CloseEvent) => {
+                  if (event.code !== SOCKET_REFUSED_CLOSE_CODE) return handler.call(this, event);
+                  onRefused();
+                  const retryable = {
+                    code: REFRESH_AND_RETRY_CLOSE_CODE,
+                    reason: event.reason,
+                    wasClean: event.wasClean,
+                  };
+                  return handler.call(this, retryable as unknown as CloseEvent);
+                },
+          );
+        },
+      });
+    }
+  };
 }
 
 type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number; generation: number };
@@ -124,7 +195,8 @@ export function acquireRealtimeClient({ url, authToken }: { url: string; authTok
     guard.subscribe(closeSupersededRealtimeClient);
   }
   closeSupersededRealtimeClient();
-  const key = `${url}\n${authToken ?? ''}`;
+  // Keyed by the socket handle, so a refreshed browser token keeps the socket.
+  const key = `${url}\n${socketCredentialHandle(authToken) ?? ''}`;
   if (sharedRealtimeClient?.key !== key) {
     sharedRealtimeClient = {
       key,

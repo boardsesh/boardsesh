@@ -16,7 +16,7 @@ import {
 import {
   captureFirstPasswordRuntime,
   firstPasswordEmailBinding,
-  isAppleOnlyFirstPasswordInventory,
+  isFirstPasswordInventory,
   type FirstPasswordRuntime,
 } from './first-password-policy';
 
@@ -96,7 +96,7 @@ export async function lockFirstPasswordEligibility(
   const identity = bindIdentityAuthority(transaction, authority);
   if (await identity.readPassword(user.id, 'update')) throw new FirstPasswordRefusal('denied', 'already_set');
   const providers = await identity.listProviders(user.id, 'update');
-  if (!isAppleOnlyFirstPasswordInventory(providers, user.id, admitted.session.generation))
+  if (!isFirstPasswordInventory(providers, user.id, admitted.session.generation))
     throw new FirstPasswordRefusal('denied', 'not_eligible');
   // A fresh read after provider row waits prevents observing an earlier email
   // value if an unfenced writer was already holding the user's row.

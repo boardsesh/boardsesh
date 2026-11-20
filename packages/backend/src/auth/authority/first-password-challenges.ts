@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, gt, isNull } from 'drizzle-orm';
 import { authFirstPasswordChallenges } from '@boardsesh/db/schema/auth';
 import type { ProviderSecurityActor } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
@@ -13,6 +13,8 @@ import {
 import {
   captureFirstPasswordRuntime,
   equalFirstPasswordDigest,
+  FIRST_PASSWORD_CHALLENGES_PER_DAY,
+  FIRST_PASSWORD_CHALLENGES_PER_HOUR,
   firstPasswordDeadline,
   type FirstPasswordRuntime,
 } from './first-password-policy';
@@ -25,6 +27,7 @@ import {
   type CapturedProviderActor,
 } from './provider-security-context';
 import type { FirstPartySession } from './session-reader';
+import { RateLimitError } from '../../utils/rate-limiter';
 
 export type FirstPasswordChallenge = typeof authFirstPasswordChallenges.$inferSelect;
 export interface FirstPasswordBoundInput {
@@ -130,6 +133,25 @@ export async function requestFirstPasswordChallenge(
   return withFirstPasswordAuthority(database, runtime, async (transaction, authority) => {
     const eligible = await lockFirstPasswordEligibility(transaction, authority, runtime, actor);
     const now = await providerDatabaseNow(transaction);
+    // The durable mail cap, counted under the `users` lock eligibility took: refused the
+    // way the per-minute limit is (503), before anything is written or planned.
+    const issuedSince = async (since: Date) =>
+      (
+        await transaction
+          .select({ total: count() })
+          .from(authFirstPasswordChallenges)
+          .where(
+            and(
+              eq(authFirstPasswordChallenges.userId, eligible.session.userId),
+              gt(authFirstPasswordChallenges.issuedAt, since),
+            ),
+          )
+      )[0]?.total ?? 0;
+    if (
+      (await issuedSince(new Date(now.getTime() - 60 * 60_000))) >= FIRST_PASSWORD_CHALLENGES_PER_HOUR ||
+      (await issuedSince(new Date(now.getTime() - 24 * 60 * 60_000))) >= FIRST_PASSWORD_CHALLENGES_PER_DAY
+    )
+      throw new RateLimitError(60 * 60);
     const expiresAt = firstPasswordDeadline(now, eligible.session.expiresAt);
     await transaction
       .update(authFirstPasswordChallenges)

@@ -8,6 +8,10 @@
 //
 // Extra arguments go to Playwright, e.g. `-- --project=webkit`.
 // BROWSER_SESSION_E2E_REUSE_EXPORT=1 skips the export when one is already there.
+// BROWSER_SESSION_E2E_GREP=@smoke runs only the specs whose title has that tag
+// (the per-PR subset of the acceptance specs; the nightly runs them all).
+// AUTH_BROWSER_SESSION_MODE=better-auth starts both servers in the new mode,
+// with every precondition it checks (global-setup.ts, better-auth-environment.ts).
 // BROWSER_SESSION_E2E_WWW=production (or the `--www-production` flag) runs www as
 // `next build` + `next start` instead of `next dev`: Router Cache behaviour and
 // several auth branches differ under NODE_ENV=production. The build is slow, so
@@ -81,6 +85,8 @@ async function main(): Promise<number> {
     extraArguments.splice(productionFlag, 1);
     process.env.BROWSER_SESSION_E2E_WWW = 'production';
   }
+  const grep = process.env.BROWSER_SESSION_E2E_GREP;
+  if (grep) extraArguments.push(`--grep=${grep}`);
   buildExport();
   return runPlaywright(extraArguments);
 }

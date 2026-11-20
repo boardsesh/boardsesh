@@ -23,6 +23,9 @@ import {
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
 import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
+import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
+import { routeBrowserSessionAuth } from '@/app/lib/auth/browser-session-route.server';
+import { withLegacyModeFirstPartyClears } from '@/app/lib/auth/browser-session.server';
 import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
@@ -319,13 +322,33 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
       { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
     );
   }
-  return withAuthResponseAdmission(request, context, (completeSignOut) =>
-    withWebOAuthIdentity(request, context, authOptions, (current, options) =>
-      current.method === 'POST'
-        ? postAuth(current, context, options, completeSignOut)
-        : getAuth(current, context, options),
-    ),
-  );
+  const browserSessionMode = browserSessionRouteMode();
+  // Under `better-auth`, Google and Apple sign-ins issue a first-party session (B5b).
+  const providerSessionCookies = browserSessionMode.kind === 'better-auth' ? browserSessionMode.cookies : undefined;
+  const legacyRoute = () =>
+    withAuthResponseAdmission(request, context, (completeSignOut) =>
+      withWebOAuthIdentity(
+        request,
+        context,
+        authOptions,
+        (current, options) =>
+          current.method === 'POST'
+            ? postAuth(current, context, options, completeSignOut)
+            : getAuth(current, context, options),
+        providerSessionCookies,
+      ),
+    );
+  // AUTH_BROWSER_SESSION_MODE unset, empty or `legacy`: the route as it was. The
+  // only difference: a login or sign-out reply also clears a first-party cookie
+  // the request carried, which no browser holds before the first cutover.
+  if (browserSessionMode.kind === 'legacy')
+    return withLegacyModeFirstPartyClears(request, nextauth[0] ?? '', await legacyRoute());
+  // The guarded sign-out keeps this route's form fields and answers.
+  return routeBrowserSessionAuth(request, context, browserSessionMode, {
+    legacyRoute,
+    readExpectedSignOutIdentity,
+    guardedSignOutResponse,
+  });
 }
 
 async function composedAuth(

@@ -3,14 +3,13 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { hash } from 'bcryptjs';
 import { authCredentialLineage, authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
-import type { BrowserBindingActor, ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
+import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import { createEnvironment } from './environment';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
 import { captureIdentityAuthority, switchIdentityAuthority, type IdentityAuthorityName } from '../router';
 import { bindIdentityAuthority } from '../identity-authority';
 import type { AuthorityDatabase } from '../adapter';
-import { beginBrowserIntent, commitBrowserLogin, createUnpublishedBrowserBinding } from '../browser-binding';
 import {
   bindProviderSecurityFlow,
   createProviderSecurityIntent,
@@ -25,6 +24,8 @@ const requireWeb = createRequire(new URL('../../../../../web/package.json', impo
 const jwt = requireWeb('next-auth/jwt') as {
   encode(input: { secret: string; token: Record<string, unknown>; maxAge: number }): Promise<string>;
 };
+export const encodeLegacyTestCredential = jwt.encode;
+
 export async function createProviderSecurityEnvironment() {
   const environment = await createEnvironment();
   try {
@@ -91,7 +92,7 @@ export async function createProviderSecurityDriver(input: {
   }
   async function actor(
     selected: IdentityAuthorityName,
-    kind: BrowserBindingActor['kind'],
+    kind: 'legacy-jwe' | 'canonical-token',
     options: {
       readonly password?: boolean;
       readonly provider?: ProviderSecurityProvider;
@@ -164,35 +165,8 @@ export async function createProviderSecurityDriver(input: {
         });
     }
     const credential = kind === 'legacy-jwe' ? { kind, credential: raw, secret } : { kind, token: raw };
-    const binding = await createUnpublishedBrowserBinding(
-      environment.database,
-      qualification,
-      new Date(Date.now() + 86_400_000),
-    );
-    if (binding.status !== 'created') throw new Error('Owned binding initialization failed');
-    const login = await beginBrowserIntent(environment.database, qualification, binding.token, {
-      operation: 'login',
-      expectedVersion: 0,
-    });
-    if (login.status !== 'prepared') throw new Error('Owned login intent failed');
-    const admitted = await commitBrowserLogin(
-      environment.database,
-      qualification,
-      binding.token,
-      login.intentToken,
-      credential,
-    );
-    if (admitted.status !== 'committed') throw new Error('Owned issuance did not admit');
-    // The browser-binding actor: first password and the owned-provider sign-in
-    // still take it (#7596 B5c2, B5a).
-    const presented: BrowserBindingActor = {
-      kind,
-      credential: raw,
-      expectedUserId: userId,
-      expectedAuthSessionId: sid,
-      browserBindingToken: binding.token,
-      browserVersion: admitted.cursor.version,
-    };
+    // The raw cookie value and its kind.
+    const presented = { kind, credential: raw };
     // The web-session actor of provider link, unlink and reauthentication.
     const webActor: ProviderSecurityActor = {
       presented: kind === 'legacy-jwe' ? { kind, credential: raw } : { kind, token: raw },

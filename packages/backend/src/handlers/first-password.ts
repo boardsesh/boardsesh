@@ -14,6 +14,8 @@ import { captureFirstPasswordActor } from '../auth/authority/first-password-cont
 import { executeFirstPasswordCommand } from '../auth/authority/first-password-commands';
 import { isWebPasswordCommandFresh } from '../auth/current-store/command-context';
 import { getCredentialDatabase } from '../auth/credential-database';
+import { logger } from '../utils/logger';
+import { databaseErrorCode } from '../auth/current-store/database-error-code';
 import { checkRateLimit } from '../utils/rate-limiter';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
 import { sendJson } from './http-utils';
@@ -73,7 +75,13 @@ export async function handleFirstPassword(
     if (Buffer.byteLength(JSON.stringify(reply), 'utf8') > FIRST_PASSWORD_RESPONSE_BYTES)
       throw new Error('First-password private reply exceeds budget');
     sendJson(response, firstPasswordReplyStatus(reply), reply);
-  } catch {
+  } catch (error) {
+    // The SQLSTATE only: the error itself can quote a token, an email or a password hash.
+    const sqlState = databaseErrorCode(error);
+    logger.warn('First password command unavailable', {
+      operation: command.operation,
+      ...(sqlState ? { sqlState } : {}),
+    });
     sendJson(response, 503, {
       firstPasswordVersion: FIRST_PASSWORD_VERSION,
       requestId: command.requestId,

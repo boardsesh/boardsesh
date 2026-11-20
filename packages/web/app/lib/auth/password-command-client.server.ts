@@ -19,6 +19,8 @@ import {
   type ForgotPasswordReply,
   type ResetPasswordReply,
   type SetPasswordReply,
+  type PresentedWebSession,
+  type WebSessionRequest,
 } from '@boardsesh/auth-protocol';
 
 import {
@@ -61,9 +63,17 @@ export type PasswordCommandClient = {
   /**
    * `clientAddress` is the visitor a trusted edge vouched for. The backend keys
    * its per-client sign-in limit on it; without it the sign-in takes the
-   * backend's per-process budget.
+   * backend's per-process budget. `webSession` asks the backend to issue a
+   * first-party web session for the account the password proves, revoking
+   * `webSession.presented` (#7596); only `AUTH_BROWSER_SESSION_MODE=better-auth`
+   * sends it.
    */
-  password(email: string, password: string, clientAddress?: string): Promise<PasswordReply>;
+  password(
+    email: string,
+    password: string,
+    clientAddress?: string,
+    webSession?: WebSessionRequest,
+  ): Promise<PasswordReply>;
 };
 /**
  * The address to send, or undefined for one the command schema would refuse
@@ -83,6 +93,18 @@ export type EmailVerificationCommandClient = {
 export type SetPasswordCommandClient = {
   setPassword(
     credential: string,
+    password: string,
+    confirmPassword: string,
+    expectedUserId: string,
+    expectedAuthSessionId: string,
+  ): Promise<SetPasswordReply>;
+  /**
+   * The second form (#7596 B4b): presents the session as the web-session
+   * commands do. A canonical token keeps its session and token through the
+   * password write; www writes no cookie from the reply.
+   */
+  setPasswordForSession(
+    presented: PresentedWebSession,
     password: string,
     confirmPassword: string,
     expectedUserId: string,
@@ -139,6 +161,15 @@ export function createPasswordCommandClient(
   }
 
   return {
+    async setPasswordForSession(presented, password, confirmPassword, expectedUserId, expectedAuthSessionId) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'set-password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload: { presented, password, confirmPassword, expectedUserId, expectedAuthSessionId },
+      })) as SetPasswordReply;
+    },
     async setPassword(credential, password, confirmPassword, expectedUserId, expectedAuthSessionId) {
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -157,7 +188,7 @@ export function createPasswordCommandClient(
         payload,
       })) as RegisterReply;
     },
-    async password(email, password, clientAddress) {
+    async password(email, password, clientAddress, webSession) {
       const sendableAddress = sendableClientAddress(clientAddress);
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -166,6 +197,7 @@ export function createPasswordCommandClient(
           ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
           : {}),
         ...(sendableAddress ? { clientAddress: sendableAddress } : {}),
+        ...(webSession ? { webSession } : {}),
         requestId: randomUUID(),
         issuedAt: Date.now(),
         payload: { email, password },

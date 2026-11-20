@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
-import { issuedWebSessionSchema, webSessionRequestSchema } from './web-session';
+import { issuedWebSessionSchema, presentedWebSessionSchema, webSessionRequestSchema } from './web-session';
 export * from './web-credential-proof';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
 export * from './provider-security-v1';
-export * from './anonymous-provider-v1';
 export * from './first-password-v1';
 export * from './batch-system-user-v1';
 export * from './web-session';
@@ -132,20 +131,40 @@ export const resetPasswordCommandSchema = z
   .object({ ...commandMetadata, operation: z.literal('reset-password'), payload: z.unknown() })
   .strict()
   .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+/** The password rule a chosen password must meet, in either set-password form. */
+export const setPasswordPasswordSchema = z.string().min(8).max(128);
 export const setPasswordCommandSchema = z
   .object({
     ...commandMetadata,
     operation: z.literal('set-password'),
-    payload: z
-      .object({
-        expectedUserId: identityId,
-        expectedAuthSessionId: z.string().min(1).max(1024),
-        credential: z.string().min(1).max(65_536),
-        password: z.string().min(8).max(128),
-        confirmPassword: z.string(),
-      })
-      .strict()
-      .refine((payload) => payload.password === payload.confirmPassword),
+    /**
+     * The first form names the legacy NextAuth cookie (`credential`). The
+     * second (#7596, B4b) presents the session the way the web-session
+     * commands do; a canonical token keeps its session and token through the
+     * password write, and a legacy cookie behaves exactly as the first form.
+     */
+    payload: z.union([
+      z
+        .object({
+          expectedUserId: identityId,
+          expectedAuthSessionId: z.string().min(1).max(1024),
+          credential: z.string().min(1).max(65_536),
+          password: setPasswordPasswordSchema,
+          confirmPassword: z.string(),
+        })
+        .strict()
+        .refine((payload) => payload.password === payload.confirmPassword),
+      z
+        .object({
+          expectedUserId: identityId,
+          expectedAuthSessionId: z.string().min(1).max(1024),
+          presented: presentedWebSessionSchema,
+          password: setPasswordPasswordSchema,
+          confirmPassword: z.string(),
+        })
+        .strict()
+        .refine((payload) => payload.password === payload.confirmPassword),
+    ]),
   })
   .strict();
 export const webSignOutCommandSchema = z

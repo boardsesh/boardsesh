@@ -1,8 +1,8 @@
 /**
  * The private web-session commands over real HTTP and PostgreSQL: login as an
- * extension of the staged password command, guarded sign-out, and roll. The
- * web asks for a session but never names its account; the backend issues it
- * only for the account the password proves.
+ * extension of the staged password command, and guarded sign-out (a session
+ * rolls in the access command). The web asks for a session but never names its
+ * account; the backend issues it only for the account the password proves.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
@@ -20,7 +20,7 @@ import {
   WEB_SESSION_LIFETIME_SECONDS,
   WEB_SESSION_PROTOCOL_VERSION,
   passwordReplySchema,
-  webSessionRollReplySchema,
+  webSessionReadReplySchema,
   webSessionSignOutReplySchema,
   type PresentedWebSession,
 } from '@boardsesh/auth-protocol';
@@ -104,7 +104,7 @@ beforeEach(() => {
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-web-session-command-retired-mailbox-key',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'off',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible',
     AUTH_CUTOFF_ENFORCEMENT: 'enforce',
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
@@ -143,7 +143,7 @@ function loginCommand(email: string, webSession?: unknown, password = PASSWORD) 
     operation: 'password',
     requestId: randomUUID(),
     issuedAt: Date.now(),
-    ...(webSession === undefined ? {} : { webSession }),
+    ...(webSession === undefined ? {} : { webSession, credentialProofVersion: 1 }),
     payload: { email, password },
   };
 }
@@ -156,7 +156,7 @@ async function login(email: string, presented?: PresentedWebSession) {
   return reply;
 }
 
-function command(operation: 'signout' | 'roll', payload: Record<string, unknown>) {
+function command(operation: 'signout' | 'session', payload: Record<string, unknown>) {
   return {
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -255,6 +255,18 @@ describe('login through the staged password command', () => {
     expect((await readFirstPartySession(environment.database, legacy)).status).toBe('denied');
   });
 
+  it('refuses a session request without a credential proof, before any work', async () => {
+    const { id, email } = await climber();
+    const before = await accountState(id);
+    const { credentialProofVersion: _proof, ...withoutProof } = loginCommand(email, {});
+    expect(await post(AUTH_COMMAND_PATHS.password, withoutProof)).toEqual({
+      status: 400,
+      body: { error: 'invalid_request' },
+    });
+    expect(await accountState(id)).toEqual(before);
+    expect(admitted).not.toHaveBeenCalled();
+  });
+
   it('never lets the web name the account', async () => {
     const { id, email } = await climber();
     for (const webSession of [{ userId: id }, { presented: { kind: 'canonical-token', token: 'x', userId: id } }]) {
@@ -281,7 +293,7 @@ describe('login through the staged password command', () => {
 });
 
 describe('no account cutoff', () => {
-  it('leaves a presented no-SID legacy cookie alone and still signs in', async () => {
+  it('ends only a presented no-SID legacy cookie (its own id denied, no cutoff) and still signs in', async () => {
     const { id, email } = await climber();
     const other = (await login(email)).webSession!;
     await phone(id);
@@ -299,7 +311,8 @@ describe('no account cutoff', () => {
       ),
     );
     expect(await sessionStatus(other.token)).toBe('admitted');
-    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('admitted');
+    // The login revokes the session it was presented, by that cookie's own id only (#7596 B2c).
+    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('denied');
   });
 
   it('signs out a bridged no-SID row alone', async () => {
@@ -391,7 +404,7 @@ describe('login details', () => {
   });
 });
 
-describe('sign-out and roll', () => {
+describe('sign-out', () => {
   it('signs out only the session the tab expected', async () => {
     const { id, email } = await climber();
     const session = (await login(email)).webSession!;
@@ -413,32 +426,6 @@ describe('sign-out and roll', () => {
     // Repeating it is harmless: nothing live is left.
     expect((await signOut(session.sessionId)).status).toBe(200);
   });
-
-  it('rolls a live session when it is due and refuses a dead one', async () => {
-    const { id, email } = await climber();
-    const session = (await login(email)).webSession!;
-    const roll = () => post(WEB_SESSION_COMMAND_PATHS.roll, command('roll', { token: session.token }));
-
-    const fresh = webSessionRollReplySchema.parse((await roll()).body);
-    expect(fresh).toMatchObject({ outcome: 'active', userId: id, authSessionId: session.sessionId, rolled: false });
-
-    const tenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
-    await environment.database
-      .update(authSession)
-      .set({ expiresAt: tenDays })
-      .where(eq(authSession.id, session.sessionId));
-    const due = webSessionRollReplySchema.parse((await roll()).body);
-    expect(due).toMatchObject({ outcome: 'active', rolled: true });
-    if (due.outcome === 'active') expect(Date.parse(due.expiresAt)).toBeGreaterThan(tenDays.getTime());
-
-    await post(
-      WEB_SESSION_COMMAND_PATHS.signout,
-      command('signout', { token: session.token, expectedUserId: id, expectedAuthSessionId: session.sessionId }),
-    );
-    const dead = await roll();
-    expect(dead.status).toBe(401);
-    expect(webSessionRollReplySchema.parse(dead.body).outcome).toBe('unauthenticated');
-  });
 });
 
 describe('private transport', () => {
@@ -451,7 +438,7 @@ describe('private transport', () => {
           WEB_SESSION_COMMAND_PATHS.signout,
           command('signout', { token: 't', expectedUserId: 'u', expectedAuthSessionId: 's' }),
         ],
-        [WEB_SESSION_COMMAND_PATHS.roll, command('roll', { token: 't' })],
+        [WEB_SESSION_COMMAND_PATHS.session, command('session', { presented: { kind: 'canonical-token', token: 't' } })],
         [AUTH_COMMAND_PATHS.password, loginCommand(email, {})],
       ] as const) {
         const response = await post(path, body);
@@ -467,28 +454,28 @@ describe('private transport', () => {
 
   it('refuses a wrong or missing secret, a browser origin and an unknown mode', async () => {
     const { email } = await climber();
-    const roll = command('roll', { token: 't' });
+    const read = command('session', { presented: { kind: 'canonical-token', token: 't' } });
     for (const authorization of ['Bearer wrong-secret-of-the-wrong-length', `Bearer ${rpcSecret}x`, '']) {
-      expect(await post(WEB_SESSION_COMMAND_PATHS.roll, roll, authorization)).toEqual({
+      expect(await post(WEB_SESSION_COMMAND_PATHS.session, read, authorization)).toEqual({
         status: 401,
         body: { error: 'unauthorized' },
       });
       expect((await post(AUTH_COMMAND_PATHS.password, loginCommand(email, {}), authorization)).status).toBe(401);
     }
-    const fromBrowser = await fetch(`${origin}${WEB_SESSION_COMMAND_PATHS.roll}`, {
+    const fromBrowser = await fetch(`${origin}${WEB_SESSION_COMMAND_PATHS.session}`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${rpcSecret}`,
         'content-type': 'application/json',
         origin: 'https://www.boardsesh.com',
       },
-      body: JSON.stringify(roll),
+      body: JSON.stringify(read),
     });
     expect(fromBrowser.status).toBe(401);
     // The transport's 401 never parses as a reply, so it cannot read as "no live session".
-    expect(webSessionRollReplySchema.safeParse(await fromBrowser.json()).success).toBe(false);
+    expect(webSessionReadReplySchema.safeParse(await fromBrowser.json()).success).toBe(false);
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'on');
-    expect((await post(WEB_SESSION_COMMAND_PATHS.roll, roll)).status).toBe(503);
+    expect((await post(WEB_SESSION_COMMAND_PATHS.session, read)).status).toBe(503);
     expect((await post(AUTH_COMMAND_PATHS.password, loginCommand(email, {}))).status).toBe(503);
     expect(admitted).not.toHaveBeenCalled();
   });

@@ -25,6 +25,7 @@ test('names every Set-Cookie of a probe response, attributes included and values
       name: '__Secure-recorded',
       attributes: [`Domain=${COOKIE_DOMAIN}`, 'Max-Age=3600', 'Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax'],
       clears: false,
+      valueDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
     },
   ]);
   const clear = records.find((record) => record.path === '/clear');
@@ -37,7 +38,9 @@ test('shows a sign-in writing the session cookie, a session read rolling it, the
   page,
   accountA,
   edgeCookies,
+  stack,
 }) => {
+  test.skip(stack.browserSessionMode !== 'legacy', 'Legacy behaviour; reads-write-nothing.spec.ts covers better-auth.');
   const signIn = await edgeCookies.during(() => signInOnWww(page, accountA));
   const written = sessionSetCookies(signIn.records).filter((cookie) => !cookie.clears);
   // The credentials callback writes it first. Legacy NextAuth also rewrites it on each /api/auth/session read.

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
+  appendStaleLegacySessionCookieClears,
   isSecureCookieContext,
   PLAIN_SESSION_COOKIE_NAME,
   responseSetsSessionCookie,
@@ -393,5 +394,40 @@ describe('appendSignOutSessionCookieClears', () => {
         expect([...clearedNames], JSON.stringify(env)).toContain(candidate);
       }
     }
+  });
+});
+
+describe('appendStaleLegacySessionCookieClears (#7596 B5b)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('clears every other legacy name in both scopes, and the host-only copy of a chunk the twin rewrites', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com' });
+    const response = new Response(null);
+    // The twin, written as two Domain chunks.
+    response.headers.append('Set-Cookie', `${SECURE_SESSION_COOKIE_NAME}.0=part-one; Path=/; Domain=.boardsesh.com`);
+    response.headers.append('Set-Cookie', `${SECURE_SESSION_COOKIE_NAME}.1=part-two; Path=/; Domain=.boardsesh.com`);
+    appendStaleLegacySessionCookieClears(response, [
+      `${SECURE_SESSION_COOKIE_NAME}.0`,
+      `${SECURE_SESSION_COOKIE_NAME}.2`,
+      PLAIN_SESSION_COOKIE_NAME,
+      'unrelated',
+    ]);
+    const clears = response.headers.getSetCookie().filter((header) => /Max-Age=0/.test(header));
+    // A chunk the twin rewrites: only its host-only copy goes.
+    expect(clears.filter((header) => header.startsWith(`${SECURE_SESSION_COOKIE_NAME}.0=`))).toEqual([
+      `${SECURE_SESSION_COOKIE_NAME}.0=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`,
+    ]);
+    // A chunk and a name the twin does not write: both scopes.
+    for (const name of [`${SECURE_SESSION_COOKIE_NAME}.2`, PLAIN_SESSION_COOKIE_NAME])
+      expect(clears.filter((header) => header.startsWith(`${name}=`))).toHaveLength(2);
+    expect(clears.some((header) => header.startsWith('unrelated='))).toBe(false);
+  });
+
+  it('never clears what it wrote on a host-only deployment', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'http://localhost:3000' });
+    const response = new Response(null);
+    response.headers.append('Set-Cookie', `${PLAIN_SESSION_COOKIE_NAME}=twin; Path=/`);
+    appendStaleLegacySessionCookieClears(response, [PLAIN_SESSION_COOKIE_NAME]);
+    expect(response.headers.getSetCookie()).toEqual([`${PLAIN_SESSION_COOKIE_NAME}=twin; Path=/`]);
   });
 });

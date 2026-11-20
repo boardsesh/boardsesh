@@ -25,6 +25,7 @@ vi.mock('../websocket-connection-manager', () => ({
 import { acquireRealtimeClient as acquireSharedRealtimeClient, createGraphQLClient } from '../graphql-client';
 import { WEB_CLIENT_VERSION } from '@/app/lib/client-identity';
 import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import { rememberBrowserAccessToken, resetBrowserAccessTokensForTests } from '@/app/lib/auth/browser-access-token';
 
 const BROWSER_IDENTITY = `boardsesh-web/${WEB_CLIENT_VERSION}`;
 
@@ -152,5 +153,38 @@ describe('acquireRealtimeClient', () => {
     const reacquired = acquireRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'token-a' });
     expect(reacquired.client).not.toBe(held.client);
     reacquired.release();
+  });
+});
+
+describe('web realtime client with a 15-minute browser token (#7596 B3b)', () => {
+  const viewer = { userId: 'user-1', authSessionId: 'session-1' };
+  const FIFTEEN_MINUTES = 15 * 60;
+
+  beforeEach(() => {
+    shared.capturedOptions.length = 0;
+    resetBrowserAccessTokensForTests();
+  });
+
+  it('reads the current token at each connect and gives the socket the 4401-retrying class', async () => {
+    rememberBrowserAccessToken('browser-token-1', viewer, FIFTEEN_MINUTES);
+    createGraphQLClient({ url: 'wss://backend.test/graphql', authToken: 'browser-token-1' });
+    const options = shared.capturedOptions.at(-1);
+    await expect(lastConnectionParams()).resolves.toMatchObject({ authToken: 'browser-token-1' });
+    rememberBrowserAccessToken('browser-token-2', viewer, FIFTEEN_MINUTES);
+    await expect(lastConnectionParams()).resolves.toMatchObject({ authToken: 'browser-token-2' });
+    // Not the plain error-swallowing socket: one more class that remaps 4401 (proven end to end in
+    // graphql-client-browser-token.test.ts), and no retry predicate of its own.
+    expect(Object.getPrototypeOf(options?.webSocketImpl)).not.toBe(WebSocket);
+    expect(options).not.toHaveProperty('shouldRetry');
+  });
+
+  it('keeps one shared socket while the token is refreshed for the same viewer', () => {
+    rememberBrowserAccessToken('browser-token-1', viewer, FIFTEEN_MINUTES);
+    const first = acquireSharedRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'browser-token-1' });
+    rememberBrowserAccessToken('browser-token-2', viewer, FIFTEEN_MINUTES);
+    const second = acquireSharedRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'browser-token-2' });
+    expect(second.client).toBe(first.client);
+    first.release();
+    second.release();
   });
 });

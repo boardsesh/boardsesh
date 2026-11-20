@@ -23,6 +23,8 @@ import {
   isSessionSuperseded,
   isWriteRefused,
 } from '@/app/lib/auth/session-guard';
+import { refreshAccessTokenAfterCredentialChange } from '@/app/lib/auth/browser-access-token';
+import { reloadAfterAccountChange } from '@/app/lib/auth/reload-after-account-change';
 import ReloadPageAlert, { TryAgainAlert } from './reload-page-alert';
 
 type SetPasswordSectionProps = {
@@ -120,6 +122,21 @@ export default function SetPasswordSection({
         setReauthenticationRequired(true);
         return;
       }
+      // Under the first-party session the server names the reload: the tab shows another login (#7596 B4b).
+      if (response.status === 409 && data.error === 'identity_changed' && data.reload === 'root') {
+        reloadAfterAccountChange();
+        return;
+      }
+      // The account already has a password (a retry after a lost reply, or another tab).
+      // Never claim this password was saved: show the card's "password login is
+      // enabled" state instead. The earlier write moved the generation.
+      if (response.status === 409 && data.code === 'already_set') {
+        void refreshAccessTokenAfterCredentialChange();
+        setPassword('');
+        setConfirmPassword('');
+        onPasswordSet();
+        return;
+      }
       if (response.status === 409 && data.error === 'identity_changed') {
         setPassword('');
         setConfirmPassword('');
@@ -136,6 +153,8 @@ export default function SetPasswordSection({
         return;
       }
 
+      // The account's generation moved, so every earlier browser token is dead (#7596 B3b).
+      void refreshAccessTokenAfterCredentialChange();
       showMessage(t('password.success'), 'success');
       setPassword('');
       setConfirmPassword('');

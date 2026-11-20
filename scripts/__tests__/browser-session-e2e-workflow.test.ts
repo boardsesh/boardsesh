@@ -12,7 +12,7 @@ import { parse } from 'yaml';
  * engines, and keep its traces off and its cap at 30 minutes.
  */
 
-type Step = { name?: string; run?: string; with?: Record<string, string>; env?: Record<string, string> };
+type Step = { name?: string; if?: string; run?: string; with?: Record<string, string>; env?: Record<string, string> };
 type Job = { if?: string; needs?: string[]; environment?: string; 'timeout-minutes'?: number; steps?: Step[] };
 type Workflow = {
   permissions?: Record<string, string>;
@@ -44,6 +44,9 @@ describe('browser-session-e2e.yml', () => {
       'scripts/browser-session-e2e.ts',
       'packages/web/partner-oauth-e2e/edge.ts',
       'packages/web/partner-oauth-e2e/server-environment.ts',
+      'packages/web/auth-proofs/apple-oidc-fixture.ts',
+      'packages/web/auth-proofs/google-oidc-fixture.ts',
+      'packages/web/instrumentation.ts',
       'packages/web/app/lib/auth/**',
       'packages/web/app/api/auth/**',
       'packages/web/app/api/internal/ws-auth/**',
@@ -72,26 +75,40 @@ describe('browser-session-e2e.yml', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
   });
 
-  it('caps the job at 30 minutes and installs both engines', () => {
+  it('caps the job at 60 minutes and installs both engines, each install attempt bounded', () => {
     const job = workflow.jobs['browser-session'];
-    expect(job['timeout-minutes']).toBe(30);
+    expect(job['timeout-minutes']).toBe(60);
     const runs = (job.steps ?? []).map((step) => step.run ?? '');
-    expect(runs).toContain('vp exec playwright install --with-deps chromium webkit');
+    const install = runs.find((run) => run.includes('playwright install'));
+    expect(install).toContain('timeout 600 vp exec playwright install --with-deps chromium webkit');
+    expect(install).toContain('for attempt in 1 2 3');
     expect(runs).toContain('vp run test:e2e:browser-session');
   });
 
-  it('runs the nightly against a production www build, a pull request against next dev, and lets a dispatch choose', () => {
-    const run = (workflow.jobs['browser-session'].steps ?? []).find(
+  it('runs every CI run against a production www build, and lets a dispatch choose next dev', () => {
+    const runs = (workflow.jobs['browser-session'].steps ?? []).filter(
       (step) => step.run === 'vp run test:e2e:browser-session',
     );
-    expect(run?.env?.BROWSER_SESSION_E2E_WWW).toBe(
-      "${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}",
-    );
+    expect(runs).toHaveLength(2);
+    for (const run of runs) expect(run.env?.BROWSER_SESSION_E2E_WWW).toBe("${{ inputs.www || 'production' }}");
     expect(workflow.on.workflow_dispatch?.inputs?.www).toMatchObject({
       type: 'choice',
-      options: ['dev', 'production'],
-      default: 'dev',
+      options: ['production', 'dev'],
+      default: 'production',
     });
+  });
+
+  it('runs the legacy baseline off pull requests, then the acceptance specs under better-auth on every run', () => {
+    const [legacy, acceptance] = (workflow.jobs['browser-session'].steps ?? []).filter(
+      (step) => step.run === 'vp run test:e2e:browser-session',
+    );
+    expect(legacy?.if).toBe("github.event_name != 'pull_request'");
+    expect(legacy?.env?.AUTH_BROWSER_SESSION_MODE).toBeUndefined();
+    expect(acceptance?.if).toBeUndefined();
+    expect(acceptance?.env?.AUTH_BROWSER_SESSION_MODE).toBe('better-auth');
+    expect(acceptance?.env?.BROWSER_SESSION_E2E_REUSE_EXPORT).toBe('1');
+    // Green, the whole set fits a pull request's budget (#7810): no subset.
+    expect(acceptance?.env?.BROWSER_SESSION_E2E_GREP).toBeUndefined();
   });
 
   it('cancels a superseded PR run but never a nightly or a dispatch', () => {
@@ -110,6 +127,16 @@ describe('browser-session-e2e.yml', () => {
 });
 
 describe('the browser-session harness', () => {
+  it('retries a spec only after WebKit lost its context: three named harness retries, and a run past two fails', () => {
+    expect(playwrightConfig).toContain('retries: 0,');
+    // The one test-level retry: WebKit only, and the reporter refuses it after any other failure.
+    expect(playwrightConfig).toContain("{ name: 'webkit', retries: 1,");
+    expect(playwrightConfig).toContain("['./harness-retry-reporter.ts']");
+    const retries = readFileSync('packages/web/e2e/browser-session/harness-retries.ts', 'utf8');
+    expect(retries).toContain("'restart-www-timeout' | 'webkit-internal-error' | 'webkit-network-process-lost'");
+    expect(retries).toContain('MAX_HARNESS_RETRIES = 2');
+  });
+
   it('runs Chromium and WebKit, with traces off in CI', () => {
     expect(playwrightConfig).toContain("name: 'chromium'");
     expect(playwrightConfig).toContain("name: 'webkit'");

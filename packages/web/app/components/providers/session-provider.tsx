@@ -18,9 +18,13 @@ import {
   WEB_SESSION_CHECK_EVENT,
 } from '../../lib/auth/session-guard';
 
+export { useSession as useBrowserSession } from 'next-auth/react';
+export type { Session as BrowserSession } from 'next-auth';
+
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
 // ws-auth reads the cookie without rewriting it, unlike NextAuth's session GET.
+// Under `better-auth` it answers the same ids as the session read (#7596 B3b).
 const IDENTITY_PROBE_PATH = '/api/internal/ws-auth';
 const FOCUS_CHECK_INTERVAL_MS = 30_000;
 
@@ -237,6 +241,8 @@ export default function SessionProviderWrapper({
     // A 401 or 409 that lands while a probe is out may have met a cookie that
     // changed after that probe read it, so one more probe runs when it ends.
     let recheckAfterProbe = false;
+    // The viewer a probe last found ended (401), so the next 401 for it reads nothing.
+    let endedProbeViewer: string | undefined;
     const checkIdentity = async (throttled: boolean) => {
       if (suspendedRef.current || !settledRef.current) return;
       if (identityProbe) {
@@ -250,11 +256,25 @@ export default function SessionProviderWrapper({
       identityProbe = probe;
       const deadline = setTimeout(() => probe.abort(), 15_000);
       let readsSession = false;
+      // The probe read the page's own login again: a held reply under a false viewer marker may land.
+      let confirmed = false;
       try {
         const response = await fetch(IDENTITY_PROBE_PATH, { cache: 'no-store', signal: probe.signal });
-        // An outage proves nothing and keeps the accepted session.
+        // An outage proves nothing and keeps the accepted session. A 401 (only
+        // under `better-auth`, #7596 B3b) says the cookie's session ended: the
+        // session read that follows decides what the page shows.
+        // Once per accepted viewer: if the session read that follows keeps the
+        // same login, a repeated 401 proves nothing (#7792 review, L2).
+        const viewerBefore = browserSessionGuard().viewerKey();
+        const sessionEnded = response.status === 401 && endedProbeViewer !== viewerBefore;
+        if (response.status === 401) endedProbeViewer = viewerBefore;
+        else if (response.ok) endedProbeViewer = undefined;
         const probed = response.ok ? readProbedViewer(await response.json()) : undefined;
-        if (
+        if (sessionEnded && identityProbe === probe) {
+          recheckAfterProbe = false;
+          readsSession = true;
+          externalRefresh();
+        } else if (
           probed !== undefined &&
           identityProbe === probe &&
           sessionViewerKey(probed) !== browserSessionGuard().viewerKey()
@@ -263,6 +283,8 @@ export default function SessionProviderWrapper({
           recheckAfterProbe = false;
           readsSession = true;
           externalRefresh();
+        } else if (probed !== undefined && sessionViewerKey(probed) === browserSessionGuard().viewerKey()) {
+          confirmed = true;
         }
       } catch {
         /* Transport failure keeps the accepted session. */
@@ -275,7 +297,7 @@ export default function SessionProviderWrapper({
             void checkIdentity(false);
           } else if (!readsSession) {
             // No session read follows, so a request waiting on this check goes on now.
-            browserSessionGuard().sessionChecked(probeStarted);
+            browserSessionGuard().sessionChecked(probeStarted, confirmed);
           }
         }
       }

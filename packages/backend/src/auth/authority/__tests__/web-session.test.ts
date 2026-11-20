@@ -14,7 +14,7 @@ import {
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema';
-import { createEnvironment } from './environment';
+import { createEnvironment, testBridgeTokenKey } from './environment';
 import { bounded, connectAs, parkBeforeCommit } from './lock-order-harness';
 import { bridgeLegacyCredential } from '../bridge';
 import { denyFirstPartySession } from '../lineage';
@@ -247,18 +247,27 @@ describe('issueWebSession', () => {
     const legacy: FirstPartyCredential = { kind: 'legacy-jwe', credential: cookie, secret };
     const issued = await issue({ userId: signingIn, presented: await admitted(legacy) });
     expect((await read(legacy)).status).toBe('denied');
-    expect((await bridgeLegacyCredential(environment.database, cookie, secret, 'on', now)).status).toBe('denied');
+    expect(
+      (await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', now)).status,
+    ).toBe('denied');
     expect((await admitted(canonical(issued.token))).userId).toBe(signingIn);
   });
 
-  it('never cuts off an account: a presented no-SID cookie or its bridged row is left alone', async () => {
+  it('never cuts off an account: a presented no-SID cookie and its bridged row each end alone', async () => {
     const userId = await account();
     const cookie = await legacyCookie(userId, { legacy_no_sid: true });
     const legacy: FirstPartyCredential = { kind: 'legacy-jwe', credential: cookie, secret };
     const other = await issue({ userId });
     const bridgedCookie = await legacyCookie(userId, {});
-    const bridged = await bridgeLegacyCredential(environment.database, bridgedCookie, secret, 'on', now);
-    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Synthetic bridge failed');
+    const bridged = await bridgeLegacyCredential(
+      environment.database,
+      bridgedCookie,
+      secret,
+      testBridgeTokenKey,
+      'on',
+      now,
+    );
+    if (bridged.status !== 'bridged') throw new Error('Synthetic bridge failed');
     const bridgedSession = await admitted(canonical(bridged.token));
     expect(bridgedSession.requiresAccountCutoff).toBe(true);
     for (const presented of [await admitted(legacy), bridgedSession]) {
@@ -266,8 +275,12 @@ describe('issueWebSession', () => {
       expect(issued.generation).toBe(0);
       expect((await admitted(canonical(issued.token))).generation).toBe(0);
     }
-    expect((await read(legacy)).status).toBe('admitted');
-    expect((await read(canonical(bridged.token))).status).toBe('admitted');
+    // Its own id is denied, nothing else (#7596 B2c): a later bridge of it is refused.
+    expect((await read(legacy)).status).toBe('denied');
+    // The bridged row is ended as itself: row gone, its id denied.
+    expect((await read(canonical(bridged.token))).status).toBe('denied');
+    expect(await sessionRow(bridged.session.id)).toBeUndefined();
+    expect((await read({ kind: 'legacy-jwe', credential: bridgedCookie, secret })).status).toBe('denied');
     expect((await read(canonical(other.token))).status).toBe('admitted');
     expect(
       await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
@@ -398,8 +411,8 @@ describe('rollWebSession', () => {
     const userId = await account();
     // A legacy cookie with ten days left: the bridge caps the row at that expiry.
     const cookie = await legacyCookie(userId, { authSessionId: randomUUID() }, 10 * 24 * 60 * 60);
-    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, 'on', now);
-    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Synthetic bridge refused');
+    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', now);
+    if (bridged.status !== 'bridged') throw new Error('Synthetic bridge refused');
     expect(bridged.session.expiresAt).toEqual(at(10));
     expect(await rollWebSession(environment.database, bridged.session.id, at(1))).toEqual({
       rolled: true,
@@ -407,7 +420,7 @@ describe('rollWebSession', () => {
     });
     expect((await read(canonical(bridged.token), at(20))).status).toBe('admitted');
     // Re-bridging the same cookie keeps the rolled expiry.
-    await bridgeLegacyCredential(environment.database, cookie, secret, 'on', at(2));
+    await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', at(2));
     expect((await sessionRow(bridged.session.id)).expiresAt).toEqual(at(31));
     await environment.database
       .update(authCredentialLineage)
@@ -470,8 +483,8 @@ describe('session source', () => {
       auth_time: signedInAt.getTime() / 1000,
       link_guarded: true,
     });
-    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, 'on', now);
-    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Synthetic bridge refused');
+    const bridged = await bridgeLegacyCredential(environment.database, cookie, secret, testBridgeTokenKey, 'on', now);
+    if (bridged.status !== 'bridged') throw new Error('Synthetic bridge refused');
     const session = await admitted(canonical(bridged.token));
     expect(session.source).toBe('bridge');
     expect(session.authenticatedAt).toEqual(signedInAt);
