@@ -2,6 +2,17 @@ import type { Locator, Page } from '@playwright/test';
 
 /** Browser measurements, including offscreen content in the normal page flow. */
 export async function auditPublicPage(page: Page, target?: Locator) {
+  // Navigation or moving the pointer can start a hover-out transition. Measure
+  // its settled colours rather than an intermediate foreground/background pair.
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
   const targetHandle = target ? await target.elementHandle() : null;
   if (target && !targetHandle) throw new Error('The audited target is unavailable');
   try {
