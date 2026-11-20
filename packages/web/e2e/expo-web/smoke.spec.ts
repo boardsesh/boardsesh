@@ -179,14 +179,14 @@ test.describe('expo-web smoke', () => {
    * Binds one of the test user's seeded boards via the board sheet so the
    * Climbs tab has a list and play-drawer actions aren't blocked by the
    * switch-board overlay (feed climbs live on other boards). Fresh contexts
-   * start unbound. The sheet lists the account's boards as a "Your boards"
-   * radiogroup; which boards the seed image puts there can vary, so this takes
+   * start unbound. The sheet lists the account's boards under "Your boards";
+   * which boards the seed image puts there can vary, so this takes
    * the first one rather than naming it.
    */
   async function bindSeededBoard(page: Page): Promise<void> {
     await tabButton(page, 'Climbs').click();
     const findBoardButton = page.getByRole('button', { name: 'Find my board' });
-    const boundThumbnail = page.locator('img[src^="blob:"]').first();
+    const boundThumbnail = page.getByTestId('climb-list').locator('img[src^="blob:"]').first();
     // The Climbs tab settles into one of two determinate states: the follow-
     // your-wall empty state (fresh context) or a populated list (already bound).
     // Wait for whichever appears so the bind decision below isn't racing an
@@ -195,15 +195,15 @@ test.describe('expo-web smoke', () => {
     await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
     if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
-      // The carousel carries no accessible name of its own, so scope to the
-      // innermost block that holds both the "Your boards" header and a
-      // radiogroup; any other radiogroup on the page is then out of reach.
-      const yourBoards = page
-        .locator('div')
-        .filter({ has: page.getByText('Your boards', { exact: true }) })
-        .filter({ has: page.getByRole('radiogroup') })
-        .last();
-      await yourBoards.getByRole('radiogroup').getByRole('button').first().click({ force: true });
+      // Board rows contain artwork; their separate action menus and the
+      // collapsed list's "Show all" button do not. Keep the pick inside the
+      // saved-board list so nearby boards cannot satisfy it.
+      const savedBoard = page
+        .getByTestId('picker-your-boards')
+        .getByRole('button')
+        .filter({ has: page.locator('img') })
+        .first();
+      await savedBoard.click({ force: true });
     }
     // Bound board → the list renders WASM thumbnails. Assert unconditionally so
     // a skipped bind (e.g. the empty-state button got renamed) fails loudly
