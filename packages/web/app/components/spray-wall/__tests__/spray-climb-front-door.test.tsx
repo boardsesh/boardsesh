@@ -1,7 +1,9 @@
 // @vitest-environment node
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import type { Locale } from '@/app/lib/i18n/config';
+import { getLocale } from '@/app/lib/i18n/get-locale';
 
 /**
  * What the spray climb page actually ships in its first HTML byte.
@@ -14,13 +16,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 
-vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: vi.fn(async () => ({
-    t: (key: string, options?: Record<string, unknown>) =>
-      options ? `${key}:${Object.values(options).join('/')}` : key,
-    locale: 'en-US',
-  })),
-}));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: vi.fn() }));
 
 // `LocaleLink` is a client component wrapping `next/link`; a plain anchor keeps
 // the assertion about the href the page emits rather than about Next's routing.
@@ -71,11 +67,22 @@ const CLIMB = {
 
 type ArtProps = Parameters<typeof SprayClimbFrontDoor>[0]['art'];
 
-async function render(overrides: { photoUrl?: string | null; art?: ArtProps; artUrl?: string | null } = {}) {
+async function render(
+  overrides: {
+    photoUrl?: string | null;
+    art?: ArtProps;
+    artUrl?: string | null;
+    setter?: string | null;
+    senderCount?: string | number | null;
+  } = {},
+) {
+  const { setter = CLIMB.setter_username, senderCount = CLIMB.ascensionist_count } = overrides;
   const element = await SprayClimbFrontDoor({
     // The component's prop types are the page's; the fixtures above are the
     // shapes those types describe, narrowed to what this component reads.
-    climb: CLIMB as unknown as Parameters<typeof SprayClimbFrontDoor>[0]['climb'],
+    climb: { ...CLIMB, setter_username: setter, ascensionist_count: senderCount } as unknown as Parameters<
+      typeof SprayClimbFrontDoor
+    >[0]['climb'],
     wallData: WALL_DATA,
     photoUrl: 'photoUrl' in overrides ? (overrides.photoUrl ?? null) : WALL_DATA.wall.publicPhotoUrl,
     art: overrides.art ?? null,
@@ -86,12 +93,77 @@ async function render(overrides: { photoUrl?: string | null; art?: ArtProps; art
 }
 
 describe('SprayClimbFrontDoor', () => {
+  beforeEach(() => {
+    vi.mocked(getLocale).mockResolvedValue('en-US');
+  });
+
+  const summaries = [
+    [
+      'en-US',
+      'Set by marco. ',
+      '1 climber logged a send.',
+      '12,345 climbers logged a send.',
+      '0 climbers logged a send.',
+    ],
+    [
+      'es',
+      'Equipado por marco. ',
+      '1 persona ha registrado un encadene.',
+      '12.345 personas han registrado un encadene.',
+      '0 personas han registrado un encadene.',
+    ],
+    [
+      'fr',
+      'Ouvert par marco. ',
+      '1 personne a enregistré une croix.',
+      '12 345 personnes ont enregistré une croix.',
+      '0 personne a enregistré une croix.',
+    ],
+    [
+      'de',
+      'Geschraubt von marco. ',
+      '1 Person hat eine Begehung eingetragen.',
+      '12.345 Personen haben eine Begehung eingetragen.',
+      '0 Personen haben eine Begehung eingetragen.',
+    ],
+    [
+      'it',
+      'Tracciato da marco. ',
+      '1 climber ha registrato una ripetizione.',
+      '12.345 climber hanno registrato una ripetizione.',
+      '0 climber hanno registrato una ripetizione.',
+    ],
+    ['zh-CN', '由 marco 设定。', '完攀记录人数：1。', '完攀记录人数：12,345。', '完攀记录人数：0。'],
+  ] satisfies [Locale, string, string, string, string][];
+
+  it.each(summaries)(
+    'renders the distinct sender count in %s with or without attribution',
+    async (locale, attribution, singular, grouped, zero) => {
+      vi.mocked(getLocale).mockResolvedValue(locale);
+      // French, Spanish and Italian can select the "many" form for an exact million.
+      const format = new Intl.NumberFormat(locale);
+      const million = grouped.replace(format.format(12345), format.format(1_000_000));
+      for (const [senderCount, sentence] of [
+        ['1', singular],
+        [12345, grouped],
+        [1_000_000, million],
+        [null, zero],
+      ] as const) {
+        for (const setter of ['marco', null]) {
+          const html = await render({ setter, senderCount });
+          expect(html).toContain(`>${setter ? attribution : ''}${sentence}</p>`);
+          expect(html.includes('href="/setter/marco"')).toBe(Boolean(setter));
+        }
+      }
+    },
+  );
+
   it('puts the climb in the first HTML byte: one h1, a summary, and the photo', async () => {
     const html = await render();
 
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain('spray.heading:Crimp Ladder/6c/V5');
-    expect(html).toContain('spray.summary:Garage Wall/40/220');
+    expect(html).toContain('Crimp Ladder — 6c/V5');
+    expect(html).toContain('On Garage Wall, a spray wall at 40° with 220 holds.');
     expect(html).toContain(WALL_DATA.wall.publicPhotoUrl);
     // The setter's own words are the one piece of unique prose on the page.
     expect(html).toContain('Sit start on the two crimps.');
@@ -121,9 +193,9 @@ describe('SprayClimbFrontDoor', () => {
 
     expect(html).toContain(`href="${buildStoreUrl('ios', { placement: 'spray-climb' }).replaceAll('&', '&amp;')}"`);
     expect(html).toContain('ct=spray-climb');
-    expect(html).toContain('spray.install.heading');
-    expect(html).toContain('spray.install.body');
-    expect(html).toContain('home.hero.ctaInstallIos');
+    expect(html).toContain('Get the app');
+    expect(html).toContain('Log your sends on this spray wall and set climbs of your own.');
+    expect(html).toContain('App Store');
   });
 
   it('never puts a presigned private-bucket URL in the markup', async () => {
@@ -139,7 +211,7 @@ describe('SprayClimbFrontDoor', () => {
   it('says so rather than shipping a broken image when there is no photo', async () => {
     const html = await render({ photoUrl: null });
 
-    expect(html).toContain('spray.noPhoto');
+    expect(html).toContain('This spray wall has no photo to show yet.');
     expect(html).not.toContain('<img');
   });
 
