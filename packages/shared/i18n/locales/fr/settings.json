@@ -555,6 +555,11 @@
     },
     "relayToWall": "Allumer ton bloc au mur",
     "peerDrivingBoard": "Quelqu’un d’autre a la board",
+    "browserBlocked": {
+      "title": "L’accès au Bluetooth est bloqué",
+      "message": "Ton navigateur a bloqué l’accès au Bluetooth. Autorise Boardsesh à utiliser le Bluetooth dans les paramètres du navigateur, puis réessaie.\n\nTu utilises Brave ? Active Web Bluetooth à l’adresse brave://flags/#brave-web-bluetooth-api, redémarre Brave, puis réessaie."
+    },
+    "browserUnavailable": "Le Bluetooth n’est pas disponible pour le moment. Vérifie que cet appareil dispose du Bluetooth, active-le, puis réessaie.",
     "browserUnsupported": {
       "title": "Bluetooth dans ton navigateur",
       "message": "Ce navigateur ne peut pas encore se connecter à ta board. Dans Firefox sur ordinateur, installe WebBT et WebBT Server, puis recharge Boardsesh. La prise en charge de Linux est expérimentale. Tu peux continuer à parcourir les blocs et leurs cotations.",

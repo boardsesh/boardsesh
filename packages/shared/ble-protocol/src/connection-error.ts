@@ -10,6 +10,7 @@
  */
 export type BleFailureCategory =
   | 'unavailable' // Bluetooth off / unsupported / unauthorized
+  | 'permission_denied' // browser or policy blocked Bluetooth access
   | 'user_cancelled' // user dismissed the picker — no message
   | 'board_not_found' // scan found nothing / target serial never appeared
   | 'connect_failed' // GATT connect failed or timed out
@@ -190,10 +191,25 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
     if (codeCategory) return codeCategory;
   }
 
-  // User dismissed the picker. Match only explicit user-cancel signals — see
-  // USER_CANCEL_MESSAGE_PATTERN for why the wording is this narrow.
-  // NotFoundError is the Web Bluetooth chooser-dismissed name.
-  if (name === 'NotFoundError' || USER_CANCEL_MESSAGE_PATTERN.test(message)) {
+  // Chromium also uses NotFoundError when the chooser cannot open because
+  // Bluetooth is disabled or scan permission was denied (including Brave).
+  // Those failures must surface even though no device was selected.
+  if (
+    name === 'NotAllowedError' ||
+    (name === 'SecurityError' && /permissions?[ -]policy|Bluetooth.*(?:blocked|disallowed|denied)/i.test(message)) ||
+    /Web Bluetooth API globally disabled|disabled Web Bluetooth|Bluetooth permission has been blocked|denied.*permission.*(?:Bluetooth|scan)/i.test(
+      message,
+    )
+  ) {
+    return 'permission_denied';
+  }
+
+  // Only explicit chooser cancellation is silent; the exception name alone
+  // also covers missing adapters, services and browser restrictions.
+  if (
+    USER_CANCEL_MESSAGE_PATTERN.test(message) ||
+    (name === 'NotFoundError' && /^No device chosen\.?$/i.test(message))
+  ) {
     return 'user_cancelled';
   }
 
@@ -203,7 +219,9 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
   // the web adapter's "Failed to get UART characteristic" and the Swift
   // "UART service was not found" / "Write characteristic was not found".
   if (
-    /UART (service|characteristic)|write characteristic|characteristic.*not found|service.*not found/i.test(message)
+    /UART (service|characteristic)|write characteristic|characteristic.*not found|service.*not found|No (?:services|characteristics).*found in/i.test(
+      message,
+    )
   ) {
     return 'service_missing';
   }
@@ -229,7 +247,7 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
     return 'connect_failed';
   }
 
-  if (/not available|unavailable|powered ?off|poweredOff/i.test(message)) {
+  if (/not available|unavailable|powered ?off|poweredOff|Bluetooth is not supported/i.test(message)) {
     return 'unavailable';
   }
 

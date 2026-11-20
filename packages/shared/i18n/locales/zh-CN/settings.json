@@ -555,6 +555,11 @@
     },
     "relayToWall": "将你的线路放上墙面",
     "peerDrivingBoard": "其他人正在控制训练板",
+    "browserBlocked": {
+      "title": "蓝牙访问被阻止",
+      "message": "浏览器阻止了蓝牙访问。请在浏览器设置中允许 Boardsesh 使用蓝牙，然后重试。\n\n使用 Brave？请在 brave://flags/#brave-web-bluetooth-api 启用 Web Bluetooth，重启 Brave 后重试。"
+    },
+    "browserUnavailable": "蓝牙目前不可用。请确认此设备支持蓝牙，开启蓝牙后重试。",
     "browserUnsupported": {
       "title": "浏览器蓝牙连接",
       "message": "此浏览器暂时无法连接你的训练板。在电脑版 Firefox 中安装 WebBT 和 WebBT Server，然后重新加载 Boardsesh。Linux 支持仍处于实验阶段。你仍然可以浏览线路和难度。",

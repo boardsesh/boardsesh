@@ -555,6 +555,11 @@
     },
     "relayToWall": "Metti il tuo blocco in parete",
     "peerDrivingBoard": "Qualcun altro ha il pannello",
+    "browserBlocked": {
+      "title": "L’accesso al Bluetooth è bloccato",
+      "message": "Il browser ha bloccato l’accesso al Bluetooth. Consenti a Boardsesh di usare il Bluetooth nelle impostazioni del browser, poi riprova.\n\nUsi Brave? Attiva Web Bluetooth all’indirizzo brave://flags/#brave-web-bluetooth-api, riavvia Brave e riprova."
+    },
+    "browserUnavailable": "Il Bluetooth non è disponibile al momento. Verifica che questo dispositivo supporti il Bluetooth, attivalo e riprova.",
     "browserUnsupported": {
       "title": "Bluetooth nel tuo browser",
       "message": "Questo browser non può ancora connettersi al tuo pannello. In Firefox per computer, installa WebBT e WebBT Server, poi ricarica Boardsesh. Il supporto per Linux è sperimentale. Puoi continuare a esplorare i blocchi e i loro gradi.",

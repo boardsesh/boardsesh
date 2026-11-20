@@ -21,6 +21,21 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
 11. **Session serial broadcast** -- `onConnectSuccess(parsedSerial, connectionHandle)` fires. `BluetoothProvider` resolves the board using the handle's snapshotted config and calls `setSessionBoardSerial(serial)` if a session is active. An unchanged binding returns its cached ID, while same-key reconnects share an in-flight resolve. Ambiguous serial resolution stays pending through the picker choice. This lets the newest generation attach and later release the holder; stale, cancelled, invalidated, and failed resolutions return `null` and cannot populate another config.
 12. **Wake lock** -- `useWakeLock(isConnected)` keeps the screen on while connected.
 
+**Browser connection errors:** Expo web uses the rendered Material guidance
+dialog for failed connections; React Native's `Alert` does not render on web.
+Blocked permissions and disabled Web Bluetooth (including Brave) show browser
+settings guidance with selectable text. Brave users can enable Web Bluetooth at
+`brave://flags/#brave-web-bluetooth-api` and restart the browser. Missing adapters,
+services and other failures show their own guidance. Close the dialog and tap
+connect again after resolving the problem; the dialog does not start another
+connection automatically. The transport still retries eligible GATT handshake
+failures once. Only an explicit picker cancellation stays silent.
+
+Chromium uses `NotFoundError` for both cancellation and disabled APIs, denied
+scan permission, missing adapters and missing services. The shared classifier
+checks the message as well as the name: blocked access is `permission_denied`
+(warning-level connection failure), not a `Bluetooth Connection Cancelled` event.
+
 **Device picker dialog (`DevicePickerDialog`):**
 
 - MUI `Dialog` with "Select a board" title and `BluetoothSearching` icon.

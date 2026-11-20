@@ -555,6 +555,11 @@
     },
     "relayToWall": "Deinen Boulder am Board beleuchten",
     "peerDrivingBoard": "Jemand anderes hat das Board",
+    "browserBlocked": {
+      "title": "Der Bluetooth-Zugriff ist blockiert",
+      "message": "Dein Browser hat den Bluetooth-Zugriff blockiert. Erlaube Boardsesh in den Browsereinstellungen den Zugriff auf Bluetooth und versuche es erneut.\n\nNutzt du Brave? Aktiviere Web Bluetooth unter brave://flags/#brave-web-bluetooth-api, starte Brave neu und versuche es erneut."
+    },
+    "browserUnavailable": "Bluetooth ist gerade nicht verfügbar. Prüfe, ob dieses Gerät Bluetooth unterstützt, schalte es ein und versuche es erneut.",
     "browserUnsupported": {
       "title": "Bluetooth in deinem Browser",
       "message": "Dieser Browser kann sich noch nicht mit deinem Board verbinden. Installiere in Firefox auf deinem Computer WebBT und WebBT Server und lade Boardsesh dann neu. Die Linux-Unterstützung ist experimentell. Du kannst weiterhin Boulder und ihre Grade ansehen.",

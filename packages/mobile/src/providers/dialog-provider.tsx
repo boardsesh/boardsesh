@@ -222,7 +222,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       <Dialog.Title>{current.title}</Dialog.Title>
       {current.message ? (
         <Dialog.Content>
-          <Text variant="bodyMedium">{current.message}</Text>
+          <Text variant="bodyMedium" selectable={Platform.OS === 'web'}>
+            {current.message}
+          </Text>
         </Dialog.Content>
       ) : null}
       <Dialog.Actions style={styles.actions}>
