@@ -516,6 +516,8 @@
     "boardControls": "Controles del plafón",
     "sendFailedTitle": "No se pudo iluminar el plafón",
     "connectionFailedTitle": "No se pudo conectar",
+    "authenticationFailedTitle": "No se pudo mantener la conexión",
+    "authenticationFailedBody": "Bluetooth no pudo autenticar este plafón. Desactiva y vuelve a activar Bluetooth e inténtalo de nuevo. Si sigue ocurriendo, comprueba si puedes conectarte con la aplicación del fabricante del plafón.",
     "permissionRequired": "Permiso de Bluetooth necesario",
     "errorPermissionDenied": "Permite los permisos de Bluetooth para conectar un plafón.",
     "tryAgain": "Reintentar",

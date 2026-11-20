@@ -66,6 +66,20 @@ describe('classifyBleDisconnect', () => {
     // Unmapped status stays unknown.
     expect(classifyBleDisconnect({ source: 'ble-plx', androidErrorCode: 22 })).toBe('unknown');
   });
+
+  it.each(['ble-plx', 'write-failure'] as const)('classifies connection authentication failure from %s', (source) => {
+    expect(classifyBleDisconnect({ source, bleErrorCode: 201, androidErrorCode: 5 })).toBe('authentication_failed');
+  });
+
+  it('does not infer a connection authentication failure from an operation code or an unknown domain', () => {
+    expect(classifyBleDisconnect({ source: 'ble-plx', bleErrorCode: 401, androidErrorCode: 5 })).toBe('unknown');
+    expect(classifyBleDisconnect({ source: 'write-failure', bleErrorCode: 401, androidErrorCode: 5 })).toBe(
+      'write_failure',
+    );
+    expect(classifyBleDisconnect({ source: 'ble-plx', androidErrorCode: 5 })).toBe('unknown');
+    expect(classifyBleDisconnect({ source: 'native-ios', bleErrorCode: 201, androidErrorCode: 5 })).toBe('unknown');
+    expect(classifyBleDisconnect({ source: 'ble-plx', bleErrorCode: 201, iosErrorCode: 5 })).toBe('unknown');
+  });
 });
 
 // Board plan item 8: a drive that ends on a Bluetooth drop the climber made is

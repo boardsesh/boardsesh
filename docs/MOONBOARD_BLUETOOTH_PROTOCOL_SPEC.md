@@ -39,7 +39,8 @@ Each claim is tagged so you can separate what was observed in the app from what 
 | Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                                         | ✅   |
 | Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                                          | ✅   |
 | Subscribes to board notifications?     | No notify-characteristic literal was found; subscription behavior was not established.                                               | ❓   |
-| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.                      | ✅   |
+| Bonds / pairs with the board?          | The older v1.2.45 app warns _"DO NOT pair your phone to the board"_. Newer-app bonding behavior remains unverified.                   | ❓   |
+| Board PIN?                            | v1.3.68 contains six-digit board-PIN copy; a controller-enforced BLE exchange has not been established.                              | ❓   |
 | Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                                           | ✅   |
 | LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                                       | 🔁   |
 | LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                                   | 🔁   |
@@ -151,9 +152,11 @@ READY → write LED frames     (write type depends on characteristic — see §5
 disconnect
 ```
 
-✅ **Unbonded by design.** The app surfaces an explicit warning — _"Do you want to connect to the board (DO NOT pair your phone to the board)?"_ — and connects without creating an OS-level bond. An interoperable client should likewise **GATT-connect without pairing**; bonding these controllers is a known source of broken connections.
+✅ **Older-app pairing warning.** The v1.2.45 package contains the explicit warning _"Do you want to connect to the board (DO NOT pair your phone to the board)?"_. Boardsesh uses a plain GATT connection without requesting an OS-level bond. This warning alone does not establish the bonding behavior of every controller or newer app version.
 
 ❓ The v1.3.68 package contains copy for an optional secured-board gate: _"Enter your board PIN to send LED data"_ and a six-digit PIN requirement. The quoted pairing warning was not found among this package's readable strings. This copy suggests a PIN flow, but does not establish its BLE messages, whether an unlock is sent over BLE, or a change to bonding behavior. Boardsesh does not implement a PIN exchange; compatibility with secured boards remains unverified.
+
+An Android disconnect reported by Boardsesh as ble-plx `201` with `androidErrorCode: 5` is connection-level authentication failure. It is not evidence of an ATT authentication response or a board-PIN challenge. The [native error patch](../patches/react-native-ble-plx@3.5.1.patch) preserves link statuses separately from `attErrorCode`. To establish a PIN requirement, observe the official app on the affected phone/controller and capture the relevant Bluetooth exchange; package strings and a disconnect label cannot answer that question alone.
 
 > **Boardsesh compatibility:** the client now probes Nordic UART and then RedBearLab, with the iOS write type selected from the characteristic properties. The RedBearLab path still needs a check on an original board.
 

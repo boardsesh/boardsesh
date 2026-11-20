@@ -11,6 +11,8 @@ import type { BleDisconnectInfo } from './types';
 //   lost power mid-link without a clean teardown.
 // - app_recovery: we dropped the link ourselves (write-stall recovery, #3181).
 // - bluetooth_off: the phone's Bluetooth radio left poweredOn.
+// - authentication_failed: Android reported connection-level authentication
+//   failure. This does not establish an ATT challenge or a board PIN requirement.
 // - write_failure: a write flushed out an already-dead link the adapter never
 //   reported (frequently a takeover on shared boards, but unproven).
 // - unknown: platform reported nothing, or a code we don't map.
@@ -19,6 +21,7 @@ export type BleDisconnectCategory =
   | 'link_timeout'
   | 'app_recovery'
   | 'bluetooth_off'
+  | 'authentication_failed'
   | 'write_failure'
   | 'unknown';
 
@@ -31,6 +34,8 @@ const CB_ERROR_PERIPHERAL_DISCONNECTED = 7;
 // Android GATT status codes (BLE spec HCI error codes, ble-plx androidErrorCode).
 const GATT_CONN_TIMEOUT = 8; // 0x08 connection timeout
 const GATT_REMOTE_USER_TERMINATED = 19; // 0x13 remote device terminated the connection
+const GATT_CONN_AUTHENTICATION_FAILURE = 5;
+const BLE_PLX_DEVICE_DISCONNECTED = 201;
 
 // The Swift write-stall recovery paths tag app-driven drops with these markers
 // (BoardBleManager.swift); bluetooth_unavailable is the central-state marker.
@@ -49,7 +54,13 @@ const APP_RECOVERY_CONTEXTS = new Set([
 export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined): BleDisconnectCategory {
   if (!info) return 'unknown';
 
-  if (info.source === 'write-failure') return 'write_failure';
+  // The number 5 is also an ATT operation status. Require ble-plx's connection
+  // error domain (201), including when a failed write reports the drop first.
+  const connectionAuthenticationFailed =
+    info.bleErrorCode === BLE_PLX_DEVICE_DISCONNECTED && info.androidErrorCode === GATT_CONN_AUTHENTICATION_FAILURE;
+  if (info.source === 'write-failure') {
+    return connectionAuthenticationFailed ? 'authentication_failed' : 'write_failure';
+  }
 
   if (info.context) {
     if (APP_RECOVERY_CONTEXTS.has(info.context)) return 'app_recovery';
@@ -69,6 +80,7 @@ export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined
   }
 
   if (info.androidErrorCode !== undefined) {
+    if (info.source === 'ble-plx' && connectionAuthenticationFailed) return 'authentication_failed';
     if (info.androidErrorCode === GATT_REMOTE_USER_TERMINATED) return 'peer_terminated';
     if (info.androidErrorCode === GATT_CONN_TIMEOUT) return 'link_timeout';
   }

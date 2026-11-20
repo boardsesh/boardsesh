@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   blePlxErrorCodes,
+  BleWriteDisconnectedError,
   classifyBleFailure,
   classifyBleFailureReason,
   isBleWriteRecoveryFailedError,
@@ -29,12 +30,13 @@ function bleError(message: string): Error {
 function bleErrorWithCode(
   errorCode: number,
   message: string,
-  extra?: { androidErrorCode?: number | null; iosErrorCode?: number | null },
+  extra?: { androidErrorCode?: number | null; iosErrorCode?: number | null; attErrorCode?: number | null },
 ): Error {
   const error = new Error(message) as Error & {
     errorCode: number;
     androidErrorCode: number | null;
     iosErrorCode: number | null;
+    attErrorCode: number | null;
   };
   error.name = 'BleError';
   error.errorCode = errorCode;
@@ -42,6 +44,7 @@ function bleErrorWithCode(
   // inactive/omitted platform code is null (never an absent property).
   error.androidErrorCode = extra?.androidErrorCode ?? null;
   error.iosErrorCode = extra?.iosErrorCode ?? null;
+  error.attErrorCode = extra?.attErrorCode ?? null;
   return error;
 }
 
@@ -415,6 +418,41 @@ describe('classifyBleFailure — ble-plx BleErrorCode (#3608)', () => {
 });
 
 describe('blePlxErrorCodes (#3608)', () => {
+  it('keeps ATT authentication status separate from a native link authentication failure', () => {
+    expect(blePlxErrorCodes(bleErrorWithCode(401, 'write failed', { attErrorCode: 5 }))).toEqual({
+      bleErrorCode: 401,
+      attErrorCode: 5,
+    });
+    expect(blePlxErrorCodes(bleErrorWithCode(201, 'link dropped', { androidErrorCode: 5 }))).toEqual({
+      bleErrorCode: 201,
+      androidErrorCode: 5,
+    });
+  });
+
+  it('preserves numeric diagnostics on a dead-link write without native identifiers or cause text', () => {
+    const original = bleErrorWithCode(401, 'write failed for device private-peripheral-id', { attErrorCode: 5 });
+    const wrapped = new BleWriteDisconnectedError(original);
+
+    expect(isDisconnectionError(wrapped)).toBe(true);
+    expect(classifyBleFailureReason(wrapped)).toBe('disconnected');
+    expect(blePlxErrorCodes(wrapped)).toEqual({ bleErrorCode: 401, attErrorCode: 5 });
+    expect(JSON.stringify(wrapped)).not.toContain('private-peripheral-id');
+    expect(wrapped).not.toHaveProperty('cause');
+    expect(blePlxErrorCodes(new BleWriteDisconnectedError(new Error('unrelated error')))).toEqual({});
+  });
+
+  it('omits non-finite native codes', () => {
+    expect(
+      blePlxErrorCodes(
+        bleErrorWithCode(Number.NaN, 'invalid codes', {
+          androidErrorCode: Number.POSITIVE_INFINITY,
+          iosErrorCode: Number.NEGATIVE_INFINITY,
+          attErrorCode: Number.NaN,
+        }),
+      ),
+    ).toEqual({});
+  });
+
   it('extracts the ble-plx code and the low-level Android GATT status', () => {
     const error = bleErrorWithCode(201, 'Device 5C:F8 was disconnected', { androidErrorCode: 133 });
     expect(blePlxErrorCodes(error)).toEqual({ bleErrorCode: 201, androidErrorCode: 133 });

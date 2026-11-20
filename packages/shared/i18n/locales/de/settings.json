@@ -516,6 +516,8 @@
     "boardControls": "Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",
     "connectionFailedTitle": "Verbindung fehlgeschlagen",
+    "authenticationFailedTitle": "Verbindung abgebrochen",
+    "authenticationFailedBody": "Bluetooth konnte dieses Board nicht authentifizieren. Schalte Bluetooth aus und wieder ein und versuche es erneut. Falls das Problem weiter auftritt, prüfe, ob die App des Board-Herstellers eine Verbindung herstellen kann.",
     "permissionRequired": "Bluetooth-Berechtigung nötig",
     "errorPermissionDenied": "Erlaube Bluetooth, um ein Board zu verbinden.",
     "tryAgain": "Erneut versuchen",

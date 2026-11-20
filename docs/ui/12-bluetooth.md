@@ -255,6 +255,9 @@ non-fatal.
 - Fires when native iOS or ble-plx reports a link drop, or when a write failure tears down the connection.
 - Consumes only when both adapter identity and generation match, so duplicate or stale callbacks cannot end a replacement link.
 - Fires analytics with `reason: 'unexpected'`, `disconnectTrigger: 'link_drop'`, the available platform-specific `disconnect*` fields, and the same `connectionDurationSec` lifetime property. Platform fields and `disconnectCategory` are absent from deliberate disconnects.
+- An established link ending with ble-plx `201` and Android status `5` is classified as `authentication_failed` and shows one recovery notice. The same numeric status on an ATT write is a different error domain and does not establish a link authentication failure. A drop during setup uses the existing connection-failed notice instead. Duplicate and stale callbacks stay silent, and the remembered board remains available for a deliberate reconnect.
+- Failed writes retain the numeric ble-plx, Android, iOS and ATT codes even when the adapter confirms the link is dead and normalizes the error. `attErrorCode` remains separate from `androidErrorCode`; the normalized error retains no native message or peripheral identifier. This is diagnostic evidence, not proof that a board requires a PIN or that saved pairing is broken.
+- Connection diagnostics may finish after the link has ended. The connection flow rechecks the exact adapter generation after that await before emitting success or returning `true`.
 
 **Unmount cleanup:**
 

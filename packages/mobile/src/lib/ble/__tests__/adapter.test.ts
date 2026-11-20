@@ -87,6 +87,7 @@ vi.mock('@boardsesh/ble-protocol', async (importOriginal) => {
     parseSerialNumber: actual.parseSerialNumber,
     isRetryableAndroidConnectError: actual.isRetryableAndroidConnectError,
     blePlxErrorCodes: actual.blePlxErrorCodes,
+    BleWriteDisconnectedError: actual.BleWriteDisconnectedError,
   };
 });
 
@@ -95,7 +96,7 @@ vi.mock('@boardsesh/ble-protocol', async (importOriginal) => {
 import { RNBleAdapter } from '../adapter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../scan-options';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
-import { splitMessages } from '@boardsesh/ble-protocol';
+import { splitMessages, blePlxErrorCodes, BleWriteDisconnectedError } from '@boardsesh/ble-protocol';
 import { State } from 'react-native-ble-plx';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -661,52 +662,76 @@ describe('RNBleAdapter', () => {
       }
     });
 
-    it('normalises a write failure to the disconnect signature when the link is gone', async () => {
-      // react-native-ble-plx surfaces a mid-write drop as a CharacteristicWriteFailed
-      // BleError that doesn't name the disconnect. The adapter probes the live
-      // link; when the device is actually gone it normalises to the message the
-      // write-failure path keys on so the lightbulb darkens.
-      const writeFailure = new Error('Characteristic ABCD write failed for device 5C:F8');
-      const mockWriteFn = vi.fn().mockRejectedValue(writeFailure);
-      const isConnectedFn = vi.fn().mockResolvedValue(false);
-      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: mockWriteFn };
+    it.each([
+      {
+        errorCode: 201,
+        androidErrorCode: 5,
+        attErrorCode: null,
+        expectedCodes: { bleErrorCode: 201, androidErrorCode: 5 },
+      },
+      {
+        errorCode: 401,
+        androidErrorCode: null,
+        attErrorCode: 5,
+        expectedCodes: { bleErrorCode: 401, attErrorCode: 5 },
+      },
+    ])(
+      'preserves native codes when normalising a dead-link write ($errorCode)',
+      async ({ errorCode, androidErrorCode, attErrorCode, expectedCodes }) => {
+        // react-native-ble-plx surfaces a mid-write drop as a CharacteristicWriteFailed
+        // BleError that doesn't name the disconnect. The adapter probes the live
+        // link; when the device is actually gone it normalises to the message the
+        // write-failure path keys on so the lightbulb darkens.
+        const writeFailure = Object.assign(new Error('Characteristic ABCD write failed for device 5C:F8'), {
+          name: 'BleError',
+          errorCode,
+          androidErrorCode,
+          attErrorCode,
+        });
+        const mockWriteFn = vi.fn().mockRejectedValue(writeFailure);
+        const isConnectedFn = vi.fn().mockResolvedValue(false);
+        const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: mockWriteFn };
 
-      const mockDeviceWithServices = {
-        id: 'drop-device',
-        isConnected: isConnectedFn,
-        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
-        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
-      };
-      const mockConnectedDevice = {
-        id: 'drop-device',
-        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
-        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
-      };
+        const mockDeviceWithServices = {
+          id: 'drop-device',
+          isConnected: isConnectedFn,
+          characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+          discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+        };
+        const mockConnectedDevice = {
+          id: 'drop-device',
+          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+          discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+        };
 
-      mockBleManager.connectToDevice.mockResolvedValue(mockConnectedDevice);
-      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
-      mockBleManager.startDeviceScan.mockImplementation(
-        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-          callback(null, {
-            id: 'drop-device',
-            localName: 'Kilter Board#TEST@3',
-            name: 'Kilter Board#TEST@3',
-            rssi: -40,
-            serviceUUIDs: ['aurora-uuid'],
-          });
-        },
-      );
+        mockBleManager.connectToDevice.mockResolvedValue(mockConnectedDevice);
+        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+        mockBleManager.startDeviceScan.mockImplementation(
+          (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+            callback(null, {
+              id: 'drop-device',
+              localName: 'Kilter Board#TEST@3',
+              name: 'Kilter Board#TEST@3',
+              rssi: -40,
+              serviceUUIDs: ['aurora-uuid'],
+            });
+          },
+        );
 
-      const adapter = new RNBleAdapter(() => Promise.resolve('drop-device'));
-      await adapter.requestAndConnect();
+        const adapter = new RNBleAdapter(() => Promise.resolve('drop-device'));
+        await adapter.requestAndConnect();
 
-      const data = new Uint8Array([0x01]);
-      vi.mocked(splitMessages).mockReturnValue([data]);
+        const data = new Uint8Array([0x01]);
+        vi.mocked(splitMessages).mockReturnValue([data]);
 
-      await expect(adapter.write(data)).rejects.toThrow('Device disconnected during write');
-      expect(isConnectedFn).toHaveBeenCalledOnce();
-    });
+        const writeError: unknown = await adapter.write(data).catch((error: unknown) => error);
+        expect(writeError).toBeInstanceOf(BleWriteDisconnectedError);
+        expect(writeError).toHaveProperty('message', 'Device disconnected during write');
+        expect(blePlxErrorCodes(writeError)).toEqual(expectedCodes);
+        expect(isConnectedFn).toHaveBeenCalledOnce();
+      },
+    );
 
     it('rethrows the original error when the link is still alive after a write failure', async () => {
       // A genuine transient write failure on a live link must NOT be normalised
@@ -2162,7 +2187,7 @@ describe('RNBleAdapter', () => {
       );
     });
 
-    it.each([8, 19, 133])('forwards patched Android disconnect status %s', async (androidErrorCode) => {
+    it.each([5, 8, 19, 133])('forwards patched Android disconnect status %s', async (androidErrorCode) => {
       const adapter = setupConnectableAdapter(
         'moonboard',
         'dev-disc-android',
