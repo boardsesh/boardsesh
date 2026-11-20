@@ -1,0 +1,10 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.1.0 /home/developer/.codex/worktrees/bugbash7844-public-touch-targets/main
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  15:03:01
+   Duration  285ms (import 76%, tests 10%, transform 7%, worker 6%)
+

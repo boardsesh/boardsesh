@@ -13,6 +13,16 @@ const steps: Step[] = typecheck.steps;
 const changesStep = (changes.steps as Step[]).find((step) => step.id === 'filter');
 const filters = parse(changesStep!.with!.filters) as Record<string, string[]>;
 
+it('selects this filesystem-backed contract independently for a ci.yml-only pull request', () => {
+  expect(filters.rootCi.some((glob) => matchesGlob('.github/workflows/ci.yml', glob))).toBe(true);
+  const guard = (workflow.jobs.guards.steps as Step[]).find((step) =>
+    step.run?.includes('scripts/__tests__/public-page-overflow-workflow.test.ts'),
+  );
+  expect(guard?.if).toContain("needs.changes.outputs.rootCi == 'true'");
+  expect(guard?.run).toContain('vp test run --project scripts');
+  expect(guard?.run).not.toContain('--changed');
+});
+
 it('includes non-JS public appearance changes and the gate itself, while mobile-only changes stay outside it', () => {
   const triggers = (file: string) => filters.publicOverflow.some((glob) => matchesGlob(file, glob));
   for (const file of [

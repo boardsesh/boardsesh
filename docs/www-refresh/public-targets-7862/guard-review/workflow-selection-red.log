@@ -1,0 +1,27 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.1.0 /home/developer/.codex/worktrees/bugbash7844-public-touch-targets/main
+
+ ❯ |scripts| __tests__/public-page-overflow-workflow.test.ts (3 tests | 1 failed) 19ms
+   × selects this filesystem-backed contract independently for a ci.yml-only pull request 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |scripts| __tests__/public-page-overflow-workflow.test.ts > selects this filesystem-backed contract independently for a ci.yml-only pull request
+AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ ❯ __tests__/public-page-overflow-workflow.test.ts:21:21
+     19|     step.run?.includes('scripts/__tests__/public-page-overflow-workflo…
+     20|   );
+     21|   expect(guard?.if).toContain("needs.changes.outputs.rootCi == 'true'"…
+       |                     ^
+     22|   expect(guard?.run).toContain('vp test run --project scripts');
+     23|   expect(guard?.run).not.toContain('--changed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  14:42:55
+   Duration  318ms (import 63%, transform 20%, tests 12%, worker 5%)
+

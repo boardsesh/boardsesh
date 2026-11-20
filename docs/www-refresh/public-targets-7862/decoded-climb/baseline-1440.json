@@ -1,0 +1,26 @@
+{
+  "phase": "baseline",
+  "source": "6e696a6f04fc6ff527508c3080b26421e686a68a",
+  "buildId": "f5MwrjAzhg0sf5A8sIbim",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "fixture": "/kilter/original/12x12-square/screw_bolt/40/view/floats-your-boat-D0E5387D5B974D38B4E93FC4DFD61EF6",
+  "layers": [
+    {
+      "currentSrc": "https://localhost:3000/api/internal/board-render?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1113r15p1131r15p1144r15p1165r15p1178r15p1198r12p1200r12p1234r13p1247r13p1252r15p1300r13p1317r13p1353r13p1387r14p1389r14&include_background=1&render_mode=aura&field_color=%23181225&v=59178f6decf3",
+      "alt": "Floats Your Boat lit up on the kilter Kilter Board Original at 40°",
+      "complete": true,
+      "naturalWidth": 1080,
+      "naturalHeight": 1170,
+      "decodeError": null,
+      "status": 200,
+      "type": "image/webp"
+    }
+  ],
+  "pageErrors": [],
+  "failures": [],
+  "documentStatus": 200,
+  "developmentControlsHidden": ["nextjs-portal", "[data-translation-editor]"]
+}

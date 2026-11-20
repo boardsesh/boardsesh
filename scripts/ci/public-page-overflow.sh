@@ -73,6 +73,15 @@ for url in http://127.0.0.1:8080/health "$NEXTAUTH_URL/docs"; do
   done
   curl --noproxy '*' -fsS --max-time 5 "$url" >/dev/null
 done
+# The first catalog read queues the real board-config refresh. Setter SSR
+# deliberately omits climb links until that refresh has populated this fixture.
+catalog_query='{"query":"{ popularBoardConfigs(input: {boardType: \"kilter\", limit: 1}) { configs { boardType } } }"}'
+deadline=$((SECONDS + 180))
+until curl --noproxy '*' -fsS --max-time 5 -H 'Content-Type: application/json' \
+  --data "$catalog_query" "$BACKEND_INTERNAL_URL" | jq -e '.data.popularBoardConfigs.configs[0].boardType == "kilter"' >/dev/null; do
+  if (( SECONDS >= deadline )); then echo 'Seeded Kilter configuration did not become available' >&2; exit 1; fi
+  sleep 1
+done
 cd packages/web
 # This anonymous spec needs real seed content, but does not use the classic sign-in warmup.
 CI=1 PLAYWRIGHT_TEST_BASE_URL="$NEXTAUTH_URL" PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 \

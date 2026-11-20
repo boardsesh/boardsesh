@@ -1,4 +1,12 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+
+/** The seeded setter has multiple pages of linked climbs. Wait for those controls before measuring them. */
+export async function waitForSeededSetter(page: Page) {
+  await expect(page.getByRole('button', { name: 'Share setter profile', exact: true })).toBeVisible();
+  await expect(page.locator('main a[href*="/view/"]').first()).toBeVisible();
+  await expect(page.locator('main nav a[rel="next"]')).toBeVisible();
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+}
 
 /** Browser measurements, including offscreen content in the normal page flow. */
 export async function auditPublicPage(page: Page, target?: Locator) {
@@ -156,6 +164,7 @@ export async function auditPublicPage(page: Page, target?: Locator) {
         alpha: number;
         ratio: number | null;
         unresolved: string | null;
+        fullyWithinClip: boolean;
       };
       let focusOutline: FocusOutline | null = null;
       if (targetElement) {
@@ -169,6 +178,28 @@ export async function auditPublicPage(page: Page, target?: Locator) {
         if (style.filter !== 'none' || (style.backdropFilter && style.backdropFilter !== 'none')) {
           unresolved = 'filtered background';
         }
+        // Only certify a complete ring. An outline outside an overflow clip can
+        // have excellent computed contrast yet paint no pixels at all.
+        const clip = { left: 0, top: 0, right: document.documentElement.clientWidth, bottom: innerHeight };
+        for (let ancestor = targetElement.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          const ancestorStyle = getComputedStyle(ancestor);
+          if (ancestorStyle.clipPath !== 'none' || ancestorStyle.maskImage !== 'none')
+            unresolved = 'nonrectangular clip';
+          if (ancestorStyle.overflowX === 'visible' && ancestorStyle.overflowY === 'visible') continue;
+          const bounds = ancestor.getBoundingClientRect();
+          const left = bounds.left + ancestor.clientLeft;
+          const top = bounds.top + ancestor.clientTop;
+          if (ancestorStyle.overflowX !== 'visible') {
+            clip.left = Math.max(clip.left, left);
+            clip.right = Math.min(clip.right, left + ancestor.clientWidth);
+          }
+          if (ancestorStyle.overflowY !== 'visible') {
+            clip.top = Math.max(clip.top, top);
+            clip.bottom = Math.min(clip.bottom, top + ancestor.clientHeight);
+          }
+        }
+        const ringExtent = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+        const bounds = targetElement.getBoundingClientRect();
         focusOutline = {
           visible:
             document.activeElement === targetElement &&
@@ -180,6 +211,11 @@ export async function auditPublicPage(page: Page, target?: Locator) {
           alpha: outlineColor.alpha,
           ratio: unresolved ? null : contrastRatio(outlineColor, background),
           unresolved,
+          fullyWithinClip:
+            bounds.left - ringExtent >= clip.left &&
+            bounds.top - ringExtent >= clip.top &&
+            bounds.right + ringExtent <= clip.right &&
+            bounds.bottom + ringExtent <= clip.bottom,
         };
       }
 
@@ -218,6 +254,7 @@ export function hasVisibleFocusOutline(audit: Awaited<ReturnType<typeof auditPub
   return (
     outline !== null &&
     outline.visible &&
+    outline.fullyWithinClip &&
     outline.width >= 2 &&
     !['none', 'hidden'].includes(outline.style) &&
     outline.alpha > 0 &&

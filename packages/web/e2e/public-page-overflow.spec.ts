@@ -4,6 +4,7 @@ import {
   hasReadableTargetText,
   hasVisibleFocusOutline,
   readableContrastFailures,
+  waitForSeededSetter,
 } from './helpers/public-page-a11y';
 
 test.use({
@@ -74,6 +75,8 @@ test('browser audit identifies poor contrast, small targets and unresolved gradi
       <a href="#transparent" style="outline: 2px solid transparent; outline-offset: 2px">Transparent outline</a>
       <a href="#faint" style="outline: 2px solid rgba(255, 255, 255, 0.1); outline-offset: 2px">Faint outline</a>
       <a href="#invisible" style="outline: 2px solid white; outline-offset: 2px; opacity: 0">Invisible outline</a>
+      <div style="overflow: hidden; width: 48px; height: 48px"><a href="#clipped" style="display: block; width: 48px; height: 48px; outline: 2px solid white">Clipped outline</a></div>
+      <div style="overflow: hidden; width: 48px; height: 48px; padding: 4px"><a href="#padded" style="display: block; width: 48px; height: 48px; outline: 2px solid white">Padded outline</a></div>
     </main>
   `);
   const audit = await auditPublicPage(page);
@@ -114,6 +117,8 @@ test('browser audit identifies poor contrast, small targets and unresolved gradi
     ['Transparent outline', false],
     ['Faint outline', false],
     ['Invisible outline', false],
+    ['Clipped outline', false],
+    ['Padded outline', true],
   ] as const) {
     const focusTarget = page.getByRole('link', { name: label, exact: true });
     await focusTarget.focus();
@@ -253,6 +258,7 @@ for (const width of [390, 1440]) {
     await expectKeyboardTarget(page, breadcrumb.getByRole('link').nth(1));
     await setterLink.click();
     await expect(page).toHaveURL(setterHref);
+    await waitForSeededSetter(page);
     await expect(page.locator('main dl')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'setter');
