@@ -452,6 +452,10 @@ export const SHARED_EVENTS = {
   // #7343); both are absent on one-tap workout logs.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
+  // Mobile lifecycle and scan events may carry bleEvidenceVersion, bleScanId
+  // and bounded bleEvidence JSON. Raw platform handles and advertisement bytes
+  // are diagnostic observations, not verified manufacturer controller IDs.
+  // Evidence spans every supported board family; older clients omit it.
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
   BluetoothConnectionFailed: 'Bluetooth Connection Failed',
   // A climber dismissing the device picker is intent, not a failure. Kept
@@ -680,6 +684,8 @@ export const SHARED_EVENTS = {
   // advertisement payload (manufacturerData/serviceData hex, service UUIDs, name)
   // so we can find where newer bare-name boxes stash their serial / LED
   // generation. Batched by reconCorrelationId. Not fired on normal connects.
+  // Also carries the versioned bounded evidence used by normal scan/lifecycle
+  // events; the existing opt-in cohort and per-board emission count are retained.
   BleAdvertisementRecon: 'BLE Advertisement Recon',
   ClimbSentToBoardSuccess: 'Climb Sent to Board Success',
   ClimbSentToBoardFailure: 'Climb Sent to Board Failure',

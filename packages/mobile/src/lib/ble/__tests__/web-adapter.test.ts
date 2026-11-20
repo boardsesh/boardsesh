@@ -116,7 +116,16 @@ describe('requestAndConnect', () => {
     const connection = await new WebBluetoothAdapter('aurora').requestAndConnect();
 
     expect(requestDevice).toHaveBeenCalledWith(requestDeviceOptionsForFamily('aurora'));
-    expect(connection).toEqual({ deviceId: 'device-abc', deviceName: 'Kilter Board' });
+    expect(connection).toMatchObject({
+      deviceId: 'device-abc',
+      deviceName: 'Kilter Board',
+      evidence: {
+        scan: {
+          capability: 'unsupported',
+          devices: [{ handleKind: 'browser_origin', advertisementStatus: 'not_observed' }],
+        },
+      },
+    });
     expect(server.connect).not.toHaveBeenCalled();
   });
 
@@ -142,7 +151,7 @@ describe('requestAndConnect', () => {
       expect(server.connect).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(1);
-      await expect(connectionPromise).resolves.toEqual({
+      await expect(connectionPromise).resolves.toMatchObject({
         deviceId: 'device-abc',
         deviceName: 'Kilter Board',
       });

@@ -221,6 +221,7 @@ vi.mock('../../lib/haptics', () => ({
 
 vi.mock('../../lib/analytics', () => ({
   track: analytics.track,
+  capture: analytics.track,
 }));
 
 // The provider calls useSetActiveBoard for the "switch to correct config" flow.

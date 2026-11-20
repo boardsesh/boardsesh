@@ -1,4 +1,7 @@
+import type { BleConnectionEvidence, BleEvidenceDevice } from './controller-evidence';
+
 export type BleConnection = {
+  evidence?: BleConnectionEvidence;
   deviceId: string;
   deviceName?: string;
   // True only when the Android ble-plx adapter recovered a transient first
@@ -11,6 +14,7 @@ export type BleConnection = {
 };
 
 export type DiscoveredDevice = {
+  evidence?: BleEvidenceDevice;
   deviceId: string;
   name?: string;
   rssi: number;
@@ -177,6 +181,8 @@ export type BleAdapterOptions = {
 export type BleDisconnectOptions = { keepBoard?: boolean };
 
 export type BluetoothAdapter = {
+  /** Snapshot belonging only to this adapter's latest connection attempt. */
+  getControllerEvidence?(): BleConnectionEvidence | undefined;
   /** False for a transient transport whose peripheral identity cannot be reconnected after restart. */
   readonly persistConnection?: boolean;
   isAvailable(): Promise<boolean>;

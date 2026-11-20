@@ -16,6 +16,8 @@ type ScanListener = (payload: {
   localName: string;
   rssi: number;
   serviceUuids?: string[];
+  scanId?: string;
+  cachedName?: string;
 }) => void;
 type DisconnectListener = (payload: {
   deviceId: string;
@@ -85,6 +87,8 @@ beforeEach(() => {
 afterEach(() => {
   delete (nativeMock as Record<string, unknown>).prepareBoardConnection;
   delete (nativeMock as Record<string, unknown>).connectPreparedBoard;
+  delete (nativeMock as Record<string, unknown>).startScanWithEvidence;
+  delete (nativeMock as Record<string, unknown>).getScanEvidence;
   vi.useRealTimers();
 });
 
@@ -1060,5 +1064,53 @@ describe('NativeIosBleAdapter.isAvailable on binaries that ask at the first scan
 
     await expect(adapter.isAvailable()).resolves.toBe(false);
     expect(nativeMock.isAvailable).toHaveBeenCalledOnce();
+  });
+});
+
+describe('native controller evidence scan ownership', () => {
+  it('ignores buffered results from an older scan before auto-selection', async () => {
+    const startScanWithEvidence = vi.fn().mockResolvedValue(undefined);
+    const getScanEvidence = vi.fn().mockResolvedValue(null);
+    Object.assign(nativeMock, { startScanWithEvidence, getScanEvidence });
+    const { picker, record } = recordingTargetPicker();
+    const adapter = new NativeIosBleAdapter(picker, 'moonboard');
+    const connecting = adapter.requestAndConnect(undefined, 'saved-controller');
+    await Promise.resolve();
+    const scanId = startScanWithEvidence.mock.calls[0][1] as string;
+    const emit = scanListeners[0];
+    emit({
+      device: { deviceId: 'saved-controller', name: 'MoonBoard A' },
+      localName: 'MoonBoard A',
+      serviceUuids: [],
+      rssi: -60,
+      scanId: 'previous-scan',
+    });
+    await Promise.resolve();
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+    expect(record.updates.at(-1)).toEqual([]);
+    emit({
+      device: { deviceId: 'saved-controller', name: 'MoonBoard A' },
+      localName: 'MoonBoard A',
+      cachedName: 'Old cached name',
+      serviceUuids: [],
+      rssi: -60,
+      scanId,
+    });
+    await expect(connecting).resolves.toMatchObject({ deviceId: 'saved-controller' });
+    expect(adapter.getControllerEvidence()?.scan.devices[0]).toMatchObject({
+      localName: 'MoonBoard A',
+      cachedName: 'Old cached name',
+    });
+    delete (nativeMock as Record<string, unknown>).startScanWithEvidence;
+    delete (nativeMock as Record<string, unknown>).getScanEvidence;
+  });
+
+  it('does not add an asynchronous native diagnostics lookup before returning the connected handle', async () => {
+    const getConnectedDevice = vi.fn(() => new Promise<never>(() => {}));
+    Object.assign(nativeMock, { getConnectedDevice });
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('controller'), 'moonboard');
+    await expect(adapter.requestAndConnect()).resolves.toMatchObject({ deviceId: 'controller' });
+    expect(getConnectedDevice).not.toHaveBeenCalled();
+    delete (nativeMock as Record<string, unknown>).getConnectedDevice;
   });
 });
