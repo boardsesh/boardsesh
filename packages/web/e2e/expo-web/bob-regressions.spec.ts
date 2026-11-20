@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { CONSENT_VERSION } from '@boardsesh/consent';
 import type { Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
 
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'default' });
 
 const COLD_LOAD_TIMEOUT_MS = 180_000;
 const WARM_TIMEOUT_MS = 30_000;
@@ -136,14 +136,14 @@ async function prepareBrowser(page: Page): Promise<{ gymSearches: Array<Record<s
 async function signIn(page: Page): Promise<void> {
   await page.goto('/app/auth/login', { timeout: COLD_LOAD_TIMEOUT_MS });
   const email = page.getByRole('textbox', { name: 'Email', exact: true });
-  const userMenu = page.getByRole('button', { name: 'User menu', exact: true });
-  await expect(email.or(userMenu).first()).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
+  const profileTab = page.getByRole('tab', { name: 'Profile', exact: true });
+  await expect(email.or(profileTab).first()).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
   if (await email.isVisible()) {
     await email.fill(process.env.TEST_USER_EMAIL ?? 'test@boardsesh.com');
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill(process.env.TEST_USER_PASSWORD ?? 'test');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   }
-  await expect(userMenu).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+  await expect(profileTab).toBeVisible({ timeout: WARM_TIMEOUT_MS });
 }
 
 test('onboarding city selection finds Atlanta gyms with location denied', async ({ page }) => {
@@ -176,9 +176,19 @@ test('gym-name search shows a pinless gym, activates its board, and explains Blu
   await page.getByText(GYM_NAME, { exact: true }).click();
   await page.getByText(BOARD_NAME, { exact: true }).click();
   await expect(page).toHaveURL(/\/app\/climbs(?:\?|$)/);
-  const connect = page.getByRole('button', { name: 'Connect Board', exact: true }).first();
-  await expect(connect).toBeVisible({ timeout: WARM_TIMEOUT_MS });
-  await connect.click();
+  const firstClimb = page
+    .getByTestId('climb-list')
+    .getByRole('button')
+    .filter({ has: page.locator('img[src^="blob:"]') })
+    .first();
+  await expect(firstClimb).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+  // The existing Expo smoke uses force for continuously animated climb rows.
+  await firstClimb.click({ force: true });
+  const wallControl = page.getByTestId('play-drawer-wall-control');
+  await expect(wallControl).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+  await expect(wallControl).toHaveAccessibleName(/Put on board/);
+  // Match the smoke's direct click through the transparent gesture layer.
+  await wallControl.dispatchEvent('click');
   await expect(page.getByText('Bluetooth in your browser', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'WebBT setup', exact: true })).toBeVisible();
   await expect(page.getByText(/You can still browse climbs and grades\./)).toBeVisible();
@@ -189,6 +199,7 @@ test('Sign out is near account details, cancellation keeps login, and confirmati
 }) => {
   await prepareBrowser(page);
   await signIn(page);
+  await page.getByRole('tab', { name: 'Profile', exact: true }).click();
   const userMenu = page.getByRole('button', { name: 'User menu', exact: true });
   await userMenu.click();
   const signOut = page.getByRole('button', { name: 'Sign out', exact: true });
