@@ -11,6 +11,17 @@ test.use({
   ignoreHTTPSErrors: process.env.PLAYWRIGHT_TEST_BASE_URL?.startsWith('https://localhost:') ?? false,
 });
 
+test.beforeEach(async ({ page }) => {
+  // Local development tools can cover the footer language control; they do not ship.
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const developmentToolsStyle = document.createElement('style');
+      developmentToolsStyle.textContent = 'nextjs-portal, [data-translation-editor] { display: none !important; }';
+      document.head.appendChild(developmentToolsStyle);
+    });
+  });
+});
+
 const PUBLIC_PAGES = [
   '/',
   '/boards',

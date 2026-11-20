@@ -1,0 +1,16 @@
+
+Running 2 tests using 1 worker
+
+(node:632211) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/2] [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/20261120-refresh/capture.spec.ts:10:7 › after read-only capture 390
+[chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/20261120-refresh/capture.spec.ts:10:7 › after read-only capture 390
+{"phase":"after","width":390,"visits":3,"states":12,"pageErrors":[]}
+
+[2/2] [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/20261120-refresh/capture.spec.ts:10:7 › after read-only capture 1440
+[chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/20261120-refresh/capture.spec.ts:10:7 › after read-only capture 1440
+{"phase":"after","width":1440,"visits":3,"states":12,"pageErrors":[]}
+
+  2 passed (21.6s)
