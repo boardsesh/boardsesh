@@ -331,6 +331,8 @@ const REST_CADENCE_CHANGE_FIELDS = `
     lastFiredBeatAt
     lastTickQueueItemUuid
     lastTickStatus
+    tickAcceptedAt
+    tickAcceptanceId
     setByParticipantId
   }
   revision

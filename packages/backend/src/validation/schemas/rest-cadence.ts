@@ -15,7 +15,7 @@ const nonNegativeIntUpTo = (max: number, label: string) =>
 
 /**
  * One rest clock config. `targetSeconds` is null for Off, otherwise inside the
- * per-mode bounds (afterTick 10..3600, onTheMinute 15..3600). `autoAdvanceOnce`
+ * per-mode bounds (afterTick 0..3600, onTheMinute 15..3600). `autoAdvanceOnce`
  * is optional: omitted, null and false all mean auto-advance stays on, and only
  * true reaches the reducer (RestCadenceConfig.autoAdvanceOnce).
  */
@@ -30,6 +30,17 @@ export const SessionRestCadenceConfigSchema = z
   })
   .superRefine((config, issues) => {
     if (config.targetSeconds == null) return;
+    if (
+      config.targetSeconds === 0 &&
+      !(config.mode === 'afterTick' && config.source === 'stage' && config.advanceOn !== 'deadline')
+    ) {
+      issues.addIssue({
+        code: 'custom',
+        path: ['targetSeconds'],
+        message: 'Zero rest requires a tick-backed workout stage',
+      });
+      return;
+    }
     const { min, max } = REST_CADENCE_TARGET_SECONDS[config.mode];
     if (config.targetSeconds < min || config.targetSeconds > max) {
       issues.addIssue({
@@ -55,6 +66,8 @@ export const SessionRestCadenceInputSchema = z
   .object({
     action: z.enum(['ARM', 'DISARM', 'CONFIGURE', 'TICK', 'FIRE', 'PAUSE', 'RESUME', 'RESET']),
     config: SessionRestCadenceConfigSchema.nullish(),
+    tickAcceptanceId: z.string().min(1).max(128).nullish(),
+    tickAgeAtLogMs: nonNegativeIntUpTo(MAX_REST_CADENCE_ELAPSED_MS, 'Tick age at log').nullish(),
     elapsedMs: nonNegativeIntUpTo(MAX_REST_CADENCE_ELAPSED_MS, 'Elapsed time').nullish(),
     anchor: z.enum(['KEEP', 'NOW', 'CLEAR']).nullish(),
     isRunning: z.boolean().nullish(),

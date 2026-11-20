@@ -934,7 +934,9 @@
       "browseClimbs": "Explorar bloques",
       "changeBoard": "Cambiar de plafón",
       "chooseBoard": "Elegir plafón",
-      "noBoardSelected": "Ningún plafón seleccionado"
+      "noBoardSelected": "Ningún plafón seleccionado",
+      "workoutStageRoundCount": "Ronda {{round}}/{{rounds}} · Bloque {{climb}}/{{climbs}}",
+      "workoutStageRoundPosition": "{{stage}} · Ronda {{round}}/{{rounds}} · Bloque {{climb}}/{{climbs}}"
     }
   },
   "playView": {
@@ -1170,6 +1172,7 @@
   },
   "partnerWorkouts": {
     "openWebsite": "Abrir en la web",
+    "newSessionRequired": "Termina tu sesión actual y empieza este entrenamiento por rondas en una sesión nueva.",
     "personalSessionRequired": "Inicia una sesión personal para usar este entrenamiento.",
     "routeTitle": "Entrenamiento de una app",
     "from": "De {{app}}",

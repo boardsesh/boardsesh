@@ -72,6 +72,8 @@ export function PartnerWorkoutCard({
   const { sessionId } = useQueueSessionId();
   const active = useActivePartnerWorkout(sessionId);
   const workout = enabled ? (pending ?? active) : null;
+  const requiresNewSession =
+    sessionId !== null && pending?.spec.blocks.some((block) => block.type === 'fourByFour') === true;
   useEffect(() => {
     if (!enabled) clearPendingWorkout();
   }, [enabled]);
@@ -174,8 +176,18 @@ export function PartnerWorkoutCard({
   const start = useCallback(async () => {
     if (!pending || pending.status === 'started' || !board || !preview.data || launching.has(pending.id)) return;
     if (!sessionId && !startConfig) return;
+    if (requiresNewSession) {
+      showToast(t('partnerWorkouts.newSessionRequired'), 'info');
+      return;
+    }
     if (plan && plan.slots.length > 0 && preview.data.items.length === 0) return;
-    if (preview.data.items.length > 0 && getQueueSnapshot().queue.length >= MAX_SYNCED_QUEUE_ITEMS) {
+    if (
+      (plan && preview.data.items.length < plan.slots.length) ||
+      preview.data.items.length + getQueueSnapshot().queue.length > MAX_SYNCED_QUEUE_ITEMS ||
+      preview.data.items.length +
+        new Set(getWorkoutRunForSession(sessionId ?? '')?.stages.flatMap((stage) => stage.itemUuids) ?? []).size >
+        MAX_SESSION_WORKOUT_ITEMS
+    ) {
       showToast(t('partnerWorkouts.queueFull'), 'error');
       return;
     }
@@ -208,6 +220,17 @@ export function PartnerWorkoutCard({
           getQueueSnapshot().sessionId !== attachedSessionId
         )
           return;
+        // Hydration can reveal a larger stored plan than the first render knew.
+        const hydratedSnapshot = getQueueSnapshot();
+        if (
+          preview.data.items.length + hydratedSnapshot.queue.length > MAX_SYNCED_QUEUE_ITEMS ||
+          preview.data.items.length +
+            new Set(getWorkoutRunForSession(attachedSessionId)?.stages.flatMap((stage) => stage.itemUuids) ?? []).size >
+            MAX_SESSION_WORKOUT_ITEMS
+        ) {
+          showToast(t('partnerWorkouts.queueFull'), 'error');
+          return;
+        }
         await getHttpClient().request(ATTACH_APP_WORKOUT, { workoutId: pending.id, sessionId: attachedSessionId });
         if (generation !== getCredentialGeneration()) return;
         await rememberPartnerWorkout(attachedSessionId, pending.id);
@@ -273,6 +296,13 @@ export function PartnerWorkoutCard({
       const attached = plan
         ? reselectPartnerWorkoutPreview(preview.data, pending.spec, plan.plan, queuedClimbUuids(snapshot.queue))
         : preview.data;
+      if (
+        attached.items.length + snapshot.queue.length > MAX_SYNCED_QUEUE_ITEMS ||
+        attached.items.length < attached.selectionSlots
+      ) {
+        showToast(t('partnerWorkouts.queueFull'), 'error');
+        return;
+      }
       const {
         landedItems: items,
         partnerRun,
@@ -330,6 +360,10 @@ export function PartnerWorkoutCard({
       if (generation !== getCredentialGeneration()) return;
       const reasons = (error as { response?: { errors?: { extensions?: { reason?: string } }[] } } | null)?.response
         ?.errors;
+      if (reasons?.some((entry) => entry.extensions?.reason === 'APP_WORKOUT_NEW_SESSION_REQUIRED')) {
+        showToast(t('partnerWorkouts.newSessionRequired'), 'info');
+        return;
+      }
       if (reasons?.some((entry) => entry.extensions?.reason === 'APP_WORKOUT_PERMANENT_SESSION')) {
         showToast(t('partnerWorkouts.personalSessionRequired'), 'error');
         return;
@@ -358,6 +392,7 @@ export function PartnerWorkoutCard({
     showToast,
     t,
     startConfig,
+    requiresNewSession,
   ]);
 
   // Timer polling is mounted only while a free-climbing countdown is running.
@@ -402,9 +437,7 @@ export function PartnerWorkoutCard({
               <Text variant="footnote">{t('partnerWorkouts.rest', { seconds: block.restSeconds })}</Text>
             ) : null}
             {block.instructions ? <Text>{block.instructions}</Text> : null}
-            {block.type === 'fourByFour' || block.type === 'limitBouldering' ? (
-              <Text variant="footnote">{t('partnerWorkouts.freeform')}</Text>
-            ) : null}
+            {block.type === 'limitBouldering' ? <Text variant="footnote">{t('partnerWorkouts.freeform')}</Text> : null}
             {plan?.clampedBlocks.includes(index) ? (
               <Text variant="footnote">{t('partnerWorkouts.clamped')}</Text>
             ) : null}
@@ -440,6 +473,7 @@ export function PartnerWorkoutCard({
         ) : pending ? (
           <>
             {!board ? <Text>{t('partnerWorkouts.chooseBoard')}</Text> : null}
+            {requiresNewSession ? <Text>{t('partnerWorkouts.newSessionRequired')}</Text> : null}
             {!sessionId && !startConfig ? <Text>{t('partnerWorkouts.privacyLoading')}</Text> : null}
             {preview.isError ? (
               <Button
@@ -470,7 +504,17 @@ export function PartnerWorkoutCard({
                 void start();
               }}
               loading={busy}
-              disabled={busy || !board || !preview.data || nativeUnavailable || (!sessionId && !startConfig)}
+              disabled={
+                busy ||
+                requiresNewSession ||
+                !board ||
+                !preview.data ||
+                nativeUnavailable ||
+                (plan !== null &&
+                  (plan.slots.length > MAX_SESSION_WORKOUT_ITEMS ||
+                    (preview.data?.items.length ?? 0) < plan.slots.length)) ||
+                (!sessionId && !startConfig)
+              }
             />
             {sessionId && onEndCurrentSession ? (
               <Button

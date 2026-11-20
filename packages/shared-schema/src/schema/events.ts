@@ -264,7 +264,7 @@ export const eventsTypeDefs = /* GraphQL */ `
   type SessionRestCadence {
     "'afterTick' (count from the last tick) or 'onTheMinute' (a fixed beat)"
     mode: String!
-    "Rest length in seconds, or null when the length is Off (count up). afterTick 10..3600, onTheMinute 15..3600."
+    "Rest length in seconds, or null when the length is Off (count up). afterTick 0..3600, onTheMinute 15..3600."
     targetSeconds: Int
     "Whether the board holder advances the wall when the rest runs out"
     autoAdvance: Boolean!
@@ -292,6 +292,10 @@ export const eventsTypeDefs = /* GraphQL */ `
     lastTickQueueItemUuid: ID
     "'flash', 'send' or 'attempt' for the last tick, or null when there is none since the last advance"
     lastTickStatus: String
+    "When a qualifying workout tick was accepted, server epoch milliseconds."
+    tickAcceptedAt: String
+    "Opaque correlation for a tick acceptance, if supplied by the sender."
+    tickAcceptanceId: String
     "Session participant id (the same id as SessionUser.id) of the member who last armed or configured the clock"
     setByParticipantId: ID
   }
@@ -327,7 +331,7 @@ export const eventsTypeDefs = /* GraphQL */ `
   input SessionRestCadenceConfigInput {
     "'afterTick' or 'onTheMinute'"
     mode: String!
-    "Rest length in seconds, or null for Off. afterTick 10..3600, onTheMinute 15..3600."
+    "Rest length in seconds, or null for Off. afterTick 0..3600, onTheMinute 15..3600."
     targetSeconds: Int
     autoAdvance: Boolean!
     """
@@ -367,6 +371,8 @@ export const eventsTypeDefs = /* GraphQL */ `
     "PAUSE only: the frozen elapsed, 0..14400. Defaults to the elapsed the server computes from its anchor."
     pausedElapsedSeconds: Int
     "TICK only: the queue item the tick was logged against, when it was the current queue item. Without one the tick keeps the last tick."
+    tickAgeAtLogMs: Int
+    tickAcceptanceId: String
     tickQueueItemUuid: ID
     "TICK only (required): 'flash', 'send' or 'attempt'"
     tickStatus: String

@@ -18,10 +18,14 @@ export type SessionWorkoutPacing = {
   advanceOn?: string;
   repsPerSet?: number;
   restBetweenSetsSeconds?: number;
+  roundCount?: number;
+  climbsPerRound?: number;
+  restBetweenRoundsSeconds?: number;
 };
 
 /** One queued climb of a stage. The climb fields are captured when the run is written. */
 export type SessionWorkoutPlanItem = {
+  position?: number;
   queueItemUuid: string;
   climbUuid: string;
   angle: number;

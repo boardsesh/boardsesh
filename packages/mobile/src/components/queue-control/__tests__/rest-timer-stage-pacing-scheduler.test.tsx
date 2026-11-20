@@ -156,8 +156,8 @@ function fourByFour(repsPerSet: number, restBetweenRepsSeconds: number, restBetw
 const FOUR_BY_FOUR = fourByFour(2, 0, 30);
 /** 3 reps a set, 20 s between reps, 30 s between sets. */
 const FOUR_BY_FOUR_REP_REST = fourByFour(3, 20, 30);
-/** 2 reps a set, no rest between sets: the 10 s changeover. */
-const FOUR_BY_FOUR_CHANGEOVER = fourByFour(2, 0, 0);
+/** 2 reps a set, with an explicitly requested 10 second rest. */
+const FOUR_BY_FOUR_CHANGEOVER = fourByFour(2, 0, 10);
 /** 3 reps a set, 20 s between reps, 3:00 between sets: longer than a slow save. */
 const FOUR_BY_FOUR_LONG_SET_REST = fourByFour(3, 20, 180);
 
@@ -546,12 +546,12 @@ describe('4x4: one climb for every rep of its set, then the set rest', () => {
     expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 
-  it('does not fire on a last rep back-dated past the changeover and its grace', () => {
+  it('does not fire on a historical rep', () => {
     startWorkout(FOUR_BY_FOUR_CHANGEOVER, ['a', 'b', 'c']);
     renderRuntime();
     armTimer();
-    logTick('attempt', 'a', 21_000);
-    logTick('send', 'a', 20_000);
+    logTick('attempt', 'a', 121_000);
+    logTick('send', 'a', 120_000);
 
     advance(60_000);
     expect(nextClimb).not.toHaveBeenCalled();
@@ -1069,5 +1069,22 @@ describe('the pacing sync', () => {
     harness.sessionId = null;
     rerender(<RestTimerPacingSync />);
     expect(getRestTimerState().stagePacing).toBeNull();
+  });
+});
+
+describe('requested zero rest', () => {
+  it('advances immediately after the final rep without adding a changeover', () => {
+    startWorkout(fourByFour(2, 0, 0), ['a', 'b', 'c']);
+    renderRuntime();
+    armTimer();
+    logTick('attempt', 'a');
+    advance(0);
+    expect(nextClimb).not.toHaveBeenCalled();
+    logTick('send', 'a');
+    advance(1);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b');
+    advance(30_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 });

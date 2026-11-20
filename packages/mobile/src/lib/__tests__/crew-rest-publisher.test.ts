@@ -34,6 +34,7 @@ import {
 } from '../rest-timer-store';
 import { resetServerClock } from '../server-clock';
 import { resolveEffectiveRestPacing } from '../rest-timer-pacing';
+import { setRestTimerForeground } from '../rest-timer-foreground-state';
 
 const SESSION = 'session-1';
 const ME = 'participant-me';
@@ -67,6 +68,7 @@ async function flush() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  setRestTimerForeground(true);
   resetRestTimerStoreForTests();
   resetCrewCadenceForTests();
   resetServerClock();
@@ -96,6 +98,7 @@ beforeEach(() => {
 afterEach(() => {
   unsubscribe();
   publisher.dispose();
+  setRestTimerForeground(true);
   vi.useRealTimers();
 });
 
@@ -175,7 +178,15 @@ describe('ticks', () => {
       queueItemUuid: 'item-1',
     });
     await flush();
-    expect(sent).toEqual([{ action: 'TICK', tickStatus: 'send', tickQueueItemUuid: 'item-1', elapsedMs: 7_200_000 }]);
+    expect(sent).toEqual([
+      {
+        action: 'TICK',
+        tickStatus: 'send',
+        tickQueueItemUuid: 'item-1',
+        elapsedMs: 7_200_000,
+        tickAgeAtLogMs: 7_200_000,
+      },
+    ]);
   });
 
   it('sends a tick with its queue item, how it went, and how long ago it was', async () => {
@@ -188,7 +199,9 @@ describe('ticks', () => {
       queueItemUuid: 'item-1',
     });
     await flush();
-    expect(sent).toEqual([{ action: 'TICK', tickStatus: 'flash', tickQueueItemUuid: 'item-1', elapsedMs: 2_000 }]);
+    expect(sent).toEqual([
+      { action: 'TICK', tickStatus: 'flash', tickQueueItemUuid: 'item-1', elapsedMs: 2_000, tickAgeAtLogMs: 2_000 },
+    ]);
   });
 
   it('sends nothing for a tick read back from the session after a cold start', async () => {
@@ -1167,4 +1180,122 @@ describe('a crew clock’s once-only advance', () => {
     await flush();
     expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
+});
+
+describe('queued tick acceptance belongs to its foreground save', () => {
+  const tickAction = () => ({
+    type: 'tick' as const,
+    sessionId: SESSION,
+    tick: { status: 'send' as const, queueItemUuid: 'item-1' },
+    tickStartMs: currentNowMs,
+    tickAgeAtLogMs: 0,
+    tickRecorded: true,
+  });
+
+  it('drops a tick queued before backgrounding even after returning active', async () => {
+    autoReply = false;
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    publisher.handleLocalAction(tickAction());
+    setRestTimerForeground(false);
+    setRestTimerForeground(true);
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(sent.map((input) => input.action)).toEqual(['ARM']);
+  });
+
+  it('drops a tick whose publisher queue wait outlives its acceptance window', async () => {
+    autoReply = false;
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    publisher.handleLocalAction(tickAction());
+    currentNowMs += 5_001;
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(sent.map((input) => input.action)).toEqual(['ARM']);
+  });
+
+  it('sends a still-fresh tick with its original age after a bounded queue wait', async () => {
+    autoReply = false;
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    publisher.handleLocalAction(tickAction());
+    currentNowMs += 4_000;
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({ action: 'TICK', elapsedMs: 4_000, tickAgeAtLogMs: 0 });
+  });
+
+  it.each([
+    [0, 'reply-first'],
+    [0, 'subscription-first'],
+    [1, 'reply-first'],
+    [1, 'subscription-first'],
+  ] as const)(
+    'does not accept an unseen in-flight tick lease after a foreground change (%is, %s)',
+    async (restSeconds, deliveryOrder) => {
+      own = { mode: 'afterTick', targetSeconds: restSeconds, autoAdvance: true, advanceOn: 'tick', source: 'stage' };
+      armRestTimer('afterTick', currentNowMs, SESSION);
+      await flush();
+      autoReply = false;
+      noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', currentNowMs, {
+        status: 'send',
+        queueItemUuid: 'item-1',
+      });
+      expect(getRestTimerState().lastTick?.queueItemUuid).toBe('item-1');
+      expect(sent.at(-1)?.action).toBe('TICK');
+      const tickAcceptanceId = sent.at(-1)?.tickAcceptanceId;
+      expect(tickAcceptanceId).toBeTruthy();
+      setRestTimerForeground(false);
+      setRestTimerForeground(true);
+      currentNowMs += 1_000;
+      const lateReply: SetSessionRestCadencePayload = {
+        applied: true,
+        change: {
+          revision: revision + 1,
+          serverNow: String(currentNowMs),
+          isSnapshot: false,
+          action: null,
+          restCadence: {
+            mode: 'afterTick',
+            targetSeconds: restSeconds,
+            autoAdvance: true,
+            advanceOn: 'tick',
+            source: 'stage',
+            isRunning: true,
+            anchorAt: String(T0),
+            tickAcceptedAt: String(T0),
+            tickAcceptanceId,
+            pausedElapsedSeconds: 0,
+            lastFiredBeatAt: null,
+            lastTickQueueItemUuid: 'item-1',
+            lastTickStatus: 'send',
+            setByParticipantId: ME,
+          },
+        },
+      };
+      if (deliveryOrder === 'subscription-first') {
+        handleCrewCadenceChange(lateReply.change, {
+          sessionId: SESSION,
+          ownParticipantId: ME,
+          receivedAtMs: currentNowMs,
+        });
+        expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+        expect(getRestTimerState().lastTick).toBeNull();
+      }
+      pendingReplies.shift()?.resolve(lateReply);
+      await flush();
+      expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+      expect(getRestTimerState().lastTick).toBeNull();
+      // A later subscription echo must not bypass the stale response's invalidation.
+      handleCrewCadenceChange(
+        { ...lateReply.change, revision: revision + 2 },
+        {
+          sessionId: SESSION,
+          ownParticipantId: ME,
+          receivedAtMs: currentNowMs,
+        },
+      );
+      expect(getRestTimerState().qualifyingTickAcceptedAtMs ?? null).toBeNull();
+      expect(getRestTimerState().lastTick).toBeNull();
+    },
+  );
 });

@@ -934,7 +934,9 @@
       "browseClimbs": "Boulder durchsuchen",
       "changeBoard": "Board wechseln",
       "chooseBoard": "Board auswählen",
-      "noBoardSelected": "Kein Board ausgewählt"
+      "noBoardSelected": "Kein Board ausgewählt",
+      "workoutStageRoundCount": "Runde {{round}}/{{rounds}} · Boulder {{climb}}/{{climbs}}",
+      "workoutStageRoundPosition": "{{stage}} · Runde {{round}}/{{rounds}} · Boulder {{climb}}/{{climbs}}"
     }
   },
   "playView": {
@@ -1170,6 +1172,7 @@
   },
   "partnerWorkouts": {
     "openWebsite": "Auf der Website öffnen",
+    "newSessionRequired": "Beende deine aktuelle Session und starte dieses Rundentraining in einer neuen Session.",
     "personalSessionRequired": "Starte eine eigene Session, um dieses Training zu nutzen.",
     "routeTitle": "Training aus einer App",
     "from": "Von {{app}}",

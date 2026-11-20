@@ -37,10 +37,12 @@ import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
+import { setRestTimerForeground } from '../../lib/rest-timer-foreground-state';
 import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import { anchorAfterFire, restAdvanceAllowed } from '../../lib/rest-timer-pacing';
 import {
   clearRestTimerQueueEnded,
+  invalidateRestTimerAcceptedTick,
   floorRestTimerAnchorAtLastAdvance,
   getRestTimerState,
   noteRestTimerAdvancedFrom,
@@ -419,6 +421,7 @@ export function RestTimerAutoAdvanceScheduler() {
 
   const fireAdvance = useCallback(
     (expectedCycleId: number, scheduledDeadlineMs: number, afterPage = false, crewAttempt = 0) => {
+      if (AppState.currentState != null && AppState.currentState !== 'active') return;
       // A beat that waited for a page came due while the climber watched, so
       // its deadline is late on purpose, not stale.
       //
@@ -535,6 +538,7 @@ export function RestTimerAutoAdvanceScheduler() {
         targetSeconds,
         nowMs: renderNowMs,
         lastFiredDeadlineMs: lastBeatHandledMs,
+        qualifyingTickAcceptedAtMs: timerState.qualifyingTickAcceptedAtMs,
       })
     : null;
 
@@ -592,12 +596,12 @@ export function RestTimerAutoAdvanceScheduler() {
     // Due within the grace window but already past — schedule nothing rather
     // than firing on the spot. Anything further past than the grace never gets
     // here: `deadlineStale` above already read it as not-scheduled.
-    if (remainingMs <= 0) return undefined;
+    if (remainingMs <= 0 && timerState.qualifyingTickAcceptedAtMs == null) return undefined;
 
     const timeouts = scheduleLeadCues(deadlineMs, leadSeconds, scheduledAtMs, chooseCountdown);
-    timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs));
+    timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), Math.max(0, remainingMs)));
     return () => clearCueTimeouts(timeouts);
-  }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds]);
+  }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds, timerState.qualifyingTickAcceptedAtMs]);
 
   // A crew rest after a tick whose deadline this phone paces but will never fire
   // on: it was already past when the phone took the board over, or when the
@@ -765,7 +769,11 @@ export function RestTimerAutoAdvanceScheduler() {
   // when the listener was set up, since the board can change hands meanwhile.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState !== 'active') return;
+      setRestTimerForeground(nextAppState === 'active');
+      if (nextAppState !== 'active') {
+        invalidateRestTimerAcceptedTick();
+        return;
+      }
       if (getRestTimerState().crew !== null && !pacesTheCrew()) return;
       reanchorRestTimerAfterBackground(nowMs(), deadlineMs);
     });

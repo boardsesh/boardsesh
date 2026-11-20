@@ -74,6 +74,8 @@ export type RestTimerState = {
   crewPacingDraft: CrewRestConfig | null;
   /** What the countdown counts from. `null` = armed but nothing to count yet. */
   anchorMs: number | null;
+  qualifyingTickAcceptedAtMs?: number | null;
+  invalidatedCrewAcceptance?: { sessionId: string; serverMs: number };
   isRunning: boolean;
   /** Frozen elapsed while paused; meaningless while running. */
   pausedElapsedSeconds: number;
@@ -190,6 +192,7 @@ export type LocalRestTimerAction =
       sessionId: string | null;
       tick: RestTimerLastTick | null;
       tickStartMs: number;
+      tickAgeAtLogMs?: number;
       /** False when the tick was kept out of `lastTick` (a late tick on another climb). */
       tickRecorded: boolean;
     }
@@ -236,6 +239,19 @@ export function setRestTimerWallQueueItemReader(reader: (() => string | null) | 
 
 function setState(next: RestTimerState): void {
   if (next === state) return;
+  if (
+    next.qualifyingTickAcceptedAtMs == null &&
+    state.qualifyingTickAcceptedAtMs != null &&
+    state.crew?.qualifyingTickAcceptedAtServerMs != null
+  ) {
+    next = {
+      ...next,
+      invalidatedCrewAcceptance: {
+        sessionId: state.crew.sessionId,
+        serverMs: state.crew.qualifyingTickAcceptedAtServerMs,
+      },
+    };
+  }
   state = next;
   for (const listener of listeners) listener();
 }
@@ -367,9 +383,8 @@ function historicalTickAnchorMs(tickStartMs: number, nowMs: number): number {
  * the set AND earns the set rest's advance. Left out, it is `nowMs` (a tick read
  * back from the session, with no log instant to go by). `nowMs` stays the cap on
  * the anchor. Under a crew clock's tick or send rule the tick is judged on
- * landing instead, as the server judges its TICK (`elapsedMs` past 60 s is
- * history there): recorded here but not there, the phone would fire beats the
- * server refuses, one every rest.
+ * with the same age-at-log carried to the server. Save latency changes elapsed
+ * time, but never turns a fresh go into a historical tick.
  */
 export function noteRestTimerTick(
   climbedAt: string,
@@ -380,7 +395,7 @@ export function noteRestTimerTick(
 ): void {
   if (!state.armed) return;
   const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const isFresh = isTickFreshEnoughToArm(tickStartMs, followsCrewTickRule() ? nowMs : loggedAtMs);
+  const isFresh = isTickFreshEnoughToArm(tickStartMs, loggedAtMs);
   const lastTick = isFresh ? lastTickAfter(tick) : state.lastTick;
   // A fresh go on the climb the timer last moved the wall off: the climber came
   // back to it and climbed it again, so this tick earns a move of its own.
@@ -393,6 +408,7 @@ export function noteRestTimerTick(
     sessionId: state.armedForSessionId,
     tick: tick ?? null,
     tickStartMs,
+    tickAgeAtLogMs: Math.max(0, Math.round(loggedAtMs - tickStartMs)),
     tickRecorded: tick !== undefined && lastTick !== state.lastTick,
   };
 
@@ -443,6 +459,9 @@ export function noteRestTimerTick(
     lastTick,
     advancedFromQueueItemUuid,
     anchorMs: anchorFromTick,
+    ...(isFresh && tickAction.tickRecorded && (state.stagePacing !== null || state.crew?.config?.source === 'stage')
+      ? { qualifyingTickAcceptedAtMs: nowMs }
+      : {}),
     isRunning: true,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
@@ -453,6 +472,11 @@ export function noteRestTimerTick(
   announce(tickAction);
 }
 
+export function invalidateRestTimerAcceptedTick(): void {
+  if (state.qualifyingTickAcceptedAtMs == null) return;
+  setState({ ...state, qualifyingTickAcceptedAtMs: null, cycleId: state.cycleId + 1 });
+}
+
 export function pauseRestTimer(nowMs: number): void {
   if (!state.armed || !state.isRunning) return;
   const elapsedSeconds =
@@ -460,6 +484,7 @@ export function pauseRestTimer(nowMs: number): void {
   setState({
     ...state,
     isRunning: false,
+    qualifyingTickAcceptedAtMs: null,
     pausedElapsedSeconds: elapsedSeconds,
     cycleId: state.cycleId + 1,
   });
@@ -488,6 +513,7 @@ export function resetRestTimer(nowMs: number): void {
   setState({
     ...state,
     anchorMs: state.isRunning ? nowMs : null,
+    qualifyingTickAcceptedAtMs: null,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
     queueEnded: false,
@@ -546,6 +572,7 @@ export function noteRestTimerAutoAdvanceFired(
     ...state,
     crew: spentCrew,
     anchorMs: anchorFor(anchorAfter, nowMs),
+    qualifyingTickAcceptedAtMs: null,
     lastTick: anchorAfter === 'clear' ? null : state.lastTick,
     isRunning: true,
     pausedElapsedSeconds: 0,
@@ -605,6 +632,7 @@ export function clearRestTimerQueueEnded(
     // moment the queue became advanceable. `onTheMinute` computes its deadline
     // forward from now, so its beat self-heals and the phase is worth keeping.
     anchorMs: anchorFor(anchorAfter, nowMs),
+    qualifyingTickAcceptedAtMs: null,
     lastTick: anchorAfter === 'clear' ? null : state.lastTick,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
@@ -623,7 +651,13 @@ export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: numb
   // A crew's fixed beat is the crew's: its next beat is still ahead, and moving
   // it here would put this phone out of step with everyone else (contracts §10).
   if (state.crew?.config?.mode === 'onTheMinute') return;
-  setState({ ...state, anchorMs: nowMs, pausedElapsedSeconds: 0, cycleId: state.cycleId + 1 });
+  setState({
+    ...state,
+    qualifyingTickAcceptedAtMs: null,
+    anchorMs: nowMs,
+    pausedElapsedSeconds: 0,
+    cycleId: state.cycleId + 1,
+  });
   announce({ type: 'reanchored', sessionId: state.armedForSessionId });
 }
 
@@ -702,6 +736,7 @@ export function applyRestTimerStagePacing(
     ...state,
     stagePacing: next,
     anchorMs: transition === 'anchorNow' ? nowMs : null,
+    qualifyingTickAcceptedAtMs: null,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
   });
@@ -855,7 +890,7 @@ export function adoptCrewCadence(
   const anchorMs = keepsOwnClock ? state.anchorMs : crewAnchorMs;
   const isRunning = keepsOwnClock ? state.isRunning : crew.isRunning;
   const pausedElapsedSeconds = keepsOwnClock ? state.pausedElapsedSeconds : crew.pausedElapsedSeconds;
-  const lastTick = serverTickHeld && state.armed ? state.lastTick : crew.lastTick;
+  const lastTick = crew.rejectedOwnAcceptance ? null : serverTickHeld && state.armed ? state.lastTick : crew.lastTick;
   const lastFiredDeadlineMs =
     crewLastFiredBeatMs === null
       ? state.lastFiredDeadlineMs
@@ -878,6 +913,12 @@ export function adoptCrewCadence(
     crew: { ...crew, config, anchorMs: crewAnchorMs, lastFiredBeatMs: crewLastFiredBeatMs },
     crewPacingDraft,
     anchorMs,
+    qualifyingTickAcceptedAtMs:
+      state.invalidatedCrewAcceptance?.sessionId === crew.sessionId &&
+      crew.qualifyingTickAcceptedAtServerMs != null &&
+      crew.qualifyingTickAcceptedAtServerMs <= state.invalidatedCrewAcceptance.serverMs
+        ? null
+        : (crew.qualifyingTickAcceptedAtMs ?? null),
     isRunning,
     pausedElapsedSeconds,
     lastTick,

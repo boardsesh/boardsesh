@@ -40,9 +40,9 @@ describe('partner workout queue handoff', () => {
       ],
     };
     const append = vi.fn((accepted: ClimbQueueItem[]) => accepted.length);
-    const result = appendPartnerWorkout({ items, run, existingRun: existing, appendQueueItems: append });
-    expect(append).toHaveBeenCalledExactlyOnceWith([items[0]]);
-    expect(result.partnerRun.stages[0].itemUuids).toEqual(['first']);
-    expect(result.combinedRun.stages.flatMap((stage) => stage.itemUuids)).toHaveLength(MAX_SESSION_WORKOUT_ITEMS);
+    expect(() => appendPartnerWorkout({ items, run, existingRun: existing, appendQueueItems: append })).toThrow(
+      'capacity',
+    );
+    expect(append).not.toHaveBeenCalled();
   });
 });

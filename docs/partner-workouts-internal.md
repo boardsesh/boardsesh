@@ -31,8 +31,8 @@ The workout runner it uses is
 model from [#5379](https://github.com/boardsesh/boardsesh/issues/5379) exists
 on the phone (`docs/workout-stages.md`); native 4x4 reps and sets remain tied
 to [#5380](https://github.com/boardsesh/boardsesh/issues/5380). This
-integration supports those blocks as freeform until that work lands (see
-"What waits on the workouts epic").
+integration runs partner 4×4s as repeated rounds, separately from the app's
+existing Rep/Set workouts. `limitBouldering` remains freeform.
 
 ### What changed on 2026-10-27
 
@@ -187,11 +187,10 @@ address. Unread bodies force `Connection: close`, including early refusals.
 
 `support` per block is computed server-side from a static map, so the
 response is stable regardless of which app build the climber has. That map
-is the one place to flip `fourByFour` to `native` when #5380 ships. The
-phone's 4x4 is reps × sets on one climb (a set is one climb done for every
-rep, then the rest between sets), so flipping it also decides how the block's
-`climbCount`, `rounds` and two rests map onto `sets`, `repsPerSet`,
-`restBetweenRepsSeconds` and `restBetweenSetsSeconds`.
+advertises `fourByFour` as native alongside its compatible mobile release.
+Partner rounds use distinct queue visits and immutable original positions;
+there is no conversion to per-climb reps and sets. Block `externalRef` is
+stored in the existing spec JSON and echoed without a new table column.
 
 ---
 
@@ -265,7 +264,8 @@ the workout to `started`. Then the blocks are turned into a queue:
 | `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, the shared preview pipeline (`buildPreview`) fills it, `appendQueueItems` queues it |
 | `onTheMinute`                                    | A native `onTheMinute` stage (`partner-workout-plan.ts`) with `numberOfClimbs` and `intervalSeconds` from the block                                       |
 | `freeClimbing`, and any `freeform` block         | Nothing is queued. The block card stays visible in the in-session view with the instructions, and ticks land in the session as usual                    |
-| `fourByFour`, `limitBouldering`                  | Freeform. The card shows rounds and rests as text. The app's own 4x4 and limit blocks are native stages now, but the partner mapping is undecided (`docs/partner-api.md`) |
+| `fourByFour` | Native rounds: selected climbs repeated in order, one distinct queue visit per climb per round |
+| `limitBouldering` | Freeform instructions |
 
 Grades arrive as `{ scale, value }` and the generator wants a board difficulty
 id, so the mapping happens on device against the board's grade table from
@@ -494,7 +494,7 @@ Implementation and remaining launch gates:
 | Mobile | Link route, persisted active association, card, atomic Start, attachment and plan recovery | Real-device sign-in, cold-start, Resume and session-change QA with the flag enabled |
 | Web | Public source app name, scheme/store links, no private workout content, `noindex` | Verify browser fallback and per-visitor lookup through deployed ingress |
 | Android | `/w/` intent filter in app config | Ship and install a native build containing it; validate verified links |
-| Advanced blocks | Honest freeform support | Native `fourByFour`, rep/set attribution and related pacing remain separate work |
+| Advanced blocks | Native partner 4×4 rounds and freeform limit bouldering | Real-device round pacing and recovery QA |
 
 Acceptance for milestone 3:
 
@@ -525,17 +525,31 @@ Telemetry, in `@boardsesh/analytics` `SHARED_EVENTS`: `App Workout Opened`,
 
 ## What waits on the workouts epic
 
-The contract promises a position within a block, rest adherence and an
-effort rating "later". Concretely:
+Native partner 4×4 results include a recorded visit `position` and structured
+per-block `progress`. Original slot ordinals survive queue changes and cold
+starts through the session plan. `completedRounds` requires one logged outcome
+at every planned visit in a round; the denominator remains the requested
+round count. An unavailable or ambiguous round plan returns `progress: null`.
+Results remain derived on read so late ticks, edits and deletions are reflected.
+The session ending and the exercise being complete are separate facts.
 
-- `blockIndex` comes from the stored `session_workouts` tick map and
-  `deriveWorkoutStages`, the same placement the app shows (see "Results").
-  A partner `fourByFour` still runs freeform with nothing queued, so its
-  ticks are `null` until the native partner 4x4 mapping lands.
-- Position within a partner 4x4 arrives with the native partner 4x4 mapping
-  (`climbCount` climbs repeated for `rounds` rounds on the repeat slots from
-  #7822). Results then gain an additive `position` field, not reserved as
-  `null` before.
+The stored plan cap is 500 visits, matching the queue. Partner preview/Start
+must refuse a full plan that cannot fit rather than silently trimming it.
+Round metadata is additive in existing JSON; no database migration is needed.
+A workout containing partner 4×4 rounds cannot attach to an existing session.
+Its queue is owned by Redis while attachment is a Postgres transaction; a
+capacity preflight cannot make those writes atomic. End the current session
+and use the existing atomic seeded new-session Start. Other block attachments
+retain their existing behavior.
+
+A workout containing partner 4×4 rounds requires a fresh personal session.
+The live queue uses Redis CAS, while attachment uses Postgres; capacity
+preflight alone cannot make existing-session attachment atomic. End the
+current session, then use the atomic seeded new-session Start. Other block
+attachments retain their existing behavior.
+
+Still separate work:
+
 - Rest adherence (planned rest vs actual per block) needs the rest timer's
   arm state or fire times on the server. Today the timer is client-only
   (`rest-timer-store.ts` is deliberately not persisted). Apps can compute gaps

@@ -80,11 +80,23 @@ Show a visible Boardsesh source credit on the main session view, for example
 action using the supplied history links; putting that action in an ellipsis
 menu is fine. The credit itself must remain visible without opening the menu.
 
-Count an interval-style exercise per `blockIndex` in the workout results.
-That works today for on-the-minute, which queues its climbs. A `fourByFour`
-block still runs freeform with nothing queued, so its ticks come back with
-`blockIndex: null` until the native partner 4x4 lands; that change brings
-per-block attribution for 4x4 ticks.
+### Updating the planned 4×4
+
+Send Sequence's exercise ID as `blocks[].externalRef`. Launch with the supplied
+Boardsesh link; the native partner 4×4 repeats the selected climbs round by
+round with the planned rests. After ending the Boardsesh session, read results
+and match each block by its reference. Store individual ticks in the logbook,
+deduplicating by tick ID, and use the block's structured `progress` to update
+the exercise and its note:
+
+**Kilter at 40°, V4 · 4/4 rounds · 14 sends, 2 falls**
+
+Three completed rounds means `3/4` and `partial`, even though the Boardsesh
+session status is `completed`. A fall finishes a visit; a skipped visit does
+not. `progress: null` means round attribution is unavailable, not zero work.
+Refresh results after logbook sync to include late offline activity. The
+climber returns to Sequence manually and continues their non-board exercises
+there. This does not require sending the rest of their training plan.
 
 ### Their Strava-style opt-out: two separate choices
 

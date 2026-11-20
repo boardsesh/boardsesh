@@ -55,7 +55,8 @@ export type RestTimerStagePacing = {
   queueItemUuid: string;
   mode: RestTimerMode;
   /**
-   * The rest after the climb's latest tick. Null only between two reps of a
+   * The rest after the climb's latest tick. Zero moves on without waiting.
+   * Null only between two reps of a
    * 4x4 set with no rest between them: no rest counts down, the climber goes
    * again.
    */
@@ -63,6 +64,8 @@ export type RestTimerStagePacing = {
   advanceOn: RestAdvanceRule;
   /** A 4x4 set's every rep is logged, so this is the set rest and then the wall moves on. */
   closesSet: boolean;
+  closesRound?: boolean;
+  round?: { index: number; count: number; climbIndex: number; climbCount: number };
   /** Set on a 4x4 only: the climb stays on the wall until `logged` reaches `perSet`. */
   reps?: RestTimerSetReps;
   /**
@@ -282,16 +285,36 @@ export function resolveStageRestPacing({
   if (!stage || !stagePacing) return null;
   const sets = stagePacing.mode === 'afterTick' ? stagePacing.sets : undefined;
   const closesSet = sets !== undefined && repsLogged >= sets.repsPerSet;
-  const restSeconds = stageRestSeconds(stagePacing, closesSet);
+  const rounds = stagePacing.mode === 'afterTick' && stagePacing.advanceOn === 'round' ? stagePacing.rounds : undefined;
+  const ordinal = rounds?.positionByItemUuid[queueItemUuid];
+  const round =
+    rounds && ordinal !== undefined
+      ? {
+          index: Math.floor(ordinal / rounds.climbCount),
+          count: rounds.roundCount,
+          climbIndex: ordinal % rounds.climbCount,
+          climbCount: rounds.climbCount,
+        }
+      : undefined;
+  const closesRound = round !== undefined && round.climbIndex === round.climbCount - 1;
+  const restSeconds =
+    rounds && round
+      ? closesRound
+        ? round.index + 1 < round.count
+          ? rounds.restBetweenRoundsSeconds
+          : 0
+        : stagePacing.restSeconds
+      : stageRestSeconds(stagePacing, closesSet);
   return {
     sessionId,
     stageId: stage.id,
     kind: stage.kind,
     queueItemUuid,
     mode: stagePacing.mode,
-    targetSeconds: restSeconds > 0 ? restSeconds : null,
+    targetSeconds: restSeconds === 0 && sets !== undefined && !closesSet ? null : restSeconds,
     advanceOn: restAdvanceRuleForStage(stagePacing),
     closesSet,
+    ...(round ? { round, closesRound } : {}),
     // Capped at the set: an extra go during the set rest is no rep of a next
     // set, and the readout never says "4 of 3".
     ...(sets !== undefined
@@ -310,7 +333,7 @@ export function resolveStageRestPacing({
  */
 function restAdvanceRuleForStage(stagePacing: WorkoutStagePacing): RestAdvanceRule {
   if (stagePacing.mode === 'onTheMinute') return 'deadline';
-  return stagePacing.advanceOn === 'set' ? 'tick' : stagePacing.advanceOn;
+  return stagePacing.advanceOn === 'set' || stagePacing.advanceOn === 'round' ? 'tick' : stagePacing.advanceOn;
 }
 
 function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePacing): boolean {
@@ -342,6 +365,11 @@ export function sameStagePacing(left: RestTimerStagePacing | null, right: RestTi
     left.targetSeconds === right.targetSeconds &&
     left.advanceOn === right.advanceOn &&
     left.closesSet === right.closesSet &&
+    left.closesRound === right.closesRound &&
+    left.round?.index === right.round?.index &&
+    left.round?.count === right.round?.count &&
+    left.round?.climbIndex === right.round?.climbIndex &&
+    left.round?.climbCount === right.round?.climbCount &&
     left.reps?.logged === right.reps?.logged &&
     left.reps?.perSet === right.reps?.perSet &&
     // `isCoolDown` is display-only and deliberately not compared.

@@ -934,7 +934,9 @@
       "browseClimbs": "Browse climbs",
       "changeBoard": "Change board",
       "chooseBoard": "Choose board",
-      "noBoardSelected": "No board selected"
+      "noBoardSelected": "No board selected",
+      "workoutStageRoundCount": "Round {{round}}/{{rounds}} · Climb {{climb}}/{{climbs}}",
+      "workoutStageRoundPosition": "{{stage}} · Round {{round}}/{{rounds}} · Climb {{climb}}/{{climbs}}"
     }
   },
   "playView": {
@@ -1170,6 +1172,7 @@
   },
   "partnerWorkouts": {
     "openWebsite": "Open on the website",
+    "newSessionRequired": "End your current session, then start this round workout in a new session.",
     "personalSessionRequired": "Start a personal session to use this workout.",
     "routeTitle": "Workout from an app",
     "from": "From {{app}}",

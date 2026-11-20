@@ -209,6 +209,18 @@ export function workoutClimbGo(
   log: readonly WorkoutTickLogEntry[],
 ): WorkoutClimbGo | null {
   const stage = run.stages.find((runStage) => runStage.id === stageId);
+  if (stage?.pacing?.mode === 'afterTick' && stage.pacing.advanceOn === 'round') {
+    const { rounds } = stage.pacing;
+    const ordinal = rounds.positionByItemUuid[queueItemUuid];
+    if (ordinal === undefined) return null;
+    return {
+      kind: 'round',
+      number: Math.floor(ordinal / rounds.climbCount) + 1,
+      total: rounds.roundCount,
+      climb: (ordinal % rounds.climbCount) + 1,
+      climbs: rounds.climbCount,
+    };
+  }
   const repsPerSet = stageRepsPerSet(stage);
   if (repsPerSet !== null) {
     const repsLogged = countWorkoutRunTicks(log, queueItemUuid);

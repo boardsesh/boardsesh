@@ -122,3 +122,30 @@ describe('partner workout preview', () => {
     expect(again.run.stages[0].itemUuids).toEqual(again.items.map((item) => item.uuid));
   });
 });
+
+it('queues the same four climbs in four rounds with independent visit identities and durable positions', async () => {
+  const spec = workout({
+    type: 'fourByFour',
+    targetGrade: { scale: 'font', value: '6B' },
+    climbCount: 4,
+    rounds: 4,
+    restBetweenClimbsSeconds: 0,
+    restBetweenRoundsSeconds: 180,
+  });
+  const built = await preview(spec, catalogue({ 18: 10 }));
+  expect(built.items).toHaveLength(16);
+  expect(new Set(built.items.map((item) => item.uuid)).size).toBe(16);
+  const firstRound = built.items.slice(0, 4).map((item) => item.climb.uuid);
+  for (let round = 1; round < 4; round++)
+    expect(built.items.slice(round * 4, round * 4 + 4).map((item) => item.climb.uuid)).toEqual(firstRound);
+  expect(built.run.stages[0]).toMatchObject({
+    kind: 'fourByFour',
+    pacing: { advanceOn: 'round', rounds: { climbCount: 4, roundCount: 4, restBetweenRoundsSeconds: 180 } },
+  });
+  const pacing = built.run.stages[0].pacing;
+  expect(
+    pacing?.mode === 'afterTick' && pacing.advanceOn === 'round'
+      ? built.items.map((item) => pacing.rounds.positionByItemUuid[item.uuid])
+      : [],
+  ).toEqual(Array.from({ length: 16 }, (_, index) => index));
+});

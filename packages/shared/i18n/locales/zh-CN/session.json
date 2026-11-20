@@ -934,7 +934,9 @@
       "browseClimbs": "浏览线路",
       "changeBoard": "更换训练板",
       "chooseBoard": "选择训练板",
-      "noBoardSelected": "未选择训练板"
+      "noBoardSelected": "未选择训练板",
+      "workoutStageRoundCount": "第 {{round}}/{{rounds}} 轮 · 第 {{climb}}/{{climbs}} 条线路",
+      "workoutStageRoundPosition": "{{stage}} · 第 {{round}}/{{rounds}} 轮 · 第 {{climb}}/{{climbs}} 条线路"
     }
   },
   "playView": {
@@ -1215,7 +1217,8 @@
     "targetGrade": "目标难度：{{grade}}",
     "resume": "继续此训练",
     "privacyLoading": "正在检查活动隐私…",
-    "budgetShortfall": "计划的 {{planned}} 条线路中，有 {{found}} 条符合队列和训练限制。"
+    "budgetShortfall": "计划的 {{planned}} 条线路中，有 {{found}} 条符合队列和训练限制。",
+    "newSessionRequired": "结束当前训练，再在新的训练中开始此轮次训练。"
   },
   "partnerHistory": {
     "title": "打开你的攀爬活动",

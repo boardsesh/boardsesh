@@ -37,7 +37,9 @@ export function buildPartnerWorkoutInitialSeed({
   const normalized = normaliseOrphanCurrent({ queue, currentClimbQueueItem, historyCount: savedLine ?? 0 });
   const available = MAX_SYNCED_QUEUE_ITEMS - normalized.queue.length;
   if (available < 0) throw new Error('The existing solo queue exceeds the initial session budget');
-  const landedItems = items.slice(0, Math.min(available, MAX_SESSION_WORKOUT_ITEMS));
+  if (items.length > Math.min(available, MAX_SESSION_WORKOUT_ITEMS))
+    throw new Error('Partner workout exceeds available queue capacity');
+  const landedItems = items;
   const partnerRun = appendBlockToRun(
     null,
     run,
@@ -73,6 +75,26 @@ function savedPacing(stage: SessionWorkoutPlanStage): WorkoutRunStage['pacing'] 
   if (pacing.mode === 'onTheMinute') return { mode: 'onTheMinute', restSeconds: pacing.restSeconds };
   if (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send')
     return { mode: 'afterTick', restSeconds: pacing.restSeconds, advanceOn: pacing.advanceOn };
+  if (
+    pacing.advanceOn === 'round' &&
+    pacing.roundCount &&
+    pacing.climbsPerRound &&
+    pacing.restBetweenRoundsSeconds !== undefined
+  ) {
+    return {
+      mode: 'afterTick',
+      restSeconds: pacing.restSeconds,
+      advanceOn: 'round',
+      rounds: {
+        climbCount: pacing.climbsPerRound,
+        roundCount: pacing.roundCount,
+        restBetweenRoundsSeconds: pacing.restBetweenRoundsSeconds,
+        positionByItemUuid: Object.fromEntries(
+          stage.items.flatMap((item) => (item.position === undefined ? [] : [[item.queueItemUuid, item.position]])),
+        ),
+      },
+    };
+  }
   if (pacing.advanceOn === 'set' && pacing.repsPerSet && pacing.restBetweenSetsSeconds !== undefined) {
     return {
       mode: 'afterTick',

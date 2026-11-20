@@ -206,3 +206,19 @@ describe('formatWorkoutStageParts', () => {
     );
   });
 });
+
+it('labels partner rounds separately from native reps and sets', () => {
+  const position = describeWorkoutRun(
+    { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['visit'] }] },
+    ['visit'],
+    'visit',
+  )?.current;
+  if (!position) throw new Error('expected position');
+  const go = { kind: 'round' as const, number: 3, total: 4, climb: 2, climbs: 4 };
+  expect(formatWorkoutStageParts(position, go, t).count).toBe(
+    'mobile.session.workoutStageRoundCount(round=3,rounds=4,climb=2,climbs=4)',
+  );
+  expect(formatWorkoutStagePositionWithGo(position, go, t)).toBe(
+    'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,round=3,rounds=4,climb=2,climbs=4)',
+  );
+});

@@ -288,7 +288,7 @@ describe('the subscribe seed', () => {
 
 describe('inputs', () => {
   it('clamps a rest length into the server’s bounds for the mode', () => {
-    expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 5 }).targetSeconds).toBe(10);
+    expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 5 }).targetSeconds).toBe(5);
     expect(toCrewConfigInput({ ...ownSettings, mode: 'onTheMinute', targetSeconds: 10 }).targetSeconds).toBe(15);
     expect(toCrewConfigInput({ ...ownSettings, targetSeconds: 9_000 }).targetSeconds).toBe(3600);
     expect(toCrewConfigInput({ ...ownSettings, targetSeconds: null }).targetSeconds).toBeNull();

@@ -24,6 +24,11 @@
 
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import {
+  restTimerForegroundGeneration,
+  sameRestTimerForeground,
+  createRestTimerAcceptanceId,
+} from './rest-timer-foreground-state';
+import {
   buildArmInput,
   buildConfigureInput,
   buildCrewPacingEditInput,
@@ -263,7 +268,19 @@ export function createCrewRestPublisher({
           // either (the server keeps whichever TICK came last).
           const crewRule = getState().crew?.config?.advanceOn ?? 'deadline';
           if (crewRule !== 'deadline' && !tickRecorded) return;
-          enqueueInput(() => buildTickInput(tick, tickStartMs, nowMs()));
+          const foregroundAtSave = restTimerForegroundGeneration();
+          const acceptedAtMs = nowMs();
+          const acceptanceId = createRestTimerAcceptanceId();
+          enqueueInput(() =>
+            sameRestTimerForeground(foregroundAtSave) && nowMs() - acceptedAtMs <= 5_000
+              ? {
+                  ...buildTickInput(tick, tickStartMs, nowMs(), action.tickAgeAtLogMs),
+                  ...((getOwnPacing().source === 'stage' || getState().crew?.config?.source === 'stage') && acceptanceId
+                    ? { tickAcceptanceId: acceptanceId }
+                    : {}),
+                }
+              : null,
+          );
           return;
         }
         case 'pause':

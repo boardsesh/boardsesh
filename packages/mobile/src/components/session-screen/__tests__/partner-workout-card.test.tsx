@@ -254,6 +254,49 @@ describe('adding a partner workout to a running session', () => {
     state.append.mockImplementation((items: ClimbQueueItem[]) => items.length);
   });
 
+  it('keeps round workouts unstarted and offers ending the current session', () => {
+    state.pending = {
+      ...focusWorkout,
+      spec: {
+        ...focusWorkout.spec,
+        blocks: [
+          {
+            type: 'fourByFour',
+            climbCount: 4,
+            rounds: 4,
+            targetGrade: { scale: 'v', value: 4 },
+            restBetweenClimbsSeconds: 0,
+            restBetweenRoundsSeconds: 180,
+          },
+        ],
+      },
+    };
+    const endCurrent = vi.fn();
+    const view = render(createElement(PartnerWorkoutCard, { onEndCurrentSession: endCurrent }));
+    expect(view.getByText('partnerWorkouts.newSessionRequired')).toBeTruthy();
+    const add = view.getByText('partnerWorkouts.add') as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.click(add);
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.append).not.toHaveBeenCalled();
+    fireEvent.click(view.getByText('partnerWorkouts.endCurrent'));
+    expect(endCurrent).toHaveBeenCalledOnce();
+  });
+
+  it('rechecks hydrated plan capacity before attaching', async () => {
+    state.hydrate.mockImplementation(async () => {
+      state.run = {
+        stages: [{ id: 'old', kind: 'volume', itemUuids: Array.from({ length: 500 }, (_, index) => `old-${index}`) }],
+      };
+      return 'clean';
+    });
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.hydrate).toHaveBeenCalled());
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.append).not.toHaveBeenCalled();
+  });
+
   it('does not arm the rest timer while the session workout waits for its Start', async () => {
     state.pendingStart = true;
     const view = render(createElement(PartnerWorkoutCard));

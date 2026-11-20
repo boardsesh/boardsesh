@@ -95,13 +95,6 @@ function sessionBoardContext(boardPath: string | null, boardType: string | null,
 
 function blockPacing(block: WorkoutBlock): SessionWorkoutPacing | undefined {
   if (block.type === 'onTheMinute') return { mode: 'onTheMinute', restSeconds: block.intervalSeconds };
-  if (block.type === 'fourByFour')
-    return {
-      mode: 'afterTick',
-      restSeconds: block.restBetweenClimbsSeconds,
-      repsPerSet: block.rounds,
-      restBetweenSetsSeconds: block.restBetweenRoundsSeconds,
-    };
   if ('restSeconds' in block && block.restSeconds !== undefined)
     return { mode: 'afterTick', restSeconds: block.restSeconds };
   return undefined;
@@ -158,6 +151,7 @@ function publicWorkout(
     plannedBlocks: partnerSpec?.blocks ?? [],
     stages: derived.stages.map((stage, index) => {
       const storedStage = usablePlan.stages[index];
+      const originalPositionByItem = new Map(storedStage.items.map((item) => [item.queueItemUuid, item.position]));
       const stageBoardTypes = new Set(storedStage.items.map((item) => boardTypes.get(item.climbUuid)).filter(Boolean));
       const soleBoardType = stageBoardTypes.size === 1 ? [...stageBoardTypes][0] : undefined;
       return {
@@ -175,6 +169,9 @@ function publicWorkout(
           const climbMetadata = boardType ? metadata.climbs.get(`${boardType}\u0000${climb.climbUuid}`) : undefined;
           return {
             index: climbIndex,
+            ...(originalPositionByItem.get(climb.queueItemUuid) === undefined
+              ? {}
+              : { position: originalPositionByItem.get(climb.queueItemUuid) }),
             climbId: climb.climbUuid,
             name: climbMetadata?.namesVisible ? climbMetadata.name : null,
             boardType: BoardTypeSchema.safeParse(boardType).data ?? null,

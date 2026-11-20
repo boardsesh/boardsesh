@@ -110,6 +110,20 @@ export const appWorkoutMutations = {
         await lockAppWorkoutStart(transaction, workoutId);
         await lockAppWorkoutSession(transaction, sessionId);
         const workout = await lockAppWorkoutForUser(transaction, ctx.userId!, workoutId);
+        // Active queues use Redis CAS while attachment is a Postgres transaction.
+        // A fresh seeded session is the atomic path for the complete round plan.
+        if (
+          workout.status !== 'started' &&
+          CreateWorkoutSchema.parse(workout.spec).blocks.some((block) => block.type === 'fourByFour')
+        )
+          throw new AppWorkoutError(
+            409,
+            'conflict',
+            'End the current session, then start this round workout in a new session.',
+            undefined,
+            undefined,
+            'APP_WORKOUT_NEW_SESSION_REQUIRED',
+          );
         await attachLockedAppWorkout(transaction, workout, sessionId);
       });
       return true;

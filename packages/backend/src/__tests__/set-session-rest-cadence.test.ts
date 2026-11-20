@@ -99,6 +99,8 @@ describe('setSessionRestCadence', () => {
           lastFiredBeatAt: null,
           lastTickQueueItemUuid: null,
           lastTickStatus: null,
+          tickAcceptedAt: null,
+          tickAcceptanceId: null,
           setByParticipantId: PARTICIPANT_ID,
         },
         revision: FIRST_REVISION,
@@ -117,7 +119,7 @@ describe('setSessionRestCadence', () => {
   });
 
   it.each([
-    ['an afterTick rest under 10 s', { action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: 9 } }],
+    ['a negative afterTick rest', { action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: -1 } }],
     [
       'an onTheMinute beat under 15 s',
       { action: 'ARM', config: { ...SETTINGS_CONFIG, mode: 'onTheMinute', targetSeconds: 14 } },
@@ -163,7 +165,7 @@ describe('setSessionRestCadence', () => {
 
   it('gives a non-member with invalid input the membership error, not the validation one', async () => {
     requireSessionMember.mockRejectedValueOnce(new Error('Not a member of this session'));
-    const rejection = setRestCadence({ action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: 9 } });
+    const rejection = setRestCadence({ action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: -1 } });
     await expect(rejection).rejects.toThrow('Not a member');
     await expect(rejection).rejects.not.toThrow(/Invalid input/);
     expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);

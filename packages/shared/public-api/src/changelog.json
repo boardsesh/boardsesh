@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "date": "2026-11-20",
+      "documentSha256": "538a37128528dd26aa003cdce37482fff395de54fc0b38caa7268d601cda0255",
+      "changes": [
+        "Add optional block externalRef values, unique within a workout, echoed in create/read block lists and results so apps can update the correct planned exercise.",
+        "Partner fourByFour blocks run natively as repeated rounds. Workout results add exact tick positions and per-block round progress, sends and falls; unknown historical attribution remains unknown. Session-ended status does not imply a completed exercise.",
+        "Session workout exports retain round pacing metadata and original visit ordinals. Workout rests honor requested zero and short durations without a mandatory ten-second changeover."
+      ]
+    },
+    {
       "date": "2026-11-19",
       "documentSha256": "1757eeb405d49cf2409bbf082dcd44182c5c1bb5c05db3950f9d846eb90512bd",
       "changes": [

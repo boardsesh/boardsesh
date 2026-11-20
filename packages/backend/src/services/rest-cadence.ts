@@ -34,14 +34,12 @@ export const REST_CADENCE_TICK_STATUSES = ['flash', 'send', 'attempt'] as const;
 export type RestCadenceTickStatus = (typeof REST_CADENCE_TICK_STATUSES)[number];
 
 /**
- * Rest length bounds per mode. afterTick allows 10 s because a workout stage
- * with "no rest" still needs a changeover clear of the client's 5 s overdue
- * grace (STAGE_CHANGEOVER_SECONDS in @boardsesh/playlist-generator). The
- * settings sheet never goes below 15 s, which is also the shortest beat
- * onTheMinute accepts.
+ * Rest length bounds per mode. Zero is an immediately due tick-backed workout
+ * rest; null remains Off. Ordinary settings and on-the-minute keep their own
+ * picker bounds. Accepted-tick leases make short rests independent of save latency.
  */
 export const REST_CADENCE_TARGET_SECONDS: Readonly<Record<RestCadenceMode, { min: number; max: number }>> = {
-  afterTick: { min: 10, max: 3600 },
+  afterTick: { min: 0, max: 3600 },
   onTheMinute: { min: 15, max: 3600 },
 };
 
@@ -179,6 +177,9 @@ export type RestCadenceLastTick = {
 };
 
 export type RestCadenceState = RestCadenceConfig & {
+  /** Fresh workout TICK acceptance; consumed once and never renewed by restore. */
+  qualifyingTickAcceptedAtMs?: number | null;
+  tickAcceptanceId?: string | null;
   isRunning: boolean;
   /** What the current cycle counts from; null = waiting for a tick. */
   anchorMs: number | null;
@@ -200,6 +201,8 @@ export type RestCadenceInput = {
   action: SessionRestCadenceAction;
   config?: RestCadenceConfig | null;
   elapsedMs?: number | null;
+  tickAgeAtLogMs?: number | null;
+  tickAcceptanceId?: string | null;
   anchor?: SessionRestCadenceAnchor | null;
   isRunning?: boolean | null;
   pausedElapsedSeconds?: number | null;
@@ -279,12 +282,23 @@ function hasQualifyingTick(state: RestCadenceState): boolean {
  * before an early claim of the next.
  */
 export function claimableRestCadenceBeatMs(state: RestCadenceState, nowMs: number): number | null {
-  if (state.anchorMs === null || state.targetSeconds === null || state.targetSeconds <= 0) return null;
+  if (
+    state.anchorMs === null ||
+    state.targetSeconds === null ||
+    (state.targetSeconds <= 0 &&
+      !(
+        state.mode === 'afterTick' &&
+        state.source === 'stage' &&
+        state.advanceOn !== 'deadline' &&
+        state.qualifyingTickAcceptedAtMs != null
+      ))
+  )
+    return null;
   const intervalMs = state.targetSeconds * 1000;
   const dueByMs = nowMs + REST_CADENCE_FIRE_EARLY_TOLERANCE_MS;
   let beatMs: number;
   if (state.mode === 'afterTick') {
-    beatMs = state.anchorMs + intervalMs;
+    beatMs = Math.max(state.anchorMs + intervalMs, state.qualifyingTickAcceptedAtMs ?? -Infinity);
     if (beatMs > dueByMs) return null;
   } else {
     const beatsDue = Math.floor((dueByMs - state.anchorMs) / intervalMs);
@@ -432,7 +446,8 @@ function restCadenceLastTickAfter(
   status: RestCadenceTickStatus,
 ): RestCadenceLastTick | null {
   const queueItemUuid = input.tickQueueItemUuid ?? null;
-  if (isHistoricalRestCadenceTick(input.elapsedMs) || queueItemUuid === null) return previous.lastTick;
+  if (isHistoricalRestCadenceTick(input.tickAgeAtLogMs ?? input.elapsedMs) || queueItemUuid === null)
+    return previous.lastTick;
   return { queueItemUuid, status };
 }
 
@@ -486,6 +501,7 @@ export function applyRestCadenceAction(
         next: {
           ...withoutAdvanceOnce(previous),
           ...pickConfig(input.config),
+          ...(anchor === 'CLEAR' || anchor === 'NOW' ? { qualifyingTickAcceptedAtMs: null } : {}),
           ...reanchored,
           setByParticipantId: participantId,
         },
@@ -495,7 +511,8 @@ export function applyRestCadenceAction(
     case 'TICK': {
       if (!input.tickStatus) return NOT_APPLICABLE;
       // Applicable but unchanged, so nothing is written or published.
-      if (historicalTickChangesNothing(previous, input.elapsedMs)) return { applicable: true, next: previous };
+      if (historicalTickChangesNothing(previous, input.tickAgeAtLogMs ?? input.elapsedMs))
+        return { applicable: true, next: previous };
       const lastTick = restCadenceLastTickAfter(previous, input, input.tickStatus);
       if (previous.mode === 'onTheMinute') {
         // Holding the beat is the whole mode: a tick only starts a clock that has no anchor yet.
@@ -503,9 +520,22 @@ export function applyRestCadenceAction(
         return { applicable: true, next: { ...previous, lastTick, anchorMs } };
       }
       const tickAnchorMs = restCadenceTickAnchorMs(previous, input.elapsedMs, nowMs);
+      const accepted =
+        previous.source === 'stage' &&
+        previous.advanceOn !== 'deadline' &&
+        input.tickQueueItemUuid != null &&
+        !isHistoricalRestCadenceTick(input.tickAgeAtLogMs ?? input.elapsedMs) &&
+        (previous.advanceOn === 'tick' || input.tickStatus !== 'attempt');
       return {
         applicable: true,
-        next: { ...previous, lastTick, anchorMs: tickAnchorMs, isRunning: true, pausedElapsedSeconds: 0 },
+        next: {
+          ...previous,
+          ...(accepted ? { qualifyingTickAcceptedAtMs: nowMs, tickAcceptanceId: input.tickAcceptanceId ?? null } : {}),
+          lastTick,
+          anchorMs: tickAnchorMs,
+          isRunning: true,
+          pausedElapsedSeconds: 0,
+        },
       };
     }
 
@@ -528,9 +558,13 @@ export function applyRestCadenceAction(
       // A once-only clock spends its advance here, in this same write:
       // auto-advance goes off, so the check above refuses every later FIRE
       // until a CONFIGURE turns it back on.
+      const consumed = {
+        ...previous,
+        ...(previous.qualifyingTickAcceptedAtMs !== undefined ? { qualifyingTickAcceptedAtMs: null } : {}),
+      };
       const fired: RestCadenceState = previous.autoAdvanceOnce
-        ? { ...withoutAdvanceOnce(previous), autoAdvance: false, lastFiredBeatMs: beatMs }
-        : { ...previous, lastFiredBeatMs: beatMs };
+        ? { ...withoutAdvanceOnce(consumed), autoAdvance: false, lastFiredBeatMs: beatMs }
+        : { ...consumed, lastFiredBeatMs: beatMs };
       const anchor = anchorAfterFire(previous);
       if (anchor === 'now') {
         // A FIRE inside the early tolerance restarts the rest from the
@@ -561,6 +595,7 @@ export function applyRestCadenceAction(
         next: {
           ...previous,
           isRunning: false,
+          ...(previous.qualifyingTickAcceptedAtMs !== undefined ? { qualifyingTickAcceptedAtMs: null } : {}),
           pausedElapsedSeconds: Math.min(pausedElapsedSeconds, MAX_REST_CADENCE_PAUSED_SECONDS),
         },
       };
@@ -605,6 +640,7 @@ export function applyRestCadenceAction(
           anchorMs: isRunning ? nowMs : null,
           pausedElapsedSeconds: 0,
           lastTick: null,
+          ...(previous.qualifyingTickAcceptedAtMs !== undefined ? { qualifyingTickAcceptedAtMs: null } : {}),
         },
       };
     }
@@ -650,6 +686,8 @@ export function isRestCadenceState(candidate: unknown): candidate is RestCadence
     isOneOf(REST_CADENCE_ADVANCE_RULES, state.advanceOn) &&
     isOneOf(REST_CADENCE_SOURCES, state.source) &&
     typeof state.isRunning === 'boolean' &&
+    (state.qualifyingTickAcceptedAtMs === undefined || isNullableNumber(state.qualifyingTickAcceptedAtMs)) &&
+    (state.tickAcceptanceId === undefined || isNullableString(state.tickAcceptanceId)) &&
     isNullableNumber(state.anchorMs) &&
     typeof state.pausedElapsedSeconds === 'number' &&
     Number.isFinite(state.pausedElapsedSeconds) &&
@@ -684,6 +722,8 @@ export function sameRestCadence(left: RestCadenceState | null, right: RestCadenc
     left.advanceOn === right.advanceOn &&
     left.source === right.source &&
     left.isRunning === right.isRunning &&
+    left.tickAcceptanceId === right.tickAcceptanceId &&
+    left.qualifyingTickAcceptedAtMs === right.qualifyingTickAcceptedAtMs &&
     left.anchorMs === right.anchorMs &&
     left.pausedElapsedSeconds === right.pausedElapsedSeconds &&
     left.lastFiredBeatMs === right.lastFiredBeatMs &&
@@ -711,6 +751,8 @@ export function toWireRestCadence(cadence: RestCadenceState | null): SessionRest
     source: cadence.source,
     isRunning: cadence.isRunning,
     anchorAt: msToWire(cadence.anchorMs),
+    tickAcceptedAt: msToWire(cadence.qualifyingTickAcceptedAtMs ?? null),
+    tickAcceptanceId: cadence.tickAcceptanceId ?? null,
     pausedElapsedSeconds: cadence.pausedElapsedSeconds,
     lastFiredBeatAt: msToWire(cadence.lastFiredBeatMs),
     lastTickQueueItemUuid: cadence.lastTick?.queueItemUuid ?? null,

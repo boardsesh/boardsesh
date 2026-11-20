@@ -67,6 +67,7 @@ export const WorkoutGradeRangeSchema = z
   );
 const restSeconds = z.number().int().min(0).max(3600);
 const commonBlock = {
+  externalRef: z.string().trim().min(1).max(200).optional(),
   label: z.string().trim().min(1).max(40).optional(),
   instructions: z.string().max(1000).optional(),
 };

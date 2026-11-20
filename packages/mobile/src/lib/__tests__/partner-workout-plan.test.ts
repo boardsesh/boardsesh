@@ -55,11 +55,12 @@ describe('partner workout planning', () => {
         { type: 'limitBouldering', targetGrade: { scale: 'v', value: 6 }, climbCount: 3 },
       ],
     };
-    expect(buildPartnerWorkoutPlan(spec, getGradesForBoard('kilter'), 'wk_free')).toEqual({
-      plan: { stages: [] },
-      slots: [],
-      clampedBlocks: [],
-    });
+    const planned = buildPartnerWorkoutPlan(spec, getGradesForBoard('kilter'), 'wk_free');
+    expect(planned.slots).toHaveLength(16);
+    expect(planned.plan.stages).toHaveLength(1);
+    expect(planned.slots.slice(0, 4).every((slot) => slot.repeatOfIndex === undefined)).toBe(true);
+    expect(planned.slots.slice(4).map((slot) => slot.repeatOfIndex)).toEqual([0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]);
+    expect(planned.slots.every((slot) => slot.stageId === 'wk_free:1')).toBe(true);
   });
 
   it('keeps native stage IDs aligned with original block indices around freeform blocks', () => {

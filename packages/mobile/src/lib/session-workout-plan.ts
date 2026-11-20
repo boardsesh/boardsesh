@@ -63,6 +63,11 @@ function toPlanPacing(pacing: WorkoutStagePacing | undefined): SessionWorkoutPac
     flattened.repsPerSet = Math.round(pacing.sets.repsPerSet);
     flattened.restBetweenSetsSeconds = Math.max(0, Math.round(pacing.sets.restBetweenSetsSeconds));
   }
+  if (pacing.advanceOn === 'round') {
+    flattened.roundCount = pacing.rounds.roundCount;
+    flattened.climbsPerRound = pacing.rounds.climbCount;
+    flattened.restBetweenRoundsSeconds = pacing.rounds.restBetweenRoundsSeconds;
+  }
   return flattened;
 }
 
@@ -86,6 +91,8 @@ function toPlanStage(
     if (!climb || claimed.has(queueItemUuid) || !fitsServer(queueItemUuid) || !fitsServer(climb.climbUuid)) continue;
     claimed.add(queueItemUuid);
     const item: SessionWorkoutPlanItem = { queueItemUuid, climbUuid: climb.climbUuid, angle: Math.round(climb.angle) };
+    if (stage.pacing?.mode === 'afterTick' && stage.pacing.advanceOn === 'round')
+      item.position = stage.pacing.rounds.positionByItemUuid[queueItemUuid];
     if (climb.isMirror !== undefined) item.isMirror = climb.isMirror;
     items.push(item);
   }
@@ -101,7 +108,7 @@ function toPlanStage(
 /**
  * The run as a stored plan: stages in run order, each with the items whose
  * climb was captured. Over the server's caps it keeps the first 30 stages and
- * the first 300 items rather than have the whole write refused. Null when
+ * the first 500 items rather than have the whole write refused. Null when
  * nothing is left, or when the server's own parser would refuse it.
  */
 export function buildSessionWorkoutPlan(record: Pick<WorkoutRunRecord, 'run' | 'climbs'>): SessionWorkoutPlan | null {

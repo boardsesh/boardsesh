@@ -121,7 +121,7 @@ describe('resolveStageRestPacing', () => {
     expect(sameStagePacing(stageFor('a', { repsLogged: 2 }), stageFor('a', { repsLogged: 3 }))).toBe(true);
   });
 
-  it('runs the rest between reps when there is one, and the changeover for a set rest of 0', () => {
+  it('runs the rest between reps when there is one, and preserves a set rest of zero', () => {
     const triples: WorkoutRun = {
       stages: [
         {
@@ -140,7 +140,7 @@ describe('resolveStageRestPacing', () => {
     const options = { run: triples, queue: ['t'] };
     expect(stageFor('t', { ...options, repsLogged: 1 })).toMatchObject({ targetSeconds: 45, closesSet: false });
     expect(stageFor('t', { ...options, repsLogged: 2 })).toMatchObject({ targetSeconds: 45, closesSet: false });
-    expect(stageFor('t', { ...options, repsLogged: 3 })).toMatchObject({ targetSeconds: 10, closesSet: true });
+    expect(stageFor('t', { ...options, repsLogged: 3 })).toMatchObject({ targetSeconds: 0, closesSet: true });
   });
 
   it('leaves the rep count off every stage but a 4x4', () => {
@@ -368,5 +368,79 @@ describe('a 4x4 set holds the wall until its last rep', () => {
     expect(
       restAdvanceAllowed({ advanceOn: 'tick', currentQueueItemUuid: 'a', lastTick: tickOn('b'), stage: done }),
     ).toBe(false);
+  });
+});
+
+describe('native partner round rests', () => {
+  const visits = Array.from({ length: 16 }, (_, ordinal) => `visit-${ordinal}`);
+  function roundRun(withinRest: number): WorkoutRun {
+    return {
+      stages: [
+        {
+          id: 'partner:0',
+          kind: 'fourByFour',
+          itemUuids: [...visits],
+          pacing: {
+            mode: 'afterTick',
+            advanceOn: 'round',
+            restSeconds: withinRest,
+            rounds: {
+              climbCount: 4,
+              roundCount: 4,
+              restBetweenRoundsSeconds: 180,
+              positionByItemUuid: Object.fromEntries(visits.map((uuid, ordinal) => [uuid, ordinal])),
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  it.each([0, 3])('uses the requested %i-second rest within each round, with no final wait', (withinRest) => {
+    const run = roundRun(withinRest);
+    for (const [ordinal, uuid] of visits.entries()) {
+      const roundEnd = ordinal % 4 === 3;
+      const expectedRest = ordinal === 15 ? 0 : roundEnd ? 180 : withinRest;
+      expect(stageFor(uuid, { run, queue: visits, repsLogged: 1 })).toMatchObject({
+        targetSeconds: expectedRest,
+        advanceOn: 'tick',
+        closesSet: false,
+        closesRound: roundEnd,
+        round: { index: Math.floor(ordinal / 4), count: 4, climbIndex: ordinal % 4, climbCount: 4 },
+      });
+    }
+  });
+
+  it('keeps original boundaries when visits are removed or reordered', () => {
+    const run = roundRun(3);
+    const changedQueue = ['visit-7', 'visit-2', 'visit-15', 'visit-3', 'visit-5'];
+    expect(stageFor('visit-7', { run, queue: changedQueue })).toMatchObject({
+      targetSeconds: 180,
+      closesRound: true,
+      round: { index: 1, climbIndex: 3 },
+    });
+    expect(stageFor('visit-2', { run, queue: changedQueue })).toMatchObject({
+      targetSeconds: 3,
+      closesRound: false,
+      round: { index: 0, climbIndex: 2 },
+    });
+    expect(stageFor('visit-15', { run, queue: changedQueue })).toMatchObject({
+      targetSeconds: 0,
+      closesRound: true,
+      round: { index: 3, climbIndex: 3 },
+    });
+  });
+
+  it.each(['attempt', 'send', 'flash'] as const)('lets a logged %s advance its visit only once', (status) => {
+    const stage = stageFor('visit-3', { run: roundRun(0), queue: visits, repsLogged: 1 });
+    const input = {
+      advanceOn: 'tick' as const,
+      currentQueueItemUuid: 'visit-3',
+      stage,
+      lastTick: { status, queueItemUuid: 'visit-3' },
+    };
+    expect(restAdvanceAllowed(input)).toBe(true);
+    expect(restAdvanceAllowed({ ...input, advancedFromQueueItemUuid: 'visit-3' })).toBe(false);
+    expect(restAdvanceAllowed({ ...input, currentQueueItemUuid: 'visit-4' })).toBe(false);
   });
 });

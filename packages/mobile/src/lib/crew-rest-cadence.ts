@@ -1,3 +1,4 @@
+import { canAdoptRestTimerAcceptance } from './rest-timer-foreground-state';
 // The crew's shared rest clock on this phone (#5382). The backend keeps one rest
 // clock per session (packages/backend/src/services/rest-cadence.ts) and sends it
 // to every member as `SessionRestCadenceChanged`. This module turns that wire
@@ -62,6 +63,9 @@ export type CrewRestCadence = {
   pausedElapsedSeconds: number;
   lastFiredBeatMs: number | null;
   lastTick: RestTimerLastTick | null;
+  qualifyingTickAcceptedAtMs?: number | null;
+  rejectedOwnAcceptance?: true;
+  qualifyingTickAcceptedAtServerMs?: number | null;
   anchorServerMs: number | null;
   lastFiredBeatServerMs: number | null;
 };
@@ -73,7 +77,7 @@ const TICK_STATUSES: readonly RestTimerLastTick['status'][] = ['flash', 'send', 
 
 /** The server's rest length bounds per mode (REST_CADENCE_TARGET_SECONDS in the backend). */
 export const CREW_REST_TARGET_SECONDS: Readonly<Record<RestTimerMode, { min: number; max: number }>> = {
-  afterTick: { min: 10, max: 3600 },
+  afterTick: { min: 0, max: 3600 },
   onTheMinute: { min: 15, max: 3600 },
 };
 
@@ -137,9 +141,12 @@ export function parseCrewRestCadence(
 ): CrewRestCadence {
   const anchorServerMs = parseServerMs(wire.anchorAt);
   const lastFiredBeatServerMs = parseServerMs(wire.lastFiredBeatAt);
-  const lastTick: RestTimerLastTick | null = isOneOf(TICK_STATUSES, wire.lastTickStatus)
-    ? { status: wire.lastTickStatus, queueItemUuid: wire.lastTickQueueItemUuid ?? null }
-    : null;
+  const acceptanceAllowed = canAdoptRestTimerAcceptance(wire.tickAcceptanceId);
+  const acceptedAt = acceptanceAllowed ? parseServerMs(wire.tickAcceptedAt) : null;
+  const lastTick: RestTimerLastTick | null =
+    acceptanceAllowed && isOneOf(TICK_STATUSES, wire.lastTickStatus)
+      ? { status: wire.lastTickStatus, queueItemUuid: wire.lastTickQueueItemUuid ?? null }
+      : null;
   return {
     sessionId,
     revision,
@@ -150,6 +157,9 @@ export function parseCrewRestCadence(
     lastFiredBeatMs: lastFiredBeatServerMs === null ? null : serverToLocalMs(lastFiredBeatServerMs),
     lastTick,
     anchorServerMs,
+    ...(acceptanceAllowed ? {} : { rejectedOwnAcceptance: true as const }),
+    qualifyingTickAcceptedAtServerMs: acceptedAt,
+    qualifyingTickAcceptedAtMs: acceptedAt === null ? null : serverToLocalMs(acceptedAt),
     lastFiredBeatServerMs,
   };
 }
@@ -530,9 +540,15 @@ export function buildCrewPacingEditInput({
 }
 
 /** A tick's TICK: how long ago the climb was logged, the queue item and how it went. */
-export function buildTickInput(tick: RestTimerLastTick, tickStartMs: number, nowMs: number): SessionRestCadenceInput {
+export function buildTickInput(
+  tick: RestTimerLastTick,
+  tickStartMs: number,
+  nowMs: number,
+  tickAgeAtLogMs?: number,
+): SessionRestCadenceInput {
   return {
     action: 'TICK',
+    ...(tickAgeAtLogMs === undefined ? {} : { tickAgeAtLogMs }),
     tickStatus: tick.status,
     tickQueueItemUuid: tick.queueItemUuid,
     elapsedMs: Math.min(MAX_ELAPSED_MS, Math.max(0, Math.round(nowMs - tickStartMs))),
@@ -551,11 +567,17 @@ export function buildTickInput(tick: RestTimerLastTick, tickStartMs: number, now
  */
 export function crewBeatServerMs(crew: CrewRestCadence, localDeadlineMs: number): number | null {
   const config = crew.config;
-  if (config === null || crew.anchorServerMs === null || config.targetSeconds === null || config.targetSeconds <= 0) {
+  if (
+    config === null ||
+    crew.anchorServerMs === null ||
+    config.targetSeconds === null ||
+    (config.targetSeconds <= 0 && !(config.mode === 'afterTick' && crew.qualifyingTickAcceptedAtServerMs != null))
+  ) {
     return null;
   }
   const intervalMs = config.targetSeconds * 1000;
-  if (config.mode === 'afterTick') return crew.anchorServerMs + intervalMs;
+  if (config.mode === 'afterTick')
+    return Math.max(crew.anchorServerMs + intervalMs, crew.qualifyingTickAcceptedAtServerMs ?? -Infinity);
   const beats = Math.max(1, Math.round((localToServerMs(localDeadlineMs) - crew.anchorServerMs) / intervalMs));
   return crew.anchorServerMs + beats * intervalMs;
 }
@@ -620,11 +642,15 @@ export function planCrewFireOutcome({
   const config = parseCrewConfig(wire);
   const anchorMs = parseServerMs(wire.anchorAt);
   if (config === null || !wire.isRunning || !config.autoAdvance || anchorMs === null) return { kind: 'refused' };
-  if (config.targetSeconds === null || config.targetSeconds <= 0) return { kind: 'refused' };
+  if (
+    config.targetSeconds === null ||
+    (config.targetSeconds <= 0 && !(config.mode === 'afterTick' && wire.tickAcceptedAt != null))
+  )
+    return { kind: 'refused' };
   const intervalMs = config.targetSeconds * 1000;
   const stillTheBeat =
     config.mode === 'afterTick'
-      ? anchorMs + intervalMs === beatServerMs
+      ? Math.max(anchorMs + intervalMs, parseServerMs(wire.tickAcceptedAt) ?? -Infinity) === beatServerMs
       : beatServerMs > anchorMs && (beatServerMs - anchorMs) % intervalMs === 0;
   if (!stillTheBeat) return { kind: 'refused' };
   // The spacing fence refuses the retry too: no use waiting for the beat.

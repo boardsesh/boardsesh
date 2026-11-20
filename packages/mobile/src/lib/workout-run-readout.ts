@@ -33,7 +33,10 @@ export type WorkoutStageReadout = {
  * one. `rep`: a 4x4 set, reps logged so far plus one, never past the set's
  * last.
  */
-export type WorkoutClimbGo = { kind: 'try'; number: number } | { kind: 'rep'; number: number; total: number };
+export type WorkoutClimbGo =
+  | { kind: 'try'; number: number }
+  | { kind: 'rep'; number: number; total: number }
+  | { kind: 'round'; number: number; total: number; climb: number; climbs: number };
 
 export type WorkoutRunReadout = {
   /** Stages with queued climbs, in the order the climber will reach them. */
@@ -135,6 +138,15 @@ export function formatWorkoutStagePositionWithGo(
   go: WorkoutClimbGo | null,
   t: TranslateWorkoutStage,
 ): string {
+  if (go?.kind === 'round') {
+    return t('mobile.session.workoutStageRoundPosition', {
+      stage: workoutStageName(position.kind, t),
+      round: go.number,
+      rounds: go.total,
+      climb: go.climb,
+      climbs: go.climbs,
+    });
+  }
   if (go?.kind === 'rep') {
     return t('mobile.session.workoutStageSetPosition', {
       stage: workoutStageName(position.kind, t, position.isCoolDown === true),
@@ -167,6 +179,14 @@ export function formatWorkoutStageParts(
   t: TranslateWorkoutStage,
 ): { stage: string; count: string; accessibilityLabel: string } {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
+  if (go?.kind === 'round') {
+    const numbers = { round: go.number, rounds: go.total, climb: go.climb, climbs: go.climbs };
+    return {
+      stage,
+      count: t('mobile.session.workoutStageRoundCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageRoundPosition', { stage, ...numbers }),
+    };
+  }
   if (go?.kind === 'rep') {
     const numbers = repAndSet(position, go);
     return {
