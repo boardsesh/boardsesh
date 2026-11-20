@@ -98,6 +98,55 @@ describe('getHoldHeatmapLocal', () => {
     db.close();
   });
 
+  it.each([true, false])('fails closed on corrupt SQLite storage classes, withStats=%s', async (withStats) => {
+    const input = makeInput({ minGrade: 18, maxGrade: 22 });
+    await getHoldHeatmapLocalWithCount(db, input, { withStats });
+    const watermarkSql = 'SELECT value FROM sync_meta WHERE key = ?';
+    const watermarkKey = `holds-index:${offlineBoardKey(SCOPE)}`;
+    const watermark = await db.getFirstAsync(watermarkSql, [watermarkKey]);
+    expect(watermark).not.toBeNull();
+    // Corrupt only after the build, without changing sync_seq. The reader must
+    // reject each storage class instead of repairing it or caching partial usage.
+    for (const { holds, kind } of [
+      { holds: '0100000001', kind: 'text' },
+      { holds: 123, kind: 'integer' },
+      { holds: 1.5, kind: 'real' },
+    ]) {
+      await db.runAsync(
+        `UPDATE board_climb_hold_sets SET holds = CASE WHEN ? = 'integer' THEN CAST(? AS INTEGER) ELSE ? END
+         WHERE climb_id = (SELECT id FROM holds_index_climbs WHERE uuid = ?)`,
+        [kind, holds, holds, 'bravo'],
+      );
+      await expect(getHoldHeatmapLocalWithCount(db, input, { withStats })).rejects.toThrow(
+        'Hold heatmap: invalid encoded hold set',
+      );
+      expect(await db.getFirstAsync(watermarkSql, [watermarkKey])).toEqual(watermark);
+      expect(
+        await db.getFirstAsync(
+          'SELECT typeof(hs.holds) AS kind FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id WHERE hic.uuid = ?',
+          ['bravo'],
+        ),
+      ).toEqual({ kind });
+    }
+  });
+
+  it.each([true, false])('counts empty BLOBs without changing filtered statistics, withStats=%s', async (withStats) => {
+    const input = makeInput({ minGrade: 18, maxGrade: 22 });
+    const pristine = await getHoldHeatmapLocalWithCount(db, input, { withStats });
+    expect(pristine.climbCount).toBe(1);
+    await insertClimb(db, { uuid: 'empty', seq: 6, frames: 'p99r13' });
+    await insertStats(db, 'empty', 900, 20);
+    await getHoldHeatmapLocalWithCount(db, input, { withStats });
+    await db.runAsync(
+      'UPDATE board_climb_hold_sets SET holds = ? WHERE climb_id = (SELECT id FROM holds_index_climbs WHERE uuid = ?)',
+      [new Uint8Array(0), 'empty'],
+    );
+    expect(await getHoldHeatmapLocalWithCount(db, input, { withStats })).toEqual({
+      holdStats: pristine.holdStats,
+      climbCount: 2,
+    });
+  });
+
   it('builds the index on first read and sums uses, roles, ascents and average difficulty', async () => {
     const stats = await getHoldHeatmapLocal(rejectBinaryDatabaseResults(db), makeInput());
 
