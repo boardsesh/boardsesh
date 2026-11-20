@@ -1,6 +1,57 @@
 {
-  "generatedAt": "2026-11-20T13:18:36.830Z",
+  "generatedAt": "2026-11-20T21:54:47.476Z",
   "entries": [
+    {
+      "prNumber": 7952,
+      "category": "fixed",
+      "title": "See when someone else takes the board, with a brief message in the light button. Bluetooth error messages now explain the disconnect and how to try again.",
+      "mergedAt": "2026-11-20T21:47:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7952"
+    },
+    {
+      "prNumber": 7953,
+      "category": "improved",
+      "title": "Share your profile or a gym with your crew. Shared profile and session links open the right screen.",
+      "mergedAt": "2026-11-20T21:41:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7953"
+    },
+    {
+      "prNumber": 7956,
+      "category": "fixed",
+      "title": "Find your gym without sharing your location in the browser.",
+      "mergedAt": "2026-11-20T21:31:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7956",
+      "body": "Sign out directly from your account menu.\nSee setup steps when your browser cannot connect to your board."
+    },
+    {
+      "prNumber": 7933,
+      "category": "improved",
+      "title": "Open a planned 4×4 with rounds and rests ready to climb.",
+      "mergedAt": "2026-11-20T17:02:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7933",
+      "body": "Send your round progress back to your training planner.\nClimb without a forced ten-second changeover when rest is off.\nKeep round progress when you resume on another phone."
+    },
+    {
+      "prNumber": 7941,
+      "category": "fixed",
+      "title": "Get a clear message when Bluetooth authentication drops your board connection, with your board remembered for another try.",
+      "mergedAt": "2026-11-20T16:32:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7941"
+    },
+    {
+      "prNumber": 7944,
+      "category": "fixed",
+      "title": "Find the gym map beside Search and tap filters reliably.",
+      "mergedAt": "2026-11-20T16:15:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7944"
+    },
+    {
+      "prNumber": 7940,
+      "category": "fixed",
+      "title": "Read the Chinese spray-wall tool guide without sideways scrolling.",
+      "mergedAt": "2026-11-20T15:53:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7940"
+    },
     {
       "prNumber": 7931,
       "category": "fixed",

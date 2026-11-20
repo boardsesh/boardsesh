@@ -10,8 +10,23 @@ manual changes). See docs/mobile-ota-updates.md.
 
 A new version shipped to the Play Store.
 
+### Improved
+
+- Share your profile or a gym with your crew. Shared profile and session links open the right screen. ([#7953](https://github.com/boardsesh/boardsesh/pull/7953))
+- Open a planned 4×4 with rounds and rests ready to climb. ([#7933](https://github.com/boardsesh/boardsesh/pull/7933))
+  Send your round progress back to your training planner.
+  Climb without a forced ten-second changeover when rest is off.
+  Keep round progress when you resume on another phone.
+
 ### Fixed
 
+- See when someone else takes the board, with a brief message in the light button. Bluetooth error messages now explain the disconnect and how to try again. ([#7952](https://github.com/boardsesh/boardsesh/pull/7952))
+- Find your gym without sharing your location in the browser. ([#7956](https://github.com/boardsesh/boardsesh/pull/7956))
+  Sign out directly from your account menu.
+  See setup steps when your browser cannot connect to your board.
+- Get a clear message when Bluetooth authentication drops your board connection, with your board remembered for another try. ([#7941](https://github.com/boardsesh/boardsesh/pull/7941))
+- Find the gym map beside Search and tap filters reliably. ([#7944](https://github.com/boardsesh/boardsesh/pull/7944))
+- Read the Chinese spray-wall tool guide without sideways scrolling. ([#7940](https://github.com/boardsesh/boardsesh/pull/7940))
 - Install Boardsesh on more Android devices. ([#7931](https://github.com/boardsesh/boardsesh/pull/7931))
 - Tap the player's Logbook above your phone's home gesture area. ([#7895](https://github.com/boardsesh/boardsesh/pull/7895))
 - See how many climbers logged a send on a spray-wall climb, in your language. ([#7904](https://github.com/boardsesh/boardsesh/pull/7904))
