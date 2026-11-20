@@ -149,6 +149,11 @@ export default defineConfig({
       './packages/hold-detector/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
+      './packages/shared/ble-core/vite.config.ts',
+      './packages/shared/aurora-ble-protocol/vite.config.ts',
+      './packages/shared/kilter-ble-protocol/vite.config.ts',
+      './packages/shared/moonboard-ble-protocol/vite.config.ts',
+      './packages/shared/woods-ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
       './packages/shared/hold-detection/vite.config.ts',
@@ -922,6 +927,21 @@ export default defineConfig({
         // The proofs import both packages; always verify their explicit TS project.
         cache: false,
       },
+      'typecheck:ble-core': {
+        command: 'pnpm --filter @boardsesh/ble-core run typecheck',
+      },
+      'typecheck:aurora-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/aurora-ble-protocol run typecheck',
+      },
+      'typecheck:kilter-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/kilter-ble-protocol run typecheck',
+      },
+      'typecheck:moonboard-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/moonboard-ble-protocol run typecheck',
+      },
+      'typecheck:woods-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/woods-ble-protocol run typecheck',
+      },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
         dependsOn: ['codegen'],
@@ -1154,6 +1174,11 @@ export default defineConfig({
           'typecheck:web',
           'typecheck:auth-proofs',
           'typecheck:ble-protocol',
+          'typecheck:ble-core',
+          'typecheck:aurora-ble-protocol',
+          'typecheck:kilter-ble-protocol',
+          'typecheck:moonboard-ble-protocol',
+          'typecheck:woods-ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
           'typecheck:queue-runtime',

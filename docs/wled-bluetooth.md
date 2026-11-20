@@ -3,7 +3,7 @@
 Boardsesh supports a separate WLED JSON-over-BLE controller type, `wled-ble`.
 Firmware lives in the public [wled-usermod-ble-json repository](https://github.com/boardsesh/wled-usermod-ble-json).
 It is an external WLED usermod, independent of Aurora and MoonBoard protocols.
-The shared [protocol contract](../packages/shared/wled-ble-protocol/protocol.md)
+The shared [protocol contract](../packages/shared/wled-ble-protocol/docs/protocol.md)
 and [test vectors](../packages/shared/wled-ble-protocol/test-vectors.json) define the wire format.
 
 ## Owner setup

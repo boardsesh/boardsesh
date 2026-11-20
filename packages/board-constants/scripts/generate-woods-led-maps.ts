@@ -2,7 +2,7 @@
 /**
  * Regenerates both committed Woods Board LED-map artifacts from the lookup
  * tables that live alongside the protocol spec
- * (`docs/woods-board-led-maps/light-map-{8x10,12x12}.json`):
+ * (`packages/shared/woods-ble-protocol/docs/woods-board-led-maps/light-map-{8x10,12x12}.json`):
  *
  *   - `src/generated/woods-led-maps-data.ts` — used by the JS encoder
  *     (`@boardsesh/ble-protocol/woods`)
@@ -26,8 +26,16 @@ import { loadWoodsLedTables, renderWoodsBoardDataSwift, renderWoodsLedMapsTs } f
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
-const docsDir = join(repoRoot, 'docs', 'woods-board-led-maps');
-const tsOutFile = join(here, '..', 'src', 'generated', 'woods-led-maps-data.ts');
+const docsDir = join(repoRoot, 'packages', 'shared', 'woods-ble-protocol', 'docs', 'woods-board-led-maps');
+const tsOutFile = join(
+  repoRoot,
+  'packages',
+  'shared',
+  'woods-ble-protocol',
+  'src',
+  'generated',
+  'woods-led-maps-data.ts',
+);
 const swiftOutFile = join(repoRoot, 'packages', 'mobile', 'modules', 'live-activity', 'ios', 'WoodsBoardData.swift');
 
 const tables = loadWoodsLedTables(docsDir);

@@ -162,7 +162,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Which firmware: OUR ESP32 one, `embedded/libs/moonboard-protocol`. Codes
   // 45-48 are its roles, not the official protocol's — the official format has no
   // foot role at all ("Foot-only holds are not separately lit in this format",
-  // docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §5.2) — and Boardsesh never
+  // packages/shared/moonboard-ble-protocol/docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §5.2) — and Boardsesh never
   // transmits them, since `MOONBOARD_ROLE_MAP` stops at 44. The firmware emits
   // `p<id>r45` frames back to the app, which is the only way this colour is ever
   // read. So the two ends move together, in this repo:

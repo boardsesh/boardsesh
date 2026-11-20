@@ -55,9 +55,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-constants": "workspace:*"
+    "@boardsesh/aurora-ble-protocol": "workspace:*",
+    "@boardsesh/ble-core": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/kilter-ble-protocol": "workspace:*",
+    "@boardsesh/moonboard-ble-protocol": "workspace:*",
+    "@boardsesh/woods-ble-protocol": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^25.9.5",
     "typescript": "~7.0.2"
   }
 }

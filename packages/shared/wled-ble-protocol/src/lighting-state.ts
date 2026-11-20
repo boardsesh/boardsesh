@@ -1,4 +1,4 @@
-import { isRecord, WledBleProtocolError } from './index';
+import { isRecord, WledBleProtocolError } from './protocol';
 
 function integer(candidate: unknown, minimum: number, maximum: number): boolean {
   return (

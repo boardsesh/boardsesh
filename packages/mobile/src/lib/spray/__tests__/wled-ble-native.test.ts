@@ -177,6 +177,33 @@ describe('native WLED BLE ownership', () => {
     expect(mocks.scan).toHaveBeenCalledTimes(2);
   });
 
+  it('quarantines a native disconnect after its caller deadline expires', async () => {
+    const { peripheral } = device();
+    mocks.connect.mockResolvedValue(peripheral);
+    let finishDisconnect!: () => void;
+    mocks.cancel.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      }),
+    );
+    const probe = nativeWledBleDriver.probe('wled-ble:wled-aabbccddeeff');
+    await finishScan();
+    await vi.advanceTimersByTimeAsync(1800);
+    await expect(probe).resolves.toMatchObject({ name: 'Gym' });
+    await expect(discoverWledBluetooth()).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(nativeWledBleDriver.probe('wled-ble:wled-aabbccddeeff')).rejects.toMatchObject({
+      code: 'unavailable',
+    });
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    finishDisconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    mocks.cancel.mockResolvedValue(undefined);
+    const next = discoverWledBluetooth();
+    await finishScan();
+    await expect(next).resolves.toEqual([capabilities]);
+  });
+
   it('never discovers or disconnects a controller while another WLED request owns it', async () => {
     const { peripheral } = device(capabilities.controllerId, true);
     mocks.connect.mockResolvedValue(peripheral);
@@ -225,6 +252,65 @@ describe('native WLED BLE ownership', () => {
     resolveConnect(peripheral);
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.cancel).toHaveBeenCalledWith('phone-device');
+    expect(peripheral.readCharacteristicForService).not.toHaveBeenCalled();
+  });
+
+  it('quarantines an abandoned connect through its late cancellation', async () => {
+    let finishConnect!: (candidate: ReturnType<typeof device>['peripheral']) => void;
+    mocks.connect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishConnect = resolve;
+        }),
+    );
+    const abort = new AbortController();
+    const probe = nativeWledBleDriver.probe('wled-ble:wled-aabbccddeeff', abort.signal);
+    const failed = expect(probe).rejects.toMatchObject({ code: 'cancelled' });
+    await finishScan();
+    abort.abort();
+    await failed;
+    await expect(discoverWledBluetooth()).rejects.toMatchObject({ code: 'unavailable' });
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    const { peripheral } = device();
+    let finishLateCancel!: () => void;
+    mocks.cancel.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishLateCancel = resolve;
+      }),
+    );
+    finishConnect(peripheral);
+    await vi.advanceTimersByTimeAsync(1800);
+    await expect(discoverWledBluetooth()).rejects.toMatchObject({ code: 'unavailable' });
+    expect(peripheral.readCharacteristicForService).not.toHaveBeenCalled();
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    finishLateCancel();
+    await vi.advanceTimersByTimeAsync(0);
+    mocks.connect.mockResolvedValue(peripheral);
+    mocks.cancel.mockResolvedValue(undefined);
+    const next = discoverWledBluetooth();
+    await finishScan();
+    await expect(next).resolves.toEqual([capabilities]);
+  });
+
+  it('cancels a connect that resolves after timeout without caller cancellation', async () => {
+    let finishConnect!: (candidate: ReturnType<typeof device>['peripheral']) => void;
+    mocks.connect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishConnect = resolve;
+        }),
+    );
+    const probe = nativeWledBleDriver.probe('wled-ble:wled-aabbccddeeff');
+    const failed = expect(probe).rejects.toMatchObject({ code: 'unavailable' });
+    await finishScan();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await failed;
+    await expect(discoverWledBluetooth()).rejects.toMatchObject({ code: 'unavailable' });
+    const previousCancellations = mocks.cancel.mock.calls.length;
+    const { peripheral } = device();
+    finishConnect(peripheral);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.cancel).toHaveBeenCalledTimes(previousCancellations + 1);
     expect(peripheral.readCharacteristicForService).not.toHaveBeenCalled();
   });
   it('account erasure cancels discovery and prevents remembering late connects', async () => {

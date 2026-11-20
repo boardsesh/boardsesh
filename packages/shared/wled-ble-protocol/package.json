@@ -1,6 +1,7 @@
 {
   "name": "@boardsesh/wled-ble-protocol",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -9,10 +10,18 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./lighting": {
+      "types": "./src/lighting.ts",
+      "import": "./src/lighting.ts",
+      "default": "./src/lighting.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@boardsesh/ble-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~7.0.2"
