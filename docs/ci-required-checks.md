@@ -2,15 +2,17 @@
 
 **Status:** active. Ruleset `23720085` was applied on 2026-09-20. The checked-in JSON
 is the original creation payload, not a mirror of current live repository settings.
-A read-only API check on 2026-10-03 confirmed the active rule still requires
-`ci-status` from GitHub Actions and has the bypass actors listed below. This PR
-makes no repository-settings changes.
+A read-only API check on 2026-11-21 confirmed the active rule still requires
+`ci-status` from GitHub Actions (integration `15368`). The observations below are
+dated; inspect live settings before relying on them. This PR makes no
+repository-settings changes.
 
-## Live policy
+## Observed policy on 2026-11-21
 
-The active ruleset currently allows `bypass_mode: always` for repository
-administrators (`RepositoryRole`, actor id `5`) and `boardsesh-repo-bot`
-(`Integration`, actor id `4098323`). The checked-in payload contains only the bot
+The active ruleset exempts Marco (`User`, actor id `1107647`,
+`bypass_mode: exempt`) and permits `boardsesh-repo-bot` (`Integration`, actor id
+`4098323`, `bypass_mode: always`). It no longer lists the administrator-role
+bypass recorded on 2026-10-03. The checked-in payload contains only the bot
 actor; it records the payload used when the ruleset was first applied and is
 pinned as that payload by `scripts/__tests__/required-checks-payload.test.ts`. It
 is not the current live snapshot. Read current state with:
@@ -20,10 +22,11 @@ gh api repos/boardsesh/boardsesh/rulesets/23720085 \
   --jq '{id,name,enforcement,bypass_actors,rules}'
 ```
 
-The repository-role bypass means administrators can merge without `ci-status`;
-classic branch protection also reports `enforce_admins: false`. A bypass is not
-evidence that a PR is ready. In the PR backlog sweep, `ready-for-admin-review` is
-applied only after exact-head CI checks pass or have expected skips, independent
+The user exemption means this ruleset does not require Marco to pass
+`ci-status`. The classic main-protection endpoint now returns HTTP 404
+(`Branch not protected`); the repository ruleset remains active. An exemption
+is not evidence that a PR is ready. In the PR backlog sweep,
+`ready-for-admin-review` is applied only after exact-head CI checks pass or have expected skips, independent
 review is clean, valid review threads are addressed, and the branch is
 conflict-free. The label records readiness evidence, not merge authorization;
 the repository owner makes the final manual admin-merge decision.
@@ -53,9 +56,8 @@ waves it through.
 gating job in the workflow and runs with `if: always()`, so it is red whenever
 anything is red. Making it a **required status check** on `main` changes what an
 absent run means: instead of "no checks, looks fine" the PR reads *Expected —
-waiting for status*, and the merge is blocked. That is the accurate description
-of an unverified commit, and it holds whether the run was dropped, cancelled, or
-never created.
+waiting for status*, and actors subject to the rule cannot merge. That describes
+an unverified commit whether the run was dropped, cancelled, or never created.
 
 Two properties keep that honest, both pinned by
 `scripts/__tests__/ci-status-rollup.test.ts`:
@@ -67,13 +69,18 @@ Two properties keep that honest, both pinned by
   roll-up, the gap reported in #4758. Keep the consolidated job: a binary-only
   PR must still run this check, and its failure must reach `ci-status`.
 
+The `required-ci-status` step in `guards` runs both filesystem-backed contracts
+on every CI run after installation. It does not use `--changed`: the module
+graph cannot relate a workflow-only or ruleset-JSON-only change to these tests.
+Their failures therefore reach the required result before a change can merge.
+
 ## Why a ruleset and not classic branch protection
 
-`main` already has classic branch protection: one approving review, dismiss stale
-reviews, require last push approval, and a bypass for the `boardsesh-repo-bot`
-app. Its `required_status_checks` is unset (`GET
-/repos/boardsesh/boardsesh/branches/main/protection/required_status_checks` →
-404).
+When the rule was created on 2026-09-20, `main` had classic branch protection:
+one approving review, dismiss stale reviews, require last push approval, and a
+bypass for `boardsesh-repo-bot`. Its required-status-check list was unset. That
+is historical context for the ruleset choice, not the current protection state;
+the full classic-protection endpoint returns HTTP 404 as of 2026-11-21.
 
 The obvious move is to add the check there:
 
@@ -104,14 +111,14 @@ before their commits can report checks, so classic enforcement would reject them
 
 A **repository ruleset** can express the same requirement with explicit bypass
 actors, so the bot keeps pushing and contributors outside those actors must pass
-CI. The live ruleset also gives repository administrators an `always` bypass, so
-they can merge without CI; it is not limited to the bot's four direct-push
-workflows. No repository workflow currently merges PRs with the bot token. Any
-future bot merge automation must verify the required checks independently or
+CI. The observed live ruleset also exempts Marco, so its required-check policy
+is not limited to the bot's four direct-push workflows. The workflow inventory
+above detects literal direct pushes, not every possible use of a bot token. Any
+bot merge automation must verify the required checks independently or
 migrate the bot's direct writes before removing this exception.
 
-The classic protection remains unchanged, and the existing *Protect native
-release tags* ruleset (id 21751146) targets tags, so the two never overlap.
+The active *Protect native release tags* ruleset (id `21751146`) still targets
+tags, while this CI ruleset targets only `refs/heads/main`.
 
 ## Applying it
 
@@ -130,17 +137,18 @@ existing ruleset.
      --jq '.check_suites[] | select(.app.slug=="github-actions") | .app.id'
    ```
 
-2. Confirm the bypass actor is still the app that pushes to main. `actor_id`
-   4098323 is `boardsesh-repo-bot`, read from the branch-protection snapshot:
+2. Confirm the live bypass actors and check the direct-push workflows above.
+   The original branch-protection snapshot identified `4098323` as
+   `boardsesh-repo-bot`; do not infer today's complete exemption policy from that
+   old snapshot:
 
    ```bash
-   gh api repos/boardsesh/boardsesh/branches/main/protection \
-     --jq '.required_pull_request_reviews.bypass_pull_request_allowances.apps[] | "\(.id) \(.slug)"'
+   gh api repos/boardsesh/boardsesh/rulesets/23720085 --jq .bypass_actors
    ```
 
 3. For initial setup only, create the rule with the historical bot-only payload.
    **This file is not a live-settings snapshot. Reapplying it would enforce a
-   stricter administrator policy by omitting today's admin bypass. Do not use it
+   stricter policy by omitting the observed user exemption. Do not use it
    to recreate or update the existing rule.**
 
    ```bash
@@ -148,23 +156,23 @@ existing ruleset.
      --input .github/rulesets/main-require-ci-status.json
    ```
 
-4. Verify nothing else moved — the classic protection must be byte-identical to
-   before, and the tag ruleset must still be there:
+4. Record the observed protection state before any separately authorized policy
+   change, then compare afterward. A missing classic-protection response is HTTP
+   404; keep that distinct from the active repository rulesets:
 
    ```bash
    gh api repos/boardsesh/boardsesh/branches/main/protection > after.json
    gh api repos/boardsesh/boardsesh/rulesets --jq '.[] | "\(.id) \(.name) \(.enforcement)"'
    ```
 
-The original bot-only creation payload would require administrators to pass
-`ci-status`. The live ruleset now grants repository administrators an `always`
-bypass, so an administrator can manually merge without changing repository
-settings. Follow the readiness policy above before exercising that authority.
+The original bot-only creation payload requires every non-bot actor to pass
+`ci-status`. The observed live rule exempts Marco, permitting his manual merge
+without changing this ruleset. Follow the readiness policy above before
+exercising that authority.
 
-For an incident, an administrator can use the existing bypass for a manual
-recovery merge; disabling or deleting the ruleset is not the routine recovery
-path. Either action changes repository policy and requires a separate explicit
-policy decision.
+For an incident, Marco can use the existing user exemption for a manual recovery
+merge. Disabling or deleting the ruleset changes repository policy and requires
+a separate explicit policy decision.
 
 ## When a PR's checks go missing anyway
 

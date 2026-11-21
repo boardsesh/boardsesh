@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { jobBlocks } from './helpers/workflow-yaml';
 
 /**
- * `ci-status` is the one context main's branch protection requires (see
+ * `ci-status` is the one context main's repository ruleset requires (see
  * docs/ci-required-checks.md), which makes it the whole answer to two different
  * questions at once:
  *
@@ -28,7 +28,12 @@ const workflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 const jobs = jobBlocks(workflowSource);
 
 type WorkflowStep = { id?: string; if?: string; run?: string; 'continue-on-error'?: boolean | string };
-type WorkflowJob = { needs?: string | string[]; if?: string; steps?: WorkflowStep[] };
+type WorkflowJob = {
+  needs?: string | string[];
+  if?: string;
+  steps?: WorkflowStep[];
+  'continue-on-error'?: boolean | string;
+};
 type Workflow = { jobs: Record<string, WorkflowJob> };
 
 function conditionExpression(condition?: string): string {
@@ -81,6 +86,28 @@ describe('ci-status is a complete roll-up', () => {
     expect(largeFilesStep?.run).toContain('scripts/check-large-files.mjs');
     expect(conditionExpression(largeFilesStep?.if)).toBe("!cancelled()&&steps.install.outcome=='success'");
     expect(largeFilesStep?.['continue-on-error'] ?? false).toBe(false);
+  });
+
+  it('runs both filesystem contracts in the required guards job without changed-file selection', () => {
+    const guards = (parse(workflowSource) as Workflow).jobs.guards;
+    const requiredStatusStep = guards.steps?.find((step) => step.id === 'required-ci-status');
+
+    expect(rollupNeeds).toContain('guards');
+    expect(conditionExpression(guards.if)).toBe('!cancelled()');
+    expect(guards['continue-on-error'] ?? false).toBe(false);
+    expect(requiredStatusStep).toBeDefined();
+    expect(conditionExpression(requiredStatusStep?.if)).toBe("!cancelled()&&steps.install.outcome=='success'");
+    expect(requiredStatusStep?.['continue-on-error'] ?? false).toBe(false);
+    expect(requiredStatusStep?.run?.trim().split(/\s+/)).toEqual([
+      'vp',
+      'test',
+      'run',
+      '--project',
+      'scripts',
+      'scripts/__tests__/ci-status-rollup.test.ts',
+      'scripts/__tests__/required-checks-payload.test.ts',
+      '--reporter=agent',
+    ]);
   });
 
   it('names only jobs that exist', () => {

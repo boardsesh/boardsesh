@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { githubYamlPaths, jobBlocks, isWorkflow, withoutCommentLines } from './helpers/workflow-yaml';
 
 /**
- * `.github/rulesets/main-require-ci-status.json` is the payload that makes
- * `ci-status` a required check on main (docs/ci-required-checks.md). It is
- * applied by hand, once, so nothing else in the repo ever reads it — which is
+ * `.github/rulesets/main-require-ci-status.json` records the original creation
+ * payload for main's required `ci-status` check (docs/ci-required-checks.md). It
+ * does not mirror live policy and is not automatically reapplied — which is
  * exactly why it needs a spec: every mistake it can contain is silent until it
  * is either useless or wedges the repo.
  *
@@ -26,7 +26,7 @@ const RULESET_PATH = '.github/rulesets/main-require-ci-status.json';
 const GITHUB_ACTIONS_APP_ID = 15368;
 
 /**
- * `boardsesh-repo-bot`, read from main's branch protection
+ * `boardsesh-repo-bot`, read from the original branch-protection snapshot
  * (`required_pull_request_reviews.bypass_pull_request_allowances.apps[].id`).
  * It is the identity the workflows below push to main as.
  */
