@@ -69,13 +69,14 @@ rollout receipts.
 | Remaining requirement | Evidence needed before closure |
 | --- | --- |
 | Reconnect compatibility | Resolve or explicitly account for the reported legacy-mode move replayed as a Now change after reconnect; the 60-second watchdog is not a regression test. |
-| Native delivery | Establish that a publicly available compatible iOS binary contains the Swift slice, not just that its PR merged. |
+| Native delivery | Both iOS 2.8.0 build tags contain the Swift merge. The [Australian public listing](https://apps.apple.com/au/app/boardsesh/id6761350784) reports 2.8.0 available 19 November at 21:33 UTC, and the [exact-build audit](https://github.com/boardsesh/boardsesh/actions/runs/44537054316) identified build 2 while awaiting review. Public metadata does not establish the final build number or physical-device behavior. |
 | Device acceptance | Dated iOS/Android checks for separate Now, the stale-current hold and Replay from here. |
 | Legacy cleanup | Prove two weeks at 100% and flat relevant telemetry before removing the legacy reducer, prune or feature flag. Preserve shipped-client compatibility. |
 
 An Astra source audit confirmed the reconnect finding in the shared reducer.
-A focused fix is being prepared: retire the unconfirmed move only when the queue
-mode actually changes and recover from the authoritative server snapshot.
+The focused fix is prepared in [#7983](https://github.com/boardsesh/boardsesh/pull/7983):
+retire the unconfirmed move only when the queue mode actually changes and recover
+from the authoritative server snapshot.
 Same-mode updates must preserve a pending move. Legacy cleanup remains gated on
 rollout and device evidence. No flag or server percentage was changed in this audit.
 
@@ -116,8 +117,10 @@ removed in #6411/#6545; preserving downloads across token refresh is intentional
 There is no privacy setup screen: the deprecated onboarding field always reads 1.
 
 The audit also found that the signed snapshot verifier's count/metadata checks did
-not assert the privacy marker or reject authored/draft rows. A focused validator
-change is being prepared separately; it does not itself withdraw old artifacts.
+not assert the privacy marker or reject authored/draft rows. The focused
+validator fix is prepared in [#7984](https://github.com/boardsesh/boardsesh/pull/7984),
+including historical coverage parsing and catalog credential checks. It does not
+itself withdraw old artifacts.
 
 ## Analytics: verified progress and remaining work
 
@@ -159,6 +162,18 @@ WHERE event = 'Active Users Snapshot'
 GROUP BY properties.day
 ORDER BY properties.day
 ```
+
+## Prepared changes and verification
+
+| PR | Scope | Verification before push |
+| --- | --- | --- |
+| [#7979](https://github.com/boardsesh/boardsesh/pull/7979) | This evidence ledger and current contributor instructions | Astra review, full lint/format and 65/65 aggregate typecheck tasks |
+| [#7983](https://github.com/boardsesh/boardsesh/pull/7983) | Queue mode-change recovery | Astra review, 510 shared queue tests, 154 provider tests, full lint/format and 65/65 typecheck tasks |
+| [#7984](https://github.com/boardsesh/boardsesh/pull/7984) | Snapshot privacy verification | Astra review and re-review, 50 regression tests, targeted lint/strict TypeScript and 65/65 aggregate typecheck tasks |
+
+The code branches passed the repository's real pre-commit checks. All three PRs
+were opened as drafts; none was merged by this audit. PR checks and review feedback
+determine readiness independently of the release gates above.
 
 ## Recorded decisions
 
