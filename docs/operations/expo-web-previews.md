@@ -53,7 +53,9 @@ After the build and sandbox-branch cleanup finish, a separate trusted job explic
 with the source run ID; this avoids relying on `workflow_run` events from a
 `GITHUB_TOKEN`-dispatched run. The publisher reads the source run from GitHub,
 checks it against the trusted request and current PR head, and downloads only
-that run's expected artifact. Hosting rules and Pages Functions come from the
+that run's expected artifact. The secret-free generated export includes hidden
+paths because Metro places bundled icon fonts beneath `assets/__node_modules/.pnpm/`;
+artifact upload must retain those directories. Hosting rules and Pages Functions come from the
 trusted checkout, not the artifact. Publishing, requests and cleanup share a
 per-PR mutation lock. Both workflows retain queued runs with `queue: max`, so
 later activity does not replace a pending fork approval or cleanup request.
@@ -69,11 +71,15 @@ for trusted hosting. Each `pr-N` branch has its own custom domain and proxied
 CNAME to `pr-N.boardsesh-app-previews.pages.dev`. DNS ownership is recorded in
 the comment `boardsesh:web-preview:pr-N`; unrelated records are not replaced.
 The publisher verifies HTTPS, the exact PR/SHA metadata, SPA routes, JavaScript,
-WASM, PWA manifest, caching, missing-asset 404s and `noindex` before reporting
+WASM, both bundled icon fonts, PWA manifest, caching, missing-asset 404s and `noindex` before reporting
 success. One PR comment and GitHub deployment status show the link, deployed
 revision or failure details. While a source build runs or fails, the previously
 deployed preview stays available. A failure after upload is reported as a
-publication failure; the smoke does not itself roll the branch back.
+publication failure; the smoke does not itself roll the branch back. Font checks
+read bounded JavaScript chunks as text, require the Material Community Icons and
+Material Symbols references, and verify the same-origin font URLs return font
+binaries. They never execute downloaded PR JavaScript; missing font artifacts fail
+publication instead of leaving the preview marked ready with blank icons.
 
 PR close/merge and removal of the remaining app diff retire the preview. Pages
 protects each branch's latest deployment from deletion, so cleanup first uploads

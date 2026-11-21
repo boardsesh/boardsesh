@@ -13,6 +13,11 @@ const PR_PATTERN = /^pr-([1-9][0-9]*)$/;
 const HOST_PATTERN = /^pr-([1-9][0-9]*)\.boardsesh\.com$/;
 const DNS_COMMENT_PREFIX = 'boardsesh:web-preview:';
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const MAX_SMOKE_SCRIPTS = 16;
+const MAX_SMOKE_FONTS = 32;
+const MAX_SMOKE_SCRIPT_BYTES = 32 * 1024 * 1024;
+const MAX_SMOKE_TOTAL_SCRIPT_BYTES = 64 * 1024 * 1024;
+const REQUIRED_ICON_FONTS = ['MaterialCommunityIcons', 'MaterialSymbols_400Regular'];
 
 function previewIdentity(input) {
   const text = String(input);
@@ -100,12 +105,56 @@ function ownsRecord(record, identity, domainExists) {
 async function responsePrefix(response, length = 512) {
   if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
+  const prefix = new Uint8Array(length);
+  let offset = 0;
   try {
-    const chunk = await reader.read();
-    return chunk.value?.subarray(0, length) ?? new Uint8Array();
+    while (offset < length) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      const bytes = chunk.subarray(0, length - offset);
+      prefix.set(bytes, offset);
+      offset += bytes.length;
+    }
+    return prefix.subarray(0, offset);
   } finally {
     await reader.cancel();
   }
+}
+
+async function boundedResponseText(response, limit, label) {
+  if (!response.body) return { text: '', bytes: 0 };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      bytes += chunk.length;
+      if (bytes > limit) throw new Error(`${label} exceeds the smoke byte limit.`);
+      text += decoder.decode(chunk, { stream: true });
+    }
+    return { text: text + decoder.decode(), bytes };
+  } finally {
+    await reader.cancel();
+  }
+}
+
+function smokeAssetPath(path, prefix, origin) {
+  const url = new URL(path, origin);
+  if (
+    !path.startsWith(prefix) ||
+    !/^\/[a-zA-Z0-9_@+./=-]+$/.test(path) ||
+    path.split('/').some((segment) => segment === '.' || segment === '..') ||
+    url.origin !== origin ||
+    url.pathname !== path ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error('Preview contains an unsafe smoke asset path.');
+  }
+  return path;
 }
 
 function assertResponse(response, pattern, label) {
@@ -439,7 +488,7 @@ export function createCloudflareClient({
         throw new Error('Preview WASM response is not a WASM binary.');
       if (missing.status !== 404 || !/\bno-store\b/i.test(missing.headers.get('cache-control') ?? ''))
         throw new Error('Missing preview assets must return HTTP 404 without caching.');
-      const html = await root.text();
+      const { text: html } = await boundedResponseText(root, 1024 * 1024, 'Preview HTML');
       if (!/\bid=["']root["']/.test(html) || !/\bid=["']root["']/.test(await deep.text()))
         throw new Error('Preview root/deep link did not serve the Expo shell.');
       if (!/<link\b[^>]*\bhref=["']\/manifest\.json["']/i.test(html))
@@ -448,13 +497,44 @@ export function createCloudflareClient({
         .map((match) => match[1])
         .filter((path) => path.startsWith('/_expo/') && path.endsWith('.js') && !path.startsWith('//'));
       if (scriptPaths.length === 0) throw new Error('Preview shell contains no root-relative Expo JavaScript chunks.');
-      for (const path of scriptPaths) {
+      if (scriptPaths.length > MAX_SMOKE_SCRIPTS) throw new Error('Preview exceeds the smoke JavaScript chunk limit.');
+      const fontPaths = new Set();
+      let scriptBytes = 0;
+      for (const path of new Set(scriptPaths)) {
+        smokeAssetPath(path, '/_expo/', identity.url);
         const chunk = await get(path);
         assertResponse(chunk, /^(?:application|text)\/(?:javascript|ecmascript)\b/i, `Preview JavaScript ${path}`);
         if (!/\bimmutable\b/i.test(chunk.headers.get('cache-control') ?? ''))
           throw new Error('Preview JavaScript must be immutable-cached.');
-        const first = new TextDecoder().decode(await responsePrefix(chunk));
-        if (!first || /^\s*</.test(first)) throw new Error('Preview JavaScript response is empty or contains HTML.');
+        const { text: javascript, bytes } = await boundedResponseText(
+          chunk,
+          Math.min(MAX_SMOKE_SCRIPT_BYTES, MAX_SMOKE_TOTAL_SCRIPT_BYTES - scriptBytes),
+          'Preview JavaScript',
+        );
+        scriptBytes += bytes;
+        if (!javascript || /^\s*</.test(javascript))
+          throw new Error('Preview JavaScript response is empty or contains HTML.');
+        // Metro emits static asset URLs as string literals. Treat the bundle only
+        // as bounded text: never import/evaluate PR code in this privileged job.
+        for (const match of javascript.matchAll(/(["'])(\/assets\/[^"'\\\r\n]*\.ttf)\1/g)) {
+          fontPaths.add(smokeAssetPath(match[2], '/assets/', identity.url));
+          if (fontPaths.size > MAX_SMOKE_FONTS) throw new Error('Preview exceeds the smoke font limit.');
+        }
+      }
+      for (const name of REQUIRED_ICON_FONTS) {
+        if (![...fontPaths].some((path) => path.split('/').at(-1)?.startsWith(`${name}.`)))
+          throw new Error(`Preview JavaScript is missing the ${name} icon font reference.`);
+      }
+      for (const path of fontPaths) {
+        const font = await get(path);
+        assertResponse(
+          font,
+          /^(?:font\/(?:ttf|sfnt)|application\/(?:octet-stream|font-sfnt|x-font-ttf))\b/i,
+          `Preview font ${path}`,
+        );
+        const signature = [...(await responsePrefix(font, 4))].join(',');
+        if (!['0,1,0,0', '116,114,117,101', '79,84,84,79'].includes(signature))
+          throw new Error(`Preview font ${path} is not a TrueType/OpenType binary.`);
       }
       return identity.url;
     }

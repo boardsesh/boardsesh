@@ -717,6 +717,17 @@ describe('Cloudflare web preview cleanup and retention discovery', () => {
   });
 });
 
+const ICON_FONT_PATHS = [
+  '/assets/__node_modules/.pnpm/@expo+vector-icons@15.1.1_expo-font@58.0.12_react-native@0.88.1_patch_hash=5ba8e0b13c37_2c6d75089aa13f5f0102f080d0470763/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf',
+  '/assets/__node_modules/.pnpm/@expo-google-fonts+material-symbols@0.4.44/node_modules/@expo-google-fonts/material-symbols/400Regular/MaterialSymbols_400Regular.96032e7aed600e905412ba2e0281f754.ttf',
+];
+
+function javascriptResponse(source: string) {
+  return new Response(source, {
+    headers: { 'content-type': 'application/javascript', 'cache-control': 'public, max-age=31536000, immutable' },
+  });
+}
+
 function previewSite(override?: (path: string) => Response | undefined): typeof fetch {
   return async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
@@ -741,16 +752,87 @@ function previewSite(override?: (path: string) => Response | undefined): typeof 
     if (url.pathname === '/wasm/board_renderer_wasm_bg.wasm')
       return new Response(new Uint8Array([0, 97, 115, 109]), { headers: { 'content-type': 'application/wasm' } });
     if (url.pathname === '/_expo/main.js')
-      return new Response('console.log("Expo");', {
-        headers: { 'content-type': 'application/javascript', 'cache-control': 'public, max-age=31536000, immutable' },
-      });
+      return javascriptResponse(ICON_FONT_PATHS.map((path) => `module.exports="${path}";`).join(''));
+    if (ICON_FONT_PATHS.includes(url.pathname))
+      return new Response(new Uint8Array([0, 1, 0, 0]), { headers: { 'content-type': 'font/ttf' } });
     return new Response('not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   };
 }
 
 describe('deployed preview HTTPS smoke', () => {
-  it('verifies the exact PR revision, real Expo shell, chunks, PWA and WASM without sending API credentials', async () => {
+  it('verifies the exact PR revision, shell, chunks, icon fonts, PWA and WASM without API credentials', async () => {
     await expect(client(previewSite()).smokePreview(42, SHA)).resolves.toBe('https://pr-42.boardsesh.com');
+  });
+
+  it('reads font signatures across network chunks and deduplicates repeated references', async () => {
+    const requestedFonts: string[] = [];
+    const site = previewSite((path) => {
+      if (path === '/_expo/main.js')
+        return javascriptResponse(ICON_FONT_PATHS.flatMap((font) => [`'${font}'`, `"${font}"`]).join(';'));
+      if (!ICON_FONT_PATHS.includes(path)) return undefined;
+      requestedFonts.push(path);
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const byte of [0, 1, 0, 0]) controller.enqueue(new Uint8Array([byte]));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'application/octet-stream' } },
+      );
+    });
+    await expect(client(site).smokePreview(42, SHA)).resolves.toBe('https://pr-42.boardsesh.com');
+    expect(requestedFonts).toEqual(ICON_FONT_PATHS);
+  });
+
+  it.each([
+    ['/assets/../private/MaterialCommunityIcons.hash.ttf'],
+    ['/assets/%2e%2e/private/MaterialCommunityIcons.hash.ttf'],
+    ['/assets/font.ttf?redirect=evil.ttf'],
+  ])('rejects unsafe font path %s before requesting it', async (unsafePath) => {
+    const site = previewSite((path) => {
+      if (path === '/_expo/main.js') return javascriptResponse(`module.exports="${unsafePath}";`);
+      if (path.startsWith('/assets/') || path.startsWith('/private/')) throw new Error('Unsafe path was fetched');
+      return undefined;
+    });
+    await expect(client(site).smokePreview(42, SHA)).rejects.toThrow('unsafe smoke asset path');
+  });
+
+  it('bounds shell downloads even when Content-Length is absent', async () => {
+    let canceled = 0;
+    const site = previewSite((path) => {
+      if (path !== '/') return undefined;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+          },
+          cancel() {
+            canceled += 1;
+          },
+        }),
+        { headers: { 'content-type': 'text/html', 'x-robots-tag': 'noindex' } },
+      );
+    });
+    await expect(client(site).smokePreview(42, SHA)).rejects.toThrow('Preview HTML exceeds the smoke byte limit');
+    expect(canceled).toBe(24);
+  });
+
+  it('rejects unsafe root chunk paths without requesting them', async () => {
+    const site = previewSite((path) => {
+      if (path !== '/') return undefined;
+      return new Response(
+        '<link href="/manifest.json"><div id="root"></div><script src="/_expo/../private/main.js"></script>',
+        { headers: { 'content-type': 'text/html', 'x-robots-tag': 'noindex' } },
+      );
+    });
+    await expect(client(site).smokePreview(42, SHA)).rejects.toThrow('unsafe smoke asset path');
+  });
+
+  it('bounds font discovery before making font requests', async () => {
+    const source = Array.from({ length: 33 }, (_, index) => `"/assets/font${index}.ttf"`).join(';');
+    const site = previewSite((path) => (path === '/_expo/main.js' ? javascriptResponse(source) : undefined));
+    await expect(client(site).smokePreview(42, SHA)).rejects.toThrow('smoke font limit');
   });
 
   it('retries certificate/edge propagation failures before marking a preview ready', async () => {
@@ -771,6 +853,22 @@ describe('deployed preview HTTPS smoke', () => {
     ['/preview-meta.json', () => Response.json({ prNumber: 43, sha: SHA }), 'different PR'],
     ['/preview-meta.json', () => Response.json({ prNumber: 42, sha: 'b'.repeat(40) }), 'different PR'],
     ['/manifest.json', () => Response.json({ start_url: '/app/', scope: '/app/' }), 'start and scope'],
+    ...ICON_FONT_PATHS.map((path) => [path, () => new Response('not found', { status: 404 }), 'Preview font'] as const),
+    [
+      ICON_FONT_PATHS[0],
+      () => new Response('<html>fallback</html>', { headers: { 'content-type': 'font/ttf' } }),
+      'not a TrueType/OpenType binary',
+    ],
+    [
+      '/_expo/main.js',
+      () => javascriptResponse(`module.exports="${ICON_FONT_PATHS[0]}";`),
+      'MaterialSymbols_400Regular icon font reference',
+    ],
+    [
+      '/_expo/main.js',
+      () => javascriptResponse('module.exports="https://example.com/MaterialCommunityIcons.ttf";'),
+      'MaterialCommunityIcons icon font reference',
+    ],
     [
       '/_expo/main.js',
       () => new Response('<html>fallback</html>', { headers: { 'content-type': 'text/html' } }),

@@ -204,6 +204,7 @@ describe('Expo web preview workflow trust boundaries', () => {
     expect(upload.with).toMatchObject({
       name: '${{ needs.inspect.outputs.artifact }}',
       path: '${{ runner.temp }}/export',
+      'include-hidden-files': true,
       'if-no-files-found': 'error',
       'retention-days': 30,
     });
