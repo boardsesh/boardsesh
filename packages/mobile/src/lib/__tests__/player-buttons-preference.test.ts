@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockStorage = new Map<string, string>();
 vi.mock('react-native-mmkv', () => ({
@@ -33,6 +33,10 @@ const stored = (key: string): unknown => {
 
 beforeEach(() => {
   mockStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('player buttons preference', () => {
@@ -78,6 +82,61 @@ describe('player buttons preference', () => {
   });
 
   describe('web navigation', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: true })),
+      );
+    });
+
+    it.each([
+      ['mouse', 'fine', 'hover', 'fine', 'hover', 0, true],
+      ['trackpad on a touchscreen laptop', 'fine', 'hover', 'fine', 'hover', 10, true],
+      ['touch-primary tablet with a mouse', 'coarse', 'none', 'fine', 'hover', 10, true],
+      ['phone', 'coarse', 'none', 'coarse', 'none', 5, false],
+      ['touch tablet', 'coarse', 'none', 'coarse', 'none', 10, false],
+      ['fine pointer without hover', 'fine', 'none', 'fine', 'none', 0, false],
+      ['coarse pointer with hover', 'coarse', 'hover', 'coarse', 'hover', 5, false],
+    ])(
+      'uses available input capabilities on a %s',
+      async (_device, pointer, hover, anyPointer, anyHover, maxTouchPoints, expected) => {
+        const browserNavigator = Object.create(navigator) as Navigator;
+        Object.defineProperty(browserNavigator, 'maxTouchPoints', { value: maxTouchPoints });
+        vi.stubGlobal('navigator', browserNavigator);
+        const matchMedia = vi.fn((query: string) => ({
+          matches:
+            query === '(any-hover: hover) and (any-pointer: fine)'
+              ? anyPointer === 'fine' && anyHover === 'hover'
+              : query === '(hover: hover) and (pointer: fine)' && pointer === 'fine' && hover === 'hover',
+        }));
+        vi.stubGlobal('matchMedia', matchMedia);
+        const { usePlayerButtonsPreference, getSetting, isDefaultPlayerButtons } = await launchWith({}, 'web');
+        const { result } = renderHook(() => usePlayerButtonsPreference());
+        expect(matchMedia).toHaveBeenCalledWith('(any-hover: hover) and (any-pointer: fine)');
+        expect(result.current.previousNext).toBe(expected);
+        expect(getSetting('playerPreviousNext')).toBe(expected);
+        expect(isDefaultPlayerButtons(result.current)).toBe(true);
+      },
+    );
+
+    it.each([true, false])('preserves the saved choice %s in a touch-only browser', async (previousNext) => {
+      vi.stubGlobal('matchMedia', () => ({ matches: false }));
+      const { usePlayerButtonsPreference } = await launchWith({ playerPreviousNext: previousNext }, 'web');
+      expect(renderHook(() => usePlayerButtonsPreference()).result.current.previousNext).toBe(previousNext);
+    });
+
+    it('keeps navigation off when media queries are unavailable', async () => {
+      vi.stubGlobal('matchMedia', undefined);
+      const { usePlayerButtonsPreference } = await launchWith({}, 'web');
+      expect(renderHook(() => usePlayerButtonsPreference()).result.current.previousNext).toBe(false);
+    });
+
+    it('can load the browser default during server rendering', async () => {
+      vi.stubGlobal('window', undefined);
+      vi.resetModules();
+      expect((await import('../player-navigation-default.web')).DEFAULT_PLAYER_PREVIOUS_NEXT).toBe(false);
+    });
+
     it.each([
       [undefined, true],
       ['unrecognized', true],
@@ -103,6 +162,19 @@ describe('player buttons preference', () => {
       act(() => result.current.setPreviousNext(false));
       act(() => resetAllSettings());
       expect(result.current.previousNext).toBe(true);
+    });
+
+    it('restores hidden navigation in a touch-only browser', async () => {
+      vi.stubGlobal('matchMedia', () => ({ matches: false }));
+      const { usePlayerButtonsEditor, resetAllSettings, isDefaultPlayerButtons } = await launchWith({}, 'web');
+      const { result } = renderHook(() => usePlayerButtonsEditor());
+      act(() => result.current.setPreviousNext(true));
+      act(() => result.current.restoreDefaults());
+      expect(result.current.previousNext).toBe(false);
+      expect(isDefaultPlayerButtons(result.current)).toBe(true);
+      act(() => result.current.setPreviousNext(true));
+      act(() => resetAllSettings());
+      expect(result.current.previousNext).toBe(false);
     });
   });
 
