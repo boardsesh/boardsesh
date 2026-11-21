@@ -14,6 +14,7 @@ shared classifier for previews and the production browser export: mobile code,
 shared packages/schema, board catalogue/WASM, dependencies/patches, export
 helpers and shipped hosting configuration. Documentation, tests, backend-only
 and marketing-only changes do not qualify.
+Bundled board-background `.webp` files under the web image roots `decoy`, `grasshopper`, `kilter`, `moonboard`, `soill`, `tension`, `touchstone` and `woods` also qualify because the app imports those files directly.
 
 A later push whose app inputs match the last successful preview reuses that
 preview and shows its actual deployed SHA. Removing all app changes removes the

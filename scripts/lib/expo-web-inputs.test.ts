@@ -1,3 +1,7 @@
+/// <reference types="node" />
+
+import { readFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { appAffectingPaths, hasAppAffectingChanges, isAppAffecting } from './expo-web-inputs.mjs';
 
@@ -38,6 +42,33 @@ describe('standalone Expo web build inputs', () => {
     ];
 
     expect(appAffectingPaths(changedPaths)).toEqual(changedPaths);
+  });
+
+  it('includes every board background statically required by the real app manifest', () => {
+    const repoRoot = resolve(import.meta.dirname, '../..');
+    const manifestPath = resolve(repoRoot, 'packages/mobile/src/lib/board-backgrounds-manifest.ts');
+    const manifestSource = readFileSync(manifestPath, 'utf8');
+    // Read the manifest as text: executing it would load Metro-only image
+    // modules, and the trusted classifier must not execute app code.
+    const bundledPaths = [...manifestSource.matchAll(/require\(['"]([^'"]+)['"]\)/g)].map(([, assetPath]) =>
+      relative(repoRoot, resolve(dirname(manifestPath), assetPath)).replaceAll('\\', '/'),
+    );
+
+    expect(bundledPaths.length).toBeGreaterThan(0);
+    expect(bundledPaths).toContain('packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.webp');
+    expect(bundledPaths.filter((filePath) => !isAppAffecting(filePath))).toEqual([]);
+  });
+
+  it('keeps marketing images and retained board PNG sources out of app inputs', () => {
+    expect(
+      appAffectingPaths([
+        'packages/web/public/images/marketing/app-preview.webp',
+        'packages/web/public/images/help/preview.webp',
+        'packages/web/public/brand/boardsesh-mark.webp',
+        'packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.png',
+        'packages/web/public/images/woods/woods-8x10-bg.png',
+      ]),
+    ).toEqual([]);
   });
 
   it('skips documentation and test-only revisions under app directories', () => {
