@@ -69,6 +69,7 @@ type Documents = {
   '\n  query AppBugReportMessages($input: AppBugReportMessagesInput!) {\n    appBugReportMessages(input: $input) {\n      messages {\n        id\n        reportId\n        body\n        authorRole\n        deliveryStatus\n        createdAt\n      }\n      hasMore\n      endCursor\n    }\n  }\n': typeof types.AppBugReportMessagesDocument;
   '\n  mutation SendAppBugReportMessage($input: SendAppBugReportMessageInput!) {\n    sendAppBugReportMessage(input: $input) {\n      id\n      reportId\n      body\n      authorRole\n      deliveryStatus\n      createdAt\n    }\n  }\n': typeof types.SendAppBugReportMessageDocument;
   '\n  mutation RetryAppBugReportMessage($id: ID!) {\n    retryAppBugReportMessage(id: $id) {\n      id\n      reportId\n      body\n      authorRole\n      deliveryStatus\n      createdAt\n    }\n  }\n': typeof types.RetryAppBugReportMessageDocument;
+  '\n  subscription AppBugReportChanged {\n    appBugReportChanged {\n      reportId\n    }\n  }\n': typeof types.AppBugReportChangedDocument;
   '\n  query GymOwnershipLookup($input: GymOwnershipLookupInput!) {\n    gymOwnershipLookup(input: $input) {\n      gym {\n        gymUuid\n        slug\n        name\n        currentOwnerId\n        currentOwnerLabel\n        currentOwnerIsSystem\n        syncFrozenAt\n        isDeleted\n        isMerged\n      }\n      newOwner {\n        userId\n        label\n        email\n      }\n    }\n  }\n': typeof types.GymOwnershipLookupDocument;
   '\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n': typeof types.ReassignGymOwnerDocument;
   '\n  query HoldHeatmap($input: ClimbSearchInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n': typeof types.HoldHeatmapDocument;
@@ -327,6 +328,8 @@ const documents: Documents = {
     types.SendAppBugReportMessageDocument,
   '\n  mutation RetryAppBugReportMessage($id: ID!) {\n    retryAppBugReportMessage(id: $id) {\n      id\n      reportId\n      body\n      authorRole\n      deliveryStatus\n      createdAt\n    }\n  }\n':
     types.RetryAppBugReportMessageDocument,
+  '\n  subscription AppBugReportChanged {\n    appBugReportChanged {\n      reportId\n    }\n  }\n':
+    types.AppBugReportChangedDocument,
   '\n  query GymOwnershipLookup($input: GymOwnershipLookupInput!) {\n    gymOwnershipLookup(input: $input) {\n      gym {\n        gymUuid\n        slug\n        name\n        currentOwnerId\n        currentOwnerLabel\n        currentOwnerIsSystem\n        syncFrozenAt\n        isDeleted\n        isMerged\n      }\n      newOwner {\n        userId\n        label\n        email\n      }\n    }\n  }\n':
     types.GymOwnershipLookupDocument,
   '\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n':
@@ -967,6 +970,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation RetryAppBugReportMessage($id: ID!) {\n    retryAppBugReportMessage(id: $id) {\n      id\n      reportId\n      body\n      authorRole\n      deliveryStatus\n      createdAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation RetryAppBugReportMessage($id: ID!) {\n    retryAppBugReportMessage(id: $id) {\n      id\n      reportId\n      body\n      authorRole\n      deliveryStatus\n      createdAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  subscription AppBugReportChanged {\n    appBugReportChanged {\n      reportId\n    }\n  }\n',
+): (typeof documents)['\n  subscription AppBugReportChanged {\n    appBugReportChanged {\n      reportId\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -94,6 +94,7 @@ import { socialCommunitySettingsQueries, socialCommunitySettingsMutations } from
 import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions';
 import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { boardPresenceResolvers } from './board-presence';
+import { feedbackConversationSubscriptions } from './feedback/subscriptions';
 import { feedbackConversationQueries, feedbackConversationMutations } from './feedback/conversations';
 import { feedbackMutations } from './feedback/mutations';
 import { feedbackQueries } from './feedback/queries';
@@ -261,6 +262,7 @@ export const resolvers = {
     ...queueSubscriptions,
     ...controllerSubscriptions,
     ...socialNotificationSubscriptions,
+    ...feedbackConversationSubscriptions,
     ...socialCommentSubscriptions,
     ...newClimbFeedSubscription,
     ...boardPresenceResolvers.Subscription,

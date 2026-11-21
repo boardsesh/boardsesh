@@ -13,6 +13,7 @@ import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
+import { pubsub } from '../../../pubsub';
 import { enrichReleaseContext } from '../../../services/mobile-release-status';
 
 export const feedbackMutations = {
@@ -72,6 +73,7 @@ export const feedbackMutations = {
     // a 3h23m window. Guard on row existence — a missing returned row means a
     // DB-layer problem, not our contract, so skip the side effect.
     if (row) {
+      if (isBugReport && userId) pubsub.publishAppBugReportChanged(userId, { reportId: String(row.id) });
       void (async () => {
         try {
           const outcome = await createFeedbackGithubIssue({
@@ -104,6 +106,7 @@ export const feedbackMutations = {
               .update(dbSchema.appFeedback)
               .set({ githubIssueNumber: issue.number, githubIssueUrl: issue.htmlUrl, githubIssueState: 'open' })
               .where(eq(dbSchema.appFeedback.id, row.id));
+            if (userId) pubsub.publishAppBugReportChanged(userId, { reportId: String(row.id) });
 
             if (contactConsent && userId) {
               const [reporter] = await db

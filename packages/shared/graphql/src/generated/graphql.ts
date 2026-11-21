@@ -340,6 +340,11 @@ export type AppBugReport = {
   status: AppFeedbackStatus;
 };
 
+export type AppBugReportChangedEvent = {
+  __typename?: 'AppBugReportChangedEvent';
+  reportId: Scalars['ID']['output'];
+};
+
 export type AppBugReportConnection = {
   __typename?: 'AppBugReportConnection';
   endCursor?: Maybe<Scalars['ID']['output']>;
@@ -12673,6 +12678,11 @@ export type SubmitQaVerdictInput = {
 export type Subscription = {
   __typename?: 'Subscription';
   /**
+   * Changes to the signed-in reporter's bug reports, including edits, withdrawals
+   * and GitHub issue status. Ownership is rechecked before every event.
+   */
+  appBugReportChanged: AppBugReportChangedEvent;
+  /**
    * Subscribe to the live "now on the wall" feed for a shared board (board_id
    * resolved from the BLE serial). Membership-free; the board's policy decides.
    * The board id alone is the no-link reading (ids can be counted); pass
@@ -15251,6 +15261,13 @@ export type RetryAppBugReportMessageMutation = {
     deliveryStatus: AppBugReportMessageDeliveryStatus;
     createdAt: string;
   };
+};
+
+export type AppBugReportChangedSubscriptionVariables = Exact<{ [key: string]: never }>;
+
+export type AppBugReportChangedSubscription = {
+  __typename?: 'Subscription';
+  appBugReportChanged: { __typename?: 'AppBugReportChangedEvent'; reportId: string };
 };
 
 export type GymOwnershipLookupQueryVariables = Exact<{
@@ -22205,6 +22222,29 @@ export const RetryAppBugReportMessageDocument = {
     },
   ],
 } as unknown as DocumentNode<RetryAppBugReportMessageMutation, RetryAppBugReportMessageMutationVariables>;
+export const AppBugReportChangedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'subscription',
+      name: { kind: 'Name', value: 'AppBugReportChanged' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'appBugReportChanged' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'reportId' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AppBugReportChangedSubscription, AppBugReportChangedSubscriptionVariables>;
 export const GymOwnershipLookupDocument = {
   kind: 'Document',
   definitions: [

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   removeToken: vi.fn(),
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
+  onConnected: vi.fn(),
+  removeConnected: vi.fn(),
   locale: { language: 'en-US' },
 }));
 const queryClient = { invalidateQueries: mocks.invalidate };
@@ -23,7 +25,9 @@ vi.mock('react-native', () => ({ AppState: { addEventListener: mocks.listenAppSt
 vi.mock('expo-notifications', () => ({ addPushTokenListener: mocks.listenToken }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: mocks.locale }) }));
 vi.mock('expo-router', () => ({ router: { push: vi.fn() } }));
-vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ({ subscribe: mocks.subscribe }) }));
+vi.mock('../../lib/graphql/ws-client', () => ({
+  getWsClient: () => ({ subscribe: mocks.subscribe, on: mocks.onConnected }),
+}));
 vi.mock('../device-registration', () => ({ registerNotificationDevice: mocks.register }));
 vi.mock('../handlers', () => ({ setupNotificationHandlers: mocks.setupHandlers }));
 
@@ -38,6 +42,7 @@ describe('native notification update bridge', () => {
     mocks.listenAppState.mockReturnValue({ remove: mocks.removeAppState });
     mocks.listenToken.mockReturnValue({ remove: mocks.removeToken });
     mocks.subscribe.mockReturnValue(mocks.unsubscribe);
+    mocks.onConnected.mockReturnValue(mocks.removeConnected);
   });
 
   it('keeps push taps gated and defers registration and websocket work until login', () => {
@@ -51,7 +56,7 @@ describe('native notification update bridge', () => {
     expect(mocks.setupHandlers.mock.calls[1][1]).toMatchObject({ canNavigate: true });
     expect(mocks.register).toHaveBeenCalledOnce();
     expect(mocks.register).toHaveBeenCalledWith();
-    expect(mocks.subscribe).toHaveBeenCalledOnce();
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
   });
 
   it('refreshes exact board, detection, and bell cache prefixes on foreground without prompting', () => {
@@ -114,13 +119,15 @@ describe('native notification update bridge', () => {
     expect(mocks.removeHandlers).toHaveBeenCalledOnce();
     expect(mocks.removeAppState).toHaveBeenCalledOnce();
     expect(mocks.removeToken).toHaveBeenCalledOnce();
-    expect(mocks.unsubscribe).toHaveBeenCalledOnce();
+    expect(mocks.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(mocks.removeConnected).toHaveBeenCalledOnce();
     expect(mocks.register).toHaveBeenCalledTimes(2);
     unmount();
     expect(mocks.removeHandlers).toHaveBeenCalledTimes(2);
     expect(mocks.removeAppState).toHaveBeenCalledTimes(2);
     expect(mocks.removeToken).toHaveBeenCalledTimes(2);
-    expect(mocks.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(mocks.unsubscribe).toHaveBeenCalledTimes(4);
+    expect(mocks.removeConnected).toHaveBeenCalledTimes(2);
   });
 
   it('updates device locale without replacing the websocket subscription', () => {
@@ -128,7 +135,7 @@ describe('native notification update bridge', () => {
     mocks.locale.language = 'de';
     rerender();
     expect(mocks.register).toHaveBeenCalledTimes(2);
-    expect(mocks.subscribe).toHaveBeenCalledOnce();
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
   });
 });
 

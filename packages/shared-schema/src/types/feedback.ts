@@ -176,3 +176,6 @@ export type AppBugReportMessageConnection = {
   hasMore: boolean;
   endCursor?: string | null;
 };
+
+/** Owner-scoped cache invalidation; contains no report or message content. */
+export type AppBugReportChangedEvent = { reportId: string };

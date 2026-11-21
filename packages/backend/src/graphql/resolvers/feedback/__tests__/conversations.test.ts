@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, sql } from 'drizzle-orm';
-import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
 import {
   appFeedback,
@@ -17,12 +17,16 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import { startJobQueue, stopJobQueue, requireJobQueue } from '../../../../services/job-queue';
 import { feedbackConversationQueries as queries, feedbackConversationMutations as mutations } from '../conversations';
+import { feedbackConversationSubscriptions } from '../subscriptions';
+import { socialNotificationSubscriptions } from '../../social/notifications';
+import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import { feedbackQueries } from '../queries';
 import {
   importFeedbackGithubComment,
   publishFeedbackGithubComment,
   refreshFeedbackGithubIssue,
   customerReplyBody,
+  startFeedbackGithubConversations,
 } from '../../../../services/feedback-github-conversations';
 import { deliverSprayNotification } from '../../../../services/spray-detection-notifications';
 import { socialNotificationQueries } from '../../social/notifications';
@@ -786,5 +790,200 @@ describe('GitHub issue status', () => {
   it('reports malformed IDs as validation failures without throwing BigInt errors', () => {
     expect(AppBugReportIdSchema.safeParse('abc').success).toBe(false);
     expect(AppBugReportIdSchema.safeParse('9223372036854775808').success).toBe(false);
+  });
+});
+
+const activeChangeStreams: ReturnType<typeof feedbackConversationSubscriptions.appBugReportChanged.subscribe>[] = [];
+afterEach(async () => {
+  await Promise.all(activeChangeStreams.splice(0).map((iterator) => iterator.return()));
+});
+async function openReportChanges(userId = reporter) {
+  const previousCount = pubsub.getRuntimeStats().appBugReport.subscribers;
+  const iterator = feedbackConversationSubscriptions.appBugReportChanged.subscribe(null, {}, ctx(userId));
+  activeChangeStreams.push(iterator);
+  const next = iterator.next();
+  await vi.waitFor(() => expect(pubsub.getRuntimeStats().appBugReport.subscribers).toBe(previousCount + 1));
+  return { iterator, next };
+}
+const expectedReportChange = () => ({
+  done: false,
+  value: { appBugReportChanged: { reportId: String(activeReport.id) } },
+});
+
+describe('owner-authorized bug-report change subscriptions', () => {
+  it('requires authentication before subscribing', async () => {
+    const iterator = feedbackConversationSubscriptions.appBugReportChanged.subscribe(null, {}, anonymous);
+    await expect(iterator.next()).rejects.toThrow('Authentication required');
+    expect(pubsub.getRuntimeStats().appBugReport.subscribers).toBe(0);
+  });
+  it('delivers close and reopen changes without fabricating persisted notifications', async () => {
+    const { iterator, next } = await openReportChanges();
+    let state = 'closed';
+    githubRequestMock.mockImplementation(async (path: string) =>
+      path.includes('/comments?')
+        ? []
+        : {
+            number: 4711,
+            html_url: activeReport.githubIssueUrl,
+            state,
+            state_reason: state === 'closed' ? 'completed' : null,
+          },
+    );
+    await refreshFeedbackGithubIssue({ reportId: String(activeReport.id) });
+    expect(await next).toEqual(expectedReportChange());
+    const reopened = iterator.next();
+    state = 'open';
+    await refreshFeedbackGithubIssue({ reportId: String(activeReport.id) });
+    expect(await reopened).toEqual(expectedReportChange());
+    expect(await db.select().from(notifications).where(eq(notifications.recipientId, reporter))).toHaveLength(0);
+  });
+  it('delivers new staff messages, canonical edits and withdrawal through the change stream', async () => {
+    const { iterator, next } = await openReportChanges();
+    await importFeedbackGithubComment(job);
+    expect(await next).toEqual(expectedReportChange());
+    expect(await db.select().from(notifications).where(eq(notifications.recipientId, reporter))).toHaveLength(1);
+    const edited = iterator.next();
+    githubRequestMock.mockImplementation(async (path: string) =>
+      path.includes('/permission')
+        ? { permission: 'write' }
+        : githubComment(100, '#replytocustomer\nCorrected instructions'),
+    );
+    await importFeedbackGithubComment(job);
+    expect(await edited).toEqual(expectedReportChange());
+    expect(
+      (await queries.appBugReportMessages(null, { input: { reportId: String(activeReport.id) } }, ctx(reporter)))
+        .messages[0].body,
+    ).toBe('Corrected instructions');
+    const withdrawn = iterator.next();
+    githubRequestMock.mockResolvedValue(githubComment(100, 'Internal discussion'));
+    await importFeedbackGithubComment(job);
+    expect(await withdrawn).toEqual(expectedReportChange());
+    expect((await socialNotificationQueries.notifications(null, {}, ctx(reporter))).notifications).toHaveLength(0);
+  });
+  it('delivers pending, published, canonical reporter edits, failed and retried delivery states', async () => {
+    const { iterator, next } = await openReportChanges();
+    const input = { reportId: String(activeReport.id), body: 'Reporter details', clientMutationId: randomUUID() };
+    const message = await mutations.sendAppBugReportMessage(null, { input }, ctx(reporter));
+    expect(await next).toEqual(expectedReportChange());
+    const published = iterator.next();
+    githubRequestMock.mockImplementation(async (_path: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? {
+            ...githubComment(201, (JSON.parse(init.body as string) as { body: string }).body),
+            user: { login: 'feedback[bot]', type: 'Bot' },
+          }
+        : [],
+    );
+    await publishFeedbackGithubComment(message.id);
+    expect(await published).toEqual(expectedReportChange());
+    const edited = iterator.next();
+    githubRequestMock.mockResolvedValue({
+      ...githubComment(201, 'Canonical reporter edit'),
+      user: { login: 'feedback[bot]', type: 'Bot' },
+    });
+    await importFeedbackGithubComment({ ...job, commentId: 201 });
+    expect(await edited).toEqual(expectedReportChange());
+    const pending = iterator.next();
+    const second = await mutations.sendAppBugReportMessage(
+      null,
+      { input: { ...input, body: 'More details', clientMutationId: randomUUID() } },
+      ctx(reporter),
+    );
+    expect(await pending).toEqual(expectedReportChange());
+    const failed = iterator.next();
+    const work = vi.fn().mockResolvedValue('worker');
+    await startFeedbackGithubConversations({ work } as unknown as PgBoss);
+    const worker = work.mock.calls.find((call) => call[0] === 'feedback-github-comment')?.[2] as (
+      jobs: JobWithMetadata<{ messageId: string }>[],
+    ) => Promise<void>;
+    githubRequestMock.mockRejectedValue(new Error('GitHub unavailable'));
+    await expect(
+      worker([
+        { data: { messageId: second.id }, retryCount: 20, retryLimit: 20 } as unknown as JobWithMetadata<{
+          messageId: string;
+        }>,
+      ]),
+    ).rejects.toThrow('GitHub unavailable');
+    expect(await failed).toEqual(expectedReportChange());
+    const retried = iterator.next();
+    expect((await mutations.retryAppBugReportMessage(null, { id: second.id }, ctx(reporter))).deliveryStatus).toBe(
+      'pending',
+    );
+    expect(await retried).toEqual(expectedReportChange());
+  });
+  it('filters forged recipients, reassigned reports and rating-source rows before every yield', async () => {
+    const { next } = await openReportChanges();
+    const foreign = await report(outsider, { githubIssueNumber: 4712 });
+    const own = await report(reporter, { githubIssueNumber: 4713 });
+    const rating = await report(reporter, { source: 'prompt', rating: 5 });
+    pubsub.publishAppBugReportChanged(reporter, { reportId: String(foreign.id) });
+    pubsub.publishAppBugReportChanged(outsider, { reportId: String(own.id) });
+    pubsub.publishAppBugReportChanged(reporter, { reportId: String(rating.id) });
+    await db.update(appFeedback).set({ userId: outsider }).where(eq(appFeedback.id, activeReport.id));
+    pubsub.publishAppBugReportChanged(reporter, { reportId: String(activeReport.id) });
+    pubsub.publishAppBugReportChanged(reporter, { reportId: String(own.id) });
+    expect(await next).toEqual({ done: false, value: { appBugReportChanged: { reportId: String(own.id) } } });
+  });
+  it('filters account-deleted reports and releases a quiet pending subscription', async () => {
+    const { iterator, next } = await openReportChanges();
+    await db.delete(users).where(eq(users.id, reporter));
+    pubsub.publishAppBugReportChanged(reporter, { reportId: String(activeReport.id) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await iterator.return();
+    expect(await next).toMatchObject({ done: true });
+    expect(pubsub.getRuntimeStats().appBugReport.subscribers).toBe(0);
+  });
+  it('cancels during an ownership lookup without a late yield or listener leak', async () => {
+    const { iterator, next } = await openReportChanges();
+    let locked!: () => void;
+    let release!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const proceed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lock = db.transaction(async (transaction) => {
+      await transaction.execute(sql`LOCK TABLE app_feedback IN ACCESS EXCLUSIVE MODE`);
+      locked();
+      await proceed;
+    });
+    await acquired;
+    try {
+      pubsub.publishAppBugReportChanged(reporter, { reportId: String(activeReport.id) });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await iterator.return();
+      expect(await next).toMatchObject({ done: true });
+      expect(pubsub.getRuntimeStats().appBugReport.subscribers).toBe(0);
+    } finally {
+      release();
+      await lock;
+    }
+    expect(await iterator.next()).toMatchObject({ done: true });
+  });
+  it('keeps the ordinary notification stream restricted to persisted visible inbox rows', async () => {
+    const iterator = socialNotificationSubscriptions.notificationReceived.subscribe(null, {}, ctx(reporter));
+    const next = iterator.next();
+    try {
+      await vi.waitFor(() => expect(pubsub.getRuntimeStats().notification.subscribers).toBe(1));
+      pubsub.publishNotificationEvent(reporter, {
+        notification: {
+          uuid: randomUUID(),
+          type: 'app_feedback_reply',
+          entityId: String(activeReport.id),
+          isRead: true,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      await importFeedbackGithubComment(job);
+      const result = await next;
+      const [stored] = await db.select().from(notifications).where(eq(notifications.recipientId, reporter));
+      expect(result).toMatchObject({
+        done: false,
+        value: { notificationReceived: { notification: { uuid: stored.uuid } } },
+      });
+    } finally {
+      await iterator.return();
+    }
   });
 });

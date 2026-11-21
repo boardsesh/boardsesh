@@ -200,6 +200,10 @@ export const feedbackTypeDefs = /* GraphQL */ `
     id: ID!
     status: AppFeedbackStatus!
   }
+  type AppBugReportChangedEvent {
+    reportId: ID!
+  }
+
   enum AppBugReportMessageDeliveryStatus {
     pending
     sent

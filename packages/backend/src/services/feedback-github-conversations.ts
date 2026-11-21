@@ -50,16 +50,7 @@ function reporterCommentBody(body: string, markerId: string): string {
     .trim();
 }
 function cacheChangeEvent(recipientId: string, message: typeof appFeedbackMessages.$inferSelect) {
-  return {
-    recipientId,
-    notification: {
-      uuid: message.notificationUuid,
-      type: 'app_feedback_reply' as const,
-      entityId: String(message.reportId),
-      createdAt: message.createdAt,
-      isRead: true,
-    },
-  };
+  return { recipientId, reportId: String(message.reportId) };
 }
 
 async function requiredToken() {
@@ -240,9 +231,13 @@ export async function importFeedbackGithubComment(job: FeedbackGithubInboundJob)
       .returning();
     await refreshReportSummary(transaction, report.id);
     const notification = await enqueueFeedbackReply(transaction, report.userId, inserted);
-    return { recipientId: report.userId, notification };
+    return { recipientId: report.userId, reportId: String(report.id), notification };
   });
-  if (event) pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
+  if (event) {
+    if ('notification' in event)
+      pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
+    pubsub.publishAppBugReportChanged(event.recipientId, { reportId: event.reportId });
+  }
 }
 
 /** Durable, idempotent app -> GitHub publishing. Marker contains no account identity. */
@@ -335,7 +330,7 @@ export async function publishFeedbackGithubComment(messageId: string): Promise<v
     await refreshReportSummary(transaction, report.id);
     return cacheChangeEvent(report.userId, message);
   });
-  if (event) pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
+  if (event) pubsub.publishAppBugReportChanged(event.recipientId, { reportId: event.reportId });
 }
 
 export type FeedbackGithubIssueJob = { reportId: string } | { issueNumber: number; repository: string };
@@ -481,16 +476,7 @@ export async function refreshFeedbackGithubIssue(job: FeedbackGithubIssueJob): P
       .returning({ userId: appFeedback.userId });
     return updated?.userId ? { recipientId: updated.userId, reportId: String(report.id) } : null;
   });
-  if (event)
-    pubsub.publishNotificationEvent(event.recipientId, {
-      notification: {
-        uuid: randomUUID(),
-        type: 'app_feedback_reply',
-        entityId: event.reportId,
-        isRead: true,
-        createdAt: new Date().toISOString(),
-      },
-    });
+  if (event) pubsub.publishAppBugReportChanged(event.recipientId, { reportId: event.reportId });
 }
 
 export async function startFeedbackGithubConversations(boss: PgBoss): Promise<void> {
@@ -509,8 +495,8 @@ export async function startFeedbackGithubConversations(boss: PgBoss): Promise<vo
         try {
           await publishFeedbackGithubComment(job.data.messageId);
         } catch (error) {
-          if (job.retryCount >= job.retryLimit)
-            await db
+          if (job.retryCount >= job.retryLimit) {
+            const [failed] = await db
               .update(appFeedbackMessages)
               .set({ deliveryStatus: 'failed' })
               .where(
@@ -518,7 +504,17 @@ export async function startFeedbackGithubConversations(boss: PgBoss): Promise<vo
                   eq(appFeedbackMessages.id, BigInt(job.data.messageId)),
                   isNull(appFeedbackMessages.githubCommentId),
                 ),
-              );
+              )
+              .returning({ reportId: appFeedbackMessages.reportId });
+            if (failed) {
+              const [owner] = await db
+                .select({ userId: appFeedback.userId })
+                .from(appFeedback)
+                .where(eq(appFeedback.id, failed.reportId))
+                .limit(1);
+              if (owner?.userId) pubsub.publishAppBugReportChanged(owner.userId, { reportId: String(failed.reportId) });
+            }
+          }
           throw error;
         }
       }

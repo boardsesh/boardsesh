@@ -343,6 +343,11 @@ export type AppBugReport = {
   status: AppFeedbackStatus;
 };
 
+export type AppBugReportChangedEvent = {
+  __typename?: 'AppBugReportChangedEvent';
+  reportId: Scalars['ID']['output'];
+};
+
 export type AppBugReportConnection = {
   __typename?: 'AppBugReportConnection';
   endCursor?: Maybe<Scalars['ID']['output']>;
@@ -12676,6 +12681,11 @@ export type SubmitQaVerdictInput = {
 export type Subscription = {
   __typename?: 'Subscription';
   /**
+   * Changes to the signed-in reporter's bug reports, including edits, withdrawals
+   * and GitHub issue status. Ownership is rechecked before every event.
+   */
+  appBugReportChanged: AppBugReportChangedEvent;
+  /**
    * Subscribe to the live "now on the wall" feed for a shared board (board_id
    * resolved from the BLE serial). Membership-free; the board's policy decides.
    * The board id alone is the no-link reading (ids can be counted); pass
@@ -13837,6 +13847,7 @@ export type ResolversTypes = ResolversObject<{
   AnalyticsConsent: ResolverTypeWrapper<AnalyticsConsent>;
   Angle: ResolverTypeWrapper<Angle>;
   AppBugReport: ResolverTypeWrapper<AppBugReport>;
+  AppBugReportChangedEvent: ResolverTypeWrapper<AppBugReportChangedEvent>;
   AppBugReportConnection: ResolverTypeWrapper<AppBugReportConnection>;
   AppBugReportMessage: ResolverTypeWrapper<AppBugReportMessage>;
   AppBugReportMessageAuthorRole: AppBugReportMessageAuthorRole;
@@ -14468,6 +14479,7 @@ export type ResolversParentTypes = ResolversObject<{
   AnalyticsConsent: AnalyticsConsent;
   Angle: Angle;
   AppBugReport: AppBugReport;
+  AppBugReportChangedEvent: AppBugReportChangedEvent;
   AppBugReportConnection: AppBugReportConnection;
   AppBugReportMessage: AppBugReportMessage;
   AppBugReportMessageConnection: AppBugReportMessageConnection;
@@ -15209,6 +15221,15 @@ export type AppBugReportResolvers<
   lastMessagePreview?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   screenshotUrls?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<ResolversTypes['AppFeedbackStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppBugReportChangedEventResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppBugReportChangedEvent'] =
+    ResolversParentTypes['AppBugReportChangedEvent'],
+> = ResolversObject<{
+  reportId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21649,6 +21670,12 @@ export type SubscriptionResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Subscription'] = ResolversParentTypes['Subscription'],
 > = ResolversObject<{
+  appBugReportChanged?: SubscriptionResolver<
+    ResolversTypes['AppBugReportChangedEvent'],
+    'appBugReportChanged',
+    ParentType,
+    ContextType
+  >;
   boardNowPlaying?: SubscriptionResolver<
     ResolversTypes['BoardPresenceEvent'],
     'boardNowPlaying',
@@ -22102,6 +22129,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   AnalyticsConsent?: AnalyticsConsentResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;
   AppBugReport?: AppBugReportResolvers<ContextType>;
+  AppBugReportChangedEvent?: AppBugReportChangedEventResolvers<ContextType>;
   AppBugReportConnection?: AppBugReportConnectionResolvers<ContextType>;
   AppBugReportMessage?: AppBugReportMessageResolvers<ContextType>;
   AppBugReportMessageConnection?: AppBugReportMessageConnectionResolvers<ContextType>;

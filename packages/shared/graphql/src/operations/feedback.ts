@@ -251,3 +251,14 @@ export type RetryAppBugReportMessageMutationVariables = { id: string };
 export type RetryAppBugReportMessageMutationResponse = {
   retryAppBugReportMessage: import('@boardsesh/shared-schema').AppBugReportMessage;
 };
+
+export const APP_BUG_REPORT_CHANGED = gql`
+  subscription AppBugReportChanged {
+    appBugReportChanged {
+      reportId
+    }
+  }
+`;
+export type AppBugReportChangedSubscriptionResponse = {
+  appBugReportChanged: import('@boardsesh/shared-schema').AppBugReportChangedEvent;
+};

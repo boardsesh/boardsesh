@@ -46,6 +46,12 @@ bot-posted reporter replies. Removing the staff marker withdraws that message
 from the app. The original GitHub timestamps determine the conversation order.
 The app refreshes focused conversations to reconcile missed live events.
 
+Status changes, comment edits and withdrawals, and reply delivery updates also
+refresh report history, conversations, and the bell through a dedicated
+authenticated subscription. Each event rechecks current report ownership. This
+stream works even when a change has no visible notification row; the notification
+stream keeps its existing persistence and privacy checks.
+
 GitHub does not automatically redeliver failed webhooks. Opening a report also
 requests a complete comment reconciliation, throttled to one refresh per report
 per 30 seconds. This recovers missed replies, edits, and deletions through the

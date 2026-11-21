@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { AppBugReport, AppBugReportMessage, ConnectionContext } from '@boardsesh/shared-schema';
 import { appFeedback, appFeedbackMessages, users } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
+import { pubsub } from '../../../pubsub';
 import {
   feedbackIssueMatches,
   requestFeedbackGithubIssueRefresh,
@@ -187,7 +188,7 @@ export const feedbackConversationMutations = {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20, 'retryAppBugReportMessage');
     const messageId = validateInput(AppBugReportIdSchema, id, 'id');
-    return db.transaction(async (transaction) => {
+    const result = await db.transaction(async (transaction) => {
       const [message] = await transaction
         .select()
         .from(appFeedbackMessages)
@@ -225,6 +226,8 @@ export const feedbackConversationMutations = {
       if (!jobId) throw new Error('GITHUB_COMMENT_ENQUEUE_FAILED');
       return mapMessage({ ...message, deliveryStatus: 'pending' });
     });
+    pubsub.publishAppBugReportChanged(ctx.userId!, { reportId: result.reportId });
+    return result;
   },
   sendAppBugReportMessage: async (
     _: unknown,
@@ -305,6 +308,7 @@ export const feedbackConversationMutations = {
       if (!jobId) throw new Error('GITHUB_COMMENT_ENQUEUE_FAILED');
       return mapMessage(inserted);
     });
+    pubsub.publishAppBugReportChanged(userId, { reportId: result.reportId });
     return result;
   },
 };
