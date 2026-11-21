@@ -33,6 +33,7 @@ import {
   type GpuBokehSwapClimbs,
 } from '../../modules/frosted-bokeh-gpu/src/index';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
+import { gradientBackground } from '../lib/gradient-background';
 import type { BoardSwapFrame } from './play-drawer/swap-look';
 import { INITIAL_FROST_SWAP_FRAME, useFrostSwapFrame } from './use-frost-swap-frame';
 
@@ -123,7 +124,7 @@ function BokehBlobs({
             top: blob.y - blob.r,
             width: blob.r * 2,
             height: blob.r * 2,
-            experimental_backgroundImage: blob.gradient,
+            ...gradientBackground(blob.gradient),
             mixBlendMode: layer.blend === 'normal' ? undefined : 'screen',
           }}
         />

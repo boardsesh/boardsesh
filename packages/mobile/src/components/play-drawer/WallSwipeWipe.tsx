@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { withAlpha } from '../../theme/colors';
+import { gradientBackground } from '../../lib/gradient-background';
 
 /** How far the flat fill fades in before the window's edge. */
 export const WIPE_EDGE_FEATHER = 12;
@@ -44,7 +45,7 @@ export function WallSwipeWipe({ progress, opacity, width, fill, children, rowSty
         pointerEvents="none"
         style={[
           styles.edge,
-          { experimental_backgroundImage: `linear-gradient(to right, ${clear} 0%, ${fill} 100%)` },
+          gradientBackground(`linear-gradient(to right, ${clear} 0%, ${fill} 100%)`),
           outerEdgeStyle,
         ]}
         testID="play-drawer-wall-control-wipe-edge"
