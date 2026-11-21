@@ -1,0 +1,171 @@
+{
+  "sourceHead": "4885d55177be3a1bbc6da9a46cf80c1e4338a30d",
+  "beforeSource": "4b4b34f191a1ebea1bf1f64868e0e6bc810ebd16",
+  "baseUrl": "https://localhost:3000",
+  "receipts": [
+    {
+      "phase": "before",
+      "locale": "en-US",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Boards Boardsesh works with | Boardsesh",
+      "ogTitle": "Boards Boardsesh works with | Boardsesh",
+      "twitterTitle": "Boards Boardsesh works with | Boardsesh",
+      "h1": "Boards Boardsesh works with",
+      "wordCount": 147,
+      "height": 2134.421875,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [],
+      "actions": [
+        {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter · 1",
+          "height": 44
+        },
+        {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods · 0",
+          "height": 44
+        },
+        {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/bring-your-logbook",
+          "text": "Bring your logbook",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/boards",
+      "images": [],
+      "rails": [],
+      "errors": []
+    },
+    {
+      "phase": "before",
+      "locale": "en-US",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Boards Boardsesh works with | Boardsesh",
+      "ogTitle": "Boards Boardsesh works with | Boardsesh",
+      "twitterTitle": "Boards Boardsesh works with | Boardsesh",
+      "h1": "Boards Boardsesh works with",
+      "wordCount": 147,
+      "height": 1459.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [],
+      "actions": [
+        {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter · 1",
+          "height": 44
+        },
+        {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL · 0",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods · 0",
+          "height": 44
+        },
+        {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/bring-your-logbook",
+          "text": "Bring your logbook",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/boards",
+      "images": [],
+      "rails": [],
+      "errors": []
+    }
+  ]
+}

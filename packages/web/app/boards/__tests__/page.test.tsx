@@ -1,14 +1,11 @@
-// @vitest-environment node
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
-const directory = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock('@/app/gyms/directory-data', () => ({ fetchFacetTotal: directory.fetch }));
 vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: async (namespace: string) => ({
+  getServerTranslation: async (namespace: string | readonly string[]) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),
     locale: 'en-US',
   }),
@@ -28,37 +25,63 @@ vi.mock('@/app/lib/store-button-labels.server', () => ({
 }));
 const { default: SupportedBoardsPage, generateMetadata } = await import('../page');
 
-beforeEach(() => directory.fetch.mockReset().mockResolvedValue(12));
+async function renderPage() {
+  const html = renderToStaticMarkup(await SupportedBoardsPage());
+  const renderedDocument = document.implementation.createHTMLDocument();
+  renderedDocument.body.innerHTML = html;
+  return renderedDocument;
+}
 
 describe('supported boards public entry', () => {
-  it('server-renders each catalog board with actual import choices and directory links', async () => {
-    const html = renderToStaticMarkup(await SupportedBoardsPage());
-    for (const brand of ['Kilter', 'Tension', 'MoonBoard', 'Decoy', 'Touchstone', 'Grasshopper', 'So iLL', 'Woods'])
-      expect(html).toContain(brand);
-    expect(html).toContain('MoonBoard CSV');
-    expect(html).toContain('Aurora export file');
-    expect(html).toContain('href="/gyms/kilter"');
-    expect(html).toContain('href="/gyms/moonboard"');
-    expect(html).toContain('href="/gyms?boardType=woods"');
-    expect(html).toContain('href="/spraywalls"');
-    expect(html).toContain('data-placement="board-compat"');
-    expect(directory.fetch).toHaveBeenCalledTimes(8);
-    expect(html.match(/<h1/g)).toHaveLength(1);
+  it('server-renders all 17 real layouts and a spray photo with intrinsic dimensions', async () => {
+    const document = await renderPage();
+    expect(document.querySelector('h1')?.textContent).toBe('Your board, on Boardsesh');
+    expect(document.querySelectorAll('h1')).toHaveLength(1);
+    expect(document.querySelectorAll('li[data-board]')).toHaveLength(9);
+    const images = document.querySelectorAll('li[data-board] img');
+    expect(images).toHaveLength(18);
+    for (const image of images) {
+      expect(image.getAttribute('src')).toMatch(/\.webp$/);
+      expect(Number(image.getAttribute('width'))).toBeGreaterThan(0);
+      expect(Number(image.getAttribute('height'))).toBeGreaterThan(0);
+      expect(image.getAttribute('alt')?.length).toBeGreaterThan(0);
+    }
+    expect(document.querySelectorAll('ul[role="list"]')).toHaveLength(9);
+    expect(document.querySelectorAll('ul[tabindex="0"]')).toHaveLength(3);
+    expect(document.querySelector('#kilter figcaption')?.textContent).toBe('Original');
+    expect([...document.querySelectorAll('#tension figcaption')].map((caption) => caption.textContent)).toEqual([
+      'Board 2 Mirror',
+      'Board 2 Spray',
+      'Original',
+    ]);
   });
 
-  it('keeps compatibility readable without publishing false zeroes during a directory outage', async () => {
-    directory.fetch.mockResolvedValue(null);
-    const html = renderToStaticMarkup(await SupportedBoardsPage());
-    expect(html).toContain('href="/gyms/kilter"');
-    expect(html).not.toContain(' · 0');
-    expect(html).toContain('Light climbs from the iOS or Android app.');
+  it('names each board once in image descriptions while retaining layout generations', async () => {
+    const document = await renderPage();
+    expect(document.querySelector('#kilter img')?.getAttribute('alt')).toBe('Original on Kilter');
+    expect(document.querySelector('#tension img')?.getAttribute('alt')).toBe('Board 2 Mirror on Tension');
+    expect(document.querySelector('#moonboard img')?.getAttribute('alt')).toBe('Mini 2025 on MoonBoard');
   });
 
-  it('declares canonical, social and translated alternate metadata for the new search surface', async () => {
+  it('keeps crawlable useful actions and one global logbook link', async () => {
+    const document = await renderPage();
+    for (const href of ['/gyms/kilter', '/gyms/tension', '/gyms/moonboard', '/gyms?boardType=woods', '/spraywalls']) {
+      expect(document.querySelector(`a[href="${href}"]`)).not.toBeNull();
+    }
+    expect(document.querySelector('[data-placement="board-compat"]')).not.toBeNull();
+    expect(document.querySelectorAll('a[href="/bring-your-logbook"]')).toHaveLength(1);
+  });
+
+  it('declares canonical, social and all six translated alternate metadata', async () => {
     const metadata = await generateMetadata();
+    expect(metadata.title).toEqual({ absolute: 'Supported boards | Boardsesh' });
+    expect(metadata.openGraph).toMatchObject({ title: 'Supported boards | Boardsesh' });
+    expect(metadata.twitter).toMatchObject({ title: 'Supported boards | Boardsesh' });
     expect(metadata.alternates?.canonical).toContain('/boards');
     expect(metadata.openGraph).toBeTruthy();
     expect(metadata.twitter).toBeTruthy();
-    expect(metadata.alternates?.languages).toHaveProperty('es');
+    for (const locale of ['en-US', 'es', 'fr', 'de', 'it', 'zh-CN']) {
+      expect(metadata.alternates?.languages).toHaveProperty(locale);
+    }
   });
 });

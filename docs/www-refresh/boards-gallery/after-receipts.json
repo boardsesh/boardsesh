@@ -1,0 +1,5875 @@
+{
+  "sourceHead": "4885d55177be3a1bbc6da9a46cf80c1e4338a30d",
+  "beforeSource": "4b4b34f191a1ebea1bf1f64868e0e6bc810ebd16",
+  "baseUrl": "https://localhost:3000",
+  "receipts": [
+    {
+      "phase": "after",
+      "locale": "en-US",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Supported boards | Boardsesh",
+      "ogTitle": "Supported boards | Boardsesh",
+      "twitterTitle": "Supported boards | Boardsesh",
+      "h1": "Your board, on Boardsesh",
+      "wordCount": 116,
+      "height": 2866.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2283.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2283.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Take a clear photo"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter",
+          "height": 44
+        },
+        {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension",
+          "height": 44
+        },
+        {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy",
+          "height": 48
+        },
+        {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone",
+          "height": 48
+        },
+        {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper",
+          "height": 48
+        },
+        {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL",
+          "height": 48
+        },
+        {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods",
+          "height": 48
+        },
+        {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 48
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/bring-your-logbook",
+          "text": "Bring your logbook",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/boards",
+      "images": [
+        {
+          "alt": "Original on Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Homewall on Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Board 2 Mirror on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Board 2 Spray on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Original on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Mini 2025 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2024 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Mini 2020 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Masters 2019 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Masters 2017 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2016 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2010 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Dungeon Trainer on Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Winter 2020 on Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2020 on Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Summer 2024 on So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Original on Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spray wall with climbing holds",
+          "board": "spray",
+          "brand": "Spray wall",
+          "caption": "Take a clear photo",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "3px",
+            "style": "solid",
+            "color": "rgb(231, 226, 240)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "en-US",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Supported boards | Boardsesh",
+      "ogTitle": "Supported boards | Boardsesh",
+      "twitterTitle": "Supported boards | Boardsesh",
+      "h1": "Your board, on Boardsesh",
+      "wordCount": 116,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["Take a clear photo"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter",
+          "height": 44
+        },
+        {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension",
+          "height": 44
+        },
+        {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL",
+          "height": 44
+        },
+        {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods",
+          "height": 44
+        },
+        {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/bring-your-logbook",
+          "text": "Bring your logbook",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/boards",
+      "images": [
+        {
+          "alt": "Original on Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Homewall on Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Board 2 Mirror on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Board 2 Spray on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Original on Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Mini 2025 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2024 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Mini 2020 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Masters 2019 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Masters 2017 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2016 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2010 on MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Dungeon Trainer on Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Winter 2020 on Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "2020 on Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Summer 2024 on So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Original on Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spray wall with climbing holds",
+          "board": "spray",
+          "brand": "Spray wall",
+          "caption": "Take a clear photo",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "es",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Plafones compatibles | Boardsesh",
+      "ogTitle": "Plafones compatibles | Boardsesh",
+      "twitterTitle": "Plafones compatibles | Boardsesh",
+      "h1": "Tu plafón, en Boardsesh",
+      "wordCount": 113,
+      "height": 2938.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1926.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1926.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2331.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2331.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Haz una foto clara"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/es/gyms/kilter",
+          "text": "Encuentra un rocódromo con Kilter",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms/tension",
+          "text": "Encuentra un rocódromo con Tension",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms/moonboard",
+          "text": "Encuentra un rocódromo con MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=decoy",
+          "text": "Encuentra un rocódromo con Decoy",
+          "height": 72
+        },
+        {
+          "href": "/es/gyms?boardType=touchstone",
+          "text": "Encuentra un rocódromo con Touchstone",
+          "height": 72
+        },
+        {
+          "href": "/es/gyms?boardType=grasshopper",
+          "text": "Encuentra un rocódromo con Grasshopper",
+          "height": 72
+        },
+        {
+          "href": "/es/gyms?boardType=soill",
+          "text": "Encuentra un rocódromo con So iLL",
+          "height": 72
+        },
+        {
+          "href": "/es/gyms?boardType=woods",
+          "text": "Encuentra un rocódromo con Woods",
+          "height": 72
+        },
+        {
+          "href": "/es/spraywalls",
+          "text": "Configura tu Spraywall",
+          "height": 48
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/es/bring-your-logbook",
+          "text": "Trae tu historial",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/es/boards",
+      "images": [
+        {
+          "alt": "Layout Original de Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Homewall de Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Mirror de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Spray de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2025 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2024 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2020 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2019 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2017 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2016 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2010 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Dungeon Trainer de Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Winter 2020 de Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2020 de Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Summer 2024 de So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original de Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall con presas",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Haz una foto clara",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "es",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Plafones compatibles | Boardsesh",
+      "ogTitle": "Plafones compatibles | Boardsesh",
+      "twitterTitle": "Plafones compatibles | Boardsesh",
+      "h1": "Tu plafón, en Boardsesh",
+      "wordCount": 113,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["Haz una foto clara"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/es/gyms/kilter",
+          "text": "Encuentra un rocódromo con Kilter",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms/tension",
+          "text": "Encuentra un rocódromo con Tension",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms/moonboard",
+          "text": "Encuentra un rocódromo con MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=decoy",
+          "text": "Encuentra un rocódromo con Decoy",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=touchstone",
+          "text": "Encuentra un rocódromo con Touchstone",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=grasshopper",
+          "text": "Encuentra un rocódromo con Grasshopper",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=soill",
+          "text": "Encuentra un rocódromo con So iLL",
+          "height": 44
+        },
+        {
+          "href": "/es/gyms?boardType=woods",
+          "text": "Encuentra un rocódromo con Woods",
+          "height": 44
+        },
+        {
+          "href": "/es/spraywalls",
+          "text": "Configura tu Spraywall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/es/bring-your-logbook",
+          "text": "Trae tu historial",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/es/boards",
+      "images": [
+        {
+          "alt": "Layout Original de Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Homewall de Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Mirror de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Spray de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original de Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2025 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2024 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2020 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2019 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2017 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2016 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2010 de MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Dungeon Trainer de Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Winter 2020 de Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2020 de Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Summer 2024 de So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original de Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall con presas",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Haz una foto clara",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "fr",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Boards compatibles | Boardsesh",
+      "ogTitle": "Boards compatibles | Boardsesh",
+      "twitterTitle": "Boards compatibles | Boardsesh",
+      "h1": "Ta board, sur Boardsesh",
+      "wordCount": 111,
+      "height": 2887.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2283.375,
+          "width": 163,
+          "height": 386,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2283.375,
+          "width": 163,
+          "height": 386,
+          "captions": ["Prenez une photo nette"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/fr/gyms/kilter",
+          "text": "Trouver une salle avec Kilter",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms/tension",
+          "text": "Trouver une salle avec Tension",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms/moonboard",
+          "text": "Trouver une salle avec MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=decoy",
+          "text": "Trouver une salle avec Decoy",
+          "height": 48
+        },
+        {
+          "href": "/fr/gyms?boardType=touchstone",
+          "text": "Trouver une salle avec Touchstone",
+          "height": 48
+        },
+        {
+          "href": "/fr/gyms?boardType=grasshopper",
+          "text": "Trouver une salle avec Grasshopper",
+          "height": 48
+        },
+        {
+          "href": "/fr/gyms?boardType=soill",
+          "text": "Trouver une salle avec So iLL",
+          "height": 48
+        },
+        {
+          "href": "/fr/gyms?boardType=woods",
+          "text": "Trouver une salle avec Woods",
+          "height": 48
+        },
+        {
+          "href": "/fr/spraywalls",
+          "text": "Configurer votre Spraywall",
+          "height": 48
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/fr/bring-your-logbook",
+          "text": "Importer votre carnet",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/fr/boards",
+      "images": [
+        {
+          "alt": "Disposition des prises Original sur Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Homewall sur Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Board 2 Mirror sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Board 2 Spray sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Original sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Mini 2025 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2024 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Mini 2020 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Masters 2019 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Masters 2017 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2016 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2010 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Dungeon Trainer sur Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Winter 2020 sur Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2020 sur Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Summer 2024 sur So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Original sur Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall avec ses prises",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Prenez une photo nette",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "3px",
+            "style": "solid",
+            "color": "rgb(231, 226, 240)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "fr",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Boards compatibles | Boardsesh",
+      "ogTitle": "Boards compatibles | Boardsesh",
+      "twitterTitle": "Boards compatibles | Boardsesh",
+      "h1": "Ta board, sur Boardsesh",
+      "wordCount": 111,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["Prenez une photo nette"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/fr/gyms/kilter",
+          "text": "Trouver une salle avec Kilter",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms/tension",
+          "text": "Trouver une salle avec Tension",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms/moonboard",
+          "text": "Trouver une salle avec MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=decoy",
+          "text": "Trouver une salle avec Decoy",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=touchstone",
+          "text": "Trouver une salle avec Touchstone",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=grasshopper",
+          "text": "Trouver une salle avec Grasshopper",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=soill",
+          "text": "Trouver une salle avec So iLL",
+          "height": 44
+        },
+        {
+          "href": "/fr/gyms?boardType=woods",
+          "text": "Trouver une salle avec Woods",
+          "height": 44
+        },
+        {
+          "href": "/fr/spraywalls",
+          "text": "Configurer votre Spraywall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/fr/bring-your-logbook",
+          "text": "Importer votre carnet",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/fr/boards",
+      "images": [
+        {
+          "alt": "Disposition des prises Original sur Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Homewall sur Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Board 2 Mirror sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Board 2 Spray sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Original sur Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Mini 2025 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2024 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Mini 2020 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Masters 2019 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Masters 2017 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2016 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2010 sur MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Dungeon Trainer sur Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Winter 2020 sur Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises 2020 sur Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Summer 2024 sur So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Disposition des prises Original sur Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall avec ses prises",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Prenez une photo nette",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "de",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Unterstützte Boards | Boardsesh",
+      "ogTitle": "Unterstützte Boards | Boardsesh",
+      "twitterTitle": "Unterstützte Boards | Boardsesh",
+      "h1": "Dein Board auf Boardsesh",
+      "wordCount": 109,
+      "height": 2887.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2283.375,
+          "width": 163,
+          "height": 386,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2283.375,
+          "width": 163,
+          "height": 386,
+          "captions": ["Mach ein deutliches Foto"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/de/gyms/kilter",
+          "text": "Finde eine Halle mit Kilter",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms/tension",
+          "text": "Finde eine Halle mit Tension",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms/moonboard",
+          "text": "Finde eine Halle mit MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=decoy",
+          "text": "Finde eine Halle mit Decoy",
+          "height": 48
+        },
+        {
+          "href": "/de/gyms?boardType=touchstone",
+          "text": "Finde eine Halle mit Touchstone",
+          "height": 48
+        },
+        {
+          "href": "/de/gyms?boardType=grasshopper",
+          "text": "Finde eine Halle mit Grasshopper",
+          "height": 48
+        },
+        {
+          "href": "/de/gyms?boardType=soill",
+          "text": "Finde eine Halle mit So iLL",
+          "height": 48
+        },
+        {
+          "href": "/de/gyms?boardType=woods",
+          "text": "Finde eine Halle mit Woods",
+          "height": 48
+        },
+        {
+          "href": "/de/spraywalls",
+          "text": "Deine Spraywall einrichten",
+          "height": 48
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/de/bring-your-logbook",
+          "text": "Logbuch übernehmen",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/de/boards",
+      "images": [
+        {
+          "alt": "Griffanordnung Original am Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Homewall am Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Board 2 Mirror am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Board 2 Spray am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Original am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Mini 2025 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2024 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Mini 2020 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Masters 2019 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Masters 2017 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2016 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2010 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Dungeon Trainer am Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Winter 2020 am Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2020 am Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Summer 2024 am So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Original am Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall mit Klettergriffen",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Mach ein deutliches Foto",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "de",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Unterstützte Boards | Boardsesh",
+      "ogTitle": "Unterstützte Boards | Boardsesh",
+      "twitterTitle": "Unterstützte Boards | Boardsesh",
+      "h1": "Dein Board auf Boardsesh",
+      "wordCount": 109,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["Mach ein deutliches Foto"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/de/gyms/kilter",
+          "text": "Finde eine Halle mit Kilter",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms/tension",
+          "text": "Finde eine Halle mit Tension",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms/moonboard",
+          "text": "Finde eine Halle mit MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=decoy",
+          "text": "Finde eine Halle mit Decoy",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=touchstone",
+          "text": "Finde eine Halle mit Touchstone",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=grasshopper",
+          "text": "Finde eine Halle mit Grasshopper",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=soill",
+          "text": "Finde eine Halle mit So iLL",
+          "height": 44
+        },
+        {
+          "href": "/de/gyms?boardType=woods",
+          "text": "Finde eine Halle mit Woods",
+          "height": 44
+        },
+        {
+          "href": "/de/spraywalls",
+          "text": "Deine Spraywall einrichten",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/de/bring-your-logbook",
+          "text": "Logbuch übernehmen",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/de/boards",
+      "images": [
+        {
+          "alt": "Griffanordnung Original am Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Homewall am Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Board 2 Mirror am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Board 2 Spray am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Original am Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Mini 2025 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2024 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Mini 2020 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Masters 2019 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Masters 2017 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2016 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2010 am MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Dungeon Trainer am Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Winter 2020 am Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung 2020 am Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Summer 2024 am So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Griffanordnung Original am Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall mit Klettergriffen",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Mach ein deutliches Foto",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "it",
+      "width": 390,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Pannelli compatibili | Boardsesh",
+      "ogTitle": "Pannelli compatibili | Boardsesh",
+      "twitterTitle": "Pannelli compatibili | Boardsesh",
+      "h1": "Il tuo pannello, su Boardsesh",
+      "wordCount": 116,
+      "height": 2866.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1902.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2283.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2283.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Scatta una foto nitida"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/it/gyms/kilter",
+          "text": "Trova una palestra con Kilter",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms/tension",
+          "text": "Trova una palestra con Tension",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms/moonboard",
+          "text": "Trova una palestra con MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=decoy",
+          "text": "Trova una palestra con Decoy",
+          "height": 48
+        },
+        {
+          "href": "/it/gyms?boardType=touchstone",
+          "text": "Trova una palestra con Touchstone",
+          "height": 48
+        },
+        {
+          "href": "/it/gyms?boardType=grasshopper",
+          "text": "Trova una palestra con Grasshopper",
+          "height": 48
+        },
+        {
+          "href": "/it/gyms?boardType=soill",
+          "text": "Trova una palestra con So iLL",
+          "height": 48
+        },
+        {
+          "href": "/it/gyms?boardType=woods",
+          "text": "Trova una palestra con Woods",
+          "height": 48
+        },
+        {
+          "href": "/it/spraywalls",
+          "text": "Configura la tua Spraywall",
+          "height": 48
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/it/bring-your-logbook",
+          "text": "Porta il tuo diario",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/it/boards",
+      "images": [
+        {
+          "alt": "Layout Original di Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Homewall di Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Mirror di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Spray di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2025 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2024 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2020 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2019 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2017 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2016 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2010 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Dungeon Trainer di Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Winter 2020 di Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2020 di Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Summer 2024 di So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original di Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall con prese",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Scatta una foto nitida",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "it",
+      "width": 1440,
+      "localeIntroDismissed": false,
+      "status": 200,
+      "documentTitle": "Pannelli compatibili | Boardsesh",
+      "ogTitle": "Pannelli compatibili | Boardsesh",
+      "twitterTitle": "Pannelli compatibili | Boardsesh",
+      "h1": "Il tuo pannello, su Boardsesh",
+      "wordCount": 116,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["Scatta una foto nitida"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/it/gyms/kilter",
+          "text": "Trova una palestra con Kilter",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms/tension",
+          "text": "Trova una palestra con Tension",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms/moonboard",
+          "text": "Trova una palestra con MoonBoard",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=decoy",
+          "text": "Trova una palestra con Decoy",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=touchstone",
+          "text": "Trova una palestra con Touchstone",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=grasshopper",
+          "text": "Trova una palestra con Grasshopper",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=soill",
+          "text": "Trova una palestra con So iLL",
+          "height": 44
+        },
+        {
+          "href": "/it/gyms?boardType=woods",
+          "text": "Trova una palestra con Woods",
+          "height": 44
+        },
+        {
+          "href": "/it/spraywalls",
+          "text": "Configura la tua Spraywall",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/it/bring-your-logbook",
+          "text": "Porta il tuo diario",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/it/boards",
+      "images": [
+        {
+          "alt": "Layout Original di Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Homewall di Kilter",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Mirror di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Board 2 Spray di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original di Tension",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2025 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2024 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Mini 2020 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2019 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Masters 2017 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2016 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2010 di MoonBoard",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Dungeon Trainer di Decoy",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Winter 2020 di Touchstone",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout 2020 di Grasshopper",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Summer 2024 di So iLL",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Layout Original di Woods",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Spraywall con prese",
+          "board": "spray",
+          "brand": "Spraywall",
+          "caption": "Scatta una foto nitida",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "zh-CN",
+      "width": 390,
+      "localeIntroDismissed": true,
+      "status": 200,
+      "documentTitle": "支持的训练板 | Boardsesh",
+      "ogTitle": "支持的训练板 | Boardsesh",
+      "twitterTitle": "支持的训练板 | Boardsesh",
+      "h1": "你的训练板，也能用 Boardsesh",
+      "wordCount": 74,
+      "height": 2890.375,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 24,
+          "y": 258.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 24,
+          "y": 679.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 24,
+          "y": 1100.375,
+          "width": 342,
+          "height": 405,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 24,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 203,
+          "y": 1521.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 24,
+          "y": 1902.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 203,
+          "y": 1902.375,
+          "width": 163,
+          "height": 389,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 24,
+          "y": 2307.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 203,
+          "y": 2307.375,
+          "width": 163,
+          "height": 365,
+          "captions": ["拍一张清晰的照片"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/zh-CN/gyms/kilter",
+          "text": "查找设有 Kilter 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms/tension",
+          "text": "查找设有 Tension 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms/moonboard",
+          "text": "查找设有 MoonBoard 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=decoy",
+          "text": "查找设有 Decoy 的岩馆",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=touchstone",
+          "text": "查找设有 Touchstone 的岩馆",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=grasshopper",
+          "text": "查找设有 Grasshopper 的岩馆",
+          "height": 72
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=soill",
+          "text": "查找设有 So iLL 的岩馆",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=woods",
+          "text": "查找设有 Woods 的岩馆",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/spraywalls",
+          "text": "设置你的喷点墙",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/bring-your-logbook",
+          "text": "导入攀爬日志",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/zh-CN/boards",
+      "images": [
+        {
+          "alt": "Kilter 的 Original 岩点布局",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Kilter 的 Homewall 岩点布局",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Board 2 Mirror 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Board 2 Spray 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Original 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Mini 2025 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2024 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Mini 2020 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Masters 2019 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Masters 2017 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2016 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2010 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Decoy 的 Dungeon Trainer 岩点布局",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Touchstone 的 Winter 2020 岩点布局",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Grasshopper 的 2020 岩点布局",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "So iLL 的 Summer 2024 岩点布局",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Woods 的 Original 岩点布局",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "布满岩点的喷点墙",
+          "board": "spray",
+          "brand": "喷点墙",
+          "caption": "拍一张清晰的照片",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 308,
+          "scrollWidth": 430,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 122,
+          "end": 122,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "nativeTouchScroll": 122,
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "tension",
+          "clientWidth": 308,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 339,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 308,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 1207,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "phase": "after",
+      "locale": "zh-CN",
+      "width": 1440,
+      "localeIntroDismissed": true,
+      "status": 200,
+      "documentTitle": "支持的训练板 | Boardsesh",
+      "ogTitle": "支持的训练板 | Boardsesh",
+      "twitterTitle": "支持的训练板 | Boardsesh",
+      "h1": "你的训练板，也能用 Boardsesh",
+      "wordCount": 74,
+      "height": 2141.890625,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "panels": [
+        {
+          "board": "kilter",
+          "x": 152,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Original", "Homewall"]
+        },
+        {
+          "board": "tension",
+          "x": 730,
+          "y": 212.390625,
+          "width": 558,
+          "height": 413,
+          "captions": ["Board 2 Mirror", "Board 2 Spray", "Original"]
+        },
+        {
+          "board": "moonboard",
+          "x": 152,
+          "y": 645.390625,
+          "width": 1136,
+          "height": 413,
+          "captions": ["Mini 2025", "2024", "Mini 2020", "Masters 2019", "Masters 2017", "2016", "2010"]
+        },
+        {
+          "board": "decoy",
+          "x": 152,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Dungeon Trainer"]
+        },
+        {
+          "board": "touchstone",
+          "x": 537.328125,
+          "y": 1078.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Winter 2020"]
+        },
+        {
+          "board": "grasshopper",
+          "x": 922.65625,
+          "y": 1078.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["2020"]
+        },
+        {
+          "board": "soill",
+          "x": 152,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Summer 2024"]
+        },
+        {
+          "board": "woods",
+          "x": 537.328125,
+          "y": 1495.390625,
+          "width": 365.328125,
+          "height": 397,
+          "captions": ["Original"]
+        },
+        {
+          "board": "spray",
+          "x": 922.65625,
+          "y": 1495.390625,
+          "width": 365.34375,
+          "height": 397,
+          "captions": ["拍一张清晰的照片"]
+        }
+      ],
+      "actions": [
+        {
+          "href": "/zh-CN/gyms/kilter",
+          "text": "查找设有 Kilter 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms/tension",
+          "text": "查找设有 Tension 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms/moonboard",
+          "text": "查找设有 MoonBoard 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=decoy",
+          "text": "查找设有 Decoy 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=touchstone",
+          "text": "查找设有 Touchstone 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=grasshopper",
+          "text": "查找设有 Grasshopper 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=soill",
+          "text": "查找设有 So iLL 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/gyms?boardType=woods",
+          "text": "查找设有 Woods 的岩馆",
+          "height": 44
+        },
+        {
+          "href": "/zh-CN/spraywalls",
+          "text": "设置你的喷点墙",
+          "height": 44
+        },
+        {
+          "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=board-compat&mt=8",
+          "text": "App Store",
+          "height": 48
+        },
+        {
+          "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=board-compat&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dboard-compat",
+          "text": "Google Play",
+          "height": 48
+        },
+        {
+          "href": "/zh-CN/bring-your-logbook",
+          "text": "导入攀爬日志",
+          "height": 44
+        }
+      ],
+      "canonical": "https://www.boardsesh.com/zh-CN/boards",
+      "images": [
+        {
+          "alt": "Kilter 的 Original 岩点布局",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Original",
+          "src": "/images/board-gallery/kilter-1-9503a9ccf48d.webp",
+          "width": 480,
+          "height": 390,
+          "declaredWidth": "480",
+          "declaredHeight": "390",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Kilter 的 Homewall 岩点布局",
+          "board": "kilter",
+          "brand": "Kilter",
+          "caption": "Homewall",
+          "src": "/images/board-gallery/kilter-8-b2f8543e7322.webp",
+          "width": 480,
+          "height": 668,
+          "declaredWidth": "480",
+          "declaredHeight": "668",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Board 2 Mirror 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Mirror",
+          "src": "/images/board-gallery/tension-10-5f5705b0062e.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Board 2 Spray 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Board 2 Spray",
+          "src": "/images/board-gallery/tension-11-eadcdcad4579.webp",
+          "width": 480,
+          "height": 376,
+          "declaredWidth": "480",
+          "declaredHeight": "376",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Tension 的 Original 岩点布局",
+          "board": "tension",
+          "brand": "Tension",
+          "caption": "Original",
+          "src": "/images/board-gallery/tension-9-e1f327c0733c.webp",
+          "width": 480,
+          "height": 780,
+          "declaredWidth": "480",
+          "declaredHeight": "780",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Mini 2025 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2025",
+          "src": "/images/board-gallery/moonboard-7-49a9ca099574.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2024 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2024",
+          "src": "/images/board-gallery/moonboard-3-040e3260997a.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Mini 2020 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Mini 2020",
+          "src": "/images/board-gallery/moonboard-6-343d5e17d5d8.webp",
+          "width": 480,
+          "height": 512,
+          "declaredWidth": "480",
+          "declaredHeight": "512",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Masters 2019 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2019",
+          "src": "/images/board-gallery/moonboard-5-52cddbc04674.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 Masters 2017 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "Masters 2017",
+          "src": "/images/board-gallery/moonboard-4-291d4735c806.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2016 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2016",
+          "src": "/images/board-gallery/moonboard-2-c5eb2e33ff69.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "MoonBoard 的 2010 岩点布局",
+          "board": "moonboard",
+          "brand": "MoonBoard",
+          "caption": "2010",
+          "src": "/images/board-gallery/moonboard-1-bc9dfc4c8478.webp",
+          "width": 480,
+          "height": 738,
+          "declaredWidth": "480",
+          "declaredHeight": "738",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Decoy 的 Dungeon Trainer 岩点布局",
+          "board": "decoy",
+          "brand": "Decoy",
+          "caption": "Dungeon Trainer",
+          "src": "/images/board-gallery/decoy-2-5b93cf8d465c.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Touchstone 的 Winter 2020 岩点布局",
+          "board": "touchstone",
+          "brand": "Touchstone",
+          "caption": "Winter 2020",
+          "src": "/images/board-gallery/touchstone-1-fede0ec20f4e.webp",
+          "width": 480,
+          "height": 520,
+          "declaredWidth": "480",
+          "declaredHeight": "520",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Grasshopper 的 2020 岩点布局",
+          "board": "grasshopper",
+          "brand": "Grasshopper",
+          "caption": "2020",
+          "src": "/images/board-gallery/grasshopper-1-c74bc502ae39.webp",
+          "width": 480,
+          "height": 508,
+          "declaredWidth": "480",
+          "declaredHeight": "508",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "So iLL 的 Summer 2024 岩点布局",
+          "board": "soill",
+          "brand": "So iLL",
+          "caption": "Summer 2024",
+          "src": "/images/board-gallery/soill-1-c33bfce7c97b.webp",
+          "width": 480,
+          "height": 533,
+          "declaredWidth": "480",
+          "declaredHeight": "533",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "Woods 的 Original 岩点布局",
+          "board": "woods",
+          "brand": "Woods",
+          "caption": "Original",
+          "src": "/images/board-gallery/woods-1-695ff244a6b1.webp",
+          "width": 480,
+          "height": 549,
+          "declaredWidth": "480",
+          "declaredHeight": "549",
+          "objectFit": "contain",
+          "complete": true
+        },
+        {
+          "alt": "布满岩点的喷点墙",
+          "board": "spray",
+          "brand": "喷点墙",
+          "caption": "拍一张清晰的照片",
+          "src": "/images/help/spray-wall-photo.webp",
+          "width": 1752,
+          "height": 2047,
+          "declaredWidth": "1752",
+          "declaredHeight": "2047",
+          "objectFit": "contain",
+          "complete": true
+        }
+      ],
+      "rails": [
+        {
+          "board": "kilter",
+          "clientWidth": 516,
+          "scrollWidth": 516,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": false,
+          "tabIndex": -1,
+          "nativeKeys": [true, true, true, true]
+        },
+        {
+          "board": "tension",
+          "clientWidth": 516,
+          "scrollWidth": 647,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 131,
+          "end": 131,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        },
+        {
+          "board": "moonboard",
+          "clientWidth": 1094,
+          "scrollWidth": 1515,
+          "firstCardWidth": 205,
+          "scrollBehavior": "auto",
+          "overflow": true,
+          "nextScroll": 217,
+          "end": 421,
+          "start": 0,
+          "buttonStyles": [
+            {
+              "disabled": true,
+              "color": "rgba(255, 255, 255, 0.3)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            },
+            {
+              "disabled": false,
+              "color": "rgb(151, 132, 255)",
+              "borderColor": "rgb(131, 122, 156)",
+              "opacity": "1"
+            }
+          ],
+          "buttonFocus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          },
+          "focus": {
+            "visible": true,
+            "width": "2px",
+            "style": "solid",
+            "color": "rgb(151, 132, 255)"
+          }
+        }
+      ],
+      "errors": []
+    }
+  ]
+}
