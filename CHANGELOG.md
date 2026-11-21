@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- See your climb's colours in the frosted driving button in your browser. ([#7974](https://github.com/boardsesh/boardsesh/pull/7974))
 - Browse climbs with Previous and Next beside Tick when using a mouse. ([#7963](https://github.com/boardsesh/boardsesh/pull/7963))
 
 ## 2026-11-20
