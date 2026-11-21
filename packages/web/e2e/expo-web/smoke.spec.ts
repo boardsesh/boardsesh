@@ -269,10 +269,7 @@ test.describe('expo-web smoke', () => {
     await locator.dispatchEvent('click');
   }
 
-  test('a browser driving the wall lights the next climb on swipe and restores the first on swipe back', async ({
-    page,
-    context,
-  }) => {
+  async function checkBrowserDriving(page: Page, input: 'mouse' | 'touch'): Promise<void> {
     const packets: number[][] = [];
     const pendingBytes: number[] = [];
     await page.exposeFunction('captureBoardWrite', (chunk: number[]) => {
@@ -384,12 +381,20 @@ test.describe('expo-web smoke', () => {
     const firstLabel = await selectedHeader.getAttribute('aria-label');
     if (!firstLabel) throw new Error('The selected climb has no header');
     const board = page.getByTestId('play-drawer-board-container');
-    const touch = await context.newCDPSession(page);
+    if (input === 'mouse') expect(new URL(page.url()).pathname).toBe('/app/climbs');
+    const touch = input === 'touch' ? await page.context().newCDPSession(page) : null;
     async function swipe(direction: 1 | -1): Promise<void> {
       const box = await board.boundingBox();
       if (!box) throw new Error('The player board has no hit area');
       const y = box.y + box.height / 2;
       const start = box.x + box.width * (direction === 1 ? 0.8 : 0.2);
+      if (!touch) {
+        await page.mouse.move(start, y);
+        await page.mouse.down();
+        await page.mouse.move(start - direction * 0.6 * box.width, y, { steps: 12 });
+        await page.mouse.up();
+        return;
+      }
       await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start, y }] });
       for (let step = 1; step <= 8; step++) {
         const x = start - (direction * box.width * 0.6 * step) / 8;
@@ -431,6 +436,26 @@ test.describe('expo-web smoke', () => {
     await swipeWhileDriving(1, third);
     await expect(control).toContainText(/0:4[3-5]/);
     await swipeWhileDriving(-1, second);
+  }
+
+  test('a browser driving the wall lights the next climb on swipe and restores the first on swipe back', async ({
+    page,
+  }) => {
+    await checkBrowserDriving(page, 'touch');
+  });
+
+  test.describe('desktop board driving', () => {
+    test.use({
+      userAgent: devices['Desktop Chrome'].userAgent,
+      viewport: { width: 1440, height: 900 },
+      contextOptions: { screen: { width: 1440, height: 900 } },
+      hasTouch: false,
+      isMobile: false,
+    });
+
+    test('dragging the board in the desktop pane lights each selected climb', async ({ page }) => {
+      await checkBrowserDriving(page, 'mouse');
+    });
   });
 
   /**
