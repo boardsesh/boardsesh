@@ -1,5 +1,12 @@
 # Branch Deploys: Comprehensive Restoration Strategy
 
+> For current React Native browser-app previews, see
+> [Expo web PR previews](./expo-web-previews.md): `pr-N.boardsesh.com`, deployed
+> only for app changes and connected to production. The homelab full-stack
+> restoration strategy below is separate; its automatic triggers remain
+> disabled. The older Expo web homelab attempt in
+> [PR #3799](https://github.com/boardsesh/boardsesh/pull/3799) remains manual.
+
 ## Current State & Problem
 
 ### Architecture Summary

@@ -341,6 +341,28 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
   });
 });
 
+void test('uses the shared app classifier for catalogue, WASM and hosting inputs', () => {
+  for (const filePath of [
+    'packages/board-constants/src/generated/boards.ts',
+    'packages/board-renderer/wasm/src/lib.rs',
+    'deploy/app-subdomain/robots.txt',
+    'scripts/lib/expo-web-inputs.mjs',
+    'scripts/lib/expo-web-preview-controller.cjs',
+    '.github/workflows/expo-web-preview.yml',
+  ]) {
+    assert.equal(classifyChangedFiles([filePath]).app, true, filePath);
+  }
+
+  for (const filePath of [
+    'packages/mobile/README.md',
+    'packages/shared/queue/src/__tests__/reducer.test.ts',
+    'packages/shared-schema/src/schema.spec.ts',
+    'deploy/app-subdomain/__tests__/headers.test.ts',
+  ]) {
+    assert.equal(classifyChangedFiles([filePath]).app, false, filePath);
+  }
+});
+
 void test('publishes cataloged static images but excludes retained board PNG sources', () => {
   assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.webp']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.png']).staticAssets, false);
