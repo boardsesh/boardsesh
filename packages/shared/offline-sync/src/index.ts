@@ -21,6 +21,17 @@
 // requests.
 
 // --- Seams -------------------------------------------------------------------
+export type {
+  ScopeDownloadContext,
+  ScopeDownloadLifecycleEvent,
+  ScopeDownloadLifecycleReporter,
+} from './sync/download-lifecycle';
+export {
+  SnapshotTransferError,
+  classifySnapshotTransferFailure,
+  isSnapshotBackgroundDecodeError,
+} from './sync/snapshot-transfer-failure';
+export type { SnapshotTransferFailure, SnapshotTransferFailureReason } from './sync/snapshot-transfer-failure';
 export type { SqlValue, SqlRunResult, SqlExecutor, OfflineDatabase, QueryInvalidator } from './database';
 export type { SyncCursorInput, SyncCursor, SyncResult, SyncDeletionRecord, SyncDeletionsResult } from './types';
 

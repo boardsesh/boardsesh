@@ -1,0 +1,1703 @@
+{
+  "projectId": 412845,
+  "collectedOn": "2026-11-21",
+  "sourceUrl": "https://us.posthog.com/project/412845/sql",
+  "issue": "https://github.com/boardsesh/boardsesh/issues/7987",
+  "classification": "Noncanonical one-off forensic audit; historical enable generations are inferred, not hardware-verified.",
+  "windowUtc": {
+    "cohortFrom": "2026-10-17T00:00:00Z",
+    "cohortToExclusive": "2026-11-14T00:00:00Z",
+    "observedToExclusive": "2026-11-21T00:00:00Z",
+    "followUpSeconds": 604800
+  },
+  "filters": {
+    "filterTestAccounts": true,
+    "properties": [
+      {
+        "type": "event",
+        "key": "environment",
+        "operator": "exact",
+        "value": "production"
+      },
+      {
+        "type": "event",
+        "key": "$os",
+        "operator": "exact",
+        "value": ["iOS", "iPadOS", "Android"]
+      },
+      {
+        "type": "hogql",
+        "key": "coalesce(properties.ota_branch, 'production') = 'production'"
+      },
+      {
+        "type": "event",
+        "key": "$app_namespace",
+        "operator": "exact",
+        "value": "com.boardsesh.app"
+      }
+    ]
+  },
+  "export": {
+    "query": "SELECT toJSONString(tuple(toString(uuid),toString(timestamp),event,distinct_id,toString(person_id),properties.scopeKey,properties.$os,properties.$app_version,properties.ota_runtime_version,properties.ota_update_id,properties.ota_is_embedded,properties.enabled,properties.trigger,properties.reason,properties.stage,properties.source)) AS record FROM events WHERE timestamp >= '2026-10-17' AND timestamp < '2026-11-21' AND event IN ('Offline Board Toggled','Offline Board Download Started','Offline Board Download Completed','Offline Board Download Failed') AND {filters} AND notEmpty(properties.scopeKey) ORDER BY timestamp,uuid LIMIT 500",
+    "keysetPredicate": "AND (timestamp, toString(uuid)) > (toDateTime64('<last timestamp>', 6, 'UTC'), '<last uuid>')",
+    "pageSize": 500,
+    "pageCounts": [500, 500, 500, 500, 500, 500, 500, 260],
+    "eventCounts": {
+      "Offline Board Toggled": 1218,
+      "Offline Board Download Started": 1155,
+      "Offline Board Download Completed": 1139,
+      "Offline Board Download Failed": 248
+    },
+    "rows": 3760,
+    "rawRecordsCommitted": false,
+    "tupleFields": [
+      "uuid",
+      "timestamp",
+      "event",
+      "clientId",
+      "personId",
+      "scopeKey",
+      "platform",
+      "nativeVersion",
+      "runtimeVersion",
+      "updateId",
+      "embedded",
+      "enabled",
+      "trigger",
+      "reason",
+      "stage",
+      "source"
+    ]
+  },
+  "semantics": [
+    "Request denominator is first observed enable per client+OS+scope until a disabled toggle, an explicit abandoned-removed/abandoned-signed-out/abandoned-disabled diagnostic, or another explicit request ID; duplicate enables are folded. An identified generation requires its matching request ID for terminal attribution; unkeyed legacy terminals cannot settle its replacement. History before 17 October is not available, so these are inferred observed generations, not a census of disabled-to-enabled transitions.",
+    "Seven days are anchored independently at the request or start timestamp. An event at exactly seven days is included, provided it precedes the overall exclusive observation boundary.",
+    "Started cohort credits the first completed event before the next start or explicit abandonment on the same identity/OS/scope. Request cohort permits restarts before completion within the same observed enable generation.",
+    "No-start has an observed enable but no captured start or terminal completion. It does not prove no work occurred: already-cached markers, consent, delivery and identity changes are unobserved.",
+    "Only explicit lifecycle state=failed is a confirmed request failure. Legacy Download Failed reports are attempt diagnostics; even unknown-exit, watermark regression and snapshot exhaustion are not terminal while paging remains possible.",
+    "All aggregate per-person and per-release results retain production/native namespace/OS/branch filters and project internal/test exclusions. No client, person, request or event identifiers are committed.",
+    "Release dimensions belong to the anchor event. A request may resume under another OTA; this is launch attribution, not proof one OTA ran for its whole lifetime."
+  ],
+  "result": {
+    "requests": {
+      "observations": 936,
+      "immature": 0,
+      "outcomes": {
+        "no-start": 37,
+        "completed": 669,
+        "abandoned": 20,
+        "confirmed-failure": 0,
+        "unknown": 210
+      },
+      "origins": {
+        "enable-event": 936
+      },
+      "triggers": {
+        "unknown": 85,
+        "adopt-confirmed": 730,
+        "owned-wall": 47,
+        "similar_climbs": 27,
+        "toggle": 24,
+        "auto-download-all": 16,
+        "download-all": 3,
+        "hold_heatmap": 2,
+        "adopt-auto": 2
+      },
+      "boards": {
+        "tension": 165,
+        "spray": 61,
+        "moonboard": 274,
+        "kilter": 415,
+        "grasshopper": 6,
+        "decoy": 7,
+        "woods": 3,
+        "touchstone": 3,
+        "soill": 2
+      },
+      "people": 709,
+      "peopleCompletingEveryObservedRequest": 473,
+      "restarts": 3,
+      "pausesObserved": 97,
+      "resumesObserved": 0,
+      "requestsWithFailureEvents": 44,
+      "cachedCompletions": 0,
+      "completionsAfterPause": 54,
+      "releases": [
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "6ced4c16-9e91-4a1f-a9c5-8b914e124e88",
+          "embedded": true,
+          "requests": 244,
+          "outcomes": {
+            "no-start": 4,
+            "completed": 140,
+            "abandoned": 3,
+            "confirmed-failure": 0,
+            "unknown": 97
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "6c9e76c2-a105-4637-add6-66fbe7e74d23",
+          "embedded": true,
+          "requests": 127,
+          "outcomes": {
+            "no-start": 4,
+            "completed": 66,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 57
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "93185d45-9be2-8eba-7440-cccf8b75be92",
+          "embedded": false,
+          "requests": 85,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 80,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "db68ab2c-eeb5-e88d-d354-d83644c15efb",
+          "embedded": false,
+          "requests": 75,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 71,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "b07eeecb-660e-7715-14d3-29950361a55e",
+          "embedded": false,
+          "requests": 61,
+          "outcomes": {
+            "no-start": 5,
+            "completed": 54,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "8c1e63fd-229c-ed5c-aca3-c1b3067516dc",
+          "embedded": false,
+          "requests": 61,
+          "outcomes": {
+            "no-start": 5,
+            "completed": 53,
+            "abandoned": 1,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "781bf1c3-961d-4bc5-9307-fc9fec6cb233",
+          "embedded": true,
+          "requests": 60,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 54,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 3
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "6c1e7e83-85d8-a9eb-48ec-5dc1e5457205",
+          "embedded": false,
+          "requests": 46,
+          "outcomes": {
+            "no-start": 4,
+            "completed": 24,
+            "abandoned": 4,
+            "confirmed-failure": 0,
+            "unknown": 14
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "316dd54a-62b9-3990-f4fe-0bac97791385",
+          "embedded": false,
+          "requests": 19,
+          "outcomes": {
+            "no-start": 3,
+            "completed": 10,
+            "abandoned": 1,
+            "confirmed-failure": 0,
+            "unknown": 5
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "fe2595b5-7295-1f66-d501-f2242e7e4ea6",
+          "embedded": false,
+          "requests": 18,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 18,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "fa716b2e-6b01-0657-4ca8-89928397d3d1",
+          "embedded": false,
+          "requests": 14,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 12,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "04db072a-0657-5371-f660-eda0764cfed5",
+          "embedded": false,
+          "requests": 13,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 7,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 6
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "0d1c41e2-b884-deaa-37f0-b0536fb7291d",
+          "embedded": false,
+          "requests": 13,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 6,
+            "abandoned": 1,
+            "confirmed-failure": 0,
+            "unknown": 5
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "4d63e0fb-0e4e-9dbb-71bb-6f4dcce40ae9",
+          "embedded": false,
+          "requests": 10,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 6,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 4
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "ab4d5aa3-b888-6a36-8275-371b73c2c4ce",
+          "embedded": false,
+          "requests": 10,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 5,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "db6e30d4e61ba5afd72bbc0b4c9f8b38da9d0570",
+          "updateId": "207cc327-58b3-4ea8-8bf8-0df168d43462",
+          "embedded": true,
+          "requests": 8,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 8,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "1e5c2708a94683a437bc4fecf3a601cd58479914",
+          "updateId": "148ac5c4-4159-dc74-4184-ae7bdc0a4ad6",
+          "embedded": false,
+          "requests": 7,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 7,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "b68bf2fd-e6aa-2a32-ab15-8028f999116d",
+          "embedded": false,
+          "requests": 7,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 4
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.3.1",
+          "runtimeVersion": "70c78454348f526db29776b8d0981489fbdde3b6",
+          "updateId": "caefc725-7834-a263-4b04-ac09529fc88c",
+          "embedded": false,
+          "requests": 5,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 5,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "c44a16ab-e4b3-9b4d-4634-fca770741d44",
+          "embedded": false,
+          "requests": 5,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "5a6030b3-bad7-210f-0412-764dab70594a",
+          "embedded": false,
+          "requests": 5,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 2,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "69a4e3e2-6a90-3d17-1f78-cba23e5b543a",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 3,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "04d5ed4f-b80c-5228-fe58-86520d592274",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "33192737-b4d2-d8e2-10f8-cfe754b8ca58",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "dd346ff4-4f15-a161-42fc-0dec09eee85d",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "1e5c2708a94683a437bc4fecf3a601cd58479914",
+          "updateId": "02ed7d6c-075d-4f4a-9aaa-ace4867078d5",
+          "embedded": true,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "6fde57b050d53b2e12df01ce0210ebf87ac187d3",
+          "updateId": "ee20589c-8745-60ff-4b58-f13c32be39e8",
+          "embedded": false,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.3.1",
+          "runtimeVersion": "183bcf4842928b888adba7cfc26951a0e7b56dbd",
+          "updateId": "3e04b9b9-716c-3f55-8d3d-6ea7291ab66c",
+          "embedded": false,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "fcee536a-e6ee-4e2f-b57a-b5a4415e806d",
+          "embedded": true,
+          "requests": 2,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "342d21de-e4f5-2e19-bb1b-e185548f980a",
+          "embedded": false,
+          "requests": 2,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "ac7b874b-095a-bad6-3868-f9e37e0e480c",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "e0571860-9082-d39d-c762-e6dc61310f67",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "fd52d0b9-ae7e-c42d-9ee1-20f7623433c5",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "51c7e3f0-2db4-397d-4ab1-365a75ab842c",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "150446bcfb84ecc366353bfd596306caf5d4f17f",
+          "updateId": "f39ad9a7-c18d-aeaf-97d7-5b83f74c58f2",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "2562b12f4b5bc595d8833b7b9e4bf11d4cffc32f",
+          "updateId": "6c648b21-4500-3dfe-fd01-151bac5b1015",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "40810ddecdb911fc005aa8270f18f874f2b8e24f",
+          "updateId": "7b64108b-a03f-43e5-98e0-9ee2759a1b62",
+          "embedded": true,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "1d74e1b7-2602-0c85-2a1b-b2d42e5e1bc7",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 1,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "2d5433fa-1367-121f-4a22-6cbff75588f7",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "74d6164d-130d-06e6-132f-efef1e1ec581",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "c9f10deb-ede0-9742-78b5-6099641ac91d",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "cc47430e-e36a-c580-5284-9442b9e51d01",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "cdc92635-3fc6-a7a6-018f-b1c0d3a46228",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "984a295fbffa93d787d45a765700ed52a173cfa8",
+          "updateId": "a8305a99-c3b1-81a6-560a-1c8342c3a471",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        }
+      ]
+    },
+    "starts": {
+      "observations": 937,
+      "immature": 0,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 697,
+        "abandoned": 7,
+        "confirmed-failure": 0,
+        "unknown": 233
+      },
+      "origins": {
+        "start-only": 937
+      },
+      "triggers": {
+        "unknown": 49,
+        "adopt-confirmed": 741,
+        "similar_climbs": 28,
+        "owned-wall": 59,
+        "toggle": 27,
+        "auto-download-all": 17,
+        "download-all": 11,
+        "hold_heatmap": 2,
+        "adopt-auto": 2,
+        "onboarding": 1
+      },
+      "boards": {
+        "tension": 159,
+        "moonboard": 271,
+        "kilter": 411,
+        "spray": 72,
+        "grasshopper": 7,
+        "decoy": 8,
+        "woods": 4,
+        "touchstone": 3,
+        "soill": 2
+      },
+      "people": 713,
+      "peopleCompletingEveryObservedRequest": 490,
+      "restarts": 3,
+      "pausesObserved": 96,
+      "resumesObserved": 0,
+      "requestsWithFailureEvents": 42,
+      "cachedCompletions": 0,
+      "completionsAfterPause": 53,
+      "releases": [
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "6ced4c16-9e91-4a1f-a9c5-8b914e124e88",
+          "embedded": true,
+          "requests": 245,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 141,
+            "abandoned": 3,
+            "confirmed-failure": 0,
+            "unknown": 101
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "6c9e76c2-a105-4637-add6-66fbe7e74d23",
+          "embedded": true,
+          "requests": 124,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 63,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 61
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "93185d45-9be2-8eba-7440-cccf8b75be92",
+          "embedded": false,
+          "requests": 82,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 80,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "db68ab2c-eeb5-e88d-d354-d83644c15efb",
+          "embedded": false,
+          "requests": 76,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 75,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "b07eeecb-660e-7715-14d3-29950361a55e",
+          "embedded": false,
+          "requests": 62,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 60,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "781bf1c3-961d-4bc5-9307-fc9fec6cb233",
+          "embedded": true,
+          "requests": 62,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 59,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 3
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "8c1e63fd-229c-ed5c-aca3-c1b3067516dc",
+          "embedded": false,
+          "requests": 59,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 56,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 3
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "6c1e7e83-85d8-a9eb-48ec-5dc1e5457205",
+          "embedded": false,
+          "requests": 52,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 28,
+            "abandoned": 1,
+            "confirmed-failure": 0,
+            "unknown": 23
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "fe2595b5-7295-1f66-d501-f2242e7e4ea6",
+          "embedded": false,
+          "requests": 18,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 18,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "316dd54a-62b9-3990-f4fe-0bac97791385",
+          "embedded": false,
+          "requests": 15,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 11,
+            "abandoned": 1,
+            "confirmed-failure": 0,
+            "unknown": 3
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "fa716b2e-6b01-0657-4ca8-89928397d3d1",
+          "embedded": false,
+          "requests": 14,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 13,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "04db072a-0657-5371-f660-eda0764cfed5",
+          "embedded": false,
+          "requests": 13,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 7,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 6
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "0d1c41e2-b884-deaa-37f0-b0536fb7291d",
+          "embedded": false,
+          "requests": 11,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 6,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 5
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "ab4d5aa3-b888-6a36-8275-371b73c2c4ce",
+          "embedded": false,
+          "requests": 10,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 2,
+            "confirmed-failure": 0,
+            "unknown": 4
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "4d63e0fb-0e4e-9dbb-71bb-6f4dcce40ae9",
+          "embedded": false,
+          "requests": 8,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 4
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "db6e30d4e61ba5afd72bbc0b4c9f8b38da9d0570",
+          "updateId": "207cc327-58b3-4ea8-8bf8-0df168d43462",
+          "embedded": true,
+          "requests": 8,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 8,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "1e5c2708a94683a437bc4fecf3a601cd58479914",
+          "updateId": "148ac5c4-4159-dc74-4184-ae7bdc0a4ad6",
+          "embedded": false,
+          "requests": 7,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 7,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "b68bf2fd-e6aa-2a32-ab15-8028f999116d",
+          "embedded": false,
+          "requests": 7,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 4
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+          "updateId": "dd346ff4-4f15-a161-42fc-0dec09eee85d",
+          "embedded": false,
+          "requests": 7,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 7,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.3.1",
+          "runtimeVersion": "70c78454348f526db29776b8d0981489fbdde3b6",
+          "updateId": "caefc725-7834-a263-4b04-ac09529fc88c",
+          "embedded": false,
+          "requests": 6,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 5,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "c44a16ab-e4b3-9b4d-4634-fca770741d44",
+          "embedded": false,
+          "requests": 6,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 5,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "04d5ed4f-b80c-5228-fe58-86520d592274",
+          "embedded": false,
+          "requests": 5,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "6fde57b050d53b2e12df01ce0210ebf87ac187d3",
+          "updateId": "ee20589c-8745-60ff-4b58-f13c32be39e8",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.3.1",
+          "runtimeVersion": "183bcf4842928b888adba7cfc26951a0e7b56dbd",
+          "updateId": "3e04b9b9-716c-3f55-8d3d-6ea7291ab66c",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "33192737-b4d2-d8e2-10f8-cfe754b8ca58",
+          "embedded": false,
+          "requests": 4,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 4,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "fcee536a-e6ee-4e2f-b57a-b5a4415e806d",
+          "embedded": true,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 2
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "1e5c2708a94683a437bc4fecf3a601cd58479914",
+          "updateId": "02ed7d6c-075d-4f4a-9aaa-ace4867078d5",
+          "embedded": true,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "2562b12f4b5bc595d8833b7b9e4bf11d4cffc32f",
+          "updateId": "6c648b21-4500-3dfe-fd01-151bac5b1015",
+          "embedded": false,
+          "requests": 3,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 3,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+          "updateId": "69a4e3e2-6a90-3d17-1f78-cba23e5b543a",
+          "embedded": false,
+          "requests": 2,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "5a6030b3-bad7-210f-0412-764dab70594a",
+          "embedded": false,
+          "requests": 2,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 2,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "ac7b874b-095a-bad6-3868-f9e37e0e480c",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "e0571860-9082-d39d-c762-e6dc61310f67",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+          "updateId": "fd52d0b9-ae7e-c42d-9ee1-20f7623433c5",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "150446bcfb84ecc366353bfd596306caf5d4f17f",
+          "updateId": "f39ad9a7-c18d-aeaf-97d7-5b83f74c58f2",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "2562b12f4b5bc595d8833b7b9e4bf11d4cffc32f",
+          "updateId": "d537f178-5c09-4daf-a3d4-02ca725c015d",
+          "embedded": true,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "Android",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "40810ddecdb911fc005aa8270f18f874f2b8e24f",
+          "updateId": "7b64108b-a03f-43e5-98e0-9ee2759a1b62",
+          "embedded": true,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "2d5433fa-1367-121f-4a22-6cbff75588f7",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "74d6164d-130d-06e6-132f-efef1e1ec581",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "c9f10deb-ede0-9742-78b5-6099641ac91d",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "cc47430e-e36a-c580-5284-9442b9e51d01",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.5.0",
+          "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+          "updateId": "cdc92635-3fc6-a7a6-018f-b1c0d3a46228",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "342d21de-e4f5-2e19-bb1b-e185548f980a",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 0,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 1
+          }
+        },
+        {
+          "platform": "iOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "984a295fbffa93d787d45a765700ed52a173cfa8",
+          "updateId": "a8305a99-c3b1-81a6-560a-1c8342c3a471",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iPadOS",
+          "nativeVersion": "2.6.0",
+          "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+          "updateId": "8c1e63fd-229c-ed5c-aca3-c1b3067516dc",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        },
+        {
+          "platform": "iPadOS",
+          "nativeVersion": "2.7.0",
+          "runtimeVersion": "984a295fbffa93d787d45a765700ed52a173cfa8",
+          "updateId": "ba133fe5-5ee5-bdbd-e124-9817f401858e",
+          "embedded": false,
+          "requests": 1,
+          "outcomes": {
+            "no-start": 0,
+            "completed": 1,
+            "abandoned": 0,
+            "confirmed-failure": 0,
+            "unknown": 0
+          }
+        }
+      ]
+    }
+  },
+  "runtimeRequests": [
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.6.0",
+      "runtimeVersion": "84dca13e7422d1aea95e45ecff524eef269f7a71",
+      "requests": 495,
+      "outcomes": {
+        "no-start": 16,
+        "completed": 339,
+        "abandoned": 13,
+        "confirmed-failure": 0,
+        "unknown": 127
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.6.0",
+      "runtimeVersion": "8733a10cad03453551ff474a116ef4858611f75b",
+      "requests": 232,
+      "outcomes": {
+        "no-start": 15,
+        "completed": 148,
+        "abandoned": 2,
+        "confirmed-failure": 0,
+        "unknown": 67
+      }
+    },
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "e171c5f7e69ad32d3915a5ae23155914015b5092",
+      "requests": 139,
+      "outcomes": {
+        "no-start": 2,
+        "completed": 129,
+        "abandoned": 4,
+        "confirmed-failure": 0,
+        "unknown": 4
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.5.0",
+      "runtimeVersion": "154bc941c504727afc914057aed2edff2c096576",
+      "requests": 24,
+      "outcomes": {
+        "no-start": 3,
+        "completed": 13,
+        "abandoned": 1,
+        "confirmed-failure": 0,
+        "unknown": 7
+      }
+    },
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "db6e30d4e61ba5afd72bbc0b4c9f8b38da9d0570",
+      "requests": 8,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 8,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "1e5c2708a94683a437bc4fecf3a601cd58479914",
+      "requests": 10,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 10,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.5.0",
+      "runtimeVersion": "b71bdb600c5a3e954d75c9ca673f056c62247ea9",
+      "requests": 13,
+      "outcomes": {
+        "no-start": 1,
+        "completed": 7,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 5
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.3.1",
+      "runtimeVersion": "70c78454348f526db29776b8d0981489fbdde3b6",
+      "requests": 5,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 5,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "6fde57b050d53b2e12df01ce0210ebf87ac187d3",
+      "requests": 3,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 3,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.3.1",
+      "runtimeVersion": "183bcf4842928b888adba7cfc26951a0e7b56dbd",
+      "requests": 3,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 3,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "150446bcfb84ecc366353bfd596306caf5d4f17f",
+      "requests": 1,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 1,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "2562b12f4b5bc595d8833b7b9e4bf11d4cffc32f",
+      "requests": 1,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 1,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "Android",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "40810ddecdb911fc005aa8270f18f874f2b8e24f",
+      "requests": 1,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 1,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "platform": "iOS",
+      "nativeVersion": "2.7.0",
+      "runtimeVersion": "984a295fbffa93d787d45a765700ed52a173cfa8",
+      "requests": 1,
+      "outcomes": {
+        "no-start": 0,
+        "completed": 1,
+        "abandoned": 0,
+        "confirmed-failure": 0,
+        "unknown": 0
+      }
+    }
+  ],
+  "failureSignatures": {
+    "windowUtc": {
+      "from": "2026-10-24T00:00:00Z",
+      "toExclusive": "2026-11-21T00:00:00Z"
+    },
+    "query": "SELECT properties.reason AS reason, properties.stage AS stage, properties.$os AS os, properties.$app_version AS native_version, properties.ota_runtime_version AS runtime_version, properties.ota_update_id AS update_id, properties.ota_is_embedded AS embedded, multiIf(positionCaseInsensitive(properties.errorMessage, 'server returned HTTP 416') > 0, 'HTTP 416', position(properties.errorMessage, '无法解码原始数据') > 0, 'localized decode (Chinese)', position(properties.errorMessage, 'Decodieren der Rohdaten nicht möglich') > 0, 'localized decode (German)', positionCaseInsensitive(properties.errorMessage, 'cannot decode raw data') > 0, 'decode (English)', positionCaseInsensitive(properties.errorMessage, 'Connection reset') > 0, 'connection reset', positionCaseInsensitive(properties.errorMessage, 'Failed to connect to') > 0, 'failed to connect', positionCaseInsensitive(properties.errorMessage, 'Software caused connection abort') > 0, 'connection abort', position(properties.errorMessage, 'ENOENT') > 0, 'missing artifact file', position(properties.errorMessage, 'unable to open database:') > 0, 'artifact could not open', 'other') AS signature, count() AS events, min(timestamp) AS first_seen, max(timestamp) AS last_seen FROM events WHERE timestamp >= '2026-10-24' AND timestamp < '2026-11-21' AND event = 'Offline Board Download Failed' AND {filters} GROUP BY reason,stage,os,native_version,runtime_version,update_id,embedded,signature ORDER BY events DESC,reason,stage,os LIMIT 500",
+    "result": "reason|stage|os|native_version|runtime_version|update_id|embedded|signature|events|first_seen|last_seen\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|other|18|2026-11-08T18:28:16.154000Z|2026-11-20T09:32:51.785000Z\naborted-background|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6ced4c16-9e91-4a1f-a9c5-8b914e124e88|True|other|15|2026-10-24T00:20:01.573000Z|2026-11-06T01:11:38.582000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6ced4c16-9e91-4a1f-a9c5-8b914e124e88|True|other|11|2026-10-24T00:17:41.211000Z|2026-11-07T19:59:34.598000Z\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|other|11|2026-11-05T05:01:58.195000Z|2026-11-17T18:44:36.984000Z\nwatermark-regression|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|other|10|2026-10-26T01:40:46.418000Z|2026-10-30T18:13:33.550000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|93185d45-9be2-8eba-7440-cccf8b75be92|False|other|8|2026-10-31T20:40:35.350000Z|2026-11-05T02:17:53.267000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|other|8|2026-10-26T10:25:00.436000Z|2026-10-30T19:00:13.467000Z\naborted-background|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|other|6|2026-11-03T22:50:04.581000Z|2026-11-18T09:51:29.209000Z\ndatabase-locked|import|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|other|6|2026-10-28T14:19:11.437000Z|2026-11-18T18:17:10.049000Z\nwatermark-regression|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|93185d45-9be2-8eba-7440-cccf8b75be92|False|other|6|2026-10-31T13:10:51.255000Z|2026-11-07T14:11:17.434000Z\ndatabase-locked|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6ced4c16-9e91-4a1f-a9c5-8b914e124e88|True|other|5|2026-10-27T01:46:38.777000Z|2026-11-04T01:51:28.532000Z\naborted-background|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|connection abort|4|2026-11-02T17:07:56.024000Z|2026-11-03T17:48:46.347000Z\nwatermark-regression|import|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|other|4|2026-11-10T06:50:00.580000Z|2026-11-16T02:35:20.302000Z\naborted-background|grades-download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|other|3|2026-11-06T08:59:04.018000Z|2026-11-12T01:05:35.139000Z\nbackground-transfer-decode|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|decode (English)|3|2026-11-18T03:13:31.946000Z|2026-11-18T03:31:36.426000Z\nunknown|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|93185d45-9be2-8eba-7440-cccf8b75be92|False|HTTP 416|3|2026-11-01T23:19:59.377000Z|2026-11-07T04:56:30.087000Z\nabandoned-disabled|abandoned|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|other|2|2026-11-03T23:41:27.329000Z|2026-11-03T23:41:27.330000Z\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|d6cd0952-f701-4ac8-674c-6d096dce9b48|False|other|2|2026-11-20T12:42:11.312000Z|2026-11-20T12:57:34.169000Z\naborted-background|grades-download|Android|2.3.1|70c78454348f526db29776b8d0981489fbdde3b6|caefc725-7834-a263-4b04-ac09529fc88c|False|other|2|2026-10-31T18:31:47.830000Z|2026-10-31T18:33:31.772000Z\nnetwork|manifest|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|other|2|2026-10-27T18:58:26.603000Z|2026-10-27T18:58:56.684000Z\nunknown|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|connection abort|2|2026-11-03T17:55:19.209000Z|2026-11-13T19:12:16.806000Z\nunknown|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|HTTP 416|2|2026-11-08T11:09:58.308000Z|2026-11-17T20:23:37.519000Z\nunknown|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|HTTP 416|2|2026-10-28T11:24:54.366000Z|2026-10-28T12:27:09.967000Z\nabandoned-disabled|abandoned|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|93185d45-9be2-8eba-7440-cccf8b75be92|False|other|1|2026-11-07T14:06:11.326000Z|2026-11-07T14:06:11.326000Z\naborted-background|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|other|1|2026-11-02T07:06:55.701000Z|2026-11-02T07:06:55.701000Z\naborted-background|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|connection abort|1|2026-11-07T03:23:21.542000Z|2026-11-07T03:23:21.542000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|0d1c41e2-b884-deaa-37f0-b0536fb7291d|False|other|1|2026-10-25T07:30:03.720000Z|2026-10-25T07:30:03.720000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|fe2595b5-7295-1f66-d501-f2242e7e4ea6|False|HTTP 416|1|2026-10-25T08:40:07.272000Z|2026-10-25T08:40:07.272000Z\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|HTTP 416|1|2026-11-08T01:35:33.686000Z|2026-11-08T01:35:33.686000Z\naborted-background|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|fe2595b5-7295-1f66-d501-f2242e7e4ea6|False|other|1|2026-10-24T09:03:55.304000Z|2026-10-24T09:03:55.304000Z\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|dd346ff4-4f15-a161-42fc-0dec09eee85d|False|other|1|2026-11-04T23:52:47.032000Z|2026-11-04T23:52:47.032000Z\naborted-background|download|iOS|2.5.0|b71bdb600c5a3e954d75c9ca673f056c62247ea9|74d6164d-130d-06e6-132f-efef1e1ec581|False|other|1|2026-11-07T05:50:02.457000Z|2026-11-07T05:50:02.457000Z\naborted-background|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|HTTP 416|1|2026-11-11T16:28:49.561000Z|2026-11-11T16:28:49.561000Z\naborted-background|grades-download|Android|2.5.0|154bc941c504727afc914057aed2edff2c096576|fcee536a-e6ee-4e2f-b57a-b5a4415e806d|True|connection abort|1|2026-10-31T17:37:02.213000Z|2026-10-31T17:37:02.213000Z\naborted-background|grades-download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|connection abort|1|2026-11-17T16:25:02.784000Z|2026-11-17T16:25:02.784000Z\naborted-background|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|93185d45-9be2-8eba-7440-cccf8b75be92|False|decode (English)|1|2026-11-03T07:26:48.434000Z|2026-11-03T07:26:48.434000Z\naborted-background|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|04db072a-0657-5371-f660-eda0764cfed5|False|other|1|2026-10-31T04:44:14.332000Z|2026-10-31T04:44:14.332000Z\nbackground-transfer-decode|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|decode (English)|1|2026-10-28T06:31:51.475000Z|2026-10-28T06:31:51.475000Z\nbackground-transfer-decode|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6ced4c16-9e91-4a1f-a9c5-8b914e124e88|True|decode (English)|1|2026-10-31T09:29:42.545000Z|2026-10-31T09:29:42.545000Z\ndatabase-locked|import|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|69a4e3e2-6a90-3d17-1f78-cba23e5b543a|False|other|1|2026-10-25T13:53:13.057000Z|2026-10-25T13:53:13.057000Z\nnetwork|manifest|Android|2.5.0|154bc941c504727afc914057aed2edff2c096576|316dd54a-62b9-3990-f4fe-0bac97791385|False|other|1|2026-11-08T09:48:18.156000Z|2026-11-08T09:48:18.156000Z\nnetwork|manifest|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|other|1|2026-11-16T02:22:26.256000Z|2026-11-16T02:22:26.256000Z\nunknown|download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|connection reset|1|2026-11-18T15:31:57.123000Z|2026-11-18T15:31:57.123000Z\nunknown|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|8c1e63fd-229c-ed5c-aca3-c1b3067516dc|False|HTTP 416|1|2026-10-28T06:43:11.850000Z|2026-10-28T06:43:11.850000Z\nunknown|download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|fe2595b5-7295-1f66-d501-f2242e7e4ea6|False|localized decode (Chinese)|1|2026-10-25T09:54:28.982000Z|2026-10-25T09:54:28.982000Z\nunknown|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|localized decode (Chinese)|1|2026-11-15T15:53:11.201000Z|2026-11-15T15:53:11.201000Z\nunknown|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|localized decode (German)|1|2026-11-14T10:38:54.982000Z|2026-11-14T10:38:54.982000Z\nunknown|download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|localized decode (Chinese)|1|2026-11-17T12:52:28.607000Z|2026-11-17T12:52:28.607000Z\nunknown|grades-download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|missing artifact file|1|2026-11-11T16:37:19.015000Z|2026-11-11T16:37:19.015000Z\nunknown|grades-download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|connection abort|1|2026-11-16T22:31:06.761000Z|2026-11-16T22:31:06.761000Z\nunknown|grades-download|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|failed to connect|1|2026-11-16T22:31:36.191000Z|2026-11-16T22:31:36.191000Z\nunknown|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6c1e7e83-85d8-a9eb-48ec-5dc1e5457205|False|HTTP 416|1|2026-10-26T19:54:46.076000Z|2026-10-26T19:54:46.076000Z\nunknown|grades-download|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|fe2595b5-7295-1f66-d501-f2242e7e4ea6|False|HTTP 416|1|2026-10-24T09:05:01.922000Z|2026-10-24T09:05:01.922000Z\nunknown|grades-download|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|781bf1c3-961d-4bc5-9307-fc9fec6cb233|True|HTTP 416|1|2026-11-13T04:43:34.145000Z|2026-11-13T04:43:34.145000Z\nunknown|grades-import|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|artifact could not open|1|2026-11-08T18:14:13.957000Z|2026-11-08T18:14:13.957000Z\nunknown|import|Android|2.6.0|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|other|1|2026-10-27T12:04:41.826000Z|2026-10-27T12:04:41.826000Z\nwatermark-regression|import|iOS|2.7.0|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|other|1|2026-11-09T09:13:22.402000Z|2026-11-09T09:13:22.402000Z\nwatermark-regression|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|33192737-b4d2-d8e2-10f8-cfe754b8ca58|False|other|1|2026-10-24T19:47:18.726000Z|2026-10-24T19:47:18.726000Z\nwatermark-regression|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|fe2595b5-7295-1f66-d501-f2242e7e4ea6|False|other|1|2026-10-25T05:42:55.811000Z|2026-10-25T05:42:55.811000Z\nwatermark-regression|import|iOS|2.6.0|84dca13e7422d1aea95e45ecff524eef269f7a71|6c1e7e83-85d8-a9eb-48ec-5dc1e5457205|False|other|1|2026-10-24T04:32:08.589000Z|2026-10-24T04:32:08.589000Z"
+  }
+}

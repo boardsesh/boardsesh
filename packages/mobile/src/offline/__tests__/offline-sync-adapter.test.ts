@@ -17,7 +17,8 @@ vi.mock('../../lib/auth-store', () => ({
     return authToken.token;
   },
   captureAuthCredentialGeneration: () => authToken.generation,
-  isAuthCredentialGenerationCurrent: () => authToken.generationCurrent,
+  isAuthCredentialGenerationCurrent: (generation: number) =>
+    authToken.generationCurrent && generation === authToken.generation,
 }));
 
 const onlineManagerIsOnline = vi.fn(() => true);
@@ -166,7 +167,7 @@ const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { getUserStartedDownloads, rememberDownloadTrigger, setSetting } from '../../settings';
+import { getUserStartedDownloads, rememberDownloadTrigger, takeDownloadTrigger, setSetting } from '../../settings';
 import {
   __resetDownloadKeepAwakeForTests,
   getPendingUserStartedDownloads,
@@ -176,6 +177,13 @@ import {
 } from '../download-keep-awake-store';
 import { __resetSyncStatusForTests, setSyncProgress } from '../../sync';
 import { getDownloadActivity } from '../../sync/download-activity-store';
+import {
+  getDownloadRequest,
+  getDownloadRequests,
+  requestDownload,
+  resetDownloadLifecycle,
+  transitionDownload,
+} from '../download-lifecycle';
 import {
   drainMutationQueue,
   startSyncScheduler,
@@ -247,6 +255,7 @@ beforeEach(() => {
   // mocked `remove`, which the trigger-binding cases count.
   __resetDownloadKeepAwakeForTests();
   completedScopeKeys.clear();
+  isScopeDownloadCompleteCore.mockReset().mockImplementation(async (_db, scopeKey) => completedScopeKeys.has(scopeKey));
   platform.OS = 'ios';
   vi.clearAllMocks();
   __resetSyncStatusForTests();
@@ -259,6 +268,7 @@ beforeEach(() => {
   connectivity.confirmBackendAvailability.mockResolvedValue(true);
   // The trigger store is persisted, so it survives between tests unless cleared.
   mockSettingsStorage.clear();
+  resetDownloadLifecycle();
   authToken.generationCurrent = true;
   authToken.generation = 1;
 });
@@ -1460,6 +1470,251 @@ describe('snapshot-bootstrap bindings', () => {
   });
 });
 
+describe('download lifecycle bindings (issue #7987)', () => {
+  const KILTER = 'kilter:1:10';
+
+  function schedulerLifecycleOptions(): SchedulerOptions {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [KILTER],
+      async () => {},
+    );
+    return startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+  }
+
+  function captureContext(options: SchedulerOptions) {
+    const context = options.getScopeDownloadContext?.(KILTER);
+    expect(context).toBeDefined();
+    if (!context) throw new Error('download lifecycle context was not captured');
+    return context;
+  }
+
+  it('does not consume a replacement request trigger from an old queued Started callback', () => {
+    const original = requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    const originalContext = captureContext(options);
+    transitionDownload(original, 'abandoned', { reason: 'disabled' });
+    requestDownload(KILTER, 'download-all');
+    rememberDownloadTrigger(KILTER, 'download-all');
+    options.onScopeDownloadStart?.({
+      scopeKey: KILTER,
+      pathIntent: 'snapshot',
+      artifactBytes: 100,
+      downloadContext: originalContext,
+    });
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadStarted, expect.anything());
+    expect(takeDownloadTrigger(KILTER)).toBe('download-all');
+  });
+
+  it('settles a disabled request left removal-pending by a previous process', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    transitionDownload(request, 'deferred', { reason: 'removal-pending' });
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    await options.prepareScopeDownloadContexts?.();
+    expect(getDownloadRequest(KILTER)).toBeUndefined();
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({
+        requestId: request.requestId,
+        state: 'abandoned',
+        reason: 'disabled',
+      }),
+    );
+  });
+
+  it('resumes an enabled request left removal-pending by a previous process', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    transitionDownload(request, 'deferred', { reason: 'removal-pending' });
+    const options = schedulerLifecycleOptions();
+    await options.prepareScopeDownloadContexts?.();
+    const context = captureContext(options);
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context, state: 'started' });
+    expect(getDownloadRequest(KILTER)).toMatchObject({ requestId: request.requestId, state: 'started' });
+  });
+
+  it('does not count owner preparation as an attempt before the first actual start', () => {
+    requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    options.onScopeDownloadLifecycle?.({
+      scopeKey: KILTER,
+      context: captureContext(options),
+      state: 'deferred',
+      reason: 'owner-unready',
+      stage: 'preparation',
+    });
+    expect(getDownloadRequest(KILTER)?.attemptId).toBeUndefined();
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: captureContext(options), state: 'started' });
+    expect(getDownloadRequest(KILTER)?.state).toBe('started');
+  });
+
+  it('keeps one request identity across distinct execution attempts and reports the second as resumed', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    await Promise.resolve();
+    const firstAttempt = captureContext(options);
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: firstAttempt, state: 'started' });
+    options.onScopeDownloadLifecycle?.({
+      scopeKey: KILTER,
+      context: firstAttempt,
+      state: 'paused',
+      reason: 'background',
+    });
+    const secondAttempt = captureContext(options);
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: secondAttempt, state: 'started' });
+
+    expect(secondAttempt.requestId).toBe(request.requestId);
+    expect(secondAttempt.attemptId).not.toBe(firstAttempt.attemptId);
+    expect(getDownloadRequest(KILTER)).toMatchObject({
+      requestId: request.requestId,
+      attemptId: secondAttempt.attemptId,
+      state: 'resumed',
+    });
+    const lifecycleEvents = trackMock.mock.calls.filter(
+      ([name]) => name === SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+    );
+    expect(lifecycleEvents.map(([, properties]) => properties.state)).toEqual([
+      'requested',
+      'started',
+      'paused',
+      'resumed',
+    ]);
+  });
+
+  it('labels a new attempt after an unresolved previous execution without declaring that execution failed', async () => {
+    requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    await Promise.resolve();
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: captureContext(options), state: 'started' });
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: captureContext(options), state: 'started' });
+
+    expect(getDownloadRequest(KILTER)).toMatchObject({ state: 'resumed', reason: 'previous-attempt-unresolved' });
+    expect(trackMock).not.toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({ state: 'failed' }),
+    );
+  });
+
+  it('ignores an old execution after the scope is canceled and enabled again', async () => {
+    const previous = requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    await Promise.resolve();
+    const oldContext = captureContext(options);
+    transitionDownload(previous, 'abandoned', { reason: 'disabled' });
+    const replacement = requestDownload(KILTER, 'toggle');
+    const eventCount = trackMock.mock.calls.length;
+
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context: oldContext, state: 'started' });
+    options.onScopeDownloadLifecycle?.({
+      scopeKey: KILTER,
+      context: oldContext,
+      state: 'completed',
+      completionSource: 'download',
+    });
+
+    expect(getDownloadRequest(KILTER)).toEqual(replacement);
+    expect(trackMock).toHaveBeenCalledTimes(eventCount);
+  });
+
+  it('ignores a lifecycle callback after the download activity account resets', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    await Promise.resolve();
+    const context = captureContext(options);
+    __resetSyncStatusForTests();
+
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context, state: 'completed', completionSource: 'download' });
+
+    expect(getDownloadRequest(KILTER)).toEqual(request);
+    expect(options.getScopeDownloadContext?.(KILTER)).toBeUndefined();
+  });
+
+  it('ignores a lifecycle callback after credentials change even before activity is reset', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    const options = schedulerLifecycleOptions();
+    await Promise.resolve();
+    const context = captureContext(options);
+    authToken.generation += 1;
+
+    options.onScopeDownloadLifecycle?.({ scopeKey: KILTER, context, state: 'completed', completionSource: 'download' });
+
+    expect(getDownloadRequest(KILTER)).toEqual(request);
+  });
+
+  it('reconciles a committed cached completion without inventing a Started event', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    transitionDownload({ ...request, attemptId: 'previous-process-attempt' }, 'started');
+    trackMock.mockClear();
+    completedScopeKeys.add(KILTER);
+    await schedulerLifecycleOptions().prepareScopeDownloadContexts?.();
+
+    expect(getDownloadRequests()).toEqual([]);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({ requestId: request.requestId, state: 'completed', completionSource: 'recovered' }),
+    );
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadStarted, expect.anything());
+    expect(trackMock).not.toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({ state: 'started' }),
+    );
+  });
+
+  it('resolves a new request for already-downloaded rows as cached rather than recovered work', async () => {
+    const request = requestDownload(KILTER, 'toggle');
+    completedScopeKeys.add(KILTER);
+
+    await schedulerLifecycleOptions().prepareScopeDownloadContexts?.();
+
+    expect(getDownloadRequest(KILTER)).toBeUndefined();
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({ requestId: request.requestId, state: 'completed', completionSource: 'cached' }),
+    );
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadStarted, expect.anything());
+  });
+
+  it('does not let a delayed cached completion settle a replacement scope generation', async () => {
+    const previous = requestDownload(KILTER, 'toggle');
+    const completion = Promise.withResolvers<boolean>();
+    isScopeDownloadCompleteCore.mockReturnValueOnce(completion.promise);
+    const preparation = schedulerLifecycleOptions().prepareScopeDownloadContexts?.();
+    transitionDownload(previous, 'abandoned', { reason: 'disabled' });
+    const replacement = requestDownload(KILTER, 'toggle');
+
+    completion.resolve(true);
+    await preparation;
+
+    expect(getDownloadRequest(KILTER)).toEqual(replacement);
+  });
+
+  it('prepares a recovered legacy request before cycle authority is captured', async () => {
+    const completion = Promise.withResolvers<boolean>();
+    isScopeDownloadCompleteCore.mockReturnValueOnce(completion.promise);
+    const options = schedulerLifecycleOptions();
+    const preparation = options.prepareScopeDownloadContexts?.();
+    expect(options.getScopeDownloadContext?.(KILTER)).toBeUndefined();
+
+    completion.resolve(false);
+    await preparation;
+
+    expect(captureContext(options).requestId).toBe(getDownloadRequest(KILTER)?.requestId);
+    expect(getDownloadRequest(KILTER)).toMatchObject({ state: 'recovered', origin: 'recovered', requestedAt: null });
+    expect(trackMock).not.toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadLifecycle,
+      expect.objectContaining({ state: 'requested' }),
+    );
+  });
+});
+
 describe('download keep-awake bindings (issue #4310)', () => {
   const KILTER = 'kilter:1:10';
   const KILTER_SCOPE = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
@@ -1678,9 +1933,11 @@ describe('download keep-awake bindings (issue #4310)', () => {
 
   it('ignores a cached completion read that resolves after the account resets', async () => {
     startKilterDownload();
+    const options = schedulerOptions();
+    await Promise.resolve();
+    isScopeDownloadCompleteCore.mockClear();
     const completion = Promise.withResolvers<boolean>();
     isScopeDownloadCompleteCore.mockReturnValueOnce(completion.promise);
-    const options = schedulerOptions();
     options.onProgress?.(idleFrame);
     expect(isScopeDownloadCompleteCore).toHaveBeenCalledOnce();
     __resetSyncStatusForTests();
@@ -1694,6 +1951,8 @@ describe('download keep-awake bindings (issue #4310)', () => {
   it('keeps a user-started download that is still incomplete when a cycle ends', async () => {
     startKilterDownload();
     const options = schedulerOptions();
+    await Promise.resolve();
+    isScopeDownloadCompleteCore.mockClear();
 
     options.onProgress?.(idleFrame);
     await vi.waitFor(() => expect(isScopeDownloadCompleteCore).toHaveBeenCalledTimes(1));
@@ -1701,16 +1960,21 @@ describe('download keep-awake bindings (issue #4310)', () => {
     expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
   });
 
-  it('reads no database at the end of a cycle with nothing pending', () => {
-    schedulerOptions().onProgress?.(idleFrame);
+  it('reads no database at the end of a cycle with nothing pending', async () => {
+    const options = schedulerOptions();
+    await Promise.resolve();
+    isScopeDownloadCompleteCore.mockClear();
+    options.onProgress?.(idleFrame);
 
     expect(isScopeDownloadCompleteCore).not.toHaveBeenCalled();
   });
 
   it('keeps a pending download when the completion read fails', async () => {
     startKilterDownload();
-    isScopeDownloadCompleteCore.mockRejectedValueOnce(new Error('database is locked'));
     const options = schedulerOptions();
+    await Promise.resolve();
+    isScopeDownloadCompleteCore.mockClear();
+    isScopeDownloadCompleteCore.mockRejectedValueOnce(new Error('database is locked'));
 
     options.onProgress?.(idleFrame);
     await vi.waitFor(() => expect(isScopeDownloadCompleteCore).toHaveBeenCalledTimes(1));

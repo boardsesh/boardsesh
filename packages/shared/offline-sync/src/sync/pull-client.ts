@@ -53,7 +53,13 @@ import {
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
+import { classifySnapshotTransferFailure } from './snapshot-transfer-failure';
 import { createDownloadFunnelGuard } from './download-funnel-guard';
+import {
+  createScopeDownloadLifecycle,
+  type ScopeDownloadContext,
+  type ScopeDownloadLifecycleReporter,
+} from './download-lifecycle';
 import { noteScopeDownloadTerminal } from './download-terminal-registry';
 import {
   classifyBootstrapFailure,
@@ -108,7 +114,6 @@ import {
 // Re-exported: the export job and the package index have always imported it from here.
 export { multiRowChunkSize } from './pull-write';
 import { getPendingCount } from '../mutation-queue/queue';
-import { isNetworkError } from '../mutation-queue/error-classification';
 import {
   isSigningOut,
   isBackgrounded,
@@ -361,6 +366,7 @@ export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
  * device that was simply closed for a week is not a week-long download).
  */
 export type ScopeDownloadCompleteInfo = {
+  downloadContext?: ScopeDownloadContext;
   scopeKey: string;
   method: 'snapshot' | 'paged';
   /**
@@ -414,6 +420,7 @@ export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) =>
  * the size of the downloads people give up on is unknowable.
  */
 export type ScopeDownloadStartInfo = {
+  downloadContext?: ScopeDownloadContext;
   scopeKey: string;
   pathIntent: 'snapshot' | 'paged';
   artifactBytes: number | null;
@@ -590,6 +597,9 @@ export type RowsDeletedSink = (info: {
 }) => void | Promise<void>;
 
 export type SyncOptions = {
+  /** Captured before the FIFO wait; callbacks must never adopt a later request. */
+  getScopeDownloadContext?: (scopeKey: string) => ScopeDownloadContext | undefined;
+  onScopeDownloadLifecycle?: ScopeDownloadLifecycleReporter;
   /** Authenticated viewer captured for this cycle; absent retains legacy snapshot replay. */
   viewerUserId?: string;
   /**
@@ -1510,8 +1520,9 @@ const MAX_MANIFEST_WAIT_FAILURES = 2;
 const MANIFEST_FAIL_OPEN_RETRY_DELAY_MS = 5 * 60_000;
 const manifestFailureCounts = new WeakMap<OfflineDatabase, { wipeEpoch: number; count: number }>();
 
-function isBackgroundTransferDecodeError(cause: unknown): boolean {
-  return cause instanceof Error && cause.name === 'SnapshotBackgroundTransferInterruptedError';
+function isSnapshotTransferInterruption(cause: unknown): boolean {
+  const failure = classifySnapshotTransferFailure(cause);
+  return failure?.reason === 'network' || failure?.reason === 'background-transfer-decode';
 }
 
 function settleManifestPublicationStateOnce(
@@ -1591,7 +1602,7 @@ async function settleBootstrapFailure(
 }> {
   const { state, cause, stage, builtAt, now, random } = input;
   const failureKind = classifyBootstrapFailure({ cause, stage });
-  const expected = isNetworkError(cause) || isBackgroundTransferDecodeError(cause);
+  const expected = classifySnapshotTransferFailure(cause)?.expected ?? false;
   if (stage === 'manifest') {
     // The manifest is one global object shared by every scope in this cycle.
     // Charging a per-scope budget for a bad response can terminal every board
@@ -2092,11 +2103,7 @@ async function runBootstrapPhase(params: {
         (cause: unknown) => {
           // A foreground byte closes the suspension window. Even with the
           // window open, HTTP, disk and programming errors spend real retries.
-          if (
-            !record.abortedReason &&
-            record.suspensionWindowOpen &&
-            (isNetworkError(cause) || isBackgroundTransferDecodeError(cause))
-          )
+          if (!record.abortedReason && record.suspensionWindowOpen && isSnapshotTransferInterruption(cause))
             record.abortedReason = 'aborted-background';
           return { file: null, cause };
         },
@@ -2173,7 +2180,7 @@ async function runBootstrapPhase(params: {
         stage: 'grades-download',
         attempt: counted.attempt,
         cause: result.cause,
-        expected: isNetworkError(result.cause),
+        expected: classifySnapshotTransferFailure(result.cause)?.expected ?? false,
       });
       record.progressScopeKey = null;
       return null;
@@ -2801,8 +2808,7 @@ async function runBootstrapPhase(params: {
           // HTTP 500, or programmer error still spends its real budget.
           if (!cachedDownload.file) {
             const suspensionKilledTransfer =
-              suspensionWindowOpen &&
-              (isNetworkError(cachedDownload.cause) || isBackgroundTransferDecodeError(cachedDownload.cause));
+              suspensionWindowOpen && isSnapshotTransferInterruption(cachedDownload.cause);
             cachedDownload.abortedReason =
               selfAbortedReason ?? (suspensionKilledTransfer ? 'aborted-background' : null);
           }
@@ -3512,9 +3518,54 @@ export function pullSync(
   // adopt a later sign-in or re-download a scope removed during that wait.
   const purgeToken = capturePurgeToken();
   const signingOutAtEnqueue = isSigningOut();
-  const cycleOptions = options ? { ...options, enabledBoards: options.enabledBoards?.slice() } : undefined;
+  const capturedOptions = options ? { ...options, enabledBoards: options.enabledBoards?.slice() } : undefined;
+  const contexts = new Map<string, ScopeDownloadContext>();
+  for (const scopeKey of options?.enabledBoards ?? []) {
+    try {
+      const context = options?.getScopeDownloadContext?.(scopeKey);
+      if (context) contexts.set(scopeKey, { ...context });
+    } catch {
+      // Correlation is optional; an unavailable ledger cannot stop a pull.
+    }
+  }
+  const lifecycle = createScopeDownloadLifecycle(contexts, options?.onScopeDownloadLifecycle);
+  const cycleOptions = capturedOptions
+    ? {
+        ...capturedOptions,
+        onScopeDownloadStart: (info: ScopeDownloadStartInfo) =>
+          capturedOptions.onScopeDownloadStart?.({ ...info, downloadContext: contexts.get(info.scopeKey) }),
+        onScopeDownloadComplete: (info: ScopeDownloadCompleteInfo) => {
+          capturedOptions.onScopeDownloadComplete?.({ ...info, downloadContext: contexts.get(info.scopeKey) });
+          lifecycle.complete(info.scopeKey, 'download');
+        },
+        onSnapshotBootstrapError: (report: SnapshotBootstrapErrorReport) => {
+          lifecycle.defer(report.scopeKey, report.reason, report.stage);
+          capturedOptions.onSnapshotBootstrapError?.({ ...report, downloadContext: contexts.get(report.scopeKey) });
+        },
+      }
+    : undefined;
   const previous = pullTails.get(db);
-  const start = () => performPullSync(db, queryClient, graphqlFetch, purgeToken, signingOutAtEnqueue, cycleOptions);
+  const start = async () => {
+    let exitReason = 'cycle-interrupted';
+    try {
+      await performPullSync(db, queryClient, graphqlFetch, purgeToken, signingOutAtEnqueue, cycleOptions, lifecycle);
+    } catch (error) {
+      exitReason = classifySnapshotBootstrapFailure(error);
+      throw error;
+    } finally {
+      // This extra connectivity read is observational and cannot replace the
+      // original rejection if a consumer-supplied probe throws.
+      let offline = false;
+      try {
+        offline = cycleOptions?.isOnline?.() === false;
+      } catch {
+        /* Preserve the pull result. */
+      }
+      lifecycle.close(
+        isSigningOut() ? 'signed-out' : isBackgrounded() ? 'background' : offline ? 'offline' : exitReason,
+      );
+    }
+  };
   const result = (previous ?? Promise.resolve()).then(start);
   // Only the queue tail swallows failure; the caller retains the original rejection.
   const tail = result.then(
@@ -3535,6 +3586,7 @@ async function performPullSync(
   purgeToken: PurgeToken,
   signingOutAtEnqueue: boolean,
   options?: SyncOptions,
+  lifecycle?: ReturnType<typeof createScopeDownloadLifecycle>,
 ): Promise<void> {
   let totalDocuments = 0;
   const reportInterruptedCycle = (): undefined => {
@@ -3550,8 +3602,10 @@ async function performPullSync(
   // Mirrors drainMutationQueue's entry guard: don't even start the snapshot
   // bootstrap phase below (which runs before the first cycleAborted() check)
   // when the app is already backgrounded.
-  if (signingOutAtEnqueue || isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded())
+  if (signingOutAtEnqueue || isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded()) {
+    lifecycle?.deferAll(isBackgrounded() ? 'background' : 'authority-changed');
     return reportInterruptedCycle();
+  }
 
   // Offline: every request this cycle would make is already lost, and the
   // bootstrap phase would spend a Sentry event per enabled-but-undownloaded
@@ -3559,12 +3613,17 @@ async function performPullSync(
   // edge and the next foreground both retrigger a cycle. Same posture as
   // drainMutationQueue's `if (!options.isOnline()) return`.
   const isOnline = options?.isOnline ?? (() => true);
-  if (!isOnline()) return reportInterruptedCycle();
+  if (!isOnline()) {
+    lifecycle?.deferAll('offline');
+    return reportInterruptedCycle();
+  }
 
   // Not this account's database (yet): see `requireOwnedDatabase`. Before the
   // bootstrap phase, which writes catalogue rows and download markers too.
-  if (options?.requireOwnedDatabase && !(await isLocalDataStampedFor(db, options.viewerUserId)))
+  if (options?.requireOwnedDatabase && !(await isLocalDataStampedFor(db, options.viewerUserId))) {
+    lifecycle?.deferAll('owner-unready');
     return reportInterruptedCycle();
+  }
 
   // The enqueue token covers the queue wait AND every phase; never rebase per table.
   // enabledBoards stays the captured snapshot after a namespace purge advances.
@@ -3658,6 +3717,8 @@ async function performPullSync(
       if (!(await isScopeDownloadComplete(db, scope.scopeKey))) {
         pendingDownloads.add(scope.scopeKey);
         if (await isBootstrapDone(db, scope.scopeKey)) snapshotDownloads.add(scope.scopeKey);
+      } else {
+        lifecycle?.complete(scope.scopeKey, 'cached');
       }
     }
     if (cycleAborted()) return reportInterruptedCycle();
@@ -3731,6 +3792,7 @@ async function performPullSync(
       // Stamping it anyway was a write per board per cycle that the
       // completion marker then deleted again.
       if (!pendingDownloads.has(scopeKey)) return;
+      lifecycle?.start(scopeKey);
       // Read and written under one lock: the stamp is read-modify-write, and a
       // read on the main connection can be older than the last commit.
       const stamp: { startedAt?: number } = {};

@@ -22,6 +22,7 @@
 // enabled-but-undownloaded board on the way.
 
 import { AppState, Platform, type AppStateStatus } from 'react-native';
+import { randomUUID } from 'expo-crypto';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager, type QueryClient } from '@tanstack/react-query';
 // The adapter is the one sanctioned importer of the raw engine entry points.
@@ -50,6 +51,8 @@ import {
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type ScopeDownloadStartReporter,
+  type ScopeDownloadContext,
+  type ScopeDownloadLifecycleEvent,
   type SchedulerTriggers,
   type SchemaDriftReporter,
   type SnapshotBootstrapErrorReport,
@@ -89,6 +92,74 @@ import { createSprayWallDeletedSink, sprayWallPhotoSink } from './spray-photo-si
 import { holdIndexSyncOptions } from './hold-index-parser';
 import { acknowledgeClimbWrite } from './acknowledge-climb-write';
 import { resolveSprayWallCapability } from './opened-spray-wall-pins';
+import { getDownloadRequest, getDownloadRequests, requestDownload, transitionDownload } from './download-lifecycle';
+import { isDownloadRemovalPending } from './download-removal';
+
+function isDownloadContextCurrent(context: ScopeDownloadContext | undefined): boolean {
+  return context?.accountGeneration === undefined || isAuthCredentialGenerationCurrent(context.accountGeneration);
+}
+
+function downloadLifecycleOptions(): Pick<SyncOptions, 'getScopeDownloadContext' | 'onScopeDownloadLifecycle'> {
+  const generation = getDownloadActivityGeneration();
+  return {
+    getScopeDownloadContext(scopeKey) {
+      if (generation !== getDownloadActivityGeneration()) return undefined;
+      const request = getDownloadRequest(scopeKey);
+      if (!request) return undefined;
+      return {
+        requestId: request.requestId,
+        attemptId: randomUUID(),
+        accountGeneration: captureAuthCredentialGeneration(),
+      };
+    },
+    onScopeDownloadLifecycle(event: ScopeDownloadLifecycleEvent) {
+      if (generation !== getDownloadActivityGeneration() || !isDownloadContextCurrent(event.context)) return;
+      const previous = getDownloadRequest(event.scopeKey);
+      if (previous && isDownloadRemovalPending(previous.requestId)) return;
+      const resumed =
+        event.state === 'started' &&
+        previous?.attemptId !== undefined &&
+        previous.attemptId !== event.context.attemptId;
+      const transitionContext =
+        event.stage === 'preparation'
+          ? { scopeKey: event.scopeKey, requestId: event.context.requestId }
+          : { scopeKey: event.scopeKey, ...event.context };
+      transitionDownload(transitionContext, resumed ? 'resumed' : event.state, {
+        reason: resumed && previous?.state === 'started' ? 'previous-attempt-unresolved' : event.reason,
+        stage: event.stage,
+        completionSource: event.completionSource,
+      });
+    },
+  };
+}
+
+/** Recover observable state, without inventing requests or timing work done before this bundle. */
+async function reconcileDownloadRequests(db: OfflineDatabase, getEnabledBoards: () => string[]): Promise<void> {
+  const generation = getDownloadActivityGeneration();
+  const accountGeneration = captureAuthCredentialGeneration();
+  const enabled = new Set(getEnabledBoards());
+  try {
+    for (const scopeKey of new Set([...enabled, ...getDownloadRequests().map((request) => request.scopeKey)])) {
+      const request = getDownloadRequest(scopeKey);
+      if (!enabled.has(scopeKey)) {
+        if (request && isDownloadRemovalPending(request.requestId)) continue;
+        if (request) transitionDownload(request, 'abandoned', { reason: 'disabled' });
+        continue;
+      }
+      const completed = await isScopeDownloadComplete(db, scopeKey);
+      if (generation !== getDownloadActivityGeneration() || !isAuthCredentialGenerationCurrent(accountGeneration))
+        return;
+      // A disable/re-enable during the read belongs to a different request.
+      if (getDownloadRequest(scopeKey)?.requestId !== request?.requestId || !getEnabledBoards().includes(scopeKey))
+        continue;
+      if (completed && request)
+        transitionDownload(request, 'completed', { completionSource: request.attemptId ? 'recovered' : 'cached' });
+      else if (!completed && !request) requestDownload(scopeKey, 'unknown', 'recovered');
+    }
+  } catch {
+    // Locked/unavailable storage is retried after the next cycle. Never gate sync.
+  }
+}
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
@@ -223,6 +294,7 @@ function downloadKeepAwakeProps(scopeKey: string): { keepAwake: boolean; suspend
 // the network downgrade — and `expected` (set by the engine for transport-shaped
 // failures) forces the warning even when the cause is an unrecognised shape.
 const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
+  downloadContext,
   scopeKey,
   stage,
   attempt,
@@ -232,6 +304,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   aborted,
   transferCompleted,
 }) => {
+  if (!isDownloadContextCurrent(downloadContext)) return;
   // The funnel's Failed leg (issue #4316). Sentry alone could never answer "what
   // fraction of downloads fail, and at which stage" — it groups by exception
   // shape, not by scope, and expected transport failures are deliberately
@@ -250,6 +323,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   // a download that did hold the screen.
   const downloadAbandoned = ABANDONED_REASONS.includes(reason);
   track(SHARED_EVENTS.OfflineBoardDownloadFailed, {
+    ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
     scopeKey,
     stage,
     attempt,
@@ -399,6 +473,7 @@ export const reportScopeDownloadAbandonedOnDisable = ({ scopeKey }: { scopeKey: 
 // is the filter for clean-run phase numbers; see the store for how a gap is
 // attributed to a board.
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
+  downloadContext,
   scopeKey,
   method,
   durationMs,
@@ -409,7 +484,9 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   importMs,
   phases,
 }) => {
+  if (!isDownloadContextCurrent(downloadContext)) return;
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+    ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
     scopeKey,
     method,
     durationMs,
@@ -449,8 +526,18 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
 // structurally unmeasurable — a download that is never finished emits nothing at
 // all. The engine guarantees this fires once ever per scope (durable
 // `scope-started:` marker), matching Completed, so the ratio is real.
-const reportScopeDownloadStart: ScopeDownloadStartReporter = ({ scopeKey, pathIntent, artifactBytes }) => {
+const reportScopeDownloadStart: ScopeDownloadStartReporter = ({
+  scopeKey,
+  pathIntent,
+  artifactBytes,
+  downloadContext,
+}) => {
+  if (!isDownloadContextCurrent(downloadContext)) return;
+  // Disable/re-enable does not purge the cached catalogue. An old queued pull
+  // must not consume the replacement request's persisted attribution.
+  if (downloadContext && getDownloadRequest(scopeKey)?.requestId !== downloadContext.requestId) return;
   track(SHARED_EVENTS.OfflineBoardDownloadStarted, {
+    ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
     scopeKey,
     pathIntent,
     artifactBytes,
@@ -969,6 +1056,8 @@ export function startSyncScheduler(
   options?: SyncRunOptions,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
+    prepareScopeDownloadContexts: () => reconcileDownloadRequests(db, getEnabledBoards),
+    ...downloadLifecycleOptions(),
     getViewerUserId: readSignedInUserId,
     getSprayWallUuid: resolveSprayWallCapability,
     // Pull only into a database stamped for that account (#6824).
@@ -1006,6 +1095,8 @@ export function triggerSync(
   options?: SyncRunOptions,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
+    prepareScopeDownloadContexts: () => reconcileDownloadRequests(db, getEnabledBoards),
+    ...downloadLifecycleOptions(),
     getViewerUserId: readSignedInUserId,
     getSprayWallUuid: resolveSprayWallCapability,
     // Pull only into a database stamped for that account (#6824).
@@ -1045,6 +1136,7 @@ export async function pullSync(
   options?: SyncOptions,
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
+    ...downloadLifecycleOptions(),
     ...options,
     getSprayWallUuid: options?.getSprayWallUuid ?? resolveSprayWallCapability,
     viewerUserId: options?.viewerUserId ?? (await readSignedInUserId()),

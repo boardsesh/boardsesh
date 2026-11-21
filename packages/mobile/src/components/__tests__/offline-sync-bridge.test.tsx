@@ -3,6 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, QueryObserver, onlineManager, type QueryKey } from '@tanstack/react-query';
 const useNotificationUpdatesMock = vi.hoisted(() => vi.fn());
+const bindDownloadOwnerMock = vi.hoisted(() => vi.fn());
+const resetDownloadLifecycleMock = vi.hoisted(() => vi.fn());
+vi.mock('../../offline/download-lifecycle', () => ({
+  setDownloadLifecycleOwner: bindDownloadOwnerMock,
+  resetDownloadLifecycle: resetDownloadLifecycleMock,
+  getDownloadRequests: () => [],
+  transitionDownload: vi.fn(),
+}));
 vi.mock('../../notifications/use-notification-updates', async () => {
   const { useEffect } = await import('react');
   return {
@@ -483,6 +491,10 @@ describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
     await waitFor(() => expect(sweepDelistedDownloadTerminalsMock).toHaveBeenCalledOnce());
     await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledOnce());
     const stampedAt = stampLocalUserIdMock.mock.invocationCallOrder[0];
+    const ledgerBoundAt = bindDownloadOwnerMock.mock.invocationCallOrder.at(-1);
+    expect(ledgerBoundAt).toBeGreaterThan(stampedAt);
+    expect(startSyncSchedulerMock.mock.invocationCallOrder[0]).toBeGreaterThan(ledgerBoundAt ?? 0);
+    expect(resetDownloadLifecycleMock.mock.invocationCallOrder[0]).toBeLessThan(ledgerBoundAt ?? 0);
     expect(clearUserDataMock.mock.invocationCallOrder[0]).toBeLessThan(stampedAt);
     expect(startSyncSchedulerMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
     expect(sweepDelistedDownloadTerminalsMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);

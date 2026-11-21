@@ -11,6 +11,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearOfflineBoards, clearOwnedSprayWallPins, setSetting } from '../settings';
 import { resetSyncStatus } from '../sync/sync-status';
 import { forgetAbandonedDownloads } from './abandoned-download-terminals';
+import { resetDownloadLifecycle } from './download-lifecycle';
 
 /**
  * Forget which boards this account downloads, what they are called, and when it
@@ -19,6 +20,7 @@ import { forgetAbandonedDownloads } from './abandoned-download-terminals';
  * board resumes it instead of downloading it again.
  */
 export function resetOfflineAccountSettings(): void {
+  resetDownloadLifecycle();
   // The "downloaded boards" list. Left behind, the next account inherits the
   // previous one's offline selection and the scheduler keeps syncing it.
   setSetting('syncEnabledBoards', []);

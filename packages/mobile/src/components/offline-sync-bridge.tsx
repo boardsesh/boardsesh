@@ -13,6 +13,7 @@ import {
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { wipePreviousAccountLocalData } from '../offline/account-boundary';
+import { setDownloadLifecycleOwner, getDownloadRequests, transitionDownload } from '../offline/download-lifecycle';
 import { getSetting } from '../settings';
 import { useNotificationUpdates } from '../notifications/use-notification-updates';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
@@ -156,6 +157,9 @@ export function OfflineSyncBridge() {
   const reportHoldOnce = useCallback((reason: OwnerClaimHold, cause?: unknown) => {
     if (reportedHolds.current.has(reason)) return;
     reportedHolds.current.add(reason);
+    for (const request of getDownloadRequests()) {
+      transitionDownload(request, 'deferred', { reason: `owner-${reason}` });
+    }
     reportHandledError(new Error(`Offline sync held for this session: ${reason}`, { cause }), {
       level: 'warning',
       tags: { source: 'offline-sync', op: 'owner-claim-hold', reason },
@@ -212,6 +216,9 @@ export function OfflineSyncBridge() {
         step = 'claim';
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
         if (cancelled) return;
+        // Owner recovery resets the ledger along with the old selection. Bind
+        // the verified account again before its scheduler can create requests.
+        setDownloadLifecycleOwner(localUserId);
         // The device is this account's now: release the scheduler and the
         // launch passes below.
         setOwnerClaim({ db });

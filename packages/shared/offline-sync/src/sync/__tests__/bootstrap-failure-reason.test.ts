@@ -104,6 +104,16 @@ describe('classifySnapshotBootstrapFailure', () => {
     expect(classifySnapshotBootstrapFailure(new TypeError('Network request failed'))).toBe('network');
   });
 
+  it('separates a range response and a missing cache artifact from unknown failures', () => {
+    expect(classifySnapshotBootstrapFailure(new Error('Unable to download a file: server returned HTTP 416'))).toBe(
+      'http-range',
+    );
+    expect(
+      classifySnapshotBootstrapFailure(new Error('FileSystemFile.open failed: ENOENT (No such file or directory)')),
+    ).toBe('artifact-missing');
+    expect(classifySnapshotBootstrapFailure(new Error('unable to open database: /cache/grades.db'))).toBe('unknown');
+  });
+
   it('falls back to unknown rather than guessing', () => {
     expect(classifySnapshotBootstrapFailure(new Error('something else entirely'))).toBe('unknown');
     expect(classifySnapshotBootstrapFailure(null)).toBe('unknown');
