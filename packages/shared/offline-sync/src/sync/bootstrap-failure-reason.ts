@@ -17,8 +17,8 @@
 // The names are set explicitly in each class's constructor and are equally reliable
 // across a `.cause` chain the platform rebuilt.
 
-import { isNetworkError } from '../mutation-queue/error-classification';
 import { classifySqliteLockError } from '../db/lock-errors';
+import { classifySnapshotTransferFailure } from './snapshot-transfer-failure';
 
 export type SnapshotBootstrapFailureReason =
   /** A sign-out, or a local purge (removing ANY board), tore the cycle down. */
@@ -67,6 +67,10 @@ export type SnapshotBootstrapFailureReason =
   | 'artifact-truncated'
   /** iOS's background URLSession could not decode the response body; retry as transport. */
   | 'background-transfer-decode'
+  /** The artifact request received HTTP 416; retry without claiming the device is offline. */
+  | 'http-range'
+  /** The downloaded cache file disappeared before it could be read. */
+  | 'artifact-missing'
   /** Offline, or the connection dropped. The normal state of a phone on a plane. */
   | 'network'
   /** Nothing above matched — the bucket that should stay near zero. */
@@ -105,14 +109,14 @@ export function classifySnapshotBootstrapFailure(cause: unknown): SnapshotBootst
   if (name === 'SnapshotSchemaCompatibilityError') return 'artifact-invalid';
   if (name === 'SnapshotWatermarkRegressionError') return 'watermark-regression';
   if (name === 'SnapshotPermanentMissError') return 'permanent-miss';
-  if (name === 'SnapshotArtifactTruncatedError') return 'artifact-truncated';
-  if (name === 'SnapshotBackgroundTransferInterruptedError') return 'background-transfer-decode';
-
   if (classifySqliteLockError(cause).locked) return 'database-locked';
+
+  const transferFailure = classifySnapshotTransferFailure(cause);
+  if (transferFailure && transferFailure.reason !== 'network') return transferFailure.reason;
 
   const message = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '';
   if (ARTIFACT_INVALID_MARKERS.some((marker) => message.includes(marker))) return 'artifact-invalid';
 
-  if (isNetworkError(cause)) return 'network';
+  if (transferFailure) return transferFailure.reason;
   return 'unknown';
 }

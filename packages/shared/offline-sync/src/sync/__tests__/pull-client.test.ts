@@ -27,7 +27,13 @@ vi.mock('../table-config', async () => {
 
 import { pullSync, type SyncProgress, multiRowChunkSize } from '../pull-client';
 import { setSigningOut, setBackgrounded, beginGlobalPurge, beginScopePurge } from '../../mutation-queue/drainer';
-import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
+import {
+  getCheckpoint,
+  setCheckpoint,
+  getCheckpointKey,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
+} from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
 import { USER_DATA_COMPLETE_KEY } from '../local-user-owner';
 import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '../sync-scheduler';
@@ -161,6 +167,124 @@ describe('pullSync', () => {
     // await chain so an incorrectly concurrent cycle reaches its network call.
     for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
   }
+
+  it('correlates request and attempt IDs through paged completion', async () => {
+    setupGraphqlFetchForAllTables();
+    const context = { requestId: 'request-original', attemptId: 'attempt-one' };
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+    const onScopeDownloadLifecycle = vi.fn();
+    await pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      getScopeDownloadContext: () => context,
+      onScopeDownloadStart,
+      onScopeDownloadComplete,
+      onScopeDownloadLifecycle,
+    });
+    expect(onScopeDownloadStart).toHaveBeenCalledWith(expect.objectContaining({ downloadContext: context }));
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(expect.objectContaining({ downloadContext: context }));
+    expect(onScopeDownloadLifecycle.mock.calls.map(([event]) => event.state)).toEqual(['started', 'completed']);
+  });
+
+  it('explains an owner-readiness no-start without fabricating work', async () => {
+    const onScopeDownloadLifecycle = vi.fn();
+    await pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      requireOwnedDatabase: true,
+      viewerUserId: 'unclaimed-viewer',
+      getScopeDownloadContext: () => ({ requestId: 'waiting-request', attemptId: 'preparation' }),
+      onScopeDownloadLifecycle,
+    });
+    expect(graphqlFetch).not.toHaveBeenCalled();
+    expect(onScopeDownloadLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'deferred',
+        reason: 'owner-unready',
+        stage: 'preparation',
+      }),
+    );
+    expect(onScopeDownloadLifecycle.mock.calls.some(([event]) => event.state === 'started')).toBe(false);
+  });
+
+  it('captures request context before the FIFO wait instead of adopting a re-enable', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const context = { requestId: 'old-request', attemptId: 'queued-attempt' };
+    const onScopeDownloadComplete = vi.fn();
+    const queued = pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      getScopeDownloadContext: () => context,
+      onScopeDownloadComplete,
+    });
+    context.requestId = 'new-request';
+    first.release();
+    await Promise.all([initial, queued]);
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        downloadContext: { requestId: 'old-request', attemptId: 'queued-attempt' },
+      }),
+    );
+  });
+
+  it('captures original callback references before a queued caller replaces its options', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const originalStarted = vi.fn();
+    const originalCompleted = vi.fn();
+    const replacement = vi.fn();
+    const options = {
+      enabledBoards: ['spray:9001:9001'],
+      onScopeDownloadStart: originalStarted,
+      onScopeDownloadComplete: originalCompleted,
+    };
+    const queued = pullSync(db, queryClient, graphqlFetch, options);
+    options.onScopeDownloadStart = replacement;
+    options.onScopeDownloadComplete = replacement;
+    first.release();
+    await Promise.all([initial, queued]);
+    expect(originalStarted).toHaveBeenCalledOnce();
+    expect(originalCompleted).toHaveBeenCalledOnce();
+    expect(replacement).not.toHaveBeenCalled();
+  });
+
+  it('reports cached readiness without fabricating another Started', async () => {
+    setupGraphqlFetchForAllTables();
+    vi.mocked(isScopeDownloadComplete).mockResolvedValueOnce(true);
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadLifecycle = vi.fn();
+    const context = { requestId: 'cached-request', attemptId: 'cached-check' };
+    await pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      getScopeDownloadContext: () => context,
+      onScopeDownloadStart,
+      onScopeDownloadLifecycle,
+    });
+    expect(onScopeDownloadLifecycle).toHaveBeenCalledWith({
+      scopeKey: 'spray:9001:9001',
+      context,
+      state: 'completed',
+      completionSource: 'cached',
+    });
+    expect(onScopeDownloadLifecycle.mock.calls.some(([event]) => event.state === 'started')).toBe(false);
+  });
+
+  it('ignores broken lifecycle sinks without withholding committed completion', async () => {
+    setupGraphqlFetchForAllTables();
+    await expect(
+      pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:9001:9001'],
+        getScopeDownloadContext: () => ({ requestId: 'request', attemptId: 'attempt' }),
+        onScopeDownloadLifecycle: () => {
+          throw new Error('reporter failed');
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(markScopeDownloadComplete).toHaveBeenCalled();
+  });
 
   it('serializes a publication pull behind the actual scheduler cycle', async () => {
     setupGraphqlFetchForAllTables();

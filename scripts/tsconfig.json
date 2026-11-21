@@ -376,6 +376,8 @@
     "mobile-native-release.test.ts",
     "benchmark-next-static-assets.ts",
     "__tests__/benchmark-next-static-assets.test.ts",
-    "__tests__/next-static-benchmark-workflow.test.ts"
+    "__tests__/next-static-benchmark-workflow.test.ts",
+    "offline-download-audit.ts",
+    "__tests__/offline-download-audit.test.ts"
   ]
 }

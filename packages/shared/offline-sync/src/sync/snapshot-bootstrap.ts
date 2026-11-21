@@ -269,6 +269,7 @@ export interface SnapshotSource {
 
 /** Where a bootstrap failed, for telemetry. */
 export type SnapshotBootstrapErrorReport = {
+  downloadContext?: import('./download-lifecycle').ScopeDownloadContext;
   scopeKey: string;
   /** Artifact bytes arrived before this failure; absent for non-transfer failures. */
   transferCompleted?: boolean;
@@ -450,8 +451,8 @@ export class SnapshotArtifactTruncatedError extends Error {
 
 /**
  * The iOS background URLSession was interrupted while decoding a response body.
- * Expo surfaces NSURLErrorCannotDecodeRawData as English prose without a stable
- * code, so the mobile adapter converts that one platform-shaped error into this
+ * Expo surfaces NSURLErrorCannotDecodeRawData as localized prose without a stable
+ * code, so the mobile adapter converts the known platform signatures into this
  * renderer-independent signal. It belongs on the bounded transport retry
  * ladder, not the structural artifact/device budget.
  */

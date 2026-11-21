@@ -348,7 +348,9 @@ import {
   setBackgrounded,
   SnapshotArtifactTruncatedError,
   SnapshotBackgroundTransferInterruptedError,
+  SnapshotTransferError,
   SnapshotPermanentMissError,
+  classifySnapshotTransferFailure,
   type SnapshotManifestEntry,
 } from '@boardsesh/offline-sync';
 
@@ -690,6 +692,75 @@ describe('downloadArtifact', () => {
         backgroundedDuringTransfer: false,
       }),
     );
+  });
+
+  it.each(['无法解码原始数据', 'Decodieren der Rohdaten nicht möglich'])(
+    'normalizes the observed localized background decoding failure: %s',
+    async (description) => {
+      const nativeCause = new Error(`Unable to download a file: ${description}`);
+      state.downloadError = new Error('FileSystemDownloadTask.start rejected', { cause: nativeCause });
+      const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+      expect(rejection).toBeInstanceOf(SnapshotBackgroundTransferInterruptedError);
+      expect((rejection as Error).cause).toBe(state.downloadError);
+      expect(classifySnapshotTransferFailure(rejection)).toEqual({
+        reason: 'background-transfer-decode',
+        retryable: true,
+        expected: true,
+      });
+      expect(state.taskCalls).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    'Connection reset',
+    'Software caused connection abort',
+    'Failed to connect to snapshots.boardsesh.com/104.21.81.90:443',
+  ])('preserves an Android transport failure for the snapshot retry ladder: %s', async (description) => {
+    const nativeCause = new Error(`Unable to download a file: ${description}`);
+    state.downloadError = nativeCause;
+    platformState.OS = 'android';
+    const rejection = await withFreshSnapshotSource((foregroundSnapshotSource) =>
+      foregroundSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error),
+    );
+
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).name).toBe('SnapshotTransferError');
+    expect((rejection as Error).cause).toBe(nativeCause);
+    expect(classifySnapshotTransferFailure(rejection)).toEqual({ reason: 'network', retryable: true, expected: true });
+  });
+
+  it('reports HTTP 416 without an immediate session retry, then permits a later fresh transfer', async () => {
+    const nativeCause = new Error('Unable to download a file: server returned HTTP 416');
+    state.downloadError = nativeCause;
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(SnapshotTransferError);
+    expect((rejection as Error).cause).toBe(nativeCause);
+    expect(classifySnapshotTransferFailure(rejection)).toEqual({
+      reason: 'http-range',
+      retryable: true,
+      expected: false,
+    });
+    expect(state.taskCalls).toHaveLength(1);
+    expect(state.taskCalls[0].sessionType).toBe('background');
+
+    state.downloadError = null;
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).resolves.not.toBeNull();
+    expect(state.taskCalls).toHaveLength(2);
+  });
+
+  it('keeps a missing artifact distinct while preserving its original native cause', async () => {
+    const nativeCause = new Error('FileSystemFile.open: ENOENT (No such file or directory)');
+    state.readError = nativeCause;
+    const rejection = await mobileSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+
+    expect((rejection as Error).cause).toBe(nativeCause);
+    expect(classifySnapshotTransferFailure(rejection)).toEqual({
+      reason: 'artifact-missing',
+      retryable: false,
+      expected: false,
+    });
   });
 
   it('throws a descriptive error wrapping the underlying cause when the cache directory cannot be created', async () => {
@@ -1349,6 +1420,18 @@ describe('downloadGradesArtifact', () => {
       /insufficient disk space/,
     );
     expect(state.downloadCalls).toHaveLength(0);
+  });
+
+  it('normalizes localized background decode errors through the same grades transfer boundary', async () => {
+    const nativeCause = new Error('Unable to download a file: 无法解码原始数据');
+    state.downloadError = nativeCause;
+    const rejection = await mobileSnapshotSource
+      .downloadGradesArtifact?.(GRADES_ARTIFACT)
+      .catch((error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(SnapshotBackgroundTransferInterruptedError);
+    expect((rejection as Error).cause).toBe(nativeCause);
+    expect(classifySnapshotTransferFailure(rejection)?.expected).toBe(true);
   });
 
   it('forwards grades cancellation and byte progress to the downloader', async () => {
