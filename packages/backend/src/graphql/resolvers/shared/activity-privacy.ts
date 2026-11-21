@@ -619,6 +619,7 @@ export function notificationPrivacyCondition(
   viewerId: string,
   notification: {
     type: SQLWrapper;
+    uuid: SQLWrapper;
     actorId: SQLWrapper;
     commentId: SQLWrapper;
     entityType: SQLWrapper;
@@ -627,8 +628,32 @@ export function notificationPrivacyCondition(
 ): SQL {
   const comment = alias(schema.comments, 'privacy_notification_comment');
   const followRequest = alias(schema.userFollowRequests, 'privacy_notification_follow_request');
+  const feedback = alias(schema.appFeedback, 'privacy_notification_feedback');
+  const feedbackMessage = alias(schema.appFeedbackMessages, 'privacy_notification_feedback_message');
   return or(
     eq(notification.type, 'new_follower'),
+    and(
+      eq(notification.type, 'app_feedback_reply'),
+      exists(
+        queryBuilder
+          .select({ id: feedback.id })
+          .from(feedback)
+          .where(
+            and(
+              eq(feedback.userId, viewerId),
+              eq(sql`${feedback.id}::text`, notification.entityId),
+              exists(
+                queryBuilder
+                  .select({ id: feedbackMessage.id })
+                  .from(feedbackMessage)
+                  .where(
+                    and(eq(feedbackMessage.notificationUuid, notification.uuid), isNull(feedbackMessage.withdrawnAt)),
+                  ),
+              ),
+            ),
+          ),
+      ),
+    ),
     // A follow request names its requester to the account they asked to follow,
     // whatever the requester's own activity privacy. It shows only while the
     // request is still pending: once it is approved, declined or cancelled there
@@ -644,6 +669,7 @@ export function notificationPrivacyCondition(
     ),
     and(
       ne(notification.type, 'follow_request'),
+      ne(notification.type, 'app_feedback_reply'),
       or(
         isNull(notification.actorId),
         and(

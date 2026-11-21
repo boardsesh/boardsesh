@@ -2,6 +2,7 @@ import type {
   QueueEvent,
   SessionEvent,
   NotificationEvent,
+  AppBugReportChangedEvent,
   CommentEvent,
   NewClimbCreatedEvent,
   BoardPresenceEvent,
@@ -36,6 +37,7 @@ export { boardReportDedupMarker } from './board-presence-store';
 type QueueSubscriber = ChannelSubscriber<QueueEvent>;
 type SessionSubscriber = ChannelSubscriber<SessionEvent>;
 type NotificationSubscriber = ChannelSubscriber<NotificationEvent>;
+type AppBugReportSubscriber = ChannelSubscriber<AppBugReportChangedEvent>;
 type CommentSubscriber = ChannelSubscriber<CommentEvent>;
 type NewClimbSubscriber = ChannelSubscriber<NewClimbCreatedEvent>;
 type BoardPresenceSubscriber = ChannelSubscriber<BoardPresenceEvent>;
@@ -61,7 +63,7 @@ const EVENT_BUFFER_TTL = 300; // 5 minutes
  * - Events are only dispatched to local subscribers
  * - Used when REDIS_URL is not configured
  *
- * The eight domains below (queue, session, notification, comment, new-climb,
+ * The nine domains below (queue, session, notification, app-bug-report, comment, new-climb,
  * climb-stats, board-presence, board-queue) all share the exact same subscribe/publish/fan-in mechanics
  * — that generic behavior lives in `PubSubChannel` (./channel.ts). Each
  * `redisSubscribe`/`redisUnsubscribe`/`redisPublish` closure below resolves to
@@ -96,6 +98,14 @@ class PubSub {
     redisSubscribe: (userId) => this.redisAdapter?.subscribeNotificationChannel(userId) ?? Promise.resolve(),
     redisUnsubscribe: (userId) => this.redisAdapter?.unsubscribeNotificationChannel(userId) ?? Promise.resolve(),
     redisPublish: (userId, event) => this.redisAdapter?.publishNotificationEvent(userId, event) ?? Promise.resolve(),
+    isRedisRequired: () => this.redisRequired,
+    logger,
+  });
+  private readonly appBugReportChannel = new PubSubChannel<AppBugReportChangedEvent>({
+    label: 'app bug report',
+    redisSubscribe: (userId) => this.redisAdapter?.subscribeAppBugReportChannel(userId) ?? Promise.resolve(),
+    redisUnsubscribe: (userId) => this.redisAdapter?.unsubscribeAppBugReportChannel(userId) ?? Promise.resolve(),
+    redisPublish: (userId, event) => this.redisAdapter?.publishAppBugReportChanged(userId, event) ?? Promise.resolve(),
     isRedisRequired: () => this.redisRequired,
     logger,
   });
@@ -218,6 +228,7 @@ class PubSub {
       queue: this.queueChannel.getRuntimeStats(),
       session: this.sessionChannel.getRuntimeStats(),
       notification: this.notificationChannel.getRuntimeStats(),
+      appBugReport: this.appBugReportChannel.getRuntimeStats(),
       comment: this.commentChannel.getRuntimeStats(),
       newClimb: this.newClimbChannel.getRuntimeStats(),
       climbStats: this.climbStatsChannel.getRuntimeStats(),
@@ -272,6 +283,10 @@ class PubSub {
 
     this.redisAdapter.onNotificationMessage((userId, event) => {
       this.notificationChannel.dispatchLocal(userId, event);
+    });
+
+    this.redisAdapter.onAppBugReportMessage((userId, event) => {
+      this.appBugReportChannel.dispatchLocal(userId, event);
     });
 
     this.redisAdapter.onCommentMessage((entityKey, event) => {
@@ -482,6 +497,16 @@ class PubSub {
    */
   publishNotificationEvent(userId: string, event: NotificationEvent): void {
     this.notificationChannel.publish(userId, event);
+  }
+
+  /** Owner-scoped cache changes are separate from persisted inbox notifications. */
+  async subscribeAppBugReportChanges(userId: string, callback: AppBugReportSubscriber): Promise<() => void> {
+    this.ensureRedisIfRequired();
+    return this.appBugReportChannel.subscribe(userId, callback);
+  }
+
+  publishAppBugReportChanged(userId: string, event: AppBugReportChangedEvent): void {
+    this.appBugReportChannel.publish(userId, event);
   }
 
   /**

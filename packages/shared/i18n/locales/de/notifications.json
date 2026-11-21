@@ -51,7 +51,8 @@
     "gymClaimApprovedGeneric": "Die Halle gehört jetzt dir — deine Anfrage ist durch",
     "default": "Du hast eine neue Benachrichtigung",
     "sprayWallReady": "{{wall}} ist bereit zur Prüfung.",
-    "sprayWallReadyGeneric": "Das Foto deiner Spraywall ist bereit zur Prüfung."
+    "sprayWallReadyGeneric": "Das Foto deiner Spraywall ist bereit zur Prüfung.",
+    "bugReportReply": "Boardsesh hat auf deine Fehlermeldung geantwortet"
   },
   "followRequest": {
     "approve": "Bestätigen",
@@ -65,6 +66,8 @@
   },
   "push": {
     "sprayWallTitle": "Bereit zur Prüfung",
-    "sprayWallBody": "Das Foto von {{wall}} ist bereit. Prüfe die Griffe."
+    "sprayWallBody": "Das Foto von {{wall}} ist bereit. Prüfe die Griffe.",
+    "bugReportTitle": "Boardsesh hat geantwortet",
+    "bugReportBody": "Öffne deine Fehlermeldung, um unsere Antwort zu lesen."
   }
 }

@@ -451,6 +451,13 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
 
       <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
         <DrawerRow icon="star" title={t('userDrawer.rateBoardsesh')} onPress={handleRate} />
+        {isAuthenticated ? (
+          <DrawerRow
+            icon="comment"
+            title={t('userDrawer.myBugReports')}
+            onPress={() => close(() => router.push('/bug-reports'))}
+          />
+        ) : null}
         <DrawerRow icon="flag" title={t('userDrawer.reportBug')} onPress={handleReportBug} />
         <DrawerRow
           icon="open.external"

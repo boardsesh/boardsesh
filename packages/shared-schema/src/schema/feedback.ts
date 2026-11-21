@@ -139,6 +139,9 @@ export const feedbackTypeDefs = /* GraphQL */ `
     contactConsent: Boolean
     createdAt: String!
     status: AppFeedbackStatus!
+    lastMessageAt: String
+    lastMessagePreview: String
+    needsReply: Boolean!
     resolvedAt: String
     resolvedBy: String
     githubIssueNumber: Int
@@ -158,6 +161,8 @@ export const feedbackTypeDefs = /* GraphQL */ `
   match everything. \`limit\`/\`offset\` drive offset pagination.
   """
   input AdminAppFeedbackInput {
+    reporterId: ID
+    needsReply: Boolean
     type: AppFeedbackTypeFilter
     status: AppFeedbackStatus
     platform: String
@@ -194,5 +199,62 @@ export const feedbackTypeDefs = /* GraphQL */ `
   input UpdateAppFeedbackStatusInput {
     id: ID!
     status: AppFeedbackStatus!
+  }
+  type AppBugReportChangedEvent {
+    reportId: ID!
+  }
+
+  enum AppBugReportMessageDeliveryStatus {
+    pending
+    sent
+    failed
+  }
+  enum AppBugReportMessageAuthorRole {
+    reporter
+    staff
+  }
+  type AppBugReport {
+    id: ID!
+    comment: String
+    createdAt: String!
+    status: AppFeedbackStatus!
+    screenshotUrls: [String!]!
+    githubIssueNumber: Int
+    githubIssueUrl: String
+    canReply: Boolean!
+    lastMessageAt: String
+    lastMessagePreview: String
+  }
+  type AppBugReportMessage {
+    id: ID!
+    reportId: ID!
+    body: String!
+    authorRole: AppBugReportMessageAuthorRole!
+    deliveryStatus: AppBugReportMessageDeliveryStatus!
+    createdAt: String!
+  }
+  input AppBugReportsInput {
+    limit: Int
+    after: ID
+  }
+  input AppBugReportMessagesInput {
+    reportId: ID!
+    limit: Int
+    before: ID
+  }
+  input SendAppBugReportMessageInput {
+    reportId: ID!
+    body: String!
+    clientMutationId: String!
+  }
+  type AppBugReportConnection {
+    reports: [AppBugReport!]!
+    hasMore: Boolean!
+    endCursor: ID
+  }
+  type AppBugReportMessageConnection {
+    messages: [AppBugReportMessage!]!
+    hasMore: Boolean!
+    endCursor: ID
   }
 `;

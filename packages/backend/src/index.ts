@@ -14,6 +14,7 @@ import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 import { startJobQueue, stopJobQueue, stopJobQueueWorkers } from './services/job-queue';
+import { startFeedbackGithubConversations } from './services/feedback-github-conversations';
 import { startSprayDetectionNotifications } from './services/spray-detection-notifications';
 import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
 import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
@@ -72,6 +73,7 @@ async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
   await startSprayDetectionMaintenance(jobQueue);
   await startSprayDetectionNotifications(jobQueue);
+  await startFeedbackGithubConversations(jobQueue);
   await startBackgroundJobMaintenance(jobQueue, db);
   // Not fatal: without it no family schedule fires, which is also the state
   // with every family in BATCH_FAMILIES_DISABLED. Work already queued is unaffected.

@@ -51,7 +51,8 @@
     "gymClaimApprovedGeneric": "Tu es désormais le propriétaire : ta revendication de la salle est validée",
     "default": "Tu as une nouvelle notification",
     "sprayWallReady": "{{wall}} est prêt à vérifier.",
-    "sprayWallReadyGeneric": "La photo de ton Spraywall est prête à vérifier."
+    "sprayWallReadyGeneric": "La photo de ton Spraywall est prête à vérifier.",
+    "bugReportReply": "Boardsesh a répondu à ton signalement de bug"
   },
   "followRequest": {
     "approve": "Approuver",
@@ -65,6 +66,8 @@
   },
   "push": {
     "sprayWallTitle": "Prêt à vérifier",
-    "sprayWallBody": "La photo de {{wall}} est prête. Vérifie les prises."
+    "sprayWallBody": "La photo de {{wall}} est prête. Vérifie les prises.",
+    "bugReportTitle": "Boardsesh a répondu",
+    "bugReportBody": "Ouvre ton signalement de bug pour lire notre réponse."
   }
 }

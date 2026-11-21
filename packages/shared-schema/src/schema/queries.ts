@@ -803,6 +803,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     only. Supports filtering by type/status/platform and free-text search over
     the comment, with offset pagination.
     """
+    myAppBugReports(input: AppBugReportsInput): AppBugReportConnection!
+    appBugReport(id: ID!): AppBugReport
+    appBugReportMessages(input: AppBugReportMessagesInput!): AppBugReportMessageConnection!
     adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
     "Current release context. Available without signing in."
     mobileReleaseStatus(input: MobileReleaseStatusInput!): ReleaseContext!

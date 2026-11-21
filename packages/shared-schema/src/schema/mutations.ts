@@ -1072,6 +1072,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
     only. Moving to \`resolved\`/\`wont_fix\` stamps the resolver + timestamp;
     moving back to \`new\`/\`in_progress\` clears them. Returns the updated row.
     """
+    retryAppBugReportMessage(id: ID!): AppBugReportMessage!
+    sendAppBugReportMessage(input: SendAppBugReportMessageInput!): AppBugReportMessage!
     updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
 
     """

@@ -891,6 +891,27 @@ export async function initializeJobQueueSchema(
       retryDelay: 30,
       retryBackoff: true,
     });
+    await boss.createQueue('feedback-github-comment', {
+      partition: false,
+      retryLimit: 20,
+      retryDelay: 60,
+      retryBackoff: true,
+      retryDelayMax: 300,
+    });
+    await boss.createQueue('feedback-github-issue', {
+      partition: false,
+      retryLimit: 20,
+      retryDelay: 60,
+      retryBackoff: true,
+      retryDelayMax: 300,
+    });
+    await boss.createQueue('feedback-github-inbound', {
+      partition: false,
+      retryLimit: 20,
+      retryDelay: 60,
+      retryBackoff: true,
+      retryDelayMax: 300,
+    });
     await boss.createQueue('notification-push-delivery', {
       partition: false,
       retryLimit: 20,

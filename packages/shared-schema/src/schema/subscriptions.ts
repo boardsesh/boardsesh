@@ -19,6 +19,12 @@ export const subscriptionsTypeDefs = /* GraphQL */ `
     notificationReceived: NotificationEvent!
 
     """
+    Changes to the signed-in reporter's bug reports, including edits, withdrawals
+    and GitHub issue status. Ownership is rechecked before every event.
+    """
+    appBugReportChanged: AppBugReportChangedEvent!
+
+    """
     Subscribe to real-time comment updates on an entity.
     """
     commentUpdates(entityType: SocialEntityType!, entityId: String!): CommentEvent!

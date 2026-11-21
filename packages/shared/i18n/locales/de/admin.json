@@ -105,8 +105,9 @@
     "reporter": {
       "anonymous": "Anonym",
       "copyEmail": "E-Mail kopieren",
-      "consentYes": "Kontakt OK",
-      "consentNo": "Keine Zustimmung"
+      "consentYes": "E-Mail erlaubt",
+      "consentNo": "E-Mail abgelehnt",
+      "showReports": "Fehler dieser Person anzeigen"
     },
     "rating": {
       "value": "{{rating}}/5"
@@ -148,6 +149,26 @@
       "updateFailed": "Der Status ließ sich nicht ändern",
       "emailCopied": "E-Mail kopiert",
       "copyFailed": "Kopieren fehlgeschlagen"
+    },
+    "conversation": {
+      "title": "Unterhaltung",
+      "open": "Unterhaltung lesen",
+      "loadError": "Diese Unterhaltung konnte nicht geladen werden.",
+      "loadOlder": "Ältere Nachrichten laden",
+      "empty": "Antworten auf diese Meldung erscheinen hier.",
+      "staff": "Boardsesh",
+      "reporter": "Meldende Person",
+      "close": "Schließen",
+      "retry": "Erneut versuchen",
+      "latestReply": "Letzte Antwort",
+      "publicNotice": "Antworten werden im verlinkten öffentlichen GitHub-Issue geteilt.",
+      "openGithub": "Auf GitHub antworten",
+      "githubHint": "Um der meldenden Person zu schreiben, beginne einen GitHub-Kommentar mit #replytocustomer. Nur autorisierte Boardsesh-Mitwirkende können diese Nachrichten senden."
+    },
+    "filters": {
+      "reporter": "Konto-ID der meldenden Person",
+      "needsReply": "Antwort ausstehend",
+      "clearReporter": "Alle meldenden Personen anzeigen"
     }
   },
   "retention": {

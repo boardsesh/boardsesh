@@ -405,7 +405,8 @@
     "successRating": "Grazie, registrato.",
     "successBug": "Bug registrato, grazie.",
     "errorRating": "Impossibile inviarlo: riprova tra un attimo.",
-    "joinDiscord": "Entra su Discord"
+    "joinDiscord": "Entra su Discord",
+    "successBugSignedIn": "Bug registrato. Lo trovi nella sezione «Le tue segnalazioni di bug»."
   },
   "feedbackForm": {
     "bugPlaceholder": "Cosa stavi facendo? Cosa ti aspettavi e cosa hai visto?",
@@ -413,10 +414,11 @@
     "remainingChars": "Mancano ancora {{count}} caratteri",
     "bluetoothBugLabel": "Ho problemi con il Bluetooth",
     "bluetoothBugDescription": "Cerca i pannelli nelle vicinanze e ci manda ciò che trasmettono, così capiamo perché il tuo non si connette. Nessun pannello viene controllato: ascoltiamo e basta.",
-    "contactConsentLabel": "Possiamo contattarti a riguardo?",
-    "contactConsentDescription": "Ci permette di mandarti via email il link alla segnalazione e di risponderti se ci servono altri dettagli.",
+    "contactConsentLabel": "Ricevi email su questa segnalazione",
+    "contactConsentDescription": "Ci permette di inviarti il link del ticket e ricontattarti via email. Le risposte nell’app sono sempre disponibili.",
     "starRating_one": "{{count}} stella",
-    "starRating_other": "{{count}} stelle"
+    "starRating_other": "{{count}} stelle",
+    "inAppRepliesDescription": "Leggi e rispondi ai nostri messaggi nella sezione «Le tue segnalazioni di bug». Le tue risposte appaiono pubblicamente nel nostro registro dei bug."
   },
   "boardConfigMismatch": {
     "title": "La configurazione del pannello non corrisponde",
@@ -777,5 +779,33 @@
     "notEligible": "Non possiamo aggiungere una password a questo account da qui. Se ne ha già una, accedi con quella.",
     "tryAgainSoon": "Non siamo riusciti a inviare il link. Riprova più tardi.",
     "back": "Torna alle Impostazioni"
+  },
+  "bugReports": {
+    "title": "Le tue segnalazioni di bug",
+    "detailTitle": "Segnalazione di bug",
+    "empty": "Le tue segnalazioni di bug appariranno qui.",
+    "signIn": "Accedi per vedere le tue segnalazioni di bug",
+    "loadError": "Impossibile caricare le tue segnalazioni.",
+    "threadError": "Impossibile caricare questa conversazione.",
+    "notFound": "Questa segnalazione non è più disponibile.",
+    "retry": "Riprova",
+    "loadOlder": "Carica i messaggi precedenti",
+    "loadMore": "Carica altre segnalazioni",
+    "replyPlaceholder": "Aggiungi una risposta",
+    "send": "Invia risposta",
+    "sendError": "Impossibile inviare la tua risposta. Riprova.",
+    "staff": "Boardsesh",
+    "you": "Tu",
+    "readOnly": "Potrai rispondere quando la tua segnalazione avrà un ticket GitHub collegato.",
+    "github": "Segnalazioni pubbliche",
+    "statusNew": "Ricevuta",
+    "statusInProgress": "In corso",
+    "statusResolved": "Risolta",
+    "statusWontFix": "Chiusa",
+    "noMessages": "Le risposte di Boardsesh appariranno qui.",
+    "publicNotice": "La tua risposta appare pubblicamente nel nostro registro dei bug su GitHub. Chiunque può leggerla. Non ti serve un account GitHub. Non includere informazioni personali.",
+    "pending": "In attesa di pubblicazione…",
+    "failed": "Questa risposta non è ancora arrivata al registro dei bug.",
+    "retrySend": "Riprova a inviare"
   }
 }

@@ -193,8 +193,10 @@ export type AddGymMemberInput = {
  */
 export type AdminAppFeedbackInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
+  needsReply?: InputMaybe<Scalars['Boolean']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
   platform?: InputMaybe<Scalars['String']['input']>;
+  reporterId?: InputMaybe<Scalars['ID']['input']>;
   search?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<AppFeedbackStatus>;
   type?: InputMaybe<AppFeedbackTypeFilter>;
@@ -324,6 +326,64 @@ export type Angle = {
   angle: Scalars['Int']['output'];
 };
 
+export type AppBugReport = {
+  __typename?: 'AppBugReport';
+  canReply: Scalars['Boolean']['output'];
+  comment?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  githubIssueNumber?: Maybe<Scalars['Int']['output']>;
+  githubIssueUrl?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  lastMessageAt?: Maybe<Scalars['String']['output']>;
+  lastMessagePreview?: Maybe<Scalars['String']['output']>;
+  screenshotUrls: Array<Scalars['String']['output']>;
+  status: AppFeedbackStatus;
+};
+
+export type AppBugReportChangedEvent = {
+  __typename?: 'AppBugReportChangedEvent';
+  reportId: Scalars['ID']['output'];
+};
+
+export type AppBugReportConnection = {
+  __typename?: 'AppBugReportConnection';
+  endCursor?: Maybe<Scalars['ID']['output']>;
+  hasMore: Scalars['Boolean']['output'];
+  reports: Array<AppBugReport>;
+};
+
+export type AppBugReportMessage = {
+  __typename?: 'AppBugReportMessage';
+  authorRole: AppBugReportMessageAuthorRole;
+  body: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  deliveryStatus: AppBugReportMessageDeliveryStatus;
+  id: Scalars['ID']['output'];
+  reportId: Scalars['ID']['output'];
+};
+
+export type AppBugReportMessageAuthorRole = 'reporter' | 'staff';
+
+export type AppBugReportMessageConnection = {
+  __typename?: 'AppBugReportMessageConnection';
+  endCursor?: Maybe<Scalars['ID']['output']>;
+  hasMore: Scalars['Boolean']['output'];
+  messages: Array<AppBugReportMessage>;
+};
+
+export type AppBugReportMessageDeliveryStatus = 'failed' | 'pending' | 'sent';
+
+export type AppBugReportMessagesInput = {
+  before?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  reportId: Scalars['ID']['input'];
+};
+
+export type AppBugReportsInput = {
+  after?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
 /** Debug context captured with a feedback row (the jsonb `context` column). */
 export type AppFeedbackContext = {
   __typename?: 'AppFeedbackContext';
@@ -352,6 +412,9 @@ export type AppFeedbackReport = {
   githubIssueNumber?: Maybe<Scalars['Int']['output']>;
   githubIssueUrl?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  lastMessageAt?: Maybe<Scalars['String']['output']>;
+  lastMessagePreview?: Maybe<Scalars['String']['output']>;
+  needsReply: Scalars['Boolean']['output'];
   platform: Scalars['String']['output'];
   rating?: Maybe<Scalars['Int']['output']>;
   releaseContext?: Maybe<ReleaseContext>;
@@ -5405,6 +5468,12 @@ export type Mutation = {
   resolveBoardForUuid: ResolvedBoard;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
+  /**
+   * Update the triage status of a feedback row from the admin dashboard. Admin
+   * only. Moving to `resolved`/`wont_fix` stamps the resolver + timestamp;
+   * moving back to `new`/`in_progress` clears them. Returns the updated row.
+   */
+  retryAppBugReportMessage: AppBugReportMessage;
   retrySprayWallDetection: SprayWallDetection;
   /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
@@ -5439,6 +5508,7 @@ export type Mutation = {
   saveSprayWallLedSetup: SprayWallLedSetup;
   /** Save a new tick (climb attempt record). */
   saveTick: Tick;
+  sendAppBugReportMessage: AppBugReportMessage;
   sendDeviceLogs: SendDeviceLogsResponse;
   /** Record the signed-in climber's analytics consent answer and return the account's current answer. */
   setAnalyticsConsent: AnalyticsConsent;
@@ -5598,11 +5668,6 @@ export type Mutation = {
   unregisterNotificationDevice: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];
-  /**
-   * Update the triage status of a feedback row from the admin dashboard. Admin
-   * only. Moving to `resolved`/`wont_fix` stamps the resolver + timestamp;
-   * moving back to `new`/`in_progress` clears them. Returns the updated row.
-   */
   updateAppFeedbackStatus: AppFeedbackReport;
   /** Update a board's metadata. */
   updateBoard: UserBoard;
@@ -6329,6 +6394,11 @@ export type MutationResolveProposalArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRetryAppBugReportMessageArgs = {
+  id: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRetrySprayWallDetectionArgs = {
   id: Scalars['ID']['input'];
 };
@@ -6388,6 +6458,11 @@ export type MutationSaveSprayWallLedSetupArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSaveTickArgs = {
   input: SaveTickInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSendAppBugReportMessageArgs = {
+  input: SendAppBugReportMessageInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6860,6 +6935,7 @@ export type NotificationEvent = {
 };
 
 export type NotificationType =
+  | 'app_feedback_reply'
   | 'comment_on_board'
   | 'comment_on_climb'
   | 'comment_on_gym'
@@ -7720,12 +7796,6 @@ export type Query = {
    * Requires authentication.
    */
   activityFeed: ActivityFeedResult;
-  /**
-   * List submitted app feedback (bug reports + ratings) for the admin feedback
-   * dashboard, enriched with the reporter's identity and triage state. Admin
-   * only. Supports filtering by type/status/platform and free-text search over
-   * the comment, with offset pagination.
-   */
   adminAppFeedback: AdminAppFeedbackResult;
   /** Stored editable metadata for one active board. Global admins only. */
   adminBoard?: Maybe<AdminBoard>;
@@ -7750,6 +7820,8 @@ export type Query = {
   allUserPlaylists: AllUserPlaylistsResult;
   /** Get available angles for a board layout. */
   angles: Array<Angle>;
+  appBugReport?: Maybe<AppBugReport>;
+  appBugReportMessages: AppBugReportMessageConnection;
   appWorkout: AppWorkout;
   /**
    * Get Aurora credential for a specific board type.
@@ -8188,6 +8260,13 @@ export type Query = {
   mobileReleaseStatus: ReleaseContext;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
+  /**
+   * List submitted app feedback (bug reports + ratings) for the admin feedback
+   * dashboard, enriched with the reporter's identity and triage state. Admin
+   * only. Supports filtering by type/status/platform and free-text search over
+   * the comment, with offset pagination.
+   */
+  myAppBugReports: AppBugReportConnection;
   /**
    * Recorded board configurations for the current user keyed by controller serial.
    * Used as a fallback when boardsBySerialNumbers returns nothing for a serial,
@@ -8718,6 +8797,16 @@ export type QueryAnglesArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryAppBugReportArgs = {
+  id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAppBugReportMessagesArgs = {
+  input: AppBugReportMessagesInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryAppWorkoutArgs = {
   id: Scalars['ID']['input'];
 };
@@ -9125,6 +9214,11 @@ export type QueryIsFollowingArgs = {
 /** Root query type for all read operations. */
 export type QueryMobileReleaseStatusArgs = {
   input: MobileReleaseStatusInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryMyAppBugReportsArgs = {
+  input?: InputMaybe<AppBugReportsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -10349,6 +10443,12 @@ export type SearchUsersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Search query (min 2 characters) */
   query: Scalars['String']['input'];
+};
+
+export type SendAppBugReportMessageInput = {
+  body: Scalars['String']['input'];
+  clientMutationId: Scalars['String']['input'];
+  reportId: Scalars['ID']['input'];
 };
 
 export type SendDeviceLogsInput = {
@@ -12577,6 +12677,11 @@ export type SubmitQaVerdictInput = {
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
+  /**
+   * Changes to the signed-in reporter's bug reports, including edits, withdrawals
+   * and GitHub issue status. Ownership is rechecked before every event.
+   */
+  appBugReportChanged: AppBugReportChangedEvent;
   /**
    * Subscribe to the live "now on the wall" feed for a shared board (board_id
    * resolved from the BLE serial). Membership-free; the board's policy decides.
@@ -14954,6 +15059,9 @@ export type AdminAppFeedbackQuery = {
       angle?: number | null;
       contactConsent?: boolean | null;
       createdAt: string;
+      lastMessageAt?: string | null;
+      lastMessagePreview?: string | null;
+      needsReply: boolean;
       status: AppFeedbackStatus;
       resolvedAt?: string | null;
       resolvedBy?: string | null;
@@ -15015,6 +15123,9 @@ export type UpdateAppFeedbackStatusMutation = {
     angle?: number | null;
     contactConsent?: boolean | null;
     createdAt: string;
+    lastMessageAt?: string | null;
+    lastMessagePreview?: string | null;
+    needsReply: boolean;
     status: AppFeedbackStatus;
     resolvedAt?: string | null;
     resolvedBy?: string | null;
@@ -15047,6 +15158,116 @@ export type UpdateAppFeedbackStatusMutation = {
       userAgent?: string | null;
     } | null;
   };
+};
+
+export type MyAppBugReportsQueryVariables = Exact<{
+  input?: InputMaybe<AppBugReportsInput>;
+}>;
+
+export type MyAppBugReportsQuery = {
+  __typename?: 'Query';
+  myAppBugReports: {
+    __typename?: 'AppBugReportConnection';
+    hasMore: boolean;
+    endCursor?: string | null;
+    reports: Array<{
+      __typename?: 'AppBugReport';
+      id: string;
+      comment?: string | null;
+      createdAt: string;
+      status: AppFeedbackStatus;
+      screenshotUrls: Array<string>;
+      githubIssueNumber?: number | null;
+      githubIssueUrl?: string | null;
+      canReply: boolean;
+      lastMessageAt?: string | null;
+      lastMessagePreview?: string | null;
+    }>;
+  };
+};
+
+export type AppBugReportQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+export type AppBugReportQuery = {
+  __typename?: 'Query';
+  appBugReport?: {
+    __typename?: 'AppBugReport';
+    id: string;
+    comment?: string | null;
+    createdAt: string;
+    status: AppFeedbackStatus;
+    screenshotUrls: Array<string>;
+    githubIssueNumber?: number | null;
+    githubIssueUrl?: string | null;
+    canReply: boolean;
+    lastMessageAt?: string | null;
+    lastMessagePreview?: string | null;
+  } | null;
+};
+
+export type AppBugReportMessagesQueryVariables = Exact<{
+  input: AppBugReportMessagesInput;
+}>;
+
+export type AppBugReportMessagesQuery = {
+  __typename?: 'Query';
+  appBugReportMessages: {
+    __typename?: 'AppBugReportMessageConnection';
+    hasMore: boolean;
+    endCursor?: string | null;
+    messages: Array<{
+      __typename?: 'AppBugReportMessage';
+      id: string;
+      reportId: string;
+      body: string;
+      authorRole: AppBugReportMessageAuthorRole;
+      deliveryStatus: AppBugReportMessageDeliveryStatus;
+      createdAt: string;
+    }>;
+  };
+};
+
+export type SendAppBugReportMessageMutationVariables = Exact<{
+  input: SendAppBugReportMessageInput;
+}>;
+
+export type SendAppBugReportMessageMutation = {
+  __typename?: 'Mutation';
+  sendAppBugReportMessage: {
+    __typename?: 'AppBugReportMessage';
+    id: string;
+    reportId: string;
+    body: string;
+    authorRole: AppBugReportMessageAuthorRole;
+    deliveryStatus: AppBugReportMessageDeliveryStatus;
+    createdAt: string;
+  };
+};
+
+export type RetryAppBugReportMessageMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+export type RetryAppBugReportMessageMutation = {
+  __typename?: 'Mutation';
+  retryAppBugReportMessage: {
+    __typename?: 'AppBugReportMessage';
+    id: string;
+    reportId: string;
+    body: string;
+    authorRole: AppBugReportMessageAuthorRole;
+    deliveryStatus: AppBugReportMessageDeliveryStatus;
+    createdAt: string;
+  };
+};
+
+export type AppBugReportChangedSubscriptionVariables = Exact<{ [key: string]: never }>;
+
+export type AppBugReportChangedSubscription = {
+  __typename?: 'Subscription';
+  appBugReportChanged: { __typename?: 'AppBugReportChangedEvent'; reportId: string };
 };
 
 export type GymOwnershipLookupQueryVariables = Exact<{
@@ -21563,6 +21784,9 @@ export const AdminAppFeedbackDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'contactConsent' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastMessageAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastMessagePreview' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'needsReply' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'status' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
@@ -21682,6 +21906,9 @@ export const UpdateAppFeedbackStatusDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'contactConsent' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'lastMessageAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'lastMessagePreview' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'needsReply' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'status' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
@@ -21739,6 +21966,285 @@ export const UpdateAppFeedbackStatusDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateAppFeedbackStatusMutation, UpdateAppFeedbackStatusMutationVariables>;
+export const MyAppBugReportsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'MyAppBugReports' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'AppBugReportsInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myAppBugReports' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'reports' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'githubIssueNumber' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'githubIssueUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'canReply' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastMessageAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastMessagePreview' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'endCursor' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MyAppBugReportsQuery, MyAppBugReportsQueryVariables>;
+export const AppBugReportDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'AppBugReport' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'appBugReport' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'id' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'githubIssueNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'githubIssueUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canReply' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'lastMessageAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'lastMessagePreview' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AppBugReportQuery, AppBugReportQueryVariables>;
+export const AppBugReportMessagesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'AppBugReportMessages' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'AppBugReportMessagesInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'appBugReportMessages' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'messages' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'reportId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'authorRole' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'deliveryStatus' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'endCursor' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AppBugReportMessagesQuery, AppBugReportMessagesQueryVariables>;
+export const SendAppBugReportMessageDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SendAppBugReportMessage' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SendAppBugReportMessageInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sendAppBugReportMessage' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reportId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'authorRole' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'deliveryStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SendAppBugReportMessageMutation, SendAppBugReportMessageMutationVariables>;
+export const RetryAppBugReportMessageDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RetryAppBugReportMessage' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'retryAppBugReportMessage' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'id' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reportId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'authorRole' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'deliveryStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RetryAppBugReportMessageMutation, RetryAppBugReportMessageMutationVariables>;
+export const AppBugReportChangedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'subscription',
+      name: { kind: 'Name', value: 'AppBugReportChanged' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'appBugReportChanged' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'reportId' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AppBugReportChangedSubscription, AppBugReportChangedSubscriptionVariables>;
 export const GymOwnershipLookupDocument = {
   kind: 'Document',
   definitions: [

@@ -105,8 +105,9 @@
     "reporter": {
       "anonymous": "匿名",
       "copyEmail": "复制邮箱",
-      "consentYes": "同意联系",
-      "consentNo": "未同意联系"
+      "consentYes": "允许邮件",
+      "consentNo": "拒绝邮件",
+      "showReports": "查看此用户的错误报告"
     },
     "rating": {
       "value": "{{rating}}/5"
@@ -148,6 +149,26 @@
       "updateFailed": "无法更新状态",
       "emailCopied": "邮箱已复制",
       "copyFailed": "无法复制"
+    },
+    "conversation": {
+      "title": "对话",
+      "open": "阅读对话",
+      "loadError": "无法加载此对话。",
+      "loadOlder": "加载更早的消息",
+      "empty": "此报告的回复会显示在这里。",
+      "staff": "Boardsesh",
+      "reporter": "报告提交者",
+      "close": "关闭",
+      "retry": "重试",
+      "latestReply": "最新回复",
+      "publicNotice": "回复会同步至关联的公开 GitHub 问题。",
+      "openGithub": "在 GitHub 上回复",
+      "githubHint": "要联系报告提交者，请以 #replytocustomer 开头发表 GitHub 评论。只有获得授权的 Boardsesh 贡献者才能发送这些消息。"
+    },
+    "filters": {
+      "reporter": "报告提交者的账户 ID",
+      "needsReply": "需要回复",
+      "clearReporter": "显示所有报告提交者"
     }
   },
   "retention": {

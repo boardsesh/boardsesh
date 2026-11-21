@@ -1030,7 +1030,8 @@
       "testPlan": "Piano di test #{{prNumber}}",
       "badge": "QA"
     },
-    "accountTitle": "Account"
+    "accountTitle": "Account",
+    "myBugReports": "Le tue segnalazioni di bug"
   },
   "qa": {
     "shared": {

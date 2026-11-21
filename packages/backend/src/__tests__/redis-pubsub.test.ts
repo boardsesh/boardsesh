@@ -261,6 +261,39 @@ describe('Redis PubSub Adapter', () => {
     });
   });
 
+  describe('Owner-scoped bug-report changes', () => {
+    it('fans changes across instances and releases the user channel on unsubscribe', async () => {
+      const userId = `feedback-owner-${Date.now()}`;
+      const received = vi.fn();
+      adapter2.onAppBugReportMessage(received);
+      await adapter2.subscribeAppBugReportChannel(userId);
+      await adapter1.publishAppBugReportChanged(userId, { reportId: '4711' });
+      await vi.waitFor(() => expect(received).toHaveBeenCalledExactlyOnceWith(userId, { reportId: '4711' }));
+      await adapter2.unsubscribeAppBugReportChannel(userId);
+      await adapter1.publishAppBugReportChanged(userId, { reportId: '4712' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(received).toHaveBeenCalledTimes(1);
+    });
+    it('validates cross-instance report IDs and strips extra payload content', async () => {
+      const userId = `feedback-validation-${Date.now()}`;
+      const received = vi.fn();
+      adapter2.onAppBugReportMessage(received);
+      await adapter2.subscribeAppBugReportChannel(userId);
+      try {
+        for (const reportId of ['not-an-id', '9223372036854775808', '', 4711]) {
+          await publisher1.publish(`boardsesh:app-bug-reports:${userId}`, JSON.stringify({ event: { reportId } }));
+        }
+        await publisher1.publish(
+          `boardsesh:app-bug-reports:${userId}`,
+          JSON.stringify({ event: { reportId: '4711', body: 'must not be forwarded' } }),
+        );
+        await vi.waitFor(() => expect(received).toHaveBeenCalledExactlyOnceWith(userId, { reportId: '4711' }));
+      } finally {
+        await adapter2.unsubscribeAppBugReportChannel(userId);
+      }
+    });
+  });
+
   describe('Channel management', () => {
     it('should not subscribe to the same channel twice', async () => {
       const sessionId = 'test-session-4';

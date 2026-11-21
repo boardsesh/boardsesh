@@ -23,13 +23,14 @@ import { enqueueOn } from './job-queue';
 import { NOTIFICATION_DELIVERY_LOCK_SEED } from './notification-locks';
 import { requireBoardEditAccess } from '../graphql/resolvers/social/boards';
 import { pubsub } from '../pubsub';
+import { feedbackReplyCopy, feedbackReplyTarget } from './feedback-notifications';
+import { NOTIFICATION_PUSH_QUEUE, NOTIFICATION_PUSH_RETRIES as RETRIES } from './notification-push-options';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
 import spanish from '@boardsesh/i18n/locales/es/notifications.json';
 import french from '@boardsesh/i18n/locales/fr/notifications.json';
 import german from '@boardsesh/i18n/locales/de/notifications.json';
 
-export const NOTIFICATION_PUSH_QUEUE = 'notification-push-delivery';
-const RETRIES = { retryLimit: 20, retryDelay: 60, retryBackoff: true, retryDelayMax: 300 } as const;
+export { NOTIFICATION_PUSH_QUEUE } from './notification-push-options';
 const ticketSchema = z.object({
   status: z.enum(['ok', 'error']),
   id: z.string().optional(),
@@ -187,16 +188,12 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .where(eq(notificationDeliveries.id, deliveryId))
       .limit(1);
     if (!delivery || delivery.status === 'done' || delivery.status === 'skipped') return;
+    // Shared delivery driver for spray completion and private support replies.
     // Recheck the target in its own short transaction. The wall lock orders this
     // read after any wall write in flight (revoke, hide, discard) and is released
     // before the Expo call below, so a slow push never stalls wall edits. Only
     // this delivery's lock is held across the HTTP request.
     const target = await db.transaction(async (validation) => {
-      const source = await readSprayDetection(validation, delivery.notificationUuid);
-      if (source)
-        await validation.execute(
-          sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`,
-        );
       const [device] = await validation
         .select({ installationId: notificationDevices.installationId })
         .from(notificationDevices)
@@ -210,8 +207,44 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
           ),
         )
         .limit(1);
+      if (!device) return null;
+      const [notice] = await validation
+        .select({ type: notifications.type })
+        .from(notifications)
+        .where(eq(notifications.uuid, delivery.notificationUuid))
+        .limit(1);
+      if (notice?.type === 'app_feedback_reply') {
+        const support = await feedbackReplyTarget(delivery.notificationUuid, validation);
+        return support?.recipientId === delivery.recipientId
+          ? {
+              copy: feedbackReplyCopy(delivery.locale),
+              data: {
+                type: 'app_feedback_reply',
+                notificationUuid: delivery.notificationUuid,
+                reportId: support.reportId,
+              },
+            }
+          : null;
+      }
+      if (notice?.type !== 'spray_wall_detection_completed') return null;
+      const source = await readSprayDetection(validation, delivery.notificationUuid);
+      if (source)
+        await validation.execute(
+          sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`,
+        );
       const current = await completionNotification(delivery.notificationUuid, validation);
-      return device && current?.recipientId === delivery.recipientId ? current : null;
+      return current?.recipientId === delivery.recipientId
+        ? {
+            copy: sprayCompletionCopy(delivery.locale, current.notification.sprayWallName),
+            data: {
+              type: 'spray_wall_detection_completed',
+              notificationUuid: delivery.notificationUuid,
+              wallUuid: current.notification.sprayWallUuid,
+              versionId: current.notification.sprayVersionId,
+              resetOfWallUuid: current.notification.sprayResetOfWallUuid ?? null,
+            },
+          }
+        : null;
     });
     const setStatus = (status: typeof notificationDeliveries.$inferSelect.status, ticketId?: string | null) =>
       transaction
@@ -229,14 +262,8 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       : await expoPost('send', {
           to: delivery.token,
           sound: 'default',
-          ...sprayCompletionCopy(delivery.locale, target.notification.sprayWallName),
-          data: {
-            type: 'spray_wall_detection_completed',
-            notificationUuid: delivery.notificationUuid,
-            wallUuid: target.notification.sprayWallUuid,
-            versionId: target.notification.sprayVersionId,
-            resetOfWallUuid: target.notification.sprayResetOfWallUuid ?? null,
-          },
+          ...target.copy,
+          data: target.data,
           collapseId: delivery.notificationUuid,
           tag: delivery.notificationUuid,
         });

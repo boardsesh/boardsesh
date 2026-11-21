@@ -1,4 +1,16 @@
-import { pgTable, text, integer, timestamp, bigserial, index, jsonb, boolean, pgEnum } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  bigserial,
+  index,
+  jsonb,
+  boolean,
+  pgEnum,
+  bigint,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 import type { ReleaseContext } from '@boardsesh/shared-schema';
 
@@ -35,9 +47,7 @@ export const appFeedback = pgTable(
     sizeId: integer('size_id'),
     setIds: jsonb('set_ids').$type<number[]>(),
     angle: integer('angle'),
-    // Whether the reporter opted in to follow-up contact. Only set for bug
-    // reports; null/false means "do not reach out". Resolve the reporter via
-    // this row's user_id when true.
+    // Email follow-up consent. Private in-app support is available regardless.
     contactConsent: boolean('contact_consent'),
     context: jsonb('context').$type<FeedbackContext>(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
@@ -56,6 +66,11 @@ export const appFeedback = pgTable(
     // rows created before this was captured (or when GitHub sync is unconfigured).
     githubIssueNumber: integer('github_issue_number'),
     githubIssueUrl: text('github_issue_url'),
+    githubIssueState: text('github_issue_state').$type<'open' | 'closed'>(),
+    githubIssueStateReason: text('github_issue_state_reason'),
+    lastMessageAt: timestamp('last_message_at', { mode: 'string' }),
+    lastMessagePreview: text('last_message_preview'),
+    needsReply: boolean('needs_reply').notNull().default(false),
   },
   (table) => ({
     createdAtIdx: index('app_feedback_created_at_idx').on(table.createdAt),
@@ -67,3 +82,28 @@ export const appFeedback = pgTable(
 
 export type AppFeedback = typeof appFeedback.$inferSelect;
 export type NewAppFeedback = typeof appFeedback.$inferInsert;
+
+/** Filtered GitHub conversation cache plus durable outbox for reporter replies. */
+export const appFeedbackMessages = pgTable(
+  'app_feedback_messages',
+  {
+    id: bigserial({ mode: 'bigint' }).primaryKey().notNull(),
+    reportId: bigint('report_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => appFeedback.id, { onDelete: 'cascade' }),
+    authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    authorRole: text('author_role').$type<'reporter' | 'staff'>().notNull(),
+    body: text('body').notNull(),
+    submittedBodyHash: text('submitted_body_hash'),
+    clientMutationId: text('client_mutation_id').notNull(),
+    notificationUuid: text('notification_uuid').notNull().unique(),
+    githubCommentId: text('github_comment_id').unique(),
+    withdrawnAt: timestamp('withdrawn_at', { mode: 'string' }),
+    deliveryStatus: text('delivery_status').$type<'pending' | 'sent' | 'failed'>().notNull().default('pending'),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    reportIdx: index('app_feedback_messages_report_idx').on(table.reportId, table.id),
+    mutationIdx: uniqueIndex('app_feedback_messages_mutation_idx').on(table.authorId, table.clientMutationId),
+  }),
+);

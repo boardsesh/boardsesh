@@ -92,6 +92,7 @@ function socketWithBothStreams() {
       .find(
         (socket) =>
           [...socket.liveSubscriptions.values()].includes('NotificationReceived') &&
+          [...socket.liveSubscriptions.values()].includes('AppBugReportChanged') &&
           [...socket.liveSubscriptions.values()].includes('ClimbStatsUpdated'),
       ) ?? null
   );
