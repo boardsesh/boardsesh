@@ -9,7 +9,7 @@ import { useResultSetKeyExtractor } from '../../../src/hooks/use-result-set-key-
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { View, StyleSheet, RefreshControl, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { type FlashListRef } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -80,6 +80,11 @@ import { useClimbsOnboarding } from '../../../src/hooks/climbs/use-climbs-onboar
 import { useClimbBoardPrewarming } from '../../../src/hooks/climbs/use-climb-board-prewarming';
 import { useClimbSearchAnalytics } from '../../../src/hooks/climbs/use-climb-search-analytics';
 import { useClimbSearchActivation } from '../../../src/hooks/climbs/use-climb-search-activation';
+import {
+  createClimberScrollTracker,
+  type ClimberScrollTracker,
+  type ForwardedScrollHandlers,
+} from '../../../src/lib/climber-scroll-tracker';
 
 const PAGE_SIZE = 30;
 // Any part of a row on screen counts: this feeds pagination and thumbnail
@@ -99,6 +104,19 @@ const CLIMB_LIST_ROW_SURFACE: ClimbRowSurface = {
   showPlaylistChips: true,
   showProgress: true,
 };
+
+/**
+ * Mounted beside the list, keyed the same way, so it runs when the list mounts
+ * and unmounts (a column change, or a no-board branch). A list that goes away
+ * mid-fling never sends that fling's end event.
+ */
+function ClimberScrollListReset({ tracker }: { tracker: ClimberScrollTracker }) {
+  useLayoutEffect(() => {
+    tracker.forgetGesture();
+    return tracker.forgetGesture;
+  }, [tracker]);
+  return null;
+}
 
 export default function ClimbList() {
   return (
@@ -291,6 +309,12 @@ function ClimbListInner() {
     listRef: climbListRef,
     onScroll: hideOnScroll,
   });
+  // Whether the climber has scrolled the list since the last page ask: the
+  // fence that stops zero-height rows paging a whole search in. It wraps the
+  // scroll-edge and chrome handlers, read through a ref so neither rebuilds it.
+  const forwardedScrollRef = useRef<ForwardedScrollHandlers>({});
+  forwardedScrollRef.current = { ...scrollEdge.list?.listProps, onScroll: handleListScroll };
+  const climberScroll = useMemo(() => createClimberScrollTracker(() => forwardedScrollRef.current), []);
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
   const visibleClimbs = useMemo(() => {
@@ -312,6 +336,7 @@ function ClimbListInner() {
       listRef: climbListRef,
       topClearance: -listTopOffset + (filterInTopChrome ? 0 : searchBarHeight),
       resetScrollToTop,
+      climberScroll,
       hasNextPage,
       isPlaceholderData,
       isLoading: isClimbsLoading,
@@ -673,8 +698,7 @@ function ClimbListInner() {
               viewabilityConfig: CLIMB_LIST_VIEWABILITY,
               contentInsetAdjustmentBehavior: nativeRootHeader ? 'automatic' : 'never',
               scrollToOverflowEnabled: nativeRootHeader,
-              ...scrollEdge.list?.listProps,
-              onScroll: handleListScroll,
+              ...climberScroll.handlers,
               onCommitLayoutEffect: handleListCommitLayout,
               contentContainerStyle: filterInTopChrome ? undefined : { paddingTop: searchBarHeight },
               scrollIndicatorInsets: filterInTopChrome ? undefined : { top: searchBarHeight },
@@ -733,7 +757,12 @@ function ClimbListInner() {
                 />
               ),
             }}
-            listReset={<ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />}
+            listReset={
+              <>
+                <ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />
+                <ClimberScrollListReset key={`climber-scroll-${listColumns}-columns`} tracker={climberScroll} />
+              </>
+            }
             listEffects={
               <>
                 <PlayBoardPrewarmHost />

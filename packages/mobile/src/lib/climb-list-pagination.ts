@@ -18,6 +18,21 @@
  * The re-ask is what could turn into a drain, so it is fenced: an ask that the
  * climber did not cause (`settle`) only goes ahead when the last one made
  * progress. A failed page, or a page that added nothing, waits for a scroll.
+ *
+ * Progress alone is not enough. When rows lay out at zero height (seen on
+ * Android after quick grade changes), every loaded row reads as on screen, so
+ * every landed page looks like the end of the list and the next one is asked
+ * for straight away. A Galaxy S26 Ultra loaded eleven pages that way, mounted
+ * all 318 rows, and ran out of native memory. So after a search's first
+ * next-page ask, each further ask needs the climber to have scrolled the list
+ * since the previous one (`climberScrolledSinceLastFetch`): a drag, a fling, or
+ * the list moving by any other means, such as VoiceOver, TalkBack or a mouse
+ * wheel. Zero-height rows never move the list. A fling keeps scrolling after an
+ * ask goes out, so it still loads page after page.
+ *
+ * The cost: on Android a list shorter than the screen cannot scroll, so it
+ * stops after one extra page. Two pages of real rows always overflow a phone or
+ * tablet, so in practice only zero-height rows, the case being fenced, stop.
  */
 
 /**
@@ -65,6 +80,12 @@ export type NextPageInput = {
   loadedCount: number;
   /** `loadedCount` when this screen last asked for a page; null before the first ask. */
   loadedCountAtLastFetch: number | null;
+  /**
+   * The climber scrolled the list since this screen last asked for a page: a
+   * drag or fling, or the list moving on by another input. A layout pass that
+   * leaves the list where it was does not count.
+   */
+  climberScrolledSinceLastFetch: boolean;
   /** Index of the first row on screen. Zero means the climber is still at the top. */
   firstVisibleIndex: number;
   /** Index of the last row on screen. */
@@ -99,6 +120,9 @@ export function shouldFetchNextPage(input: NextPageInput): boolean {
   // landed). Asking again without the climber moving is a drain.
   const lastAskMadeProgress = input.loadedCountAtLastFetch === null || input.loadedCount > input.loadedCountAtLastFetch;
   if (input.trigger === 'settle' && !lastAskMadeProgress) return false;
+  // Only the first ask of a search may go out without the climber moving the
+  // list. Without this, rows that measure zero height page the whole search in.
+  if (input.loadedCountAtLastFetch !== null && !input.climberScrolledSinceLastFetch) return false;
 
   if (input.endReachedPending) return true;
   // Still at the top of the first page: opening the tab is one search.

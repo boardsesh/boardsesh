@@ -22,6 +22,7 @@ function input(overrides: Partial<NextPageInput>): NextPageInput {
     msSinceLastFailure: null,
     loadedCount: PAGE_SIZE,
     loadedCountAtLastFetch: null,
+    climberScrolledSinceLastFetch: true,
     firstVisibleIndex: 2,
     lastVisibleIndex: 8,
     endReachedPending: false,
@@ -114,6 +115,38 @@ describe('shouldFetchNextPage', () => {
       expect(shouldFetchNextPage(input(duplicates))).toBe(false);
       // The climber moving the list is a new reason to ask.
       expect(shouldFetchNextPage(input({ ...duplicates, trigger: 'scroll' }))).toBe(true);
+    });
+  });
+
+  // The Android crash: rows laid out at zero height, so every row read as on
+  // screen and each landed page asked for the next until the app ran out of memory.
+  describe('when every loaded row reads as on screen', () => {
+    const allRowsVisible = (loadedCount: number) =>
+      ({ firstVisibleIndex: 0, lastVisibleIndex: loadedCount - 1, loadedCount }) as const;
+
+    it('lets the first ask of a search go out without a scroll', () => {
+      const first = { ...allRowsVisible(30), endReachedPending: true, climberScrolledSinceLastFetch: false } as const;
+      expect(shouldFetchNextPage(input(first))).toBe(true);
+    });
+
+    it('does not chain a second page without the climber moving the list', () => {
+      const landed = {
+        ...allRowsVisible(60),
+        loadedCountAtLastFetch: 30,
+        climberScrolledSinceLastFetch: false,
+      } as const;
+      expect(shouldFetchNextPage(input({ ...landed, trigger: 'settle' }))).toBe(false);
+      expect(shouldFetchNextPage(input({ ...landed, trigger: 'scroll' }))).toBe(false);
+      expect(shouldFetchNextPage(input({ ...landed, trigger: 'settle', endReachedPending: true }))).toBe(false);
+    });
+
+    it('loads the next page once the climber drags or flings', () => {
+      const landed = {
+        ...allRowsVisible(60),
+        loadedCountAtLastFetch: 30,
+        climberScrolledSinceLastFetch: true,
+      } as const;
+      expect(shouldFetchNextPage(input({ ...landed, trigger: 'settle' }))).toBe(true);
     });
   });
 

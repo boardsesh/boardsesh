@@ -6,6 +6,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 
 vi.mock('../../../components/ClimbListThumbnail', () => ({ ClimbListThumbnailPrewarm: () => null }));
 import { useClimbsListLifecycle } from '../use-climbs-list-lifecycle';
+import { createClimberScrollTracker } from '../../../lib/climber-scroll-tracker';
 
 type Options = Parameters<typeof useClimbsListLifecycle>[0];
 function deferredPage() {
@@ -14,6 +15,21 @@ function deferredPage() {
     resolve = complete;
   });
   return { promise, resolve };
+}
+type ViewableReport = Parameters<ReturnType<typeof useClimbsListLifecycle>['handleViewableItemsChanged']>[0];
+/** FlashList's report that rows `first` to `last` are on screen. */
+function rowsOnScreen(first: number, last: number): ViewableReport {
+  return { viewableItems: [{ index: first }, { index: last }] } as unknown as ViewableReport;
+}
+/** A scroll event with the list at `offsetY`. */
+function scrollAt(offsetY: number): Parameters<Options['climberScroll']['handlers']['onScroll']>[0] {
+  return { nativeEvent: { contentOffset: { x: 0, y: offsetY } } } as unknown as Parameters<
+    Options['climberScroll']['handlers']['onScroll']
+  >[0];
+}
+function alwaysScrolled(): Options['climberScroll'] {
+  const tracker = createClimberScrollTracker(() => undefined);
+  return { ...tracker, hasScrolled: () => true };
 }
 function setup(overrides: Partial<Options> = {}) {
   const scrollToIndex = vi.fn();
@@ -24,6 +40,8 @@ function setup(overrides: Partial<Options> = {}) {
     listRef: { current: { scrollToIndex } as unknown as FlashListRef<Climb> },
     topClearance: 120,
     resetScrollToTop: vi.fn(),
+    // The climber always counts as having scrolled, unless a test says otherwise.
+    climberScroll: alwaysScrolled(),
     fetchNextPage,
     hasNextPage: true,
     isPlaceholderData: false,
@@ -130,6 +148,43 @@ describe('useClimbsListLifecycle', () => {
     expect(screen.fetchNextPage).not.toHaveBeenCalled();
     expect(screen.initialProps.resetScrollToTop).toHaveBeenCalledOnce();
     expect(screen.result.current.visibleRowsStore.getFirst()).toBe(0);
+    screen.unmount();
+  });
+
+  // The Android out-of-memory crash: rows at zero height all read as on screen,
+  // and each landed page asked for the next until the app ran out of memory.
+  it('needs the climber to scroll between page asks after the first', async () => {
+    const climberScroll = createClimberScrollTracker(() => undefined);
+    const screen = setup({ climberScroll, loadedCount: 60 });
+    act(() => screen.result.current.handleViewableItemsChanged(rowsOnScreen(1, 59)));
+    await act(async () => {});
+    expect(screen.fetchNextPage).toHaveBeenCalledTimes(1);
+
+    // The page lands and every row still reads as on screen: no scroll, no ask.
+    screen.rerender({ ...screen.initialProps, climberScroll, loadedCount: 90 });
+    act(() => screen.result.current.handleViewableItemsChanged(rowsOnScreen(1, 89)));
+    await act(async () => {});
+    expect(screen.fetchNextPage).toHaveBeenCalledTimes(1);
+
+    act(() => climberScroll.handlers.onMomentumScrollBegin());
+    screen.rerender({ ...screen.initialProps, climberScroll, loadedCount: 90 });
+    act(() => screen.result.current.handleViewableItemsChanged(rowsOnScreen(2, 89)));
+    await act(async () => {});
+    expect(screen.fetchNextPage).toHaveBeenCalledTimes(2);
+    screen.unmount();
+  });
+
+  it('forgets a fling cut short by a new search', () => {
+    const climberScroll = createClimberScrollTracker(() => undefined);
+    const screen = setup({ climberScroll });
+    act(() => climberScroll.handlers.onMomentumScrollBegin());
+    expect(climberScroll.hasScrolled()).toBe(true);
+    screen.rerender({ ...screen.initialProps, climberScroll, searchKey: 'second' });
+    expect(climberScroll.hasScrolled()).toBe(false);
+    // The coasting is forgotten too: the scroll to the top that follows only
+    // records where the list is.
+    act(() => climberScroll.handlers.onScroll(scrollAt(0)));
+    expect(climberScroll.hasScrolled()).toBe(false);
     screen.unmount();
   });
 });
