@@ -81,7 +81,7 @@ export function useCreateClimbNavigation({
           }
         }
 
-        router.push({ pathname: '/(tabs)/climbs/create', params });
+        router.push({ pathname: '/(tabs)/climbs/create', params }, { withAnchor: true });
         actionInFlightRef.current = false;
       };
       void completeHandoff().catch((error: unknown) => {

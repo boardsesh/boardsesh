@@ -187,20 +187,23 @@ describe('useCreateClimbNavigation params', () => {
 
     result.current.openRemix(climb, board);
 
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        forkFrames: 'p1129r15p1130r12',
-        forkName: 'Sloper Traverse',
-        forkDescription: 'Start matched on the jug',
-        forkParentUuid: climb.uuid,
-        boardName: 'kilter',
-        layoutId: '8',
-        sizeId: '17',
-        setIds: '26,27',
-        angle: '40',
+    expect(router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: {
+          forkFrames: 'p1129r15p1130r12',
+          forkName: 'Sloper Traverse',
+          forkDescription: 'Start matched on the jug',
+          forkParentUuid: climb.uuid,
+          boardName: 'kilter',
+          layoutId: '8',
+          sizeId: '17',
+          setIds: '26,27',
+          angle: '40',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 
   it('openRemix carries no grade: a remix is graded by its own first ascent (#5971)', () => {
@@ -225,17 +228,20 @@ describe('useCreateClimbNavigation params', () => {
 
     result.current.openEdit(climb, board);
 
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        editClimbUuid: 'climb-1',
-        boardName: 'kilter',
-        layoutId: '8',
-        sizeId: '17',
-        setIds: '26,27',
-        angle: '40',
+    expect(router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: {
+          editClimbUuid: 'climb-1',
+          boardName: 'kilter',
+          layoutId: '8',
+          sizeId: '17',
+          setIds: '26,27',
+          angle: '40',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 });
 
