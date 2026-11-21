@@ -219,10 +219,11 @@
       "error": "错误",
       "expired": "已过期",
       "syncing": "正在同步",
-      "duplicateAccountCircuits": "训练线路组未在同步：另一个 Boardsesh 账户关联了同一个训练板登录，因此你们双方的线路集同步都已暂停。完攀和评分仍会同步。",
+      "duplicateAccountCircuits": "训练线路组未在同步：另一个 Boardsesh 账户关联了同一个训练板登录，因此你们双方的线路集同步都已暂停。",
       "syncingHint": "正在同步，请稍后查看",
-      "foreignAccountCircuits": "此账户未同步训练线路组，因为对应线路集属于另一个 Boardsesh 账户。完攀和评分仍会同步。请联系 Boardsesh 支持解决线路集归属问题。",
-      "ambiguousAccountCircuits": "训练线路组未同步，因为对应线路集有多个 Boardsesh 所有者。完攀和评分仍会同步。请联系 Boardsesh 支持解决线路集归属问题。"
+      "foreignAccountCircuits": "此账户未同步训练线路组，因为对应线路集属于另一个 Boardsesh 账户。请联系 Boardsesh 支持解决线路集归属问题。",
+      "ambiguousAccountCircuits": "训练线路组未同步，因为对应线路集有多个 Boardsesh 所有者。请联系 Boardsesh 支持解决线路集归属问题。",
+      "foreignAccountLogbook": "这个训练板登录的部分完攀记录保存在另一个 Boardsesh 账户中，因此不会显示在这里。请登录那个账户，或联系 Boardsesh 支持。"
     },
     "unsynced": {
       "title_one": "{{count}} 项内容等待同步",
