@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, unlink, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   AUDIT_CONNECT_TIMEOUT_SECONDS,
   AUDIT_DATABASE_RESPONSE_TIMEOUT_MS,
@@ -19,6 +20,7 @@ import {
   AUDIT_SCAN_QUERY,
   awaitDatabaseResponse,
   buildAuditSummary,
+  createAuditDatabaseClient,
   helpText,
   parseArgs,
   parseDatabaseRow,
@@ -294,6 +296,50 @@ void describe('database response bounds', () => {
   });
 });
 
+void describe('audit PostgreSQL client transport', () => {
+  for (const suffix of ['', '?sslmode=disable', '?sslmode=prefer']) {
+    void it(`requires TLS for a remote endpoint with ${suffix || 'no TLS option'}`, async () => {
+      const client = await createAuditDatabaseClient(`postgres://fixture:fixture@database.example/audit${suffix}`);
+      try {
+        assert.equal(client.options.ssl, 'require');
+        assert.equal(client.options.max, 1);
+        assert.equal(client.options.prepare, false);
+        assert.equal(client.options.connect_timeout, AUDIT_CONNECT_TIMEOUT_SECONDS);
+        assert.equal(client.options.idle_timeout, 5);
+      } finally {
+        await client.end({ timeout: 0 });
+      }
+    });
+  }
+
+  for (const suffix of ['?sslmode=verify-full', '?sslrootcert=system']) {
+    void it(`preserves verified certificate trust for ${suffix}`, async () => {
+      const client = await createAuditDatabaseClient(`postgres://fixture:fixture@database.example/audit${suffix}`);
+      try {
+        assert.deepEqual(client.options.ssl, { rejectUnauthorized: true });
+      } finally {
+        await client.end({ timeout: 0 });
+      }
+    });
+  }
+
+  void it('allows plaintext for the known local test host', async () => {
+    const client = await createAuditDatabaseClient('postgres://fixture:fixture@127.0.0.1/audit?sslmode=disable');
+    try {
+      assert.equal(client.options.ssl, false);
+    } finally {
+      await client.end({ timeout: 0 });
+    }
+  });
+
+  void it('rejects repeated sslmode before constructing a client', async () => {
+    await assert.rejects(
+      createAuditDatabaseClient('postgres://fixture:fixture@database.example/audit?sslmode=disable&sslmode=require'),
+      /must not repeat sslmode/,
+    );
+  });
+});
+
 void describe('JSONL output safety', () => {
   void it('reports a missing parent directory as a CLI usage error', async () => {
     const directory = await createFixtureDirectory('audit-missing-parent-');
@@ -326,6 +372,52 @@ void describe('JSONL output safety', () => {
     const existing = join(directory, 'existing.jsonl');
     await writeFile(existing, 'do not overwrite');
     await assert.rejects(runAuditCommand(parseArgs(validArgs(existing))), /existing output path/);
+  });
+
+  void it('removes staging output when database configuration is missing', async () => {
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-no-db-config-');
+    const outputPath = join(directory, 'report.jsonl');
+    const scriptPath = fileURLToPath(new URL('./audit-legacy-tick-timestamps.ts', import.meta.url));
+    const child = spawnSync(process.execPath, ['--import', 'tsx', scriptPath, ...validArgs(outputPath)], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      env: { ...process.env, DB_URL: '', DATABASE_URL: '', POSTGRES_URL: '' },
+    });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 1, child.stderr);
+    assert.match(child.stderr, /DATABASE_URL, POSTGRES_URL, or DB_URL is not set/);
+    assert.deepEqual(await readdir(directory), []);
+  });
+
+  void it('keeps help and invalid output independent of database configuration modules', async () => {
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-lazy-config-');
+    const scriptPath = fileURLToPath(new URL('./audit-legacy-tick-timestamps.ts', import.meta.url));
+    const importTrap = join(directory, 'forbid-database-config.mjs');
+    await writeFile(
+      importTrap,
+      `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier.includes('db-connection')) throw new Error('Database configuration loaded before validation');
+  return next(specifier, context);
+} });
+`,
+    );
+    const existingOutput = join(directory, 'existing.jsonl');
+    await writeFile(existingOutput, 'keep this file');
+    for (const [argumentsToRun, expectedStatus] of [
+      [['--help'], 0],
+      [validArgs(existingOutput), 2],
+    ] as const) {
+      const child = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', '--import', pathToFileURL(importTrap).href, scriptPath, ...argumentsToRun],
+        { encoding: 'utf8', timeout: 15_000 },
+      );
+      assert.equal(child.error, undefined);
+      assert.equal(child.status, expectedStatus, child.stderr);
+      assert.doesNotMatch(child.stderr, /Database configuration loaded before validation/);
+    }
+    assert.equal(await readFile(existingOutput, 'utf8'), 'keep this file');
   });
 
   void it('rejects a tracked path even when the working-tree file is absent', async () => {
