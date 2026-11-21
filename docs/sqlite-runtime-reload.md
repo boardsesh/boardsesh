@@ -118,19 +118,28 @@ clean. Every failed write waited out its full busy timeout, so a lock was really
 held. iOS 2.6.0 made about 1,650 launch-gate reloads in the same 10 days, with
 no failures.
 
-Two things in the installed Android expo-sqlite mean no connection is ever
-closed when a runtime is torn down:
+The original SDK57 investigation found that `removeAllCachedDatabases()`
+returned the same `MutableList` it had just cleared, so `OnDestroy` received no
+connections to close. The JS-release path also did not close the native handle.
+These were source findings; Android runtime cleanup was not reproduced on a
+device.
 
-- `removeAllCachedDatabases()` returns the same `MutableList` it has just
-  cleared, so `OnDestroy` closes nothing.
-- The JS-release path, `sharedObjectDidRelease`, frees the C++ binding without
-  calling `sqlite3_close`.
+As of 21 November 2026, main uses expo-sqlite 58.0.18. Its Android
+`SQLiteModule.kt` copies `cachedDatabases.toList()` before clearing the cache,
+and `onDestroy()` iterates the returned connections. `DatabaseConnection` retains
+open bindings until module destruction. The SDK57 cache-alias defect is fixed
+upstream; the old JS-release diagnosis does not describe this implementation.
+Our committed SQLite patch has no Android changes.
 
-The native fix is #6707.
+#6707 remains open for SDK58 verification: reload while a real exclusive write
+transaction is open, then verify that the replacement runtime can acquire the
+writer and preserve committed tick/outbox pairs. Verify lifecycle delivery and
+in-flight native-call draining before selecting another native patch. The source
+changes alone do not establish lock recovery on a current Android binary.
 
-Until that ships, the app keeps write transactions out of the window where the
-launch update gate can reload. Two states in `src/lib/launch-reload-window.ts`,
-written only by the gate, carry it:
+The app still keeps write transactions out of the window where the launch update
+gate can reload. Two states in `src/lib/launch-reload-window.ts`, written only by
+the gate, carry it:
 
 - **The gate is open**: an eligible run that has not resolved yet.
 - **A reload is requested**: set at the moment the gate decides to reload, before
@@ -162,7 +171,7 @@ What waits on those states:
 The cost is the same on both platforms. iOS cannot wedge (#6292), but one code
 path is simpler, and iOS waits about 1.5 s at p90 before its first pull.
 
-Known gaps, which only #6707 closes:
+Known gaps in the JavaScript fence that still need SDK58 runtime verification:
 
 - A store update's first launch runs the embedded JS of the new binary. This
   protects that launch only from the binary whose embedded bundle includes it.
