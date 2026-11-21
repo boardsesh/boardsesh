@@ -4,7 +4,7 @@ import type { SettingsTranslate } from '../root/settings-pages';
 export type EarlyAccessModelInput = {
   t: SettingsTranslate;
   /**
-   * PR previews (docs/crowdsourced-qa-mobile.md), or `null` on a binary that
+   * PR previews (docs/qa/crowdsourced-qa-mobile.md), or `null` on a binary that
    * cannot load one.
    */
   previews: {

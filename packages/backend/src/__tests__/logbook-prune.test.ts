@@ -22,7 +22,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 
 /**
  * The retention job behind the logbook feed's `410` (services/logbook-prune.ts,
- * docs/integration-platform.md "Retention, cursor validity and moving the
+ * docs/integrations/integration-platform.md "Retention, cursor validity and moving the
  * database"), against the real triggers and the real feed read.
  *
  * Remove a protection to prove these fail:

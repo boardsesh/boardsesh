@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { OptionalReleaseContextInputSchema } from './release-context';
 
 /**
- * Crowdsourced QA input bounds (docs/crowdsourced-qa.md).
+ * Crowdsourced QA input bounds (docs/qa/crowdsourced-qa.md).
  *
  * Unlike app feedback — where a malformed enrichment field must never cost us
  * the report — a verdict is an authored judgement on a specific PR, so every

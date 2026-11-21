@@ -25,7 +25,7 @@ import {
 const totalHolds = (size: '8x10' | '12x12') => WOODS_ROW_LENGTHS[size].reduce((sum, length) => sum + length, 0);
 
 describe('WOODS_ROW_LENGTHS', () => {
-  // Matches the LED-map entry counts (docs/woods-board-led-maps) and the app's
+  // Matches the LED-map entry counts (docs/boards/woods-board-led-maps) and the app's
   // BOARD_ROW_LENGTHS arrays.
   it('totals 485 holds on 8x10 (1×11 + 21×21 + 3×11)', () => {
     expect(totalHolds('8x10')).toBe(485);

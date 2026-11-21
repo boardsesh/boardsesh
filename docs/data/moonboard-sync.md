@@ -1,0 +1,77 @@
+# MoonBoard Sync
+
+`@boardsesh/moonboard-sync` is the MoonBoard-specific public location sync CLI. It exists because MoonBoard locations are not available through Aurora or Kilter Grips APIs.
+
+## Public board locations
+
+The CLI logs in to MoonBoard, calls the map marker endpoint, and writes public Boardsesh locations through `@boardsesh/location-sync`.
+
+Each upstream marker creates:
+
+- one deterministic system-owned `gyms` row
+- one public, unowned `user_boards` row for every supported MoonBoard layout and angle
+
+MoonBoard locations intentionally cover every configured layout, not just the 2016 setup. For each marker, the sync writes all layouts from `MOONBOARD_LAYOUTS` and all angles from `MOONBOARD_ANGLES`.
+
+Rows are upserted by deterministic UUID. The sync does not delete rows that disappear upstream.
+
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. The separate gym-owner/approved-claim guard remains in force. The `moonboard-locations-sync` worker family runs the sync daily at 03:41 UTC (see [Scheduled sync](#scheduled-sync)), so a released freeze takes effect at the next run, which may refresh or resurrect the matching row.
+
+## Gym identity (source keys)
+
+MoonBoard's `GetMapMarkers` payload has **no upstream id** — only a name and coordinates. A gym's stable identity is therefore derived from its name plus a coarse location cell:
+
+```
+moonboard:<normalized name>:<lat cell>:<lng cell>
+```
+
+`<lat cell>`/`<lng cell>` are integer hundredths of a degree (`Math.round(coord * 100)`), a ~1.1 km north-south grid. The name is normalized (lowercase, single-spaced) so casing/whitespace jitter can't split one gym into two identities; the human-readable name is stored separately for display.
+
+Why not full-precision coordinates: they made the key change on every pin nudge, so any move beyond the 20 m physical-match tier minted a permanent duplicate gym — a 20-150 m move tripped the same-provider guard, a larger move missed the match radius entirely (issue #3715). Why not the name alone: genuinely distinct gyms share names (the prod collisions — e.g. "MoonBoard" vs "Moonboard" — sit thousands of km apart), and a name-only key would merge them into one flip-flopping gym.
+
+The coarse cell keeps the key stable across the whole realistic pin-correction range while keeping far-apart same-named gyms distinct. The rare correction that crosses a cell boundary **and** lands in the 20-150 m band mints one twin that surfaces in `/admin/gym-duplicates` for a human merge — the fallback is a manual merge, never a silently wrong one.
+
+When the sync first runs against a database whose MoonBoard gyms were seeded without source aliases (as in prod today), each marker resolves its existing gym through the name + location physical match and adopts it (aliases the stable key onto it), so no separate backfill migration is needed.
+
+## Scheduled sync
+
+The `moonboard-locations-sync` family (role `routine-provider`, see
+[background-workers.md](../backend/background-workers.md#routine-provider-sync)) is the
+production schedule: `41 3 * * *` UTC, unless switched off in `BATCH_FAMILIES_DISABLED`.
+It logs in with `MOONBOARD_USERNAME` / `MOONBOARD_PASSWORD` from the worker's
+environment, reads the markers, and writes through the same
+`upsertPublicBoardLocations` as the CLI, in fenced batches of 25 gyms. The
+first run adopts the seeded gyms through the physical match described above.
+
+| Outcome | What the run records |
+| --- | --- |
+| Synced | `succeeded`; `/metrics` last success moves; `moonboard locations finished` log line with the counts |
+| No credentials | `succeeded` with a `MOONBOARD_CREDENTIALS_ABSENT` warning, and **nothing written**: no gym, no alias, no freshness marker, so a missing secret never reads as a fresh sync (#3863) |
+| Login or marker request failed | `failed` after one retry 10 minutes later; the error code is `ATTEMPT_FAILED` |
+
+Lease 30 minutes, heartbeat window 2 minutes (one 25-gym batch), deadline 24 h.
+MoonBoard's endpoints are not rate limited by a `Retry-After` today; the run
+makes three requests.
+
+## CLI
+
+```bash
+moonboard-sync locations
+moonboard-sync locations --username <email> --password <password> -v
+```
+
+Environment variables:
+
+| Variable             | Required | Purpose                    |
+| -------------------- | -------- | -------------------------- |
+| `DATABASE_URL`       | yes      | Postgres connection string |
+| `MOONBOARD_USERNAME` | yes      | MoonBoard account email    |
+| `MOONBOARD_PASSWORD` | yes      | MoonBoard account password |
+
+Run with 1Password:
+
+```bash
+op run --env-file=packages/moonboard-sync/.env.1password -- vp exec moonboard-sync locations -v
+```
+
+The root `vp run db:seed-locations` task runs the Aurora, Kilter, and MoonBoard location CLIs instead of the removed GeoJSON seed script. Credentialed providers are safe in clean dev environments: Kilter and MoonBoard skip with a successful exit when their credentials are not configured.

@@ -7,7 +7,7 @@
 //
 // A spray wall's holds are stored once, in the wall's canonical frame, and every
 // version's photo carries its own photo->canonical homography. No image is ever
-// warped (`docs/spray-walls.md`, "Canonical coordinates and matching"), so the
+// warped (`docs/product/spray-walls.md`, "Canonical coordinates and matching"), so the
 // render path pushes each hold back through the INVERSE of that matrix and paints
 // it on the untouched photograph.
 //

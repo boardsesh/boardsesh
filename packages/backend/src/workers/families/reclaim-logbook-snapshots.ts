@@ -11,7 +11,7 @@ export type ReclaimLogbookSnapshotsPayload = z.infer<typeof reclaimLogbookSnapsh
 /**
  * Deletes logbook snapshots past their hour. Only storage depends on this: an
  * expired snapshot is unreadable from the moment it expires, whether or not a
- * run has happened (docs/integration-platform.md, "Complete bootstrap and
+ * run has happened (docs/integrations/integration-platform.md, "Complete bootstrap and
  * transition").
  *
  * Every 15 minutes. Each write batch is one short fenced transaction, and a

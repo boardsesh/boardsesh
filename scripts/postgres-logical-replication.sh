@@ -31,7 +31,7 @@ SOURCE_SLOT_RELEASE_BUDGET_REMAINING=0
 # scripts/postgres-migration-audit.sh:16. Only the target is pinned: the source
 # is whatever the mutable postgis/postgis:16-master tag last built, and
 # assert_spatial_capability_precreated decides that difference on capabilities
-# instead. See docs/postgres-18-migration.md section 1.
+# instead. See docs/operations/postgres-18-migration.md section 1.
 EXPECTED_POSTGIS_VERSION="${EXPECTED_POSTGIS_VERSION:-3.6.4}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/postgres-credentials.sh
@@ -1517,7 +1517,7 @@ SELECT coalesce(
       printf 'spatial capability gap: %s\n' \
         "$(boardsesh_describe_spatial_capability_gap "$gap_row")" >&2
     done <<<"$target_gaps"
-    fail "the target PostGIS build does not provide every capability the source uses; PostGIS versions may differ only while this manifest is satisfied (docs/postgres-18-postgis-rehearsal.md)"
+    fail "the target PostGIS build does not provide every capability the source uses; PostGIS versions may differ only while this manifest is satisfied (docs/operations/postgres-18-postgis-rehearsal.md)"
   fi
   echo "Target PostGIS satisfies every capability in the source spatial manifest."
 }

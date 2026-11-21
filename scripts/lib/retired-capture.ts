@@ -17,7 +17,7 @@ export function migrateCaptureRoute(options: { to: string | null; story: string 
   }
   if (/[?&]screenshot[A-Z]/.test(options.to)) {
     throw new Error(
-      'Screenshot query commands were retired. Use --story climbs--populated or --story player--lit; see docs/mobile-stories.md.',
+      'Screenshot query commands were retired. Use --story climbs--populated or --story player--lit; see docs/mobile/mobile-stories.md.',
     );
   }
 }

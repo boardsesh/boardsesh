@@ -28,7 +28,7 @@ import {
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 
 /**
- * The partner OAuth retention sweep (docs/integration-platform.md, "Retention
+ * The partner OAuth retention sweep (docs/integrations/integration-platform.md, "Retention
  * sweep"). Nothing in the provider deletes a row once it stops mattering, so
  * this does, in six steps:
  *

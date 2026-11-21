@@ -113,7 +113,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     presentQaVerdict,
   } = useUserDrawer();
 
-  // Crowdsourced QA (docs/crowdsourced-qa-mobile.md). Open to every user on a
+  // Crowdsourced QA (docs/qa/crowdsourced-qa-mobile.md). Open to every user on a
   // binary that can actually load a PR preview — on any other build the rows
   // would offer something the app cannot do. `qaPrNumber` is null once THIS
   // account has filed a verdict for THIS bundle, which switches the group back to

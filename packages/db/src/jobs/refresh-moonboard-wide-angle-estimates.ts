@@ -13,7 +13,7 @@
  *
  * Callers: the CLI `packages/db/scripts/refresh-moonboard-wide-angle-estimates.ts`
  * (flags --dry-run, --publish) and the batch worker's
- * `refresh-moonboard-wide-angle-estimates` family (docs/background-workers.md).
+ * `refresh-moonboard-wide-angle-estimates` family (docs/backend/background-workers.md).
  * Zero angle-surface coverage from any shape board throws
  * {@link MoonboardFitUnusableError}: nothing is written. There is no
  * coefficient persistence step here (the angle surface is refit from

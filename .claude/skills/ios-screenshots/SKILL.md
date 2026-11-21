@@ -1,6 +1,6 @@
 ---
 name: ios-screenshots
-description: Capture screenshots of the Boardsesh React Native app (packages/mobile/) running on an iOS simulator, driven against Metro with a cached dev-client .app. Use when asked to screenshot / see / visually verify the mobile app on iOS / iPhone, or to share mobile screenshots in chat. macOS only; the Linux/KVM-friendly counterpart is `vp run mobile:android-shots`. Full reference: docs/ios-simulator-screenshots.md.
+description: Capture screenshots of the Boardsesh React Native app (packages/mobile/) running on an iOS simulator, driven against Metro with a cached dev-client .app. Use when asked to screenshot / see / visually verify the mobile app on iOS / iPhone, or to share mobile screenshots in chat. macOS only; the Linux/KVM-friendly counterpart is `vp run mobile:android-shots`. Full reference: docs/qa/ios-simulator-screenshots.md.
 ---
 
 # iOS simulator screenshots

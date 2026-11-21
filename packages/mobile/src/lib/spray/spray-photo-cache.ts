@@ -3,7 +3,7 @@
 // Every other board background is a bundled asset: `background-image-cache.ts`
 // resolves a manifest key to a file already inside the IPA/APK. A spray wall's
 // background is a photograph in the PRIVATE R2 bucket, read through a 15-minute
-// presigned URL (`docs/spray-walls.md`, "Photos and privacy"), so it has to be
+// presigned URL (`docs/product/spray-walls.md`, "Photos and privacy"), so it has to be
 // fetched once and kept.
 //
 // Two rules shape everything below.

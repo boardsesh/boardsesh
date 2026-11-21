@@ -12,8 +12,8 @@
 // in the scheduler, the pill or the sheet. All three are wired: the
 // stage input is what `RestTimerPacingSync` resolved for the climb on the wall
 // (`resolveStageRestPacing`); the crew input is the session's shared clock this
-// phone follows (lib/crew-rest-cadence.ts). See docs/rest-timer.md and
-// docs/workout-stages.md ("Pacing").
+// phone follows (lib/crew-rest-cadence.ts). See docs/product/rest-timer.md and
+// docs/product/workout-stages.md ("Pacing").
 
 import {
   stageRestSeconds,

@@ -80,7 +80,7 @@ jobs:
   # Tells the private blackheathdc-ansible repo a new worker image exists so
   # its own self-hosted runner can pull and deploy it. This job never runs on
   # a self-hosted runner itself and holds no homelab secrets -- see
-  # docs/homelab-deploys.md for the trust model and the kill switch.
+  # docs/operations/homelab-deploys.md for the trust model and the kill switch.
   dispatch-homelab:
     needs: image
     if: github.event_name == 'push' && vars.HOMELAB_DEPLOY_ENABLED == 'true'

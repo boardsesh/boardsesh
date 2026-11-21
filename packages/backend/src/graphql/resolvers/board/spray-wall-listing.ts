@@ -34,7 +34,7 @@ import * as dbSchema from '@boardsesh/db/schema';
  * predicate carries: `searchBoards`, `gymBoards` (gym editors included — they
  * are not the owner) and a follower's `myBoards`. The owner escape sits OUTSIDE
  * the EXISTS, so the owner still lists their own hidden wall and sees the
- * notice on it. See "What hidden means" in docs/spray-walls.md.
+ * notice on it. See "What hidden means" in docs/product/spray-walls.md.
  *
  * ## Archived walls
  *
@@ -43,7 +43,7 @@ import * as dbSchema from '@boardsesh/db/schema';
  * chooses a wall to climb on, and nothing new can be set on an archived wall. So
  * the archived test sits OUTSIDE the owner escape. The owner finds archived walls
  * in `mySprayWalls`, and every climb, tick and share link on them keeps working.
- * See "Archive and reset" in docs/spray-walls.md.
+ * See "Archive and reset" in docs/product/spray-walls.md.
  */
 export function listableSprayWallCondition(
   viewerId: string | null | undefined,

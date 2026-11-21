@@ -115,7 +115,7 @@ export function buildExistingMoonboardEstimateKeysSql(): SQL {
  * A row is written at the angle the problem is MISSING, never at the angle it
  * was graded at — the real grade there is the setter's own and nothing here
  * should overwrite it. `universalGrade` stays null (MoonBoard has no
- * cross-board bridge; see docs/boardsesh-grade.md) and `ascensionistCount` is
+ * cross-board bridge; see docs/data/boardsesh-grade.md) and `ascensionistCount` is
  * 0, the same convention `cross_angle_estimate` uses for an angle nobody has
  * climbed.
  *

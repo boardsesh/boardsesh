@@ -6,7 +6,7 @@ name: Mobile OTA Preview Sweep
 # branch on the self-hosted V3 server whose PR is no longer open. The sweep also
 # sees same-named legacy channels during the migration window. The
 # server-side delete is the primary GC; the bucket's `{appId}/pr-` lifecycle rule is
-# only an orphan backstop — see docs/mobile-ota-updates.md.
+# only an orphan backstop — see docs/operations/mobile-ota-updates.md.
 #
 # Trusted, scheduled job: it checks out main (no PR-author code) and only ever
 # touches names matching ^pr-[1-9][0-9]*$, so it can never delete `production`.

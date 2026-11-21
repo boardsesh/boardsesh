@@ -159,7 +159,7 @@ describe('the refresher that fills sitemap_climb_urls', () => {
     // `tension` and every Tension ordinal moves by the MoonBoard row count.
     // Asserting only `urlRows[0] === 'kilter'` cannot see that: `kilter` sorts
     // first either way. This sequence is the contract the store's page
-    // boundaries actually follow, and `docs/sitemap.md` explains why moving
+    // boundaries actually follow, and `docs/web/sitemap.md` explains why moving
     // them is allowed.
     expect(urlRows.map((row) => row.boardType)).toEqual([
       'kilter',

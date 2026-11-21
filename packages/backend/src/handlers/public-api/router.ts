@@ -35,7 +35,7 @@ export type PartnerRuntime = NonNullable<Awaited<ReturnType<typeof loadPartnerAu
 type PartnerRuntimeLoader = (mode: PartnerOAuthMode) => Promise<PartnerRuntime | null>;
 type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 
-/** `docs/integration-platform.md`, "Operations" → "Limits". */
+/** `docs/integrations/integration-platform.md`, "Operations" → "Limits". */
 const API_PER_CONNECTION = 120;
 const API_PER_APP = 6000;
 /**

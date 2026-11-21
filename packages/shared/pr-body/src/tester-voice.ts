@@ -5,7 +5,7 @@
  * it is rendered verbatim in the Boardsesh app, to someone holding a phone in a
  * gym with five minutes. That reader has no shell, no checkout, and no CI logs,
  * so a step that says "run vitest", "curl the header" or "read
- * docs/production-deploy.md" is dead weight to every person who will ever read
+ * docs/operations/production-deploy.md" is dead weight to every person who will ever read
  * it. Author-side verification is worth writing down; it belongs in the
  * Summary, where reviewers read it.
  *

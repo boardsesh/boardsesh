@@ -12,7 +12,7 @@ const payload = z
   .strict();
 
 /**
- * Nightly Boardsesh grade refresh (`@boardsesh/db/jobs`, docs/boardsesh-grade.md).
+ * Nightly Boardsesh grade refresh (`@boardsesh/db/jobs`, docs/data/boardsesh-grade.md).
  * Reads every board's stats into memory (the batch container's 4 GB heap),
  * then publishes coefficients, gate results and grades in one fenced
  * transaction. A blocking gate fails the run with `GATES_FAILED` and no retry:

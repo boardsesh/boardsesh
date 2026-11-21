@@ -833,7 +833,7 @@ export function RestTimerAutoAdvanceScheduler() {
 }
 
 // The countdown's timeouts (#5396). Below the component so the hunks above stay
-// where docs/rest-timer.md says each PR edits.
+// where docs/product/rest-timer.md says each PR edits.
 
 type CueTimeout = ReturnType<typeof setTimeout>;
 

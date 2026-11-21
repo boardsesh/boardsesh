@@ -25,7 +25,7 @@ set -euo pipefail
 #
 # The output directory is wiped first. As a guard, the script refuses to wipe a
 # non-empty directory that isn't already an Expo web export (no `_expo/`), and
-# refuses any target at or above the repo root. See docs/expo-web-deployment.md.
+# refuses any target at or above the repo root. See docs/operations/expo-web-deployment.md.
 #
 # BOARDSESH_EXPORT_KEEP_METRO_CACHE=1 trades the `--clear` cache wipe for an
 # env-scoped transform store — throwaway validation only, never a shipped

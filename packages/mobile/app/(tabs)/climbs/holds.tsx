@@ -57,7 +57,7 @@ const CHROME_BUDGET = 300;
  * types, and hands the edited filter back via `emitHoldsFilterSelection` when the
  * screen pops (Done or swipe-back). A pushed route — not a stacked sheet —
  * because native sheets can't stack above the filter sheet, and the board's
- * pan/pinch shouldn't fight a modal's pan. See docs/mobile-sheets-vs-routes.md.
+ * pan/pinch shouldn't fight a modal's pan. See docs/mobile/mobile-sheets-vs-routes.md.
  */
 export default function HoldFilterScreen() {
   const params = useLocalSearchParams<Params>();

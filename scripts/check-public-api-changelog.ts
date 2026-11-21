@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 /**
- * The public API changelog gate (docs/integration-platform.md, "Versioning"):
+ * The public API changelog gate (docs/integrations/integration-platform.md, "Versioning"):
  * CI fails a PR that changes the published contract without a changelog entry.
  *
  * Usage:

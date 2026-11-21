@@ -1,7 +1,7 @@
 appId: com.boardsesh.app
 name: e2e gate smoke
 ---
-# The mobile E2E gate's navigation smoke (docs/mobile-e2e-gate.md), not a store
+# The mobile E2E gate's navigation smoke (docs/qa/mobile-e2e-gate.md), not a store
 # capture: it takes no screenshots. Same route list as smoke-android.yaml, for
 # the same reason (every deep link below is one app-store.yaml already opens, so
 # the pinned fixture set holds its requests): home -> profile -> climbs -> first

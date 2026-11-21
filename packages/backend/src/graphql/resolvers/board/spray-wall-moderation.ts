@@ -25,7 +25,7 @@ import {
  *
  * ## Why this is not the climb-proposal machinery
  *
- * `docs/climb-moderation.md` describes a weighted approval threshold over a
+ * `docs/product/climb-moderation.md` describes a weighted approval threshold over a
  * proposed CHANGE to a climb: several climbers vote, their roles weight the
  * votes, and the outcome is a catalogue edit. That is the right shape when the
  * community knows better than any one person whether a climb's holds are wrong.

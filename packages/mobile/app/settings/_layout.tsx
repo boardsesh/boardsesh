@@ -69,7 +69,7 @@ function KeepBoardsOffline() {
  *
  * One consequence to keep in mind when adding a row: a `router.push` aimed at a
  * TAB route from here stacks a second `(tabs)` instance on top of Settings (the
- * cross-navigator trap in docs/mobile-sheets-vs-routes.md). Use `router.dismissTo`
+ * cross-navigator trap in docs/mobile/mobile-sheets-vs-routes.md). Use `router.dismissTo`
  * for those — it pops back to the tabs already in the root stack and drops
  * Settings on the way.
  *

@@ -98,7 +98,7 @@ The campaign uses the dedicated `app-stores/apple/campaign-fixtures.json` pin
 with a shared crew session and seven board selectors: Kilter, Tension, MoonBoard,
 Woods, Decoy, Grasshopper, spray. Preflight rejects missing or wrongly typed
 boards. Android and navigation smoke retain the separate legacy fixture.
-See the [creative asset runbook](../../docs/app-store-creative-assets.md)
+See the [creative asset runbook](../../docs/marketing/app-store-creative-assets.md)
 for capture, review, and separate Header/Search Results exports.
 
 Apple permits up to ten screenshots; this campaign deliberately uses nine.
@@ -139,7 +139,7 @@ closed if a scene or its assets cannot render.
 These are separate organic App Store creative placements on iOS/iPadOS 27 and
 later, not extra screenshot slots. Generate opaque PNGs with `vp run store:creatives`:
 Header at 3840 × 1646 and Search Results at 3840 × 2560. Keep them outside the
-screenshot upload tree. The [creative asset runbook](../../docs/app-store-creative-assets.md)
+screenshot upload tree. The [creative asset runbook](../../docs/marketing/app-store-creative-assets.md)
 covers source requirements, `creative-assets.json` provenance, localization and
 manual Asset Library review/publication. Existing fastlane screenshot and
 metadata lanes do not upload or publish them.
@@ -244,8 +244,8 @@ automatic disclosure exemption. Confirm any additional video, audio or document
 collection from the complete feature/SDK inventory rather than restoring the
 old blanket “not collected” list.
 
-Evidence: [media storage](../../docs/user-media-storage.md),
-[analytics choices and telemetry paths](../../docs/analytics-consent.md),
+Evidence: [media storage](../../docs/operations/user-media-storage.md),
+[analytics choices and telemetry paths](../../docs/analytics/analytics-consent.md),
 [native PostHog identity](../../packages/mobile/src/lib/posthog-client.ts),
 [Sentry privacy handling](../../packages/mobile/src/lib/sentry.ts), and
 [stored comments](../../packages/backend/src/graphql/resolvers/social/comments.ts).

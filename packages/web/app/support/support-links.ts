@@ -22,7 +22,7 @@ import { z } from 'zod';
  *
  * A value that fails its check is treated as unset, so a typo hides a button
  * instead of pointing it somewhere else. A monthly list is all or nothing: one
- * bad entry drops the whole list. Full contract: docs/production-deploy.md.
+ * bad entry drops the whole list. Full contract: docs/operations/production-deploy.md.
  */
 
 export const SUPPORT_CURRENCIES = ['aud', 'usd'] as const;

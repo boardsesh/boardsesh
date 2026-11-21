@@ -9,7 +9,7 @@ import { singleFlight } from './single-flight';
  * The same two properties `similar-climbs-cache.ts` documents: the cache decides
  * how OFTEN the statement runs, `singleFlight` decides how many copies run AT
  * ONCE — and the second is what keeps a cold window from emptying the pool
- * (`docs/db-connectivity.md`).
+ * (`docs/operations/db-connectivity.md`).
  *
  * Every Redis failure falls through to `load` instead of to an error: an
  * unreachable Redis must degrade to the uncached read, never take the caller

@@ -11,7 +11,7 @@
 # `command:` (e.g. docker-compose, or Railway's custom start command), so one
 # image serves every CLI. kilter and aurora expose a long-running `daemon`;
 # moonboard is locations-only (no daemon subcommand); the scheduler's `start`
-# runs the cron loop and a /health server (see docs/scheduler.md):
+# runs the cron loop and a /health server (see docs/backend/scheduler.md):
 #   node --import tsx packages/kilter-sync/src/cli/index.ts daemon
 #   node --import tsx packages/aurora-sync/src/cli/index.ts daemon
 #   node --import tsx packages/moonboard-sync/src/cli/index.ts locations

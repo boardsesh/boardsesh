@@ -465,7 +465,7 @@ describe('positional hold plans', () => {
 });
 
 // The export publishes artifacts in one of two storage shapes
-// (docs/board-snapshots.md, "Artifact shape"): shape 1 is rowid tables with the
+// (docs/data/board-snapshots.md, "Artifact shape"): shape 1 is rowid tables with the
 // device's secondary indexes, in the order rows arrived; shape 2 is the same
 // tables WITHOUT ROWID with no secondary index, vacuumed into key order. The
 // loader has to read either. This package cannot import the export job, so the

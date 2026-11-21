@@ -3,7 +3,7 @@ import { hasNonNegativeCounts, runBackendCronMutation } from './backend-cron-mut
 
 /**
  * The two daily jobs behind the first-party active-user count (#2644,
- * docs/analytics-consent.md). Signed-in requests write `user_activity_days` in
+ * docs/analytics/analytics-consent.md). Signed-in requests write `user_activity_days` in
  * the backend whatever a climber's analytics consent; these turn it into
  * numbers and keep it bounded:
  *

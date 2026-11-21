@@ -25,7 +25,7 @@ import { logger } from '../utils/logger';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 /**
- * When the PostHog erasure jobs are queued (docs/analytics-consent.md,
+ * When the PostHog erasure jobs are queued (docs/analytics/analytics-consent.md,
  * "Erasure"), against a running pg-boss, and what the worker does with one.
  * Queued jobs start 15 minutes or 7 days out, so even with the worker
  * registered they stay in `created` and can be counted.

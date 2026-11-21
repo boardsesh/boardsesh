@@ -13,9 +13,9 @@ name: Refresh MoonBoard Angle Estimates
 # delta does. This is separate from the nightly refresh-climb-grades.ts run:
 # MoonBoard is a CROWD_MEAN_BOARDS member there too now (for problems graded
 # at both 25° and 40°), but this job targets the disjoint single-angle case
-# that pipeline has no evidence for. See docs/boardsesh-grade.md.
+# that pipeline has no evidence for. See docs/data/boardsesh-grade.md.
 # The weekly run is the worker's `refresh-moonboard-angle-estimates` family
-# (docs/background-workers.md); this workflow is the manual fallback.
+# (docs/backend/background-workers.md); this workflow is the manual fallback.
 on:
   workflow_dispatch:
     inputs:

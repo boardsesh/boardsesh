@@ -1,4 +1,4 @@
-// The #4979 hold (docs/current-climb-outside-queue.md, section 6): when the
+// The #4979 hold (docs/product/current-climb-outside-queue.md, section 6): when the
 // climb on the wall hasn't changed for 4 hours or more, connecting a board
 // doesn't light it. The board stays dark until the climber acts, and the player
 // says when that climb was last on the wall.

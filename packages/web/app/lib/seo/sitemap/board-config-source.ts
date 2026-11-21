@@ -50,7 +50,7 @@ const MOONBOARD_REVALIDATE_SECONDS = 21_600;
  * `getAllBoardConfigsOrThrow` budgets itself 10 s. This leg runs in parallel with
  * it and had no bound at any layer: `dbzRead`'s pool sets `connect_timeout: 30`
  * and `statement_timeout` is off by default (PgBouncer rejects it as a startup
- * parameter — see docs/db-connectivity.md), so a stalled read would have held the
+ * parameter — see docs/operations/db-connectivity.md), so a stalled read would have held the
  * boards shard for the whole platform timeout, and the single-flight would have
  * made every later caller join the stall. Measured cost of the query itself on
  * the prod replica: 0.17 ms and 28 buffers, so 10 s is a tail bound and not a
@@ -191,7 +191,7 @@ async function getMoonBoardListedLayoutIds(): Promise<Set<number>> {
  * lands between `kilter` and `soill`. So every Tension/Soill/Touchstone URL
  * shifts by the MoonBoard row count and changes page in `sitemap_climb_urls`.
  * That is a catalogue change, which is what `ordinal` is allowed to move for —
- * see the "Adding a board also moves `ordinal`" note in `docs/sitemap.md`.
+ * see the "Adding a board also moves `ordinal`" note in `docs/web/sitemap.md`.
  *
  * A layout with no listed climbs is dropped rather than shipped with a zero
  * count: both shards would skip it anyway, and leaving it in means a future

@@ -9,7 +9,7 @@ import { defineConfig } from '@playwright/test';
  *   vp run db:up                       (once)
  *   vp run test:e2e:partner-oauth
  *
- * See docs/integration-platform.md, "End-to-end journey".
+ * See docs/integrations/integration-platform.md, "End-to-end journey".
  */
 export default defineConfig({
   testDir: './partner-oauth-e2e',

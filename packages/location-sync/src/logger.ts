@@ -5,7 +5,7 @@
  * singleton directly (shared packages never depend on `backend`). Instead the
  * caller injects a structural logger. The shape matches winston's
  * `info(message, meta)` / `warn(message, meta)` signature, so the backend can
- * pass its winston logger straight through (per docs/logging.md) while other
+ * pass its winston logger straight through (per docs/backend/logging.md) while other
  * hosts pass a string-callback adapter or the no-op below.
  */
 export type LocationSyncLogFields = Record<string, unknown>;

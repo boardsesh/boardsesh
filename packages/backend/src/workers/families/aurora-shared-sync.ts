@@ -79,7 +79,7 @@ export const AURORA_SHARED_SYNC_DEADLINE_SECONDS = BOARD_WIDE_FAN_OUT_DEADLINE_S
  * The board-wide half of the Aurora daemon, on its own schedule: products,
  * layouts, climbs, climb stats and beta links from Aurora's shared `/sync`, the
  * weekly stats history snapshot, and for gym boards the public locations plus
- * one slice of the gym-wall crawl (docs/aurora-location-sync.md).
+ * one slice of the gym-wall crawl (docs/data/aurora-location-sync.md).
  *
  * It borrows a token from the board's most recently successful linked account
  * (stored token first, a login with its password as the fallback) and never
@@ -105,7 +105,7 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
     heartbeatSeconds: 300,
     // The same priority as the routine cycle, never lower: pg-boss fetches
     // FIFO within a priority, and two routine cycles can keep a lower
-    // priority waiting forever (docs/background-workers.md, "Queue share").
+    // priority waiting forever (docs/backend/background-workers.md, "Queue share").
     priority: 0,
   },
   payload: auroraSharedSyncPayload,

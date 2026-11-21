@@ -6,7 +6,7 @@
 // needs is `'off'` vs everything else, and `boardDownloadState` returns `'off'`
 // exactly when the scope is absent from `syncEnabledBoards` — so the live sync
 // frame adds nothing but a re-render on every progress tick, on screens that are
-// virtualised lists (see docs/react-native-performance.md).
+// virtualised lists (see docs/mobile/react-native-performance.md).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';

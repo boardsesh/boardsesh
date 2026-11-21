@@ -1,5 +1,5 @@
 // What the look picker needs to draw "Wall only" and "Holds only" on the phone,
-// before the backend has made either (`docs/spray-walls.md`, "Previewing a look
+// before the backend has made either (`docs/product/spray-walls.md`, "Previewing a look
 // on the phone").
 //
 // Pure: the picker's tiles read one `SprayLookPreviewSource` and these helpers,

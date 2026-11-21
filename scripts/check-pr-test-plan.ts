@@ -12,7 +12,7 @@
  * (packages/shared/offline-sync/src/db/migrations.ts) until the body carries a
  * ticked statement that the previous stable bundle can read the result. Older JS
  * can land on a migrated phone (a reverted canary update, a climber leaving early
- * updates); see docs/offline-sync-plan.md, "Older JS on a newer database". That
+ * updates); see docs/data/offline-sync.md, "Older JS on a newer database". That
  * rule needs the PR's changed files, and `skip-qa-gate` does not waive it.
  *
  * Inputs (designed so CI never has to shell-escape a multi-line markdown body):

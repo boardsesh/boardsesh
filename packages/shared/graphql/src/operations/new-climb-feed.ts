@@ -124,7 +124,7 @@ export const SIMILAR_CLIMBS_QUERY = gql`
  * hands out: without it a caller who is neither the owner nor a member of the
  * wall's gym is refused, because the `layoutId` in the input comes out of a
  * sequence and authorizes nothing on its own. Send it unconditionally — it is
- * ignored when the caller is already a principal. See `docs/spray-walls.md`.
+ * ignored when the caller is already a principal. See `docs/product/spray-walls.md`.
  */
 export const SAVE_CLIMB_MUTATION = gql`
   mutation SaveClimb($input: SaveClimbInput!) {

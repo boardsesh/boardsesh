@@ -125,7 +125,7 @@ export function orderConnectedAppScopes(scopes: readonly string[]): string[] {
  * tick, other setters' unlisted climbs and drafts included (#7387, owner decision
  * 2026-11-10); except that a climb on someone else's Private or Link only
  * Spraywall reaches the app without its names, the serializer's rule
- * (`logbook-tick-serializer.ts`, docs/integration-platform.md "Data boundaries").
+ * (`logbook-tick-serializer.ts`, docs/integrations/integration-platform.md "Data boundaries").
  */
 export function describeConnectedAppScope(scope: string, t: ConnectedAppsTranslate): ConnectedAppScopeView {
   switch (scope) {

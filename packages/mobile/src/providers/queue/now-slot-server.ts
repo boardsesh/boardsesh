@@ -1,5 +1,5 @@
 /**
- * F3 now-slot mode, the mobile half (#6666; docs/current-climb-outside-queue.md
+ * F3 now-slot mode, the mobile half (#6666; docs/product/current-climb-outside-queue.md
  * sections 2 and 7): the per-connect server probe, its telemetry, and the
  * whole-queue clamp that follows the probe.
  */

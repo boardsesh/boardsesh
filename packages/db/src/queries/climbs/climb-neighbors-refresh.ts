@@ -19,7 +19,7 @@ import { distinctHoldIds, storedWoodsSizeId } from './frames-hold-entries';
  * The watermark-driven refresh behind the `refresh-climb-neighbors` job
  * (`src/jobs/refresh-climb-neighbors.ts`, run by the CLI in `scripts/` and by
  * the batch worker's family). Lives in the package so the backend Vitest suite,
- * which has a real Postgres, can run it end to end. Design: docs/similar-climbs.md.
+ * which has a real Postgres, can run it end to end. Design: docs/data/similar-climbs.md.
  *
  * Per board:
  *  1. Work set = every climb whose `sync_seq` moved past the board's watermark

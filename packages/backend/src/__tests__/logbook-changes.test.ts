@@ -24,7 +24,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 
 /**
  * The logbook change log and the feed read behind `GET /v1/logbook/changes`
- * (docs/integration-platform.md, "Incremental sync"). The migrations are real
+ * (docs/integrations/integration-platform.md, "Incremental sync"). The migrations are real
  * (applied by schema-sql.ts) so these exercise the shipped triggers.
  *
  * Revert to prove these fail without their fix:

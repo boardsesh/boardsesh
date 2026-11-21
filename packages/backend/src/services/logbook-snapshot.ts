@@ -34,7 +34,7 @@ import {
 
 /**
  * The complete logbook snapshot a partner app downloads before following the
- * change feed. Design and proof: docs/integration-platform.md, "Complete
+ * change feed. Design and proof: docs/integrations/integration-platform.md, "Complete
  * bootstrap and transition". `GET /v1/logbook/changes` without a cursor, or
  * with a snapshot cursor, drives it (handlers/public-api/logbook.ts).
  *
@@ -62,7 +62,7 @@ export const LOGBOOK_SNAPSHOT_TTL_SECONDS = 3600;
 /**
  * How long a build may run before it is abandoned. The one-hour TTL only starts
  * once the copy is done, because the client cannot download anything before then.
- * The sizing is in docs/integration-platform.md, "What it costs".
+ * The sizing is in docs/integrations/integration-platform.md, "What it costs".
  */
 export const LOGBOOK_SNAPSHOT_BUILD_DEADLINE_SECONDS = 3 * 3600;
 /** One chunk holds one maximum feed page, so a page read touches at most two chunks. */

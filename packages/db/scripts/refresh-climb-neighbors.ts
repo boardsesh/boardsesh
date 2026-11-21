@@ -2,7 +2,7 @@
  * Nightly similar-climbs refresh (board_climb_neighbors). The job body is
  * `src/jobs/refresh-climb-neighbors.ts`; the batch worker's
  * `refresh-climb-neighbors` family runs the same body, one board per job.
- * Design + runbook: docs/similar-climbs.md.
+ * Design + runbook: docs/data/similar-climbs.md.
  *
  * Run locally: `node --import tsx packages/db/scripts/refresh-climb-neighbors.ts`
  * Flags: --board=<name>[,<name>] (default: every board but spray) · --full
@@ -45,7 +45,7 @@ async function main(argv: string[]): Promise<void> {
       full: argv.includes('--full'),
       dryRun: argv.includes('--dry-run'),
       // The gap scan reads every neighbour row on the board; gaps only come from
-      // deleted climbs now, so it runs weekly (docs/similar-climbs.md).
+      // deleted climbs now, so it runs weekly (docs/data/similar-climbs.md).
       refillGaps: argv.includes('--refill-gaps') || isGapRefillDay(new Date()),
     });
   } finally {

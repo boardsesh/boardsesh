@@ -9,7 +9,7 @@ describe('isProductionHost', () => {
   it.each([
     // app.boardsesh.com is a separate deployment (standalone Expo-web export
     // on Cloudflare Pages) and never loads this Next.js app — see
-    // docs/expo-web-deployment.md.
+    // docs/operations/expo-web-deployment.md.
     'app.boardsesh.com',
     // The exact bug this module fixes: preview deploys contain "boardsesh.com"
     // as a substring and must NOT match.

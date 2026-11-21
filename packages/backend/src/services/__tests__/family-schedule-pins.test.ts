@@ -4,7 +4,7 @@ import { allFamilies } from '../../workers/families';
 /**
  * Every family's schedule, pinned. A cron is a production cadence: changing
  * one should be a deliberate edit here too, reviewed next to the docs table in
- * docs/background-workers.md. Families without schedules (the probe, the
+ * docs/backend/background-workers.md. Families without schedules (the probe, the
  * first-link syncs, enqueued by the backend) have none to pin.
  */
 const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: string; roles: string[] }>> = {

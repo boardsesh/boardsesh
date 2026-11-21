@@ -502,7 +502,7 @@ export function mapCatalogConfigStats(config: MoonBoardCatalogConfiguration, ang
   const difficultyId = moonBoardGradeToDifficultyId(config.grade);
   // Prefer the community's own userGrade over the setter's grade for
   // userDifficultyId, falling back to the setter grade when userGrade is
-  // empty/absent (the majority case — see docs/moonboard-catalog-import.md).
+  // empty/absent (the majority case — see docs/data/moonboard-catalog-import.md).
   const userDifficultyId = config.userGrade ? moonBoardGradeToDifficultyId(config.userGrade) : difficultyId;
   return {
     angle,

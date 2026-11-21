@@ -197,7 +197,7 @@ export const climbQueries = {
    * Used by the playview drawer's similar-climbs panel and the web climb page's
    * similar-climbs strip (both 0.5).
    *
-   * Two paths (docs/similar-climbs.md):
+   * Two paths (docs/data/similar-climbs.md):
    *  - Admins (`hasCatalogQueryAccess`) run the live Jaccard CTE, cached.
    *  - Everyone else, anonymous callers included (the web front door calls
    *    anonymously), reads the nightly `board_climb_neighbors` index. A bare

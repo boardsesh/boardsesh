@@ -15,7 +15,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *   vp run mobile:ios-shots                        # boot + install + Metro + launch, then hold Metro
  *   vp run mobile:ios-shots -- --to climbs --label climbs --shutdown   # one-shot: boot, shoot, tear down
  *   vp run mobile:ios-shots -- screenshot --to board-view --label board   # shoot a running simulator
- *   vp run mobile:ios-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile-stories.md)
+ *   vp run mobile:ios-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile/mobile-stories.md)
  *   vp run mobile:ios-shots -- navigate --to discover                  # deep-link only
  *   vp run mobile:ios-shots -- --flow app-store                        # run the Maestro flow
  *   vp run mobile:ios-shots -- shutdown                                # stop simulator + Metro

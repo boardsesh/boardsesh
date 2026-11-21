@@ -4,7 +4,7 @@ import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
  * The rules a developer's app must meet before Boardsesh registers it. Pure:
  * no Better Auth, no database, nothing built at import, so the GraphQL entry
  * point can load it with partner OAuth off. `registration.ts` applies them;
- * docs/integration-platform.md "Self-service registration" is the contract.
+ * docs/integrations/integration-platform.md "Self-service registration" is the contract.
  */
 
 export const PARTNER_APPS_PER_DEVELOPER = 10;
@@ -27,7 +27,7 @@ export const PARTNER_APP_APPLICATION_TYPES = ['web', 'native'] as const;
 export type PartnerAppApplicationType = (typeof PARTNER_APP_APPLICATION_TYPES)[number];
 
 /**
- * `docs/partner-api.md` section 2: confidential apps send their secret by Basic
+ * `docs/integrations/partner-api.md` section 2: confidential apps send their secret by Basic
  * or in the form, public apps send none. `private_key_jwt` is never offered: its
  * `jwks_uri` would be fetched inside the token transaction.
  */

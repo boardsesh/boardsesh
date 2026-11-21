@@ -6,7 +6,7 @@ import { rowsOf } from '../util/rows';
 /**
  * Materialised similar climbs (`board_climb_neighbors`): the pure scoring core
  * the nightly job runs, and the read path the `similarClimbs` resolver serves
- * non-admin callers from. Design and runbook: docs/similar-climbs.md.
+ * non-admin callers from. Design and runbook: docs/data/similar-climbs.md.
  */
 
 /** Neighbours kept per climb. The play drawer asks for 12, the web strip for 10. */

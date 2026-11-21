@@ -51,7 +51,7 @@ import {
  *       vp test run --project backend-serial job-queue-roles-routine
  *
  * The full recipe (a private dev DB container, migrated) is step 0 of the
- * routine cutover in docs/background-workers.md.
+ * routine cutover in docs/backend/background-workers.md.
  */
 
 // Keycloak is the one Kilter call no fixture can stand in for: the refresh

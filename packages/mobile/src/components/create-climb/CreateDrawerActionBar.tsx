@@ -86,7 +86,7 @@ type CreateDrawerActionBarProps = {
  * evenly across the row; under both sits the persistent draft-status line.
  *
  * Save is not here. It is the sheet's confirm, so it sits at the trailing end of
- * the header (docs/mobile-sheets-vs-routes.md, "Where actions go"). Without the
+ * the header (docs/mobile/mobile-sheets-vs-routes.md, "Where actions go"). Without the
  * pill the row holds at most six 44dp icon buttons: 264dp plus 32dp of side
  * padding is 296dp, which fits a 320pt screen because the row drops the shared
  * 8dp gap (5 x 8 more would be 336dp) and lets space-between spread the tools.

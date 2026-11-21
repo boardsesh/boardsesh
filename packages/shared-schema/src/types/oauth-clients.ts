@@ -1,4 +1,4 @@
-/** Wire shapes for the developer console's operations (docs/integration-platform.md "Self-service registration"). */
+/** Wire shapes for the developer console's operations (docs/integrations/integration-platform.md "Self-service registration"). */
 export type OAuthClientApplicationType = 'WEB' | 'NATIVE';
 
 export type OAuthClientAuthMethod = 'NONE' | 'CLIENT_SECRET_BASIC' | 'CLIENT_SECRET_POST';

@@ -4,7 +4,7 @@ import { integrationVideoLink, integrationVideoWaitSteps } from './lib/showcase-
 
 /**
  * Records every simulator take the homepage showcase video uses, with no manual
- * steps: `vp run video:record`. Runbook: docs/showcase-video.md.
+ * steps: `vp run video:record`. Runbook: docs/marketing/showcase-video.md.
  *
  *   vp run video:record                                  # every take, prod backend
  *   vp run video:record -- --only crew --backend local   # one take, seeded dev DB
@@ -1964,7 +1964,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (!primaryMetroPort) throw new Error(`No free primary Metro port among ${PRIMARY_METRO_PORTS.join(', ')}`);
     console.log(`${LOG} primary Metro port: ${primaryMetroPort}`);
     // The iOS dev-client: the primary phone on iOS, and the crew take's second
-    // phone on either platform (see "Android" in docs/showcase-video.md).
+    // phone on either platform (see "Android" in docs/marketing/showcase-video.md).
     const needsIosApp = args.platform === 'ios' || Boolean(credentials.secondary);
     // --app-path, else the cached dev-client, else build one (~30 min, once).
     const cachedApp = resolve(MOBILE_DIR, '.app-cache', 'Boardsesh.app');

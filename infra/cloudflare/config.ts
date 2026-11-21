@@ -23,7 +23,7 @@ import {
 //    proxy so /og/* share cards and /render/board images edge-cache globally.
 //    Everything else on that host (/graphql, other REST, WebSocket upgrades)
 //    must bypass the cache.
-//    The manual runbook this replaces lives in docs/og-climb.md.
+//    The manual runbook this replaces lives in docs/web/og-climb.md.
 //
 // 2. www.boardsesh.com is the marketing/SEO surface. It moved from Vercel to the
 //    Railway web service in #4655 (epic #4648); the two rules below are cost
@@ -31,7 +31,7 @@ import {
 //    Railway sits behind the same proxy. Measured 2026-08-25 against Vercel:
 //    ~442,600 function invocations/day, of which /api/internal/board-render was
 //    ~215,600 and the climb-view page ~203,900, against a published sitemap of
-//    only ~60k URLs and ~2,000 homepage hits. See docs/cloudflare.md.
+//    only ~60k URLs and ~2,000 homepage hits. See docs/operations/cloudflare.md.
 //    Its DNS record is fully managed here — type, content, TTL and the proxy
 //    flag — so a future origin change is a reviewable diff rather than a
 //    dashboard click.
@@ -52,7 +52,7 @@ export const WS_HOSTNAME = 'ws.boardsesh.com';
  *
  * A fully managed proxied CNAME in `dnsRecords` since the owner registered the
  * custom domain on `boardsesh-backend` (2026-11-17). See "api.boardsesh.com" in
- * docs/cloudflare.md.
+ * docs/operations/cloudflare.md.
  */
 export const API_HOSTNAME = 'api.boardsesh.com';
 
@@ -1230,7 +1230,7 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   //
   // Attach the live hostname only after the complete historical inventory
   // passes staging verification and Production Deploy is frozen and drained.
-  // Keep the staging domain for verification. See docs/static-assets.md.
+  // Keep the staging domain for verification. See docs/operations/static-assets.md.
   {
     name: 'boardsesh-static-assets',
     customDomain: ASSETS_HOSTNAME,
@@ -1238,7 +1238,7 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
     cors: PUBLIC_READ_CORS,
   },
   // Mobile bootstrap databases and manifests. Readers stay on Tigris until a
-  // complete R2 export has passed the migration checks in docs/board-snapshots.md.
+  // complete R2 export has passed the migration checks in docs/data/board-snapshots.md.
   {
     name: 'boardsesh-board-snapshots',
     customDomain: SNAPSHOTS_HOSTNAME,
@@ -1303,7 +1303,7 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     // has nothing behind it. No `settings`: Cloudflare always flattens a
     // proxied CNAME, so flatten_cname is not a field this record can own (see
     // FullyManagedDnsRecordDesired.settings). See the "Flipping www to a new
-    // origin" section of docs/cloudflare.md for the full mechanics and rollback.
+    // origin" section of docs/operations/cloudflare.md for the full mechanics and rollback.
     {
       management: 'full',
       name: WWW_HOSTNAME,

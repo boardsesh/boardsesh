@@ -86,7 +86,7 @@ function parseZoneMode(raw: string | undefined): ZoneMatchMode {
  * `emitZoneFilterSelection` when the screen pops (Done or swipe-back). A pushed
  * route — not a stacked sheet — because native sheets can't stack above the
  * filter sheet, and the board's drag/pinch shouldn't fight a modal's pan. See
- * docs/mobile-sheets-vs-routes.md.
+ * docs/mobile/mobile-sheets-vs-routes.md.
  */
 export default function ZoneFilterScreen() {
   const params = useLocalSearchParams<Params>();

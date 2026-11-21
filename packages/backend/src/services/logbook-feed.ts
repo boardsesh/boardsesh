@@ -12,7 +12,7 @@ import type { Database } from '../db/client';
 
 /**
  * Reads the logbook change feed: the proof and the protocol are in
- * docs/integration-platform.md, "Incremental sync". `GET /v1/logbook/changes`
+ * docs/integrations/integration-platform.md, "Incremental sync". `GET /v1/logbook/changes`
  * (handlers/public-api/logbook.ts) and the snapshot bootstrap build on it.
  *
  * Every step of one page runs in a single read-only REPEATABLE READ

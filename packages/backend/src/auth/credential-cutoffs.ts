@@ -3,7 +3,7 @@ import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
 /**
  * Whether a presented first-party credential may still be used, decided from
  * its stamps and its climber's cutoff state (BA-04 section 4,
- * docs/better-auth-migration.md "Credential cutoffs"). Pure: every reader and
+ * docs/auth/better-auth-migration.md "Credential cutoffs"). Pure: every reader and
  * the refresh issuer call this one function, so they cannot disagree.
  */
 

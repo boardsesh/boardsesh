@@ -98,7 +98,7 @@ export const JOIN_SESSION = `
   }
 `;
 
-// F3 (#6666, docs/current-climb-outside-queue.md section 2): the same join with
+// F3 (#6666, docs/product/current-climb-outside-queue.md section 2): the same join with
 // the seed's History / Up next line, selecting the two new QueueState fields.
 //
 // The `_NOW_SLOT` documents sit BESIDE today's and are never folded into them:

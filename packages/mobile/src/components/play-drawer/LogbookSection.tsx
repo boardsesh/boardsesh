@@ -34,7 +34,7 @@ type LogbookSectionProps = {
 
 // HARD inline caps. This card renders inside the play drawer's plain
 // ScrollView, where a `.map()` over a growable array mounts every row up front
-// (docs/react-native-performance.md section 2). A long-running project can hold
+// (docs/mobile/react-native-performance.md section 2). A long-running project can hold
 // hundreds of logs, so the card shows a fixed amount and hands the rest to the
 // virtualised full-logbook sheet. Do not raise these or add an inline expand:
 // worst case here is 6 days x 4 rows plus one heading per angle, and angles are

@@ -1,6 +1,6 @@
 // On-device SQLite DDL for the Boardsesh mobile app.
 //
-// Column names, types, and primary keys are governed by docs/sync-table-manifest.md
+// Column names, types, and primary keys are governed by docs/data/sync-table-manifest.md
 // — the cross-package contract. The sync pull client accepts only the per-table
 // column allowlist in sync/table-config.ts, so every column here MUST match the
 // snake_case key the backend resolver emits, to the character.

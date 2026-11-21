@@ -8,7 +8,7 @@ import { jobBlocks } from './helpers/workflow-yaml';
 
 /**
  * `ci-status` is the one context main's repository ruleset requires (see
- * docs/ci-required-checks.md), which makes it the whole answer to two different
+ * docs/qa/ci-required-checks.md), which makes it the whole answer to two different
  * questions at once:
  *
  *   * "did CI pass?" — only if every gating job is in its `needs`. A job that is

@@ -19,7 +19,7 @@ name: OTA Config Apply
 # branch, and refuses to remap a channel while a rollout is live. It publishes
 # nothing: no update moves because this ran.
 #
-# See docs/mobile-ota-updates.md, "Managing xprem as code". The daily read-only
+# See docs/operations/mobile-ota-updates.md, "Managing xprem as code". The daily read-only
 # check is ota-drift.yml.
 on:
   push:

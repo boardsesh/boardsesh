@@ -108,7 +108,7 @@ function BoardsLayout() {
       />
       {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
           sheet: two of its steps (the corner markers and the hold editor) are
-          full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
+          full-screen pan-and-pinch surfaces, which `docs/mobile/mobile-sheets-vs-routes.md`
           rule 3 keeps off a sheet's own drag.
 
           On iPad the two spray screens cover the whole screen

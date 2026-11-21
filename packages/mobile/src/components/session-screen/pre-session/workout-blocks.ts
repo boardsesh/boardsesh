@@ -332,7 +332,7 @@ export function changeBlockType(
 /**
  * The block types in run order as one comma-joined string, warm-ups included
  * (`warmUp,pyramid,volume`), for analytics. A string, not an array: the web
- * `track()` types arrays out (docs/gym-funnel-analytics.md). Not sorted, because
+ * `track()` types arrays out (docs/analytics/gym-funnel-analytics.md). Not sorted, because
  * the order is the workout.
  */
 export function selectionWorkoutTypes(selection: GeneratorSelection): string {

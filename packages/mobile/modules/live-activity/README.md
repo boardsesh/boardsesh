@@ -191,6 +191,6 @@ debugging filters to `subsystem:com.boardsesh.app` with categories
 `BoardBleManager`, `LiveActivityModule`, `LiveActivityManager`,
 `LiveActivityIntent`.
 
-See `docs/live-activity-push-testing.md` for the Tailscale-backed end-to-end
+See `docs/qa/live-activity-push-testing.md` for the Tailscale-backed end-to-end
 push delivery test, and `.boardsesh/qa-notes.md` (generated per branch)
 for the on-device QA flow.

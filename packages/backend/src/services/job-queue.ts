@@ -1,7 +1,7 @@
 /**
  * The backend's job queue: pg-boss, in this process, on the same Postgres.
  *
- * `docs/partner-workouts-internal.md` ("The job queue") is the design. The short
+ * `docs/integrations/partner-workouts-internal.md` ("The job queue") is the design. The short
  * version of why it is pg-boss and not BullMQ on the Redis we already run:
  *
  * 1. **A job can commit with the state change.** `send()` takes a `db` option, so
@@ -17,7 +17,7 @@
  * schema under the reserved migration owner; runtime startup disables DDL.
  * That schema is outside `packages/db/drizzle`, so
  * `check:db-migrations` does not see it and `pg_dump` carries it like any other
- * schema. See `docs/db-migrations.md`.
+ * schema. See `docs/operations/db-migrations.md`.
  *
  * Two notes on the installed version (12.x), because the design doc was written
  * against assumptions and asked for them to be checked:
@@ -82,7 +82,7 @@ export function requireJobQueue(): PgBoss {
 /**
  * pg-boss pool per backend replica when `PGBOSS_POOL_SIZE` is unset. Its work is
  * short timer statements and a handful of once-a-minute jobs, which 2
- * connections serve; see the connection budget in docs/db-connectivity.md.
+ * connections serve; see the connection budget in docs/operations/db-connectivity.md.
  */
 export const DEFAULT_PGBOSS_POOL_SIZE = 2;
 

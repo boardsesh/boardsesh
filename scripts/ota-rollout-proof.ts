@@ -36,7 +36,7 @@
  * machine-readable result into the output directory.
  *
  * Dependency-free: runs with no install in a job that holds the admin login.
- * See docs/mobile-ota-updates.md, "Running the throwaway-branch proof".
+ * See docs/operations/mobile-ota-updates.md, "Running the throwaway-branch proof".
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';

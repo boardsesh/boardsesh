@@ -12,7 +12,7 @@ type Segments = readonly string[];
 const TABS_GROUP = '(tabs)';
 const PLAYER_ROUTE = 'play';
 // The replayable walkthrough. Like the player, a transparentModal with an opaque
-// backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
+// backing (docs/mobile/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
 // tabs the tab bar never leaves while it is up.
 const ONBOARDING_ROUTE = 'onboarding';
 // The full-screen Wall display for an iPad mounted at the board. Another

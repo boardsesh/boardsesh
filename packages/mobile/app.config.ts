@@ -321,7 +321,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
   // Deliberately scoped to Android identity + icons: `scheme`, ios.bundleIdentifier,
   // and the iOS entitlement/App-Group block stay on the production values (changing
   // the scheme breaks OAuth deep-link redirects; the iOS entitlements are irrelevant
-  // to an Android-only build). See docs/android-sideload-build.md.
+  // to an Android-only build). See docs/operations/android-sideload-build.md.
   const isDevVariant = process.env.BOARDSESH_APP_VARIANT === 'dev';
   const appName = isDevVariant ? 'Boardsesh Dev' : 'Boardsesh';
   const androidPackage = isDevVariant ? 'com.boardsesh.app.dev' : 'com.boardsesh.app';
@@ -423,7 +423,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           // Linux), which matches the binary's embedded Linux value for a JS-only
           // commit, and on a native change resolves the NEW fingerprint so old
           // binaries are correctly excluded. Override unset => identical to before, so
-          // the gate's canonical fingerprint is unchanged. See docs/mobile-ota-updates.md.
+          // the gate's canonical fingerprint is unchanged. See docs/operations/mobile-ota-updates.md.
           runtimeVersion: process.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE?.trim()
             ? process.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE.trim()
             : { policy: 'fingerprint' as const },

@@ -22,7 +22,7 @@ import { followedAuthorsLocalCondition } from './followed-authors-local';
  * applies to the list, so a downloaded Woods board offers the same setters, with
  * the same counts, as the network does. Not user-scoped either — this is a public
  * aggregate over board reference data, so none of the auth-scoping contract
- * (docs/offline-reads.md) applies.
+ * (docs/data/offline-reads.md) applies.
  */
 type Bind = string | number;
 

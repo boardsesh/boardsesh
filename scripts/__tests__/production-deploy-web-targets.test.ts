@@ -386,7 +386,7 @@ describe('production-deploy web deploy targets', () => {
   it('bounds every job, so a hung one cannot hold the concurrency group for six hours', () => {
     // `concurrency: production-deploy` with `cancel-in-progress: false` means a
     // job that hangs blocks EVERY later deploy for GitHub's 6-hour default.
-    // That is the wedge docs/production-deploy.md's runbook and
+    // That is the wedge docs/operations/production-deploy.md's runbook and
     // production-deploy-watchdog.mjs exist to clean up after; bounding the jobs
     // stops most of it happening. The watchdog only cancels a run that is
     // PARKED — a job that is genuinely executing and hung is not, so the

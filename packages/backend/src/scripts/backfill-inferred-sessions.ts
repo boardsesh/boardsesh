@@ -5,7 +5,7 @@
  * actual grouping in read-only transactions. --apply commits one complete window at
  * a time and refuses plans that remove existing sessions or their social history.
  * Windows include whole UTC days and connected midnight-crossing runs; a window may
- * produce several sessions. See docs/inferred-sessions-backfill.md for rollout.
+ * produce several sessions. See docs/data/inferred-sessions-backfill.md for rollout.
  *
  * vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <id> --simulate
  * vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <id> --apply

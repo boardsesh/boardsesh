@@ -216,7 +216,7 @@ def gesture_savings(fp: int, fn: int, holds: int) -> float | None:
 
     This is the definition behind the 47.2% (Python onnxruntime) and 48.2%
     (onnxruntime-node) figures the Node detector reported for `2026-09-18-seg` and
-    that docs/spray-recognition-rollout.md quotes against its 40% gate: those
+    that docs/product/spray-recognition-rollout.md quotes against its 40% gate: those
     runs' precision and recall reproduce both numbers to 0.1 point with it. The
     unweighted 1 - (fp + fn) / holds would put the same runs at 32.7% (Python)
     and 34.3% (Node), under the gate both were reported to clear.

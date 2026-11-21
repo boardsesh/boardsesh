@@ -5,7 +5,7 @@ name: Refresh Climb Neighbors
 # resolver serves to every non-admin caller (the web climb pages included).
 # Watermark-driven per board (board_climb_neighbor_runs), so a normal night only
 # re-scores new and edited climbs plus the lists they land in. Spray walls are
-# never materialised. Design + runbook: docs/similar-climbs.md.
+# never materialised. Design + runbook: docs/data/similar-climbs.md.
 #
 # One job per board, so the small catalogues finish in minutes while Kilter
 # (about 295k eligible climbs in one layout) runs on its own. A full build is

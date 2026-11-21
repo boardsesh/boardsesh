@@ -98,7 +98,7 @@ END`;
 
 // Filter on the effective difficulty (user override → consensus fallback) so a
 // grade-range filter doesn't silently hide ungraded ascents whose consensus is
-// in range. See docs/ascents-and-attempts.md.
+// in range. See docs/data/ascents-and-attempts.md.
 const effectiveDifficultyExpr = sql<number>`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
 
 // climbed_at holds UTC wall-clock time with no zone. Casting an instant's text
@@ -511,7 +511,7 @@ export const tickQueries = {
     // contract so optimistic writes don't flicker), and an additional
     // `effectiveDifficulty` that COALESCEs with the climb's consensus grade
     // for chart-bucket / aggregation consumers. NULL difficulty means "use
-    // consensus" — see docs/ascents-and-attempts.md.
+    // consensus" — see docs/data/ascents-and-attempts.md.
     // Unbounded (no LIMIT) over one user's whole logbook, fanning out through
     // five LEFT JOINs — board_climbs and board_climb_stats are the big ones.
     // Production picks a parallel hash join for that shape, and enough

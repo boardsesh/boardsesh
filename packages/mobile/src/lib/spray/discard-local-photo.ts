@@ -1,6 +1,6 @@
 // Best-effort removal of a wall photo file this device rendered and no longer
 // needs — a rotated preview the crop step drew, or an edit superseded by a newer
-// one (`docs/spray-walls.md`, "Adding a wall").
+// one (`docs/product/spray-walls.md`, "Adding a wall").
 //
 // Best effort, and silent: these are files in the app's cache directory, which
 // the OS clears on its own schedule anyway. A failed delete must never surface

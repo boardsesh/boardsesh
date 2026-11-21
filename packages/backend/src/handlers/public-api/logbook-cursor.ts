@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:
 import { z } from 'zod';
 
 /**
- * The `c3.` cursor of `GET /v1/logbook/changes` (docs/integration-platform.md,
+ * The `c3.` cursor of `GET /v1/logbook/changes` (docs/integrations/integration-platform.md,
  * "Reading it"): its kind, the connection it is bound to and the position, plus
  * the feed generation for a change cursor (a snapshot row carries its own).
  *

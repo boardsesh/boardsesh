@@ -2,7 +2,7 @@ import { logger } from '../utils/logger';
 
 /**
  * `QUEUE_NOW_SLOT_PERCENT`: the backend kill switch for F3 (#6666,
- * docs/current-climb-outside-queue.md, section 8).
+ * docs/product/current-climb-outside-queue.md, section 8).
  *
  * A session is in when the FNV-1a hash of its id mod 100 is below the percent.
  * Unset, blank or unparseable means 0, so it fails closed to today's rules.

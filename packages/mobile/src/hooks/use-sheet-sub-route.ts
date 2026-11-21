@@ -48,7 +48,7 @@ export type SheetSubRoute<ScrollHandle extends ScrollRestoreTarget> = {
  * back the way it left. Native sheets cannot stack, so the sheet suspends: it
  * dismisses its native host without unmounting while the route is on top, then
  * re-presents under a fresh key when the screen regains focus, with its scroll
- * position restored. See docs/mobile-sheets-vs-routes.md.
+ * position restored. See docs/mobile/mobile-sheets-vs-routes.md.
  *
  * The sheet keeps its own close and dismiss handling; it should ignore a native
  * close while `isAwaitingReturn()` or `suspended` is true, since that close is

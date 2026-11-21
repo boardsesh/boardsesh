@@ -127,7 +127,7 @@ export const MIGRATION_GAP_REMEDIATION =
   "These will never re-apply on their own (most often drizzle's created_at high-water mark skipped them, " +
   "but a database can also carry the schema without the ledger row) — check first whether each migration's " +
   'objects already exist: if they do, insert only the ledger row; if they do not, apply the .sql by hand inside ' +
-  'a transaction and insert the row in the same transaction. See docs/db-migrations.md.';
+  'a transaction and insert the row in the same transaction. See docs/operations/db-migrations.md.';
 
 /**
  * Operator-facing message. Names every missing tag — an error that fires but
@@ -181,7 +181,7 @@ export function formatBaselinedGapWarning(
   return (
     `${baselinedTags.length} of ${expectedCount} journal ${subject} covered by the ` +
     `baseline recorded ${recordedAt} — the deploy is not blocked on it. Repair pending: ` +
-    `${baselinedTags.join(', ')}. See docs/db-migrations.md and shrink the list in ` +
+    `${baselinedTags.join(', ')}. See docs/operations/db-migrations.md and shrink the list in ` +
     'scripts/lib/migration-ledger-baseline.ts as each one is repaired.'
   );
 }

@@ -9,7 +9,7 @@
 // onCycleError). Apps bind these once in an adapter — mobile's lives at
 // packages/mobile/src/offline/offline-sync-adapter.ts.
 //
-// The client half of docs/sync-table-manifest.md lives here: the SQLite DDL
+// The client half of docs/data/sync-table-manifest.md lives here: the SQLite DDL
 // (db/schema.ts), the per-table sync config (sync/table-config.ts), and the
 // pull client that enforces them must agree with the backend resolvers to the
 // character.

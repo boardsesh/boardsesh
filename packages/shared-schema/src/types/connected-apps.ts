@@ -1,4 +1,4 @@
-/** Wire shapes for Connected apps (docs/integration-platform.md, "Connected apps"). */
+/** Wire shapes for Connected apps (docs/integrations/integration-platform.md, "Connected apps"). */
 export type ConnectedApp = {
   connectionId: string;
   /** The app's registered name, or null. */

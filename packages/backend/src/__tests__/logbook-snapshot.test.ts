@@ -33,7 +33,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
 
 /**
  * The bootstrap's hand-off from snapshot to change feed
- * (docs/integration-platform.md, "Complete bootstrap and transition") and the
+ * (docs/integrations/integration-platform.md, "Complete bootstrap and transition") and the
  * build, expiry and reclaim rules around it.
  *
  * Remove these protections to prove the tests fail:

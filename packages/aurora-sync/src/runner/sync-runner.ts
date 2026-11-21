@@ -260,7 +260,7 @@ export class SyncRunner {
       // `prepare: false` is required for Railway's PgBouncer pooled URL
       // (transaction-pooling mode is incompatible with prepared statements).
       // `DB_POOL_MAX` caps it the way it caps `createDb()`: 5 when unset, never
-      // below 2. See docs/db-connectivity.md, "Pool budgets".
+      // below 2. See docs/operations/db-connectivity.md, "Pool budgets".
       this.client = postgres(connectionString, {
         max: resolvePoolMax(),
         idle_timeout: 30,
@@ -502,7 +502,7 @@ export class SyncRunner {
 
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
     // The worker families own routine syncs once this is set; see
-    // docs/aurora-sync.md. Checked before the lease or the pool is touched.
+    // docs/data/aurora-sync.md. Checked before the lease or the pool is touched.
     if (isSyncDaemonDisabled(process.env)) {
       this.log(`[SyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`);
       return;

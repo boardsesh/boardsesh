@@ -2,7 +2,7 @@
 
 Scripts for measuring what a climber sees and waits for on a real phone: thumbnails that appear before their holds, how long a page of climbs takes, how the play drawer opens, what a swipe between climbs shows and whether it lands, how the drawer closes, what the app does while it launches.
 
-The method, the meaning of every number, the traps, and the Android plan are in [`docs/mobile-visible-performance.md`](../../docs/mobile-visible-performance.md). Read that first.
+The method, the meaning of every number, the traps, and the Android plan are in [`docs/mobile/mobile-visible-performance.md`](../../docs/mobile/mobile-visible-performance.md). Read that first.
 
 The capture and analysis tools run locally; compact injector fixtures run in the `scripts` test project. Injected sources are for measurement builds only. Python 3, standard library only; `scenario_film.py` also needs ImageMagick.
 
@@ -55,7 +55,7 @@ The standard and opening injectors support the `8b842c4950` baseline, the
 `329e73f824` and `cb0f82386b`. Current offline requests may return null locally
 and pass an abort signal to the network. Current activation uses one privacy or
 credential-generation rejection guard; the historical candidate retains three
-loaded-snapshot guards. See the [source-family table](../../docs/mobile-visible-performance.md#opening-a-climb-after-deep-scrolling).
+loaded-snapshot guards. See the [source-family table](../../docs/mobile/mobile-visible-performance.md#opening-a-climb-after-deep-scrolling).
 
 Both scripts finish validating replacements before writing. Missing, duplicated,
 mixed, or already-instrumented anchors fail without additional writes. Apply only

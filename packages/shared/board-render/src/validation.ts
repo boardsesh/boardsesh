@@ -116,7 +116,7 @@ export function isValidFramesString(frames: string): boolean {
 /**
  * `render_mode`, `glow_falloff`, `glyphs` and `field_color` query params,
  * shared by the web `board-render` route and the backend's `GET /og/climb` —
- * see docs/og-climb.md.
+ * see docs/web/og-climb.md.
  *
  * `render_mode` defaults to `aura`, the drawing the app has shipped since 2.4.
  * Every Boardsesh caller sends it explicitly anyway — the params are the

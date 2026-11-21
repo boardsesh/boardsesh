@@ -577,7 +577,7 @@ describe('Daemon Integration Tests', () => {
       // shouldAddToQueue (the native socket's stale-item shape). F3 never stores
       // an orphan, at any QUEUE_NOW_SLOT_PERCENT: the climb is inserted at the
       // Now slot, published as a FullSync plus a same-sequence trailing
-      // CurrentClimbChanged (docs/current-climb-outside-queue.md, section 1
+      // CurrentClimbChanged (docs/product/current-climb-outside-queue.md, section 1
       // "Invariants" item 1, and section 2 "Which event the server publishes").
       await execute(client1, {
         query: `mutation SetCurrentClimb($item: ClimbQueueItemInput) { setCurrentClimb(item: $item) { uuid } }`,
@@ -626,7 +626,7 @@ describe('Daemon Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // A well-formed room at QUEUE_NOW_SLOT_PERCENT=0 with no placement keeps
-      // today's pointer event (docs/current-climb-outside-queue.md, section 8
+      // today's pointer event (docs/product/current-climb-outside-queue.md, section 8
       // "Kill switches").
       await execute(client1, {
         query: `mutation SetCurrentClimb($item: ClimbQueueItemInput) { setCurrentClimb(item: $item) { uuid } }`,

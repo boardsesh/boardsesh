@@ -130,7 +130,7 @@ async function anotherRunActive(context: BackgroundJobContext): Promise<boolean>
 }
 
 /**
- * Nightly and live board snapshot publication (docs/board-snapshots.md). Reads
+ * Nightly and live board snapshot publication (docs/data/board-snapshots.md). Reads
  * the primary through the exporter's own `createPool()`, which on the worker is
  * the same two-connection pool as `context.database`, under the batch login.
  * Nothing here writes Postgres: the only fenced statement is the `SELECT 1`
@@ -181,7 +181,7 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
   async execute(context, request) {
     const log: SnapshotExportLogger = logger.child({ family: context.family, runId: context.runId });
     requireSnapshotStorage();
-    // pg_read_all_stats is a manual provisioning step (docs/board-snapshots.md),
+    // pg_read_all_stats is a manual provisioning step (docs/data/board-snapshots.md),
     // so say on every run whether this login has it: a first deploy without
     // the grant then shows in the log, not only as the failure below.
     const readsAllStats = await readsAllSessions(context);

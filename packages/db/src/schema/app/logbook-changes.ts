@@ -23,7 +23,7 @@ export const xid8 = customType<{ data: string; driverData: string }>({
 });
 
 /**
- * Change log behind the public logbook feed (docs/integration-platform.md,
+ * Change log behind the public logbook feed (docs/integrations/integration-platform.md,
  * "Incremental sync"). One narrow row per public tick change, written only by
  * triggers in the same transaction as the tick write. A row
  * says "this tick changed"; the payload is always read from the tick at read
@@ -88,7 +88,7 @@ export const LOGBOOK_CHANGE_WATERMARK_SINGLETON_ID = 1;
  * The feed's persistent state, one row (`id = 1`).
  *
  * `feedGeneration` is a random id written into every cursor. Rotating it (see
- * the "moving the database" runbook in docs/integration-platform.md) makes
+ * the "moving the database" runbook in docs/integrations/integration-platform.md) makes
  * every outstanding cursor answer `410`, even when transaction ids overlap
  * after a restore. `prunedThrough*` is the retention watermark: a cursor below
  * it answers `410`, a cursor at or above it is valid however old it is.

@@ -1,0 +1,83 @@
+# French translation glossary
+
+Fixed terminology for French (`fr`) translations. **Follow this for every French string you add or edit** — it keeps the climbing vocabulary consistent and correct. This matters most for AI-generated translations: an agent will not reliably know the right French climbing term, so it is written down here.
+
+Catalogs live in `packages/shared/i18n/locales/fr/` (shared by web and mobile). The English source is `en-US/`.
+
+> **Authority:** Alexandre Zuttre set this terminology — native French speaker and climber. When a term is missing here or you are unsure, match the wording already used in the catalogs, keep the safer existing phrasing, and flag it for review rather than guessing.
+
+## Never « envoyer » for a climbing send
+
+English climbing borrowed "to send" for completing a climb. French did not: **« envoyer » never means climbing something**. To a French climber, « envoyer » only means transmitting a thing (an email, a report, data), and « Envoi » as a logging label is meaningless.
+
+Use instead:
+
+- **enchaîné / enchaîner** — the send status and the default verb. The log button and status chips say **« Enchaîné »**; as a verb: « Enchaîner du V5 aujourd'hui », « travaillées sans les enchaîner ».
+- **la croix** — the noun: a send, the tick in your logbook. Feminine, invariable in the plural: _une croix, dix croix_. « **Faire la croix** » is the standard climbing idiom for ticking a climb in the logbook; « cocher » also works for the logging action. Counts and stat labels use « croix », not « enchaînements » — « enchaînement » as a standalone noun reads route-flavoured for board bouldering.
+- **réussi / réussir** — acceptable in running prose, but statuses, buttons, and filters use « Enchaîné ».
+
+| English                   | Wrong French         | Right French                           |
+| ------------------------- | -------------------- | -------------------------------------- |
+| Send (log button, status) | Envoi / Envoyer      | Enchaîné                               |
+| Sent (ascent status)      | Envoyé               | Enchaîné                               |
+| {{count}} sends           | {{count}} envois     | {{count}} croix                        |
+| Hardest send              | Envoi le plus dur    | Croix la plus dure                     |
+| Log a send                | Enregistrer un envoi | Faire la croix / Enregistrer une croix |
+| Sent by {{name}}          | Envoyé par {{name}}  | Enchaîné par {{name}}                  |
+
+« Enchaîné » agrees with its noun when one is present: _un bloc enchaîné_, _mes voies enchaînées_. A bare status chip defaults to the masculine « Enchaîné ».
+
+### Lighting a climb on the wall is « allumer »
+
+"Send to the wall / board" (transmitting the LEDs) is technically a legitimate « envoyer », but next to climbs it collides with the climbing sense. Use **« allumer »**: « Allumer la voie au mur », « Allumer sur la board ». Reserve « envoyer » for genuinely sending data with no climb as the object: emails, bug reports, exports, session data, and BLE lighting _commands_ in technical prose (privacy policy).
+
+## Other climbing terms
+
+| English                 | French                                |
+| ----------------------- | ------------------------------------- |
+| attempt (on a climb)    | essai (verb: essayer; status: Essayé) |
+| board (the device)      | la board (feminine — see below)       |
+| flash                   | flash (verb: flasher; plural: flashs) |
+| climb / boulder problem | bloc                                  |
+| Verified (Kilter's mark) | Vérifié / Vérifiés                    |
+| workout block (stage of a training session, not a climb) | phase (bloc stays the climb) |
+| route                   | voie                                  |
+| grade                   | cotation                              |
+| hold                    | prise                                 |
+| wall                    | mur                                   |
+| logbook                 | carnet                                |
+| setter                  | ouvreur / ouvreuse (verb: ouvrir)     |
+| project (unsent climb)  | projet (verb: travailler)             |
+| redpoint                | après travail                         |
+| climber                 | grimpeur / grimpeuse                  |
+| kickboard (climb rule)  | kickboard (anglicism — see below)     |
+| campus (no feet)        | campus (anglicism — see below)        |
+
+« Tentative » is not a go on a climb — keep it for non-climbing attempts (login attempts, retries, rate limits). A go on a climb is « un essai ».
+
+### Keep these in English (do **not** translate)
+
+- **Brand product names:** `Kilter Board`, `Tension Board`, `MoonBoard`, `Kilter Homewall`, `Boardsesh` (trademarks — see `LEGAL.md` and the `/legal` page).
+- **beta**, **flash**, **crew**, **playlist** — anglicisms French climbers use as-is.
+- **kickboard**, **campus** — climb-rule characteristics (« Sans kickboard », « Campus (sans pieds) »). No established French climbing-gym translation; do **not** render "kickboard" as « planche » or « planche du bas » — that reintroduces the « planche »/board-device ambiguity this glossary bans above.
+- **JSON keys** (`send`, `sends`, `statSent`, …) and **ICU placeholders** (`{{board}}`, `{{sends}}`). Only translate values.
+
+## The board device is « la board » (feminine)
+
+Every string names the board device **« board »**, feminine: _la board, une board, les boards_, with feminine agreement (_la board connectée_, _une board trouvée_). That is what French board climbers say and how French climbing media writes it (La Fabrique Verticale: « la board », « une Kilterboard ») — it patterns with « la planche », like skate and snowboard French. Do **not** use « planche » (wrong) or « panneau » (translationese) for the device; « panneau » survives only in the UI-panel sense (« Panneau d'administration »). Brand names stay in English (above) and take feminine agreement when an article is needed: _la board Kilter_. One exception: « le Kilter Homewall » stays masculine — it reads as a wall (« le mur »), not a board.
+
+## A spray wall is a **Spraywall**
+
+The same name in English, Spanish, French and German, in every string: **Spraywall**, one word and capitalized, masculine: _le Spraywall, un Spraywall, ce Spraywall_, plural _les Spraywalls_. It patterns with _le mur_, so articles, adjectives and pronouns stay masculine (_Ce Spraywall est archivé_, _Réinitialise-le_). Contractions work as usual: _du Spraywall_, _au Spraywall_.
+
+Never: _spray wall_, _spray-wall_, _spraywall_, _mur de spray_, _mur spray_, _murs de spray_, _murs spray_, _mur de pan_. Never a bare _mur_ / _murs_ for the Spraywall either (_Réinitialiser ce mur_ → _Réinitialiser ce Spraywall_). Hold-detection copy keeps its own words (_prise_, _bloc_); only the name of the wall changes.
+
+- Store `keywords.txt` keeps « pan » so searches still find the app; everything else in `fastlane/metadata` follows this section.
+- `spray-term-consistency.test.ts` in `@boardsesh/i18n` bans the retired names in every French string, and the bare _mur_ in spray-wall strings.
+
+## Process
+
+- Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`, `it`) — the catalog completeness test fails on missing keys.
+- See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow, and `docs/i18n/i18n-spanish-glossary.md` for the Spanish counterpart.
+
+English public website copy has a scoped “spray wall” exception described in `docs/design/ai-design-guidelines.md`. This does not change this locale’s Spraywall terminology or the native/store convention.

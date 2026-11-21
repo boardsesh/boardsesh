@@ -91,7 +91,7 @@ ARG NEXT_PUBLIC_NEXT_ASSET_BASE_URL
 # Optional: empty or non-numeric is ignored by store-links.ts, which then emits
 # `ct` and `mt` with no `pt`. Build-time like every NEXT_PUBLIC_ value.
 ARG NEXT_PUBLIC_APP_STORE_PROVIDER_ID
-# Ad pixel ids (docs/analytics-consent.md#ad-pixels). Optional: unset means
+# Ad pixel ids (docs/analytics/analytics-consent.md#ad-pixels). Optional: unset means
 # the www bundle loads no Meta or Reddit script at all.
 ARG NEXT_PUBLIC_META_PIXEL_ID
 ARG NEXT_PUBLIC_REDDIT_PIXEL_ID

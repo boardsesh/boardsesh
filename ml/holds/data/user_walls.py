@@ -32,7 +32,7 @@ hand-labelled spray corpus. There is deliberately no `test/` directory: rfdetr
 would score a `test/` split during training if `run_test` were ever switched on.
 
 Credentials are the backend's PRIVATE_* bucket variables
-(docs/user-media-storage.md). R2_PRIVATE_BUCKET and R2_ENDPOINT, which the
+(docs/operations/user-media-storage.md). R2_PRIVATE_BUCKET and R2_ENDPOINT, which the
 README's corpus-protocol `aws s3 sync` line uses, are accepted for the bucket and
 endpoint. Nothing here ever writes to the bucket.
 
@@ -193,7 +193,7 @@ def read_private_bucket_config(env: dict[str, str] | None = None) -> PrivateBuck
         raise UserWallsError(
             "private bucket not configured: set "
             + ", ".join(missing)
-            + " (docs/user-media-storage.md), or pass --from-dir for a local copy"
+            + " (docs/operations/user-media-storage.md), or pass --from-dir for a local copy"
         )
     assert bucket_name and access_key_id and secret_access_key
     return PrivateBucketConfig(

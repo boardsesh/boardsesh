@@ -1,6 +1,6 @@
 /**
  * Code samples for the public developer docs. Never translated: they are
- * requests a developer copies. Every value comes from docs/partner-api.md and
+ * requests a developer copies. Every value comes from docs/integrations/partner-api.md and
  * is checked against the backend (token lifetimes, scope names, limits).
  */
 

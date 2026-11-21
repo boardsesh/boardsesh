@@ -10,7 +10,7 @@ import {
   PartnerSessionSchema,
 } from '../schemas';
 
-/** The tick from docs/partner-api.md, section 3. */
+/** The tick from docs/integrations/partner-api.md, section 3. */
 const documentedTick = {
   id: '0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77',
   climbedAt: '2026-10-20T18:42:11Z',

@@ -145,7 +145,7 @@ describe('pr-test-plan backend label', () => {
   });
 
   it('leaves a PR that touches neither alone', () => {
-    expect(wanted(['docs/crowdsourced-qa.md', '.github/workflows/ci.yml'])).toBe(false);
+    expect(wanted(['docs/qa/crowdsourced-qa.md', '.github/workflows/ci.yml'])).toBe(false);
   });
 
   it('does not treat every package as a server change', () => {

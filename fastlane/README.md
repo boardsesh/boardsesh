@@ -111,7 +111,7 @@ The automatic Mobile Store Metadata workflow writes the currently editable iOS
 version. Check its target after merging these notes, especially while an older
 draft remains open. The guarded command above and the 2.8.0 draft's metadata
 follow-up ensure the final notes belong to the intended release.
-See the [store release runbook](../docs/mobile-store-release.md) for exact-build
+See the [store release runbook](../docs/operations/mobile-store-release.md) for exact-build
 selection, draft recovery, audits and manual submission.
 
 ## Native tester updates — `android upload_beta`, `ios testflight`
@@ -127,7 +127,7 @@ tester can install either build.
 JavaScript-only changes continue through the separate OTA workflows. A binary
 can only receive OTA bundles matching its runtime fingerprint; choosing staging
 cannot make an older native binary load an incompatible bundle. See the
-[OTA runbook](../docs/mobile-ota-updates.md).
+[OTA runbook](../docs/operations/mobile-ota-updates.md).
 
 The native workflows call these lanes after building and checking the artifacts:
 
@@ -305,7 +305,7 @@ Italian phone slot 07 uses `07-session-detail.png`, framed from the native
 session recap, until a reviewed Italian physical Live Activity fixture exists.
 CPP/ad/video campaigns keep their four app locales and five Apple locales.
 The default listing uses the dedicated Apple campaign fixture described in the
-[creative asset runbook](../docs/app-store-creative-assets.md).
+[creative asset runbook](../docs/marketing/app-store-creative-assets.md).
 Android and navigation smoke keep their existing fixture pin. Review every
 locale/device set in the canonical upload tree before publication. Explicit
 record/live captures are diagnostic; the iOS workflow requires replay for store
@@ -317,7 +317,7 @@ locale/device set. Failed captures still retain diagnostics and run image gates,
 but cannot prepare Apple credentials or upload. Capture-only defaults leave the
 store unchanged. Qualifying
 automatic release-train runs can also upload a complete verified set. The Android
-workflow is separate. See [mobile store release](../docs/mobile-store-release.md)
+workflow is separate. See [mobile store release](../docs/operations/mobile-store-release.md)
 for the trigger and review sequence.
 
 ### Apple Header and Search Results
@@ -326,7 +326,7 @@ for the trigger and review sequence.
 `creative-assets.json` source/output manifest outside the screenshot upload tree.
 These are organic App Store creative assets, not screenshot slots. The fastlane
 lanes above do not upload or publish them. Use the manual Asset Library review
-and placement steps in the [creative asset runbook](../docs/app-store-creative-assets.md).
+and placement steps in the [creative asset runbook](../docs/marketing/app-store-creative-assets.md).
 Keep native captures and their locale/device identity together when generating
 localized assets.
 

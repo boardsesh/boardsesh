@@ -27,7 +27,7 @@
  * eoas resolves the target runtimeVersion (fingerprint) from the LOCAL config, so
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
  * embeds. That means the fingerprint-affecting env must match the production
- * build's per-platform split (see docs/mobile-ota-updates.md → Rollback):
+ * build's per-platform split (see docs/operations/mobile-ota-updates.md → Rollback):
  *   - Android needs GOOGLE_MAPS_API_KEY (it changes android.config); iOS must run
  *     WITHOUT it (Apple Maps). A single --platform all can't satisfy both, so the
  *     helper rejects it — run one platform at a time.
@@ -37,7 +37,7 @@
  * The cleaner long-term fix is still to revert the offending JS commit on `main`
  * — the production OTA workflow then republishes a good bundle automatically. Use
  * a rollback directive when you need installs reverted in minutes, before a
- * revert PR can merge + republish. See docs/mobile-ota-updates.md.
+ * revert PR can merge + republish. See docs/operations/mobile-ota-updates.md.
  *
  * Usage:
  *   vp run mobile:ota-rollback -- --platform ios       # rollback iOS to embedded
@@ -155,12 +155,14 @@ function main(): number {
   const serverUrl = process.env.EXPO_UPDATES_URL;
   if (!serverUrl) {
     console.error('[ota-rollback] Requires EXPO_UPDATES_URL (the expo-open-ota manifest endpoint).');
-    console.error('[ota-rollback] See docs/mobile-ota-updates.md.');
+    console.error('[ota-rollback] See docs/operations/mobile-ota-updates.md.');
     return 1;
   }
   if (!process.env.EOO_TOKEN) {
     console.error('[ota-rollback] Requires EOO_TOKEN (an app-scoped expo-open-ota API key — the V3 server rejects');
-    console.error('[ota-rollback] Expo tokens). Mint one in the dashboard and set it. See docs/mobile-ota-updates.md.');
+    console.error(
+      '[ota-rollback] Expo tokens). Mint one in the dashboard and set it. See docs/operations/mobile-ota-updates.md.',
+    );
     return 1;
   }
   // The fingerprint depends on GOOGLE_MAPS_API_KEY per platform (it changes
@@ -179,7 +181,7 @@ function main(): number {
     console.error('[ota-rollback] --platform android requires GOOGLE_MAPS_API_KEY (it feeds android.config, so it');
     console.error('[ota-rollback] changes the Android fingerprint). Without it eoas resolves a map-less fingerprint');
     console.error(
-      '[ota-rollback] no Android binary has and the rollback lands nowhere. See docs/mobile-ota-updates.md.',
+      '[ota-rollback] no Android binary has and the rollback lands nowhere. See docs/operations/mobile-ota-updates.md.',
     );
     return 1;
   }

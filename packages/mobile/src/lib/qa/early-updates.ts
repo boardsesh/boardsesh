@@ -1,6 +1,6 @@
 // "Get updates early": a phone that opts in follows the early-updates OTA branch
 // (`EARLY_UPDATES_OTA_BRANCH`), which receives every merge to main ahead of the
-// daily stable release. See docs/mobile-ota-updates.md → "Early updates".
+// daily stable release. See docs/operations/mobile-ota-updates.md → "Early updates".
 //
 // Two pieces of state, kept apart on purpose:
 //

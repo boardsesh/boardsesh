@@ -1,6 +1,6 @@
 /**
  * First-party cookies the Meta Pixel and the Reddit Pixel write on www (see
- * docs/analytics-consent.md#ad-pixels). Both www and the browser app at
+ * docs/analytics/analytics-consent.md#ad-pixels). Both www and the browser app at
  * app.boardsesh.com share `.boardsesh.com`, so a No on either must clear them.
  */
 export const AD_PIXEL_COOKIE_NAMES = ['_fbp', '_fbc', '_rdt_uuid', '_rdt_cid'] as const;

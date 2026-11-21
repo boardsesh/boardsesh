@@ -58,7 +58,7 @@ describe('with-android-lan-http', () => {
 
     expect(
       targetSdk,
-      'At target SDK 37 WLED needs ACCESS_LOCAL_NETWORK, requested when the climber connects. See docs/spray-wall-led.md.',
+      'At target SDK 37 WLED needs ACCESS_LOCAL_NETWORK, requested when the climber connects. See docs/boards/spray-wall-led.md.',
     ).toBeLessThan(37);
   });
 

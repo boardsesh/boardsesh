@@ -3,7 +3,7 @@ import { LargeContentViewer } from './LargeContentViewer';
 // centred title, and a trailing confirm. Passed through `ModalSheet` / `Sheet`'s
 // `header` slot, which sits above the body and outside its scroll, so the bar
 // never moves with the keyboard, the bottom inset or error text. See
-// docs/mobile-sheets-vs-routes.md, "Where actions go".
+// docs/mobile/mobile-sheets-vs-routes.md, "Where actions go".
 //
 // Generalised from TickSheetHeader, which keeps its own grade-bar design.
 //

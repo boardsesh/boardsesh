@@ -10,7 +10,7 @@ import { users } from '../auth/users';
  * (GDPR Art. 7(1) asks us to be able to show that). `decided_at` is the
  * server's clock, never the client's. The merge with a device's own answer
  * lives in `@boardsesh/consent` (`resolveConsent`); see
- * `docs/analytics-consent.md`.
+ * `docs/analytics/analytics-consent.md`.
  *
  * Not a column on `user_profiles`: a profile row is not guaranteed to exist,
  * and its `updated_at` feeds the setter sitemap's `lastmod`.

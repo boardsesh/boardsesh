@@ -17,7 +17,7 @@ import { splitMessages } from '../transport';
  * (`@boardsesh/ble-protocol`, consumed directly by the React Native app).
  *
  * Validated against:
- * - docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md (Kilter Board Android App v3.6.4)
+ * - docs/boards/AURORA_BLUETOOTH_PROTOCOL_SPEC.md (Kilter Board Android App v3.6.4)
  * - Byte-exact payloads captured from Aurora's official Kilter app
  * - 3rd-party validated payloads for Kilter Original boards
  *

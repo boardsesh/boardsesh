@@ -426,13 +426,13 @@ async function publishToSelfHostedBranch(
     console.error(
       '[mobile:publish] e.g. https://updates.boardsesh.com/manifest). eoas derives the upload host from it.',
     );
-    console.error('[mobile:publish] See docs/mobile-ota-updates.md.');
+    console.error('[mobile:publish] See docs/operations/mobile-ota-updates.md.');
     return 1;
   }
   if (!process.env.EOO_TOKEN) {
     console.error('[mobile:publish] --channel requires EOO_TOKEN (an app-scoped expo-open-ota API key).');
     console.error('[mobile:publish] The V3 control-plane server rejects Expo tokens; mint a key in the dashboard');
-    console.error('[mobile:publish] and set EOO_TOKEN locally / in CI. See docs/mobile-ota-updates.md.');
+    console.error('[mobile:publish] and set EOO_TOKEN locally / in CI. See docs/operations/mobile-ota-updates.md.');
     return 1;
   }
 

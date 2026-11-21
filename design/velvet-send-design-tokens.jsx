@@ -4,7 +4,7 @@
 // geometry · the two render variants · what this establishes.
 //
 // Velvet Send is the canonical design language. Every value mirrors
-// docs/ai-design-guidelines.md / packages/mobile/src/theme. The committed PNG
+// docs/design/ai-design-guidelines.md / packages/mobile/src/theme. The committed PNG
 // (velvet-send-design-tokens-v1.png) is rendered headlessly by the sibling
 // render-velvet-send-tokens.mjs (SVG → sharp); this React component is the
 // editable canvas source of record, with an in-browser "Download PNG" button.
@@ -13,7 +13,7 @@
 // own tokens. Bold sans headers, monospace for hex values. Dev-handoff feel.
 
 (() => {
-  // ---------- raw token values (source: docs/ai-design-guidelines.md) ----------
+  // ---------- raw token values (source: docs/design/ai-design-guidelines.md) ----------
   const TOK = {
     // Brand — light + dark. tint/primary = foreground; primaryFill = filled surface.
     brand: {
@@ -361,7 +361,7 @@
           The single visual reference for Velvet Send — the violet design language in{' '}
           <Mono c={SHEET.ink}>packages/mobile</Mono>, anchored on the logo's V11–V16 grade purples. One palette renders
           through two platform variants: Liquid Glass on iOS 26, Material 3 everywhere else. Values mirror{' '}
-          <Mono c={SHEET.ink}>docs/ai-design-guidelines.md</Mono>.
+          <Mono c={SHEET.ink}>docs/design/ai-design-guidelines.md</Mono>.
         </P>
       </div>
       <TileMini size={200} />
@@ -855,7 +855,7 @@
             Boardsesh · Velvet Send · design tokens · v1
           </Mono>
           <Mono c={SHEET.faint} s={11}>
-            Source: docs/ai-design-guidelines.md · packages/mobile/src/theme
+            Source: docs/design/ai-design-guidelines.md · packages/mobile/src/theme
           </Mono>
         </div>
       </div>

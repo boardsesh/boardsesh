@@ -22,7 +22,7 @@ import styles from './help.module.css';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
-// Anchor for /help#climb-counts, linked from docs/kilter-sync.md.
+// Anchor for /help#climb-counts, linked from docs/data/kilter-sync.md.
 const CLIMB_COUNTS_SECTION_ID = 'climb-counts';
 
 const CTA_SX = brandCtaSx();
@@ -51,7 +51,7 @@ const GUIDES: ReadonlyArray<{ key: string; href: string; shot: HelpShot; peekY: 
  * Five things a reader should be able to settle in a few seconds: which guide
  * they want (the tiles), what this site does vs the app, how to link a Kilter or
  * Tension account, why Kilter's app shows more climbs, and where to ask. The
- * section ids are stable: `climb-counts` is linked from docs/kilter-sync.md.
+ * section ids are stable: `climb-counts` is linked from docs/data/kilter-sync.md.
  */
 export default function HelpContent({
   developerDocsState = 'unavailable',

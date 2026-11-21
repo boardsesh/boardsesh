@@ -12,7 +12,7 @@ const payload = z
 
 /**
  * Weekly MoonBoard wide-angle estimate refresh (`@boardsesh/db/jobs`,
- * docs/boardsesh-grade.md). Borrows Kilter/Tension's fitted angle-effect shape
+ * docs/data/boardsesh-grade.md). Borrows Kilter/Tension's fitted angle-effect shape
  * to estimate every MoonBoard problem's grade outside the catalog's own
  * 25°/40°, then publishes in fenced chunks of ~50k rows, each climb's whole
  * angle ladder in one chunk. Zero angle-surface coverage from either shape

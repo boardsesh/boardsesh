@@ -1,5 +1,5 @@
 /**
- * The board motion lab screen (docs/board-motion-lab.md): a caption bar, the
+ * The board motion lab screen (docs/rendering/board-motion-lab.md): a caption bar, the
  * real player board, a status line and controls. Nothing is drawn over the board.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

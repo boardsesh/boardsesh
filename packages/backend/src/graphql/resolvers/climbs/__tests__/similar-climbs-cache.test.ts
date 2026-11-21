@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
  * Two properties, and they are not the same property:
  *   - the CACHE decides how often the statement runs;
  *   - `singleFlight` decides how many copies run at once, which per
- *     `docs/db-connectivity.md` is the one that keeps a cold window from
+ *     `docs/operations/db-connectivity.md` is the one that keeps a cold window from
  *     emptying the connection pool.
  */
 

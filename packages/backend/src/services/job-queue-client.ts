@@ -54,7 +54,7 @@ export async function assertWorkerPrivileges(database: Db): Promise<void> {
 }
 
 /**
- * pg-boss background timers, slowed to what our queues need (docs/db-connectivity.md,
+ * pg-boss background timers, slowed to what our queues need (docs/operations/db-connectivity.md,
  * "pg-boss timers"). Every backend replica runs these, and each tick races the
  * other replicas for the single `pgboss.version` row, so a faster tick costs
  * lock waits, not just a cheap UPDATE.
@@ -106,7 +106,7 @@ export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
  * Workers only. Every worker statement on this pool is a short read or the
  * fetch; run I/O goes through the Drizzle adapter. The backend's pool runs
  * supervision passes that can legitimately take longer. See
- * docs/db-connectivity.md, "Worker job-queue read deadline".
+ * docs/operations/db-connectivity.md, "Worker job-queue read deadline".
  */
 export const WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS = 30_000;
 
@@ -119,7 +119,7 @@ export const WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS = 30_000;
  * With this set, a live server cancels the statement at 25 s and rolls it back
  * (SQLSTATE 57014) before the client gives up, so nothing commits behind the
  * worker's back. pg sends it as a startup parameter, which a direct connection
- * honours (workers connect straight to the primary; see docs/db-connectivity.md,
+ * honours (workers connect straight to the primary; see docs/operations/db-connectivity.md,
  * "PgBouncer: parked").
  */
 export const WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS = 25_000;

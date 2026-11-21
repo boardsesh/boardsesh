@@ -16,7 +16,7 @@ import { loadReconciliationWindow, type ReconciliationTransaction } from './wind
 /**
  * Inferred sessions are off unless the deploy says otherwise.
  *
- * The backend has no feature-flag framework — the registry in `docs/feature-flags.md`
+ * The backend has no feature-flag framework — the registry in `docs/operations/feature-flags.md`
  * is a web concern — so this is an env gate, flipped per environment and rolled back by
  * unsetting it. Nothing reads inferred rows yet either, so with it off the reconciler
  * is inert.

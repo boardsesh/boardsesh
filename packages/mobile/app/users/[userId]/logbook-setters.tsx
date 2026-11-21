@@ -38,7 +38,7 @@ const isLayoutId = (value: unknown): value is number => typeof value === 'number
  * sheet (native sheets can't stack); the filter sheet suspends while it is on
  * top, and the capsule row pushes it directly. It lives beside the public
  * profile and is mirrored into every tab's stack, so it opens from your own
- * You tab and from anyone's profile in any tab (docs/mobile-sheets-vs-routes.md).
+ * You tab and from anyone's profile in any tab (docs/mobile/mobile-sheets-vs-routes.md).
  *
  * Two ways out: "Show climbs" hands the picks back and returns to the list;
  * the back chevron or swipe-back hands them back too, and a suspended filter

@@ -3,7 +3,7 @@ name: Android Production Release
 # Releases one exact build already on the Play internal track to production.
 # The default is a GET-only plan. With `apply` it writes the production track
 # and commits it for review; Play review and managed publishing still decide
-# when the build reaches phones. See docs/mobile-store-release.md.
+# when the build reaches phones. See docs/operations/mobile-store-release.md.
 
 on:
   workflow_dispatch:

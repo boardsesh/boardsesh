@@ -60,7 +60,7 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
  * first-party session end to end. While any entry remains, `better-auth`
  * resolves to `unavailable` even with every precondition met, as the backend's
  * `BROWSER_SESSION_CUTOVER_BLOCKERS` refuses to start. Each www PR deleted
- * its own entry; #7880 emptied the list (docs/better-auth-browser-session.md,
+ * its own entry; #7880 emptied the list (docs/auth/better-auth-browser-session.md,
  * "Status"). No environment variable or flag removes one; only
  * tests build a resolver with another list (`browserSessionRouteModeResolver`).
  */

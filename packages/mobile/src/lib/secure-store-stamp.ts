@@ -52,7 +52,7 @@
 //
 // Phase 2 deletes the legacy copies and collapses the read to a single v2 call. At
 // that point there is no second namespace to disagree with and this module can go
-// with it. See docs/keychain-namespaces.md.
+// with it. See docs/auth/keychain-namespaces.md.
 
 import * as SecureStore from 'expo-secure-store';
 import { SECURE_STORE_V2_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';

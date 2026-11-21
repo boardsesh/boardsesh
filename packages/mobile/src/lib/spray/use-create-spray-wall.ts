@@ -122,7 +122,7 @@ export function useCreateSprayWall() {
  * a retry after a lost response never mints a second one. The clone carries the
  * old wall's name, angle, location and look but no photo, version or hold, so
  * the wizard rejoins it at the photo step. The old wall stays live until the
- * clone's first publish archives it (`docs/spray-walls.md`, "Archive and reset").
+ * clone's first publish archives it (`docs/product/spray-walls.md`, "Archive and reset").
  */
 export function useResetSprayWall() {
   const queryClient = useQueryClient();
@@ -140,7 +140,7 @@ export function useResetSprayWall() {
 /**
  * Adopt an uploaded photo as the wall's draft version.
  *
- * Refused while another draft is open (`docs/spray-walls.md`, "One open draft
+ * Refused while another draft is open (`docs/product/spray-walls.md`, "One open draft
  * per wall"), which is exactly what a climber who abandoned a flow yesterday
  * will hit today — so the screen shows the server's own message rather than a
  * generic failure: it names the draft that is in the way.

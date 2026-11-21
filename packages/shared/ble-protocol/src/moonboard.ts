@@ -13,7 +13,7 @@ const MOONBOARD_FRAME_SUFFIX = '#';
 // parser treats `~` as an optional config marker before `l` and resets the flag
 // after every frame (one write, one effect). Official-controller handling of
 // this prefix is unverified, so the feature stays opt-in and requires real-
-// device coverage. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md.
+// device coverage. See docs/boards/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md.
 const MOONBOARD_V2_ADDITIONAL_LED_PREFIX = '~D';
 
 // Boardsesh persists MoonBoard frames with the shared basic role codes only.

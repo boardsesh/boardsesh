@@ -9,7 +9,7 @@ import { users } from './users';
  *    so they must not change. Better Auth's `user` model maps onto `users`, and
  *    its `session` and `verification` models get partner-only tables here so
  *    this flow never mixes with first-party sign-in state.
- * 2. Boardsesh's own records that sit beside them (docs/integration-platform.md).
+ * 2. Boardsesh's own records that sit beside them (docs/integrations/integration-platform.md).
  *
  * Every user column cascades from `users`, and every foreign key column leads an
  * index: account deletion runs one cascade query per reference.

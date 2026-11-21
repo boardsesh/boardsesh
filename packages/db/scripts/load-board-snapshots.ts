@@ -20,7 +20,7 @@
  * NOTHING` inserts. Nothing here depends on row order, a `rowid` or an index,
  * so both artifact shapes load alike: shape 1 (rowid tables with secondary
  * indexes) and shape 2 (`WITHOUT ROWID`, no secondary index, rows in key
- * order; see `docs/board-snapshots.md`). Keep it that way.
+ * order; see `docs/data/board-snapshots.md`). Keep it that way.
  *
  * Two shapes the artifacts cannot carry are filled in on the way through:
  *

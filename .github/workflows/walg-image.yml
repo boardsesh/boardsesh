@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - 'docker/walg/**'
-      - 'docs/postgres-image-digests.json'
+      - 'docs/operations/postgres-image-digests.json'
       - '.github/workflows/walg-image.yml'
   workflow_dispatch:
 
@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           postgres_image="$(jq -r '.images.portable.name + "@" + .images.portable.digest' \
-            docs/postgres-image-digests.json)"
+            docs/operations/postgres-image-digests.json)"
           echo "postgres image: $postgres_image"
 
           echo '--- the binary lives at /wal-g and answers --version ---'

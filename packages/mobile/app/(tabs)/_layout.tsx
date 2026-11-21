@@ -86,7 +86,7 @@ export default function TabLayout() {
   // Keep blurred tabs' native (Fabric) trees resident on Android so a tab switch is a
   // re-attach, not a createNode/completeRoot rebuild (#3153). Android-only: an iPhone
   // on the Material variant keeping every tab resident would add to the 4GB-device
-  // board-art OOM risk (#3479, docs/react-native-performance.md §7), so it stays on the
+  // board-art OOM risk (#3479, docs/mobile/react-native-performance.md §7), so it stays on the
   // default + freeze. (NativeTabs keeps visited tabs resident on every iPhone anyway.)
   // A regular-width tablet-sized surface opts into the sidebar shell; compact
   // width (every phone and a narrow tablet/browser window) keeps the native /

@@ -18,7 +18,7 @@ import { useHeaderBlurEffect } from './use-header-blur-effect';
  *   transparent one would draw under the status bar), plus a `headerTintColor`
  *   of the label colour. Without it UIKit tints every bar glyph (the back
  *   chevron, an X, a plain action) in React Navigation's default iOS blue. The
- *   brand colour is for the prominent confirm alone (docs/mobile-chrome.md,
+ *   brand colour is for the prominent confirm alone (docs/design/mobile-chrome.md,
  *   "Top-bar buttons"). The legacy `systemMaterial` blur comes from
  *   `useHeaderBlurEffect`, so only iOS without Liquid Glass gets it; iOS 26 draws
  *   its own scroll edge effect under the bar.

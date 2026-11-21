@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server';
  * that have moved off Vercel. It reads the same secret from its own env, so
  * the name stays `CRON_SECRET` on both sides — rotating it means updating the
  * Vercel project env AND the Railway service env together, or one of the two
- * schedulers starts 401ing. `docs/scheduler.md` tracks which job runs where.
+ * schedulers starts 401ing. `docs/backend/scheduler.md` tracks which job runs where.
  *
  * Comparison is constant-time to avoid leaking the secret's value through
  * response-timing side channels, mirroring the pattern used for the native

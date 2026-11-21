@@ -3,7 +3,7 @@ import type { pubsub as PubSubInstance } from '../pubsub/index';
 import type { QueueWriteResult } from './room-manager/types';
 
 /**
- * Event builders shared by the F3 writers (docs/current-climb-outside-queue.md,
+ * Event builders shared by the F3 writers (docs/product/current-climb-outside-queue.md,
  * section 2), so every `FullSync` carries `historyCount` and `currentChangedAt`
  * and every trailing `CurrentClimbChanged` is published the same way.
  */

@@ -1461,7 +1461,7 @@ export type ReplayDefaultResponse = {
  *
  * A new query on a screen the capture visits is a replay miss on every run
  * until the set is re-recorded, and a re-record is an operational task against
- * PROD (see docs/mobile-screenshot-fixtures.md). For a query whose honest
+ * PROD (see docs/qa/mobile-screenshot-fixtures.md). For a query whose honest
  * answer for the screenshots account never depends on what was recorded, that
  * cost buys nothing, so its answer is declared here instead.
  *

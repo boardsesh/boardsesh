@@ -15,7 +15,7 @@ import type { SprayWallHealthMetrics } from '@boardsesh/db/jobs';
  * carries only `wallsLive: 0` — every activity metric would be an empty-set
  * artifact, and a dashboard reading them as zeros would show "walls exist but
  * nobody climbs" from a world with no walls at all. The absence IS the
- * measurement, and `docs/growth-metrics.md` documents it as such.
+ * measurement, and `docs/analytics/growth-metrics.md` documents it as such.
  */
 export const SPRAY_WALL_HEALTH_EVENT = 'Spray Wall Health Weekly' as const;
 

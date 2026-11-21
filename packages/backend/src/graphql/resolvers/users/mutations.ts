@@ -416,7 +416,7 @@ export const userMutations = {
             // Erase the account's PostHog person once this deletion commits. The
             // job rides this transaction (a savepoint, so a queue failure cannot
             // abort the deletion); the PostHog call happens later, with retries.
-            // docs/analytics-consent.md, "Erasure".
+            // docs/analytics/analytics-consent.md, "Erasure".
             await enqueuePosthogPersonDeletion(tx, { distinctId: userId, reason: 'account_deleted' });
 
             // The users delete cascades into every partner app this account

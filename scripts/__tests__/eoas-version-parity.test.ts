@@ -98,7 +98,7 @@ describe('eoas version parity', () => {
   it('names the post-rename image in the forward-looking instructions', () => {
     // Railway pulls the pre-rename `expo-open-ota` path, which is fine and
     // documented — but anything telling a human what to deploy should say xprem.
-    for (const relativePath of ['docs/mobile-ota-updates.md', 'scripts/mobile-ota-setup.ts']) {
+    for (const relativePath of ['docs/operations/mobile-ota-updates.md', 'scripts/mobile-ota-setup.ts']) {
       const references = serverImageReferences(relativePath);
       expect(references.length).toBeGreaterThan(0);
       expect(references.some((reference) => reference.imageName === SERVER_IMAGE_NAME)).toBe(true);
@@ -114,7 +114,7 @@ describe('eoas version parity', () => {
   });
 
   it('states the pinned CLI in the OTA doc and the declared server image in the runbook', () => {
-    expect(readRepoFile('docs/mobile-ota-updates.md')).toContain(EOAS_PACKAGE_SPEC);
+    expect(readRepoFile('docs/operations/mobile-ota-updates.md')).toContain(EOAS_PACKAGE_SPEC);
     expect(readRepoFile('scripts/mobile-ota-setup.ts')).toContain(
       `ghcr.io/mercuretechnologies/${SERVER_IMAGE_NAME}:v${OTA_SERVER_VERSION}`,
     );
@@ -125,6 +125,8 @@ describe('eoas version parity', () => {
     // constant has to survive the CLI's own validation before it survives ours.
     expect(Number.isFinite(SELF_HOSTED_UPLOAD_RATE_PER_SECOND)).toBe(true);
     expect(SELF_HOSTED_UPLOAD_RATE_PER_SECOND).toBeGreaterThan(0);
-    expect(readRepoFile('docs/mobile-ota-updates.md')).toContain(`--upload-rate ${SELF_HOSTED_UPLOAD_RATE_PER_SECOND}`);
+    expect(readRepoFile('docs/operations/mobile-ota-updates.md')).toContain(
+      `--upload-rate ${SELF_HOSTED_UPLOAD_RATE_PER_SECOND}`,
+    );
   });
 });

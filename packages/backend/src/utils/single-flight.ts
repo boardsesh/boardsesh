@@ -10,7 +10,7 @@
  * window meant N simultaneous copies of the statement, each holding one of the
  * pool's ten connections until it finished. Once the pool was gone every OTHER
  * query in the process queued behind it forever — postgres.js's acquire queue is unbounded and
- * untimed (docs/db-connectivity.md) — so an anonymous `board(boardUuid:)`
+ * untimed (docs/operations/db-connectivity.md) — so an anonymous `board(boardUuid:)`
  * that normally answers in 50 ms never answered at all, while `{ __typename }`
  * kept answering in single-digit milliseconds through the same event loop.
  *

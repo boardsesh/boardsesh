@@ -248,7 +248,7 @@ const CHANGELOG_PREAMBLE = `# Changelog
 
 User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
-manual changes). See docs/mobile-ota-updates.md.
+manual changes). See docs/operations/mobile-ota-updates.md.
 `;
 
 // The store(s) a native release shipped to, for the CHANGELOG.md "App update" note.

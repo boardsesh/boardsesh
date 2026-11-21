@@ -14,7 +14,7 @@ export function buildOtaCanaryProperties(context: Pick<ReleaseContext, 'automati
 // OTA-adoption telemetry. Mobile-only (web has no OTA), so the event names stay
 // free-string constants rather than entries in @boardsesh/analytics'
 // SHARED_EVENTS (which is for names fired by BOTH platforms). See
-// docs/mobile-ota-updates.md for what each event measures.
+// docs/operations/mobile-ota-updates.md for what each event measures.
 
 // Fired once per launch with the running JS bundle's metadata. The adoption
 // signal: isEmbeddedLaunch === false means the install is running an OTA'd

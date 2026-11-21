@@ -6,7 +6,7 @@
 // Scanned` event with `surface: 'app'` once its handoff resolves the board.
 //
 // The event names no board: no slug, no name, no uuid, only the board type
-// through `boardTypeProperty` (`docs/spray-walls.md`, "Telemetry").
+// through `boardTypeProperty` (`docs/product/spray-walls.md`, "Telemetry").
 
 import { boardQrScanned, parseBoardQrLanding, type BoardQrMedium } from '@boardsesh/analytics';
 import { isAnalyticsGranted } from '@boardsesh/consent';

@@ -11,7 +11,7 @@ import { notificationClimbRender, type NotificationClimbRender } from './notific
  * `ClimbListThumbnail` renders at `Math.max(400, width * 5)` and that number is
  * part of the render cache key, so any width up to 80 resolves to the same
  * `_w400_` PNG the climbs list and play view already wrote. Bumping past 80
- * would silently double the on-disk cache. See docs/react-native-performance.md §6.
+ * would silently double the on-disk cache. See docs/mobile/react-native-performance.md §6.
  */
 const THUMBNAIL_WIDTH = 44;
 const THUMBNAIL_HEIGHT = 56;

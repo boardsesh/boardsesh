@@ -30,7 +30,7 @@ import { SHOWCASE_FULL_PLAN, planFrames, type ShowcaseScenePlan } from './timeli
  * Render targets: several cuts of the same recorded takes, one per place the
  * video goes. `vp run video:render -- --target <name>` renders one, `--target
  * all` every one, and no `--target` renders `homepage` and `social` (what
- * `vp run video` ships). docs/showcase-video.md ("Targets") has the table.
+ * `vp run video` ships). docs/marketing/showcase-video.md ("Targets") has the table.
  *
  * These cut the iOS recording. The Android recording has its own registry
  * (`SHOWCASE_ANDROID_TARGETS`), picked with `--platform android`.
@@ -214,7 +214,7 @@ export const SHOWCASE_SAFE_STAGE: ShowcaseStageVariant = {
 
 const out = (...parts: string[]) => resolve(SHOWCASE_OUT_DIR, ...parts);
 
-/** Apple's App Preview numbers this target was built to; docs/showcase-video.md has the source and date. */
+/** Apple's App Preview numbers this target was built to; docs/marketing/showcase-video.md has the source and date. */
 export const APPLE_APP_PREVIEW_SPEC = {
   /** iPhone 6.9" and 6.5" (and 6.7", 6.3", 6.1") portrait. */
   iphonePortrait: { width: 886, height: 1920 },

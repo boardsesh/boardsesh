@@ -20,7 +20,7 @@ name: Android Dev-Client APK (React Native)
 # defaults above when BOARDSESH_APP_VARIANT=dev.
 # Debug builds self-sign with the deterministic Expo template debug.keystore, so
 # no signing secrets are needed and the dev app upgrades in place run-to-run.
-# See docs/android-sideload-build.md.
+# See docs/operations/android-sideload-build.md.
 
 on:
   push:
@@ -66,7 +66,7 @@ env:
   # no Production environment scoping is needed.
   EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
-  # tearing down JSI promises off-thread (Sentry 7595562195). See docs/mobile-ota-updates.md.
+  # tearing down JSI promises off-thread (Sentry 7595562195). See docs/operations/mobile-ota-updates.md.
   EXPO_PUBLIC_USE_RN_FETCH: '1'
   # Switches app.config.ts to the "Boardsesh Dev" identity + reddish icons.
   BOARDSESH_APP_VARIANT: dev
@@ -202,7 +202,7 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         # Universal (arm64-v8a + x86_64): runs on physical arm64 devices, Apple-Silicon
         # emulators, AND x86_64 emulators (the fast KVM path on Linux/Intel, used by the
-        # local screenshot flow — see docs/android-emulator-screenshots.md). Both props
+        # local screenshot flow — see docs/qa/android-emulator-screenshots.md). Both props
         # must list both ABIs: -PreactNativeArchitectures governs the RN/Hermes core libs,
         # -PboardseshAbiFilters the board-renderer CMake module.
         run: ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,x86_64 -PboardseshAbiFilters=arm64-v8a,x86_64 --no-daemon --console=plain --stacktrace

@@ -11,7 +11,7 @@
 // upload. The server only ever sees the cropped file, so the anchors, the
 // homography and the canonical frame are all measured in its own pixels, exactly
 // as they would be for a photo that had been framed that tightly in the camera.
-// A crop is not a warp (`docs/spray-walls.md`, "The frame").
+// A crop is not a warp (`docs/product/spray-walls.md`, "The frame").
 
 import { sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
 

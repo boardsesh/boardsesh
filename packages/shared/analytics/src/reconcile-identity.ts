@@ -22,7 +22,7 @@ import type { AnalyticsProperties } from './client';
 // `$identify(distinct_id = party UUID, $anon_distinct_id = SDK-minted id)` on
 // every signed-out cold start, and PostHog created the party person with
 // `is_identified = 1`. The party UUID is no longer an analytics id at all. See
-// "Identity-split pitfall" in docs/growth-metrics.md for the evidence and for
+// "Identity-split pitfall" in docs/analytics/growth-metrics.md for the evidence and for
 // what is still unproven.
 //
 // The routine keeps no state of its own. It reads who the SDK thinks it is on

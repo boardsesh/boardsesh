@@ -46,7 +46,7 @@ Ads land on www.boardsesh.com tagged \`utm_source=reddit|instagram&utm_medium=pa
 - **Android installs** come from the Play referrer (\`install_source\`, \`install_medium\`, \`install_campaign\`) and are dated by \`install_begin_timestamp\`. The link id is our button (\`placement\`), never the ad: the ad lives in \`utm_content\` on www only.
 - Internal cohort 295337 is excluded everywhere. Days are UTC. Zero rows means no tagged traffic yet.
 
-Definitions: scripts/posthog/paid-social-queries.ts and docs/growth-metrics.md, "Paid social (Reddit, Instagram)".`;
+Definitions: scripts/posthog/paid-social-queries.ts and docs/analytics/growth-metrics.md, "Paid social (Reddit, Instagram)".`;
 
 export const paidSocialDashboard = {
   projectId: PAID_SOCIAL_PROJECT_ID,

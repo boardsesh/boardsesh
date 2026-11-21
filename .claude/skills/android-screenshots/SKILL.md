@@ -1,6 +1,6 @@
 ---
 name: android-screenshots
-description: Capture screenshots of the Boardsesh React Native app (packages/mobile/) running on an Android emulator, driven against Metro with a cached dev-client APK. Use when asked to screenshot / see / visually verify the mobile app on Android, or to share mobile screenshots in chat. Linux/KVM-friendly; the iOS counterpart is `vp run mobile:ios-shots` (full App Store matrix: `vp run mobile:screenshots`). Full reference: docs/android-emulator-screenshots.md.
+description: Capture screenshots of the Boardsesh React Native app (packages/mobile/) running on an Android emulator, driven against Metro with a cached dev-client APK. Use when asked to screenshot / see / visually verify the mobile app on Android, or to share mobile screenshots in chat. Linux/KVM-friendly; the iOS counterpart is `vp run mobile:ios-shots` (full App Store matrix: `vp run mobile:screenshots`). Full reference: docs/qa/android-emulator-screenshots.md.
 ---
 
 # Android emulator screenshots
@@ -54,7 +54,7 @@ the background workflow for multiple shots.
 - `--flow app-store|onboarding` runs the committed Maestro flows instead of ad-hoc capture.
 - `--app-path <apk>` / `--apk-tag <tag>` / `--build-local` to control APK resolution.
 - Env: `BOARDSESH_EMULATOR_GPU` (renderer), `BOARDSESH_AVD_NAME`, `BOARDSESH_EMULATOR_BOOT_TIMEOUT`,
-  `BOARDSESH_METRO_PORT`. See `docs/android-emulator-screenshots.md` for the full table.
+  `BOARDSESH_METRO_PORT`. See `docs/qa/android-emulator-screenshots.md` for the full table.
 
 ## Requirements & troubleshooting
 

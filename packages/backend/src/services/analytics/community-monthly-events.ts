@@ -11,7 +11,7 @@ import { deterministicEventUuid } from './deterministic-event-uuid';
  * The `Community Monthly Summary` / `Community Monthly Rank` reporting contract
  * behind the PostHog "Community: monthly recap" dashboard. Definitions live
  * with the numbers (`services/community-monthly-stats.ts`) and in
- * docs/growth-metrics.md ("Community monthly recap"); this file pins how they
+ * docs/analytics/growth-metrics.md ("Community monthly recap"); this file pins how they
  * travel:
  *
  * - one fixed non-person actor, `system:community-monthly`;
@@ -29,7 +29,7 @@ import { deterministicEventUuid } from './deterministic-event-uuid';
  *   (its boards since deleted) are overwritten too;
  * - scalar properties only, and never a user id, email, avatar or profile
  *   link. `climberName` is the one name, under the exception written in
- *   posthog.ts and docs/analytics-consent.md.
+ *   posthog.ts and docs/analytics/analytics-consent.md.
  */
 export const COMMUNITY_MONTHLY_SUMMARY_EVENT = 'Community Monthly Summary' as const;
 export const COMMUNITY_MONTHLY_RANK_EVENT = 'Community Monthly Rank' as const;

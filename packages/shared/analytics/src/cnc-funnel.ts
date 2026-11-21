@@ -23,7 +23,7 @@
 //    That is deliberate and matches `board-render-events.ts`: the two properties
 //    this funnel will most often be broken down by — `board_name`, `size_id` —
 //    already exist in PostHog under those exact names from the board-render
-//    contract (docs/board-render-analytics.md), and a second spelling of
+//    contract (docs/analytics/board-render-analytics.md), and a second spelling of
 //    `board_name` would make a cross-surface breakdown silently drop rows.
 //  * Property VALUES are identifiers, never copy: never translated, never
 //    title-cased, never derived from what the buyer typed. The licensee's name,

@@ -65,7 +65,7 @@ export function neckTrimRadiusFor(placementRadius: number): number {
  * is well above it); a greyscale board cannot produce warm pixels at all and
  * lands near zero. There is no board in the catalogue sitting near 0.6, so this
  * is a cliff-edge separator rather than a threshold anything balances on — the
- * per-config rates are in `docs/board-art-geometry.md`.
+ * per-config rates are in `docs/rendering/board-art-geometry.md`.
  */
 export const MIN_CONFIG_ACCEPTANCE = 0.6;
 

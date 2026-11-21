@@ -438,7 +438,7 @@ export const GET_SPRAY_WALL_LOOK = gql`
 `;
 
 /**
- * Where the wall stands in a reset (`docs/spray-walls.md`, "Archive and reset"):
+ * Where the wall stands in a reset (`docs/product/spray-walls.md`, "Archive and reset"):
  * when a reset archived it, the wall it was cloned from, and the published wall
  * that replaced it.
  *

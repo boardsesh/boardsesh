@@ -5,7 +5,7 @@
 #
 # Why this file exists at all
 # ---------------------------
-# `docs/postgres-18-migration.md` §1 used to block the PG16 -> PG18 catalog
+# `docs/operations/postgres-18-migration.md` §1 used to block the PG16 -> PG18 catalog
 # audit unless `pg_extension.extversion` was byte-identical on both sides.
 # Railway production reports `3.7.0dev` only because the service tracks the
 # mutable `postgis/postgis:16-master` tag; the attested PG18 artifact ships
@@ -15,7 +15,7 @@
 # supported way through, and the only way past it would have been to waive it
 # on judgement.
 #
-# `docs/postgres-18-postgis-rehearsal.md` answers the narrower question the
+# `docs/operations/postgres-18-postgis-rehearsal.md` answers the narrower question the
 # decision actually needs: does everything this application does with PostGIS
 # survive the step from 3.7.0dev to 3.6.4? It boots the production image beside
 # the pinned artifact and matched 21 of 21 checks, including a byte comparison
@@ -36,10 +36,10 @@
 # The exact, tiny set of extensions whose recorded version may differ between
 # source and target. It is a shell constant rather than an environment knob on
 # purpose: an operator must not be able to widen the tolerance from a shell
-# prompt at 3am, and `docs/postgres-18-migration.md` has said "there is no
+# prompt at 3am, and `docs/operations/postgres-18-migration.md` has said "there is no
 # override flag" since the first draft. Adding a name here is a code change,
 # and it is only defensible with a rehearsal like
-# docs/postgres-18-postgis-rehearsal.md behind it.
+# docs/operations/postgres-18-postgis-rehearsal.md behind it.
 #
 # Note what this does NOT relax: `postgis_topology` and `postgis_tiger_geocoder`
 # are separate extensions and stay strictly compared. A source carrying them

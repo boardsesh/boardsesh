@@ -28,7 +28,7 @@ export type UnversionedCacheTier = 'short' | 'daily';
 /**
  * The share-card family's `full` art slot: the board on the left, the text column
  * from `OG_CARD_COLUMN_LEFT`. Every card that draws a board uses it, the climb card
- * included (docs/og-climb.md, "The climb-identity column").
+ * included (docs/web/og-climb.md, "The climb-identity column").
  *
  * Plain numbers here rather than in `og-family.ts` because `render-config.ts` needs
  * the board box to compute the OG scale, and that module is in the browser's render

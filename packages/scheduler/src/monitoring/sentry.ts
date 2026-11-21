@@ -22,7 +22,7 @@ const DEFAULT_SENTRY_ENVIRONMENT = 'production';
  * Unlike `packages/web` and `packages/backend`, there is **no hardcoded DSN
  * fallback**. Those two run only where we deploy them; the scheduler CLI is
  * also what an operator runs by hand against production (`scheduler run
- * cleanup`, see docs/scheduler.md), and a baked-in DSN would file that
+ * cleanup`, see docs/backend/scheduler.md), and a baked-in DSN would file that
  * laptop's output against the production project. An unset `SENTRY_DSN` is a
  * supported configuration, not a mistake — so it degrades to a no-op monitor
  * and says so once, rather than throwing.

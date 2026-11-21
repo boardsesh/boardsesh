@@ -18,7 +18,7 @@
 // scripts/ota-image-bump.ts moves this pin and OTA_SERVER_VERSION
 // (infra/railway/config.ts) in one commit, and the publish on that commit waits
 // for the server to roll (scripts/mobile-ota-server-ready.mjs). See
-// docs/mobile-ota-updates.md, "The 3.2 upgrade".
+// docs/operations/mobile-ota-updates.md, "The 3.2 upgrade".
 //
 // Railway pulls the image under its PRE-RENAME name
 // `ghcr.io/mercuretechnologies/expo-open-ota:v3.2.6` (the project renamed

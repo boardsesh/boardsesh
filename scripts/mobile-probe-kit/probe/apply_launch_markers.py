@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add launch attribution markers on top of apply_probes.py. See docs/mobile-visible-performance.md.
+"""Add launch attribution markers on top of apply_probes.py. See docs/mobile/mobile-visible-performance.md.
 
     apply_launch_markers.py <repo-root>
 

@@ -1339,7 +1339,7 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
     }
 
-    // F3 (docs/current-climb-outside-queue.md, sections 2 and 4): every queue
+    // F3 (docs/product/current-climb-outside-queue.md, sections 2 and 4): every queue
     // reshape is a FullSync followed by a CurrentClimbChanged under the SAME
     // sequence, so a locked phone still repaints the wall. These three pin the
     // native gates that trailing event passes; tightening any of them to reject

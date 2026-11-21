@@ -26,7 +26,7 @@ import { presignVersionPhoto } from './spray-walls';
 
 /**
  * Spray wall training data (SW-20, #5471): the admin vetting queue and the
- * scheduler's export. `docs/spray-walls.md`, "Training data: consent, vetting,
+ * scheduler's export. `docs/product/spray-walls.md`, "Training data: consent, vetting,
  * export", is the narrative; this file is the rules.
  *
  * ## One predicate
@@ -546,7 +546,7 @@ export const SPRAY_TRAINING_EXPORT_LEASE = 'spray-training-export';
 /**
  * A run stops writing after this long. Nothing else stops it: the resolver does
  * not watch its HTTP request, and the scheduler's request ends long before this
- * (docs/scheduler.md, "Spray wall training export", lists what ends it and
+ * (docs/backend/scheduler.md, "Spray wall training export", lists what ends it and
  * when), so a slow run outlives its caller and is reported as a failed job
  * while it is still writing. This bound is what keeps such a run inside the
  * lease's TTL below.

@@ -1386,7 +1386,7 @@ WHERE subscription.subname = 'pg18_smoke_subscription';")"
 done
 [[ "$subscription_state" =~ ^[1-9][0-9]*\|0$ ]]
 
-# The comparison docs/postgres-18-migration.md asks for by name: the on-the-wire
+# The comparison docs/operations/postgres-18-migration.md asks for by name: the on-the-wire
 # binary of every populated geography, byte for byte, plus the row and populated
 # counts so a copy that dropped rows or coerced NULL to a point cannot pass.
 #

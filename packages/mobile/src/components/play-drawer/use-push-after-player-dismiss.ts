@@ -4,7 +4,7 @@
 // On iPhone the player is the root-stack `transparentModal` `/play`, and the
 // native stack keeps a modal above every card: a card pushed while the player is
 // up lands beneath it and only shows once the player is closed
-// (docs/mobile-sheets-vs-routes.md). So the player goes first, the native
+// (docs/mobile/mobile-sheets-vs-routes.md). So the player goes first, the native
 // transition is waited out, and only then does the route push. The setter
 // playlist link in PlayDrawer does the same.
 //

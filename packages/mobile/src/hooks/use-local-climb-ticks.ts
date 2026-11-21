@@ -28,7 +28,7 @@ export function localClimbTicksQueryKey(climbUuid: string, boardName: string, vi
  * current as the last sync, so a tick deleted elsewhere since (the You tab
  * deletes on the server) can show here until that answer lands.
  *
- * Satisfies the auth-scoping contract in docs/offline-reads.md: it serves only
+ * Satisfies the auth-scoping contract in docs/data/offline-reads.md: it serves only
  * when `canServeLocalUserData` says the rows on disk are complete and belong to
  * the signed-in climber, and filters rows to the owner stamp (or a legacy row
  * with no owner). Resolves `undefined` when the gate declines, when the query

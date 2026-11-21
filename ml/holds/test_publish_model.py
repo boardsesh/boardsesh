@@ -255,7 +255,7 @@ def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_m
     assert manifest["eval"] == {
         "sprayEvalF1": 0.559,
         "weightedCorrectionsPerHold": 0.97,
-        # The release gate's number (docs/spray-recognition-rollout.md, 40%).
+        # The release gate's number (docs/product/spray-recognition-rollout.md, 40%).
         "gestureSavings": 0.515,
         # Which half the numbers came from: `eval` is held out, `tune` is where the
         # threshold was chosen.
@@ -609,7 +609,7 @@ def test_upload_sets_immutable_weights_and_a_short_lived_manifest(
     # The sha256 the next publish compares against, so it can tell identical bytes
     # from different ones rather than blindly re-uploading.
     assert weight_args["Metadata"] == {"sha256": manifest["files"][0]["sha256"]}
-    # R2 endpoint: no ACL header (docs/user-media-storage.md - R2 rejects them).
+    # R2 endpoint: no ACL header (docs/operations/user-media-storage.md - R2 rejects them).
     assert "ACL" not in weight_args
 
     manifest_put = client.puts[0]

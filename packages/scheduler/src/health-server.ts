@@ -26,7 +26,7 @@ function isDegraded(jobs: JobStatus[]): boolean {
 
 /**
  * Two endpoints, split the way `packages/backend` splits `/health` from
- * `/health/db` (see docs/db-connectivity.md):
+ * `/health/db` (see docs/operations/db-connectivity.md):
  *
  * - `GET /health` — liveness. 200 whenever the process is up, which is what
  *   Railway's `healthcheckPath = "/health"` polls. It deliberately does NOT go

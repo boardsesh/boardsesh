@@ -31,7 +31,7 @@ export function selectRecentBetaVideos(rows: RecentBetaLinkGqlRow[], limit: numb
  * The newest community beta videos, for Home's Fresh beta shelf (#6289). With a
  * board type and layout the server keeps only beta for that layout (a Kilter
  * Original clip is no use on a Kilter Homewall); with neither it is global.
- * Network only, never persisted (`docs/offline-reads.md`, bucket 3).
+ * Network only, never persisted (`docs/data/offline-reads.md`, bucket 3).
  */
 export function useRecentBetaLinks(limit: number, boardType: string | null, layoutId: number | null, enabled: boolean) {
   return useQuery({

@@ -29,7 +29,7 @@
  * frozen instant (itself the maximum `frozenNow` across every shard — see
  * `mergeFixtureSets` below).
  *
- * See docs/mobile-screenshot-fixtures.md for the recording runbook.
+ * See docs/qa/mobile-screenshot-fixtures.md for the recording runbook.
  */
 
 import { createHash } from 'node:crypto';

@@ -171,7 +171,7 @@ export interface BrowserSessionCookies {
  *
  * Duplicate names: a browser can hold two cookies of one name, one Domain-scoped
  * and one host-only, and sends both. Their order in the header is not reliable
- * across those scopes (docs/better-auth-browser-cookie-order.md), so "first
+ * across those scopes (docs/auth/better-auth-browser-cookie-order.md), so "first
  * wins" would let the wrong copy win. When every copy carries the same value,
  * that value is used. When the copies differ in any way (two sessions, or one
  * valid and one tampered or empty), that kind has no token and is listed in

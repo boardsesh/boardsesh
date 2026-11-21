@@ -2,7 +2,7 @@
 
 /**
  * Hard cap on History + Up next in the synced queue. The climb on the wall is
- * extra (docs/current-climb-outside-queue.md, section 5), so the stored array
+ * extra (docs/product/current-climb-outside-queue.md, section 5), so the stored array
  * holds at most this + 1 entries with a climb current and this many with
  * nothing current. The backend reads it through `maxPayloadItems` in
  * `packages/backend/src/graphql/resolvers/queue/now-slot-payload.ts` (the

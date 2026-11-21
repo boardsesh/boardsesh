@@ -18,7 +18,7 @@ import { useMobileReleaseStatus } from '../../lib/use-mobile-release-status';
 // event as super properties; while mounted it reports a freshly-downloaded
 // bundle (the "fetched, applies next launch" step of the funnel). Renders
 // nothing — mounted once near the app root beside AnalyticsScreenTracker. See
-// docs/mobile-ota-updates.md.
+// docs/operations/mobile-ota-updates.md.
 
 // Module-scoped so the launch status fires at most once per JS runtime (= once
 // per launch) even if this subtree is ever torn down and recreated. The tracker

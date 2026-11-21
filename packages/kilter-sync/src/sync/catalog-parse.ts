@@ -91,7 +91,7 @@ export type GripsDecodeResult =
  * Aurora catalog's own `frames` strings for the climbs present in both gives
  * 141/141 semantic parity on multi-frame climbs (78 of them byte-identical;
  * the rest differ only where Aurora re-states a frame as an absolute snapshot
- * instead of a delta). See docs/kilter-sync.md.
+ * instead of a delta). See docs/data/kilter-sync.md.
  *
  * Multi-frame output sorts each frame's tokens by placement id, which is the
  * Aurora catalog's own convention and what makes those 78 byte-identical.

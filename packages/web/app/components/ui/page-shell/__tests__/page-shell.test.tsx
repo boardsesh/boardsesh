@@ -59,7 +59,7 @@ describe('PageSection', () => {
   });
 
   it('renders as a <section> and carries an id for anchor links', () => {
-    // /help#climb-counts is linked from docs/kilter-sync.md, so the id has to
+    // /help#climb-counts is linked from docs/data/kilter-sync.md, so the id has to
     // survive on a real element the browser can scroll to.
     const { container } = render(
       <PageSection id="climb-counts" title="Climb counts">

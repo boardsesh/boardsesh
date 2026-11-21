@@ -335,7 +335,7 @@ export function useQueuePersistence({
 let queueSnapshotRestoreReported = false;
 
 /**
- * `Queue Snapshot Restored` (docs/current-climb-outside-queue.md, section 8):
+ * `Queue Snapshot Restored` (docs/product/current-climb-outside-queue.md, section 8):
  * once per launch, what the cold start brought back. `upNextDuplicates` counts
  * climbs that appear more than once in Up next (the copies F3 stops making), so
  * it should fall as old solo snapshots age out.

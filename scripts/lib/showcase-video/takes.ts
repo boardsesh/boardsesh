@@ -18,7 +18,7 @@ import { storeSearchTakeIds } from './store-search';
  * How each take is captured: which deep link sets it up, which Maestro flow
  * drives it, and what the recorder checks afterwards. The recorder
  * (`scripts/showcase-video-record.ts`) reads nothing about a take from anywhere
- * else, so adding or changing a take starts here. See docs/showcase-video.md.
+ * else, so adding or changing a take starts here. See docs/marketing/showcase-video.md.
  */
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');

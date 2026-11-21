@@ -48,7 +48,7 @@ export type SnapshotTableStats = {
  * `board_climb_grades` DDL, that layout's grade rows, and its own one-row
  * `snapshot_meta`. Optional per entry — layouts with no grade rows (every
  * MoonBoard layout: MoonBoard is deliberately outside CROWD_MEAN_BOARDS,
- * see docs/boardsesh-grade.md) publish none, and a manifest with no `grades`
+ * see docs/data/boardsesh-grade.md) publish none, and a manifest with no `grades`
  * anywhere is the kill switch that reverts the fleet to the crawl.
  *
  * Deliberately NOT its own element of `entries`: `findSnapshotEntry` first-

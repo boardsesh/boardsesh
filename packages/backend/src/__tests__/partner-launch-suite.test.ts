@@ -59,7 +59,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
  * piece against its own fixture; this proves them together, end to end.
  *
  * Launch gates and done criteria (BA-07-08 plan section 4, the fast path's
- * section 3 and launch gates, docs/integration-platform.md "Test suite required
+ * section 3 and launch gates, docs/integrations/integration-platform.md "Test suite required
  * before launch") map to the describe blocks below. What no test here can prove
  * is listed at the end of that doc section.
  *
@@ -1133,7 +1133,7 @@ describe('partner OAuth on, in the real server', () => {
         if (value === null) authorization.url.searchParams.delete(name);
         else authorization.url.searchParams.set(name, value);
       }
-      // docs/partner-api.md: back to the registered redirect URI with invalid_request and the state.
+      // docs/integrations/partner-api.md: back to the registered redirect URI with invalid_request and the state.
       expectErrorAtApp(await openAuthorize(authorization.url, climber), app, authorization, 'invalid_request');
       expect(await db.$count(oauthConnections, eq(oauthConnections.userId, climber.userId))).toBe(0);
     });
@@ -1481,7 +1481,7 @@ describe('partner OAuth on, in the real server', () => {
         if (!rotated.ok) throw new Error('unreachable');
 
         await revoke(app, rotated.tokens.refresh_token);
-        // docs/partner-api.md: revoking a refresh token also ends the access tokens issued with it.
+        // docs/integrations/partner-api.md: revoking a refresh token also ends the access tokens issued with it.
         // Checked before anything else touches the family: a later replay of the refresh
         // token closes the whole family anyway, which would hide a revoke that left them.
         expect(await callMe(app, rotated.tokens.access_token)).toEqual({

@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test';
  *   vp run db:up                       (once)
  *   vp run test:e2e:browser-session
  *
- * See docs/better-auth-browser-session.md, "Browser-session e2e harness".
+ * See docs/auth/better-auth-browser-session.md, "Browser-session e2e harness".
  */
 export default defineConfig({
   testDir: '.',

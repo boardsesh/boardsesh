@@ -28,7 +28,7 @@ import {
 } from '../../../validation/schemas';
 
 /**
- * Offline sync pull resolvers (Phase 2). See docs/sync-table-manifest.md — the
+ * Offline sync pull resolvers (Phase 2). See docs/data/sync-table-manifest.md — the
  * contract that binds these resolvers, the mobile SQLite DDL, and the mobile
  * table-config together.
  *
@@ -93,7 +93,7 @@ function cursorBounds(cursor: SyncCursorInput | null | undefined): { ts: string;
  * `updated_at <= deletedAt` guard makes harmless. It can still miss a marker
  * from a transaction that started before the named marker's and committed
  * after it; only devices holding a #6339 cursor are exposed, and that is
- * accepted (docs/sync-deletions-cutoff.md). The text cast keeps the
+ * accepted (docs/data/sync-deletions-cutoff.md). The text cast keeps the
  * microseconds the next comparison needs. Names no column #6339 added, so it
  * stays valid once those are dropped.
  */

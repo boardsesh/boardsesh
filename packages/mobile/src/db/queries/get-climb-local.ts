@@ -33,7 +33,7 @@ import {
  *
  * The send and attempt counts read the viewer's ticks only (`user_id = viewerId`,
  * or no `user_id` for this device's own offline writes), like every other local
- * tick read (docs/offline-reads.md, the auth-scoping contract).
+ * tick read (docs/data/offline-reads.md, the auth-scoping contract).
  */
 export type GetClimbLocalInput = {
   boardName: string;

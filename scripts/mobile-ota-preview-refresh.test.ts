@@ -795,7 +795,7 @@ describe('refresh workflow shape', () => {
     );
     expect(refresh.jobs.plan.outputs?.conservative).toBe('${{ steps.plan.outputs.conservative }}');
     expect(notify.permissions).toEqual({});
-    // DISCORD_DEPLOY_WEBHOOK is a Production environment secret (docs/mobile-e2e-gate.md).
+    // DISCORD_DEPLOY_WEBHOOK is a Production environment secret (docs/qa/mobile-e2e-gate.md).
     expect(notify.environment).toBe('Production');
     expect(notify.steps.some((step) => step.uses)).toBe(false);
     expect(JSON.stringify(notify).match(/secrets\.[A-Z_]+/g)).toEqual(['secrets.DISCORD_DEPLOY_WEBHOOK']);

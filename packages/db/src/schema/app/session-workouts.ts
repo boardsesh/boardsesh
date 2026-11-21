@@ -7,7 +7,7 @@ import { boardSessions } from './sessions';
  * The workout a climber followed in a session (#6903): one row per climber per
  * session, written by their own phone through `recordSessionWorkout`. What each
  * block came to is never stored; readers derive it from the climber's ticks in
- * the session with `@boardsesh/workout-summary`. See docs/workout-stages.md,
+ * the session with `@boardsesh/workout-summary`. See docs/product/workout-stages.md,
  * "Workouts on the server".
  *
  * Both JSON columns are typed `unknown` on purpose: every reader runs them

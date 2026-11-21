@@ -1,7 +1,7 @@
 /**
  * Paid social (Reddit, Instagram/Meta) landing on www.boardsesh.com, store clicks and Android installs.
  * www landing traffic is anonymous, so it is keyed by session; Android installs are person properties.
- * See docs/growth-metrics.md, "Paid social (Reddit, Instagram)".
+ * See docs/analytics/growth-metrics.md, "Paid social (Reddit, Instagram)".
  */
 import { SHARED_EVENTS } from '../../packages/shared/analytics/src/events';
 
@@ -62,7 +62,7 @@ function landingTags() {
 
 /**
  * www sessions that landed on a paid-social tag, with each person's crawler class.
- * The crawler rule is docs/growth-metrics.md "The www crawler rule", per person over the same window.
+ * The crawler rule is docs/analytics/growth-metrics.md "The www crawler rule", per person over the same window.
  */
 function wwwCtes(window: PaidSocialWindow, sources: readonly string[]) {
   return `www_events AS (

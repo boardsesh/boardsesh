@@ -573,7 +573,7 @@ function RootLayout() {
                                                       ignores its own presentation, so the full-screen
                                                       cover is decided here from the entry screen. iPad
                                                       never mounts NativeTabs, so rule 2 of
-                                                      docs/mobile-sheets-vs-routes.md is not in play. */}
+                                                      docs/mobile/mobile-sheets-vs-routes.md is not in play. */}
                                                                               <Stack.Screen
                                                                                 name="spray-led-fullscreen"
                                                                                 options={{
@@ -625,7 +625,7 @@ function RootLayout() {
                                                       over the live tabs: transparentModal with the opaque
                                                       backing app/onboarding.tsx paints, NOT fullScreenModal,
                                                       which snapshots the iOS 26 NativeTabs (hard rule 2,
-                                                      docs/mobile-sheets-vs-routes.md). Gesture disabled
+                                                      docs/mobile/mobile-sheets-vs-routes.md). Gesture disabled
                                                       because each step's only way on is its own CTA, and
                                                       each swallows Android back too. */}
                                                                               <Stack.Screen

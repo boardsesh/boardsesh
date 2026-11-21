@@ -25,7 +25,7 @@ import { gymVisibleCondition } from '../graphql/resolvers/social/gym-visibility'
  * sends. PostHog has no Postgres connection, so the `community-monthly-stats`
  * batch family computes this here and sends it as personless events
  * (`services/analytics/community-monthly-events.ts`; contract in
- * docs/growth-metrics.md, "Community monthly recap").
+ * docs/analytics/growth-metrics.md, "Community monthly recap").
  *
  * What leaves this module is counts, public gym names and slugs, and the names
  * of climbers a signed-out visitor would already see named on a board

@@ -55,7 +55,7 @@ export type Scheduler = {
    *
    * Because it records `lastRunAt` on this instance, a call here clears an
    * `overdue` flag. The `scheduler run <job>` CLI does not: it runs in its own
-   * process and never sees the ticking instance's state (docs/scheduler.md,
+   * process and never sees the ticking instance's state (docs/backend/scheduler.md,
    * "Health endpoints").
    */
   runJob(jobName: string): Promise<unknown>;

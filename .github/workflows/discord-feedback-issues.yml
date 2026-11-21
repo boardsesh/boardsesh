@@ -15,7 +15,7 @@ name: Discord Feedback Issues
 # reach GitHub or Discord. Its sole output is a decisions file, which `apply`
 # re-validates against a digest-pinned bundle it did not produce.
 #
-# See docs/discord-feedback-pipeline.md.
+# See docs/analytics/discord-feedback-pipeline.md.
 
 on:
   schedule:

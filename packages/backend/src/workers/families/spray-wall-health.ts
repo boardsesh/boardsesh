@@ -16,7 +16,7 @@ import { BackgroundJobError, type BackgroundJobFamilyModule } from './types';
  * second-climber reach, degradation, resets, reports — and emits ONE
  * personless `Spray Wall Health Weekly` PostHog event. Nothing is written to
  * the database; the event is the artifact, and the dashboard it feeds is the
- * reporting target (`docs/growth-metrics.md`).
+ * reporting target (`docs/analytics/growth-metrics.md`).
  *
  * Timing: Monday 08:45 UTC, ten minutes after the last angle-estimate job and
  * comfortably inside the same morning, measuring the week that just ENDED.

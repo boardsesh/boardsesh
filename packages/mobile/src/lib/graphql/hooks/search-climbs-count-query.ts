@@ -6,7 +6,7 @@ import { SEARCH_CLIMBS_COUNT, type SearchClimbsCountQueryResponse } from '../ope
 import { SEARCH_CLIMBS_COUNT_QUERY_KEY } from '../query-keys';
 
 // A list's count barely moves while a climber taps through it, and on a board
-// with no download each count is a Postgres query (docs/postgres-query-costs.md).
+// with no download each count is a Postgres query (docs/operations/postgres-query-costs.md).
 const TAP_COUNT_STALE_MS = 5 * 60 * 1000;
 
 /**

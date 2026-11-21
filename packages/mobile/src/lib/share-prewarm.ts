@@ -89,7 +89,7 @@ function buildSprayOgImageUrl(
   return `${BACKEND_URL}/og/climb?${query}`;
 }
 
-// The share cards for everything that is not a climb (docs/og-climb.md, "The
+// The share cards for everything that is not a climb (docs/web/og-climb.md, "The
 // share-card family"). www puts a data token (`v`) on the URL it advertises,
 // which the app cannot compute; the backend ignores it and keys its byte cache on
 // the card's drawn data, so the token-free URL renders exactly the bytes the

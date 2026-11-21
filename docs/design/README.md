@@ -1,4 +1,38 @@
-# Design previews
+# Design system
+
+Velvet Send tokens, shared components, accessibility, native chrome, motion and maintained design previews.
+
+[All documentation](../README.md)
+
+## Start here
+
+- [AI Design Guidelines — Velvet Send](ai-design-guidelines.md)
+- [Mobile chrome and layout metrics](mobile-chrome.md)
+- [Mobile motion, haptics and Queue Undo](mobile-motion.md)
+- [Velvet Send components](velvet-components.md)
+
+## Guides and supporting records
+
+Current behavior and operational requirements live with their topic. A proposal,
+measurement or historical qualification is supporting evidence; its stated limits
+and outstanding acceptance gates still apply. A merged change alone does not prove
+a production rollout or a physical-device result.
+
+| Document | Path |
+| --- | --- |
+| [AI Design Guidelines — Velvet Send](ai-design-guidelines.md) | `ai-design-guidelines.md` |
+| [Build plans — visual system](build-plans-design.md) | `build-plans-design.md` |
+| [Native UI with @expo/ui (mobile)](expo-ui-components.md) | `expo-ui-components.md` |
+| [Marketing campaign screenshot provenance](marketing-campaign-assets.md) | `marketing-campaign-assets.md` |
+| [Mobile accessibility details](mobile-accessibility.md) | `mobile-accessibility.md` |
+| [Mobile chrome and layout metrics](mobile-chrome.md) | `mobile-chrome.md` |
+| [Mobile large-screen layout](mobile-large-screen-layout.md) | `mobile-large-screen-layout.md` |
+| [Mobile motion, haptics and Queue Undo](mobile-motion.md) | `mobile-motion.md` |
+| [Design previews](previews.md) | `previews.md` |
+| [Velvet Send components](velvet-components.md) | `velvet-components.md` |
+| [Web (consuming Velvet Send)](web-velvet-send.md) | `web-velvet-send.md` |
+
+## Design capture and publication workflow
 
 Browse the [published previews](previews.md). Editable HTML stays here; generated
 PNGs live in the public `dev` object-storage bucket and are ignored by Git.

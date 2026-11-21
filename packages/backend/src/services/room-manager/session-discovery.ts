@@ -30,7 +30,7 @@ import { hasLiveConnectionsOrSessionKey, readSessionLiveness } from './session-l
  * `board_sessions` also holds inferred sessions (`origin = 'inferred'`), which are
  * reconstructed from tick timing and are over before they exist. They have no board
  * path and nothing to join, so every live-session loader scopes them out here rather
- * than leaving each caller to remember. See `docs/inferred-sessions.md`.
+ * than leaving each caller to remember. See `docs/data/inferred-sessions.md`.
  */
 const isLiveSessionRow = eq(sessions.origin, 'explicit');
 

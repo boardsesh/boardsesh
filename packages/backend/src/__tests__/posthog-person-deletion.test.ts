@@ -17,7 +17,7 @@ import {
 } from '../services/analytics/posthog-person-deletion';
 
 /**
- * The PostHog erasure job's HTTP contract (docs/analytics-consent.md,
+ * The PostHog erasure job's HTTP contract (docs/analytics/analytics-consent.md,
  * "Erasure"), with the HTTP calls mocked. The enqueue side and the worker,
  * against a running pg-boss, are in posthog-person-deletion-enqueue.test.ts.
  */

@@ -125,7 +125,7 @@ describe('lint ignore scope', () => {
 describe('markdown is out of formatting scope', () => {
   /**
    * The formatter's emphasis pairing does not follow CommonMark's
-   * intraword-underscore rule. On `docs/websocket-implementation.md` it paired
+   * intraword-underscore rule. On `docs/backend/websocket-implementation.md` it paired
    * the `_` inside the bare identifier `NOT_FOUND` with a later `_signed-in_`
    * and emitted `NOT*FOUND` + `\_signed-in*` — corrupting an identifier in
    * prose, reproducibly, on every `vp check --fix`.

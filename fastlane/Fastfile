@@ -938,7 +938,7 @@ platform :android do
     # 190, and Android then rejects every sideload upgrade with
     # INSTALL_FAILED_VERSION_DOWNGRADE (190 < 2_000_285). The Play query may only
     # RAISE the number above this floor, never lower it. See
-    # docs/android-sideload-build.md.
+    # docs/operations/android-sideload-build.md.
     fallback = ENV["VERSION_CODE_FALLBACK"].to_s
     floor = fallback.empty? ? nil : fallback.to_i
 

@@ -14,16 +14,16 @@
  * is excluded from the nightly `refresh-climb-grades` run on purpose; the model
  * here works from setter labels alone and never claims a `universal_grade`.
  * Model + rationale: ../queries/grade-model/moonboard-angle-model.ts and
- * docs/boardsesh-grade.md.
+ * docs/data/boardsesh-grade.md.
  *
  * Callers: the CLI `packages/db/scripts/refresh-moonboard-angle-estimates.ts`
  * (flags --validate-only, --dry-run, --publish) and the batch worker's
- * `refresh-moonboard-angle-estimates` family (docs/background-workers.md). An
+ * `refresh-moonboard-angle-estimates` family (docs/backend/background-workers.md). An
  * unusable pooled fit throws {@link MoonboardFitUnusableError}: nothing is
  * written. The publish (coefficients + estimate upserts + stale-row reap) is
  * one fenced transaction, on purpose: it is ~216k rows (~131 s measured on
  * GitHub Actions, Sep 2026), so it fits the family's 600 s heartbeat whole
- * (docs/background-workers.md). The much larger wide-angle job commits in
+ * (docs/backend/background-workers.md). The much larger wide-angle job commits in
  * chunks instead.
  */
 import { sql } from 'drizzle-orm';

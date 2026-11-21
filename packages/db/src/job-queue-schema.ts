@@ -38,7 +38,7 @@ const POPULAR_BOARD_CONFIGS_REFRESH_QUEUE_OPTIONS = {
 
 /**
  * The backend's hourly `board_climb_popularity` refresh (the popular sort's
- * ranking table, docs/climb-popularity.md). Lives here because the migrator
+ * ranking table, docs/data/climb-popularity.md). Lives here because the migrator
  * creates the queue.
  */
 export const CLIMB_POPULARITY_REFRESH_QUEUE = 'climb-popularity-refresh';
@@ -59,7 +59,7 @@ const CLIMB_POPULARITY_REFRESH_QUEUE_OPTIONS = {
 
 /**
  * The backend's daily `playlist_grade_summaries` refresh (the grade band on
- * playlist cards and Discover's grade filter, docs/playlist-grade-summaries.md).
+ * playlist cards and Discover's grade filter, docs/data/playlist-grade-summaries.md).
  * Lives here because the migrator creates the queue.
  */
 export const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE = 'playlist-grade-summary-refresh';
@@ -78,7 +78,7 @@ const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE_OPTIONS = {
 } as const;
 
 /**
- * The backend's PostHog person erasure (docs/analytics-consent.md, "Erasure").
+ * The backend's PostHog person erasure (docs/analytics/analytics-consent.md, "Erasure").
  * Two jobs per deleted account or per withdrawal (15 minutes and 7 days after
  * it), enqueued in the transaction that records it. Lives here because the
  * migrator creates the queue.
@@ -119,7 +119,7 @@ export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
 export const CRON_JOB_DELETE_AFTER_SECONDS = 24 * 60 * 60;
 
 /**
- * The backend's hourly partner OAuth retention sweep (docs/integration-platform.md,
+ * The backend's hourly partner OAuth retention sweep (docs/integrations/integration-platform.md,
  * "Retention sweep"). Lives here because the migrator creates the queue.
  */
 export const PARTNER_OAUTH_SWEEP_QUEUE = 'partner-oauth-sweep';
@@ -677,7 +677,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     // The generated playlists' grade bands, recomputed when the job swaps their
     // climbs (refreshPlaylistGradeSummariesFor: upsert, delete). Granted with
     // the table's own migration, so a worker image that ships the recompute
-    // can't start ahead of the grant (docs/background-workers.md).
+    // can't start ahead of the grant (docs/backend/background-workers.md).
     { table: 'playlist_grade_summaries', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
     // Written by the playlist_climbs delete trigger (offline sync tombstones).
     { table: 'sync_deletions', privileges: ['INSERT'] },
@@ -705,7 +705,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     // catalogue artifact reads every CATALOG_SNAPSHOT_TABLES entry. Its deletion
     // replay observer also needs pg_read_all_stats, a predefined role this
     // migrator cannot grant: the admin grants it when provisioning the login
-    // (docs/background-workers.md).
+    // (docs/backend/background-workers.md).
     { table: 'board_products', privileges: ['SELECT'] },
     { table: 'board_layouts', privileges: ['SELECT'] },
     { table: 'board_product_sizes', privileges: ['SELECT'] },

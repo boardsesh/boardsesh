@@ -2632,7 +2632,7 @@ export function PlayCore({
   // Climber logs card: "See all logs" opens the virtualised list; a row opens
   // that climber's profile; the empty states lead to climber search. Both routes
   // are plain cards on the root stack, and on iOS a card pushed while the
-  // `/play` modal is up lands beneath it (docs/mobile-sheets-vs-routes.md), so
+  // `/play` modal is up lands beneath it (docs/mobile/mobile-sheets-vs-routes.md), so
   // they leave through `usePushAfterPlayerDismiss`.
   const handleOpenClimberLogs = useCallback(() => {
     setClimberLogsClimbUuid(displayedClimbUuid ?? null);

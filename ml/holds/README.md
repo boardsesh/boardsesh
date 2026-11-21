@@ -170,7 +170,7 @@ per-photo breakdown) from the `tune` sweep and the final `eval` split score,
 plus the int8 ONNX itself. The int8 export is 28-33 MB depending on config —
 over this repo's 15 MB ceiling — so it does not get committed; it goes to R2
 under `models/hold-detector/<version>/` instead — see "Publishing a model"
-below (`docs/user-media-storage.md` has the bucket/credential contract).
+below (`docs/operations/user-media-storage.md` has the bucket/credential contract).
 
 ## Retrain runbook
 
@@ -183,14 +183,14 @@ threshold being scored. Placing a hold by hand counts 2 gestures and deleting a
 false positive counts 1, the same weights as the "Weighted corr." row in the
 full-run table, so gesture savings is that row halved and subtracted from 1. It is
 the definition behind the 48.2% the Node detector reported for `2026-09-18-seg`,
-and the release gate is **40%** (`docs/spray-recognition-rollout.md`).
+and the release gate is **40%** (`docs/product/spray-recognition-rollout.md`).
 
 ```bash
 cd ml/holds && . .venv/bin/activate
 CONFIG=seg-nano-tiled-1024          # the shipped model's config
 SHIPPED=2026-09-18-seg              # the shipped version, from its manifest
 
-# 1. Fetch. Uses the backend's PRIVATE_* variables (docs/user-media-storage.md);
+# 1. Fetch. Uses the backend's PRIVATE_* variables (docs/operations/user-media-storage.md);
 #    R2_PRIVATE_BUCKET and R2_ENDPOINT also work for the bucket and endpoint.
 #    Use the read-only token. Prints the exportId and the directory to train on.
 export PRIVATE_S3_BUCKET_NAME=boardsesh-user-private
@@ -289,7 +289,7 @@ are not retracted.
 talks to R2. Given a config and a version tag, it builds `manifest.json`,
 validates it against `model-manifest.schema.json`, and uploads it plus the
 exported ONNX weights to `models/hold-detector/<version>/` in the public
-`media` bucket (`docs/user-media-storage.md`). Nothing else in this directory
+`media` bucket (`docs/operations/user-media-storage.md`). Nothing else in this directory
 uploads anything.
 
 **Weights are immutable per version; the manifest is the only mutable
@@ -302,7 +302,7 @@ at a weight file that hasn't landed yet.
 ### Env vars
 
 Same `MEDIA_*` prefix the backend uses for the same bucket
-(`packages/backend/src/storage/bucket-config.ts`, `docs/user-media-storage.md`)
+(`packages/backend/src/storage/bucket-config.ts`, `docs/operations/user-media-storage.md`)
 — this script never falls back to bare `AWS_*`, so a typo'd prefix fails loudly
 instead of silently publishing into the wrong bucket:
 
@@ -398,7 +398,7 @@ tensor and require interpolation before thresholding.
 
 The recognition service (`packages/hold-detector/src/manifest.ts`) reads this
 contract and verifies the weights' byte count and SHA-256. Current deployment
-and exposure gates are in `docs/spray-recognition-rollout.md`; the earlier phone
+and exposure gates are in `docs/product/spray-recognition-rollout.md`; the earlier phone
 inference runtime has been superseded.
 
 ### Lightweight preprocessing and publisher checks
@@ -871,7 +871,7 @@ What the corpus needs, per issue #5434:
 stays in the private bucket.
 
 Pull the collected photos down for labelling with the AWS CLI against the private
-bucket (credentials as in `docs/user-media-storage.md`):
+bucket (credentials as in `docs/operations/user-media-storage.md`):
 
 ```bash
 aws s3 sync s3://$R2_PRIVATE_BUCKET/spray-wall-test-data/ .data/spraywall-discord/ \

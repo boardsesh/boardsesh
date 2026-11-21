@@ -8,7 +8,7 @@ name: Railway Config
 #   validate    — pull requests. The layers that need no credentials.
 #   primary-tls — every trigger. Probes the PG primary's served certificate.
 #
-# See docs/railway.md.
+# See docs/operations/railway.md.
 on:
   schedule:
     - cron: '30 6 * * *' # 06:30 UTC daily, just after refresh-recommendations
@@ -38,7 +38,7 @@ on:
       - 'scripts/railway-apply.ts'
       - 'scripts/check-primary-tls.ts'
       - 'scripts/check-primary-tls.test.ts'
-      - 'docs/pg-primary-tls.json'
+      - 'docs/operations/pg-primary-tls.json'
       - 'scripts/railway-deployment-rollback.mjs'
       - 'scripts/ota-image-bump.ts'
       - 'scripts/lib/ota-version-files.ts'
@@ -150,7 +150,7 @@ jobs:
           # fail the job on a connection timeout rather than on real drift. The
           # disk check below needs nothing here — it reads the volume through
           # Railway's API. Re-add once the check runs through a tunnel or from
-          # inside the network. See docs/railway.md.
+          # inside the network. See docs/operations/railway.md.
         run: |
           set -euo pipefail
 
@@ -171,7 +171,7 @@ jobs:
   # The primary's certificate is declared state too: the image's entrypoint installs
   # it from Railway variables, so a deploy that loses those variables, or a rollback
   # to an image without the entrypoint, silently reverts it. This probes the live
-  # endpoint and compares it with docs/pg-primary-tls.json.
+  # endpoint and compares it with docs/operations/pg-primary-tls.json.
   #
   # Its own job, and not a step in `drift`, for two reasons: it needs no credential,
   # so it can run on pull requests where the Production environment is unreachable;

@@ -122,7 +122,7 @@ BEGIN
     RAISE EXCEPTION 'seeded test user is missing';
   END IF;
   -- Catalogue coverage. The image is seeded from the published board snapshots
-  -- (docs/board-snapshots.md), so "board_climbs is not empty" no longer says
+  -- (docs/data/board-snapshots.md), so "board_climbs is not empty" no longer says
   -- much: a load that stopped after the first layout would still pass it. Assert
   -- the shape a developer actually needs instead.
   SELECT count(*) INTO climb_count FROM board_climbs;

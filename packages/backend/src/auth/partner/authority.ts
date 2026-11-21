@@ -119,7 +119,7 @@ const PUBLISHED_METADATA_FIELDS = [
   'authorization_response_iss_parameter_supported',
 ] as const;
 
-/** `docs/partner-api.md` section 2: confidential apps use Basic or POST, public apps `none`. */
+/** `docs/integrations/partner-api.md` section 2: confidential apps use Basic or POST, public apps `none`. */
 const PARTNER_CLIENT_AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'];
 
 const DISCOVERY_CACHE_CONTROL = 'public, max-age=15, stale-while-revalidate=15, stale-if-error=86400';

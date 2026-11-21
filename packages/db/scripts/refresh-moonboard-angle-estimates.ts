@@ -2,7 +2,7 @@
  * MoonBoard same-board angle grade estimate refresh. The job body is
  * `src/jobs/refresh-moonboard-angle-estimates.ts`; the batch worker's
  * `refresh-moonboard-angle-estimates` family runs the same body
- * (docs/background-workers.md).
+ * (docs/backend/background-workers.md).
  *
  * Run locally: `vp run db:refresh-moonboard-angle-estimates -- --dry-run`
  * Flags: --validate-only (fit the coefficients and print the per-band report,

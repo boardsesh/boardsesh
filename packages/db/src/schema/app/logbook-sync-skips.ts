@@ -6,7 +6,7 @@ import { auroraTableTypeEnum } from './ascents';
  * Why one upstream logbook row could not be written.
  *
  * Machine-stable strings, not sentences: they are the grouping key for the
- * triage query in docs/aurora-sync.md, so re-wording one silently splits a
+ * triage query in docs/data/aurora-sync.md, so re-wording one silently splits a
  * cluster in two. Add a value here rather than free-texting into `detail`.
  *
  * - invalid_angle      angle isn't a finite int4. Unwritable (`angle` is NOT
@@ -67,7 +67,7 @@ export type LogbookSyncSkipReason = (typeof LOGBOOK_SYNC_SKIP_REASONS)[number];
  * writes cleanly (see reconcileLogbookSyncSkips), so a query against it always
  * answers "what is broken right now", never "what ever broke".
  *
- * Triage query + reason codes: docs/aurora-sync.md.
+ * Triage query + reason codes: docs/data/aurora-sync.md.
  */
 export const logbookSyncSkips = pgTable(
   'logbook_sync_skips',

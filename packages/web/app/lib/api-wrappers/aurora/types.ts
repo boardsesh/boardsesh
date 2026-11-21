@@ -137,7 +137,7 @@ export type Ascent = {
 };
 
 // LogbookEntry covers both ascents and attempts. Difficulty is intentionally
-// nullable — see docs/ascents-and-attempts.md. Attempts never carry a grade,
+// nullable — see docs/data/ascents-and-attempts.md. Attempts never carry a grade,
 // and ascents may be saved without a user override.
 export type LogbookEntry = Omit<Ascent, 'bid_count' | 'difficulty'> & {
   tries: number;

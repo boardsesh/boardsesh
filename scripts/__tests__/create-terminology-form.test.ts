@@ -693,7 +693,7 @@ describe('Terminology Google Form creation artifact (stand-in, not live Google p
     expect(questions.find((item) => item.title.startsWith('Route / circuit｜'))!.help).toContain('训练线路组');
     expect(questions.find((item) => item.title.startsWith('Tall climbs｜'))!.help).toContain('不要求用到最顶排');
     expect(questions.find((item) => item.title.startsWith('Matching｜'))!.help).not.toContain('同点换手');
-    const document = readFileSync('docs/i18n-chinese-glossary.md', 'utf8');
+    const document = readFileSync('docs/i18n/i18n-chinese-glossary.md', 'utf8');
     for (const question of questions) expect(document, question.title).toContain(question.title);
   });
 

@@ -95,8 +95,8 @@ function reportedVisitor(request: Request): string | undefined {
 }
 
 /**
- * Rate-limit key a caller cannot choose. See docs/cloudflare.md and the staged
- * requirements in docs/better-auth-web-password-delegation.md.
+ * Rate-limit key a caller cannot choose. See docs/operations/cloudflare.md and the staged
+ * requirements in docs/auth/better-auth-web-password-delegation.md.
  *
  * A route handler cannot see its socket peer. Our ingress appends the peer it
  * observed to `X-Forwarded-For`, so only the LAST hop is out of the caller's
@@ -132,7 +132,7 @@ export function trustedClientRateLimitKey(request: Request): string {
  * `CF-Connecting-IP`. The proof is what tells our zone's traffic from that.
  * Railway's edge appends the peer it saw as the last hop; that was checked for the
  * backend service on 2026-11-10, not yet for this one
- * (docs/better-auth-web-password-delegation.md). If it appends its own address
+ * (docs/auth/better-auth-web-password-delegation.md). If it appends its own address
  * instead, no last hop is a Cloudflare edge and this is always null.
  */
 export function cloudflareVouchedVisitorAddress(request: Request): string | null {
@@ -150,7 +150,7 @@ export function cloudflareVouchedVisitorAddress(request: Request): string | null
  * with no visitor, and the last hop itself, which is our ingress's own address
  * if the web ingress appends that rather than the peer it observed. Nobody has
  * yet checked which one the web service sees in production (see
- * docs/better-auth-web-password-delegation.md), so a limit that must never put
+ * docs/auth/better-auth-web-password-delegation.md), so a limit that must never put
  * every visitor in one bucket keys on this instead and skips when it is null.
  *
  * While the origin proof secret is unset this behaves exactly as before: any

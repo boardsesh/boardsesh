@@ -526,7 +526,7 @@ function BluetoothAutoSender({
   consumeBackgroundAdoptSendGate: () => boolean;
   // Reports a refused write so the gate is measurable in the field.
   onBackgroundAdoptSendSuppressed: (item: ClimbQueueItem) => void;
-  // #4979 stale-climb hold (docs/current-climb-outside-queue.md, section 6).
+  // #4979 stale-climb hold (docs/product/current-climb-outside-queue.md, section 6).
   // False with the kill switch on, and on a virtual hold (taking a wall with no
   // lights is itself the climber's ask).
   staleCurrentHoldEnabled: boolean;
@@ -2780,7 +2780,7 @@ export function BluetoothProvider({
     });
   }, []);
 
-  // #4979 stale-climb hold (docs/current-climb-outside-queue.md, section 6). The
+  // #4979 stale-climb hold (docs/product/current-climb-outside-queue.md, section 6). The
   // auto-sender decides; this keeps what it decided, for the player's Put on the
   // wall and "Last on the wall" line, and for the hold's telemetry. A ref beside
   // the state so the callbacks stay stable and read the hold synchronously.

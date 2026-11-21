@@ -42,7 +42,7 @@ import { sprayTickVisibleSql } from '../shared/spray-tick-visibility';
  * plan their phone followed and which queue item each tick was logged on; what
  * each block came to is derived on read from that climber's ticks with
  * `@boardsesh/workout-summary`, so a tick edited or deleted later is reflected
- * without a rewrite. docs/workout-stages.md, "Workouts on the server".
+ * without a rewrite. docs/product/workout-stages.md, "Workouts on the server".
  *
  * Who a reader shows follows `sessionDetail`: a workout appears only when the
  * session opens for the viewer, its climber is someone the session's own

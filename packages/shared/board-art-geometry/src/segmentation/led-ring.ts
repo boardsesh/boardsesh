@@ -53,7 +53,7 @@
  * visually against one board's art and one hand-marked hold. The intended
  * retuning loop is against `hold_outline_overrides` rows of
  * `kind = 'led_inner'`, which are ground truth and which always REPLACE
- * extractor output at the merge — see `docs/board-art-geometry.md`.
+ * extractor output at the merge — see `docs/rendering/board-art-geometry.md`.
  */
 
 import { simplifyRing, type RingPoint } from '../ring';

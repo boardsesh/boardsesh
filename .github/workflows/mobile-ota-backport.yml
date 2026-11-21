@@ -10,7 +10,7 @@ name: Mobile OTA Backport (Approved Release)
 # runtimeVersion and aborts unless its 12-char prefix equals the <shortfp> baked
 # into the anchor tag. A drift means the cherry-pick touched native inputs, so the
 # OTA would resolve a fingerprint no shipped binary has and silently never land —
-# better to fail loudly. See docs/mobile-ota-updates.md.
+# better to fail loudly. See docs/operations/mobile-ota-updates.md.
 #
 # V2 is GONE (destroyed 2026-08-25): this backport publishes only to the V3 server
 # (updates.boardsesh.com) via the eoas CLI pinned in scripts/lib/eoas.ts (used by
@@ -81,7 +81,7 @@ env:
   # Manifest base for the offline snapshot bootstrap (bundle-only, no fingerprint
   # effect). Public R2 host; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # blackheathdc-ansible/inventories/boardsesh_workers.yml (batch defaults).
-  # Cutover: docs/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
+  # Cutover: docs/data/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://snapshots.boardsesh.com/board-snapshots/v1-gzip
   # Compatibility input for frozen V3 release anchors. Their app.config.ts reads
   # this variable to emit expo-channel-name; the current config ignores it and
@@ -91,7 +91,7 @@ env:
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it
   # doesn't enter the resolved config, so it never moves the fingerprint. Kept in
-  # lockstep with the other mobile fingerprint workflows. See docs/mobile-ota-updates.md.
+  # lockstep with the other mobile fingerprint workflows. See docs/operations/mobile-ota-updates.md.
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:

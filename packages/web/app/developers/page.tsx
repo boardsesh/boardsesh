@@ -75,7 +75,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * The public docs for apps that read a climber's logbook (docs/partner-api.md
+ * The public docs for apps that read a climber's logbook (docs/integrations/partner-api.md
  * is the source). Gated by this service's PARTNER_OAUTH_MODE, never by a flag
  * of its own: `off` and `hold` are a 404 (the same as the console at
  * `/developers/apps`), `allowlist` says registration is by invitation and stays

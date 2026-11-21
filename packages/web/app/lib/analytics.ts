@@ -217,7 +217,7 @@ function getPosthog(): PostHog | null {
 
   // Crawlers that execute our JS boot this SDK and, holding no cookies, mint a
   // fresh person per page load: Applebot was 917 of the 946 web "users" on 2026-09-10.
-  // Not isCrawlerUserAgent — that one counts real YandexSearch users as bots. docs/feature-flags.md.
+  // Not isCrawlerUserAgent — that one counts real YandexSearch users as bots. docs/operations/feature-flags.md.
   if (isAutomatedCrawlerUserAgent(navigator.userAgent)) return null;
 
   const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;

@@ -776,7 +776,7 @@ export const climbMutations = {
    *
    * The edit is made in place. No revision is recorded and `revision_number` /
    * `holds_revision_number` do not move, so a holds edit leaves the climb's sends,
-   * first ascent and stars as they were (docs/spray-walls.md, "Editing a climb").
+   * first ascent and stars as they were (docs/product/spray-walls.md, "Editing a climb").
    */
   updateClimb: async (
     _: unknown,
@@ -1262,7 +1262,7 @@ export const climbMutations = {
             // with the hold rewrite. Its slot in other climbs' lists is left for
             // the nightly job: the UPDATE above bumped `sync_seq`, and the job
             // deletes every row naming a changed climb and rewrites the lists it
-            // sat in (docs/similar-climbs.md). Deleting those slots here too would
+            // sat in (docs/data/similar-climbs.md). Deleting those slots here too would
             // leave gaps only the weekly whole-board scan finds.
             await tx
               .delete(dbSchema.boardClimbNeighbors)

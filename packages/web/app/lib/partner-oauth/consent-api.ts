@@ -11,7 +11,7 @@ import { PARTNER_CONSENT_DETAILS_URL, PARTNER_CONSENT_URL } from './authorizatio
  * run here and not on the web server: a server-side call would also put every
  * climber behind the web server's one address, in one rate-limit bucket.
  *
- * `docs/integration-platform.md`, "Consent and the www session", has the
+ * `docs/integrations/integration-platform.md`, "Consent and the www session", has the
  * contract; `packages/backend/src/auth/partner/consent.ts` has the code.
  */
 

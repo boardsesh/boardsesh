@@ -1,0 +1,172 @@
+# Climbing data exports
+
+Signed-in climbers open **Settings → Account → Export climbing data**, select a board and
+format, then tap **Save or share** on iOS or Android to open the system share
+sheet. They can save the JSON file or send it to another app. Expo web keeps
+**Download JSON** through the browser. No linked manufacturer account is required.
+
+## Formats and freshness
+
+Boardsesh JSON supports every shared `SUPPORTED_BOARDS` entry, including
+MoonBoard, Woods, and spray walls. Schema version 1 contains account identity,
+ticks, favorites, owned playlists, and authored climbs including drafts. It
+preserves raw/canonical identifiers, statuses, notes, mirror flags, ratings,
+dates, board/layout references, playlist order, and raw climb frames. Bigint IDs
+are strings; unresolved climb references remain present. This is a personal
+climbing archive, not a board catalogue, authentication backup, or wall-photo
+export.
+
+Spray-wall climb metadata follows wall access when the snapshot is generated.
+If a wall becomes private or gym membership ends, personal tick notes, favorites,
+and playlist references remain in the export, while inaccessible climb names and
+authored definitions are omitted. Climbs on the climber's own private walls remain
+available.
+
+Aurora JSON is an additional format for Kilter, Tension, Decoy, Touchstone,
+Grasshopper, and So iLL. Its existing `user`, `ascents`, `attempts`, `circuits`,
+`climbs`, and `likes` shape is preserved. It identifies climbs by name and omits
+some Boardsesh details; availability does not promise manufacturer-app import.
+
+Generation only follows a request. The first snapshot for a user and board in a
+UTC ISO week is reused until the next week; repeated downloads do not regenerate
+it. The screen shows generation, refresh, and expiry dates. Changes waiting to
+sync are absent from a server snapshot; the app warns about pending changes and
+does not automatically drain them as part of exporting.
+
+## Backend contract
+
+Three authenticated GraphQL operations are shared with mobile:
+
+1. `userDataExport(boardType, period?)` reads weekly status and file metadata;
+   omitting the period selects the current week.
+2. `requestUserDataExport(boardType)` coalesces generation with existing work.
+3. `userDataExportDownload(boardType, period, format)` issues a fresh five-minute
+   private download link.
+
+Identity always comes from authentication. The service verifies the account
+still exists, including on retained legacy Aurora HTTP export/download routes.
+A validated period lets a job crossing Monday finish polling and download its
+original snapshot. Refreshing a completed older snapshot selects the current week.
+
+The period lookup window is 21 days from the ISO week's Monday; file availability
+is separately limited to 14 days from snapshot creation. This preserves a
+late-Sunday snapshot into the third calendar week. A valid period can return
+`files: []` after expiry or when no file was prepared. Clients use the returned
+status and file metadata rather than treating an accepted period as a ready file.
+
+The legacy `downloadUrl` field remains an authenticated Aurora-only REST proxy
+for existing clients and is deprecated. New clients request
+`userDataExportDownload` to obtain a direct private-storage link.
+
+The `user-data-export` family uses the existing `maintenance-delivery` worker.
+Producers serialize on the account row and reuse matching queued/running/retrying
+ledger jobs. pg-boss `stately` alone permits an active plus queued twin. The worker
+reads its injected primary database, loads personal collections once, and uses
+the immutable archive to produce a missing Aurora companion. Conditional uploads
+preserve a winning snapshot across retries and overlapping attempts.
+
+The worker checks a fresh private upload once with a bounded streaming SHA-256
+read-back. Status polling uses object metadata and the job ledger, so it never
+downloads the archive body. A known-invalid immutable file is hidden from
+Boardsesh downloads and cannot be regenerated under the same weekly key; the
+climber sees a support message and can request a new snapshot next week. Damage
+that occurs after a successful verification cannot be detected by metadata alone.
+
+Limits: one active job per existing worker process; two runs per user/board/week;
+one automatic retry per run; five-minute attempt lease; 30-second heartbeat;
+30-minute overall deadline. Recoverable terminal failure permits another run
+after five minutes while budget remains; invalid archives and oversized
+snapshots wait until the next week. User-filtered queries are indexed including drafts.
+Storage failures do not masquerade as cache misses and cause regeneration.
+
+Queries return the climber's own records. Playlist result rows grow linearly with
+climb memberships in owned playlists, plus one row for each empty playlist. The
+full archive and its serialized output are materialized in memory. Generation
+preflights user-scoped row counts and large text fields, then limits each collection
+query to the remaining 20,000-row budget plus one. Both formats have a 32 MiB
+serialized JSON limit; cached archive reads enforce the same cap from Content-Length
+and actual streamed bytes. `EXPORT_TOO_LARGE` stops the job without an automatic
+retry or a partial upload. The climber's underlying records remain untouched; an
+operator must arrange another full-fidelity export path for histories above these
+limits. Preflight counts can race with writes, so bounded queries and the final
+serialized-byte check remain necessary. A single source field can still require
+temporary memory before its size is detected.
+
+## Private storage and retention
+
+Objects remain under `user-data-exports/` in `boardsesh-user-private`, with no
+public domain or `r2.dev` URL. Uploads carry attachment filenames and
+`private, no-store`. Each download tap signs a direct GET: bytes bypass backend
+proxying, and browser navigation needs no private-bucket CORS. Never log or cache
+signed URLs or archive contents.
+
+Cloudflare manages rule `boardsesh-user-data-exports-14d`, expiring that prefix
+after 1,209,600 seconds. The apply tool re-reads and merges only its own rule ID,
+preserving all unrelated rules. Unreadable policies, duplicate IDs, and conflicting
+prefix ownership block changes. Link issuance enforces the 14-day age while R2's
+physical cleanup is pending. Only generated copies expire; source records remain.
+
+## Native save/share and local retention
+
+Each tap requests a fresh link and downloads directly into an operation-specific
+private app-cache directory. Both Boardsesh and Aurora exports share a named
+`.json` file with MIME type `application/json` (and iOS type `public.json`). The
+file is not read or parsed into JavaScript. The action stays busy through download
+and sharing; dismissing the share sheet is normal completion.
+
+Download, share, unavailable-sharing, and cleanup failures show separate guidance.
+A retry requests another fresh link. Native errors do not expose signed URLs,
+cache paths, or archive contents in mutation state or telemetry.
+
+Startup sweeps leftover export files before new downloads. Failed and aborted
+downloads are removed once their native download tasks settle. iOS removes files
+after the share sheet is dismissed. Android keeps completed files for 60 active
+seconds after sharing, pausing that timer while Boardsesh is backgrounded so a
+recipient can finish reading. Logout or an account switch aborts pending work and
+requests cleanup immediately; pending downloads are removed once their tasks
+settle. Cleanup remains scoped to each operation.
+Failed cleanup is retried on foreground and startup. Saving or sharing a copy puts
+that copy under the destination app's retention rules.
+
+`expo-sharing` requires new native binaries; an OTA update alone cannot add it.
+
+### Captured browser operations
+
+In the staged selected-browser mode, export status and generation use the
+original view's query keys and cache. A polling-cap hit may return already-owned
+metadata; it does not supply a new delivery receipt or authorize a download.
+Each generation request and fresh-link request captures its operation before
+asynchronous work. The screen also captures its action before reading the
+outbox or asking whether to export synced changes. A later account or an
+account round trip cannot adopt those pending actions or their busy/error state.
+
+The fresh link's actual delivery receipt remains attached to the platform
+download guard through later awaits. A newer same-owner lease cannot extend an
+older link response. Download cancellation and mount retirement happen during
+layout cleanup, before a removing parent's layout effect. Native query keys,
+polling limits, file cleanup and save/share behavior stay compatible. Signed
+URLs remain local to the download call, outside query and mutation data.
+These caller controls keep public browser readiness false; they do not qualify
+the remaining offline outboxes or whole-application browser behavior.
+
+## Rollout
+
+1. Apply generated indexes and rerun worker grants with the
+   `maintenance-delivery` login configured; its export reads have a restricted-role
+   integration test.
+2. Supply the private bucket's `PRIVATE_*` configuration to the existing worker.
+   Deploy the new family before producers; verify storage and an unpaused worker.
+3. Converge Cloudflare retention using its existing dry-run/apply workflow. Verify
+   the prefix and age; a newly created bucket needs a second converge. Resolve any
+   blocked policy before enabling exports.
+4. The family starts with the backend deploy; hold it with
+   `BATCH_FAMILIES_DISABLED` until steps 1-3 are done. Deploy
+   backend/mobile with compatible native binaries; verify named downloads and
+   repeated-download snapshot reuse.
+   Until this step, status reads answer `unavailable` instead of offering Prepare
+   or Retry; this week's finished files stay downloadable.
+5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
+   actual iOS/Android save/share destinations before completing device QA.
+
+See [user-media-storage.md](../operations/user-media-storage.md) for bucket configuration and
+[background-workers.md](../backend/background-workers.md) for queue/grant deployment.

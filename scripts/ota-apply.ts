@@ -38,7 +38,7 @@
  *   OTA_BASE_URL or EXPO_UPDATES_URL     (optional) defaults to the declared server.
  *
  * Runs under bare `node --experimental-strip-types` in CI, with no install: the
- * job holds the admin login. See docs/mobile-ota-updates.md, "Managing xprem as code".
+ * job holds the admin login. See docs/operations/mobile-ota-updates.md, "Managing xprem as code".
  */
 
 import { resolve } from 'node:path';

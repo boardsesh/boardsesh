@@ -402,7 +402,7 @@ export function diffServiceImage(desired: ServiceDesired, live: LiveState, optio
         `Refusing: this would move the server to ${declaredVersion} while the repo publishes with ` +
         `eoas ${cliVersion}.\n` +
         `The CLI may lead the server but must never trail it — a CLI that trails can 404 on ` +
-        `app-scoped routes (docs/mobile-ota-updates.md).\n` +
+        `app-scoped routes (docs/operations/mobile-ota-updates.md).\n` +
         `Fix: bump EOAS_PACKAGE_SPEC in scripts/lib/eoas.ts first, in the same PR.`,
       blocked: true,
     };

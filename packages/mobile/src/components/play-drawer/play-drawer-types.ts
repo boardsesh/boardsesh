@@ -59,7 +59,7 @@ export type PlayDrawerOpenOptions = {
    * preview-first pick of the climb already up (a queue sheet row, Replay from
    * here, the playlist switch). Every other open of the current climb is a
    * pick, which lights a climb the #4979 hold kept dark
-   * (docs/current-climb-outside-queue.md, section 6); this one only shows the
+   * (docs/product/current-climb-outside-queue.md, section 6); this one only shows the
    * climb, so a hold stays and the player offers Put on the wall.
    */
   reopensCurrent?: boolean;

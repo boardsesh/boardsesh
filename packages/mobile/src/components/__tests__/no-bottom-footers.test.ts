@@ -5,7 +5,7 @@ import { join, relative, sep } from 'node:path';
 // Sheet and screen actions go in the top bar (SheetTopBar through a sheet's
 // `header`, useHeaderActions on a screen). A pinned bottom footer moves with
 // the keyboard, the bottom inset and any error text above it, which is the
-// yank this rule removes. See docs/mobile-sheets-vs-routes.md, "Where actions go".
+// yank this rule removes. See docs/mobile/mobile-sheets-vs-routes.md, "Where actions go".
 //
 // This is a source scan, not a render test: it fails when a file passes
 // `footer=` to ModalSheet / Sheet, imports TickActionBar, or imports

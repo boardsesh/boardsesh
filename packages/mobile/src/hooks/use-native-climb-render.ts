@@ -1492,7 +1492,7 @@ export function buildCacheKey(
   // For a wall it is `-sv<version>`, and it has to be here rather than folded
   // into `sizeId` — a wall's size id is its layout id forever, and encoding the
   // version there would leak into `compatible_size_ids`, the offline key,
-  // `board_sessions.board_path` and share URLs (`docs/spray-walls.md`). Drop this
+  // `board_sessions.board_path` and share URLs (`docs/product/spray-walls.md`). Drop this
   // token and a reset serves the previous generation's overlay over the new
   // photo, which is the whole failure this exists to prevent.
   //
@@ -2488,7 +2488,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // `frames`, not `frames.length`: the memo only captures the length, but the
     // effect below already depends on the whole string, so keying on the length
     // would save nothing and would put a `.length` dep in a hot hook — the one
-    // shape docs/react-native-performance.md tells reviewers to reject.
+    // shape docs/mobile/react-native-performance.md tells reviewers to reject.
     [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, prefetch, renderWidth, frames],
   );
 

@@ -519,7 +519,7 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
  * Run CPU-heavy render work under the SHARED render cap.
  *
  * `BOARD_RENDER_CONCURRENCY` is documented as the cap for "OG and board-image
- * misses" (`docs/og-climb.md`), and a spray-wall card is another miss competing
+ * misses" (`docs/web/og-climb.md`), and a spray-wall card is another miss competing
  * for the same cores — sharp decoding and compositing a phone photograph is the
  * same kind of work as the WASM overlay, so it belongs in the same queue rather
  * than in a second one that could double the real concurrency.

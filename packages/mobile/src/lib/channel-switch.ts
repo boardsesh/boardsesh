@@ -11,7 +11,7 @@ const CHANNEL_SWITCH_TIMEOUT_MS = 180_000;
 // is best-effort (there is no native read-back API).
 export const OTA_CHANNEL_OVERRIDE_KEY = 'dev_ota_channel_override';
 
-// The channels our OTA server publishes to (see docs/mobile-ota-updates.md).
+// The channels our OTA server publishes to (see docs/operations/mobile-ota-updates.md).
 export const PRESET_CHANNELS = ['production', 'preview-1', 'preview-2', 'preview-3', 'preview-4'] as const;
 
 // The channel rows to show: the presets, plus the active override if it isn't

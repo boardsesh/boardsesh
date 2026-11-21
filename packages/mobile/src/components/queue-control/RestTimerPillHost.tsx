@@ -3,7 +3,7 @@
 // WHY TWICE: an @expo/ui sheet presents off the view controller that owns its
 // subtree. A single root-level instance would present UNDER the `/play`
 // transparent modal — the sheet flashes open and vanishes (#3505 / #3294, and
-// `docs/mobile-sheets-vs-routes.md` rule 1). So the host is mounted at the app
+// `docs/mobile/mobile-sheets-vs-routes.md` rule 1). So the host is mounted at the app
 // root AND inside the play drawer, exactly the way BleControlSheetHost is, and
 // each mount owns its own `visible` state.
 

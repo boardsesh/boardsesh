@@ -3,7 +3,7 @@
  *
  * `dbzRead`'s pool sets `connect_timeout: 30` and `statement_timeout` is off by
  * default (PgBouncer rejects it as a startup parameter — see
- * `docs/db-connectivity.md`), so a stalled read would otherwise hold a shard for
+ * `docs/operations/db-connectivity.md`), so a stalled read would otherwise hold a shard for
  * the whole platform timeout and every caller behind the single-flight with it.
  *
  * Like `withDeadline` in `shard-registry.ts`, this STOPS WAITING rather than

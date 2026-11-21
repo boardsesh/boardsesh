@@ -45,7 +45,7 @@ Converts the raw simulator recordings into the assets the help pages ship:
   --dry-run         List the conversions without writing anything
   --help            Show this message
 
-Recording contract and size budget: docs/help-clips.md.`;
+Recording contract and size budget: docs/marketing/help-clips.md.`;
 
 /** Buffer cap for the piped poster frame: one full-resolution portrait PNG. */
 const POSTER_FRAME_MAX_BYTES = 64 * 1024 * 1024;

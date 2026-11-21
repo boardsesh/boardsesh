@@ -11,14 +11,14 @@ import { getAnalyticsEnvironment } from './posthog';
 
 /**
  * Erasing a climber's PostHog person (GDPR Art. 17), see
- * docs/analytics-consent.md ("Erasure").
+ * docs/analytics/analytics-consent.md ("Erasure").
  *
  * Both clients identify a signed-in climber with `users.id`, and `identify()`
  * merges the anonymous person the device used before sign-in into that person.
  * So deleting the person behind the account id removes the account's profile
  * (email, Apple Ads and install-referrer properties) and every distinct id
  * merged into it. Where PostHog refused that merge (a "split person", see
- * docs/growth-metrics.md, "Identity-split pitfall"), the pre-sign-in person is
+ * docs/analytics/growth-metrics.md, "Identity-split pitfall"), the pre-sign-in person is
  * found through the account's `$identify` events and deleted with it.
  *
  * Each pass runs in two steps, because the delete erases the `$identify`
@@ -149,7 +149,7 @@ type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
  *
  * A missed enqueue is logged at error level WITH the distinct id: once
  * `deleteAccount` commits, nothing else records whose person to erase. The log
- * line is what an operator replays from (docs/analytics-consent.md, "Erasure").
+ * line is what an operator replays from (docs/analytics/analytics-consent.md, "Erasure").
  */
 export async function enqueuePosthogPersonDeletion(
   transaction: Transaction,

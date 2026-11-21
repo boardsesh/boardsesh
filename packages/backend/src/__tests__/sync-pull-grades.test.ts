@@ -9,7 +9,7 @@ import { syncQueries } from '../graphql/resolvers/sync/queries';
  * syncClimbStats coverage (sync-pull-board-scope.test.ts): composite-cursor
  * paging on (computed_at, sync_seq), layout/size scoping via a correlated
  * board_climbs EXISTS (grades has no layout_id column), the auth requirement,
- * and an empty tail that echoes the supplied cursor. See docs/sync-table-manifest.md.
+ * and an empty tail that echoes the supplied cursor. See docs/data/sync-table-manifest.md.
  */
 
 const USER_ID = 'sync-grades-user';

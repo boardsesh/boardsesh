@@ -103,7 +103,7 @@ After mobile changes, run the validation sequence:
 3. `vp run check:mobile-bundle` (a headless Metro bundle check that runs on Linux)
 4. `vp run check:mobile-simulator` (macOS only; skips elsewhere)
 
-Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet. To change an existing screen, start with [docs/contributing-to-screens.md](./docs/contributing-to-screens.md).
+Read [docs/mobile/react-native-performance.md](docs/mobile/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile/mobile-sheets-vs-routes.md](docs/mobile/mobile-sheets-vs-routes.md) before adding a screen or sheet. To change an existing screen, start with [docs/mobile/contributing-to-screens.md](docs/mobile/contributing-to-screens.md).
 
 ### JS changes land on `main`, native changes on `release/next`
 
@@ -112,7 +112,7 @@ Read [docs/react-native-performance.md](./docs/react-native-performance.md) befo
 - A native change temporarily makes the current store fleet OTA-ineligible. Keep the native release focused, update the version and localized release notes on the train before the final native change lands, and get matching TestFlight and Play-internal builds out quickly.
 - Split mixed backend/native work when useful so the backward-compatible backend or shared-schema foundation can ship first. Keep server behavior compatible with the currently shipped mobile app until the replacement store release has been adopted.
 - Urgent fixes for an older accepted fingerprint use the existing OTA backport workflow and immutable release anchor.
-- Maintainers close the train by merging `release/next` into `main` as a merge commit (never a squash) and resetting it. Runbook: [docs/mobile-store-release.md](./docs/mobile-store-release.md).
+- Maintainers close the train by merging `release/next` into `main` as a merge commit (never a squash) and resetting it. Runbook: [docs/operations/mobile-store-release.md](docs/operations/mobile-store-release.md).
 
 ### Path A: small changes through xprem Branch Surfing
 
@@ -124,7 +124,7 @@ To use it:
 2. Tap xprem's blue branch marker.
 3. Select the `pr-<number>` branch for the pull request. The app downloads that branch and reloads into it.
 
-To know whether the `pr-<number>` branch will actually work for a pull request, read the OTA compatibility comment it posts. The branch only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its branch is skipped and the comment says so. For those, use Path B. The official picker is mounted from `app/_layout.tsx` with `@xprem/control-center`; it is available on compatible production builds without a tester role. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).
+To know whether the `pr-<number>` branch will actually work for a pull request, read the OTA compatibility comment it posts. The branch only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its branch is skipped and the comment says so. For those, use Path B. The official picker is mounted from `app/_layout.tsx` with `@xprem/control-center`; it is available on compatible production builds without a tester role. Background: [docs/operations/mobile-ota-updates.md](docs/operations/mobile-ota-updates.md).
 
 ### Path B: larger work through a dev build and the Metro switcher
 
@@ -134,7 +134,7 @@ Build a dev client:
 
 - iOS on a real device: `vp run mobile:dev-client-build` triggers an EAS build of the `development-device` client. Install it on the iPhone you test with.
 - iOS locally on a Mac: `vp run mobile:ios` builds and runs through the shared Xcode cache.
-- Android: there is no first-class `vp` wrapper for a local Android dev build yet. The emulator tooling installs a cached dev-client APK and runs it against Metro on an x86_64 emulator: run `vp run mobile:android-doctor` once, then `vp run mobile:android-shots`. See [docs/android-emulator-screenshots.md](./docs/android-emulator-screenshots.md).
+- Android: there is no first-class `vp` wrapper for a local Android dev build yet. The emulator tooling installs a cached dev-client APK and runs it against Metro on an x86_64 emulator: run `vp run mobile:android-doctor` once, then `vp run mobile:android-shots`. See [docs/qa/android-emulator-screenshots.md](docs/qa/android-emulator-screenshots.md).
 
 Then run the bundler with `vp run dev:mobile` and connect the dev client to it. In a dev build, open More, then Development, then Metro Servers (`src/components/DevServerSwitcherScreen.tsx`). It lists Metro bundlers it discovered on local ports and across your Tailscale peers (`src/lib/metro-discovery.ts`), each labeled with its branch, worktree, and commit. Pick one, or add a target by URL (`http://host:port`), and the app reloads its JavaScript from that bundler. The branch and QA notes for the selected bundler show in the dev metadata panel at the top of the More tab (`src/components/DevMetadataPanel.tsx`).
 
@@ -186,7 +186,7 @@ A few things are shared across worktrees so parallel sessions stay fast:
 
 The backend is `packages/backend/`: a GraphQL-WS server on port 8080, backed by Postgres and Redis (pub/sub for multi-instance party sessions). Backend and server logic belongs here, not in the Next.js app; we are moving REST and server code out of `packages/web` over time.
 
-Run it with `vp run dev:backend` (it starts the database first). Use the structured Winston logger, not `console.*` (a lint rule blocks `console` in backend source). See [docs/logging.md](./docs/logging.md).
+Run it with `vp run dev:backend` (it starts the database first). Use the structured Winston logger, not `console.*` (a lint rule blocks `console` in backend source). See [docs/backend/logging.md](docs/backend/logging.md).
 
 Tests run with `vp test run --project backend`. Vitest auto-starts Postgres and Redis from `packages/backend/docker-compose.test.yml`. Set `SKIP_TEST_INFRA=1` to skip the Docker spin-up, or `CI=1` when the caller already provides those services.
 
@@ -332,7 +332,7 @@ This is a limitation of Aurora's API, not a choice on our side.
 3. Fill in the Test plan and Risk sections too. Testers read the plan word for word in the app, so keep it to 1–5 numbered steps, one action then what to see, 12 words or fewer each ("1. CI green." is fine for an internal change), and score the risk `Risk: N/5 — why` (1 docs/CI/deps … 5 BLE/OTA/migrations). CI fails without them.
 4. CI runs lint, typecheck, tests, and the mobile checks. Keep iterating until it's green.
 
-Changing an existing screen? See [docs/contributing-to-screens.md](./docs/contributing-to-screens.md) for how to propose it and what to include.
+Changing an existing screen? See [docs/mobile/contributing-to-screens.md](docs/mobile/contributing-to-screens.md) for how to propose it and what to include.
 
 The project rules and architecture agents follow are in `CLAUDE.md`, which is useful reading for humans too.
 

@@ -12,7 +12,7 @@ import {
 const USAGE = `Usage: vp run help:publish-shots [-- [--input <dir>] [--dry-run]]
 
 Uploads the captured help-page PNGs to the public dev bucket, then rewrites
-docs/help-screenshots.json and docs/help-screenshots.md.
+docs/marketing/help-screenshots.json and docs/marketing/help-screenshots.md.
 
   --input <dir>   Capture directory, also accepted as a bare positional
                   (default: ${DEFAULT_HELP_SHOT_DIR})
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   // Prunes links whose source PNG has gone; written only now that every upload and
   // its public checksum re-check has succeeded.
   finish(captures);
-  console.log(`[help:publish-shots] indexed ${captures.length} capture(s) in docs/help-screenshots.md`);
+  console.log(`[help:publish-shots] indexed ${captures.length} capture(s) in docs/marketing/help-screenshots.md`);
 }
 
 main().catch((error: unknown) => {

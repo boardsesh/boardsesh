@@ -17,7 +17,7 @@
 //    signed-in viewer. `isOwned` is a different question ("I own the physical
 //    board") and is never used here.
 //
-// And one rule from the wall itself (`docs/spray-walls.md`, "Archive and reset"):
+// And one rule from the wall itself (`docs/product/spray-walls.md`, "Archive and reset"):
 // an archived wall offers none of these: it is read-only. A live wall's holds
 // stay editable, published climbs or not; the editor asks before it removes a
 // hold that published climbs use.

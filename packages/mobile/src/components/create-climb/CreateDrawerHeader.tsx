@@ -50,7 +50,7 @@ type CreateDrawerHeaderProps = {
  *
  * Uses SheetTopBar's measured chassis with an editable title. The trailing
  * actions share one glass toolbar, and its measured width balances the leading
- * side so the name stays centered (see docs/mobile-sheets-vs-routes.md).
+ * side so the name stays centered (see docs/mobile/mobile-sheets-vs-routes.md).
  */
 export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   name,

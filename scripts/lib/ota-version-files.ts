@@ -8,7 +8,7 @@
  * scripts/lib/eoas.ts instead, and eoas-version-parity.test.ts keeps it that way.
  */
 export const EOAS_SPEC_FILES = [
-  'docs/mobile-ota-updates.md',
+  'docs/operations/mobile-ota-updates.md',
   'scripts/mobile-ota-setup.ts',
   'scripts/mobile-ota-rollback.ts',
   'CLAUDE.md',

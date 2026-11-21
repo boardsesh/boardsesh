@@ -2,7 +2,7 @@
  * The board motion lab's contracts. A variant is one way to change climbs on
  * the player's GPU board; the lab renders it with the real carousel, lets the
  * sliders retune it live, and plays the same scripted swipes for every variant
- * so recordings compare like with like. See docs/board-motion-lab.md.
+ * so recordings compare like with like. See docs/rendering/board-motion-lab.md.
  */
 import type { ClimbOverlaySwapLookProbe } from '../../lib/board-render/gpu-native-capability';
 import type { BoardTransition } from '../play-drawer/board-transition';

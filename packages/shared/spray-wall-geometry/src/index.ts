@@ -6,7 +6,7 @@
  * Pure TypeScript, shared by the backend, the app and the web climb page. Its one
  * dependency is `@boardsesh/board-art-geometry/ring`, the outline-ring contract
  * the hold projection hands back. The hold matcher that compared two photos of one wall went with the
- * retired in-place reset. The frame is written up in `docs/spray-walls.md`,
+ * retired in-place reset. The frame is written up in `docs/product/spray-walls.md`,
  * "Canonical coordinates".
  */
 export {

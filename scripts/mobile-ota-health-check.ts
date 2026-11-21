@@ -42,7 +42,7 @@
  * evidence: an old binary that already runs the new OTA sends `ota-install:`
  * on every healthy launch, so the line can read 0 for weeks while such
  * binaries remain, and their next emergency launch still falls back to the
- * per-launch id. The date of the switch goes in docs/mobile-ota-updates.md
+ * per-launch id. The date of the switch goes in docs/operations/mobile-ota-updates.md
  * ("The health check").
  *
  * Exit code is non-zero ONLY when the gated rate exceeds the threshold AND the
@@ -63,7 +63,7 @@
  *   POSTHOG_PROJECT_ID        optional — defaults to 412845 (not a secret).
  *   POSTHOG_HOST              optional — defaults to https://us.posthog.com.
  *
- * See docs/mobile-ota-updates.md ("Health monitoring & rollback").
+ * See docs/operations/mobile-ota-updates.md ("Health monitoring & rollback").
  */
 
 import { writeFileSync } from 'node:fs';
@@ -321,7 +321,7 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
 
   if (!apiKey) {
     console.log('[ota-health] POSTHOG_PERSONAL_API_KEY not set — skipping health check (non-blocking, exit 0).');
-    console.log('[ota-health] Add the secret to activate the gate. See docs/mobile-ota-updates.md.');
+    console.log('[ota-health] Add the secret to activate the gate. See docs/operations/mobile-ota-updates.md.');
     return 0;
   }
 

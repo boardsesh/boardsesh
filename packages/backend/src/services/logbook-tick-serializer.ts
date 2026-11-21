@@ -10,7 +10,7 @@ import { eligiblePartnerSessionCondition, readPartnerSessions } from './public-a
 /**
  * Turns the columns the feed and the snapshot store (`LogbookFeedTick`) into
  * the public tick (`@boardsesh/public-api`'s `TickSchema`). The field sources
- * are the table in docs/integration-platform.md, "The tick".
+ * are the table in docs/integrations/integration-platform.md, "The tick".
  *
  * Climb metadata is read at delivery, in the page's own read transaction, so a
  * snapshot made before a spray wall went private never serves its old names:
@@ -203,7 +203,7 @@ export function utcTimestamp(stored: string): string {
  * outside it (an origin, a session id, a user id) can ever be sent.
  *
  * `climb.boardseshGrade` is always null. The Boardsesh grade lives on the
- * difficulty-id scale (docs/boardsesh-grade.md), and no conversion to the
+ * difficulty-id scale (docs/data/boardsesh-grade.md), and no conversion to the
  * decimal V scale the contract describes is documented, so none is invented.
  */
 export function serializeLogbookTick(tick: LogbookFeedTick, metadata: LogbookClimbMetadata): Tick {

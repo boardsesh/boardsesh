@@ -3,7 +3,7 @@ name: ClickHouse Image
 # The ClickHouse behind xprem Observe (Railway service boardsesh-ota-clickhouse):
 # stock clickhouse/clickhouse-server:25.3 plus docker/clickhouse/config.d and users.d,
 # which cap the server at 1.2 GB and each query at 500 MB and turn off the system
-# logs. See docs/railway.md,
+# logs. See docs/operations/railway.md,
 # "Rolling out a new ClickHouse image".
 #
 # Publishing is dispatch-only and deliberately not wired to pushes: the digest is
@@ -109,6 +109,6 @@ jobs:
             echo
             echo 'The tag `sha-${{ github.sha }}` is a lookup alias only; Railway'
             echo 'deploys by digest. Then follow "Rolling out a new ClickHouse image"'
-            echo 'in docs/railway.md: restart ClickHouse only, never the OTA server'
+            echo 'in docs/operations/railway.md: restart ClickHouse only, never the OTA server'
             echo 'at the same time.'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -20,7 +20,7 @@ export type BackendAnalyticsEvent =
   // zero is the signal to turn the check into a rejection (#3942).
   | 'Tick Climb Not In Catalog'
   // The daily first-party DAU/WAU/MAU counts from user_activity_days. Counts
-  // only, on one fixed system id. See docs/analytics-consent.md.
+  // only, on one fixed system id. See docs/analytics/analytics-consent.md.
   | 'Active Users Snapshot'
   // Versioned historical action-proxy counts; never substitute for request MAU.
   | 'Historical Active Users Snapshot'
@@ -33,7 +33,7 @@ export type BackendAnalyticsEvent =
   // One personless weekly roll-up of the spray-wall fleet's health (issue
   // #6062). The distinct id is a fixed synthetic actor; count WEEKS, and read
   // the properties, never the event volume. Contract:
-  // services/analytics/wall-health-events.ts and docs/growth-metrics.md.
+  // services/analytics/wall-health-events.ts and docs/analytics/growth-metrics.md.
   | 'Spray Wall Health Weekly'
   // The monthly community recap (community-monthly-stats batch family): one
   // summary and twenty ranked rows (top gyms, top climbers) per UTC month, on
@@ -41,7 +41,7 @@ export type BackendAnalyticsEvent =
   // deterministic uuids. Dedupe by uuid, keep the newest. `Community Monthly
   // Rank` carries the one personal value a backend event may carry, see
   // below. Contract: services/analytics/community-monthly-events.ts and
-  // docs/growth-metrics.md.
+  // docs/analytics/growth-metrics.md.
   | 'Community Monthly Summary'
   | 'Community Monthly Rank'
   // Fires from the Stripe webhook once a build-pack payment is confirmed —
@@ -74,7 +74,7 @@ export type BackendAnalyticsEvent =
 /**
  * Backend events are operational telemetry sent under legitimate interest, not
  * product analytics, so they must not identify anyone whatever that person's
- * consent (docs/analytics-consent.md). That is enforced here rather than at each
+ * consent (docs/analytics/analytics-consent.md). That is enforced here rather than at each
  * call site:
  *
  * - there is no way to pass a distinct id. Every event gets its own random one
@@ -98,7 +98,7 @@ export type BackendAnalyticsEvent =
  * every month in that window within 7 days. The Monday run also re-sends the
  * month that just left the window with every name removed, so a name lives
  * here for at most 13 months plus a week. Nothing else may name a person here
- * (docs/analytics-consent.md, "Named climbers in the community recap").
+ * (docs/analytics/analytics-consent.md, "Named climbers in the community recap").
  */
 interface CaptureBackendEventOptions {
   properties?: AnalyticsProperties;

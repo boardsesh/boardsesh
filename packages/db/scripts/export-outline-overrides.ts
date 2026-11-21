@@ -3,7 +3,7 @@
  * generator merges into its shards.
  *
  * The overrides table is where a human's correction to a traced hold silhouette
- * lives (see `docs/board-art-geometry.md`). A row in a database nobody can read
+ * lives (see `docs/rendering/board-art-geometry.md`). A row in a database nobody can read
  * at build time is not something `scripts/generate-board-art-geometry.ts` can
  * merge, so this script is the one-way bridge: DB rows out, one JSON file per
  * `(board, layout, size)` under

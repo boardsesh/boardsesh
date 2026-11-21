@@ -1,0 +1,245 @@
+# User media storage
+
+Where avatars, gym images, beta-video thumbnails, spray wall photos and user data exports live, and how the backend reaches them.
+
+## The buckets
+
+| Bucket | Handle | Provider | Access | Contents |
+| --- | --- | --- | --- | --- |
+| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
+| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant and, for a photo over 2048 px, its `<photoId>-full.jpg` copy), `spray-training/exports/<exportId>/…` (the vetted spray wall training set: copies of approved, owner-consented wall photos with their labels; the newest two exports are kept, see `docs/product/spray-walls.md`), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
+| `boardsesh-board-snapshots` | `snapshots` | Cloudflare R2 | Public through `snapshots.boardsesh.com` after the gated publisher/reader cutover | `board-snapshots/**` — see `docs/data/board-snapshots.md` |
+| `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through `assets.boardsesh.com`; `assets-r2.boardsesh.com` remains available for staging | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/operations/static-assets.md` |
+
+A public spray wall's photo is the one entry whose filename is random rather than
+derived, and deliberately so. The wall photo itself lives in the `private` bucket
+and is read through 15-minute presigned URLs; promoting a wall to public COPIES the
+current published photo into `media` under `sprayWallPublicPhotoKey` —
+`spray-walls/<wall uuid>/<128 random bits>.jpg` — because a logged-out climber and
+a crawler reading a gym page cannot hold a signature. The 128 random bits are what
+make the owner's later "make this private" real: a key anybody could rebuild from
+the wall uuid would keep resolving in every cache and screenshot after the object
+was deleted, and a re-promotion would hand back a URL people already had. Going
+private, and deleting the wall, null the key and delete the object; the copy has no
+resize variants. See `docs/product/spray-walls.md`.
+
+**On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. A custom domain or the independent `r2.dev` URL publishes the whole bucket. That is why exports live in a separate bucket, why the private bucket has no custom domain, and why the Cloudflare config disables `r2.dev` on every declared bucket.
+
+## Why R2 and not Tigris
+
+When user media storage was introduced, Boardsesh's other object storage used Tigris, making it the initial candidate for this data too. Two measurements said otherwise.
+
+**Tigris cannot sit behind Cloudflare.** Its docs are explicit: *"Your custom domain must point directly to Tigris without any intermediate proxy that terminates TLS, such as Cloudflare's proxy mode."* Tigris issues and renews the domain's TLS certificate off the live CNAME, so orange-clouding it breaks renewal within a couple of months. The Cloudflare Origin Rules workaround — overriding the Host header, which also sets SNI — is Enterprise-only. This constrained the former Tigris binding for `assets.boardsesh.com`; the migrated R2 custom domain is proxied by design.
+
+**Tigris's edge footprint is thin.** Measured from Sydney on 2026-09-01, twenty consecutive requests to `assets.boardsesh.com` were served from `sjc1` at ~540 ms each; dynamic data placement never moved the object closer. The same box reached a Cloudflare cache hit in 30 ms.
+
+R2 custom domains *are* the Cloudflare CDN — proxied by design, free egress, and Cache Rules apply through `infra/cloudflare/`. At 5.2 GB the bucket sits inside R2's free tier (10 GB storage, 1M Class A, 10M Class B).
+
+## Configuration
+
+Every bucket is configured through its own env prefix, resolved by `packages/backend/src/storage/bucket-config.ts`:
+
+```
+<PREFIX>_S3_BUCKET_NAME          selects prefixed mode for this bucket
+<PREFIX>_AWS_ENDPOINT_URL        (or _AWS_ENDPOINT_URL_S3)
+<PREFIX>_AWS_REGION              (or _AWS_DEFAULT_REGION; defaults to `auto`)
+<PREFIX>_AWS_ACCESS_KEY_ID
+<PREFIX>_AWS_SECRET_ACCESS_KEY
+<PREFIX>_S3_FORCE_PATH_STYLE     optional, defaults false (virtual-hosted)
+<PREFIX>_PUBLIC_BASE_URL         required before any public URL is built; must be https
+<PREFIX>_DISABLE_ACL             defaults true for an R2 endpoint and for `private`
+```
+
+Prefixes are `MEDIA`, `PRIVATE`, `SNAPSHOTS`.
+
+Two rules the code enforces rather than documents:
+
+- **A prefixed bucket never borrows the legacy `AWS_*` credentials.** Setting `MEDIA_S3_BUCKET_NAME` without `MEDIA_AWS_ACCESS_KEY_ID` throws at first use instead of pointing one bucket's name at another bucket's key, which would fail later as an opaque 403.
+- **A prefixed bucket must declare `<PREFIX>_PUBLIC_BASE_URL` before anything asks for a public URL.** No URL is derived from the S3 endpoint. R2's endpoint requires SigV4 and always 401s; Tigris only serves public objects on the bucket virtual-host domain. Deriving one produces a URL that looks right and fails for every anonymous reader — which is exactly how legacy `t3.storageapi.dev/...` values ended up persisted in `board_beta_links.thumbnail` and needed a data backfill to undo.
+
+R2 answers `x-amz-acl: public-read` with `501 NotImplemented`, and the default before named buckets was to send exactly that on every upload — so an R2 bucket that still sends ACLs fails **100%** of its uploads. Nothing is gained by making that hinge on an operator remembering a flag, so a `*.r2.cloudflarestorage.com` endpoint suppresses ACLs on its own. `<PREFIX>_DISABLE_ACL` remains an explicit override in both directions.
+
+`<PREFIX>_PUBLIC_BASE_URL` is checked at read time and must be `https` (plain HTTP is allowed only on `localhost`). Every value built from it is either persisted to a database column or served in an `<img src>`, so an `http://` typo would not fail loudly — it would quietly downgrade every avatar and thumbnail on the site.
+
+### Legacy fallback
+
+Any handle with no `<PREFIX>_S3_BUCKET_NAME` falls back to the bare `AWS_S3_BUCKET_NAME` / `AWS_ENDPOINT_URL` / `AWS_DEFAULT_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, reproducing the pre-named-buckets behaviour — path-style, `us-east-1` default, `public-read` ACL. That is what lets the code deploy before the variables exist, and what lets a rollback be "delete the new variables and restart".
+
+The one deliberate deviation is `private`, which defaults to **no** ACL in both modes. The old single-client module sent `public-read` on any upload that did not override it, which for this handle is the OCR test-data path; that was harmless only because the Railway bucket ignores ACLs, and would publish user-submitted screenshots against any store that honours them.
+
+The permanent board-snapshot worker uses the named `SNAPSHOTS_*` R2 configuration.
+`.github/workflows/export-board-snapshots.yml` is a gated R2 rehearsal with scoped
+`SNAPSHOTS_R2_*` inputs; it has no scheduled or Tigris publishing path and remains
+disabled while the homelab worker owns publication. Legacy `AWS_*` fields remain
+available for rollback, rather than being borrowed by a named bucket.
+
+Each configured bucket logs one line at first use:
+
+```
+storage[media] bucket=boardsesh-user-media source=prefixed endpoint=https://<acct>.r2.cloudflarestorage.com region=auto pathStyle=false acl=none public=https://media.boardsesh.com
+```
+
+Check it after any storage env change. `source=legacy` on `media` in production means the new variables did not take.
+
+## Serving
+
+Private climbing archives use short-lived browser-download links. Their weekly
+cache, formats, 14-day retention, and worker rollout are documented in
+[user-data-exports.md](../product/user-data-exports.md).
+
+Export week keys are accepted for 21 days from their Monday, while each file
+expires 14 days after its snapshot was created. A late-Sunday snapshot can still
+be valid in the third calendar week. An accepted week key can therefore return
+`files: []` when no snapshot exists or it has expired; it does not extend retention
+or permit an expired download.
+
+Objects are reached through the backend's `/static/*` routes, which stream them out of the `media` bucket:
+
+| Route | Handler |
+| --- | --- |
+| `/static/avatars/<file>` | `handleStaticAvatar` |
+| `/static/gym-logos/<file>` | `handleStaticGymLogo` |
+| `/static/gym-photos/<file>` | `handleStaticGymPhoto` |
+| `/static/beta-link-thumbnails/<platform>/<file>` | `handleStaticBetaThumbnail` |
+
+All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). When the media bucket has a public base URL, these routes redirect to its CDN, with sized requests addressing `<baseKey>@<size>.jpg`. The bucket cannot resize on demand.
+
+New Instagram and TikTok thumbnails write the shared `BETA_THUMBNAIL_REQUEST_SIZE` (280px) variant before the original and before returning a URL for the feed. Avatars and gym images write every allowed size on each upload; their `?v=` parameter prevents stale images after replacement. Without a public base URL, the backend proxies images and resizes on demand, caching variants only for immutable beta thumbnails.
+
+### Empty image objects
+
+New beta thumbnail downloads with an empty body are rejected before writing either
+an original or a resized variant. The avatar upload endpoint already rejects empty
+multipart files; mobile retains the native/browser `appendUploadImage` adapter.
+
+When the backend proxies media (no public media base URL), known-empty avatars,
+gym images and beta thumbnails return `404` with `Cache-Control: no-store`.
+Unknown object lengths continue streaming. Sized requests check the actual original
+bytes, and an empty cached beta variant is regenerated from a healthy original and
+written back to the same key. An absent or empty original returns the same uncached
+404 without a storage write. Ordinary proxy misses also remain uncached so a
+separately repaired object is immediately visible.
+
+These read guards do not run on configured CDN redirects and do not repair stored
+URLs or existing bucket objects. Legacy avatar remediation stays in #4228/#4724;
+thumbnail repair and its cache/refetch policy stay in #4743. No production census,
+object deletion or data repair is part of these guards.
+
+### Repairing missing beta thumbnail variants
+
+An original returning 200 while its `@280.jpg` URL returns 404 means the resized object is missing. After deploying the upload fix, run the existing backfill with the production media bucket environment:
+
+```bash
+vp exec tsx packages/backend/src/scripts/backfill-image-variants.ts --prefix beta-link-thumbnails/ --dry-run
+vp exec tsx packages/backend/src/scripts/backfill-image-variants.ts --prefix beta-link-thumbnails/
+```
+
+The backfill creates only missing variants and skips existing objects. It does not change beta links or refetch Instagram/TikTok posts. Re-run the dry run to confirm no variants remain, then check the affected public URLs; cached CDN 404s may need time to expire.
+
+### App multipart uploads
+
+Avatars, bug-report screenshots and PR QA screenshots use the mobile app's
+`appendUploadImage` adapter. Native release bundles pin React Native's fetch with
+`EXPO_PUBLIC_USE_RN_FETCH=1` because Expo fetch can crash Hermes (see
+`docs/operations/mobile-ota-updates.md`). RN multipart parts must carry a readable `uri`,
+plus `name` and `type`. A `bytes()`-only descriptor sends an empty file part.
+
+The native adapter also exposes a non-enumerable `bytes()` reader for Expo fetch
+in development. RN's serializer spreads only the URI and metadata into the
+native bridge; Expo reads the original entry's method. Both paths can replay the
+form after authentication refresh. Keep the fetch pin in place.
+
+The browser adapter reads picker/manipulator `blob:` or `data:` URLs without
+backend credentials and appends a real Blob with an explicit filename. Both
+adapters reject missing or empty images, and leave the multipart boundary to
+fetch. The backend rejects empty avatar and screenshot parts before storage.
+The backend also rejects an avatar whose bytes do not match the declared type,
+or that sharp cannot decode, and stores sharp's re-encode of it in the same
+format, never the uploaded bytes.
+
+### Spray wall photos
+
+The fourth media surface, and the only one that is private by design: a spray wall photo is a picture of the inside of somebody's home. `POST /api/spray-wall-photos` (`packages/backend/src/handlers/spray-wall-photos.ts`) is the one way one enters Boardsesh; `docs/product/spray-walls.md` has the wall model around it.
+
+| | |
+| --- | --- |
+| Bucket | `private`, never `media` — `media` is world-readable under guessable keys |
+| Key | `spray-walls/<wallUuid>/<photoId>.jpg`, plus the single largest allowed resize variant, plus `<photoId>-full.jpg` when the source was over 2048 px |
+| Cap | 25 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
+| Accepted | JPEG / PNG / WebP by magic bytes, re-encoded to JPEG at quality 88 |
+| Sizes | base ≤ 2048 px on its long side (defines the wall's frame); `-full` copy ≤ 5712 px and ≤ 24.5 MP for the zoomed hold editor (#5911; 4096 px before October 2026) |
+| Read | a 15-minute presigned GET, minted per read (`presignGetObject`); nothing persists a URL |
+| `Cache-Control` | `private, no-store` |
+
+Four things differ from every other surface here, and each one comes from that same fact:
+
+- **Every byte is re-encoded through sharp.** `rotate()` bakes in the EXIF orientation and the re-encode drops the metadata block wholesale — including the GPS tags a phone camera writes, which on a home wall is the owner's street address.
+- **No local-dev disk fallback.** The gym image handlers write to a directory and serve it from `/static/…` when S3 is off. Doing that here would put a home photo on an unauthenticated route, so with no private bucket configured this endpoint answers 501 in *every* environment — the `user-data-export` precedent for the same bucket.
+- **`private, no-store`, not the default year-long immutable.** A shared cache on the path would keep serving the photo long past the 15-minute presign that IS the access control, and past the owner flipping the wall private or deleting it. There is no version of "keep a copy for a while" that survives a privacy change.
+- **An upload is not a row.** The object sits unreferenced until `createSprayWallVersion(wallUuid, photoId)` adopts it, so an abandoned upload is a stray object for the SW-17 cleanup job, not something anyone can see.
+
+The one place a long lifetime may ever be set is the public-promotion path: SW-14 (#5447) copies a PUBLIC wall's photo to the `media` bucket under a random key, and that copy is world-readable by intent. Anything writing to `private` uses the rules above.
+
+### Feedback screenshots
+
+`POST /api/feedback-screenshots` takes one authenticated image per request and returns `{ key }`. There is no `/static/` route for these: the only readers are a GitHub comment and the admin dashboard, and both get a `media.boardsesh.com` URL directly. The key it mints — `feedback-screenshots/<uuid>.<ext>` — rides on a QA verdict (`submitQaVerdict`) or a bug report (`submitAppFeedback`), and the backend turns it back into a `media.boardsesh.com` URL when it writes the PR comment or the GitHub issue. See `docs/qa/crowdsourced-qa.md`.
+
+Three things about this path are deliberate:
+
+- **It stores to the public bucket**, not `private`. GitHub's comment API accepts no file uploads, so the body has to embed a URL an anonymous reader can fetch, and `private` has no custom domain. Anyone who attaches a screenshot is publishing it; the sheet says so before they pick.
+- **The declared mime type must match the file's magic bytes, and the stored object is a re-encode.** Without the check any signed-in account could host arbitrary bytes on `media.boardsesh.com` under our key, and without the re-encode a payload appended after a real JPEG would ride along (#6812). Avatars and gym images take the same re-encode (#5065, #6811), and every upload decode is capped at `UPLOAD_MAX_INPUT_PIXELS` (#6813).
+- **Every upload writes a new uuid key**, unlike avatars, which overwrite one key per user. That removes the stale-variant problem and makes the object immutable, but it also means an authenticated caller could otherwise fill the bucket, so the handler carries its own per-user rate limit. Nothing deletes these objects — add an R2 lifecycle rule on the prefix if retention ever matters.
+
+## Migration runbook
+
+`vp run storage:migrate-user-media` (`scripts/migrate-user-media.ts`) copies the retired Railway bucket into the two R2 buckets. It is re-runnable: the plan skips any destination object already present at the same byte size, so a second pass moves only the delta — plus the ~182 objects under a **mutable** prefix, which are always recopied.
+
+A prefix is mutable when its objects can be rewritten at the same key: `avatars/`, `gym-logos/`, `gym-photos/` (overwritten on re-upload) and `user-data-exports/` (rewritten within its own ISO week). A listing carries no checksum, so for those a matching size does not prove matching content — a rewrite that lands on the same byte length between the bulk copy and the sweep would otherwise be skipped as already-done and would pass verification too, leaving the stale copy live. Beta thumbnails and OCR submissions are keyed by media id and timestamp respectively, so they stay on the cheap skip-by-size path, which is where the 50,719-object saving actually is.
+
+Credentials come from three prefixes — `LEGACY_*` for the Railway bucket (path-style), plus `MEDIA_*` and `PRIVATE_*`.
+
+```bash
+export LEGACY_S3_BUCKET_NAME=structured-parcel-ei3jl8g
+export LEGACY_AWS_ENDPOINT_URL=https://t3.storageapi.dev
+export LEGACY_AWS_REGION=sjc
+export LEGACY_AWS_ACCESS_KEY_ID=… LEGACY_AWS_SECRET_ACCESS_KEY=…
+# plus MEDIA_* and PRIVATE_* as above
+
+vp run storage:migrate-user-media -- --dry-run    # print the plan, move nothing
+vp run storage:migrate-user-media                 # copy, then verify
+vp run storage:migrate-user-media -- --verify-only
+```
+
+Flags: `--prefix <p>` (repeatable), `--only media|private`, `--rate <n>` (default 50 request starts/sec per side), `--concurrency <n>` (default 8), `--reverse` (restore R2 → Railway), `--verify-only`.
+
+`LEGACY` defaults to path-style because the Railway bucket only speaks that; the R2 prefixes default to virtual-hosted. Both are overridable with `<PREFIX>_S3_FORCE_PATH_STYLE`.
+
+`--verify-only` is read-only in both directions and **exits non-zero** whenever it finds a missing object, a size mismatch, or an unroutable key — so the cutover step below genuinely gates rather than merely printing. Combined with `--reverse` it reports how many R2 objects are not yet back in the legacy bucket and fails the same way.
+
+Its one honest limit: because a listing carries no checksum, `--verify-only` on its own proves presence and size, not currency, for the mutable prefixes. A real run closes that by recopying them unconditionally, so the object it has just written is the current one.
+
+At the default rate the full 50,901-object copy takes about 17 minutes; request rate binds, not bandwidth. Every run ends with a `SUMMARY {...}` line to paste into the PR.
+
+**Unroutable keys abort the run before any byte moves.** `MIGRATION_ROUTES` in `scripts/lib/object-store-migration.ts` is exhaustive by design: a prefix nobody has classified might be private data, and the media bucket is world-readable. Add the route, then re-run.
+
+The source bucket is therefore listed in full on every run, including a `--prefix` or `--only` one. Scoping that listing would quietly downgrade the guarantee to "abort only if the surprise key happens to fall inside the slice you asked for". The filters still scope the copy plan; the extra cost is ~51 listing requests against a 17-minute copy.
+
+### Cutover order
+
+1. Deploy the code. Every handle still falls back to `AWS_*`, so nothing changes.
+2. `--dry-run`, review, then run for real, then `--verify-only`.
+3. Set `MEDIA_*` and `PRIVATE_*` on `boardsesh-backend`; restart; confirm the two `source=prefixed` log lines.
+4. Re-run the migration to sweep whatever was written between the copy and the flip.
+5. Smoke-test: upload an avatar, upload a gym logo and photo, load a climb page with a beta video, request and download a user data export.
+
+**Rollback:** delete `MEDIA_*` and `PRIVATE_*`, restart. Both handles return to the Railway bucket, which the migration never modifies. Objects written to R2 after the flip come back with `--reverse`. Do the flip in a low-traffic window so that window stays small.
+
+## Manual steps this repo does not automate
+
+`infra/railway/config.ts` manages the OTA services in this project and lists `boardsesh-backend` only as inventory — it asserts nothing about the service carrying these credentials — so these are dashboard actions:
+
+- Creating the two R2 buckets and their scoped API tokens (Cloudflare dashboard).
+- Attaching `media.boardsesh.com` to `boardsesh-user-media`, which is what makes it public.
+- Setting the `MEDIA_*` / `PRIVATE_*` variables on `boardsesh-backend` (Railway dashboard).
+
+Never attach a custom domain to `boardsesh-user-private`. It holds complete per-user tick histories.

@@ -24,7 +24,7 @@ import { SURFABILITY_CONFIRM_BUDGET_MINUTES, SURFABILITY_PROBE_BUDGET_MINUTES } 
  * sleeps. Revisit only after a week of green publishes on 3.1.2 — and note that
  * shortening it means editing three workflows, since
  * scripts/mobile-ota-publish-workflow.test.ts derives their `timeout-minutes`
- * floors from these values. Rationale: docs/mobile-ota-updates.md.
+ * floors from these values. Rationale: docs/operations/mobile-ota-updates.md.
  */
 export const SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS = [60_000, 180_000, 300_000, 600_000, 900_000] as const;
 export const SELF_HOSTED_PUBLISH_MAX_ATTEMPTS = SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.length + 1;

@@ -9,7 +9,7 @@
  * The capture orchestrator starts this itself for
  * `vp run mobile:screenshots -- --fixtures record|replay` and points the app at
  * it with EXPO_PUBLIC_BACKEND_URL / EXPO_PUBLIC_WS_URL; run it by hand to serve
- * a set to a dev build. See docs/mobile-screenshot-fixtures.md.
+ * a set to a dev build. See docs/qa/mobile-screenshot-fixtures.md.
  */
 
 import { dirname, isAbsolute, resolve } from 'node:path';

@@ -97,7 +97,7 @@ const ACTIVE_USERS_TIMEOUT_MS = 600_000;
  * response headers. Either way the job reports a failed run while the backend
  * keeps writing, up to its own 12-minute deadline; a run that passes that
  * writes no manifest, so the half-written export is ignored by the ML fetch
- * and deleted by the next run. docs/scheduler.md, "Spray wall training
+ * and deleted by the next run. docs/backend/scheduler.md, "Spray wall training
  * export", has the table and where the 100 seconds comes from.
  */
 const SPRAY_TRAINING_EXPORT_TIMEOUT_MS = 900_000;
@@ -130,7 +130,7 @@ export const JOBS: readonly JobDefinition[] = [
   // (`git show 98ef8e32b -- packages/web/vercel.json`), so by the time the crons
   // moved to the scheduler there was nothing left in `vercel.json` to carry
   // over. #4648 republishes the surface and brings the same slot back here.
-  // docs/sitemap.md's runbook used to call for a separate one-shot Railway cron
+  // docs/web/sitemap.md's runbook used to call for a separate one-shot Railway cron
   // service — this is that service, except it already exists, already has a
   // Sentry monitor, and already has a disable switch.
   //
@@ -196,10 +196,10 @@ export const JOBS: readonly JobDefinition[] = [
     run: purgeSprayWallPhotos,
   },
 
-  // First-party active users (#2644, docs/analytics-consent.md): yesterday's
+  // First-party active users (#2644, docs/analytics/analytics-consent.md): yesterday's
   // DAU and the trailing WAU/MAU from `user_activity_days`, sent to PostHog as
   // one aggregate event. Counted whatever climbers' analytics consent, which is
-  // why it is the canonical MAU in docs/growth-metrics.md.
+  // why it is the canonical MAU in docs/analytics/growth-metrics.md.
   //
   // Overlap-safe, which JobDefinition requires: the counts are reads, and the
   // event's uuid is derived from the day, so a second send collapses into the

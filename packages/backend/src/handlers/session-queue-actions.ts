@@ -37,7 +37,7 @@ export type NavigateOutcome =
  * must not end the keep-lighting window their phone is running (2.7). A legacy
  * token with no account names nobody, as before.
  *
- * F3 (docs/current-climb-outside-queue.md, section 3): Next goes to Up next[0]
+ * F3 (docs/product/current-climb-outside-queue.md, section 3): Next goes to Up next[0]
  * and Previous to History's last entry, read with `upNextStart` /
  * `historyLine`, so with nothing current Next lands on `queue[historyCount]`
  * rather than the oldest History climb. Inside `QUEUE_NOW_SLOT_PERCENT` it

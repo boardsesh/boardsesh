@@ -816,7 +816,7 @@ input ClimbQueueItemInput {
 }
 
 """
-How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+How setCurrentClimb puts a climb on the wall (docs/product/current-climb-outside-queue.md, section 1).
 NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
 STEP: Previous on the queue walk; the pointer steps back into History.
 Omitted by shipped clients, the native socket and the LED path.
@@ -1662,7 +1662,7 @@ type Tick {
   quality: Int
   "Effective quality for display: COALESCE(quality, the climber's own synced star rating for this climb+angle from board_climb_ratings). Both are 1-5 native (no rescaling). Still nullable when neither exists. Populated by read queries; mutation responses don't compute it."
   effectiveQuality: Int
-  "User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read `effectiveDifficulty` for the value to display (it falls back to the climb's consensus). See docs/ascents-and-attempts.md."
+  "User's personal grade override as a difficulty_id. Null means the user did not attach a personal grade — read `effectiveDifficulty` for the value to display (it falls back to the climb's consensus). See docs/data/ascents-and-attempts.md."
   difficulty: Int
   "Effective grade for display and aggregation: COALESCE(difficulty, ROUND(consensus_difficulty)). Still nullable when the climb has no consensus yet."
   effectiveDifficulty: Int
@@ -6477,7 +6477,7 @@ type IntegrationExportResult {
 # ============================================
 #
 # The sync pull resolvers return opaque snake_case JSON documents (the keys are
-# the mobile SQLite column names — see docs/sync-table-manifest.md). The cursor
+# the mobile SQLite column names — see docs/data/sync-table-manifest.md). The cursor
 # is a composite (updatedAt, syncSeq) so timestamp collisions during Aurora bulk
 # updates never skip rows. Timestamps are ISO-8601 String, never a DateTime
 # scalar (the codebase has none).
@@ -6538,7 +6538,7 @@ A single hard-deleted record the client should remove locally.
 type SyncDeletion {
   "Postgres table the row was deleted from."
   tableName: String!
-  "Natural-key encoding of the deleted row (see docs/sync-table-manifest.md)."
+  "Natural-key encoding of the deleted row (see docs/data/sync-table-manifest.md)."
   recordId: String!
   "When the row was deleted (ISO 8601)."
   deletedAt: String!
@@ -6807,7 +6807,7 @@ A wall photo, behind short-lived presigned URLs.
 
 Spray-wall photos live in the PRIVATE bucket, never the public `media` one:
 the photograph is of somebody's home, and `media` is world-readable under
-guessable keys (`docs/user-media-storage.md`). So there is no stable URL to
+guessable keys (`docs/operations/user-media-storage.md`). So there is no stable URL to
 store on a row — every read mints a fresh signature, and `expiresAt` is when
 the one in hand stops working.
 """
@@ -8571,7 +8571,7 @@ type Query {
   matching separately — see findExactDuplicateMatch.
   Admins get the live query. Everyone else reads the nightly precomputed
   index (top 25 per climb at 0.5 and above), and a frames-only lookup
-  (no climbUuid) is admin-only. See docs/similar-climbs.md.
+  (no climbUuid) is admin-only. See docs/data/similar-climbs.md.
   """
   similarClimbs(input: SimilarClimbsInput!): [SimilarClimb!]!
 
@@ -9608,7 +9608,7 @@ type Query {
   # Incremental pull with a composite (updatedAt, syncSeq) cursor. Each returns
   # snake_case JSON documents (keys = mobile local columns). User-data queries
   # are scoped to the authenticated user; board-data queries are scoped by
-  # boardType. See docs/sync-table-manifest.md.
+  # boardType. See docs/data/sync-table-manifest.md.
 
   "Pull the authenticated user's ticks changed since the cursor."
   syncTicks(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
@@ -12000,7 +12000,7 @@ input UpdateAppFeedbackStatusInput {
 
 """
 A tester's verdict on a pull-request preview (crowdsourced QA; see
-docs/crowdsourced-qa.md).
+docs/qa/crowdsourced-qa.md).
 """
 enum QaVerdictKind {
   approved
@@ -12524,7 +12524,7 @@ extend type Mutation {
   requestUserDataExport(boardType: String!): UserDataExportStatus!
 }
 
-"The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics-consent.md."
+"The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics/analytics-consent.md."
 type AnalyticsConsent {
   "granted or denied."
   analytics: String!
@@ -12562,7 +12562,7 @@ input SetAnalyticsConsentInput {
 
 """
 Whether this visitor is asked before analytics runs, from the Cloudflare
-country of the request. See docs/analytics-consent.md.
+country of the request. See docs/analytics/analytics-consent.md.
 """
 type ConsentRegion {
   "The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted."
@@ -12625,7 +12625,7 @@ extend type Mutation {
 """
 Where an app's OAuth redirect lands. WEB apps use https:// redirect URIs only;
 NATIVE apps may also use http://127.0.0.1 or http://[::1] and private-use
-schemes such as com.example.app:/oauth/boardsesh. See docs/partner-api.md.
+schemes such as com.example.app:/oauth/boardsesh. See docs/integrations/partner-api.md.
 """
 enum OAuthClientApplicationType {
   WEB
@@ -12847,7 +12847,7 @@ extend type Mutation {
   recordAppWorkoutPlan(workoutId: ID!, plan: JSON!): Boolean!
 }
 
-"An app the signed-in climber connected to their account (docs/integration-platform.md, Connected apps)."
+"An app the signed-in climber connected to their account (docs/integrations/integration-platform.md, Connected apps)."
 type ConnectedApp {
   "Pass to disconnectApp."
   connectionId: ID!

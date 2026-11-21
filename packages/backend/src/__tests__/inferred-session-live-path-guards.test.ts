@@ -17,7 +17,7 @@ import { getPostgresConstraintName, getPostgresErrorCode } from '../utils/postgr
  * hands the party-mode machinery a row with nothing to join. So these assertions carry
  * the weight that an error message otherwise would.
  *
- * See docs/inferred-sessions.md.
+ * See docs/data/inferred-sessions.md.
  */
 
 const ONE_HOUR_MS = 60 * 60 * 1000;

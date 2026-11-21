@@ -32,7 +32,7 @@ import { boundedErrorFields } from './job-logging';
 import { BackgroundJobError, type BackgroundJobContext, type BackgroundJobFamilyModule } from './types';
 
 /**
- * `spray-wall-art`: render one version's generated wall looks (`docs/spray-walls.md`,
+ * `spray-wall-art`: render one version's generated wall looks (`docs/product/spray-walls.md`,
  * "Generated wall looks").
  *
  * - **Wall only** (`-crop.jpg`): the version's photo warped into the canonical

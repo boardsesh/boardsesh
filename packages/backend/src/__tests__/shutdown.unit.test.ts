@@ -118,7 +118,7 @@ describe('pool configuration', () => {
   // would have left that grep green-but-meaningless. Assert on the options
   // postgres-js actually resolved instead. The backend sets neither env var in
   // production, so these defaults are its real pool: `max` 5 since the
-  // 2026-09 connection budget (docs/db-connectivity.md), idle 30 s.
+  // 2026-09 connection budget (docs/operations/db-connectivity.md), idle 30 s.
   //
   // These overlap `packages/db/src/client/__tests__/postgres.test.ts` on
   // purpose. `packages/db` is not a Vitest project and the only db test CI runs
@@ -181,7 +181,7 @@ describe('pool configuration', () => {
   it('ships with no statement_timeout startup parameter', async () => {
     // PgBouncer in transaction-pooling mode rejects unknown startup parameters,
     // so enabling this against a pooled URL fails every connection rather than
-    // bounding one query. See docs/db-connectivity.md.
+    // bounding one query. See docs/operations/db-connectivity.md.
     const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: undefined });
     expect(options.connection.statement_timeout).toBeUndefined();
   });

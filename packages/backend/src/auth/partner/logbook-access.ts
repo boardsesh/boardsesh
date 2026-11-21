@@ -29,7 +29,7 @@ import type { PartnerSecret } from './configuration';
  * Connections per backend process for snapshot work. One may build and one
  * serves starts and page reads. The build slots are cluster-wide
  * (`LOGBOOK_SNAPSHOT_BUILD_SLOTS`, 2), so two replicas still use both. The
- * budget is in docs/db-connectivity.md, "Dedicated pools".
+ * budget is in docs/operations/db-connectivity.md, "Dedicated pools".
  */
 export const LOGBOOK_SNAPSHOT_POOL_MAX = 2;
 

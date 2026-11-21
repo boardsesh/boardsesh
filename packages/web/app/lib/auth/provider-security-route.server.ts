@@ -48,7 +48,7 @@ import { SealedCookieTooLarge } from './sealed-cookie.server';
 /**
  * www's provider link, unlink and reauthentication routes under
  * `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B5e1), on the backend's
- * `provider-security-v1` commands. See docs/better-auth-browser-session.md.
+ * `provider-security-v1` commands. See docs/auth/better-auth-browser-session.md.
  *
  * - Mode unset, empty or `legacy`: every route answers 404.
  * - `better-auth` unavailable, or www's `CURRENT_STORE_PROVIDER_SECURITY_MODE`

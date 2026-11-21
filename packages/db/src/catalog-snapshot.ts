@@ -9,7 +9,7 @@
  * loader — the drift would otherwise only surface as an empty table in an image
  * nobody rebuilds for weeks.
  *
- * See docs/board-snapshots.md → "Catalogue artifact".
+ * See docs/data/board-snapshots.md → "Catalogue artifact".
  */
 
 /**

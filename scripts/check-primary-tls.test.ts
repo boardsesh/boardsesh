@@ -313,7 +313,7 @@ describe('pendingRolloutIsCurrent', () => {
 
 describe('the committed manifest', () => {
   it('rejects the snakeoil certificate the base image ships', () => {
-    const committed = JSON.parse(readFileSync('docs/pg-primary-tls.json', 'utf8')) as TlsManifest;
+    const committed = JSON.parse(readFileSync('docs/operations/pg-primary-tls.json', 'utf8')) as TlsManifest;
     expect(committed.host).toBe('pgdr.boardsesh.com');
     expect(Object.keys(committed.rejectedFingerprints)).toHaveLength(1);
     const [fingerprint, reason] = Object.entries(committed.rejectedFingerprints)[0]!;
@@ -324,7 +324,7 @@ describe('the committed manifest', () => {
   // Asserted as a state machine rather than as a snapshot of today, so completing
   // the rollout does not turn this file red and invite deleting it.
   it('is in exactly one of the two legal states', () => {
-    const committed = JSON.parse(readFileSync('docs/pg-primary-tls.json', 'utf8')) as TlsManifest;
+    const committed = JSON.parse(readFileSync('docs/operations/pg-primary-tls.json', 'utf8')) as TlsManifest;
     expect(validateManifest(committed)).toEqual([]);
 
     if (committed.pendingRollout !== null) {

@@ -299,7 +299,7 @@ const ARGUMENT_KINDS: Array<{ kind: SeedKind; when: (site: ArgumentSite) => bool
  * whole point of the epic's enumeration worry — `spray_wall_catalog_id_seq` hands
  * out 1, 2, 3, … — and requiring the PAIR left `sprayWallByLayout(layoutId: Int!)`
  * out of both the sweep and the allow-list, which is precisely the reader
- * `docs/spray-walls.md` splits its two visibility rules over. `serialNumbers` is
+ * `docs/product/spray-walls.md` splits its two visibility rules over. `serialNumbers` is
  * here for the same reason: it names a board without naming a board type.
  *
  * `grades(boardName:)` still is not swept — a board type alone scopes nothing to a
@@ -590,7 +590,7 @@ const NOT_APPLICABLE: Record<string, string> = {
 
   // --- similar climbs: never materialised for a wall --------------------------
   'Query.similarClimbs':
-    'a non-admin (the sweep owner included) reads board_climb_neighbors, which the nightly job never computes for spray layouts, so a wall answers []; only an admin reaches the live query, and it keeps the sprayLayoutIsReadable gate (docs/similar-climbs.md)',
+    'a non-admin (the sweep owner included) reads board_climb_neighbors, which the nightly job never computes for spray layouts, so a wall answers []; only an admin reaches the live query, and it keeps the sprayLayoutIsReadable gate (docs/data/similar-climbs.md)',
   // --- hold heatmap: admin-only live aggregate --------------------------------
   'Query.holdHeatmap':
     'an admin-only live aggregate behind requireAdmin, so the sweep owner (not an admin) is refused; a non-admin gets the heatmap from the wall mirrored on the phone, and an admin still passes the sprayLayoutIsReadableWithCapability gate',
@@ -1323,7 +1323,7 @@ describe('the spray-wall visibility sweep', () => {
     // nothing else in this file notices: a field that stops being swept simply
     // vanishes from `rows`, and only the allow-listed ones leave a stale row
     // behind. `sprayWallByLayout` is the canonical case — a bare layout id, the
-    // enumerable key `docs/spray-walls.md` splits its two visibility rules over —
+    // enumerable key `docs/product/spray-walls.md` splits its two visibility rules over —
     // and the others stand for the argument shapes beside it.
     const swept = rows.map((row) => row.key);
     for (const key of [

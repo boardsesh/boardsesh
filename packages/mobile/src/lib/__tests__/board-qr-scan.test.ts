@@ -75,7 +75,7 @@ describe('trackBoardQrScan', () => {
     });
   });
 
-  // docs/spray-walls.md, "Telemetry": nothing that identifies the wall. A
+  // docs/product/spray-walls.md, "Telemetry": nothing that identifies the wall. A
   // slug or a uuid handed over as the type arrives as null, and the payload
   // has no other field to carry one.
   it.each(['garage-spray', '0f8fad5b-d9cb-469f-a165-70867728950e', 'Marco’s Garage'])(

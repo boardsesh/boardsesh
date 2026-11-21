@@ -33,7 +33,7 @@ def test_no_labelled_holds_is_none_not_a_number() -> None:
 
 
 def test_it_reproduces_the_node_detectors_48_2_percent() -> None:
-    """docs/spray-recognition-rollout.md quotes 48.2% for onnxruntime-node on `2026-09-18-seg`.
+    """docs/product/spray-recognition-rollout.md quotes 48.2% for onnxruntime-node on `2026-09-18-seg`.
 
     That run reported P 0.6909 / R 0.6214 on the 964-hold spray eval split:
     599 true positives, 365 misses and 268 false positives.

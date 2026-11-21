@@ -35,7 +35,7 @@ import { userBoards } from './boards';
  * `total_attempts` differently. One table means none of that can come back.
  *
  * Every live-session path must therefore scope itself to `origin = 'explicit'` — the
- * auto-end sweep, the join guard, the leader checks. See `docs/inferred-sessions.md`.
+ * auto-end sweep, the join guard, the leader checks. See `docs/data/inferred-sessions.md`.
  */
 export const sessionOriginEnum = pgEnum('session_origin', ['explicit', 'inferred']);
 

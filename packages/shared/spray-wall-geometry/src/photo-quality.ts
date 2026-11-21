@@ -17,7 +17,7 @@
  * The thresholds come from a spike over real climbers' wall photos (October
  * 2026): a near front-on photo scored 1.25 and flattened cleanly; a strongly
  * keystoned one scored 2.87 and its far side came out visibly smeared. 1.7 and
- * 2.2 are where the results stopped looking good and stopped being usable. `docs/spray-walls.md` ("Generated wall looks") keeps the table.
+ * 2.2 are where the results stopped looking good and stopped being usable. `docs/product/spray-walls.md` ("Generated wall looks") keeps the table.
  */
 import {
   IDENTITY_HOMOGRAPHY,

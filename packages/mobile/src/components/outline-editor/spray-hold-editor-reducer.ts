@@ -365,7 +365,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       delete holds[action.id];
       // A hold this session drew is dropped outright; one the wall already had is
       // recorded so `removeSprayWallHolds` can stamp it off the draft. That split
-      // is the server's own (docs/spray-walls.md, "Adding and removing holds").
+      // is the server's own (docs/product/spray-walls.md, "Adding and removing holds").
       return commit(state, {
         ...snapshotOf(state),
         holds,

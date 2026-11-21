@@ -21,7 +21,7 @@ func loadThumbnail(climbUuid: String) -> UIImage? {
 // MARK: - Velvet Send Design Tokens
 
 /// Velvet Send palette + spacing/radius tokens, translated from the mobile
-/// design system (docs/ai-design-guidelines.md). Colours resolve per
+/// design system (docs/design/ai-design-guidelines.md). Colours resolve per
 /// @Environment(\.colorScheme) through `Palette.resolve(_:)`. Keep the lock
 /// screen and Dynamic Island chrome on these tokens — no ad-hoc Color literals.
 ///

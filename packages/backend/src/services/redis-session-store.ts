@@ -47,7 +47,7 @@ export type RedisSessionData = {
    */
   stateHashOrdered: string;
   /**
-   * The History / Up next line (F3, docs/current-climb-outside-queue.md,
+   * The History / Up next line (F3, docs/product/current-climb-outside-queue.md,
    * section 2). Meaningful only while nothing is current; null when the hash
    * predates F3. Trust it only when `historyCountVersion === version`: a write
    * by a pre-F3 instance during a rolling deploy bumps `version` and leaves

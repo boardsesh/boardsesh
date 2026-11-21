@@ -15,7 +15,7 @@
  *
  * Callers: the CLI `packages/db/scripts/refresh-hold-features.ts` (flags
  * --dry-run, --board=<name>, --no-shadow) and the batch worker's
- * `refresh-hold-features` family (docs/background-workers.md). Reads go
+ * `refresh-hold-features` family (docs/backend/background-workers.md). Reads go
  * through `db` one at a time (the worker's pool holds two connections, one of
  * them for its heartbeat); each layout's writes commit in one `transact` batch.
  *

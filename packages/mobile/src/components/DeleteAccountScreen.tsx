@@ -134,7 +134,7 @@ export function DeleteAccountScreen() {
   // Grouped like the native settings pages: each control in a card, the prose as
   // the footer under it. There is no Cancel: back is cancel. The destructive
   // button stays in the body, below the typed confirmation it depends on (the
-  // documented exception in docs/mobile-sheets-vs-routes.md).
+  // documented exception in docs/mobile/mobile-sheets-vs-routes.md).
   return (
     <KeyboardAvoidingView
       keyboardVerticalOffset={headerHeight}

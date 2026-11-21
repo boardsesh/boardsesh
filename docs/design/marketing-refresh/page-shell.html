@@ -7,7 +7,7 @@
     <style>
       /* ============================================================
          Velvet Send (web, dark) — the ONLY scheme www renders.
-         Tokens lifted from docs/ai-design-guidelines.md +
+         Tokens lifted from docs/design/ai-design-guidelines.md +
          packages/web/app/theme/theme-config.ts (darkTokens).
          ============================================================ */
       :root {
@@ -1922,14 +1922,14 @@
           <span class="num">10</span>
           <div class="body">
             <strong>Anchor offsets move onto <code>PageSection</code>, and a live link depends on it.</strong>
-            <code>/help#climb-counts</code> is linked from <code>docs/kilter-sync.md</code>, and it only lands correctly
-            because <code>help.module.css .section</code> carries
+            <code>/help#climb-counts</code> is linked from <code>docs/data/kilter-sync.md</code>, and it only lands
+            correctly because <code>help.module.css .section</code> carries
             <code>scroll-margin-top: calc(var(--global-header-height) + 16px)</code>. When that module is deleted, the
             rule must already be on <code>PageSection</code> — any section with an <code>id</code> gets it, not just
             help's.
             <span class="bind"
               >Binds: help-content.tsx <code>CLIMB_COUNTS_SECTION_ID</code>; help.module.css <code>.section</code>;
-              docs/kilter-sync.md.</span
+              docs/data/kilter-sync.md.</span
             >
           </div>
         </div>

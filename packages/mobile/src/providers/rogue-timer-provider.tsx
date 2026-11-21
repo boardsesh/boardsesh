@@ -24,7 +24,7 @@
 // diffs the rest timer's snapshot and restarts the stopwatch when a new rest
 // starts (a climb saved on this phone, an auto-advance, a fixed-window beat, a
 // Reset), resets it when the rest timer is switched off, and restarts it on a
-// fresh tick while the rest timer is off. See docs/rest-timer.md.
+// fresh tick while the rest timer is off. See docs/product/rest-timer.md.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RogueTimerCommand, type RogueTimerCommandCode } from '@boardsesh/ble-protocol/rogue-timer';

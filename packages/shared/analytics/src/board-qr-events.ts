@@ -23,7 +23,7 @@
 //    mediums a board code prints (`BOARD_QR_MEDIUMS`); `poster` is the gym
 //    poster's, which never points at a board, so `parseBoardQrLanding` refuses it.
 //
-// Which code fires which scan event: docs/gym-funnel-analytics.md ("Which code
+// Which code fires which scan event: docs/analytics/gym-funnel-analytics.md ("Which code
 // fires which event").
 
 import { boardTypeProperty, type BoardTypeProperty } from './board-type-property';

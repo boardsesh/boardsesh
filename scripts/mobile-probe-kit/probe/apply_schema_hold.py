@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Keep a probe build from migrating the phone's offline database. See docs/mobile-visible-performance.md.
+"""Keep a probe build from migrating the phone's offline database. See docs/mobile/mobile-visible-performance.md.
 
     apply_schema_hold.py <repo-root>
 
 Installing a build that knows a newer on-device migration migrates the tester's
 real database, and their store build then refuses the file until that migration
-ships (the downgrade rule in docs/offline-sync-plan.md). Check first:
+ships (the downgrade rule in docs/data/offline-sync.md). Check first:
 `schema_check.py` prints the phone's version next to the checkout's.
 
 This holds the build at version 12. It leaves out migration 13, which only adds

@@ -12,7 +12,7 @@
 // drawing a placeholder forever.
 //
 // The photo URLs are the reason nothing is persisted. `SprayWallPhoto.url` is a
-// signature over an object in the PRIVATE bucket (`docs/spray-walls.md`, "Photos
+// signature over an object in the PRIVATE bucket (`docs/product/spray-walls.md`, "Photos
 // and privacy"), so the query refetches rather than storing it, and the local
 // copy on disk is keyed on `(layoutId, version)` instead — see
 // `spray-photo-cache.ts`.

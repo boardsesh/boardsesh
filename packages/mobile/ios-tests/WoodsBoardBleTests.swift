@@ -4,7 +4,7 @@ import XCTest
 // Parity suite for the Swift Woods encoder + the BoardBleManager Woods
 // dispatch (#3314). The byte-exact fixtures mirror
 // packages/shared/ble-protocol/src/__tests__/woods.test.ts — keep the two in
-// lockstep, and docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md is the wire authority.
+// lockstep, and docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md is the wire authority.
 /// File-scoped so BOTH suites in this file can reach it: the encoder tests below
 /// build expected packets from the table, and `WoodsBoardBleManagerTests`'
 /// mirroring cases assert against the reflected one. It was a `private` method of

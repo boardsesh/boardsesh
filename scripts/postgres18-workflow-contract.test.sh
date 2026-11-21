@@ -62,7 +62,7 @@ fi
 
 # Every branch-controlled validation job that builds or boots ARM64 installs
 # QEMU. Only the portable-image job does now — the seeded image is amd64-only
-# until the publisher gains a native ARM64 runner (docs/postgres-18-migration.md).
+# until the publisher gains a native ARM64 runner (docs/operations/postgres-18-migration.md).
 # Published-digest smoke and publisher trust are enforced by the separate
 # prerequisite workflow after it lands on protected main.
 [[ "$(grep -cE 'docker/setup-qemu-action@[0-9a-f]{40}' "$VALIDATION_WORKFLOW")" == '1' ]] ||

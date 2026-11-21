@@ -463,7 +463,7 @@ describe('PARTNER_OAUTH_SECRETS', () => {
 
 describe('the logbook routes read the primary', () => {
   // A lagging replica would answer a valid cursor with 410, and a stale
-  // connection row would serve a Disconnected app (docs/integration-platform.md).
+  // connection row would serve a Disconnected app (docs/integrations/integration-platform.md).
   it.each([
     '../logbook-access.ts',
     '../../../handlers/public-api/logbook.ts',

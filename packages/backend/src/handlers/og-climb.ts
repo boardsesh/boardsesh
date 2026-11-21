@@ -99,7 +99,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     set_ids: rawSetIds,
     frames: url.searchParams.get('frames') ?? '',
     format: url.searchParams.get('format') ?? undefined,
-    // Aura render options (issue #2202) — see docs/og-climb.md. `render_mode`
+    // Aura render options (issue #2202) — see docs/web/og-climb.md. `render_mode`
     // defaults to aura, the app's own drawing; the rest default closed.
     render_mode: url.searchParams.get('render_mode') ?? undefined,
     glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
@@ -318,7 +318,7 @@ async function serveSprayOgCard(res: ServerResponse, params: Parameters<typeof r
   if (result.kind === 'not-found') {
     // Never cached: a wall its owner makes public tomorrow must not stay a 404
     // at the edge, and a cached 404 on a shareable URL is the exact failure
-    // docs/og-climb.md warns about.
+    // docs/web/og-climb.md warns about.
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;

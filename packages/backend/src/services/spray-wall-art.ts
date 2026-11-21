@@ -22,7 +22,7 @@ import {
 import { logger } from '../utils/logger';
 
 /**
- * The producer half of the generated wall looks (`docs/spray-walls.md`,
+ * The producer half of the generated wall looks (`docs/product/spray-walls.md`,
  * "Generated wall looks"): deciding whether a version gets art, queueing the
  * `spray-wall-art` job, and presigning what it made.
  */

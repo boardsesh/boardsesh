@@ -31,7 +31,7 @@ export function resetQaGateSessionForTests(): void {
 }
 
 /**
- * Launch-time gate for crowdsourced QA (see `docs/crowdsourced-qa-mobile.md`).
+ * Launch-time gate for crowdsourced QA (see `docs/qa/crowdsourced-qa-mobile.md`).
  * Renders nothing.
  *
  * On a store / TestFlight build that can surf OTA branches, an opted-in tester

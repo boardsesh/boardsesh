@@ -11,7 +11,7 @@ import { getPostgresErrorCode } from '../utils/postgres-errors';
  * platform it came from. This runs whatever the climber's analytics consent:
  * it is our own service statistic (legitimate interest), it never leaves our
  * database except as aggregate counts, and it is how MAU survives opt-outs.
- * See docs/analytics-consent.md.
+ * See docs/analytics/analytics-consent.md.
  *
  * Cost: one `INSERT ... ON CONFLICT DO NOTHING` per climber per UTC day per
  * platform per backend replica. The in-process set below swallows every other

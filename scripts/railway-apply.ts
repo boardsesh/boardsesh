@@ -62,7 +62,7 @@
  * The disk assertion needs no extra config: it reads the volume through Railway's
  * API, which CI can reach even though ClickHouse's private DSN host it cannot.
  *
- * See docs/railway.md and infra/railway/config.ts.
+ * See docs/operations/railway.md and infra/railway/config.ts.
  */
 
 import { pathToFileURL } from 'node:url';
@@ -1115,7 +1115,7 @@ export interface MainDependencies {
  * domain answers at its root. So this catches a host that is not there, and
  * nothing subtler. A host attached to the wrong bucket, or one that neither
  * caches nor compresses, still passes; the curl gate in
- * docs/mobile-ota-updates.md is what covers those.
+ * docs/operations/mobile-ota-updates.md is what covers those.
  */
 async function defaultProbePreflightUrl(url: string): Promise<string | null> {
   try {

@@ -1,7 +1,7 @@
 /**
  * Keeps `playlist_grade_summaries` (the grade band on playlist cards and
  * Discover's grade filter) in step with grades that drift under it
- * (docs/playlist-grade-summaries.md).
+ * (docs/data/playlist-grade-summaries.md).
  *
  * - **Daily, on the job queue.** `PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE` is
  *   created by the migrator with the `exclusive` policy, so one run is queued

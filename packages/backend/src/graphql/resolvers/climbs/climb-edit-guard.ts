@@ -15,7 +15,7 @@ import { isSprayBoard } from './spray-authoring';
  *
  * This file used to also write climb revision history (#5955). That was retired:
  * edits are made in place and `board_climb_revisions` is no longer written
- * (docs/spray-walls.md, "Editing a climb").
+ * (docs/product/spray-walls.md, "Editing a climb").
  */
 
 type DrizzleExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;

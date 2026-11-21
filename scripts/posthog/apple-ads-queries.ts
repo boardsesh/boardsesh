@@ -1,4 +1,4 @@
-/** Apple report rows and consented people are separate populations. See docs/growth-metrics.md. */
+/** Apple report rows and consented people are separate populations. See docs/analytics/growth-metrics.md. */
 import { SHARED_EVENTS } from '../../packages/shared/analytics/src/events';
 
 export const APPLE_ADS_DASHBOARD_ID = 2192729;

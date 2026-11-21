@@ -77,7 +77,7 @@ type QueueContextValue = {
   isSessionWallLit: boolean;
   /**
    * When the current climb last became a different climb (#4979,
-   * docs/current-climb-outside-queue.md section 6). Read by the Bluetooth
+   * docs/product/current-climb-outside-queue.md section 6). Read by the Bluetooth
    * auto-sender's stale-climb hold. Stamped for the current queue-item uuid; it
    * changes identity only when that uuid changes or a FullSync reseeds it.
    */

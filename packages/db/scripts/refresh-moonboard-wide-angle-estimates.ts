@@ -2,7 +2,7 @@
  * MoonBoard wide-angle grade estimate refresh. The job body is
  * `src/jobs/refresh-moonboard-wide-angle-estimates.ts`; the batch worker's
  * `refresh-moonboard-wide-angle-estimates` family runs the same body
- * (docs/background-workers.md).
+ * (docs/backend/background-workers.md).
  *
  * Run locally: `vp run db:refresh-moonboard-wide-angle-estimates -- --dry-run`
  * Flags: --dry-run (full plan including row shapes, write nothing),

@@ -1,13 +1,13 @@
 /**
  * Spray-wall health: one weekly roll-up of how the fleet's walls are doing.
  *
- * The rollout of spray walls (`docs/spray-walls.md`) answers "is it working?"
+ * The rollout of spray walls (`docs/product/spray-walls.md`) answers "is it working?"
  * only from event funnels that start with somebody uploading a photo. Nothing
  * there says how the walls that DID land are living: are owners climbing on
  * them, is anyone else, are holds coming off the wall, are resets settling,
  * are reports piling up? This job measures that stock directly from the app
  * tables and returns one flat bag of integers — the payload of the backend's
- * `Spray Wall Health Weekly` event (`docs/growth-metrics.md`).
+ * `Spray Wall Health Weekly` event (`docs/analytics/growth-metrics.md`).
  *
  * Why an event per week and not a stats table: the reporting target is the
  * PostHog growth dashboard, and a Postgres table cannot feed it. One event a
@@ -18,7 +18,7 @@
  * Nothing identifies a wall or a person: every field is a count. The owner's
  * identity lives only inside the aggregates (`wallsSecondClimber` counts walls
  * someone OTHER than the owner climbed this week), matching the wall telemetry
- * rule in `docs/spray-walls.md` ("Telemetry").
+ * rule in `docs/product/spray-walls.md` ("Telemetry").
  *
  * Read-only: no `transact` is taken because nothing is written. The weekly
  * window is the Monday-anchored week that just ENDED, in UTC; pass `weekStart`

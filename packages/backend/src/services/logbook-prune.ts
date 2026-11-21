@@ -9,7 +9,7 @@ import {
 import { positionIsBefore, type LogbookFeedPosition } from './logbook-feed';
 
 /**
- * The logbook feed's retention job (docs/integration-platform.md, "Retention,
+ * The logbook feed's retention job (docs/integrations/integration-platform.md, "Retention,
  * cursor validity and moving the database"): deletes `logbook_changes` rows
  * older than 90 days and advances the retention watermark over them.
  *

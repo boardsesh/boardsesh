@@ -18,7 +18,7 @@ const HEALTH_RESPONSE_HEADERS = {
  * `wait-on http-get://localhost:8080/health` (.github/workflows/e2e-tests.yml
  * lines 336 and 584), what the dev orchestrator waits on
  * (scripts/dev-orchestrator.ts:424), and what the branch-deploy compose
- * healthcheck hits (docs/branch-deploys.md:442). Failing it during a Postgres
+ * healthcheck hits (docs/operations/branch-deploys.md:442). Failing it during a Postgres
  * blip would strand all three, and party sessions over WebSocket keep working
  * without the database. Alert on /health/db instead.
  */

@@ -194,7 +194,7 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
 const COMPLETED_STATUSES = "('flash', 'send')";
 
 /**
- * The row-level half of the auth-scoping contract (docs/offline-reads.md).
+ * The row-level half of the auth-scoping contract (docs/data/offline-reads.md).
  *
  * Sign-out wipes the user tables, but best-effort: a locked database or a crash
  * mid-sign-out leaves the previous account's ticks behind, and these reads used

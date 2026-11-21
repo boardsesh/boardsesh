@@ -5,7 +5,7 @@ import { loadBoardMotionLabScreen } from '../../src/components/board-motion-lab/
 import { useDeveloperSettingsAccess } from '../../src/components/settings/developer/use-developer-settings-access';
 import { useTheme } from '../../src/providers/theme-provider';
 
-// Tester-only tool (docs/board-motion-lab.md). Hiding the Developer row is not
+// Tester-only tool (docs/rendering/board-motion-lab.md). Hiding the Developer row is not
 // a guard, since a deep link reaches this route directly, so it checks the same
 // access as the Developer page's dev tools. The screen module is only required
 // (`loadBoardMotionLabScreen`) once access is confirmed, so it stays out of the

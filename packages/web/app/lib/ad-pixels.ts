@@ -2,7 +2,7 @@
 //
 // Pure decision logic only. The DOM side (script injection, page views, the
 // Lead conversion, cookie cleanup) lives in `ad-pixels-browser.ts` and asks
-// this module before it does anything. See docs/analytics-consent.md#ad-pixels.
+// this module before it does anything. See docs/analytics/analytics-consent.md#ad-pixels.
 //
 // The rule, on top of the analytics consent the website already enforces:
 //

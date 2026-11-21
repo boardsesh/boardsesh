@@ -1,5 +1,5 @@
 /**
- * Crowdsourced QA's GitHub half (docs/crowdsourced-qa.md).
+ * Crowdsourced QA's GitHub half (docs/qa/crowdsourced-qa.md).
  *
  * Reads: the open pull requests, so a tester who loaded a `pr-<n>` OTA preview
  * can see what the PR is and what to test. Writes: the tester's verdict, as a

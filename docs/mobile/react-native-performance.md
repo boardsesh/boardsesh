@@ -1,0 +1,700 @@
+# React Native Performance Playbook: Mobile App
+
+Best practices and enforcement for `packages/mobile`. This is the mobile counterpart to
+the web-era React performance audit (removed with the web climbing UI in W-16). That audit catalogued _specific fixes_; this doc
+states the _rules_ — each with the rule, why it matters on a phone, and a real example already
+living in this codebase to copy from.
+
+The expensive surfaces on mobile are the same three as web — the climb list, the play-view
+drawer, and the queue — but the cost model is different. There is no browser to skip paints for
+us: every unnecessary re-render runs on the JS thread, competes with gesture/animation worklets on
+the UI thread, and shows up as dropped frames on a mid-range Android device, not as a profiler
+squiggle. The bar is "60fps while scrolling the climbs list and swiping the play drawer on a
+large-logbook account," and the evidence for clearing it is a before/after recording.
+
+---
+
+## 1. Provider context values: memoize, and split state from actions
+
+**Rule:** Any context that many screens subscribe to must provide a `useMemo`'d value object.
+When the provider holds both frequently-replaced state (a logbook array, reducer state, a roster)
+**and** the stable callbacks consumers depend on, split them into separate contexts so a callback-only
+consumer never re-renders when the data churns.
+
+**Why:** An inline `value={{ ... }}` allocates a new object every render, so every `useContext`
+consumer re-renders every time the provider does — regardless of `React.memo`. On mobile that
+cascade lands on the JS thread mid-scroll. Bundling a volatile array with the callbacks is the
+same trap one level up: a logbook merge while the user scrolls re-renders every component that only
+wanted `saveTick`.
+
+**Lint config:** `react/jsx-no-constructed-context-values` is configured as `error` for
+`packages/mobile/**` and `packages/shared/**` (in both `.oxlintrc.json` and the `vite.config.ts`
+`lint` block), with a repo-wide `warn`. It flags the inline `<Ctx.Provider value={{ ... }}>`
+anti-pattern. Caveat: vite-plus's bundled linter does not currently _execute_ this off-by-default
+`react/*` rule — it shows in `vp lint --rules` but never fires — so today the rule enforces at
+editor / raw-oxlint time and as a forward-looking guard, not in `vp lint` / CI. Until vite-plus
+runs it, this one is a **review-checklist item** (see CLAUDE.md → Mobile performance checklist), not
+an automated gate.
+
+**Examples in this repo:**
+
+- `packages/shared/board-react/src/board-provider.tsx` — splits into **three** contexts (#3152):
+  `BoardActionsContext` (the **stable** half — identity, auth/init flags, `getLogbook`/`saveTick`/
+  `saveClimb`/`updateClimb`; its `useMemo` deps deliberately exclude the logbook, so a merge never
+  changes its identity), `BoardLogbookContext` (the **volatile** `logbook` + `logbookByClimbAngle`
+  index, read only by the per-row `useAscentStatus` and the tick forms), and the full back-compat
+  `BoardContext` (`{ ...actionsValue, ...logbookValue }`) that web still consumes via
+  `useBoardProvider()`. A callback-only consumer (`climbs/index.tsx` reading just `getLogbook`,
+  the create-climb screen reading the mutations) subscribes via `useBoardActions()` and skips the
+  per-merge re-render entirely. The mutation callbacks stay stable via the
+  ref-updated-in-`useEffect` + empty-dep-`useCallback` pattern, so a React Query `mutateAsync`
+  reference change does not churn the context either.
+- `packages/mobile/src/providers/queue-provider.tsx` — splits into **two** contexts:
+  `QueueContext` (full state + actions) and `QueueSessionControlContext` (just the wall-control
+  state + callbacks). A component that only drives take/release control subscribes to the smaller
+  context and skips the per-queue-update re-render. Both values are `useMemo`'d with explicit deps.
+- `packages/mobile/src/providers/toast-provider.tsx` / `auth-provider.tsx` — the value is a
+  `useMemo` over the single stable `showToast` / the auth callbacks. (Both previously used an inline
+  `value={{ … }}`; this is exactly what the lint rule now blocks.)
+
+**Anti-pattern:**
+
+```tsx
+// BAD: new object every render → every useToast() consumer re-renders.
+<ToastContext.Provider value={{ showToast }}>
+
+// GOOD: stable reference; only changes when showToast does (it never does).
+const value = useMemo<ToastContextValue>(() => ({ showToast }), [showToast]);
+<ToastContext.Provider value={value}>
+```
+
+---
+
+## 2. Virtualize anything user-growable; cap any `loadMore` drain
+
+**Rule:** A list backed by data the user can grow (search results, the logbook, a playlist) must be
+virtualized — `FlashList` for full screens, `BottomSheetFlatList` inside a Gorhom sheet. Never
+`.map()` a growable array inside a `ScrollView`. Any "fetch the next page until `hasMore` is false"
+loop must be capped or have a written justification.
+
+**Why:** `.map()` in a `ScrollView` mounts every row up front. The climbs search pages 30 at a time
+with infinite scroll, so the list grows unbounded; mounting 200+ `ClimbListRow`s (each with its own
+swipe gesture + thumbnail render) blows the frame budget on mount and holds the memory the whole
+session. Virtualization keeps the mounted set to the viewport plus an overscan window. An
+unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catalog.
+
+**Examples in this repo:**
+
+- `packages/mobile/app/(tabs)/climbs/index.tsx` — `FlashList`, paged by `shouldFetchNextPage`
+  (`packages/mobile/src/lib/climb-list-pagination.ts`). It fetches exactly one page per call and
+  the `isLoadingMoreRef` latch prevents a re-entrant drain; there is no "loop until hasMore"
+  anywhere. Two things it does that a bare `onEndReached` does not, both measured on an
+  iPhone 13 Pro against production (a page of 30 takes about 2.2 s to come back):
+  - **It looks ahead by rows, not by half a screen.** The next page is requested once 20 loaded
+    climbs remain below the last row on screen (40 once a second page is loaded). A climber still
+    at the top of the first page never triggers it, so opening the tab is one search on a phone
+    and on an iPad alike. With the old `onEndReachedThreshold={0.5}` every scroll past 30 climbs
+    parked on skeleton rows.
+  - **A dropped end-reached is remembered.** FlashList reports the end once per content size. If
+    that call lands while a refetch is running (a sync invalidating the search is enough) it used
+    to be discarded, and the list sat at its last row until the climber scrolled away and back —
+    80 s in one capture. The request is now kept and honoured when the list is free; an effect
+    re-asks on every fetch-state change. The last visible row comes from `onViewableItemsChanged`
+    through a store (`createVisibleRowsStore`), never screen state: one state update per row
+    scrolled would re-render the whole screen. Its `viewabilityConfig` sets `minimumViewTime: 0`;
+    FlashList's default of 250 ms reports nothing during a flick.
+  - **The re-ask is fenced, or it is a drain.** An ask the climber did not cause (`settle`) is
+    refused after a failed page and after a page that added no climbs. A scroll may retry a
+    failure, after a 3 s cooldown, so a rate-limited search is not retried once per row.
+- `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
+  `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
+- `packages/mobile/src/components/play-drawer/LogbookSection.tsx` sits inside the play drawer's plain
+  `ScrollView`, so it renders a fixed amount: 6 sessions and 4 logs per session, each log one or
+  two lines of text. Everything past that is in `logbook/LogbookFullSheet.tsx`, a
+  `BottomSheetFlatList`. The caps are constants with no inline expand; raising one puts a growable
+  `.map()` back in the drawer.
+- `packages/mobile/src/components/play-drawer/ClimberLogsSection.tsx` sits inside the play drawer's
+  plain `ScrollView`, so it shows at most four climber rows (`INLINE_CLIMBER_LOG_CAP`), however many
+  the server returned. Climbers with nothing to add (no note, no grade that disagrees) get no row:
+  they share two text lines in the card's footer, capped at three faces and two names
+  (`planClimberLogsCard`, `describeBareNames`), so that part is bounded too. The rest are behind
+  "See all logs" in `ClimberLogsSheet.tsx`, a `BottomSheetFlatList`, where those climbers sit two to
+  a line and each line is one list item.
+
+**Anti-pattern:** `{items.map((item) => <Row key={item.id} item={item} />)}` inside a
+`<ScrollView>` for anything that isn't a fixed, small, known-length list. A fixed footer of 6
+skeleton rows is fine; a search result set is not.
+
+---
+
+## 3. `React.memo` rows; `renderItem` deps with no `.length`, no inline closures
+
+**Rule:** The row component a list renders is wrapped in `React.memo`. The `renderItem` passed to
+the list is a `useCallback` whose dependency array contains **no array `.length`** and **no inline
+closures created in render**. Hoist `keyExtractor` to module scope.
+
+**Why:** FlashList recycles row instances; an unmemoized row re-renders on every recycle even when
+its climb is unchanged. A `renderItem` that depends on `climbs.length` (or any value that changes
+every page) gets a new identity every fetch, which defeats FlashList's recycling and re-renders the
+whole visible window. Inline closures (`onPress={() => …}`) passed to a memoized row break its
+`React.memo` by handing it a fresh prop each render.
+
+**Good template — `packages/mobile/app/(tabs)/climbs/index.tsx`:**
+
+- `keyExtractor` is a module-scope function (line 893), not an inline `(item) => item.uuid`.
+- `renderClimbItem` is a `useCallback` (lines 699–727) whose deps are the board identity tuple plus
+  the **stable** `handleClimbPress` / `handleOpenClimbActions` / `handleAddToQueue` callbacks and the
+  scalar `activeClimbUuid`. No `visibleClimbs.length`, no inline arrows.
+- The handlers it closes over (`handleClimbPress`, `handleAddToQueue`) are themselves `useCallback`s.
+- `ClimbListRow` (`packages/mobile/src/components/ClimbListRow.tsx`) is `React.memo`'d and keeps its
+  own gesture callbacks stable by reading the latest props through refs
+  (`onPressRef.current = onPress`), so a parent re-render never recomposes its RNGH gestures.
+
+**Anti-pattern:**
+
+```tsx
+// BAD: deps include .length → new renderItem every page → recycling defeated.
+const renderItem = useCallback(({ item }) => <Row item={item} onTap={() => open(item)} />, [climbs.length]);
+```
+
+---
+
+## 4. Per-row hooks do O(1) lookups, never O(N) scans
+
+**Rule:** A hook called once per visible row must not scan an accumulating array. Read from a
+pre-built index (a `Map`) keyed by the row's identity.
+
+**Why:** A per-row `logbook.filter(...)` turns the climbs list into O(rows × logbook): every time a
+scrolled page merges fresh ticks into a new `logbook` array, every visible row re-scans the whole
+logbook. On a large-logbook account that is the single biggest scroll stall, and it gets worse as
+the user logs more climbs — exactly the users we least want to punish.
+
+**Example in this repo:**
+
+- `packages/shared/board-react/src/board-provider.tsx` builds `logbookByClimbAngle` — a
+  `Map<\`${climb_uuid}:${angle}\`, LogbookEntry[]>` — once per logbook change (lines 71–83).
+- `packages/mobile/src/hooks/use-ascent-status.ts` reads it: `board.logbookByClimbAngle.get(key)`
+  is one map lookup over that row's handful of ticks, then a `useMemo` over `[entries, isMirror]`.
+  The whole climbs list dropped from O(rows × logbook) to O(rows) per merge.
+
+**Anti-pattern:** `const ticks = logbook.filter((e) => e.climb_uuid === climbUuid && e.angle === angle)`
+inside a hook that every row calls.
+
+---
+
+## 5. Worklet gestures: gate `runOnJS(setState)`, mirror read JS values into shared values
+
+**Rule:** A gesture worklet must not `runOnJS(setState)` on every frame — gate the cross-thread hop
+on a value _change_ (a boolean edge, a threshold crossing). JS values the worklet reads (a flag like
+`enabled`, a measured width) must be **mirrored into shared values** via a `useEffect`, not listed in
+the gesture `useMemo`'s dependency array.
+
+**Why:** `onUpdate`/`onTouchesMove` fire ~60×/sec on the UI thread. A `runOnJS` per frame floods
+the JS thread with hops and serializes a UI-thread gesture behind JS-thread work — the exact stutter
+virtualization is meant to avoid. And rebuilding the gesture (`Gesture.Pan()`) mid-interaction
+because a dep flipped leaves React Native Gesture Handler stuck on iOS — the swipe just dies. The
+fix is to keep the gesture object referentially stable and feed it live values through shared values
+it can read on the UI thread.
+
+**Example in this repo — `packages/mobile/src/components/play-drawer/use-carousel-gesture.ts`:**
+
+- `enabled`, the board width and the screen width are mirrored into shared values via `useEffect`.
+  The gesture `useMemo` reads `enabledSV.value` and the widths inside the worklet and does **not**
+  list the props in its deps, so a flag that flips or a layout that changes never recomposes the
+  gesture. Reduce Motion needs no flag of its own: under the system setting Reanimated ends a spring
+  the moment it is assigned, so a release changes the climb with no slide. Reanimated reads the
+  setting once at launch, so a change made while the app runs shows here after a restart.
+- The haptic `runOnJS(triggerHaptic)()` fires once per drag — gated behind
+  `!hasTriggeredHaptic.value`, a shared-value latch flipped on the threshold crossing — not on every
+  `onUpdate` frame.
+- A swipe to a mounted neighbour shows its board and takes the next touch on the UI thread. Which
+  climb is in the middle is a shared value (`anchorPage` in `use-swipe-pager.ts`) that the release
+  animation moves on the frame it lands; the JS thread is told once, when the incoming board is
+  within 10% of the middle, and changes the climb while the settle finishes.
+  The previous design asked the JS thread which neighbour to draw when a swipe changed sides, and
+  waited for it to swap the climb before taking another touch: on an iPhone 13 Pro every swipe
+  forward began with the wrong holds on the incoming board, and swipes were ignored for 160 to 230 ms
+  after each release. The page after the next exists only once the JS thread has rendered the
+  step before. A qualifying second release during that wait is retained on the UI thread until
+  its neighbour is mounted and its exact background and holds overlay have displayed (#6351).
+  A React commit, image `onLoad`, or first-paint timeout alone does not make a page ready to enter.
+  The wait is bounded: `RELEASE_ART_DEADLINE_MS` (700 ms) after the page is mounted, the release
+  goes onto it even if it is still painting, and a page whose art `failed` is stepped onto at once.
+  The clock starts when the page is mounted, not at finger-up, so a page React mounts late still
+  gets longer than the 600 ms photo reveal; a swipe repeated toward the same climb keeps the first
+  one's clock. It is a delayed no-op `withTiming` on a shared value with `ReduceMotion.Never`,
+  cancelled the moment the release goes or is dropped: no JS timer and no JS-thread work, and the
+  UI thread only ticks it while a release waits. Unbounded, an overlay that never answered held
+  every swipe for good. While the neighbour paints, the drag follows the finger at 30% (the end
+  card's resistance) instead of staying at 0, and when a page paints mid-drag the board closes the
+  gap at up to twice the finger's speed instead of jumping. Only those anomalous steps hop to the JS
+  thread (`noteStepArtWait`), and they ride the step's own `Queue Navigation` as `heldArtState` /
+  `heldMs`; an ordinary step costs nothing extra.
+  The board/carousel host stays mounted when a section header changes and the drawer measures
+  itself again (#6383), including the setter-notes layouts reported in #6373. See rule 9.
+- `packages/mobile/src/components/ClimbListRow.tsx` follows the same pattern: the swipe-commit
+  haptic is gated by `useAnimatedReaction` on the `>= COMMIT_THRESHOLD` boolean edge (lines 39–43),
+  so `runOnJS(hapticLight)` fires once per arm, not per frame.
+
+**Anti-pattern:**
+
+```ts
+// BAD: a JS hop every frame, and `enabled` in deps rebuilds the gesture mid-swipe.
+const gesture = useMemo(
+  () =>
+    Gesture.Pan().onUpdate((e) => {
+      'worklet';
+      runOnJS(setOffset)(e.translationX); // floods JS thread
+    }),
+  [enabled],
+); // rebuild mid-gesture → RNGH stuck on iOS
+```
+
+**Composing a pan overlay with per-element taps —
+`packages/mobile/src/components/create-climb/use-zoomed-hold-tap-gesture.ts`:**
+When a zoomed board mounts an `absoluteFill` pan overlay above tappable elements, the overlay
+swallows their touches (RNGH only offers a touch to the hit view + ancestors), so the overlay's
+gesture must resolve taps itself. Two non-obvious choices there:
+
+- **`Gesture.Race(pan, longPress, tap)`, not `Exclusive`.** `Exclusive` puts later gestures in a
+  `waitFor` on the pan, and a `Pan` only _fails_ on touch-up — so a `LongPress` could never activate
+  mid-hold (the role sheet would never open while held). With `Race`, the first gesture to activate
+  wins; gate the pan behind an `activeOffset` (8px here) so a stationary touch goes to tap/long-press
+  and only a real drag activates the pan. `activeOffsetX`/`activeOffsetY` are **OR'd** (crossing
+  either axis activates), so single-axis drags pan fine.
+- **Built once, reads everything live.** The composed gesture's `useMemo` deps are only stable
+  shared values + the pan; render-scoped values (the hit-target list, the JS callbacks) are read
+  through a `useRef` written on every render (`callbacksRef`), so it never recomposes mid-session.
+  The screen→board inverse transform runs in the worklet off `scaleSV`/`translateXSV`/`translateYSV`
+  (mirrored container size for the center origin), then `runOnJS` resolves the nearest element once.
+
+---
+
+## 6. Warm board-art surfaces use the rasterized native-PNG path, not remote SVG
+
+**Rule:** Any board-art surface that appears while scrolling, swiping, or inside always-mounted
+chrome (the list thumbnail, the play-drawer board, the accessory bar) renders through the native-PNG
+path: `useNativeClimbRender` + `LayeredClimbImage` with `cachePolicy="memory"` on bundled
+assets. Do not render mobile board backgrounds through `react-native-svg` `<Image href>` or any
+remote URL.
+
+**Why:** The removed SVG background renderer parsed the frames string, built an SVG hold overlay,
+and painted N `<Circle>`s in `react-native-svg` on every render, on top of a remote image fetch for
+board art that should be on disk. The native path renders the holds once into a cached PNG (deduped
+by cache key, warmed from disk on launch — see the generation-tracked, 1500-entry JS LRU and
+`warmupRenderedOverlaysOnce` in `use-native-climb-render.ts`) and stacks
+it over bundled background images via `expo-image` with `cachePolicy="memory"`, so a scrolled-
+past climb is an instant cache hit with zero network and zero per-row SVG work. It also satisfies
+the no-network offline rule — missing layers render as visible gray blocks rather than silently
+fetching. `cachePolicy="memory"`, not `"memory-disk"`: the overlay and the background are already
+files we own on disk (the native renderer's own PNG cache, and the bundled asset), so asking
+expo-image to also keep a disk copy made SDWebImage query its own disk cache and write a second
+copy of a file already on disk, on its own serial `ioQueue` — pure duplicate I/O (issue #5187).
+
+The JS LRU is only a fast-path hint; native cache pruning or the OS can remove a PNG after warm-up.
+If expo-image reports an overlay load failure, the hook validates that exact managed file URI. A
+missing file invalidates only the matching `{ uri, generation }`, then all mounted consumers share
+one bounded native regeneration. The replacement receives a new generation even though native
+writes it to the same URI, and `LayeredClimbImage` uses that generation in the React `key` so
+Android performs a real reload. An existing-file decode failure gets one bounded same-URI remount
+and is terminal on the second failure; each consumer holds a single retry budget shared across both
+failure classes (a present-file remount consumes the same budget as a missing-file regeneration),
+replenished only after the exact replacement's `onLoad`.
+The Android session notification has no expo-image callback, so it opts into synchronous file
+preflight, withholds a missing path, and keys native notification refreshes on the same generation.
+
+**The holds arrive with the board, never after it.** A native thumbnail render takes about 12 ms
+on an iPhone 13 Pro, yet every list row used to show its bare board first and fade the holds in
+150 ms later — on a cache hit as much as on a miss. Four pieces keep that from coming back:
+
+- **An index hit is adopted during render.** A recycled FlashList row keeps its hook instance and
+  gets a new climb. `useNativeClimbRender` looks the new key up while rendering and sets state
+  there, so the row's first commit for that climb already carries the overlay. Left to the effect,
+  the row committed once with no overlay and again with it.
+- **No cross-fade onto a visible board.** The hook returns `overlayImmediate` (the overlay was
+  rendered when the surface took the climb); `BoardImageNative` and `ClimbListThumbnail` suppress
+  the transition when that overlay is also in memory. expo-image applies its `transition` to
+  memory-cache hits too.
+- **Rows are warmed before they mount.** `ClimbListThumbnailPrewarmWindow`
+  (`ClimbListScrollAhead.tsx`) mounts a `ClimbListThumbnailPrewarm` for the 24 loaded climbs below
+  the viewport and the 12 above it: a `prefetch`-rank render, then `warmBoardArtMemory` decodes
+  the PNG into expo-image's memory cache. The rows above are already rendered; they are there
+  for the decode, so a fast scroll back up a long list does not fall back to placeholders. In a 465-row cold scroll 93% of rows found their overlay already
+  rendered. `warmBoardArtMemory` is the only caller of `Image.prefetch` the board-art network
+  guard allows, and it drops anything that is not a `file://` URI. It is iOS-only: expo-image's
+  Android prefetch loads a `GlideUrl`, which never matches the key a view uses for a local file.
+- **Rendered is not the same as decoded.** A view paints an image on the frame it mounts only
+  when the bitmap is already in memory. On a hard flick a row can mount before the warm-up's
+  decode has finished, and the view then shows the bare board for the frames its own decode
+  takes. The module keeps a record of the files known to be in memory (a finished warm-up, or a
+  view's `onLoad`; cleared when the image cache is swept), and a surface shows its board straight
+  away only when `overlayImmediate && isBoardArtInMemory(overlayUri)`. Otherwise it waits behind
+  the placeholder below. On Android the record only ever holds files a view has loaded.
+- **Anything not ready holds the photo back.** When the overlay is not rendered, or not decoded
+  yet, `LayeredClimbImage`'s `revealWithOverlay` keeps the stack at opacity 0 behind
+  a skeleton-coloured block until the overlay's `onLoad`, with a 600 ms fallback so a failed
+  render still shows a board. Callers leave it unset when the hook reports `overlayUnavailable`
+  (no renderer, no matching holds, no render config, a full disk): nothing is coming to wait for. `'each-climb'` for list rows; `'first-paint'` for the play board,
+  where a swipe to the next climb must keep the photo up.
+
+The play board gets the same treatment from the tap: `requestPlayBoardPrewarm`
+(`lib/board-render/play-board-prewarm.ts`) starts the play-size render in `handleClimbPress`, using
+the overlay width the carousel measured on its last open, so the render runs during the ~110 ms
+the drawer needs to mount and measure. `PlayBoardPrewarmHost` ranks it `full` — somebody is about
+to look at it — not `prefetch`. On a board the player draws on the stationary GPU carousel
+(`usePlayerGpuBoard`) the prewarm passes `cachedOnlyOnceGpuWarm`: while that drawing has not yet
+presented a GPU frame in this process it renders as above, and once it has it renders nothing, because
+the GPU draws the first holds; it still decodes the photo and any PNG already cached. The carousel's
+upcoming-climb prefetch is off on that board; see `docs/rendering/gpu-climb-overlay-experiment.md`.
+
+**Cache key shape (`buildCacheKey` in `use-native-climb-render.ts`):**
+`v<RENDERER_VERSION>_<style>_w<width>_<board>_<layout>_<size>_<setIds>_<framesHash>`. Each token is
+a collision-prevention contract — two climbs that share every token reuse one PNG, so a token must
+exist for every input that changes the rendered pixels:
+
+- `style`: `s` (stroke-only, the full-size play view) vs `f` (filled dots, the list/accessory
+  thumbnail). Same climb, different hold styling.
+- `width`: `full` (native board width, ~1080px — the play view) vs `<n>` (e.g. `400` — the
+  list/accessory, which pass `renderWidth` so the Rust renderer rasterizes a small PNG instead of
+  downscaling a large one on the main thread). Without this token the small and full overlays would
+  collide and one would be reused at the wrong resolution. The token tracks the _requested_ width,
+  not the clamped output, so it's stable per `(board, renderWidth)`.
+
+The list thumbnail and the accessory thumbnail deliberately use the **same** `style` + `width`
+tokens (`_f_` + `_w400_`) so a climb seen in the list is an instant cache hit in the accessory bar.
+The matching `buildBoardKey` (which guards background-path state across FlashList row recycling)
+carries a `full`/`thumb` variant token for the same reason — a recycled row must re-resolve, not
+surface the previous size's bundled background paths.
+
+**Examples in this repo:**
+
+- Warm path (use this): `packages/mobile/src/hooks/use-native-climb-render.ts` +
+  `packages/mobile/src/components/LayeredClimbImage.tsx` (`cachePolicy="memory"`), wired up in
+  `packages/mobile/src/components/ClimbListThumbnail.tsx` and `BoardImageNative.tsx`.
+- Static diagrams should still avoid network board art. Use bundled background paths through
+  `background-image-cache.ts` or draw diagram-only shapes; the old `react-native-svg` background
+  renderer was removed because it accepted remote `<SvgImage href>` board-art URLs.
+
+---
+
+## 7. Board-art image memory: cap the cache, render at display size, recycle, release on background
+
+**Rule:** Board-art surfaces are the app's largest memory consumer (decoded bitmaps live in native
+heap + as GPU textures, not the JS heap) — on iOS a 4 GB device can hit the OS watchdog OOM kill in
+the foreground while browsing (#3479), and an iPad can SIGSEGV inside image decode after days of
+uptime (#3803). Tab residency adds to this: `NativeTabs` renders every tab at launch and keeps it
+mounted. Home and Discover defer their feeds until first focus; Record mounts its session
+  screen on first focus on iOS (Android retains its eager mount). The focus latch keeps
+  queries enabled after blur so live updates keep arriving. NativeTabs now carries the
+  Liquid Glass variant on every iPhone, iOS 18 included (the 3–4 GB
+iPhone XS/XR class), so the cache cap below is what bounds board art there. Only the Material
+variant on iPhone still uses JS `Tabs` with lazy tabs and `freezeOnBlur`. Four contracts keep them
+in check:
+
+- **Cap the decoded-bitmap cache.** SDWebImage defaults `maxMemoryCost` to `0` — _unlimited_ — and
+  expo-image does not override it, so an app that never calls `Image.configureCache()` runs an
+  unbounded image memory cache and only ever reclaims at a background or `memoryWarning` seam.
+  `useImageCacheMemoryManagement` sets `maxMemoryCost` (`IMAGE_MEMORY_CACHE_MAX_BYTES`, 256 MB) once
+  at startup. iOS-only: expo-image declares `configureCache` `@platform ios` and defines no Android
+  counterpart, so calling it off iOS fails at the bridge rather than quietly no-opping.
+  Prefer this over any periodic wipe — NSCache enforces it continuously, and because eviction drops
+  only the _cache's_ reference (a bitmap a mounted view displays is retained by
+  `UIImageView.image`/`CALayer.contents`), it can never blank on-screen art or force a reload.
+- **Size the overlay to the display, keep the photo full-res.** The play-drawer board and the wall
+  kiosk hero pass `renderWidth` (display px × `PixelRatio.get()`) so the per-climb holds overlay
+  rasterizes at the shown size instead of the board's native ~1080px, plus `backgroundVariant="full"`
+  so the _shared_ board photo (one decode per board-config, reused across every climb) stays crisp.
+  `renderWidth` alone would downgrade the photo to the 416px `thumb` — only the overlay should shrink.
+  This matters most where a surface swaps climbs without unmounting: both layers set
+  `allowDownscaling={false}`, so a native-width overlay decodes at ~8 MB of RGBA however small it is
+  drawn. `useNativeClimbRender` clamps to native width, so it never upscales.
+- **`recyclingKey` on always-mounted board surfaces that swap climbs.** The carousel boards key on the
+  climb's `frames` so swapping releases the previous overlay instead of holding both. **Not a blanket
+  rule:** a key change sets `sdImageView.image = nil` _before_ the new load
+  (`expo-image/ios/ImageView.swift`), so it inserts a blank frame unless the incoming art is already
+  cached. The carousel gets away with it because its peek pre-warms the cache; the wall kiosk hero
+  deliberately omits it rather than flash a wall-mounted display between climbs.
+- **Release board-art on background + memory pressure.** `LayeredClimbImage` blanks its `<Image>`
+  layers when `useIsAppBackgrounded()` is true or the surface is a non-focused iPad tab
+  (`BoardArtVisibilityProvider` — the iPad shell keeps every tab mounted, and
+  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). The tab the
+  player is open over still counts as focused (#7081); every other tab is released. Alongside the
+  cap, `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
+  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Root
+  routes over the tabs (the player and the pages it pushes) are not switches: the sweep follows the
+  last tab the climber was on, so opening and closing the player never sweeps. Note the
+  `memoryWarning` event is a _last_ resort, not a foreground lever: iOS delivers it only after an
+  allocation has already failed. Re-decodes from disk (no network).
+
+**Player transitions retain thumbnails, on phones and iPad.** Opening `/play` must keep the
+underlying list's image layers mounted. Although the player has an opaque backing, its opening and closing
+animations expose the list; an interactive swipe exposes it while `/play` is still focused.
+Unmounting on route focus leaves blank thumbnails until their images decode again. Keep the
+existing image instances throughout the transition, including a cancelled swipe. This retains
+the mounted list thumbnails while the player is open; list virtualization, cache limits,
+app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory. iPad did
+the opposite until #7081: it hid the tab under the player and swept the memory cache on every
+open and close, so the list came back blank behind the closing player. On iPad, a session that
+stays on one tab plus the player now never sweeps, and the 256 MB `maxMemoryCost` cap is the
+bound that matters for #3803.
+
+**Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
+and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the
+cache. Display-sizing + recycling cut carousel browse-growth ~19%; background-blanking cut the
+worst case (board left open on app-switch) ~96 MB. **Ceiling:** expo-image on Android is Glide,
+whose cache/pool are sized to device RAM and resist JS `clearMemoryCache()` (the native allocator
+retains freed pages), so the common feed-backgrounded footprint is unmoved by JS. The native lever
+is implemented: `modules/memory-trim/` registers a `ComponentCallbacks2` that full-clears Glide
+(memory cache + bitmap/array pools) on `onTrimMemory(UI_HIDDEN..39)` — the window where stock
+Glide only half-trims (it already full-clears at `BACKGROUND(40)+`). The module is side-effect-only
+and activated by a JS import in `app/_layout.tsx` (Expo modules are created lazily on first JS
+access — without the import its OnCreate never runs). Verify via
+`adb logcat -s MemoryTrim`. The high MB on a 12 GB device overstates
+real risk; the OOM actually reproduces on 4 GB iPhones.
+
+**Examples in this repo:**
+
+- `packages/mobile/src/lib/app-visibility.ts` (`useIsAppBackgrounded`, one ref-counted AppState
+  listener) + `packages/mobile/src/hooks/use-image-cache-memory-management.ts` (root cache sweep).
+- `renderWidth` + `backgroundVariant` threaded through `BoardImageNative.tsx` →
+  `use-native-climb-render.ts`; applied in `play-drawer/SwipeBoardCarousel.tsx` and
+  `board-presence/wall-kiosk/WallHeroStage.tsx`.
+- `IMAGE_MEMORY_CACHE_MAX_BYTES` + `Image.configureCache` in
+  `packages/mobile/src/hooks/use-image-cache-memory-management.ts` — the cache ceiling.
+- `packages/mobile/modules/memory-trim/` (Android-only) — native Glide full-clear at
+  `TRIM_MEMORY_UI_HIDDEN`; policy in `MemoryTrimPolicy.kt`, activation import in `app/_layout.tsx`.
+
+---
+
+## 8. Board renders go through the render scheduler
+
+**Rule:** Any surface that draws a board overlay requests it through `useNativeClimbRender`
+(which calls `requestRender`), never the native module directly. Pass `playSurface: true` only for
+the one board the climber is actually looking at — never a preview card, a rail, or the carousel's
+off-screen peek. Never hold a render request past your effect's cleanup. Warm-up renders nobody is
+looking at yet — the play drawer's next few queue items — pass `prefetch: true` instead, and pass it
+for nothing that is on screen.
+
+**Why:** `renderHoldsOverlay` runs on expo-modules-core's one shared serial queue per platform, so
+every render — play board, carousel peek, every FlashList thumbnail — used to queue behind whatever
+was already running, and a scrolled-past row never gave its slot back. On a phone in Low Power Mode
+that stretched the wait for the board a climber was staring at from a fraction of a second to
+several seconds, and nothing measured it (issue #5187). `render-scheduler.ts`
+(`packages/mobile/src/lib/board-render/render-scheduler.ts`) now queues renders in JS, orders them
+`play` > `full` > `thumbnail` > `prefetch`, and drops a request the moment its last consumer stops
+wanting it — but only if every caller goes through it. The `prefetch` rank is idle-only: it
+dispatches when nothing else is queued and native is empty, so warming the climbs ahead can never
+cost a render somebody is waiting on more than the one prefetch already inside native. A play-board render that is still waiting after 6s fires
+the `render_stalled` event (`docs/analytics/board-render-analytics.md`), which is how to tell whether a slow
+render is stuck in our queue or stuck in native.
+
+---
+
+## 9. A swipe between items is settled on the UI thread: keep the neighbours mounted, key them by page
+
+**Rule:** When a gesture swaps one heavy surface for the next (the play drawer's swipe between
+climbs), mount the neighbours ahead of time, give each a key that does not change when it becomes
+the current one, and let a shared value on the UI thread say which is in the middle. The JS thread
+follows the swipe. The one thing it still decides is how far ahead a swipe may go: one page either
+side of the climb it has rendered, because those are the boards it has mounted.
+
+**Why:** A release animation that ends by asking the JS thread to swap content has three costs, all
+measured on an iPhone 13 Pro before this rule (`docs/mobile/mobile-visible-performance.md`, swipe
+reference numbers):
+
+- **The wrong content first.** One spare surface cannot hold both neighbours, so the JS thread has
+  to be asked which one a swipe is heading for. Until it answers, the incoming board shows the
+  other neighbour's holds (8 to 36 ms), and holds that were not decoded yet then fade up on a board
+  that is already sliding.
+- **A dead window.** The carousel ignored touches from finger-up until the JS thread had swapped
+  the climb: 160 to 230 ms. At six swipes a second half of them did nothing.
+- **Renders nobody needed.** Mirroring the swipe's direction and its "committing" flag into React
+  state re-rendered the whole drawer four to seven times per swipe.
+
+**How, in `packages/mobile/src/components/play-drawer/`:**
+
+- `use-swipe-pager.ts` gives every mounted climb a page number that it keeps for as long as it is
+  mounted. `SwipeBoardCarousel` and `SwipeableHeader` key their three slots by page, so the board
+  that was the neighbour becomes the current one by a prop change. The swipe does not remount its
+  images.
+- Every slot has the same view structure, whatever its role. A wrapper that only the current slot
+  has would remount the subtree the moment the role moved; an animated style that only the current
+  slot has (the zoom) would leave its last transform behind on a slot that stopped being current.
+- `pageOffset` places each page from `anchorPage` and the swipe offset in a worklet: opacity and
+  transform, nothing else. Two pages that are both drawn never overlap, so there is no z-order to
+  keep, and there must not be one that changes. In Fabric a `zIndex` that changes re-inserts the
+  native view among its siblings, and iOS cancels a touch that began on a view that was taken out:
+  a swipe that started during a fling was cut off 3 ms later until the slots stopped animating
+  `zIndex`. For the same reason no slot takes touches at all; they fall through to the stand-in
+  below, or to the container.
+- The accessibility element is one fixed stand-in the size of the board, not a slot. The slots
+  change places on every swipe, and focus that sat on one would be left on a hidden view. It takes
+  touches, so a screen reader's explore-by-touch finds it, and it is the container's first child, so
+  no board added or dropped after it can change where it sits among its siblings. The header has
+  one fixed stand-in too (#6352), `PlayDrawerHeaderAccessibility`: it reads the whole header as one
+  label (name, attribute glyphs, grade, stats, setter, rules, wall state) and carries its controls
+  (copy the name, the setter, the wall pill) as custom actions, and every header slot is hidden
+  from assistive tech. Unlike the board's slots, the current header takes sighted taps, so a
+  stand-in under it could miss Android's explore-by-touch: hover events go to the topmost view
+  first, a hidden view there that takes them (the setter link) stops them reaching anything below,
+  and RN only skips a view for hover when its `pointerEvents` is `none` or `box-only`. So the
+  header's stand-in is the last child of `SwipeableHeader`, on top, with
+  `pointerEvents="box-none"`, which lets taps through and still takes hover. Being last, it never
+  changes order against another view that stays, so Fabric's differ never removes and reinserts it.
+- The UI thread numbers each step it takes (`uiSteps`); the JS thread writes back the last step it
+  has rendered, in one shared value with the page it has in the middle. While they differ the UI
+  thread leaves the JS thread alone. When they agree and the pages do not (a Next button, a queue
+  tap, a crew member's change, a step the queue refused) the UI thread goes where the JS thread is.
+- A swipe that starts while the last fling is still running takes it over (`landFling` with
+  `carry`): the anchor moves at once and the offset keeps the incoming board where it was, with the
+  outgoing one beside it. A board's place is a function of its distance from the middle alone
+  (`pageOffset`), so neither board moves when the anchor does.
+- A release settles at exactly one board width with the `paging` spring (critically damped,
+  stiffness from the release speed; see [mobile-motion.md](../design/mobile-motion.md#paging)). It used to
+  spring toward the screen width plus 80 pt while the content was clamped at the board width, so
+  the header and holds stopped dead at 2,700–3,400 pt/s, then waited out an invisible 80–94 ms tail.
+  The outgoing PNG board needs half the frame plus half the board to leave a letterboxed frame;
+  `pageOffset` stretches its path, and the incoming one's, by that margin (at most 48 pt) toward
+  the ends of the swipe, so it leaves exactly as the incoming board lands and moves 1:1 with the
+  finger at the start. A wider margin fades the boards over the outer 30% of the swipe instead.
+- The JS thread is told about a step once the incoming board is within 10% of the middle
+  (`TELL_JS_REMAINING`, about 34 pt): 8–42 ms after a flick, 58–83 ms after a slow release, never
+  later than the old spring reached its clamp (Reanimated's own spring, stepped at 120 Hz in
+  `paging-spring.test.ts`).
+  Changing the climb costs the UI thread a frame now and then (the new neighbour's board is
+  mounted, the rest of the drawer updates). Told at finger-up, that frame fell while both boards
+  were moving fast; told only at landing, the next swipe waits for the settle's last sub-pixel
+  creep.
+- The JS thread takes the steps one per committed render (`requestStep`). Two can be waiting when
+  it has been busy, and the queue's navigation reads state that only a render brings up to date.
+- A release blocked because React or the neighbour's artwork is behind retains one direction and
+  velocity. It starts its fling after the matching step renders and native display events confirm
+  the current artwork attempt, including all background layers. A new touch, cancellation,
+  navigation reset, backward queue boundary, zoom, disable, or carousel unmount discards that intent. The
+  current complete board stays centred until its neighbour is ready; no extra board slot is mounted.
+  A confirmed forward boundary opens the track-end card once. A loading neighbour never counts as
+  that boundary. An exhausted artwork attempt cancels the retained release immediately, even while
+  React is behind; a later repair cannot revive it. Unresolved or absent backgrounds are not ready.
+- Readiness belongs to a mounted page, including when its climb frames change. Only unmounting
+  removes the page's entry: a frames-dependent parent cleanup can otherwise discard the child's
+  synchronous image-readiness report and leave a previous page impossible to swipe back to.
+  Merge readiness updates and remove pages on the UI thread. A JS shared-value getter can still
+  see the map from before its queued writes: spreading that map can overwrite another slot's
+  `ready` signal or resurrect an unmounted page, permanently blocking a reverse swipe. Keep native
+  display ownership in refs so effect replay preserves an image's genuine display event.
+- The displayed holds for the same climb bridge a replacement caused by board-size refinement.
+  Keep them until the replacement overlay's native display event, with the replacement transition
+  disabled. Scope that bridge to the board and climb frames so another climb cannot inherit it.
+- Everything a step needs is the pager's, created in the drawer: the offset, the step a fling is
+  carrying (`untoldStep`), the reaction that tells the JS thread, and the Next and Previous
+  callbacks (`useSwipeNavigation`). The board/carousel host now stays mounted through geometry
+  refinement, queue broadcasts, and new open targets. Keep the pager and its step bridge in the
+  drawer: a fling can outlive a carousel teardown, and keeping the pending step in the carousel
+  previously lost it with callbacks from an obsolete render. A drag gets no release when its
+  carousel goes, so the gesture's unmount returns the offset to rest.
+
+**Do not** pass anything that only the current slot should have by changing the tree. `playSurface`
+moves between mounted boards now, which is why `useNativeClimbRender` reads it through a ref when
+it arms the paint watchdog: a board that becomes the play surface after its holds painted has
+nothing left to wait for. `LayeredClimbImage` reports an overlay's mount from a layout effect,
+inside the commit that mounts the image, before its native `onLoad` can arrive. It reports one
+image replacing another as the new one only, and the watchdog keeps no answer between mount
+reports, so a stale event cannot satisfy a later image's paint timeout.
+
+---
+
+## Profiling workflow
+
+### Opening a climb from the list
+
+The acceptance gate for a cached full-size climb is **p95 at most 100 ms from the
+tap to full-size artwork and usable board gestures**, including after long
+scrolling and repeated openings. Completing the native slide animation is not
+part of that interval. A thumbnail bridge can cover a real render/decode miss,
+but its appearance cannot satisfy the full-artwork gate. Report those misses
+separately instead of mixing them into a warm-cache timing result.
+
+The player mounts its board and gesture core in the opening commit; optional
+details and sheet contents follow separately. Artwork transferred from a row
+must be immutable and fenced by the exact board/frame/render identity, cache
+generation, mirror intent, and privacy/credential epochs. Loading an image is
+not proof that it displayed: readiness needs native `onDisplay` for the matching
+holds and background layers. A replacement prepared behind a bridge is counted
+only after its visible handoff reaches a frame.
+
+On native, the drawer host dispatches the known root-stack `play` route in the
+tap's React batch. The public Expo navigation ref avoids the imperative URL
+queue's extra provider commit; browser and unready/unknown navigators keep the
+URL fallback. Activation reads current queue and masked suggestion-source state
+through the stable snapshot action, so changing the active climb does not
+subscribe the entire climb list to another render. Queue commits remain
+synchronous and keep the same privacy and wall-control checks.
+
+QueueProvider reuses the compatibility result for the same immutable suggestion
+sequence, board target and privacy/credential epochs. Current-climb anchoring
+and the synthetic feed's first-anchor exception remain live. This removes a
+full-list compatibility pass on each subsequent selection; the first pass for
+a new loaded sequence still takes O(N) work.
+
+Measured geometry is reused through `opening-layout-cache.ts`, a 32-entry LRU.
+Reuse requires the complete layout identity: board and intrinsic dimensions,
+climb, viewport, font scale, pixel ratio, locale, safe-area insets, preferences,
+visible section, presentation/pane inset, header, controls, lost-hold banner and
+playback variants. Only positive, complete measurements enter the cache; a
+screen with no visible section may have zero section-header height. Unknown
+models measure normally. Credential/privacy withdrawal clears the cache and
+invalidates an already captured key synchronously.
+
+Verify the timing on a physical device in a pinned release/probe build. Use
+alternating baseline/candidate batches with at least 30 warm opens per build,
+including 60 downward scrolls, repeated opens and recycled rows after hard
+flicks. Compare native hitches under similar thermal conditions. Unit tests and
+simulator screenshots prove lifecycle/layout behavior; they do not establish
+the 100 ms physical-device result or native frame rate. Measure the row's
+immediate touch feedback separately. A bounded delay before presenting the
+drawer can cover preparation, but it still counts toward tap-to-ready time.
+
+For player swipe dismissal on ProMotion iPhones, target the 120 Hz presentation
+budget (8.33 ms) in a release build. Record the OS/build, active display cadence,
+power and accessibility settings, and compare slow releases around 80% openness,
+fast flicks and cancelled drags from the Climbs tab. Include 30 warm dismissals
+with a large logbook and a player whose below-fold sections have loaded. Report
+missed presentation deadlines and any repeatable plateau after finger-up; an
+average FPS counter or a screen recording alone cannot establish 120 fps.
+
+The release spring runs entirely on the UI thread. Navigation and host cleanup
+happen after the whole surface is offscreen; see the player swipe dismissal
+contract in `docs/mobile/mobile-sheets-vs-routes.md`. Unit tests cover ordering and races,
+but physical-device timing remains a separate acceptance check. Check the built
+app's `CADisableMinimumFrameDurationOnPhone` flag before measuring ProMotion.
+
+Required evidence for any list / provider / theme PR: a **before/after recording on the climbs list
+and the play drawer**, captured on a large-logbook account. A claim of "this is faster" without a
+recording does not clear review.
+
+To count what a recording only shows (thumbnails that appeared before their holds, the wait for each
+page of climbs, the stages of a drawer open, stalls during launch), use the probe build and scripted
+scenarios in `docs/mobile/mobile-visible-performance.md`. Its reference table has the iPhone 13 Pro numbers
+to compare a later release against.
+
+1. **React DevTools Profiler — "Highlight updates when components render."** Turn it on, then scroll
+   the climbs list and navigate the queue / play drawer. Every row that flashes on an unrelated
+   state change is a missing `React.memo`, an unstable `renderItem` dep, or an unmemoized context
+   value. The goal: scrolling highlights only newly-mounted rows; toggling the active climb
+   highlights only the previously- and newly-selected rows, not the whole list; opening a toast
+   highlights nothing in the list.
+2. **Hermes sampling profiler with a large-logbook account.** Sign in as a user with a deep logbook
+   (the O(N)-scan bugs are invisible on a fresh account). Record a profile while scrolling and while
+   swiping the play-drawer carousel. Look for per-row `logbook.filter`, per-frame `runOnJS` hops, and
+   repeated `BoardRenderer`/SVG work — these dominate the flame graph exactly on the accounts we care
+   about.
+3. **Frame timing.** Watch the perf monitor (JS + UI FPS) on a mid-range device, not just the
+   simulator. UI-thread drops point at gesture/worklet issues (rule 5); JS-thread drops point at
+   re-render cascades (rules 1, 3, 4) or per-row work (rule 4, 6).
+
+When in doubt, copy the structure of `app/(tabs)/climbs/index.tsx` — it is the worked example for
+rules 2, 3, and 4, and the surface every list/provider PR is measured against.
+
+## Configurable climb rows
+
+`climb-row-display-preference.ts` exposes a synchronous dedicated snapshot; a row reads it directly rather than receiving the entire Settings context. A field switched off does not mount its live leaf, thumbnail or prewarm worker. `climb-row-layout.ts` reserves late-loading mirror and playlist lines without an image; keep the skeleton and height estimates on the same function. The settings preview injects presentational leaves and stages personal marks, avoiding logbook/favorites/membership subscriptions. See [Climb list rows](../product/climb-list-rows.md) for the registry and extension steps.

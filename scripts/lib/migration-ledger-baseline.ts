@@ -37,7 +37,7 @@
  *
  * A missing ledger row has two possible causes and this list mixes both, because
  * telling them apart needs the production schema in front of you (see
- * `docs/db-migrations.md`):
+ * `docs/operations/db-migrations.md`):
  *
  *  - **The `.sql` changed after production applied it.** The ledger stores the
  *    hash of the file as it was when it ran, so an edit orphans the row.
@@ -60,7 +60,7 @@
  * ## Shrinking it
  *
  * `DB_URL=postgres://... vp run db:verify-journal` prints each remaining tag
- * with the ledger hash its repair row needs. Repair per `docs/db-migrations.md`
+ * with the ledger hash its repair row needs. Repair per `docs/operations/db-migrations.md`
  * ("The journal-vs-ledger check"), then remove the entry here. Do not add one
  * without a reason: a new gap means a migration that did not reach production,
  * and baselining it ships the outage #2933 was closed to prevent.

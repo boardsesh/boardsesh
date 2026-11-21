@@ -51,7 +51,7 @@ export const queueTypeDefs = /* GraphQL */ `
   }
 
   """
-  How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+  How setCurrentClimb puts a climb on the wall (docs/product/current-climb-outside-queue.md, section 1).
   NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
   STEP: Previous on the queue walk; the pointer steps back into History.
   Omitted by shipped clients, the native socket and the LED path.

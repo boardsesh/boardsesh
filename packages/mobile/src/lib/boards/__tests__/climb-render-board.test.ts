@@ -133,7 +133,7 @@ describe('resolveClimbRenderBoard', () => {
   // origins — the 8x10 runs 0-484, the 12x12 runs 0-893 — so an 8x10 climb's ids
   // all exist on the 12x12 as completely different holds. Falling back to the
   // layout default (always the 12x12) would not fail to render; it would quietly
-  // render a different climb. See docs/board-art-geometry.md.
+  // render a different climb. See docs/rendering/board-art-geometry.md.
   it('draws a Woods 8x10 climb on the 8x10, not on the layout default 12x12', () => {
     const result = resolveClimbRenderBoard(
       { boardType: 'woods', layoutId: 1, angle: 40, frames: '', compatibleSizeIds: [1] },

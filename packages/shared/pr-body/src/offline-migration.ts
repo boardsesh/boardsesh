@@ -13,7 +13,7 @@ export const OFFLINE_MIGRATIONS_PATH = 'packages/shared/offline-sync/src/db/migr
  * Why the gate exists: JS can go backwards on a device. A reverted canary OTA, or
  * a climber leaving the early-updates track, puts the previous bundle on a
  * database this PR's bundle already migrated. The app refuses a database whose
- * version is above what it knows (docs/offline-sync-plan.md, "Older JS on a
+ * version is above what it knows (docs/data/offline-sync.md, "Older JS on a
  * newer database"), so every such device loses offline storage until it updates
  * again. A migration is therefore written expand-first: the previous stable
  * bundle must still be able to read what it leaves behind, and anything that

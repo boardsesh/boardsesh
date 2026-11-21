@@ -315,7 +315,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // Original MoonBoard (RedBearLab) LED box: a second controller generation
     // whose write characteristic (713d0003, `.write`-only) lives on its own
     // service. Probed as a fallback after the Nordic UART one for the moonboard
-    // family. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
+    // family. See docs/boards/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
     private let redBearLabServiceUuid = CBUUID(string: "713D0000-503E-4C75-BA94-3148F18D941E")
     private let redBearLabWriteCharacteristicUuid = CBUUID(string: "713D0003-503E-4C75-BA94-3148F18D941E")
     private let chunkDelay: TimeInterval = 0.005

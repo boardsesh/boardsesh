@@ -10,7 +10,7 @@
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
- * what happened to `docs/web-reposition.md`'s mobile-consumer list and its
+ * what happened to `docs/web/web-reposition.md`'s mobile-consumer list and its
  * `join`/`controllers`/`favorites` row before this PR. This test makes the
  * audit executable: it walks `packages/web/app/api/**` off disk and asserts
  * SET EQUALITY, in both directions, against the pinned verdict map below.
@@ -90,7 +90,7 @@ const VERDICTS: Record<string, Verdict> = {
   // Cron targets. Their only trigger is a scheduler outside the web app — no
   // in-repo code ever calls them, which is the intended steady state, not
   // evidence of deadness. All three now fire from the Railway scheduler
-  // (packages/scheduler, docs/scheduler.md), which is why none of them appears
+  // (packages/scheduler, docs/backend/scheduler.md), which is why none of them appears
   // in packages/web/vercel.json any more; `classifies every scheduler cron
   // target as an external surface` pins that below.
   'app/api/internal/cleanup/route.ts': 'keep-external',
@@ -117,7 +117,7 @@ const VERDICTS: Record<string, Verdict> = {
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
   // for every already-shared HTML page and crawler cache from before each
-  // card moved to the backend (see docs/og-climb.md). New metadata never
+  // card moved to the backend (see docs/web/og-climb.md). New metadata never
   // emits them — no in-repo caller by design.
   'app/api/og/climb/route.tsx': 'keep-external',
   'app/api/og/playlist/route.tsx': 'keep-external',

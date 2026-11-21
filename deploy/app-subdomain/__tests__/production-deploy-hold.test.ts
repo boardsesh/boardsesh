@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 // Guards the APP_WEB_DEPLOY_HOLD freeze on `deploy-app-web` in
 // .github/workflows/production-deploy.yml — the job that ships this directory's
-// Cloudflare Pages config (see ../README.md, docs/expo-web-deployment.md).
+// Cloudflare Pages config (see ../README.md, docs/operations/expo-web-deployment.md).
 //
 // deploy-web and deploy-production-backend read `check-rollback` and stage
 // instead of promoting while a Vercel Instant Rollback is pinned. Pages exposes

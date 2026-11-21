@@ -8,7 +8,7 @@ import { gyms } from './gyms';
  * A CACHE, NOT A SOURCE OF TRUTH. Truncating it costs nothing permanent: every
  * column is derived from `board_climb_events` joined through `user_boards`, and
  * the next refresh rebuilds it. Same discipline as the sitemap store
- * (`sitemap_shard_refreshes`) — see docs/sitemap.md.
+ * (`sitemap_shard_refreshes`) — see docs/web/sitemap.md.
  *
  * Why materialise at all: the live scan groups ~270k dwell-gated climb events by
  * gym across ~750 gyms, which is too slow to sit behind an admin page or a

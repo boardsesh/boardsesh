@@ -158,7 +158,7 @@ describe('the files a bump rewrites', () => {
     // the two lists in step is the only thing standing between an automated bump
     // and a red branch nobody asked for.
     for (const relativePath of [
-      'docs/mobile-ota-updates.md',
+      'docs/operations/mobile-ota-updates.md',
       'scripts/mobile-ota-setup.ts',
       'scripts/mobile-ota-rollback.ts',
       'CLAUDE.md',

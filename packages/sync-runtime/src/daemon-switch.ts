@@ -1,7 +1,7 @@
 /**
  * The off switch for the Aurora and Kilter sync daemons.
  *
- * Once the background worker families own routine syncs (docs/background-workers.md,
+ * Once the background worker families own routine syncs (docs/backend/background-workers.md,
  * "Routine provider sync"), the sync host sets `SYNC_DAEMON_DISABLED=true`: the
  * daemon command logs one line and exits 0 instead of starting its loop, so the
  * service goes idle without deleting its unit. Only the literal `true` disables;

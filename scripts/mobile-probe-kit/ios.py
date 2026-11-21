@@ -2,7 +2,7 @@
 
 Gestures and screenshots go through a WebDriverAgent runner on the phone;
 launching the app and moving files go through `xcrun devicectl`. See
-docs/mobile-visible-performance.md for how to start the runner and forward its
+docs/mobile/mobile-visible-performance.md for how to start the runner and forward its
 ports.
 
 Environment:

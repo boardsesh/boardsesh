@@ -57,7 +57,7 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
  * Spray walls break that. A spray climb is an ordinary `board_climbs` row with a
  * non-null `user_id` (the wall's setter), so the owned leg matched it — and
  * `saveClimb` SEEDS the setter's own grade into `board_climb_stats`
- * (`docs/spray-walls.md`). So the first tick logged with no difficulty averaged to
+ * (`docs/product/spray-walls.md`). So the first tick logged with no difficulty averaged to
  * NULL, NULLed `display_difficulty` and cleared `tick_graded_at`, and the setter's
  * grade was gone with nothing left to recover it from — the row no longer even
  * says a grade was ever derived.

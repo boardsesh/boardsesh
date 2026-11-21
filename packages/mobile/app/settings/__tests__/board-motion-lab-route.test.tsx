@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The board motion lab's route guard (docs/board-motion-lab.md). A deep link
+// The board motion lab's route guard (docs/rendering/board-motion-lab.md). A deep link
 // reaches it directly, so it checks the Developer page's dev-tools access, and
 // it only loads the lab's screen once access is confirmed.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

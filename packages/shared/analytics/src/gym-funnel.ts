@@ -33,7 +33,7 @@
 //
 // Two amendments to #4374's literal wording, both documented at the type they
 // affect: `admin_review` (not `admin_sent`), and the three `GymPageCta` members
-// that have no call site. Full write-up: docs/gym-funnel-analytics.md.
+// that have no call site. Full write-up: docs/analytics/gym-funnel-analytics.md.
 
 import type { AnalyticsPropertyValue } from './client';
 

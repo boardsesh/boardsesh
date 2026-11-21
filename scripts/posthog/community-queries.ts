@@ -1,7 +1,7 @@
 /**
  * HogQL behind the "Community: monthly recap" PostHog dashboard: the monthly
  * totals, the top 10 gyms and climbers, and a ready-to-paste Reddit post.
- * Contract: docs/growth-metrics.md, "Community monthly recap".
+ * Contract: docs/analytics/growth-metrics.md, "Community monthly recap".
  *
  * The backend family `community-monthly-stats` re-sends every month it covers
  * with the same event uuid (daily for the current and last month, weekly for

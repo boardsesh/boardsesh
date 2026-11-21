@@ -13,7 +13,7 @@ import { migrateCaptureRoute } from './lib/retired-capture';
  *   vp run mobile:android-shots                       # boot + install + Metro + launch, then hold Metro
  *   vp run mobile:android-shots -- --to climbs --label climbs --shutdown   # one-shot: boot, shoot, tear down
  *   vp run mobile:android-shots -- screenshot --to board-view --label board   # shoot a running emulator
- *   vp run mobile:android-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile-stories.md)
+ *   vp run mobile:android-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile/mobile-stories.md)
  *   vp run mobile:android-shots -- navigate --to discover                  # deep-link only
  *   vp run mobile:android-shots -- --flow app-store                        # run the Maestro flow
  *   vp run mobile:android-shots -- shutdown                                # stop emulator + Metro + readiness server

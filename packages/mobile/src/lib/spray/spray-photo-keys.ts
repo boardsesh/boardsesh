@@ -103,7 +103,7 @@ export function sprayPartialPhotoFileName(identity: SprayPhotoIdentity): string 
 
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
-/** Which stored size of a photo an object key names (`docs/spray-walls.md`, "Two sizes per photo"). */
+/** Which stored size of a photo an object key names (`docs/product/spray-walls.md`, "Two sizes per photo"). */
 export type SprayPhotoObjectSize = 'base' | 'full';
 
 /** A private-bucket wall photo, named by the object it is stored as. */

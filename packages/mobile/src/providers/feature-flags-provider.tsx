@@ -68,7 +68,7 @@ export type FeatureFlagDefinition = {
    * — the layer that actually knows the region — is overruled. Marking the flag
    * here makes the override apply in `__DEV__` builds only (QA still exercises
    * the path in a dev client) and be ignored in production, where PostHog stays
-   * authoritative. See `donation-links-v2` and docs/feature-flags.md.
+   * authoritative. See `donation-links-v2` and docs/operations/feature-flags.md.
    */
   policyControlled?: boolean;
 };
@@ -172,7 +172,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'stale-current-hold-kill',
     label: 'Disable the stale-climb hold',
     description:
-      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the wall button reads Put on board. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
+      'Emergency kill switch for the #4979 hold (F3, docs/product/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the wall button reads Put on board. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
     key: 'android-notification-bokeh-kill',
@@ -802,7 +802,7 @@ export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boo
 }
 
 /**
- * F3 now-slot mode (#6666, docs/current-climb-outside-queue.md section 8). A
+ * F3 now-slot mode (#6666, docs/product/current-climb-outside-queue.md section 8). A
  * POSITIVE flag read `=== true`: unresolved or off is legacy mode, with today's
  * GraphQL documents and today's reducer, so it is a kill switch for every
  * failure the Now slot can cause. In a session it is not enough on its own: the
@@ -813,7 +813,7 @@ export function useQueueNowSlotEnabled(): boolean {
 }
 
 /**
- * The #4979 hold (docs/current-climb-outside-queue.md, section 6): after 4 h
+ * The #4979 hold (docs/product/current-climb-outside-queue.md, section 6): after 4 h
  * with the same climb on the wall, connecting a board does not light it. A KILL
  * switch read `!== true`, so unresolved means the hold is on: a positive flag
  * would read off for the first frames of a cold open, which is exactly when the

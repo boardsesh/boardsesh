@@ -13,7 +13,7 @@ const payload = z
 
 /**
  * Weekly MoonBoard same-board (25°↔40°) angle transpose (`@boardsesh/db/jobs`,
- * docs/boardsesh-grade.md). Fits a per-grade-band delta from the small
+ * docs/data/boardsesh-grade.md). Fits a per-grade-band delta from the small
  * dual-graded minority, then publishes coefficients and estimate rows in one
  * fenced transaction. An unusable pooled fit fails the run with
  * `FIT_UNUSABLE` and no retry: nothing was written, and the same data fails

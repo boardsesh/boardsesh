@@ -108,7 +108,7 @@ and the other five surfaces. Two/three-board scenarios still produce ten/eleven
 raw inputs with a single compatibility frame and `02-wall-status.png`. Earlier
 eleven/twelve-source campaigns also remain readable, with their board-view and
 participant composite named `02-live-climb.png`.
-The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
+The [campaign fixture contract](../../docs/qa/mobile-screenshot-fixtures.md#routes)
 describes the recorded state required by the extended flow.
 
 The board is drawn with **Aura**, the default isolated-story renderer.
@@ -262,9 +262,9 @@ by the form. Uploads are collection even when optional. Do not carry forward
 the old photo/comment exclusions, or infer that video, audio or documents are
 absent without completing that part of the feature/SDK inventory.
 
-Evidence: [media storage](../../docs/user-media-storage.md),
-[analytics choices and telemetry paths](../../docs/analytics-consent.md),
+Evidence: [media storage](../../docs/operations/user-media-storage.md),
+[analytics choices and telemetry paths](../../docs/analytics/analytics-consent.md),
 [native PostHog identity](../../packages/mobile/src/lib/posthog-client.ts),
 [Sentry privacy handling](../../packages/mobile/src/lib/sentry.ts),
 [stored comments](../../packages/backend/src/graphql/resolvers/social/comments.ts),
-and [integration data boundaries](../../docs/integration-platform.md).
+and [integration data boundaries](../../docs/integrations/integration-platform.md).

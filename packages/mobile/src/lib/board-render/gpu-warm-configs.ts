@@ -7,7 +7,7 @@
  * of rasterized holds (process-wide). Measured on the reference phones that
  * first presentation takes 680–1080 ms; later ones 30–80 ms. Until a drawing is
  * warm here the board may render its PNG at once, as it always did; once warm
- * it goes GPU first (docs/gpu-climb-overlay-experiment.md).
+ * it goes GPU first (docs/rendering/gpu-climb-overlay-experiment.md).
  *
  * Backgrounding releases only GPU buffers (`releaseGPU`); sessions, chunks and
  * the pipeline survive, so a warm drawing stays warm. Memory only: a reload

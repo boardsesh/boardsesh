@@ -6,7 +6,7 @@ import { loadWoodsLedTables, renderWoodsBoardDataSwift, renderWoodsLedMapsTs } f
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
-const docsDir = join(repoRoot, 'docs', 'woods-board-led-maps');
+const docsDir = join(repoRoot, 'docs', 'boards', 'woods-board-led-maps');
 
 // Both committed artifacts must be byte-identical to what the generator
 // renders from the docs JSON — a stale regenerate would desync the JS and

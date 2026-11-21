@@ -5,7 +5,7 @@
 // script re-expresses the same content as a native SVG so it can be rasterised
 // offline with sharp (the repo's standard rasteriser) — no browser required.
 //
-// All token values mirror docs/ai-design-guidelines.md / packages/mobile/src/theme.
+// All token values mirror docs/design/ai-design-guidelines.md / packages/mobile/src/theme.
 // Regenerate:  node design/render-velvet-send-tokens.mjs
 
 import sharp from 'sharp';
@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// ---------- token data (source: docs/ai-design-guidelines.md) ----------
+// ---------- token data (source: docs/design/ai-design-guidelines.md) ----------
 const brand = {
   light: {
     tint: '#6D28D9',
@@ -355,7 +355,7 @@ text(P, y + 78, 'Color & token reference', { f: F.disp, size: 58, weight: 800, f
 paragraph(
   P,
   y + 124,
-  'The single visual reference for Velvet Send — the violet design language in packages/mobile, anchored on the logo’s V11–V16 grade purples. One palette renders through two platform variants: Liquid Glass on iOS 26, Material 3 everywhere else. Values mirror docs/ai-design-guidelines.md.',
+  'The single visual reference for Velvet Send — the violet design language in packages/mobile, anchored on the logo’s V11–V16 grade purples. One palette renders through two platform variants: Liquid Glass on iOS 26, Material 3 everywhere else. Values mirror docs/design/ai-design-guidelines.md.',
   { size: 15.5, fill: C.muted, lh: 24, maxW: 1060 },
 );
 tile(W - P - 200, y, 200);
@@ -647,7 +647,7 @@ y += 30;
 push(`<rect x="${P}" y="${y}" width="${CW}" height="1" fill="rgba(180,168,205,0.1)" />`);
 y += 30;
 text(P, y, 'Boardsesh · Velvet Send · design tokens · v1', { f: F.mono, size: 11, fill: C.faint });
-text(W - P, y, 'Source: docs/ai-design-guidelines.md · packages/mobile/src/theme', {
+text(W - P, y, 'Source: docs/design/ai-design-guidelines.md · packages/mobile/src/theme', {
   f: F.mono,
   size: 11,
   fill: C.faint,

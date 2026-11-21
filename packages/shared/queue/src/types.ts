@@ -276,7 +276,7 @@ export type SetCurrentClimbOptions = {
    * F3 now-slot mode: a climb only History holds. `reuse` (the default, a
    * pick) moves that History entry into Now; `fresh` puts up a new copy and
    * leaves History as it was, the way `nextClimb` places a list step
-   * (docs/current-climb-outside-queue.md). Ignored in legacy mode.
+   * (docs/product/current-climb-outside-queue.md). Ignored in legacy mode.
    */
   historyCopy?: HistoryCopyRule;
 };
@@ -431,7 +431,7 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
   serverSequenceSessionId?: string | null;
   /**
    * The History / Up next line while nothing is current (F3, #6666;
-   * `docs/current-climb-outside-queue.md`, section 1). Only kept in now-slot
+   * `docs/product/current-climb-outside-queue.md`, section 1). Only kept in now-slot
    * mode, where it is always resolved: the current climb's index when one is
    * current, else the line. `null` or absent (legacy mode) means "derive it
    * from the current climb", which `upNextStart` reads as today's
@@ -501,7 +501,7 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
         /**
          * When the room's current climb last changed (ISO 8601), from a `_NOW_SLOT`
          * FullSync or snapshot. The reducer ignores it; the mobile provider seeds
-         * the #4979 hold's clock from it (docs/current-climb-outside-queue.md, section 6).
+         * the #4979 hold's clock from it (docs/product/current-climb-outside-queue.md, section 6).
          */
         currentChangedAt?: string | null;
         currentChangedBy?: string | null;

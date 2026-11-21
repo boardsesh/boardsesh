@@ -7,7 +7,7 @@
 //
 // Deliberately excludes app.boardsesh.com: that host is a fully separate
 // deployment (the standalone Expo-web static export served by Cloudflare
-// Pages — see docs/expo-web-deployment.md), not this Next.js app, so it can
+// Pages — see docs/operations/expo-web-deployment.md), not this Next.js app, so it can
 // never legitimately load this code.
 //
 // Shared by instrumentation-client.ts (Sentry) and analytics.ts (PostHog) so

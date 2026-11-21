@@ -12,7 +12,7 @@ export type MoonBoardLocationsSyncPayload = z.infer<typeof moonBoardLocationsSyn
  * then writes gyms and boards through `@boardsesh/location-sync` in fenced
  * batches of 25 gyms. Each gym resolves through its alias, else the name +
  * location physical match, which is how the first run adopts the seeded gyms
- * instead of minting duplicates (docs/moonboard-sync.md).
+ * instead of minting duplicates (docs/data/moonboard-sync.md).
  *
  * Without credentials the run succeeds as a logged
  * `MOONBOARD_CREDENTIALS_ABSENT` and writes nothing at all: no gym, no alias,
@@ -31,7 +31,7 @@ export const moonBoardLocationsSyncFamily: BackgroundJobFamilyModule<MoonBoardLo
     retryDelayMax: 600,
     deadlineSeconds: 86400,
     // Equal to the routine cycle, so FIFO order keeps it from waiting behind
-    // an endless stream of cycles (docs/background-workers.md, "Queue share").
+    // an endless stream of cycles (docs/backend/background-workers.md, "Queue share").
     priority: 0,
     // One 25-gym batch (about 25 gym resolutions and 225 board upserts) holds
     // the run-row lock at a time.

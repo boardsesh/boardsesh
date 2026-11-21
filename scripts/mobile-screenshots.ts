@@ -38,7 +38,7 @@ import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screens
  * (scripts/screenshot-backend.ts) instead of a live one, so the screenshots stop
  * moving whenever PROD's data does. `record` proxies `--backend` and writes down
  * every answer; `replay` serves those bytes and never leaves the machine. See
- * docs/mobile-screenshot-fixtures.md.
+ * docs/qa/mobile-screenshot-fixtures.md.
  *
  * --dev-client makes the Android capture work the way iOS always has: install the
  * dev-client APK (com.boardsesh.app.dev) and load its JS from a Metro this script
@@ -317,7 +317,7 @@ export type ScreenshotPlatform = 'ios' | 'android' | 'all';
  * uncaptioned PNGs straight to the shard directory.
  *
  * `smoke` is not a capture at all: it is the mobile E2E gate's navigation smoke
- * (docs/mobile-e2e-gate.md). It walks a few screens, takes no screenshots and
+ * (docs/qa/mobile-e2e-gate.md). It walks a few screens, takes no screenshots and
  * writes nothing under `app-stores/`; the run is judged on the app's own pings,
  * the device log and the replay backend's log, and the answer lands in the
  * result file `smokeResultPath()` names.
@@ -478,7 +478,7 @@ export interface ScreenshotOptions {
    * mints one (now, to the second). This is the START instant the app runs on
    * during the recording, not the value the finished set ships with: the
    * backend bumps the PERSISTED manifest's `frozenNow` past the newest
-   * response actually recorded (see docs/mobile-screenshot-fixtures.md, "The
+   * response actually recorded (see docs/qa/mobile-screenshot-fixtures.md, "The
    * frozen clock"), so a run that takes 20 minutes never ships a fixture that
    * would replay as being in the future. Optional even for a multi-shard
    * recording — `mergeFixtureSets` takes the MAXIMUM finalized `frozenNow`

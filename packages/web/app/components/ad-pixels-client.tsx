@@ -10,7 +10,7 @@ import { syncAdPixels } from '@/app/lib/ad-pixels-browser';
  * Keeps the Meta and Reddit pixels in step with consent and sends a page view
  * per page. Renders nothing. The scripts are injected from an effect, after
  * hydration and only once consent allows them, so they never block a render.
- * See docs/analytics-consent.md#ad-pixels.
+ * See docs/analytics/analytics-consent.md#ad-pixels.
  */
 export default function AdPixelsClient() {
   const pathname = usePathname();

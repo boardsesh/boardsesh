@@ -129,7 +129,7 @@ const RECORDED_FRAMES: Partial<Record<ShowcaseTakeId, number>> = {
   log: 716,
 };
 
-/** The marks each take's flow raises, from the table in docs/showcase-video.md. */
+/** The marks each take's flow raises, from the table in docs/marketing/showcase-video.md. */
 const DOCUMENTED_MARKS: Partial<Record<ShowcaseTakeId, readonly string[]>> = {
   spray: ['next-1', 'next-2'],
   wall: ['sheet-open', 'history-shown'],

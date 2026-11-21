@@ -17,7 +17,7 @@
  * times, the code has to survive either order. A bare `vercel` resolves to
  * `railway` rather than to a hold: the operator's intent was "deploy www", and
  * Railway is now the only way to do that. Remove the entry and this branch goes
- * with it — see the follow-up in docs/production-deploy.md.
+ * with it — see the follow-up in docs/operations/production-deploy.md.
  *
  * Anything else — an unknown name, `none` mixed with a real target, or
  * `railway` with no `RAILWAY_WEB_SERVICE_ID` or `RAILWAY_WEB_ORIGIN` — throws.

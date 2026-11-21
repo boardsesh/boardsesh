@@ -1,7 +1,7 @@
 // How long a hang-up keeps the board remembered (plan item 2, 2026-11).
 //
 // A short tap on a lit bulb hangs up at once, with no confirm and no Undo
-// (docs/board-connection-holder.md). Before this, a hang-up also forgot the
+// (docs/boards/board-connection-holder.md). Before this, a hang-up also forgot the
 // board, so the tap that undoes a slip opened the board picker. Now the
 // hang-up stamps the remembered board with `forgetAfter`, and the board counts
 // as forgotten only once that time has passed. Pure helpers, kept apart from the

@@ -113,7 +113,7 @@ export function climberVoteGradeApplies(boardType: string): boolean {
  * a statement, not when a CASE arm runs. Leaving them out keeps a Kilter or
  * Aurora recompute off those tables, so it runs as a worker role that has not
  * been granted them yet (a worker image can start before the migrator grants;
- * docs/background-workers.md).
+ * docs/backend/background-workers.md).
  */
 export function climberVoteGradeArms(
   boardTypes: readonly string[],

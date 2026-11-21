@@ -59,7 +59,7 @@ export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
  * this, so a board read through any of them carries the same fields.
  *
  * The field ORDER is load-bearing: `GetBoard` is replayed from recorded
- * fixtures keyed on the query text (docs/mobile-screenshot-fixtures.md), and
+ * fixtures keyed on the query text (docs/qa/mobile-screenshot-fixtures.md), and
  * that set cannot be re-recorded. Append a field at the end and the screenshot
  * drift test tells you the recorded `GetBoard` no longer matches.
  */

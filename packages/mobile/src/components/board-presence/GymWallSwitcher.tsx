@@ -46,7 +46,7 @@ export type GymWallSwitcherProps = {
  *
  * Presentation-agnostic on purpose: it mounts no sheet and no overlay, because
  * an `@expo/ui` sheet cannot stack over the one this already lives in. Same
- * shape as InlinePlaylistPicker — see docs/mobile-sheets-vs-routes.md.
+ * shape as InlinePlaylistPicker — see docs/mobile/mobile-sheets-vs-routes.md.
  */
 function GymWallSwitcherComponent({ activeBoard, onSelectBoard, style }: GymWallSwitcherProps) {
   const { t } = useTranslation('session');

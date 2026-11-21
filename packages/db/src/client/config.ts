@@ -158,7 +158,7 @@ export function isProductionSentryEnvironment(): boolean {
 }
 
 /**
- * The web server's own connection string (BA-04, docs/better-auth-writer-fence-proof.md).
+ * The web server's own connection string (BA-04, docs/auth/better-auth-writer-fence-proof.md).
  * It is meant for the restricted `boardsesh_web` LOGIN on the same database as
  * DATABASE_URL. Unset or empty, the web keeps DATABASE_URL, so nothing changes
  * until an operator sets it. Only a process that called `applyWebDatabaseUrl()`
@@ -175,7 +175,7 @@ export const WEB_DATABASE_URL_VARIABLE = 'WEB_DATABASE_URL';
  * the NextAuth DrizzleAdapter on users/accounts, and the sign-in callback that
  * sets emailVerified (its failure is swallowed, so it would stop silently).
  * On `boardsesh_web` every one of those fails with 42501. Full list with line
- * numbers: docs/better-auth-writer-fence-proof.md, "Web connection string".
+ * numbers: docs/auth/better-auth-writer-fence-proof.md, "Web connection string".
  * The backend's identity mirror and import refuse on the same entry
  * (packages/backend/src/auth/authority/identity-copy-gates.ts): one change
  * removes it from both lists, and a backend test fails if only one has it.

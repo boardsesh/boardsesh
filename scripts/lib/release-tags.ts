@@ -17,7 +17,7 @@
  *     was built from; the <shortfp> in the name is the fingerprint an OTA must
  *     resolve to reach that release's installs. This frozen tag is the backport
  *     anchor: check it out, cherry-pick a JS fix, and publish an OTA under its
- *     fingerprint. See docs/mobile-ota-updates.md.
+ *     fingerprint. See docs/operations/mobile-ota-updates.md.
  *
  * These are string-only, so they unit-test without git or the network.
  */

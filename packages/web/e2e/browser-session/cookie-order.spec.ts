@@ -20,7 +20,7 @@ import {
 import { expect, expectedMarker, sessionSetCookies, test, type ResponseHoldsFixture } from './fixtures';
 
 /**
- * #7596 B7c: the cookie-order fixture of docs/better-auth-browser-cookie-order.md,
+ * #7596 B7c: the cookie-order fixture of docs/auth/better-auth-browser-cookie-order.md,
  * rerun on this design in Chromium and WebKit, on the real routes and real
  * backend under AUTH_BROWSER_SESSION_MODE=better-auth.
  *

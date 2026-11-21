@@ -1,0 +1,239 @@
+# PostGIS cross-version spatial rehearsal
+
+Evidence for Blocker 2 of the PostgreSQL 18 rollout. The 2026-09-01 run below
+records the original 21 checks against the PostgreSQL 18.6 producer candidate.
+The 2026-11-13 expansion records all 24 checks, including the later `ST_Y`
+call site. Re-run the current fixture with `vp run test:postgres18-spatial-rehearsal`;
+the mutable source tag can change its versions and must be recorded again.
+
+## The question
+
+`docs/operations/postgres-18-migration.md` §1 blocks the catalog audit unless source and target PostGIS
+versions are equal. Production reports `3.7.0dev` because the Railway service tracks the mutable
+`postgis/postgis:16-master` tag; the PG18 producer image ships stable 3.6.4, and PGDG publishes no
+stable 3.7 for PostgreSQL 18. `pg_extension.extversion` cannot be downgraded in place — PostGIS ships
+no downgrade script — so "move one side to match the other" is not available in either direction.
+
+The gate asks whether the versions are equal. The decision actually needs the narrower question:
+**does everything this application does with PostGIS survive the step from 3.7.0dev to 3.6.4?**
+
+## Method
+
+No production contact, no credential, no dump of the 11 GB production database. Both endpoints are
+throwaway containers on a private docker network with `POSTGRES_HOST_AUTH_METHOD=trust`, so there is
+no secret involved at any point.
+
+|                |                                                                                                                                                                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source         | `postgis/postgis:16-master` — the tag the Railway production service tracks                                                                                                                                                                                                                                     |
+| Target         | built from `packages/db/docker/Dockerfile.postgres`, the PostgreSQL 18.6 producer candidate                                                                                                                                                                                                                   |
+| Copy mechanics | the dump/restore flags, the byte-identical `pg_restore --list` awk filter, and the exit-status-and-any-diagnostic rule from `scripts/postgres-logical-replication.sh setup`. The real setup also carries the `drizzle` schema, which holds migration bookkeeping and no spatial object; this dumps `public` only |
+| Clients        | PostgreSQL 18.6 `pg_dump`/`pg_restore`, run from inside the target image — newer client, older server                                                                                                                                                                                                           |
+
+The fixture is the application's complete spatial surface, taken from the migrations that created it:
+the two `geography(Point,4326)` columns (0052, 0054), both partial GiST indexes, and the
+`set_location_from_coordinates()` trigger that derives the geography from lat/lng (0127). 500 rows per
+table, half with a NULL location, so a copy that silently coerced NULL to a point could not pass.
+
+Set `TARGET_IMAGE` to the attested digest to rehearse against the published artifact instead of a
+local build. That needs `docker login ghcr.io` with a token carrying `read:packages` —
+`ghcr.io/boardsesh/boardsesh-postgres-postgis` is not anonymously pullable, unlike the seeded dev
+image.
+
+## Versions observed
+
+```
+source: PostgreSQL 16.14, POSTGIS="3.7.0dev 3.6.0rc2-620-gb8c7b0142"
+        GEOS="3.15.0dev-CAPI-1.21.0" PROJ="9.9.0"
+target: PostgreSQL 18.6,  POSTGIS="3.6.4 94d984b"
+        GEOS="3.11.1-CAPI-1.17.1" PROJ="9.8.1"
+```
+
+The step is wider than the PostGIS version alone — PROJ goes 9.9.0 → 9.8.1 — and the distance and
+proximity checks cover that. GEOS also moves, 3.15.0dev → 3.11.1, but it is **not** exercised and does
+not need to be: GEOS backs planar `geometry` operations, and this application uses none. Geography
+distance and `ST_DWithin` run through PostGIS's own geodesic code in liblwgeom.
+
+**The source build is not the build production runs.** The production audit recorded
+`3.6.0rc2-339-g6d7299047`; this rehearsal ran `3.6.0rc2-620-gb8c7b0142`, roughly 280 commits of
+PostGIS master later. That is the mutable-tag problem in miniature, and it is why
+the [migration runbook](postgres-18-migration.md) requires a digest-pinned source
+before a `wal_level` restart. Reproducing this historical rehearsal requires
+`SOURCE_IMAGE` set to the exact production digest being qualified; record a new
+result rather than treating a mutable tag as production evidence.
+
+## Result — 21 of 21 checks matched
+
+| Check                                                              | Covers                                                                                                                            |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| row count, populated-geography count (both tables)                 | nothing dropped, NULLs stayed NULL                                                                                                |
+| `format_type` of both `location` columns                           | `geography(Point,4326)` survived with its typmod                                                                                  |
+| `ST_AsEWKB` digest over every populated row (both tables)          | the on-the-wire binary of all 500 geographies, byte for byte — the comparison `docs/operations/postgres-18-migration.md` §1 asks for by name |
+| `ST_AsText` digest over every populated row (both tables)          | the WKT rendering `packages/db/src/__tests__/location-trigger.integration.test.ts` asserts against                                |
+| whole-row digest, `sum(hashtextextended(row_to_json(t)::text, 0))` | the repo's own cutover drift detector, `scripts/postgres-table-digests.sql`                                                       |
+| no `ENABLE ALWAYS`/`REPLICA` trigger on either table               | the premise that `--disable-triggers` models logical-replication apply                                                            |
+| `pg_indexes.indexdef` for both partial GiST indexes                | predicates and opclass survived verbatim                                                                                          |
+| proximity probe discriminates — 17 of 194 eligible rows            | the `ST_DWithin` comparison below is not 0 == 0                                                                                   |
+| `ST_DWithin` proximity count                                       | the geodesic predicate agrees across versions, on a query with both matches and non-matches                                       |
+| `ST_Distance` aggregate over every populated row                   | PROJ/liblwgeom produce identical geodesic distances                                                                               |
+| `EXPLAIN` on the target names `using gyms_location_idx`            | the partial GiST index is chosen, not scanned past                                                                                |
+| trigger probe: insert the same lat/lng on both sides               | plpgsql `ST_MakePoint(...)::geography` yields an identical geography under 3.6.4                                                  |
+
+The digests are sensitive, not decorative: moving a single coordinate by 1e-7 degrees (~1 cm) on one
+of the 250 populated rows changes both the EWKB digest and the row digest.
+
+## Expanded latitude extraction run — 2026-11-13
+
+The location-sync proof now reads `ST_Y(location::geometry)`. The expanded
+rehearsal executes that exact extraction on every row of both restored spatial
+tables and requires equality with the original latitude, including NULLs. A
+third new check requires the correct answer for six explicit negative, zero,
+positive, polar and NULL coordinates. Equal wrong answers on both versions
+cannot pass: each side must produce the known expected result.
+
+All **24 of 24 checks passed** with 500 fixture rows per table:
+
+| Input | Exact observed version or identity |
+| --- | --- |
+| Source | PostgreSQL 16.15, PostGIS `3.8.0dev 3.7.0rc3-8-g625d3e521`, GEOS 3.16.0dev, PROJ 9.10.0 |
+| Source image | `postgis/postgis@sha256:f7126d1a09a38383a7e6104ace25d8926629c342feeacb10cbfea08586742e04` |
+| Target | PostgreSQL 18.6, PostGIS `3.6.4 94d984b`, GEOS 3.11.1, PROJ 9.9.0 |
+| Owned local target image | `boardsesh-hypopg-audit:6975`, image ID `sha256:b5a9799214c2e9b3962d4413ef202e7644af33ae5ca20563ce626afdeedae5d7` |
+| Target Dockerfile | `packages/db/docker/Dockerfile.postgres`, SHA256 `2a2bb0a4230bd22715a507b684b7f7db9fac66d400f41515d1492a0ea27e0500` |
+
+The source `master` tag has moved from the historical 3.7.0dev build to
+3.8.0dev. This run is evidence for those exact observed builds and the current
+application surface; it does not qualify an untested production source digest
+or replace the whole-catalog, sequence and failback gates. The target was an
+owned local build of the unchanged checked-in Dockerfile, not a claim about a
+published attested artifact. Both databases used the rehearsal's private Docker
+network, with no published ports or production connection.
+
+Read-only negative controls on both endpoints returned `true/false/false` for
+the correct `ST_Y` comparison, a wrong-axis `ST_X` substitution, and coercing
+NULL latitude to zero. The new assertions therefore reject both wrong-axis and
+NULL-loss regressions. `ST_X` is a negative-control instrument, not an added
+application capability or a surface-guard allowlist entry.
+
+An earlier version of this rehearsal reported a passing `ST_DWithin` check that proved nothing — the
+probe point sat 4,345 km from the nearest fixture row against a 2,000 km radius, so the count was 0 on
+both sides and no candidate ever reached the geodesic predicate. The discrimination check above is
+what stops that recurring: the answer must be a strict subset of the eligible rows, so neither an
+empty result nor "everything" can pass.
+
+## What this does and does not settle
+
+**Settles:** nothing in the Boardsesh spatial surface depends on anything 3.7.0dev provides that 3.6.4
+does not. Values, types, index definitions, index selection, geodesic results and the derivation
+trigger all cross unchanged. The 3.7.0dev build is a consequence of tracking a `master` tag, not of
+any feature this application uses.
+
+**Does not settle:** this is not the §4 rehearsal. No whole-catalog cross-major DDL fingerprint
+comparison, no sequence fence, no failback drill, and no real production data. Those remain the hard
+external gate, and the fixture necessarily reflects what the audit found rather than whatever
+production actually contains.
+
+**Keeping the claim true.** "The application's whole spatial surface" is a statement about the
+repository, and it decays. `scripts/postgres18-spatial-surface.test.sh` is the mechanism that keeps it
+honest: it inventories every `ST_*` call site in first-party SQL and TypeScript, plus every migration
+that adds a geography column, and fails when either grows past what the rehearsal exercises. Today
+that surface is exactly `ST_MakePoint`, `ST_Distance`, `ST_DWithin`, `ST_AsText` and `ST_Y`, over
+`gyms` and `user_boards`. It runs inside `vp run test:postgres18-contract`, so a new spatial migration trips it.
+A new spatial _resolver_ only trips it on the next run of that workflow, since
+`packages/backend/**` is not in the `&database_image_paths` filter — a gap worth closing if the
+backend starts doing more with geography.
+
+Re-run the rehearsal itself when: the Railway image pin changes, `Dockerfile.postgres` moves the
+PostGIS version, or the surface test above fails.
+
+## Two things the rehearsal turned up on the way
+
+**The schema-owner step is load-bearing.** Restoring without
+`ALTER SCHEMA public OWNER TO boardsesh_owner` fails on `COMMENT ON SCHEMA public IS 'standard public
+schema'` — the awk filter drops `COMMENT - EXTENSION` entries but not `COMMENT - SCHEMA`, and the
+restore runs as the owner role. `postgres-logical-replication.sh` already does the ALTER; this is a
+note for anyone reproducing the steps by hand from the runbook.
+
+**A `--data-only` restore into an already-loaded schema used to fail, and it took two trigger
+functions to fix rather than one.** `pg_restore` emits
+`SELECT pg_catalog.set_config('search_path', '', false)`, and migration 0127's
+`set_location_from_coordinates()` had `proconfig` NULL, so its unqualified `geography` cast could not
+resolve while the trigger fired during `COPY`:
+
+```
+pg_restore: error: COPY failed for table "user_boards": ERROR:  type "geography" does not exist
+CONTEXT:  PL/pgSQL function public.set_location_from_coordinates() line 4 at assignment
+```
+
+Pinning only that one moved the abort to the next table with an INSERT trigger. `update_vote_counts()`
+(0053, replaced by 0130) declares `v_entity_type social_entity_type`, and plpgsql resolves a `DECLARE`
+datatype when it _compiles_ the function on first call in a session — strictly before the function's
+own `boardsesh.skip_vote_counts` early return can run, so the skip guard cannot rescue it:
+
+```
+pg_restore: error: COPY failed for table "votes": ERROR:  type "social_entity_type" does not exist
+CONTEXT:  compilation of PL/pgSQL function "update_vote_counts" near line 3
+```
+
+Those are the only two of our fourteen trigger functions that fire on INSERT and so run during `COPY`.
+The other twelve fire on UPDATE or DELETE and carry the identical defect (unqualified
+`sync_deletions`, `playlists`, `playlist_ownership`, a `nextval()` naming its sequence as a bare
+string), so migration 0210 pins `search_path = public, pg_catalog` on all fourteen. PostGIS installs a
+fifteenth `RETURNS trigger` function into `public`, `postgis_cache_bbox()`; it is extension-owned and
+deliberately left alone, which is why the guards that enforce this invariant exclude by
+`pg_depend.deptype = 'e'` rather than by name.
+
+The scope is narrower than it first looks, and the distinction matters. Verified on PostgreSQL 18.4:
+a **full** `pg_dump` → `pg_restore` is unaffected, because `pg_dump` emits `CREATE TRIGGER` after
+`COPY`, so the trigger does not exist while the data loads. Only a `--data-only` restore into a schema
+that is already present takes the broken path — which is exactly what this rehearsal does, and how it
+was found. The runbook's "backup/restore of PG18 succeeds independently" gate and the failback drill
+were never at risk, and neither is the cutover copy: a subscriber applies with
+`session_replication_role = replica` and fires no ordinary triggers.
+
+Fixed by migration 0210 (#4699).
+
+**Keep passing `--disable-triggers` on a data-only reload.** The pin removes the hard error; it does
+not remove the reason for the flag. With `search_path` pinned the triggers no longer fail — they
+_run_, so a data-only reload recomputes derived data from the rows it just loaded instead of
+restoring what the dump recorded. `set_location_from_coordinates` recomputes `gyms.location` /
+`user_boards.location` from lat/lng, and `update_vote_counts` rebuilds `vote_counts` from `votes`.
+On a self-consistent dump that lands on the same answer — measured on PostgreSQL 18.4 with all
+fourteen pinned, a `--data-only` reload of `votes` + `vote_counts` restored 29/27 rows with a
+`vote_counts` checksum identical to the source, with and without the flag. It stops being identical
+the moment a dumped derived value disagrees with its source rows, and the restore then silently
+prefers the recomputation.
+
+There is also an ordering hazard worth knowing before you reach for a whole-database reload.
+`COPY votes` populates `vote_counts` through the trigger, so a later `COPY vote_counts` collides:
+
+```
+pg_restore: error: COPY failed for table "vote_counts": ERROR:  duplicate key value violates unique constraint "vote_counts_entity_type_entity_id_pk"
+```
+
+Today that does not fire, and only by luck: `pg_dump` emits `TABLE DATA` entries in alphabetical
+order, `vote_counts` sorts before `votes` (`_` before `s`), so the dumped counts load first and the
+trigger's `ON CONFLICT … DO UPDATE` absorbs the recount. Reproduced by feeding `pg_restore` a
+reversed `-L` list — the error above is verbatim from that run. A future table sorting between the
+two, or any partial reload that touches `votes` after `vote_counts`, brings it back.
+`--disable-triggers` (or `session_replication_role = replica`) avoids both problems, and it remains
+the faithful model of logical-replication apply.
+
+`logbook_changes` has the same hazard, and it does fire. `boardsesh_ticks` sorts first, so
+`COPY boardsesh_ticks` fills the log through its trigger and the later `COPY logbook_changes` collides
+on `seq`:
+
+```
+pg_restore: error: COPY failed for table "logbook_changes": ERROR:  duplicate key value violates unique constraint "logbook_changes_pkey"
+```
+
+`--disable-triggers` clears that one, but not its neighbour: a fully migrated target already holds
+the seeded `logbook_change_watermark` row, so that `COPY` fails on `logbook_change_watermark_pkey`
+either way. `pg_restore` reports it and carries on unless `--exit-on-error` is set, and the target
+keeps its own feed generation. Both reproduced on PostgreSQL 18.6. Neither table's rows mean anything
+in another cluster, because `xid8` values belong to one cluster, so after a logical move clear the log
+and rotate the generation ([integration-platform.md](../integrations/integration-platform.md#retention-cursor-validity-and-moving-the-database)).
+
+Two guards keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
+migration folder in the `db-migrations` CI job, and `scripts/dev-db-image-smoke.sh` asserts
+`pg_proc.proconfig` against the fully-migrated dev-db image in `test-dev-db`.

@@ -3,7 +3,7 @@
 // the real exported tokens (no copied numbers): every label, outline and accent
 // pairing on every surface step, the nav label over the overlay bar, the ladder's
 // order, and chroma 0 on every neutral. The values themselves are documented in
-// docs/ai-design-guidelines.md ("Material surfaces: Graphite").
+// docs/design/ai-design-guidelines.md ("Material surfaces: Graphite").
 import { describe, expect, it, vi } from 'vitest';
 
 // colors.ts touches Platform/PlatformColor at import; Android skips the iOS branch.

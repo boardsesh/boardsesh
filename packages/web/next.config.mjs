@@ -728,7 +728,7 @@ export default withSentryConfig(nextConfig, {
   webpack: {
     // Off since #4654: cron monitors now come from packages/scheduler
     // (Sentry.withMonitor per job), and vercel.json declares no crons for
-    // this to instrument. See docs/scheduler.md.
+    // this to instrument. See docs/backend/scheduler.md.
     automaticVercelMonitors: false,
 
     // Tree-shaking options for reducing bundle size

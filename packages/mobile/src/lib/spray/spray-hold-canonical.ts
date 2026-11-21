@@ -2,7 +2,7 @@
 //
 // The exact inverse of `spray-hold-geometry.ts`, and it exists for the same
 // reason that one does: the editor draws on the untouched photograph, because no
-// image is ever warped (`docs/spray-walls.md`, "Canonical coordinates and
+// image is ever warped (`docs/product/spray-walls.md`, "Canonical coordinates and
 // matching"), but a hold is STORED once in the wall's canonical frame so that
 // every later photograph of the same wall agrees about where it is.
 //

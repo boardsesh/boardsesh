@@ -831,7 +831,7 @@ describe('BluetoothAutoSender drain loop', () => {
 // The auto-sender's hold reads `isStaleCurrentClimb` per write (the component
 // itself, with the release paths and telemetry, is exercised through the real
 // BluetoothProvider in bluetooth-provider-wall-confirm.test.tsx, "stale-climb
-// hold"). docs/current-climb-outside-queue.md, section 6.
+// hold"). docs/product/current-climb-outside-queue.md, section 6.
 describe('stale-climb hold gate (#4979)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = Date.parse('2026-10-25T10:00:00.000Z');

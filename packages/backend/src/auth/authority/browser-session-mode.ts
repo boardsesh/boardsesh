@@ -91,7 +91,7 @@ export function legacyBridgeUntil(environment: Environment = process.env): Date 
  * backend session end to end. While any entry remains, `better-auth` refuses
  * to start even with every precondition met. Each Phase B PR deleted its own
  * entry; #7880 emptied the list (the evidence per entry is in
- * docs/better-auth-browser-session.md, "Status"). Like
+ * docs/auth/better-auth-browser-session.md, "Status"). Like
  * `AUTHORITY_ACTIVATION_BLOCKERS`, no environment variable or flag changes it.
  */
 export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([]);

@@ -6,7 +6,7 @@
 # migrations applied. Developers just pull & run.
 #
 # The catalogue comes from the nightly board snapshots we already publish for
-# offline mode (docs/board-snapshots.md) — not from scraping Aurora APKs and
+# offline mode (docs/data/board-snapshots.md) — not from scraping Aurora APKs and
 # running pgloader, which is what this image used to do (issue #4508). The
 # snapshots are built from production, so the image ships last night's catalogue
 # instead of whatever an APK mirror happened to serve, and dropping pgloader

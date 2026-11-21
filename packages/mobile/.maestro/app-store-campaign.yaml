@@ -415,4 +415,4 @@ name: multiboard App Store campaign sources
 # reliably start or capture ActivityKit with the simulator replay client. Keep
 # that native card separate from these full-screen app captures; it is never a
 # fabricated widget or a relabeled simulator screenshot. Local regeneration is
-# documented in docs/live-activity-creative-captures.md with its provenance.
+# documented in docs/marketing/live-activity-creative-captures.md with its provenance.

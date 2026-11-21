@@ -165,7 +165,7 @@ function configureGoogleSignin(): void {
   // in the webClientId's Google Cloud project), not by an id string — passing one
   // is ignored. EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID exists only for backend-
   // audience parity. If Android sign-in fails before any network call, the
-  // running build's SHA-1 likely isn't registered (see docs/android-sideload-build.md).
+  // running build's SHA-1 likely isn't registered (see docs/operations/android-sideload-build.md).
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
@@ -210,7 +210,7 @@ export async function signInWithGoogle(): Promise<OAuthSignInResult> {
           `[auth] Google sign-in failed with an unmapped error (code: ${errorCode ?? 'none'}). On Android ` +
             "this is typically a config issue — the build's signing-certificate SHA-1 isn't registered as an " +
             "Android OAuth client for com.boardsesh.app in the webClientId's Google Cloud project. Get the " +
-            'SHA-1 via `apksigner verify --print-certs <apk>` (see docs/android-sideload-build.md).',
+            'SHA-1 via `apksigner verify --print-certs <apk>` (see docs/operations/android-sideload-build.md).',
         );
     }
     throw error;

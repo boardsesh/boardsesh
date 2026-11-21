@@ -2,7 +2,7 @@
 // the nightly snapshot export job (scripts/export-board-snapshots.ts). Kept in
 // its own module so both paths coerce a raw postgres-js row into a sync document
 // identically — the export artifact and a live pull must produce byte-identical
-// SQLite rows. See docs/sync-table-manifest.md.
+// SQLite rows. See docs/data/sync-table-manifest.md.
 
 export type RawRow = Record<string, unknown>;
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://boardsesh.com/schemas/hold-detector-manifest.schema.json",
   "title": "Hold detector model manifest",
-  "description": "Published to models/hold-detector/<version>/manifest.json in the public media R2 bucket by ml/holds/publish_model.py (epic #5346, SW-01, issue #5434). Consumed by the recognition service in packages/hold-detector; deployment and exposure gates are documented in docs/spray-recognition-rollout.md. The earlier phone inference runtime (issue #5435) has been superseded. Weights are immutable per version; the manifest is the only mutable pointer for a given version, so a bad manifest can be re-published with --force but the weight files it points at never change underneath a version tag.",
+  "description": "Published to models/hold-detector/<version>/manifest.json in the public media R2 bucket by ml/holds/publish_model.py (epic #5346, SW-01, issue #5434). Consumed by the recognition service in packages/hold-detector; deployment and exposure gates are documented in docs/product/spray-recognition-rollout.md. The earlier phone inference runtime (issue #5435) has been superseded. Weights are immutable per version; the manifest is the only mutable pointer for a given version, so a bad manifest can be re-published with --force but the weight files it points at never change underneath a version tag.",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -325,7 +325,7 @@
         "gestureSavings": {
           "type": "number",
           "maximum": 1,
-          "description": "eval.py's gesture_savings: 1 - (2 * misses + false positives) / (2 * holds) on the `eval` split at the shipped default threshold. The share of hand-placement gestures the detector saves, where placing a hold by hand costs 2 and deleting a false positive costs 1. Can go negative for a detector that mostly adds false positives. The release gate is 40% (docs/spray-recognition-rollout.md)."
+          "description": "eval.py's gesture_savings: 1 - (2 * misses + false positives) / (2 * holds) on the `eval` split at the shipped default threshold. The share of hand-placement gestures the detector saves, where placing a hold by hand costs 2 and deleting a false positive costs 1. Can go negative for a detector that mostly adds false positives. The release gate is 40% (docs/product/spray-recognition-rollout.md)."
         }
       }
     },

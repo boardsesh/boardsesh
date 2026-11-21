@@ -10,7 +10,7 @@
  *   (native-revoke-reset-lock-order.test.ts races them in both orders).
  * - STAGED_WEB_PROOF_GENERATION_STAMP, its code half (#7596 B2c, owner
  *   decision 4). The evidence, each a named test, is listed in
- *   docs/better-auth-rollout.md ("Code gates"): the staged proof carries the
+ *   docs/auth/better-auth-rollout.md ("Code gates"): the staged proof carries the
  *   generation read where the credential was verified; under `better-auth` www
  *   never stamps a sign-in from its own read; a moved, zero or missing stamp is
  *   denied by the bridge and by admission; a no-SID cookie is never bridged into

@@ -24,7 +24,7 @@
 // stale, already-revoked credential (#5345). Every mutation here therefore stamps
 // what it left in each namespace, and the migration reads that stamp to tell a
 // stale v2 copy from a fresh one — see secure-store-stamp.ts and
-// docs/keychain-namespaces.md.
+// docs/auth/keychain-namespaces.md.
 //
 // Every mutation also records its key here so a migration pass running
 // concurrently can stand down — see touchedSecureKeys below.

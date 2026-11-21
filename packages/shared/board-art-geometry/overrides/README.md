@@ -92,4 +92,4 @@ not something the generator can merge.
   tighter than the 0.25 radii the editor and the merge accept — so it would red a legal
   correction with no remedy. The 0.25 rule binds on the committed ring instead.
 
-Full context: `docs/board-art-geometry.md`.
+Full context: `docs/rendering/board-art-geometry.md`.

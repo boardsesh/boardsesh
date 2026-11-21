@@ -1,5 +1,5 @@
 /**
- * F3 Redis fields (#6666, docs/current-climb-outside-queue.md, sections 2 and 9):
+ * F3 Redis fields (#6666, docs/product/current-climb-outside-queue.md, sections 2 and 9):
  * `historyCount`, `historyCountVersion`, `currentUuid` and `currentChangedAt`,
  * against a real Redis running the real CAS script.
  */

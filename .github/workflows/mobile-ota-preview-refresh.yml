@@ -5,7 +5,7 @@ name: Refresh Mobile OTA Previews
 # PR's last preview record is missing, unreadable or failed. An unrelated base
 # commit leaves the preview offered to the same installed binaries; the PR's
 # next push picks it up. Rules: scripts/mobile-ota-preview-refresh.ts and
-# docs/mobile-ota-updates.md ("When an open preview is republished").
+# docs/operations/mobile-ota-updates.md ("When an open preview is republished").
 #
 # `plan` reads PR, deployment and git-object metadata with a read-only token. It
 # checks out this workflow's own trusted commit (main, never a PR
@@ -19,7 +19,7 @@ name: Refresh Mobile OTA Previews
 # Production environment secret, so `notify` declares that environment, holds no
 # token scope and runs no checked-out code. Concurrency sits on `plan` rather
 # than the workflow: a `notify` parked at the environment gate must not hold the
-# refresh lane (docs/production-deploy.md, "The failure mode").
+# refresh lane (docs/operations/production-deploy.md, "The failure mode").
 on:
   push:
     branches: [main]

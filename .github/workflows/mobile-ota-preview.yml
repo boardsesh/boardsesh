@@ -3,7 +3,7 @@ name: Mobile OTA Preview (Per-PR Branch)
 # Publishes a PR's JS bundle to its own self-hosted OTA branch `pr-<number>` so
 # anyone on a compatible store / TestFlight binary can load it through Test a PR
 # preview in More or the user drawer. Native config keeps the `production` channel fixed;
-# `pr-<number>` is only the eoas upload branch. See docs/mobile-ota-updates.md.
+# `pr-<number>` is only the eoas upload branch. See docs/operations/mobile-ota-updates.md.
 #
 # ─── SECURITY — READ BEFORE EDITING ──────────────────────────────────────────────
 # EOO_TOKEN is the app-scoped expo-open-ota publish key, so ANY job holding it can
@@ -115,13 +115,13 @@ env:
   # Manifest base for the offline snapshot bootstrap (bundle-only, no fingerprint
   # effect). Public R2 host; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # blackheathdc-ansible/inventories/boardsesh_workers.yml (batch defaults).
-  # Cutover: docs/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
+  # Cutover: docs/data/board-snapshots.md#batch-worker-owner-export-board-snapshots-family.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://snapshots.boardsesh.com/board-snapshots/v1-gzip
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it
   # doesn't enter the resolved config, so it never moves the fingerprint. Kept in
-  # lockstep with the other mobile fingerprint workflows. See docs/mobile-ota-updates.md.
+  # lockstep with the other mobile fingerprint workflows. See docs/operations/mobile-ota-updates.md.
   EXPO_PUBLIC_USE_RN_FETCH: '1'
   # Preview-only tag: pr-<number> OTA bundles report `environment: preview` to BOTH
   # Sentry and PostHog, so testers' crashes and product events stay out of the

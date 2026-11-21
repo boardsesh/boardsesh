@@ -7,7 +7,7 @@
 //    while an offline fetch sits paused, so the card gates on this climb's
 //    entry in `fetchedUuids` instead.
 // 2. An uncapped `.map()` inside the play drawer's ScrollView
-//    (docs/react-native-performance.md section 2).
+//    (docs/mobile/react-native-performance.md section 2).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';

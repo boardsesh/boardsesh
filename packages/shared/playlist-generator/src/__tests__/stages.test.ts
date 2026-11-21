@@ -226,7 +226,7 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     ]);
   });
 
-  // Partner warm-ups set their own range (docs/partner-api.md, "Blocks").
+  // Partner warm-ups set their own range (docs/integrations/partner-api.md, "Blocks").
   it("keeps its own target over the following workout stage's", () => {
     const plan: WorkoutPlan = {
       stages: [
@@ -481,7 +481,7 @@ describe('generateStagedPlan cool-downs', () => {
     ]);
   });
 
-  // Partner warm-ups set their own range (docs/partner-api.md, "Blocks").
+  // Partner warm-ups set their own range (docs/integrations/partner-api.md, "Blocks").
   it('keeps a trailing warm-up with its own target ramping up to it', () => {
     const plan: WorkoutPlan = {
       stages: [volumeStage('main', 10, 1), { id: 'warm', kind: 'warmUp', warmUpType: 'standard', targetGrade: 5 }],

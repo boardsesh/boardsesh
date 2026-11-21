@@ -228,7 +228,7 @@ export function buildPlayStoreUrl(input: StoreLinkInput): string {
  *
  * App Analytics only attributes a campaign link that names its provider, so
  * until the variable is set the `ct` token rides along unread. See
- * `docs/growth-metrics.md`.
+ * `docs/analytics/growth-metrics.md`.
  */
 export function appStoreProviderId(): string | null {
   const providerId = process.env.NEXT_PUBLIC_APP_STORE_PROVIDER_ID?.trim();

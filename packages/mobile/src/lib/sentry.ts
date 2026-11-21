@@ -44,7 +44,7 @@ export const isSentryEnabled = !!sentryDsn && !__DEV__;
 // binaries before the next native build ships. Match the view name + method (never a bare
 // `partialExpand` substring) so no unrelated error is ever dropped; cover `expand` too —
 // same mechanism, even though only `partialExpand` rejects on today's fleet. See
-// docs/mobile-ota-updates.md: JS-only, so it keeps the same fingerprint and rides the OTA.
+// docs/operations/mobile-ota-updates.md: JS-only, so it keeps the same fingerprint and rides the OTA.
 const EXPO_UI_SHEET_NO_HANDLER =
   /Call to function 'ModalBottomSheetView\.(?:partialExpand|expand)' has been rejected|No handler registered for AsyncFunction '(?:partialExpand|expand)' on view 'ModalBottomSheetView'/;
 

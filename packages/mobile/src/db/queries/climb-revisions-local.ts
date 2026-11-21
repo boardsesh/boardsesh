@@ -107,7 +107,7 @@ export async function readClimbRevisionNumbersLocal(
  *   stamps the phone's version), not because it has none.
  *
  * `ownerUserId` is the `local_user_id` stamp, as in every other local tick
- * read (docs/offline-reads.md): rows a failed sign-out wipe left behind must
+ * read (docs/data/offline-reads.md): rows a failed sign-out wipe left behind must
  * not answer for the next account.
  */
 export async function readTickRevisionsLocal(

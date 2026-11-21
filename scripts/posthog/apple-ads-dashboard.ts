@@ -105,7 +105,7 @@ Read store delivery and consented product outcomes separately. Apple reports ins
 
 The range selects Apple reporting dates and native activity/cohort entry. Store report timezone is unverified; person windows use UTC. Attribution lookup time is not installation time. Unknown keyword/country stays unknown.`,
     agentContext:
-      'Sources: dotted applesearchads warehouse tables; current persons attribution joined to canonical native production iOS person IDs; growth_native_newcomers membership. Internal cohort 295337 excluded. Do not use event-time person properties to filter earlier outcomes. Definitions are versioned in scripts/posthog/apple-ads-queries.ts and docs/growth-metrics.md; no approved Data Catalog metric exists. Never divide store spend by consenting-person outcomes as campaign CPA. Measurement release remains unverified until release-mode evidence is recorded.',
+      'Sources: dotted applesearchads warehouse tables; current persons attribution joined to canonical native production iOS person IDs; growth_native_newcomers membership. Internal cohort 295337 excluded. Do not use event-time person properties to filter earlier outcomes. Definitions are versioned in scripts/posthog/apple-ads-queries.ts and docs/analytics/growth-metrics.md; no approved Data Catalog metric exists. Never divide store spend by consenting-person outcomes as campaign CPA. Measurement release remains unverified until release-mode evidence is recorded.',
   },
   freshness: {
     id: 12710552,

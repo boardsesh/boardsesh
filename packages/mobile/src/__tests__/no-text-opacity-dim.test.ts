@@ -169,7 +169,7 @@ function countAll(): Map<string, number> {
 const HOW_TO_FIX =
   'Dim text with a label tone, not opacity: <Text tone="secondary"> (secondaryLabel) or ' +
   '<Text tone="tertiary"> (tertiaryLabel). Opacity mixes text into its ground and ignores ' +
-  'Increase Contrast. See "Velvet Send v2 roles" in docs/ai-design-guidelines.md.';
+  'Increase Contrast. See "Velvet Send v2 roles" in docs/design/ai-design-guidelines.md.';
 
 const dimmedSheet = `
 const styles = StyleSheet.create({

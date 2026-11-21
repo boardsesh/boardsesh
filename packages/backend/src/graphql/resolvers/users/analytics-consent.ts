@@ -130,7 +130,7 @@ function nextDecidedAt(userId: string) {
  * write. A per-user advisory lock serializes concurrent device answers.
  *
  * A denial that replaces a grant or no answer also queues the erasure of the
- * account's PostHog person (docs/analytics-consent.md, "Erasure"), in this
+ * account's PostHog person (docs/analytics/analytics-consent.md, "Erasure"), in this
  * transaction, so the job exists exactly when the withdrawal does. No answer
  * counts: before the consent prompt shipped, both clients identified every
  * signed-in climber with the account id and their email, so an account whose

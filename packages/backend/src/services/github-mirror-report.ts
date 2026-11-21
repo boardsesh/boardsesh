@@ -1,7 +1,7 @@
 /**
  * One place to announce that a GitHub mirror never landed.
  *
- * Both mirrors — a QA verdict's comment + label (`docs/crowdsourced-qa.md`) and
+ * Both mirrors — a QA verdict's comment + label (`docs/qa/crowdsourced-qa.md`) and
  * an in-app bug report's issue — are fire-and-forget by design: the
  * `qa_verdicts` / `app_feedback` row is the record, and a GitHub outage must
  * cost the copy, never the mutation. What it must NOT cost is knowing that a

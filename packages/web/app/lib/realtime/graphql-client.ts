@@ -86,7 +86,7 @@ export function createGraphQLClient(
     // so the handshake also carries the client identity. Browsers cannot set
     // headers on the upgrade, so connectionParams is the only channel.
     // `clientPlatform` puts a signed-in socket's day in `user_activity_days`
-    // under `web`, as HTTP requests already are (docs/analytics-consent.md).
+    // under `web`, as HTTP requests already are (docs/analytics/analytics-consent.md).
     connectionParams: async () => {
       const connectToken = socketHandle ? await socketConnectToken(socketHandle) : null;
       return {

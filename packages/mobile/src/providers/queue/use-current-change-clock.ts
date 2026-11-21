@@ -22,7 +22,7 @@ export type CurrentChangeClockControls = {
 };
 
 /**
- * The #4979 hold's clock (docs/current-climb-outside-queue.md, section 6): when
+ * The #4979 hold's clock (docs/product/current-climb-outside-queue.md, section 6): when
  * the current climb last became a different climb.
  *
  * It advances only when the current queue-item uuid differs from the one the

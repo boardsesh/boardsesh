@@ -260,7 +260,7 @@ export const SHARED_EVENTS = {
   // fallback: 'probe' | 'validation-error' }. Fired at most once per launch
   // while the answer is true, and on every false: any false after the F3
   // backend is live, outside a deploy window, means a rollback or a probe that
-  // broke. See docs/current-climb-outside-queue.md, section 8 (telemetry).
+  // broke. See docs/product/current-climb-outside-queue.md, section 8 (telemetry).
   QueueServerProbe: 'Queue Server Probe',
   // F3 (#6666): the solo queue snapshot a cold start restored, once per launch.
   // Props: { historyCount, upNextCount, upNextDuplicates (climbs appearing more
@@ -328,7 +328,7 @@ export const SHARED_EVENTS = {
   // single-workout funnels keep their meaning. `workoutTypes` is every block the
   // climber built, warm-ups included, in run order, comma-joined
   // (`warmUp,pyramid,volume`): a string because web `track()` types arrays out
-  // (docs/gym-funnel-analytics.md), and not sorted because the order is the workout.
+  // (docs/analytics/gym-funnel-analytics.md), and not sorted because the order is the workout.
   // `phase` is 'pre_session' for the workout queued at Start and 'in_session'
   // for a block added to a running session (one workout block, never a warm-up);
   // events from before it existed are all Start. Same values as
@@ -1070,7 +1070,7 @@ export const SHARED_EVENTS = {
   // who sees it can still finish — but the count of walls that published and
   // then sat on "Setting your wall up…", by where they sat.
   SprayWallBindStalled: 'Spray Wall Bind Stalled',
-  // Spray walls — a reset (docs/spray-walls.md, "Archive and reset"). A reset
+  // Spray walls — a reset (docs/product/spray-walls.md, "Archive and reset"). A reset
   // clones the wall's settings into a new wall the owner photographs and marks
   // in the add-a-wall wizard; its first publish archives the old wall.
   //
@@ -1750,7 +1750,7 @@ export const SHARED_EVENTS = {
   // `Climb First Action` trio that once measured the classic-vs-Aura A/B was
   // retired once the flags went away and nothing read the events. Full
   // contract, property tables and the stratification rule (never pool across
-  // boardName or glowFalloffSource): docs/board-render-analytics.md. Builders
+  // boardName or glowFalloffSource): docs/analytics/board-render-analytics.md. Builders
   // live in board-render-events.ts, re-exported from @boardsesh/analytics.
   //
   // The climber changed a Boardsesh render setting from the settings screen
@@ -1769,7 +1769,7 @@ export const SHARED_EVENTS = {
   AuraGpuPrepared: 'Aura GPU Prepared',
   // How a cold live-GPU request first put holds on the board (GPU frame, an
   // already-cached PNG, or the PNG hedge after the grace period) and how long it
-  // took. Sampled like the two above; docs/board-render-analytics.md.
+  // took. Sampled like the two above; docs/analytics/board-render-analytics.md.
   AuraGpuFirstHolds: 'Aura GPU First Holds',
   // A saved render preset or CVD palette preset was applied (issue #2202,
   // settings-screen PR). No extra props beyond the common ones — the event IS

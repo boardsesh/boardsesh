@@ -39,7 +39,7 @@ import { GET_PROFILE, type GetProfileQueryResponse } from './graphql/operations'
 //    the timeout: Login Succeeded still fires on time for the funnels.
 //
 // So a sign-up is a person with `is_new_account = true` on EITHER event. The
-// query is in docs/growth-metrics.md ("Counting sign-ups").
+// query is in docs/analytics/growth-metrics.md ("Counting sign-ups").
 //
 // `account_age_read` on Login Succeeded says how the 5 s went: 'ok', 'timeout'
 // (no read had answered), 'empty' (the last read answered with no profile) or

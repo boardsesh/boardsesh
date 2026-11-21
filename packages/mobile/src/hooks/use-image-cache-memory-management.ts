@@ -73,7 +73,7 @@ export function useImageCacheMemoryManagement(): void {
   // module defines no such function, so calling it off iOS fails at the bridge
   // rather than quietly no-opping. Android bounds Glide by its own
   // device-RAM-derived policy plus the native `modules/memory-trim` full-clear
-  // (docs/react-native-performance.md §7); web has no native cache to configure.
+  // (docs/mobile/react-native-performance.md §7); web has no native cache to configure.
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
     Image.configureCache({

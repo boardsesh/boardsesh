@@ -1,7 +1,7 @@
 export const qaTypeDefs = /* GraphQL */ `
   """
   A tester's verdict on a pull-request preview (crowdsourced QA; see
-  docs/crowdsourced-qa.md).
+  docs/qa/crowdsourced-qa.md).
   """
   enum QaVerdictKind {
     approved

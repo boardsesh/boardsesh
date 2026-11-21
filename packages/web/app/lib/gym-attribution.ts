@@ -45,7 +45,7 @@ export function gymQrUrl(gymSlug: string, medium: GymQrMedium = 'poster'): strin
  * `app/b/[board_slug]/page.tsx`'s redirect carries the params onto
  * `/b/{slug}/{angle}/list`, where `BoardQrLandingTracker` counts them as
  * `Board QR Scanned`. See "Which code fires which event" in
- * `docs/gym-funnel-analytics.md`.
+ * `docs/analytics/gym-funnel-analytics.md`.
  *
  * `wallUuid` is an UNLISTED spray wall's share-link capability. It goes first,
  * `?wall=<uuid>&src=qr&medium=board`, the same param `buildSprayWallShareUrl`

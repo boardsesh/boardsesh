@@ -27,7 +27,7 @@ import { boardClimbs } from '../boards/unified';
 /**
  * Spray walls — the per-wall state that does NOT belong on the catalogue rows.
  *
- * A spray wall is a runtime-created catalogue layout (SW-03, `docs/spray-walls.md`):
+ * A spray wall is a runtime-created catalogue layout (SW-03, `docs/product/spray-walls.md`):
  * one `board_layouts` row plus one `board_product_sizes` row carrying the same
  * id, and one `board_holes` + `board_placements` pair per hold, again sharing an
  * id. That mapping is what makes queue, play, ticks, stats, playlists, feed,
@@ -87,7 +87,7 @@ export const sprayHoldSourceEnum = pgEnum('spray_hold_source', ['manual', 'auto'
 /**
  * What the climber did with a detector suggestion before it was saved as an
  * `auto` hold (SW-20, #5471). The training export reads it as the label's
- * provenance, and the correction ratio in `docs/spray-recognition-rollout.md`
+ * provenance, and the correction ratio in `docs/product/spray-recognition-rollout.md`
  * comes straight from it.
  *
  *  - `accepted`: kept as found, via accept-defaults or keep-maybes.
@@ -141,7 +141,7 @@ export type SprayWallRenderSettingsValue = {
 
 /**
  * The generated wall looks of one version (`spray_wall_versions.art`), written
- * by the `spray-wall-art` job (`docs/spray-walls.md`, "Generated wall looks").
+ * by the `spray-wall-art` job (`docs/product/spray-walls.md`, "Generated wall looks").
  *
  * - `pending`: a job is queued or running;
  * - `ready`: both images are in the private bucket at `cropKey` / `cutoutKey`;
@@ -236,7 +236,7 @@ export const sprayWalls = pgTable(
      *
      * The key is RANDOM rather than derived — `spray-walls/<wall uuid>/<128 random
      * bits>.jpg`. `media` is world-readable under guessable keys
-     * (`docs/user-media-storage.md`), so a key derived from the wall uuid would
+     * (`docs/operations/user-media-storage.md`), so a key derived from the wall uuid would
      * stay fetchable to anyone who had ever seen the wall, and "made it private
      * again" would mean nothing. Each promotion mints a fresh key.
      */
@@ -360,7 +360,7 @@ export const sprayWalls = pgTable(
     photosPurgedAt: timestamp('photos_purged_at'),
     /**
      * When this wall was archived: replaced by a reset clone that reached its
-     * first publish (`docs/spray-walls.md`, "Archive and reset").
+     * first publish (`docs/product/spray-walls.md`, "Archive and reset").
      *
      * An archived wall is read-only. Its climbs, ticks, playlists and share links
      * keep working, it leaves every picker and listing, and nobody can set or
@@ -422,7 +422,7 @@ export const sprayWallReportReasonEnum = pgEnum('spray_wall_report_reason', [
 /**
  * One climber's report of one wall.
  *
- * Deliberately NOT the `climb_proposals` vote machinery (`docs/climb-moderation.md`):
+ * Deliberately NOT the `climb_proposals` vote machinery (`docs/product/climb-moderation.md`):
  * that is a weighted approval threshold over a change to a CLIMB — its holds, its
  * name, its grade — where the community is the right judge and the outcome is a
  * catalogue edit. A wall photograph is somebody's home, the question is a safety
@@ -476,7 +476,7 @@ export const sprayWallReports = pgTable(
 /**
  * One photograph of the wall. Version 1 is the wall's first photo; every reset
  * adds another. A version NEVER creates a new layout or a new size — see
- * `docs/spray-walls.md` "What the version is not".
+ * `docs/product/spray-walls.md` "What the version is not".
  */
 export const sprayWallVersions = pgTable(
   'spray_wall_versions',

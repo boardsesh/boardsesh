@@ -10,7 +10,7 @@ import { sql } from 'drizzle-orm';
  *
  * `record_id` holds the row's NATURAL key (not the server bigserial id), encoded
  * exactly as the mobile local PK so the client can split it back into columns —
- * see docs/sync-table-manifest.md "Del:" lines per table. Examples:
+ * see docs/data/sync-table-manifest.md "Del:" lines per table. Examples:
  *   boardsesh_ticks  -> OLD.uuid
  *   user_favorites   -> board_name:climb_uuid:angle
  *   board_climb_stats-> board_type:climb_uuid:angle
