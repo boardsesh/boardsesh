@@ -40,6 +40,10 @@
 /chunk-carryover.json
   Cache-Control: no-store
 
+# Preview reuse checks must read the revision actually served by the branch.
+/preview-meta.json
+  Cache-Control: no-store
+
 # index.html and wasm/* keep fixed filenames, so they deliberately get NO cache
 # override here — they must revalidate, or a deploy would be masked by a stale
 # cached shell / stale WASM binary. (Left to Pages' default caching.)

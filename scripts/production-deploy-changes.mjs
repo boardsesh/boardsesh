@@ -2,6 +2,7 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isAppAffecting } from './lib/expo-web-inputs.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -158,37 +159,6 @@ function isWebAffecting(filePath) {
     isProductionDeployTestFile(filePath) ||
     isProductionDeployWatchdogFile(filePath) ||
     (isCloudflareAffecting(filePath) && filePath !== 'packages/web/app/lib/crawler-policy.ts')
-  );
-}
-
-function isAppAffecting(filePath) {
-  return (
-    filePath.startsWith('packages/mobile/') ||
-    filePath.startsWith('packages/shared/') ||
-    filePath.startsWith('packages/shared-schema/') ||
-    // deploy-app-web installs the root graph before exporting Expo web. The
-    // workspace manifest owns linker policy, overrides and patch mappings, so
-    // these root inputs can change the shipped browser bundle even when no
-    // packages/mobile source file changed.
-    filePath === 'pnpm-lock.yaml' ||
-    filePath === 'pnpm-workspace.yaml' ||
-    filePath === 'package.json' ||
-    filePath.startsWith('patches/') ||
-    filePath === 'scripts/build-expo-web-export.sh' ||
-    // The export recipe shells out to this: it rewrites the shipped shell's
-    // manifest href and the manifest's start_url/scope from the export's
-    // baseUrl (W-24, #4438). A patcher-only change alters the artifact
-    // app.boardsesh.com serves, so it has to redeploy the subdomain — and run
-    // the post-deploy manifest smoke that would catch a bad patch.
-    filePath === 'scripts/lib/patch-expo-web-pwa-manifest.mjs' ||
-    // Everything deploy-app-web ships to the Pages project. Listed file by file
-    // rather than as a `deploy/app-subdomain/` prefix because the rest of that
-    // directory — README, tsconfig, vite config, __tests__ — is not deployed,
-    // and a README edit should not redeploy the subdomain.
-    filePath === 'deploy/app-subdomain/_headers' ||
-    filePath === 'deploy/app-subdomain/_redirects' ||
-    filePath === 'deploy/app-subdomain/_routes.json' ||
-    filePath.startsWith('deploy/app-subdomain/functions/')
   );
 }
 

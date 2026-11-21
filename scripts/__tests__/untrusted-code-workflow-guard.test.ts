@@ -52,6 +52,8 @@ const TRUSTED_REF_TERMS = new Set([
  * checkout; stale ones fail.
  */
 const ALLOWED: Record<string, string> = {
+  'expo-web-preview.yml ${{ needs.inspect.outputs.head_repository }} ${{ needs.inspect.outputs.head_sha }}':
+    'The inspect job runs only on ci-sandbox/web-preview refs and validates an exact trusted deployment request against the live PR head. Only its approved repository and SHA reach this secret-free, read-only build job; the trusted publisher independently revalidates the request.',
   'mobile-ota-preview.yml ${{ needs.gate.outputs.head_sha }}':
     'The gate emits action=publish only on a pull_request run (PR-scoped) or on its own ci-sandbox/ota-preview branch; a default-branch dispatch becomes action=handoff. The gate tests below execute it.',
   "mobile-ota-preview.yml ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.gate.outputs.head_sha || github.event.repository.default_branch }}":
