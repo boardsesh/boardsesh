@@ -10,6 +10,12 @@ const APP_PACKAGE_PREFIXES = [
   'packages/board-renderer/',
 ];
 
+// Metro bundles these board backgrounds through the app's static require()
+// manifest. Other web images are marketing assets; retained PNG originals are
+// not bundled. A manifest-derived test guards newly consumed board-art roots.
+const BUNDLED_BOARD_ART_PATH =
+  /^packages\/web\/public\/images\/(?:decoy|grasshopper|kilter|moonboard|soill|tension|touchstone|woods)\/.*\.webp$/;
+
 const APP_BUILD_INPUTS = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -45,6 +51,7 @@ export function isAppAffecting(filePath) {
     APP_PACKAGE_PREFIXES.some((prefix) => filePath.startsWith(prefix)) ||
     filePath.startsWith('patches/') ||
     filePath.startsWith('deploy/app-subdomain/functions/') ||
+    BUNDLED_BOARD_ART_PATH.test(filePath) ||
     APP_BUILD_INPUTS.has(filePath)
   );
 }

@@ -343,6 +343,7 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
 
 void test('uses the shared app classifier for catalogue, WASM and hosting inputs', () => {
   for (const filePath of [
+    'packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.webp',
     'packages/board-constants/src/generated/boards.ts',
     'packages/board-renderer/wasm/src/lib.rs',
     'deploy/app-subdomain/robots.txt',
@@ -354,6 +355,7 @@ void test('uses the shared app classifier for catalogue, WASM and hosting inputs
   }
 
   for (const filePath of [
+    'packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.png',
     'packages/mobile/README.md',
     'packages/shared/queue/src/__tests__/reducer.test.ts',
     'packages/shared-schema/src/schema.spec.ts',
