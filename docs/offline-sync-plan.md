@@ -1,5 +1,7 @@
 # Offline Sync Plan
 
+Current fleet health and the automatic-download default decision are recorded in [Offline mode fleet health and default decision](offline-mode-health-2026-11-21.md), with reproducible production queries from 21 November 2026.
+
 Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the local database with a custom GraphQL mutation queue for offline writes.
 
 > **Shipped design supersedes the "pre-warmed, ships with the app" plan below.** This document is the original architecture evaluation (four approaches compared, one recommended) plus a first-cut design for warming boards on-device. What actually shipped downloads reference data **per board scope, on demand**, warmed by a nightly-built, CDN-hosted SQLite snapshot per `(boardType, layoutId)` rather than a single all-boards database bundled into the app binary. See **[`board-snapshots.md`](board-snapshots.md)** for the shipped export job, artifact format, client bootstrap flow, and ops runbook. The alternatives evaluation, mutation queue, sync pull protocol, and table manifest still describe the shipped system accurately; the "Pre-warmed SQLite database" section, app-size/QA notes, and any "first sync" / "pre-warmed timestamp" references describe the superseded all-boards-in-binary design.
