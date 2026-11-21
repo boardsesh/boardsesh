@@ -172,9 +172,12 @@ later linker already reads.
   re-read is for. If the first account only unlinked and still holds the
   sends, they stay with it, and the second account still sees none of them.
   Joining two accounts is the account-merge work in #3278 / #3541, not a sync.
-- **A climber relinking their own login keeps the watermark**, with or without
-  an unlink in between, because their synced ticks or playlists survive the
-  unlink.
+- **A climber relinking their own login keeps the watermark while a real
+  footprint remains**, with or without an unlink in between. If every synced
+  tick and owned Aurora circuit was removed, the reset can run again.
+- **Deleted circuit markers survive a link and cursor reset.** They do not
+  count as a synced footprint, but the re-read still skips those circuits
+  (#7240). Only unlinking clears that board's markers, as described above.
 - **It relies on the link-generation fence.** `updateUserSyncs` overwrites
   the watermark (it doesn't keep the later of two values), and a run carries
   the watermark in memory from page to page. So a run of an earlier link that

@@ -245,8 +245,8 @@ async function assertNoConflictingKilterOwner(
 const PER_LINKER_LOGBOOK_TABLES = ['ascents', 'bids', 'circuits'];
 
 /**
- * Give a Boardsesh user who has never synced this board the login's whole
- * logbook (#6692).
+ * Give a Boardsesh user with no remaining Aurora footprint on this board
+ * the login's whole logbook (#6692).
  *
  * `board_user_syncs` holds one watermark per Aurora login, not per Boardsesh
  * user, and an unlink or an account deletion leaves it behind. Without this, a
@@ -258,9 +258,11 @@ const PER_LINKER_LOGBOOK_TABLES = ['ascents', 'bids', 'circuits'];
  * "Never synced" is read from what survives an unlink: a tick on this board
  * with a real Aurora id, or an Aurora circuit playlist the user owns.
  * `json-import-%` ids are per-user hashes from the export import and say
- * nothing about the API cursor. With either footprint the watermark stays, so
- * a climber relinking their own login never re-pulls, and never gets back a
- * tick they deleted here (`deleteTick` hard-deletes, and Aurora is not told).
+ * nothing about the API cursor. A climber relinking their own login keeps
+ * the watermark while a real footprint remains. Removing every footprint
+ * allows a re-pull, including ticks deleted here (`deleteTick` hard-deletes,
+ * and Aurora is not told). Deleted-circuit markers do not count as a footprint;
+ * they survive the reset and keep those circuits out of the re-read.
  *
  * Nothing another account holds moves. The next sync re-reads Aurora, and the
  * appliers still refuse every tick and playlist another Boardsesh user owns
