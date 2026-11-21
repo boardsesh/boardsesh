@@ -631,23 +631,10 @@ test.describe('expo-web smoke', () => {
         const miniPlayer = page.getByTestId('persistent-mini-player');
         await expect(miniPlayer).toBeVisible();
 
-        // The persistent detail pane embeds the same action bar as the mobile
-        // route. Check both rows so a desktop-only gate cannot silently strip an
-        // action while the main Log ascent button still makes the pane look live.
-        // The leading action is mirror on boards that support it and the queue
-        // otherwise; the heart always leads the second row, so either way one of
-        // these names is on screen. "Climb actions" is the ⋯ menu in the pane's
-        // top row (a Paper menu anchor on web), not the bar.
-        await expect(
-          playPane
-            .getByRole('button', {
-              name: /^(Mirror climb|Unmirror climb|Add favorite|Remove favorite)$/,
-            })
-            .first(),
-        ).toBeVisible();
-
-        // Previous/Next are optional controls, disabled in fresh preferences.
-        for (const actionName of ['Log ascent', 'Choose Angle', 'Climb actions', 'Share climb']) {
+        // Mouse browsers show transport controls by default (#7963). These
+        // occupy the slots that phones use for Favorite and Share; optional
+        // actions remain available through the menus.
+        for (const actionName of ['Log ascent', 'Choose Angle', 'Previous climb', 'Next climb']) {
           await expect(playPane.getByRole('button', { name: actionName, exact: true })).toBeVisible();
         }
         const wallControl = playPane.getByTestId('play-drawer-wall-control');
@@ -684,10 +671,10 @@ test.describe('expo-web smoke', () => {
         await tabButton(page, 'Profile').click();
         await expect(miniPlayer).toBeVisible();
         await miniPlayer.getByRole('button', { name: /^More actions for / }).click();
-        await page.getByText('Open the queue', { exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Open the queue', exact: true }).click();
         await expect(historyToggle).toBeVisible({ timeout: 15_000 });
         await dismissSheet(page, historyToggle);
-        await expect(tabButton(page, 'Profile')).toHaveAttribute('aria-selected', 'true');
+        await expect(page).toHaveURL(/\/profile(?:[/?#]|$)/);
         await expect(playPane).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath('desktop-profile-mini-player.png') });
 

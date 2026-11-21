@@ -50,7 +50,9 @@ configured detents cannot be dragged between, snap-point content gains a second 
 around virtualized lists, keyboard behaviour props are no-ops, and there is no accurate
 post-animation dismissal signal. The isolated web shim uses Gorhom until Expo's implementation
 passes all of those gates. Keep Gorhom outside the native dependency graph because of the Android
-freeze fixed in #3167. Web QA must cover a long queue, row reorder without sheet movement,
+freeze fixed in #3167. The web modal adapter forwards a missing closed-index event before
+terminal dismissal, so the sheet coordinator can reopen a queue after a backdrop close;
+duplicate close events are ignored. Web QA must cover a long queue, row reorder without sheet movement,
 dragging between detents, note focus at a mobile viewport, and exactly-once dismissal. Soft-keyboard
 behaviour remains a real-device browser check even though the adapter preserves Gorhom's input and
 keyboard props.
