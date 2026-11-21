@@ -80,6 +80,118 @@ describe('SET_NOW_SLOT_MODE', () => {
     const state = nowSlotState();
     expect(queueReducer(state, { type: 'SET_NOW_SLOT_MODE', payload: true })).toBe(state);
   });
+  describe.each([
+    { name: 'legacy to now-slot', mode: false },
+    { name: 'now-slot to legacy', mode: true },
+  ])('$name reconnect', ({ mode }) => {
+    const sessionId = 'mode-change-session';
+    const correlationId = 'before-mode-change';
+    const seenSequence = 5;
+
+    function pendingMove(): QueueState {
+      const state: QueueState = {
+        ...initialState({}),
+        nowSlotMode: mode,
+        queue: [A, B, C, D],
+        currentClimbQueueItem: B,
+        historyCount: mode ? 1 : null,
+        serverSequence: seenSequence,
+        serverSequenceSessionId: sessionId,
+      };
+      const moved = openLocally(state, D, {
+        correlationId,
+        sessionId,
+        ...(mode ? { placement: 'NOW' } : {}),
+      });
+      return queueReducer(moved, {
+        type: 'UNCONFIRMED_MOVE_NOT_SENT',
+        payload: { correlationId, serverViewIsLive: false },
+      });
+    }
+
+    it('keeps a pending move when reconnecting in the same mode', () => {
+      const waiting = pendingMove();
+      expect(waiting.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+
+      expect(queueReducer(waiting, { type: 'SET_NOW_SLOT_MODE', payload: mode })).toBe(waiting);
+    });
+
+    it('retires the old move without dropping its optimistic queue or echo ids', () => {
+      const waiting = pendingMove();
+      const changed = queueReducer(waiting, { type: 'SET_NOW_SLOT_MODE', payload: !mode });
+
+      expect(changed.unconfirmedMove).toBeNull();
+      expect(changed.queue).toBe(waiting.queue);
+      expect(changed.currentClimbQueueItem).toBe(waiting.currentClimbQueueItem);
+      expect(changed.pendingCurrentClimbUpdates).toEqual([correlationId]);
+    });
+
+    it('accepts the opening snapshot without replaying or releasing the old move for resend', () => {
+      const changed = queueReducer(pendingMove(), { type: 'SET_NOW_SLOT_MODE', payload: !mode });
+      const synced = queueReducer(changed, {
+        type: 'INITIAL_QUEUE_DATA',
+        serverSequence: seenSequence,
+        payload: {
+          queue: [A, B, C, D],
+          currentClimbQueueItem: B,
+          historyCount: 1,
+          sessionId,
+          live: true,
+        },
+      });
+
+      expect(uuids(synced)).toEqual(['a', 'b', 'c', 'd']);
+      expect(synced.currentClimbQueueItem).toBe(B);
+      expect(synced.historyCount).toBe(mode ? null : 1);
+      expect(synced.unconfirmedMove).toBeNull();
+      expect(synced.pendingCurrentClimbUpdates).toEqual([]);
+      expect(
+        queueReducer(synced, {
+          type: 'UNCONFIRMED_MOVE_NOT_SENT',
+          payload: { correlationId, serverViewIsLive: true },
+        }),
+      ).toBe(synced);
+      expect(queueReducer(synced, { type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId } })).toBe(synced);
+    });
+
+    it('still recognises a late own echo and confirms a new move in the new mode', () => {
+      const changed = queueReducer(pendingMove(), { type: 'SET_NOW_SLOT_MODE', payload: !mode });
+      const echoed = queueReducer(changed, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        serverSequence: seenSequence + 1,
+        payload: { item: D, isServerEvent: true, serverCorrelationId: correlationId },
+      });
+
+      expect(echoed.queue).toBe(changed.queue);
+      expect(echoed.currentClimbQueueItem).toBe(changed.currentClimbQueueItem);
+      expect(echoed.unconfirmedMove).toBeNull();
+      expect(echoed.pendingCurrentClimbUpdates).toEqual([]);
+
+      const nextCorrelationId = 'after-mode-change';
+      const moved = openLocally(echoed, E, {
+        correlationId: nextCorrelationId,
+        sessionId,
+        ...(!mode ? { placement: 'NOW' } : {}),
+      });
+      expect(moved.unconfirmedMove).toMatchObject({
+        itemUuid: E.uuid,
+        correlationId: nextCorrelationId,
+        resend: 'none',
+      });
+      const confirmed = queueReducer(moved, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        serverSequence: seenSequence + 2,
+        payload: { item: E, isServerEvent: true, serverCorrelationId: nextCorrelationId },
+      });
+
+      expect(confirmed.currentClimbQueueItem).toBe(E);
+      expect(confirmed.queue).toBe(moved.queue);
+      expect(confirmed.queue.filter(({ uuid }) => uuid === E.uuid)).toHaveLength(1);
+      expect(confirmed.unconfirmedMove).toBeNull();
+      expect(confirmed.pendingCurrentClimbUpdates).toEqual([]);
+    });
+  });
+
   // A cold start whose restore runs before the flag resolves (no cached flag
   // values): the line waits in legacy mode and lands when the mode turns on.
   describe('a line restored before the mode is known', () => {

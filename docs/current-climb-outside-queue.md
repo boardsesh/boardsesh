@@ -1316,3 +1316,23 @@ Owner answers, 2026-10-25, on PR #6770's open questions.
     for the same queue item. If a crewmate moved off the climb and back while this phone was
     offline, the phone holds a climb they just picked, and lighting it costs one tap on Put
     on the wall. No schema change. Section 6, step 1.
+
+## 11. Reconnect mode transition decision (2026-11-21)
+
+Issue [#6666's 26 October status](https://github.com/boardsesh/boardsesh/issues/6666#issuecomment-6408575083)
+records the Fable LOW finding: a move recorded under legacy rules can survive a
+reconnect that enables now-slot mode. The old move carries no placement, so replaying
+it as `NOW` against the opening snapshot can reorder the queue under different rules.
+The reverse transition can replay a now-slot move as a legacy pointer/add operation.
+
+Retire `unconfirmedMove` whenever `SET_NOW_SLOT_MODE` changes the effective mode in
+either direction. Do not translate or replay that old intent under the new rules.
+Keep the optimistic queue until the authoritative `FullSync` arrives, then accept
+that snapshot without replaying the retired move. Keep pending correlation ids so
+a later echo still follows existing own-echo handling. A same-mode dispatch remains
+a no-op and preserves an unconfirmed move.
+
+The provider's existing resend effect releases parked queue additions when their
+unconfirmed move disappears; it must not resend the retired wall move. This fix
+changes no server cohort, wire document, rollout flag, legacy reducer branch or
+suggested-climb pruning. PR 6 cleanup still needs its documented rollout evidence.
