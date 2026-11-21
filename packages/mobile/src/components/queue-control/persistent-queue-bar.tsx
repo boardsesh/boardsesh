@@ -20,10 +20,11 @@
  */
 
 import { useSegments } from 'expo-router';
+import { Platform } from 'react-native';
 import { MATERIAL_MINI_PLAYER_CARD_GAP, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
+import { resolveMiniPlayerHost } from '../../hooks/mini-player-host';
 import { isTopLevelTabRoute, tabsActiveSegment } from '../../lib/route-segments';
 import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { ActiveContextBar } from './ActiveContextBar';
@@ -42,7 +43,9 @@ export { TOOLBAR_RESERVE, TAB_BAR_HEIGHT };
 export function PersistentQueueBar() {
   const { variant } = useTheme();
   const segments = useSegments();
-  const { home } = useCurrentClimbSurface();
+  const { home, sidebarShell } = useCurrentClimbSurface();
+  const miniPlayerHost = resolveMiniPlayerHost({ home, variant, platformOS: Platform.OS, sidebarShell });
+  const browserSidebar = Platform.OS === 'web' && sidebarShell;
   // sessionId-only subscription (mirrors the tab layout's own read) — a "return to
   // session" affordance while a session is live and the user isn't already on the
   // Record tab.
@@ -55,10 +58,9 @@ export function PersistentQueueBar() {
   // A pick logs the flip the bar draws, its own; the queue's current, its slot's.
   const pickMirrored = pick ? pick.mirrored : undefined;
 
-  // One climb, one surface: the JS tablet shell's pane (IpadPlayPane) or the
-  // native accessory (iPhone, iPad, and the iPhone Duo's split) already show it,
-  // so the floating bar renders only where neither does.
-  if (home !== 'floatingBar') return null;
+  // The desktop bar accompanies its selection pane; native tablet panes and
+  // the native accessory still own the climb without a second floating bar.
+  if (home !== 'floatingBar' && miniPlayerHost !== 'materialCard') return null;
   if (!currentClimb) return null;
   // Show the climb bar only on a top-level tab page (a tab's own index), never on a
   // pushed sub-route or any root push/modal. This single gate subsumes the old
@@ -67,8 +69,7 @@ export function PersistentQueueBar() {
   // not-top-level here.
   if (!isTopLevelTabRoute(segments)) return null;
 
-  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
-  if (isMaterial) {
+  if (miniPlayerHost === 'materialCard') {
     // The card logs and lights from its own row, so it needs neither the tick
     // nor the return-to-session button the glass capsule floats beside it. On an
     // Android phone it follows the nav bar down when the bar hides on scroll,
@@ -77,7 +78,8 @@ export function PersistentQueueBar() {
       <TabBarHideFollower>
         <ActiveContextBar
           fillPrimary
-          anchorToMeasuredTabBar
+          anchorToMeasuredTabBar={!browserSidebar}
+          alignToContentColumn={browserSidebar}
           gapAboveTabBar={MATERIAL_MINI_PLAYER_CARD_GAP}
           horizontalInset={MATERIAL_MINI_PLAYER_CARD_INSET}
           primary={<FloatingMiniPlayerCard />}

@@ -8,6 +8,7 @@ import {
   MATERIAL_TAB_BAR_HEIGHT,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT,
   REST_TIMER_RESERVE,
+  SIDEBAR_WIDTH,
   TAB_BAR_HEIGHT,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
@@ -97,6 +98,8 @@ export type BottomChromeInputs = {
    * the JS queue toolbar because the pane is suppressed there.
    */
   detailPaneOwnsQueue?: boolean;
+  /** A card accompanies the browser sidebar, even when the selection pane is up. */
+  sidebarMiniPlayer?: boolean;
   /**
    * Bottom inset measured INSIDE the focused native tab's content (see the
    * module docblock's sampling-point contract), published by
@@ -398,7 +401,8 @@ export function computeBottomChromeMetrics({
   hasCurrentClimb,
   nativeAccessoryPresented,
   usesSidebar = false,
-  detailPaneOwnsQueue = usesSidebar,
+  sidebarMiniPlayer = false,
+  detailPaneOwnsQueue = usesSidebar && !sidebarMiniPlayer,
   measuredTabContentInsetBottom = null,
   connectivityBannerHeight = 0,
   restTimerArmed = false,
@@ -486,7 +490,8 @@ export function computeBottomChromeMetrics({
     hideOnScrollTabBar && insideTabs && !usesNativeTabBar && !usesSidebar && tabBarAtBottom && onAccessorySurface;
   // The Material MiniPlayer card floats one gap above the in-flow tab bar, so it
   // takes its height plus that gap (`FloatingMiniPlayerCard`).
-  const jsQueueToolbarReserve = uiVariant === 'material' ? MATERIAL_MINI_PLAYER_CARD_RESERVE : TOOLBAR_RESERVE;
+  const jsQueueToolbarReserve =
+    sidebarMiniPlayer || uiVariant === 'material' ? MATERIAL_MINI_PLAYER_CARD_RESERVE : TOOLBAR_RESERVE;
   const jsQueueReserve = jsQueueToolbarVisible ? jsQueueToolbarReserve : 0;
   // A native accessory is UIKit-owned and already folded into `insetsBottom` on
   // the real NativeTabs path. Keep this field as an *additional* reserve so every
@@ -585,7 +590,12 @@ export function computeBottomChromeMetrics({
   const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve + restTimerReserve;
   // The column the accessory spans: the window less the in-tab side insets, on
   // the only path where UIKit lays the tab out beside a sidebar or rail.
-  const contentColumnLeft = tabBarOverlaysContent ? Math.max(measuredTabContentInsetLeft ?? 0, 0) : 0;
+  const contentColumnLeft =
+    usesSidebar && sidebarMiniPlayer
+      ? SIDEBAR_WIDTH
+      : tabBarOverlaysContent
+        ? Math.max(measuredTabContentInsetLeft ?? 0, 0)
+        : 0;
   const contentColumnRight = tabBarOverlaysContent ? Math.max(measuredTabContentInsetRight ?? 0, 0) : 0;
 
   return {

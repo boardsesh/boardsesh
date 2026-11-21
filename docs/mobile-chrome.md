@@ -38,6 +38,11 @@ Board light, Log) on an opaque `surfaceContainer` card with a 12dp corner and le
 `MATERIAL_MINI_PLAYER_CARD_INSET` 8 from each edge, `MATERIAL_MINI_PLAYER_CARD_GAP` 0 so it sits
 straight on the measured tab bar (and on the gesture inset while the bar hides), `MATERIAL_MINI_PLAYER_CARD_HEIGHT` 48 (the platter's height, so it holds the same controls).
 
+On the browser's regular-width sidebar shell, this same card also accompanies the
+selected-climb pane. It clears the navigation rail and docks to the bottom window inset;
+both the pane and scrolling lists reserve the card's height. Its menu keeps queue access
+available from every tab root, including Profile. See [large-screen layout](./mobile-large-screen-layout.md).
+
 **Sheet chrome** resolves per variant via `theme.sheet` (`sheetChromeByVariant`), so `Sheet`,
 `ModalSheet` and `PlayDrawer` never drift:
 

@@ -22,6 +22,7 @@ const navigation = vi.hoisted(() => ({
   onPrevious: vi.fn(),
   onNext: vi.fn(),
   playerOpen: false,
+  currentClimbHome: 'floatingBar' as 'floatingBar' | 'detailPane' | 'nativeAccessory',
   previousWalk: null as { kind: 'list'; name: string } | { kind: 'upNext' } | null,
   nextWalk: null as { kind: 'list'; name: string } | { kind: 'upNext' } | null,
 }));
@@ -127,6 +128,9 @@ vi.mock('../../../hooks/use-share-climb-action', () => ({
 vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: effects.hapticSelection }));
 vi.mock('expo-router', () => ({ useSegments: () => [] }));
+vi.mock('../../../hooks/use-current-climb-surface', () => ({
+  useCurrentClimbSurface: () => ({ home: navigation.currentClimbHome }),
+}));
 vi.mock('../../../lib/route-segments', () => ({ isPlayerRoute: () => navigation.playerOpen }));
 vi.mock('../use-mini-player-navigation', () => ({
   useMiniPlayerNavigation: () => navigation,
@@ -193,6 +197,7 @@ beforeEach(() => {
   navigation.canPrevious = true;
   navigation.canNext = false;
   navigation.playerOpen = false;
+  navigation.currentClimbHome = 'floatingBar';
   navigation.previousWalk = null;
   navigation.nextWalk = null;
   queue.sessionId = null;
@@ -382,6 +387,15 @@ describe('MiniPlayerLeadingButtons', () => {
       expect(navigation.onNext).toHaveBeenCalledOnce();
       fireEvent.click(getByLabelText('playView.track.previousInQueue'));
       expect(navigation.onPrevious).toHaveBeenCalledOnce();
+    });
+
+    it('leave preview paging to the desktop pane while keeping Next usable', () => {
+      navigation.currentClimbHome = 'detailPane';
+      navigation.canNext = true;
+      const { container, getByLabelText } = renderButtons(['next']);
+      expect(container.querySelector('[data-track-pager]')).toBeNull();
+      fireEvent.click(getByLabelText('playView.actionBar.nextAria'));
+      expect(navigation.onNext).toHaveBeenCalledOnce();
     });
 
     it('page the list only while Next shows and the player is closed', () => {

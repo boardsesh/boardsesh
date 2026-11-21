@@ -12,6 +12,7 @@ export type AccessoryBarSurfaceEmphasis = 'none' | 'connected';
 type AccessoryBarSurfaceProps = {
   /** Surface height; the default radius is a full pill (`height / 2`). */
   height: number;
+  testID?: string;
   borderRadius?: number;
   /**
    * `connected` = this device holds the board's BLE link. Expressed per platform:
@@ -39,6 +40,7 @@ type AccessoryBarSurfaceProps = {
  */
 export function AccessoryBarSurface({
   height,
+  testID,
   borderRadius,
   emphasis = 'none',
   style,
@@ -57,7 +59,7 @@ export function AccessoryBarSurface({
   // Native Liquid Glass draws its own refractive edge + lift.
   if (mode === 'glass') {
     return (
-      <View style={[shape, style]}>
+      <View testID={testID} style={[shape, style]}>
         <GlassSurface
           glassEffectStyle="regular"
           tintColor={warmTint}
@@ -92,7 +94,7 @@ export function AccessoryBarSurface({
       ...surfaceElevation,
     };
     return (
-      <View style={[shape, materialSurfaceStyle, style]}>
+      <View testID={testID} style={[shape, materialSurfaceStyle, style]}>
         {connected ? (
           <View
             pointerEvents="none"
@@ -109,6 +111,7 @@ export function AccessoryBarSurface({
   // the fill amber.
   return (
     <View
+      testID={testID}
       style={[
         shape,
         shadows.sm,

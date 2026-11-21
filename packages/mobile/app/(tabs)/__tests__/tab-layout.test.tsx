@@ -6,6 +6,7 @@ import { Children, createElement, isValidElement, useEffect, type ReactNode } fr
 const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
 
 const cfg = vi.hoisted(() => ({
+  jsQueueReserve: 0,
   bluetoothConnected: false,
   sessionId: null as string | null,
   // Whether this build/OS has the native BottomAccessory export (iOS 26). The layout
@@ -62,12 +63,16 @@ vi.mock('react-native', () => ({
   },
   // _layout.tsx wraps the iPad shell in Views + calls StyleSheet.create at module
   // eval, so the strict RN mock must supply both.
-  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('div', { 'data-style': style == null ? '' : JSON.stringify(style) }, children),
+  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
+    createElement('div', { 'data-testid': testID, 'data-style': style == null ? '' : JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   // The regular-width shell sizes the play pane + decides the wall surface off the
   // window width.
   useWindowDimensions: () => ({ width: cfg.windowWidth, height: cfg.windowHeight }),
+}));
+
+vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ jsQueueReserve: cfg.jsQueueReserve }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -320,6 +325,7 @@ import { markWallDisplayMounted } from '../../../src/lib/wall-display-presence';
 
 describe('TabLayout', () => {
   beforeEach(() => {
+    cfg.jsQueueReserve = 0;
     cfg.bluetoothConnected = false;
     cfg.sessionId = null;
     cfg.nativeAccessoryActive = true;
@@ -513,6 +519,24 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')).toBe(navigator);
     expect(container.querySelectorAll('[data-trigger]')).toHaveLength(5);
     expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
+  });
+
+  it('clears the desktop card below the selected-climb pane', () => {
+    cfg.platformOS = 'web';
+    cfg.variant = 'material';
+    cfg.widthClass = 'regular';
+    cfg.isTablet = true;
+    cfg.windowWidth = 1440;
+    cfg.jsQueueReserve = 48;
+    const { container, rerender } = render(<TabLayout />);
+    expect(container.querySelector('[data-testid="desktop-play-pane"]')?.getAttribute('data-style')).toContain(
+      '"paddingBottom":48',
+    );
+    cfg.jsQueueReserve = 0;
+    rerender(<TabLayout />);
+    expect(container.querySelector('[data-testid="desktop-play-pane"]')?.getAttribute('data-style')).toContain(
+      '"paddingBottom":0',
+    );
   });
 
   it('gives native iPad the Music MiniPlayer: the accessory, and no pane or wall column', () => {

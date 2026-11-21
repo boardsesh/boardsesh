@@ -21,6 +21,7 @@ export function FloatingMiniPlayerCard() {
   const { inAppBoardConnection } = useBoardConnectionState();
   return (
     <AccessoryBarSurface
+      testID="persistent-mini-player"
       height={MATERIAL_MINI_PLAYER_CARD_HEIGHT}
       borderRadius={borderRadius.lg}
       emphasis={inAppBoardConnection === 'connectedByMe' ? 'connected' : 'none'}

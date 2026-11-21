@@ -25,6 +25,7 @@ import { useTabChrome } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
 import { useVerticalTabBar } from './use-vertical-tab-bar';
 import { useCurrentClimbSurface } from './use-current-climb-surface';
+import { resolveMiniPlayerHost } from './mini-player-host';
 import {
   computeBottomChromeMetrics,
   trackExpandedTabContentInset,
@@ -110,14 +111,16 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   const nativeAccessoryPresented = onAccessorySurface && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // The regular-width JS tablet shell replaces the bottom tab bar with its rail.
-  // Only widths that also mount the selected-climb detail pane suppress the
-  // floating queue toolbar; tight regular windows keep that toolbar because the
-  // pane is intentionally absent there. The native iPad is not this shell: the
+  // Native tablet panes suppress the floating toolbar; the browser keeps its
+  // cross-tab MiniPlayer beside the pane. Tight regular windows keep the toolbar
+  // too, because the pane is absent there. The native iPad is not this shell: the
   // same resolver the floating bar and the rest pill read keeps it on the
   // native-tab path below.
   const { sidebarShell, home } = useCurrentClimbSurface();
   const usesSidebar = insideTabs && sidebarShell;
-  const detailPaneOwnsQueue = usesSidebar && home === 'detailPane';
+  const miniPlayerHost = resolveMiniPlayerHost({ home, variant, platformOS: Platform.OS, sidebarShell });
+  const sidebarMiniPlayer = usesSidebar && Platform.OS === 'web' && miniPlayerHost === 'materialCard';
+  const detailPaneOwnsQueue = usesSidebar && home === 'detailPane' && !sidebarMiniPlayer;
   // iPhone Duo (closed, or open in landscape with the split) keeps the phone
   // path: the accessory stays presented along the bottom and the in-tab inset
   // carries it. Only the tab bar leaves the bottom: it is a vertical rail.
@@ -199,6 +202,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         nativeAccessoryPresented,
         usesSidebar,
         detailPaneOwnsQueue,
+        sidebarMiniPlayer,
         measuredTabContentInsetBottom,
         connectivityBannerHeight,
         restTimerArmed,
@@ -222,6 +226,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       nativeAccessoryPresented,
       usesSidebar,
       detailPaneOwnsQueue,
+      sidebarMiniPlayer,
       measuredTabContentInsetBottom,
       connectivityBannerHeight,
       restTimerArmed,

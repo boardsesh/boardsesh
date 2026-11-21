@@ -47,6 +47,8 @@ type ActiveContextBarProps = {
   anchorToMeasuredTabBar?: boolean;
   /** Horizontal inset from the screen edge. */
   horizontalInset?: number;
+  /** Align the browser sidebar card to the content beside its navigation rail. */
+  alignToContentColumn?: boolean;
 };
 
 export function ActiveContextBar({
@@ -58,6 +60,7 @@ export function ActiveContextBar({
   gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR,
   anchorToMeasuredTabBar = false,
   horizontalInset = TOOLBAR_SIDE_MARGIN,
+  alignToContentColumn = false,
 }: ActiveContextBarProps) {
   const reduceMotion = useReduceMotion();
   const bottomChrome = useBottomChromeMetrics();
@@ -85,8 +88,8 @@ export function ActiveContextBar({
         styles.toolbar,
         {
           bottom,
-          left: horizontalInset,
-          right: horizontalInset,
+          left: horizontalInset + (alignToContentColumn ? bottomChrome.contentColumnLeft : 0),
+          right: horizontalInset + (alignToContentColumn ? bottomChrome.contentColumnRight : 0),
         },
       ]}
     >
