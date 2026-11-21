@@ -60,3 +60,17 @@ connection hangs. The service derives `secure` from `SMTP_PORT` (only `465` →
   verification email can't be sent and the mutation surfaces an error.
 - `ADMIN_EMAIL` pointed at an inbox a human watches — the admin-review path is
   the fallback for gyms with no verifiable domain.
+
+## Bug reports and Apple private relay
+
+Bug-report acknowledgements use `@boardsesh/email` and skip recipients at the
+exact `privaterelay.appleid.com` domain before contacting SMTP. Fastmail can
+accept a submission before Apple rejects delivery asynchronously, so catching a
+transport exception cannot prevent the resulting bounce. Other recipient
+domains and other transactional email flows retain their existing behavior.
+
+The feedback record and GitHub issue creation are independent of email delivery.
+Reporters can instead read and answer GitHub-backed messages inside the app; see
+[bug-report conversations](./bug-report-conversations.md) for the contributor
+marker, public-visibility disclosure, and signed webhook setup. The email-contact
+setting applies to email only.

@@ -3,6 +3,7 @@ import { users } from '../auth/users';
 import { socialEntityTypeEnum, comments } from './social';
 
 export const notificationTypeEnum = pgEnum('notification_type', [
+  'app_feedback_reply',
   'new_follower',
   'comment_reply',
   'comment_on_tick',
@@ -63,6 +64,7 @@ export const notifications = pgTable(
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 export type NotificationType =
+  | 'app_feedback_reply'
   | 'new_follower'
   | 'comment_reply'
   | 'comment_on_tick'

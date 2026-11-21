@@ -51,7 +51,8 @@
     "gymClaimApprovedGeneric": "You're the owner now — your gym claim came through",
     "default": "You have a new notification",
     "sprayWallReady": "{{wall}} is ready to review.",
-    "sprayWallReadyGeneric": "Your Spraywall photo is ready to review."
+    "sprayWallReadyGeneric": "Your Spraywall photo is ready to review.",
+    "bugReportReply": "Boardsesh replied to your bug report"
   },
   "followRequest": {
     "approve": "Approve",
@@ -65,6 +66,8 @@
   },
   "push": {
     "sprayWallTitle": "Ready to review",
-    "sprayWallBody": "{{wall}}'s photo is ready. Check the holds."
+    "sprayWallBody": "{{wall}}'s photo is ready. Check the holds.",
+    "bugReportTitle": "Boardsesh replied",
+    "bugReportBody": "Open your bug report to read our reply."
   }
 }

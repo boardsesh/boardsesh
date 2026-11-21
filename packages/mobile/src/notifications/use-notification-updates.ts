@@ -19,6 +19,7 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
       setupNotificationHandlers(router, {
         canNavigate: authenticated && consentSettled,
         onSprayCompletion: refreshCompletion,
+        onBugReportReply: refreshCompletion,
       }),
     [authenticated, accountId, refreshCompletion, consentSettled],
   );

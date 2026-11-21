@@ -149,7 +149,14 @@ export const FeedbackSheet = memo(function FeedbackSheet({
           screenshotKeys: screenshotKeys.length > 0 ? screenshotKeys : null,
         });
         onClose();
-        showToast(isBugReport ? t('feedbackDialog.successBug') : t('feedbackDialog.successRating'), 'success');
+        showToast(
+          isBugReport
+            ? isAuthenticated
+              ? t('feedbackDialog.successBugSignedIn')
+              : t('feedbackDialog.successBug')
+            : t('feedbackDialog.successRating'),
+          'success',
+        );
         setSelectedRating(null);
         setComment('');
         setContactConsent(true);
@@ -272,6 +279,9 @@ export const FeedbackSheet = memo(function FeedbackSheet({
               value={contactConsent}
               onValueChange={setContactConsent}
             />
+            <Text variant="footnote" tone="secondary">
+              {t('feedbackForm.inAppRepliesDescription')}
+            </Text>
           </View>
         ) : null}
 

@@ -216,8 +216,9 @@
     "reporter": {
       "anonymous": "Anónimo",
       "copyEmail": "Copiar correo",
-      "consentYes": "Contacto permitido",
-      "consentNo": "Sin consentimiento"
+      "consentYes": "Correo permitido",
+      "consentNo": "Correo rechazado",
+      "showReports": "Ver los errores de esta persona"
     },
     "rating": {
       "value": "{{rating}}/5"
@@ -259,6 +260,26 @@
       "updateFailed": "No se pudo actualizar el estado",
       "emailCopied": "Correo copiado",
       "copyFailed": "No se pudo copiar"
+    },
+    "conversation": {
+      "title": "Conversación",
+      "open": "Leer conversación",
+      "loadError": "No se ha podido cargar esta conversación.",
+      "loadOlder": "Cargar mensajes anteriores",
+      "empty": "Las respuestas a este informe aparecerán aquí.",
+      "staff": "Boardsesh",
+      "reporter": "Persona que informó",
+      "close": "Cerrar",
+      "retry": "Reintentar",
+      "latestReply": "Última respuesta",
+      "publicNotice": "Las respuestas se comparten en la incidencia pública de GitHub enlazada.",
+      "openGithub": "Responder en GitHub",
+      "githubHint": "Para escribir a la persona que informó, empieza un comentario de GitHub con #replytocustomer. Solo los colaboradores autorizados de Boardsesh pueden enviar estos mensajes."
+    },
+    "filters": {
+      "reporter": "ID de la cuenta que informó",
+      "needsReply": "Pendiente de respuesta",
+      "clearReporter": "Mostrar todas las personas"
     }
   },
   "retention": {

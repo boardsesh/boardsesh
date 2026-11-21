@@ -91,6 +91,13 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
     (notification: GroupedNotification) => {
       if (!notification.isRead) markGroupAsRead(notification);
 
+      if (notification.type === 'app_feedback_reply') {
+        if (notification.entityId && /^\d+$/.test(notification.entityId)) {
+          router.push({ pathname: '/bug-reports/[id]', params: { id: notification.entityId } });
+        }
+        return;
+      }
+
       if (notification.type === 'new_follower') {
         // One follower reads as "go see who this is"; several read as "let me
         // deal with all of them", which is the follow-back list.

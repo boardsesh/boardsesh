@@ -159,6 +159,21 @@ describe('useNotificationNavigation proposal rows', () => {
   });
 });
 
+describe('bug report reply navigation', () => {
+  it('opens its report and marks the notification read', () => {
+    tap(makeNotification({ type: 'app_feedback_reply', entityId: '42', entityType: null }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/bug-reports/[id]', params: { id: '42' } });
+    expect(markGroupMutate).toHaveBeenCalledOnce();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed report ids instead of opening an unrelated climb', () => {
+    tap(makeNotification({ type: 'app_feedback_reply', entityId: '../settings', entityType: null }));
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
+
 describe('useNotificationNavigation owner comment rows', () => {
   // The rows an item's owner gets for a comment on it (#6385) open that item's
   // thread, never the climb, even when the row carries a climb to draw.

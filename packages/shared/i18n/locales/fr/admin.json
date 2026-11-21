@@ -105,8 +105,9 @@
     "reporter": {
       "anonymous": "Anonyme",
       "copyEmail": "Copier l'e-mail",
-      "consentYes": "Contact autorisé",
-      "consentNo": "Pas de consentement"
+      "consentYes": "E-mails autorisés",
+      "consentNo": "E-mails refusés",
+      "showReports": "Voir les bugs signalés par cette personne"
     },
     "rating": {
       "value": "{{rating}}/5"
@@ -148,6 +149,26 @@
       "updateFailed": "Impossible de mettre à jour le statut",
       "emailCopied": "E-mail copié",
       "copyFailed": "Impossible de copier"
+    },
+    "conversation": {
+      "title": "Conversation",
+      "open": "Lire la conversation",
+      "loadError": "Impossible de charger cette conversation.",
+      "loadOlder": "Charger les messages précédents",
+      "empty": "Les réponses à ce signalement apparaîtront ici.",
+      "staff": "Boardsesh",
+      "reporter": "Auteur du signalement",
+      "close": "Fermer",
+      "retry": "Réessayer",
+      "latestReply": "Dernière réponse",
+      "publicNotice": "Les réponses sont partagées sur le ticket GitHub public lié.",
+      "openGithub": "Répondre sur GitHub",
+      "githubHint": "Pour écrire à l’auteur du signalement, commence un commentaire GitHub par #replytocustomer. Seuls les contributeurs autorisés de Boardsesh peuvent envoyer ces messages."
+    },
+    "filters": {
+      "reporter": "ID du compte ayant signalé le bug",
+      "needsReply": "Réponse attendue",
+      "clearReporter": "Afficher tous les auteurs"
     }
   },
   "retention": {

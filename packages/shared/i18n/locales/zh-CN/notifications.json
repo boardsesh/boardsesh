@@ -51,7 +51,8 @@
     "gymClaimApprovedGeneric": "岩馆认领已通过，你现在是所有者了",
     "default": "你有一条新通知",
     "sprayWallReady": "{{wall}} 已准备好，请检查。",
-    "sprayWallReadyGeneric": "你的喷点墙照片已准备好，请检查。"
+    "sprayWallReadyGeneric": "你的喷点墙照片已准备好，请检查。",
+    "bugReportReply": "Boardsesh 回复了你的错误报告"
   },
   "followRequest": {
     "approve": "同意",
@@ -65,6 +66,8 @@
   },
   "push": {
     "sprayWallTitle": "可以检查了",
-    "sprayWallBody": "{{wall}} 的照片已准备好，请检查岩点。"
+    "sprayWallBody": "{{wall}} 的照片已准备好，请检查岩点。",
+    "bugReportTitle": "Boardsesh 已回复",
+    "bugReportBody": "打开你的错误报告以阅读我们的回复。"
   }
 }

@@ -4,6 +4,7 @@ import type { SocialEntityType } from './comments';
 import type { ProposalType } from './proposals';
 
 export type NotificationType =
+  | 'app_feedback_reply'
   | 'new_follower'
   | 'comment_reply'
   | 'comment_on_tick'

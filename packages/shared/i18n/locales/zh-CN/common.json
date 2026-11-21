@@ -1030,7 +1030,8 @@
       "testPlan": "测试计划 #{{prNumber}}",
       "badge": "质量测试"
     },
-    "accountTitle": "账户"
+    "accountTitle": "账户",
+    "myBugReports": "你的错误报告"
   },
   "qa": {
     "shared": {
