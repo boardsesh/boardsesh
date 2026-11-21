@@ -15,6 +15,11 @@ models:
   storage plus manual JSON import. Web and mobile talk to the same backend
   REST endpoints.
 
+Quantum Board integration research is in the [ewalls API notes](QUANTUM_API_SPEC.md)
+and [Bluetooth protocol guide](QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md). They document
+the inspected Android client's behavior pending Walltopia's official contract;
+they do not indicate that Quantum support is implemented in Boardsesh.
+
 v1 exports explicit (party/recorded) sessions only. `integration_exports.
 session_type` already accommodates inferred solo sessions for later.
 
