@@ -631,6 +631,8 @@ way it looks like this:
   backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
   renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
   new climbs or playback frames over 200 ms (at once with Reduce Motion).
+  The browser uses the same still renderer, with CSS `backgroundImage` for the coloured hold blobs,
+  the label's readability fade and the swipe's feather; native uses `experimental_backgroundImage`.
   On iOS, Metal library and pipeline preparation runs once on a background queue;
   property updates never wait for compilation. The latest properties draw when it is ready.
   Pipeline failures and GPU command execution failures report the existing still-renderer fallback.

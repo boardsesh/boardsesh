@@ -17,6 +17,9 @@
 
 import { devices, expect, test, type Page } from '@playwright/test';
 import { and, asc, eq, sql } from 'drizzle-orm';
+import { getAuroraBluetoothPacket } from '@boardsesh/ble-protocol/aurora';
+import { getLedPlacements } from '@boardsesh/board-constants/led-placements';
+import type { Climb } from '@boardsesh/shared-schema';
 import { CONSENT_VERSION } from '@boardsesh/consent';
 import {
   boardClimbs,
@@ -42,6 +45,34 @@ const TAB_NAMES = ['Home', 'Climbs', 'Session', 'Discover', 'Profile'] as const;
 
 /** The seeded shared board the suite binds through the board sheet (see e2e/SEED_CONTRACT.md). */
 const SEEDED_BOARD_NAME = 'Dyno Den';
+
+/** The seeded shared board the suite already binds through the board sheet. */
+async function findSeededBoard() {
+  process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
+  const db = createDb();
+  try {
+    const [board] = await db
+      .select({
+        slug: userBoards.slug,
+        layout: userBoards.layoutId,
+        size: userBoards.sizeId,
+        type: userBoards.boardType,
+        hasLeds: userBoards.hasLeds,
+      })
+      .from(userBoards)
+      .where(eq(userBoards.name, SEEDED_BOARD_NAME))
+      .limit(1);
+    if (!board) {
+      throw new Error(
+        `No board named "${SEEDED_BOARD_NAME}" in the e2e database — the dev DB image is stale ` +
+          '(docker compose down -v && vp run db:up).',
+      );
+    }
+    return board;
+  } finally {
+    await closePool();
+  }
+}
 
 /**
  * Console/page-error budget: the smoke fails on error classes that historically
@@ -237,6 +268,170 @@ test.describe('expo-web smoke', () => {
     // dispatch the click on the button element itself.
     await locator.dispatchEvent('click');
   }
+
+  test('a browser driving the wall lights the next climb on swipe and restores the first on swipe back', async ({
+    page,
+    context,
+  }) => {
+    const packets: number[][] = [];
+    const pendingBytes: number[] = [];
+    await page.exposeFunction('captureBoardWrite', (chunk: number[]) => {
+      pendingBytes.push(...chunk);
+      // A GATT write can carry part of an Aurora frame. Its length byte counts
+      // the body only, leaving five framing bytes to wait for.
+      while (pendingBytes.length >= 2 && pendingBytes.length >= pendingBytes[1] + 5) {
+        const packet = pendingBytes.splice(0, pendingBytes[1] + 5);
+        if (packet[1] > 1) packets.push(packet);
+      }
+    });
+    await page.addInitScript(() => {
+      const characteristic = {
+        writeValueWithoutResponse: (bytes: Uint8Array) =>
+          (window as unknown as { captureBoardWrite: (chunk: number[]) => Promise<void> }).captureBoardWrite(
+            Array.from(bytes),
+          ),
+      };
+      const gatt = {
+        connected: false,
+        async connect() {
+          this.connected = true;
+          return this;
+        },
+        disconnect() {
+          this.connected = false;
+        },
+        async getPrimaryService() {
+          return { getCharacteristic: async () => characteristic };
+        },
+      };
+      const device = Object.assign(new EventTarget(), { id: 'test-kilter', name: 'Kilter Board#12345@3', gatt });
+      Object.defineProperty(navigator, 'bluetooth', {
+        configurable: true,
+        value: { requestDevice: async () => device },
+      });
+    });
+    await ensureSignedIn(page);
+    // The web smoke runs --no-dev and declines analytics. Pin the rollout in
+    // this fresh browser's existing device preferences before reloading it.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const request = indexedDB.open('boardsesh-mobile-web');
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const transaction = db.transaction('entries', 'readwrite');
+            transaction
+              .objectStore('entries')
+              .put(JSON.stringify({ 'wall-swipe-to-drive': true }), 'featureFlagOverrides');
+            transaction.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            transaction.onabort = () => {
+              db.close();
+              reject(transaction.error);
+            };
+          };
+        }),
+    );
+    const boardFixture = await findSeededBoard();
+    expect(boardFixture.type).toBe('kilter');
+    expect(boardFixture.hasLeds).toBe(true);
+    const positions = getLedPlacements('kilter', Number(boardFixture.layout), Number(boardFixture.size));
+    // Take three real single-frame climbs the fixture board can light. Pin their
+    // order so a change in the account's feed cannot change the swipe target.
+    type FixtureClimb = { climb: Climb; packet: number[] };
+    const fixture: FixtureClimb[] = [];
+    await page.route('**/graphql', async (route) => {
+      if (
+        route.request().method() !== 'POST' ||
+        !/\bquery SearchClimbs\b/.test(route.request().postDataJSON().query ?? '')
+      ) {
+        return route.fallback();
+      }
+      if (!fixture.length) {
+        const response = await route.fetch();
+        const { data } = (await response.json()) as { data: { searchClimbs: { climbs: Climb[] } } };
+        for (const climb of data.searchClimbs.climbs.toSorted((left, right) => left.uuid.localeCompare(right.uuid))) {
+          if ((climb.framesCount ?? 1) !== 1 || !climb.frames) continue;
+          const { packet, ledsWritten } = getAuroraBluetoothPacket(climb.frames, positions, 'kilter', 3);
+          // This test compares one complete, non-clear Aurora packet per climb.
+          if (!ledsWritten || packet.length !== packet[1] + 5) continue;
+          const bytes = Array.from(packet);
+          if (fixture.some((entry) => entry.climb.name === climb.name || entry.packet.join() === bytes.join()))
+            continue;
+          fixture.push({ climb, packet: bytes });
+          if (fixture.length === 3) break;
+        }
+      }
+      await route.fulfill({
+        json: { data: { searchClimbs: { climbs: fixture.map(({ climb }) => climb), hasMore: false } } },
+      });
+    });
+    await page.goto(`/app/b/${boardFixture.slug}/40/list`);
+    const list = page.getByTestId('climb-list');
+    await expect(list.locator('img[src^="blob:"]').first()).toBeVisible({ timeout: 60_000 });
+    expect(fixture, 'three different single-frame climbs on the seeded Kilter board').toHaveLength(3);
+    const [first, second, third] = fixture;
+    await list.getByRole('button').filter({ hasText: first.climb.name }).first().click({ force: true });
+    const control = page.getByTestId('play-drawer-wall-control');
+    const selectedHeader = page.getByTestId('play-drawer-header-accessibility');
+    await expect.poll(() => selectedHeader.getAttribute('aria-label')).toContain(first.climb.name);
+    await tapThroughGestureLayer(control);
+    await expect(control).toHaveAccessibleName(/You are driving the wall/i, { timeout: WARM_TIMEOUT_MS });
+    await expect.poll(() => packets.at(-1)).toEqual(first.packet);
+    const firstLabel = await selectedHeader.getAttribute('aria-label');
+    if (!firstLabel) throw new Error('The selected climb has no header');
+    const board = page.getByTestId('play-drawer-board-container');
+    const touch = await context.newCDPSession(page);
+    async function swipe(direction: 1 | -1): Promise<void> {
+      const box = await board.boundingBox();
+      if (!box) throw new Error('The player board has no hit area');
+      const y = box.y + box.height / 2;
+      const start = box.x + box.width * (direction === 1 ? 0.8 : 0.2);
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start, y }] });
+      for (let step = 1; step <= 8; step++) {
+        const x = start - (direction * box.width * 0.6 * step) / 8;
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      }
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    async function swipeWhileDriving(direction: 1 | -1, expected: FixtureClimb): Promise<void> {
+      const before = packets.length;
+      await swipe(direction);
+      await expect.poll(() => selectedHeader.getAttribute('aria-label')).toContain(expected.climb.name);
+      await expect.poll(() => packets.slice(before).at(-1)).toEqual(expected.packet);
+      await expect(control).toHaveAccessibleName(/You are driving the wall/i);
+    }
+    await swipeWhileDriving(1, second);
+    await swipeWhileDriving(-1, first);
+    await expect(selectedHeader).toHaveAttribute('aria-label', firstLabel);
+    // The web fallback paints the climb's holds as CSS radial gradients.
+    await expect(control.getByTestId('wall-glow-blobs').locator(':scope > div').first()).toHaveCSS(
+      'background-image',
+      /radial-gradient/,
+    );
+    // A connected browser can stop driving and preview a different list climb.
+    // Put that preview up, then let the confirmation settle before swiping.
+    await tapThroughGestureLayer(control);
+    await expect(control).not.toHaveAccessibleName(/You are driving the wall/i);
+    const beforePreview = packets.length;
+    await swipe(1);
+    await expect.poll(() => selectedHeader.getAttribute('aria-label')).toContain(second.climb.name);
+    await expect(control).toHaveAccessibleName(/Put on board/i);
+    // Leave the preview dark through the wall control's 600 ms double-tap guard.
+    await page.waitForTimeout(650);
+    expect(packets).toHaveLength(beforePreview);
+    await tapThroughGestureLayer(control);
+    await expect.poll(() => packets.slice(beforePreview).at(-1)).toEqual(second.packet);
+    await expect(control).toHaveAccessibleName(/You are driving the wall/i);
+    await expect(control).toContainText(/0:(?:39|40)/, { timeout: 12_000 });
+    await swipeWhileDriving(1, third);
+    await expect(control).toContainText(/0:4[3-5]/);
+    await swipeWhileDriving(-1, second);
+  });
 
   /**
    * Dismisses the presented sheet and waits for `stillVisible` to disappear.
@@ -496,28 +691,6 @@ test.describe('expo-web smoke', () => {
      * deterministic per dev-DB image without pinning a uuid the image is free
      * to drop.
      */
-    /** The seeded shared board the suite already binds through the board sheet. */
-    async function findSeededBoardSlug(): Promise<string> {
-      process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
-      const db = createDb();
-      try {
-        const [board] = await db
-          .select({ slug: userBoards.slug })
-          .from(userBoards)
-          .where(eq(userBoards.name, SEEDED_BOARD_NAME))
-          .limit(1);
-        if (!board) {
-          throw new Error(
-            `No board named "${SEEDED_BOARD_NAME}" in the e2e database — the dev DB image is stale ` +
-              '(docker compose down -v && vp run db:up).',
-          );
-        }
-        return board.slug;
-      } finally {
-        await closePool();
-      }
-    }
-
     async function findSeededClimbUuid(): Promise<string> {
       process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
       const db = createDb();
@@ -563,7 +736,7 @@ test.describe('expo-web smoke', () => {
 
     test.beforeAll(async () => {
       seededClimbUuid = await findSeededClimbUuid();
-      seededBoardSlug = await findSeededBoardSlug();
+      seededBoardSlug = (await findSeededBoard()).slug;
     });
 
     /** The board's climbs, whichever board is active, render WASM thumbnails. */

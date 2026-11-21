@@ -6,6 +6,7 @@ import { FrostedBokeh, frostedBokehFollowsSwap, type FrostedBokehSwap } from '..
 import type { WallGlowLayer } from './use-wall-glow';
 import type { BoardSwapFrame } from './swap-look';
 import { swapLabelFade, type SwapLabelFades } from './wall-glow-swap-fade';
+import { gradientBackground } from '../../lib/gradient-background';
 
 /** The button's readable label zone, checked by wallGlowLabelFade. */
 const FADE_LEFT = 0.12;
@@ -119,10 +120,7 @@ function WallGlowComponent({ layer, width, moving = false, swap }: WallGlowProps
     fade > 0 && fullSurfaceFade
       ? [styles.fullFade, { backgroundColor: baseWithAlpha(surface.base, fade) }]
       : fadeGradient
-        ? [
-            styles.fade,
-            { left: width * FADE_LEFT, width: width * FADE_WIDTH, experimental_backgroundImage: fadeGradient },
-          ]
+        ? [styles.fade, { left: width * FADE_LEFT, width: width * FADE_WIDTH, ...gradientBackground(fadeGradient) }]
         : null;
 
   return (
