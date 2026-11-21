@@ -16,7 +16,7 @@ Three controls have different meanings:
 
 The epic's [#4312 engine availability fix](https://github.com/boardsesh/boardsesh/issues/4312) is already shipped. Making automatic downloads the default is a separate expansion of storage, transfer and import work. A future default change should affect unset preferences; persisted explicit false must remain false. The Settings effect's mount location also matters: changing one default alone does not eagerly download every existing board at app launch.
 
-Source: [settings defaults](../packages/mobile/src/settings/defaults.ts), [settings reads](../packages/mobile/src/settings/hooks.ts), [automatic downloads](../packages/mobile/src/offline/use-keep-boards-offline.ts), [toggle handler](../packages/mobile/src/components/settings/offline/auto-offline-boards-toggle.ts), and [adoption policy](../packages/mobile/src/lib/board-discovery/adopt-found-board-decision.ts).
+Source: [settings defaults](../../packages/mobile/src/settings/defaults.ts), [settings reads](../../packages/mobile/src/settings/hooks.ts), [automatic downloads](../../packages/mobile/src/offline/use-keep-boards-offline.ts), [toggle handler](../../packages/mobile/src/components/settings/offline/auto-offline-boards-toggle.ts), and [adoption policy](../../packages/mobile/src/lib/board-discovery/adopt-found-board-decision.ts).
 
 ## Evidence scope and definitions
 
@@ -35,7 +35,7 @@ A download match means a Started event is followed by Completed on the same `dis
 
 Unmatched starts are **not** proof of terminal download failure. They can reflect abandonment, pauses, event delivery loss, changed client identity, or the chosen deadline. Completion-only latency excludes unmatched work. People with at least one completion can still have another board incomplete, so the stricter “every observed start completed” count is reported too.
 
-PostHog coverage follows [analytics consent](analytics-consent.md). Unreported or never-reconnected clients are absent; these counts are observed people, not a census of the fleet. Native app version does not identify the running JS bundle: OTA IDs and embedded status must accompany any attribution of a fix. No causal experiment establishes that enabling the default improves retention.
+PostHog coverage follows [analytics consent](../analytics/analytics-consent.md). Unreported or never-reconnected clients are absent; these counts are observed people, not a census of the fleet. Native app version does not identify the running JS bundle: OTA IDs and embedded status must accompany any attribution of a fix. No causal experiment establishes that enabling the default improves retention.
 
 Exact SQL, filters and aggregate returned rows are retained in [download cohort evidence](evidence/offline-download-cohorts-2026-11-21.json) and [health evidence](evidence/offline-health-2026-11-21.json). To rerun via execute-sql, supply the saved top-level filters object alongside the query; it fills each `{filters}` placeholder, including internal/test exclusion. Queries can also be opened in the [PostHog SQL editor](https://us.posthog.com/project/412845/sql) with the same filters.
 
