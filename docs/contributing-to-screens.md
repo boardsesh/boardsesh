@@ -6,12 +6,13 @@ This page is for anyone who wants to improve a screen that already exists in the
 
 Contributions are welcome. We do not assign volunteers by default. Comment on the issue you want to work on, say what you plan to change, and start once nobody has objected. If there is no issue yet, open one first.
 
-Good entry points right now:
+Find new work among the [open issues labeled `epic:climbing-experience`](https://github.com/boardsesh/boardsesh/issues?q=is%3Aissue%20is%3Aopen%20label%3Aepic%3Aclimbing-experience).
+
+These completed contributions show how focused improvements fit the existing app:
 
 - [#6230](https://github.com/boardsesh/boardsesh/issues/6230): queue, playlist and search model.
 - [#6229](https://github.com/boardsesh/boardsesh/issues/6229): the order of sections on the climb view.
 - [#6291](https://github.com/boardsesh/boardsesh/issues/6291): Boardz workouts.
-- Anything open under the [`epic:climbing-experience`](https://github.com/boardsesh/boardsesh/labels/epic%3Aclimbing-experience) label.
 
 Questions go in the issue, or on [Discord](https://discord.gg/YXA8GsXfQK).
 
@@ -76,11 +77,13 @@ A display preference never changes who can see what. Privacy follows [docs/priva
 
 ## Text and translations
 
-Every visible string goes in every locale: en-US, es, fr and de. Catalogs live in `packages/shared/i18n/locales/`. Follow the glossaries: [Spanish](./i18n-spanish-glossary.md), [French](./i18n-french-glossary.md), [German](./i18n-german-glossary.md). Don't hardcode strings. See "Internationalisation" in [CLAUDE.md](../CLAUDE.md).
+Every visible string goes in every locale listed in `SUPPORTED_LOCALES` in [the shared i18n configuration](../packages/shared/i18n/src/config.ts). Catalogs live in `packages/shared/i18n/locales/`. Follow the glossaries: [Spanish](./i18n-spanish-glossary.md), [French](./i18n-french-glossary.md), [German](./i18n-german-glossary.md), [Italian](./i18n-italian-glossary.md) and [Simplified Chinese](./i18n-chinese-glossary.md). Don't hardcode strings. See "Internationalisation" in [CLAUDE.md](../CLAUDE.md).
 
 ## JS or native
 
-JS-only changes go to `main` and reach climbers by OTA. A change that moves the native fingerprint (a new native module, an Expo plugin, an SDK bump) goes to `release/next`. If you are not sure, open the PR against `main` as JS-only. The OTA compatibility comment on the PR tells you if it is wrong. Details: "JS changes land on `main`, native changes on `release/next`" in [CONTRIBUTING.md](../CONTRIBUTING.md) and [docs/mobile-store-release.md](./mobile-store-release.md).
+All native and JavaScript PRs target `main`. JavaScript-only changes ship by OTA to compatible binaries. A native fingerprint change (a new native module, an Expo plugin, an SDK bump) starts Main Native Release for the affected platforms; public store submission remains manual. The OTA compatibility comment identifies whether your change needs a new binary.
+
+Older binaries keep their last compatible OTA until users install a compatible binary. Urgent fixes for an older accepted fingerprint use the explicit OTA backport workflow and immutable release anchor. See [Native and JavaScript PRs target main](../CONTRIBUTING.md#native-and-javascript-prs-target-main) and [docs/mobile-store-release.md](./mobile-store-release.md).
 
 ## Test it
 
