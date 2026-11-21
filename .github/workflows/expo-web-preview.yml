@@ -94,6 +94,9 @@ jobs:
         with:
           name: ${{ needs.inspect.outputs.artifact }}
           path: ${{ runner.temp }}/export
+          # Metro emits bundled fonts beneath assets/__node_modules/.pnpm/.
+          # Include hidden paths only from this generated, secret-free export.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
 
