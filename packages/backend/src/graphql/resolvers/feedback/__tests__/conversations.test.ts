@@ -358,6 +358,73 @@ describe('trusted GitHub comments', () => {
     const [summary] = await db.select().from(appFeedback).where(eq(appFeedback.id, activeReport.id));
     expect(summary.lastMessageAt).toContain('2026-11-22');
   });
+  it('uses canonical IDs for same-second comments across pages and keeps the local outbox last', async () => {
+    const message = await mutations.sendAppBugReportMessage(
+      null,
+      {
+        input: {
+          reportId: String(activeReport.id),
+          body: 'Newer reporter message',
+          clientMutationId: randomUUID(),
+        },
+      },
+      ctx(reporter),
+    );
+    githubRequestMock.mockImplementation(async (_path: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? {
+            ...githubComment(200, (JSON.parse(init.body as string) as { body: string }).body),
+            user: { login: 'feedback[bot]', type: 'Bot' },
+          }
+        : [],
+    );
+    await publishFeedbackGithubComment(message.id);
+    // The older staff comment arrives later, giving it a larger local row ID.
+    githubRequestMock.mockImplementation(async (path: string) =>
+      path.includes('/permission')
+        ? { permission: 'write' }
+        : githubComment(100, '#replytocustomer\nOlder staff message'),
+    );
+    await importFeedbackGithubComment(job);
+    const pending = await mutations.sendAppBugReportMessage(
+      null,
+      {
+        input: {
+          reportId: String(activeReport.id),
+          body: 'Pending reporter message',
+          clientMutationId: randomUUID(),
+        },
+      },
+      ctx(reporter),
+    );
+    await db
+      .update(appFeedbackMessages)
+      .set({ createdAt: '2026-11-21T12:00:00Z' })
+      .where(eq(appFeedbackMessages.id, BigInt(pending.id)));
+    const bodies: string[] = [];
+    let before: string | null | undefined;
+    for (let page = 0; page < 3; page++) {
+      const result = await queries.appBugReportMessages(
+        null,
+        {
+          input: {
+            reportId: String(activeReport.id),
+            limit: 1,
+            ...(before ? { before } : {}),
+          },
+        },
+        ctx(reporter),
+      );
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]).not.toHaveProperty('githubCommentId');
+      bodies.push(result.messages[0].body);
+      before = result.endCursor;
+      expect(result.hasMore).toBe(page < 2);
+    }
+    expect(bodies).toEqual(['Pending reporter message', 'Newer reporter message', 'Older staff message']);
+    const [summary] = await db.select().from(appFeedback).where(eq(appFeedback.id, activeReport.id));
+    expect(summary).toMatchObject({ lastMessagePreview: 'Newer reporter message', needsReply: true });
+  });
   it('filters the admin dashboard by reporter and unanswered app reply', async () => {
     await mutations.sendAppBugReportMessage(
       null,
@@ -378,7 +445,7 @@ describe('trusted GitHub comments', () => {
     );
     await publishFeedbackGithubComment(String(pending.id));
     githubRequestMock.mockImplementation(async (path: string) =>
-      path.includes('/permission') ? { permission: 'write' } : githubComment(),
+      path.includes('/permission') ? { permission: 'write' } : githubComment(202),
     );
     const inbox = await feedbackQueries.adminAppFeedback(
       null,
@@ -386,7 +453,7 @@ describe('trusted GitHub comments', () => {
       ctx(admin),
     );
     expect(inbox.reports.map((entry) => entry.id)).toEqual([String(activeReport.id)]);
-    await importFeedbackGithubComment(job);
+    await importFeedbackGithubComment({ ...job, commentId: 202 });
     expect(
       (await feedbackQueries.adminAppFeedback(null, { input: { reporterId: reporter, needsReply: true } }, ctx(admin)))
         .reports,

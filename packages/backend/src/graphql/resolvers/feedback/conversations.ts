@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { AppBugReport, AppBugReportMessage, ConnectionContext } from '@boardsesh/shared-schema';
 import { appFeedback, appFeedbackMessages, users } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -21,6 +21,12 @@ import {
 
 const BUG_SOURCES = ['shake-bug', 'drawer-bug'];
 const notFound = () => new Error('Bug report not found');
+// GitHub timestamps have second precision. Its comment ID preserves canonical
+// order within that second; local outbox rows follow every confirmed comment.
+const OUTBOX_MESSAGE_SORT_ID = '9223372036854775807';
+const messageSortId = sql<bigint>`CASE WHEN ${appFeedbackMessages.deliveryStatus} = 'sent'
+  AND ${appFeedbackMessages.githubCommentId} IS NOT NULL
+  THEN ${appFeedbackMessages.githubCommentId}::bigint ELSE ${OUTBOX_MESSAGE_SORT_ID}::bigint END`;
 const messageColumns = {
   id: appFeedbackMessages.id,
   reportId: appFeedbackMessages.reportId,
@@ -28,6 +34,7 @@ const messageColumns = {
   deliveryStatus: appFeedbackMessages.deliveryStatus,
   authorRole: appFeedbackMessages.authorRole,
   createdAt: appFeedbackMessages.createdAt,
+  githubCommentId: appFeedbackMessages.githubCommentId,
 };
 
 function mapReport(report: typeof appFeedback.$inferSelect): AppBugReport {
@@ -62,7 +69,14 @@ function mapMessage(message: {
   deliveryStatus: 'pending' | 'sent' | 'failed';
   createdAt: string;
 }): AppBugReportMessage {
-  return { ...message, id: String(message.id), reportId: String(message.reportId) };
+  return {
+    id: String(message.id),
+    reportId: String(message.reportId),
+    body: message.body,
+    authorRole: message.authorRole,
+    deliveryStatus: message.deliveryStatus,
+    createdAt: message.createdAt,
+  };
 }
 
 async function authorizedReport(id: string, ctx: ConnectionContext) {
@@ -131,21 +145,34 @@ export const feedbackConversationQueries = {
                 lt(appFeedbackMessages.createdAt, validated.before.createdAt),
                 and(
                   eq(appFeedbackMessages.createdAt, validated.before.createdAt),
+                  lt(messageSortId, BigInt(validated.before.sortId)),
+                ),
+                and(
+                  eq(appFeedbackMessages.createdAt, validated.before.createdAt),
+                  eq(messageSortId, BigInt(validated.before.sortId)),
                   lt(appFeedbackMessages.id, BigInt(validated.before.id)),
                 ),
               )
             : undefined,
         ),
       )
-      .orderBy(desc(appFeedbackMessages.createdAt), desc(appFeedbackMessages.id))
+      .orderBy(desc(appFeedbackMessages.createdAt), desc(messageSortId), desc(appFeedbackMessages.id))
       .limit(limit + 1);
-    const messages = rows.slice(0, limit).map(mapMessage);
-    const last = messages.at(-1);
+    const page = rows.slice(0, limit);
+    const messages = page.map(mapMessage);
+    const last = page.at(-1);
     return {
       messages,
       hasMore: rows.length > limit,
       endCursor: last
-        ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, id: last.id })).toString('base64url')
+        ? Buffer.from(
+            JSON.stringify({
+              createdAt: last.createdAt,
+              sortId:
+                last.deliveryStatus === 'sent' && last.githubCommentId ? last.githubCommentId : OUTBOX_MESSAGE_SORT_ID,
+              id: String(last.id),
+            }),
+          ).toString('base64url')
         : null,
     };
   },

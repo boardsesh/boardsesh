@@ -151,6 +151,7 @@ const messageCursorSchema = z
             .max(40)
             .refine((date) => Number.isFinite(Date.parse(date))),
           id: feedbackRowId,
+          sortId: feedbackRowId,
         })
         .strict()
         .parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));

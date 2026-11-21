@@ -23,12 +23,12 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 const PAGE_SIZE = 20;
 
 function mergeMessages(existing: AppBugReportMessage[], incoming: AppBugReportMessage[]): AppBugReportMessage[] {
-  const messages = new Map(existing.map((message) => [message.id, message]));
-  for (const message of incoming) messages.set(message.id, message);
-  return [...messages.values()].sort((first, second) => {
-    const timeDifference = Date.parse(first.createdAt) - Date.parse(second.createdAt);
-    return timeDifference || (BigInt(first.id) < BigInt(second.id) ? -1 : 1);
-  });
+  // Pages arrive newest first in canonical GitHub order. Local cache IDs can
+  // reflect webhook delivery order, so the client must preserve server order.
+  const incomingIds = new Set(incoming.map((message) => message.id));
+  const newestFirst = [...existing].reverse().filter((message) => !incomingIds.has(message.id));
+  newestFirst.push(...incoming);
+  return [...new Map(newestFirst.map((message) => [message.id, message])).values()].reverse();
 }
 
 /** Mounted with a report/account key so requests and drafts cannot cross accounts. */

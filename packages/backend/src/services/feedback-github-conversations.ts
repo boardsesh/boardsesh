@@ -98,7 +98,11 @@ async function refreshReportSummary(transaction: Transaction, reportId: bigint) 
         eq(appFeedbackMessages.deliveryStatus, 'sent'),
       ),
     )
-    .orderBy(desc(appFeedbackMessages.createdAt), desc(appFeedbackMessages.id))
+    .orderBy(
+      desc(appFeedbackMessages.createdAt),
+      desc(sql`${appFeedbackMessages.githubCommentId}::bigint`),
+      desc(appFeedbackMessages.id),
+    )
     .limit(1);
   await transaction
     .update(appFeedback)
