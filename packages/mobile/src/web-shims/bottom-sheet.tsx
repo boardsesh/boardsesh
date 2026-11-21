@@ -245,6 +245,7 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
   const innerRef = useRef<GorhomModalRef>(null);
   const dismissalStateRef = useRef<SheetDismissalState>(initialSheetDismissalState);
   const isVisibleRef = useRef(false);
+  const lastChangeIndexRef = useRef<number | null>(null);
   const pendingActionRef = useRef<PendingModalAction | null>(null);
   const chrome = useSheetChrome({
     backdropComponent,
@@ -270,6 +271,7 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
     if (dismissalStateRef.current === 'dismissed') {
       dismissalStateRef.current = presentedDismissalState();
       pendingActionRef.current = action;
+      lastChangeIndexRef.current = null;
       modal.present();
       return;
     }
@@ -282,11 +284,13 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
   }, []);
 
   const handleChange = useCallback((index: number) => {
+    const duplicateClose = index === -1 && lastChangeIndexRef.current === -1;
+    lastChangeIndexRef.current = index;
     isVisibleRef.current = index >= 0;
     if (index >= 0) {
       dismissalStateRef.current = presentedDismissalState();
     }
-    onChangeRef.current?.(index);
+    if (!duplicateClose) onChangeRef.current?.(index);
 
     const pendingAction = index >= 0 ? pendingActionRef.current : null;
     if (pendingAction && innerRef.current) {
@@ -301,6 +305,13 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
     const transition = transitionSheetDismissal(dismissalStateRef.current, 'dismiss');
     dismissalStateRef.current = transition.state;
     if (!transition.shouldNotify) return;
+    // Gorhom web can dismiss without reporting index -1. The coordinator needs
+    // that close edge before the terminal callback, or it keeps this sheet
+    // marked as presented and ignores the next request to open it.
+    if (lastChangeIndexRef.current !== -1) {
+      lastChangeIndexRef.current = -1;
+      onChangeRef.current?.(-1);
+    }
     onCloseRef.current?.();
     onDismissRef.current?.();
     onFullyDismissedRef.current?.();

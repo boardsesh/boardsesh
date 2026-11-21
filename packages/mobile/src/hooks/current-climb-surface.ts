@@ -43,8 +43,8 @@ export type CurrentClimbSurface = {
 /**
  * The one answer to "who shows the current climb". The floating queue bar, the
  * bottom-chrome reserve, the rest-timer pill and the drawer host's tap routing
- * all read it, so no screen can show the climb twice (a floating bar over the
- * accessory) or reserve room for a surface that is not there. Pure, so it is
+ * all read it. The browser sidebar additionally keeps a MiniPlayer beside its
+ * selection pane (`resolveMiniPlayerHost`); native accessories stay exclusive. Pure, so it is
  * unit-tested without a device.
  */
 export function resolveCurrentClimbSurface({

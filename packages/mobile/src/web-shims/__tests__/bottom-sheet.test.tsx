@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render } from '@testing-library/react';
-import { createRef, type ReactNode } from 'react';
+import { createRef, forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type MockGorhomProps = {
@@ -87,6 +87,13 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'web' },
   TextInput: { State: { currentlyFocusedField: () => null } },
 }));
+
+import {
+  SheetPresentationProvider,
+  SHEET_SETTLE_MS,
+  useManagedSheet,
+  type ManagedSheetHandle,
+} from '../../providers/sheet-presentation-provider';
 
 import {
   BottomSheet,
@@ -253,6 +260,63 @@ describe('Expo web bottom-sheet adapter', () => {
     expect(gorhom.state.bottomSheetMethods.close).toHaveBeenCalledTimes(2);
     expect(gorhom.state.modalMethods.close).toHaveBeenCalledTimes(1);
     expect(gorhom.state.modalMethods.dismiss).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a missing closed index before terminal dismissal, without duplicate close edges', () => {
+    const sheetRef = createRef<BottomSheetMethods>();
+    const callbacks: string[] = [];
+    const onChange = vi.fn((index: number) => callbacks.push(`change:${index}`));
+    const onFullyDismissed = vi.fn(() => callbacks.push('dismissed'));
+    render(
+      <BottomSheetModal ref={sheetRef} onChange={onChange} onFullyDismissed={onFullyDismissed}>
+        <span />
+      </BottomSheetModal>,
+    );
+
+    act(() => sheetRef.current?.present());
+    act(() => gorhom.state.modalProps?.onDismiss?.());
+    expect(callbacks).toEqual(['change:-1', 'dismissed']);
+    act(() => gorhom.state.modalProps?.onChange?.(-1));
+    act(() => gorhom.state.modalProps?.onDismiss?.());
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onFullyDismissed).toHaveBeenCalledTimes(1);
+
+    act(() => sheetRef.current?.present());
+    act(() => gorhom.state.modalProps?.onChange?.(0));
+    act(() => gorhom.state.modalProps?.onChange?.(-1));
+    act(() => gorhom.state.modalProps?.onDismiss?.());
+    expect(callbacks).toEqual(['change:-1', 'dismissed', 'change:0', 'change:-1', 'dismissed']);
+  });
+
+  it('reopens a settled managed modal after a backdrop dismissal that omitted index changes', () => {
+    vi.useFakeTimers();
+    const ManagedModal = forwardRef<ManagedSheetHandle>(function ManagedModal(_modalProps, ref) {
+      const sheetRef = useRef<BottomSheetMethods>(null);
+      const managed = useManagedSheet({ sheetRef });
+      useImperativeHandle(ref, () => managed.handle, [managed.handle]);
+      return (
+        <BottomSheetModal ref={sheetRef} onChange={managed.onChange} onFullyDismissed={managed.onFullyDismissed}>
+          <span />
+        </BottomSheetModal>
+      );
+    });
+    const managedRef = createRef<ManagedSheetHandle>();
+    const rendered = render(
+      <SheetPresentationProvider>
+        <ManagedModal ref={managedRef} />
+      </SheetPresentationProvider>,
+    );
+    try {
+      act(() => managedRef.current?.present());
+      act(() => vi.advanceTimersByTime(SHEET_SETTLE_MS));
+      act(() => gorhom.state.modalProps?.onDismiss?.());
+      act(() => managedRef.current?.present());
+      expect(gorhom.state.modalMethods.present).toHaveBeenCalledTimes(2);
+    } finally {
+      rendered.unmount();
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('notifies each modal dismissal callback exactly once per presentation cycle', () => {

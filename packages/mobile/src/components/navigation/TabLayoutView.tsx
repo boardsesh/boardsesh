@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../components/navigation/tab-badge';
 import { useTheme } from '../../providers/theme-provider';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { WALL_COLUMN_WIDTH } from '../../theme/size-class';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 
@@ -88,6 +89,8 @@ export function TabLayoutView({
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSession } = useTranslation('session');
   const { systemColors, variant, m3, brandColors } = useTheme();
+  const { jsQueueReserve } = useBottomChromeMetrics();
+  const paneBottomClearance = Platform.OS === 'web' ? jsQueueReserve : 0;
   const shellDividerColor = selectByVariant(variant, {
     liquidGlass: systemColors.separator,
     material: m3.outlineVariant,
@@ -176,7 +179,14 @@ export function TabLayoutView({
             mounted under the Wall display, which covers the whole shell — same
             redundancy guard as the wall column below. */}
         {isRegular && showDetailPane && !wallDisplayOpen ? (
-          <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: shellDividerColor }]}>
+          <View
+            key="pane"
+            testID="desktop-play-pane"
+            style={[
+              styles.playPane,
+              { width: playPaneWidth, borderLeftColor: shellDividerColor, paddingBottom: paneBottomClearance },
+            ]}
+          >
             {detailPane}
           </View>
         ) : null}
@@ -188,7 +198,10 @@ export function TabLayoutView({
         {isRegular && showWallColumn && !wallDisplayOpen ? (
           <View
             key="wall"
-            style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor }]}
+            style={[
+              styles.wallColumn,
+              { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor, paddingBottom: paneBottomClearance },
+            ]}
           >
             {wallColumn}
           </View>

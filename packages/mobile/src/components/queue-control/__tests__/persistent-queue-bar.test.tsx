@@ -13,6 +13,7 @@ const cfg = vi.hoisted(() => ({
   onAccessorySurface: true,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  platformOS: 'ios' as 'ios' | 'android' | 'web',
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
   nativeTabBar: false,
@@ -28,7 +29,11 @@ vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: ()
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return cfg.platformOS;
+    },
+  },
   // Expose `style` as `data-style` so positioning assertions can query the outer
   // plain View shell (which now owns the absolute layout, not the Animated.View).
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
@@ -180,6 +185,7 @@ describe('PersistentQueueBar', () => {
     cfg.onAccessorySurface = true;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.variant = 'liquidGlass';
+    cfg.platformOS = 'ios';
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
     cfg.nativeTabBar = false;
@@ -187,6 +193,44 @@ describe('PersistentQueueBar', () => {
     cfg.windowWidth = 430;
     cfg.sessionId = null;
     cfg.activeSegment = null;
+  });
+
+  it.each(['material', 'liquidGlass'] as const)('shows one desktop card on Profile with %s', (variant) => {
+    cfg.platformOS = 'web';
+    cfg.variant = variant;
+    cfg.activeSegment = 'profile';
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1440;
+    cfg.measuredTabBarHeight = 64;
+    const { container } = renderBar();
+    expect(container.querySelectorAll('[data-mini-player-card]')).toHaveLength(1);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    const shellStyle = container.querySelector('[data-animated]')?.parentElement?.getAttribute('data-style');
+    expect(shellStyle).toContain('"left":104');
+    expect(shellStyle).toContain('"right":8');
+    expect(shellStyle).toContain('"bottom":0');
+  });
+
+  it.each([700, 815, 816, 1176, 1440])('keeps the desktop card across pane widths: %i', (windowWidth) => {
+    cfg.platformOS = 'web';
+    cfg.variant = 'material';
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = windowWidth;
+    expect(renderBar().container.querySelectorAll('[data-mini-player-card]')).toHaveLength(1);
+  });
+
+  it('hides the desktop card on pushed routes and without a climb', () => {
+    cfg.platformOS = 'web';
+    cfg.variant = 'material';
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1440;
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
+    expect(renderBar().container.querySelector('[data-mini-player-card]')).toBeNull();
+    cfg.onTopLevelTab = true;
+    cfg.onAccessorySurface = true;
+    cfg.currentClimbQueueItem = null;
+    expect(renderBar().container.querySelector('[data-mini-player-card]')).toBeNull();
   });
 
   it('renders nothing when no climb is current', () => {

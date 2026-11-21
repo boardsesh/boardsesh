@@ -10,6 +10,7 @@ import { hapticSelection } from '../../lib/haptics';
 import { trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
 import { queueSheetOpenContext } from '../../lib/queue-sheet-open-context';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
+import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -346,9 +347,11 @@ function MiniPlayerTransportButtons({
 }) {
   const { t } = useTranslation('session');
   const navigation = useMiniPlayerNavigation();
-  // The host stays mounted under the player, which pages its own track.
+  // The route and desktop pane page their own track. A second pager would
+  // clear the preview loader's pin while that player is still walking its list.
   const segments = useSegments();
-  const playerOpen = isPlayerRoute(segments);
+  const { home } = useCurrentClimbSurface();
+  const playerOpen = isPlayerRoute(segments) || home === 'detailPane';
   return (
     <>
       {buttonIds.includes('next') && !playerOpen ? <MiniPlayerTrackPager /> : null}

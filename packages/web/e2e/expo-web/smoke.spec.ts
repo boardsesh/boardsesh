@@ -253,7 +253,7 @@ test.describe('expo-web smoke', () => {
       .filter({ has: page.locator('img[src^="blob:"]') })
       .first();
     await firstClimbRow.click({ force: true });
-    await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+    await expect(page.getByRole('button', { name: 'Log ascent' }).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
   }
 
   /**
@@ -588,7 +588,7 @@ test.describe('expo-web smoke', () => {
   test.describe('desktop adaptive shell', () => {
     test('uses the tablet rail and keeps default play actions and deferred sections in the detail pane', async ({
       browser,
-    }) => {
+    }, testInfo) => {
       // `screen` is a browser-context option rather than a per-test fixture.
       // Create the context here so Dimensions.get('screen') sees desktop
       // eligibility before the Expo bundle evaluates.
@@ -627,33 +627,24 @@ test.describe('expo-web smoke', () => {
         await openPlayDrawerFromClimbsList(page);
         expect(new URL(page.url()).pathname).not.toContain('/play');
 
-        // The persistent detail pane embeds the same action bar as the mobile
-        // route. Check both rows so a desktop-only gate cannot silently strip an
-        // action while the main Log ascent button still makes the pane look live.
-        // The leading action is mirror on boards that support it and the queue
-        // otherwise; the heart always leads the second row, so either way one of
-        // these names is on screen. "Climb actions" is the ⋯ menu in the pane's
-        // top row (a Paper menu anchor on web), not the bar.
-        await expect(
-          page
-            .getByRole('button', {
-              name: /^(Mirror climb|Unmirror climb|Add favorite|Remove favorite)$/,
-            })
-            .first(),
-        ).toBeVisible();
+        const playPane = page.getByTestId('desktop-play-pane');
+        const miniPlayer = page.getByTestId('persistent-mini-player');
+        await expect(miniPlayer).toBeVisible();
 
-        // Previous/Next are optional controls, disabled in fresh preferences.
-        for (const actionName of ['Log ascent', 'Choose Angle', 'Climb actions', 'Share climb']) {
-          await expect(page.getByRole('button', { name: actionName, exact: true })).toBeVisible();
+        // Mouse browsers show transport controls by default (#7963). These
+        // occupy the slots that phones use for Favorite and Share; optional
+        // actions remain available through the menus.
+        for (const actionName of ['Log ascent', 'Choose Angle', 'Previous climb', 'Next climb']) {
+          await expect(playPane.getByRole('button', { name: actionName, exact: true })).toBeVisible();
         }
-        const wallControl = page.getByTestId('play-drawer-wall-control');
+        const wallControl = playPane.getByTestId('play-drawer-wall-control');
         await expect(wallControl).toBeVisible();
         await expect(wallControl).toHaveRole('button');
         await expect(wallControl).toHaveAccessibleName(/\S/);
-        const queueButton = page.getByRole('button', { name: /^Queue, (nothing up next|\d+ climbs?( up next)?)$/ });
+        const queueButton = playPane.getByRole('button', { name: /^Queue, (nothing up next|\d+ climbs?( up next)?)$/ });
         await expect(queueButton).toBeVisible();
 
-        const logAscentButton = page.getByRole('button', { name: 'Log ascent', exact: true });
+        const logAscentButton = playPane.getByRole('button', { name: 'Log ascent', exact: true });
         await tapThroughGestureLayer(logAscentButton);
         const saveTickButton = page.getByRole('button', { name: /Log (flash|send|attempt)/i }).first();
         await expect(saveTickButton).toBeVisible({ timeout: 15_000 });
@@ -670,7 +661,39 @@ test.describe('expo-web smoke', () => {
         await page.mouse.wheel(0, 1200);
 
         for (const sectionName of ['Logbook', 'Beta Videos', 'Community', 'Similar Climbs']) {
-          await expect(page.getByText(sectionName, { exact: true }).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+          await expect(playPane.getByText(sectionName, { exact: true }).first()).toBeVisible({
+            timeout: WARM_TIMEOUT_MS,
+          });
+        }
+        // Profile must retain queue access without finding an action in the pane.
+        // These use real mouse hit testing: dispatchEvent would miss an overlay
+        // swallowing the new bar's controls.
+        await tabButton(page, 'Profile').click();
+        await expect(miniPlayer).toBeVisible();
+        await miniPlayer.getByRole('button', { name: /^More actions for / }).click();
+        await page.getByRole('menuitem', { name: 'Open the queue', exact: true }).click();
+        await expect(historyToggle).toBeVisible({ timeout: 15_000 });
+        await dismissSheet(page, historyToggle);
+        await expect(page).toHaveURL(/\/profile(?:[/?#]|$)/);
+        await expect(playPane).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath('desktop-profile-mini-player.png') });
+
+        // Start compact so the measured bottom-tab height is cached, then cross
+        // both the rail and detail-pane boundaries on the same browser screen.
+        for (const width of [699, 700, 815, 816, 1176, 1440]) {
+          await page.setViewportSize({ width, height: 900 });
+          await expect(miniPlayer).toHaveCount(1);
+          await expect(miniPlayer).toBeVisible();
+          await expect(playPane).toHaveCount(width >= 816 ? 1 : 0);
+          if (width >= 700) {
+            await expect.poll(async () => Math.round((await miniPlayer.boundingBox())?.x ?? -1)).toBe(104);
+            await expect
+              .poll(async () => {
+                const bounds = await miniPlayer.boundingBox();
+                return bounds ? Math.round(bounds.y + bounds.height) : -1;
+              })
+              .toBe(900);
+          }
         }
         expect(fatalErrors).toEqual([]);
       } finally {

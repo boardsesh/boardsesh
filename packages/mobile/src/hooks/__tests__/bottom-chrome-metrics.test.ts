@@ -37,6 +37,47 @@ const IN_TAB_INFERRED_BAR_INSET = ROOT_WINDOW_INSET + TAB_BAR_HEIGHT;
 const SYNTHETIC_ROOT_INSET = 100;
 
 describe('computeBottomChromeMetrics', () => {
+  it.each(['material', 'liquidGlass'] as const)('reserves the desktop card beside the pane on %s', (uiVariant) => {
+    const metrics = computeBottomChromeMetrics({
+      uiVariant,
+      usesNativeTabBar: false,
+      insetsBottom: 12,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+      usesSidebar: true,
+      sidebarMiniPlayer: true,
+    });
+    expect(metrics.jsQueueToolbarVisible).toBe(true);
+    expect(metrics.jsQueueReserve).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE);
+    expect(metrics.tabBarHeight).toBe(0);
+    expect(metrics.tabBarBottom).toBe(12);
+    expect(metrics.contentColumnLeft).toBe(96);
+    expect(metrics.contentColumnRight).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(12 + MATERIAL_MINI_PLAYER_CARD_RESERVE);
+    expect(metrics.fixedFooterBottom).toBe(MATERIAL_MINI_PLAYER_CARD_RESERVE);
+  });
+
+  it.each([
+    { hasCurrentClimb: false, onAccessorySurface: true },
+    { hasCurrentClimb: true, onAccessorySurface: false },
+  ])('leaves no desktop card reserve when hidden: %j', (visibility) => {
+    const metrics = computeBottomChromeMetrics({
+      uiVariant: 'material',
+      usesNativeTabBar: false,
+      insetsBottom: 0,
+      insideTabs: true,
+      nativeAccessoryPresented: false,
+      usesSidebar: true,
+      sidebarMiniPlayer: true,
+      ...visibility,
+    });
+    expect(metrics.jsQueueToolbarVisible).toBe(false);
+    expect(metrics.jsQueueReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(0);
+  });
+
   it('reserves nothing extra outside the tabs group', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',

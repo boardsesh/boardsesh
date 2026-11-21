@@ -17,6 +17,20 @@ drawer host's tap routing all read it, so the climb never shows twice. Tab conte
 accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
 Duo's side rail).
 
+**Desktop browsers keep a MiniPlayer beside their panes.** On the browser sidebar shell,
+the shared floating card stays across the bottom of every tab root, Profile included. Its
+three-dot menu opens the queue; the optional Queue button uses the same action. The card
+shows the last pick or queue current, using the existing MiniPlayer preferences, on either
+appearance variant. Tapping its climb selects that climb in the detail pane when it fits.
+The native iPad and Android tablet layouts keep their existing player hosts.
+
+The card starts 8px after the 96px rail and ends 8px before the window edge. With the
+rail up it docks to the window inset, ignoring a bottom-tab height cached before resize.
+Lists reserve its 48px height; the selected-climb and wall panes clear the same space.
+Below 700px the existing compact browser chrome takes over. A pushed route, Wall display,
+or a tab with no climb does not reserve a floating card. The pane owns playlist paging
+while it is present, so the accompanying MiniPlayer never starts a second background pager.
+
 **The landscape iPad player is Music's Now Playing.** `resolvePlayerArrangement`
 (`src/components/play-drawer/play-drawer-layout.ts`) returns `sideBySide` when a native iPad window is
 wider than tall and leaves a 600 pt board column beside the 400 pt panel; everything else, iPad portrait
