@@ -90,6 +90,15 @@ function streamKey(event: DownloadAuditEvent): string {
   return JSON.stringify([event.clientId, event.platform, event.scopeKey]);
 }
 
+function isTerminalEvent(event: DownloadAuditEvent): boolean {
+  return (
+    event.event === COMPLETED ||
+    (event.event === TOGGLED && event.enabled === false) ||
+    (event.event === FAILED && ABANDONED.has(event.reason ?? '')) ||
+    (event.event === LIFECYCLE && ['completed', 'abandoned', 'failed'].includes(event.state ?? ''))
+  );
+}
+
 function classifyObservation(observation: Observation, window: DownloadAuditWindow): DownloadAuditClassification {
   const deadline = observation.anchorAt + DOWNLOAD_FOLLOW_UP_MS;
   const candidates = observation.events.filter((event) => {
@@ -100,13 +109,7 @@ function classifyObservation(observation: Observation, window: DownloadAuditWind
       (!observation.supersededBy || compareEvents(event, observation.supersededBy) < 0)
     );
   });
-  const terminalIndex = candidates.findIndex(
-    (event) =>
-      event.event === COMPLETED ||
-      (event.event === TOGGLED && event.enabled === false) ||
-      (event.event === FAILED && ABANDONED.has(event.reason ?? '')) ||
-      (event.event === LIFECYCLE && ['completed', 'abandoned', 'failed'].includes(event.state ?? '')),
-  );
+  const terminalIndex = candidates.findIndex(isTerminalEvent);
   const relevant = terminalIndex < 0 ? candidates : candidates.slice(0, terminalIndex + 1);
   const terminal = terminalIndex < 0 ? undefined : candidates[terminalIndex];
   const starts = relevant.filter((event) => event.event === STARTED).length;
@@ -185,6 +188,10 @@ export function classifyDownloadRequests(
       stream.active = observation;
       if (event.requestId) stream.byId.set(event.requestId, observation);
     }
+    // Legacy asynchronous terminals can arrive after a replacement request.
+    // Identified generations need their own ID to establish a terminal outcome;
+    // unkeyed history remains usable only for legacy, inferred generations.
+    if (!event.requestId && stream.active?.requestId && isTerminalEvent(event)) continue;
     // An ID never falls back to the current scope: a stale callback belongs to
     // its original generation, including after disable/re-enable.
     const observation = event.requestId ? stream.byId.get(event.requestId) : stream.active;
@@ -192,7 +199,14 @@ export function classifyDownloadRequests(
     if (event.requestId && observation !== stream.active) continue;
     if (event.event === TOGGLED && event.enabled !== null && event.enabled !== undefined)
       stream.enabled = event.enabled;
-    if (event.event === LIFECYCLE && event.state === 'abandoned') stream.enabled = false;
+    // Old clients reported a scope's terminal abandonment without always
+    // delivering its disabled toggle. Close that generation before a later
+    // enable; ordinary attempt failures and background pauses keep it open.
+    if (
+      (event.event === LIFECYCLE && event.state === 'abandoned') ||
+      (event.event === FAILED && ABANDONED.has(event.reason ?? ''))
+    )
+      stream.enabled = false;
     if (identifiedRequest) stream.enabled = true;
   }
   return observations
@@ -223,7 +237,12 @@ export function classifyDownloadStarts(
     } else {
       const active = activeByStream.get(key);
       // Identified callbacks must never cross a request-generation boundary.
-      if (active && (!event.requestId || !active.anchor.requestId || event.requestId === active.anchor.requestId))
+      if (
+        active &&
+        (!active.anchor.requestId ||
+          event.requestId === active.anchor.requestId ||
+          (!event.requestId && !isTerminalEvent(event)))
+      )
         active.events.push(event);
     }
   }

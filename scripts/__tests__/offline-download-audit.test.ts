@@ -69,6 +69,38 @@ describe('offline download audit classification', () => {
     expect(classified[0]).toMatchObject({ outcome: 'completed', starts: 2, restarts: 1 });
   });
 
+  it.each(['abandoned-removed', 'abandoned-signed-out', 'abandoned-disabled'])(
+    'opens a new legacy generation after %s without a disabled toggle',
+    (reason) => {
+      const classified = classifyDownloadRequests([
+        enable(),
+        observation(STARTED, 1),
+        observation(FAILED, 2, { reason }),
+        enable(3),
+        observation(STARTED, 4),
+        observation(COMPLETED, 5),
+      ]);
+      expect(classified.map(({ outcome }) => outcome)).toEqual(['abandoned', 'completed']);
+      expect(classified.map(({ starts }) => starts)).toEqual([1, 1]);
+    },
+  );
+
+  it.each(['unknown', 'watermark-regression', 'database-locked', 'aborted-background'])(
+    'keeps a legacy generation enabled after the nonterminal %s diagnostic',
+    (reason) => {
+      const classified = classifyDownloadRequests([
+        enable(),
+        observation(STARTED, 1),
+        observation(FAILED, 2, { reason }),
+        enable(3),
+        observation(STARTED, 4),
+        observation(COMPLETED, 5),
+      ]);
+      expect(classified).toHaveLength(1);
+      expect(classified[0]).toMatchObject({ outcome: 'completed', starts: 2 });
+    },
+  );
+
   it('separates clients and operating systems even when the person and scope match', () => {
     const classified = classifyDownloadRequests([
       enable(),
@@ -172,6 +204,55 @@ describe('offline download audit classification', () => {
       observation(COMPLETED, 5, { requestId: 'request-two' }),
     ]);
     expect(classified.map(({ outcome }) => outcome)).toEqual(['abandoned', 'completed']);
+  });
+
+  it.each(['abandoned-removed', 'abandoned-signed-out', 'abandoned-disabled'])(
+    'ignores stale %s failure callbacks when a replacement request is enabled',
+    (reason) => {
+      const classified = classifyDownloadRequests([
+        observation(LIFECYCLE, 0, { state: 'requested', origin: 'requested', requestId: 'request-one' }),
+        observation(LIFECYCLE, 1, { state: 'abandoned', requestId: 'request-one' }),
+        observation(LIFECYCLE, 2, { state: 'requested', origin: 'requested', requestId: 'request-two' }),
+        observation(FAILED, 3, { reason, requestId: 'request-one' }),
+        enable(4),
+        observation(COMPLETED, 5, { requestId: 'request-two' }),
+      ]);
+      expect(classified.map(({ outcome }) => outcome)).toEqual(['abandoned', 'completed']);
+    },
+  );
+
+  it.each([
+    { event: FAILED, reason: 'abandoned-removed' },
+    { event: FAILED, reason: 'abandoned-signed-out' },
+    { event: FAILED, reason: 'abandoned-disabled' },
+    { event: COMPLETED },
+    { event: TOGGLED, enabled: false },
+    { event: LIFECYCLE, state: 'abandoned' },
+    { event: LIFECYCLE, state: 'failed' },
+  ])('does not attach an unkeyed $event terminal to an identified replacement request', (terminal) => {
+    const classified = classifyDownloadRequests([
+      observation(LIFECYCLE, 0, { state: 'requested', origin: 'requested', requestId: 'request-one' }),
+      observation(LIFECYCLE, 1, { state: 'abandoned', requestId: 'request-one' }),
+      observation(LIFECYCLE, 2, { state: 'requested', origin: 'requested', requestId: 'request-two' }),
+      observation(terminal.event, 3, terminal),
+      enable(4),
+      observation(COMPLETED, 5, { requestId: 'request-two' }),
+    ]);
+    expect(classified.map(({ outcome }) => outcome)).toEqual(['abandoned', 'completed']);
+  });
+
+  it.each([
+    { event: FAILED, reason: 'abandoned-removed' },
+    { event: FAILED, reason: 'abandoned-signed-out' },
+    { event: FAILED, reason: 'abandoned-disabled' },
+    { event: COMPLETED },
+    { event: TOGGLED, enabled: false },
+  ])('requires a keyed terminal after an identified start despite an unkeyed $event', (terminal) => {
+    const initial = [observation(STARTED, 0, { requestId: 'request-one' }), observation(terminal.event, 1, terminal)];
+    expect(classifyDownloadStarts(initial)[0].outcome).toBe('unknown');
+    expect(
+      classifyDownloadStarts([...initial, observation(COMPLETED, 2, { requestId: 'request-one' })])[0].outcome,
+    ).toBe('completed');
   });
 
   it('does not call someone complete when another requested board lacks a start', () => {

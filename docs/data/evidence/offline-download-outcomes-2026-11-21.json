@@ -70,7 +70,7 @@
     ]
   },
   "semantics": [
-    "Request denominator is first observed enable per client+OS+scope until a disable or another explicit request ID; duplicate enables are folded. History before 17 October is not available, so these are inferred observed generations, not a census of disabled-to-enabled transitions.",
+    "Request denominator is first observed enable per client+OS+scope until a disabled toggle, an explicit abandoned-removed/abandoned-signed-out/abandoned-disabled diagnostic, or another explicit request ID; duplicate enables are folded. An identified generation requires its matching request ID for terminal attribution; unkeyed legacy terminals cannot settle its replacement. History before 17 October is not available, so these are inferred observed generations, not a census of disabled-to-enabled transitions.",
     "Seven days are anchored independently at the request or start timestamp. An event at exactly seven days is included, provided it precedes the overall exclusive observation boundary.",
     "Started cohort credits the first completed event before the next start or explicit abandonment on the same identity/OS/scope. Request cohort permits restarts before completion within the same observed enable generation.",
     "No-start has an observed enable but no captured start or terminal completion. It does not prove no work occurred: already-cached markers, consent, delivery and identity changes are unobserved.",
