@@ -340,7 +340,7 @@ enum SharedQueueState {
             URLQueryItem(name: "dim_background", value: "0.18"),
             // The climber's saved board look. Sent explicitly for BOTH values —
             // every Boardsesh caller names its render mode rather than leaning
-            // on the server default (docs/web/og-climb.md convention). The mode is
+            // on the server default (docs/og-climb.md convention). The mode is
             // also baked into the cached thumbnail's filename, so no cache
             // version bump is needed when a climber flips the setting.
             URLQueryItem(name: "render_mode", value: renderMode ?? SharedBoardRenderMode.resolve(from: defaults)),
