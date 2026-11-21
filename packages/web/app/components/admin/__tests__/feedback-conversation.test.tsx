@@ -124,6 +124,21 @@ describe('GitHub-backed feedback conversations', () => {
     ).toBeTruthy();
   });
 
+  it('preserves canonical server order when timestamps tie and local IDs arrive out of order', async () => {
+    mockRequest.mockResolvedValue({
+      appBugReportMessages: {
+        messages: [staffMessage, { ...staffMessage, id: '999', body: 'Earlier comment in the same second.' }],
+        hasMore: false,
+        endCursor: 'opaque-cursor',
+      },
+    });
+    render(<FeedbackConversation report={report} token="admin-token" onClose={vi.fn()} />);
+    const earlier = await screen.findByText('Earlier comment in the same second.');
+    expect(
+      earlier.compareDocumentPosition(screen.getByText(staffMessage.body)) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('filters by reporter account independently of email contact consent', async () => {
     mockRequest.mockResolvedValue(directory);
     render(<FeedbackPanel />);
