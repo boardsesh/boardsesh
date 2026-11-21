@@ -5,6 +5,7 @@ import { reportHandledError } from '../lib/error-reporting';
 import { startConnectivityStore } from '../lib/connectivity/start-connectivity';
 import { shouldRetryQuery } from '../lib/graphql/query-retry';
 import { watchBoardImportCompletion } from '../lib/integrations/board-import-completion';
+import { watchProfileEmailForDeviceTokens } from '../lib/device-token-profile-email';
 import { climbProgressCacheScopeFor } from '../lib/climb-progress-cache-owner';
 import { bindOfflineUserReadRecovery } from '../lib/graphql/offline-user-read-recovery';
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
@@ -116,6 +117,9 @@ export function createQueryClient(): QueryClient {
   climbProgressCacheScopeFor(queryClient);
   // The client lives as long as the app, so the unsubscribe is never needed here.
   watchBoardImportCompletion(queryClient);
+  // Native only (a no-op on web): the signed-in profile's email names its
+  // device-token entry, so the next password sign-in can send it (#7656).
+  watchProfileEmailForDeviceTokens(queryClient);
   return queryClient;
 }
 

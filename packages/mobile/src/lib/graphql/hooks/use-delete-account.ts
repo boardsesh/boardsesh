@@ -10,6 +10,7 @@ import { getHttpClient } from '../client';
 import { isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { captureAccountDeletionIntent, type AccountDeletionResult } from '../../account-deletion-intent';
 import { forgetSignupConversion } from '../../signup-conversion';
+import { forgetDeviceTokenForAccount } from '../../device-token-store';
 
 /**
  * Count of the signed-in user's published climbs, surfaced in the
@@ -50,6 +51,10 @@ export function useDeleteAccount() {
       }
       const response = await getHttpClient().request<DeleteAccountMutationResponse>(DELETE_ACCOUNT, variables);
       if (response.deleteAccount !== true) return { deleted: false };
+      // The account is gone, so this device no longer needs to be recognised
+      // for it (#7656). Keyed by the deleted account's id, so it is right even
+      // if a newer sign-in already superseded this one; never throws.
+      void forgetDeviceTokenForAccount(intent.userId);
       if (isAuthCredentialGenerationCurrent(credentialGeneration)) {
         // A delayed/rejected local delete must not block sign-out after server deletion.
         void forgetSignupConversion(intent.userId).catch(() => {});

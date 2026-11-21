@@ -17,6 +17,7 @@ import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL, WEB_BASE_URL } from './env';
 import { clientIdentityHeaders } from './client-identity';
 import { parseVerifiedAuthResult, type VerifiedAuthResult } from './verified-auth-result';
+import { deviceTokenHeadersForCredentialsSignIn, rememberDeviceTokenFromReply } from './device-token-store';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -102,6 +103,7 @@ export async function oauthNativeSignIn(
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
+  void rememberDeviceTokenFromReply(data, { jwt: data.jwt });
   return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
@@ -269,6 +271,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
     return { success: false, status: response.status, error: 'invalid_response' };
   }
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
+  void rememberDeviceTokenFromReply(data, { jwt: data.jwt });
   return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
@@ -380,11 +383,15 @@ export type RegistrationResult =
   | NativeAuthFailure;
 
 export async function signInWithCredentials(email: string, password: string): Promise<CredentialsSignInResult> {
+  // The token this device holds for the account behind `email`, if any (#7656).
+  // Only this request ever carries it; with no matching token, or a backend that
+  // never issued one, the headers are exactly what they were before.
+  const deviceTokenHeaders = await deviceTokenHeadersForCredentialsSignIn(email);
   let response: Response;
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/credentials`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders(), ...deviceTokenHeaders },
       body: JSON.stringify({ email, password }),
       signal: createTimeoutSignal(15_000),
     });
@@ -408,6 +415,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
+  void rememberDeviceTokenFromReply(data, { email, jwt: data.jwt });
   return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
@@ -451,6 +459,7 @@ export async function registerWithCredentials(
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
+  void rememberDeviceTokenFromReply(data, { email, jwt: data.jwt });
   return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
