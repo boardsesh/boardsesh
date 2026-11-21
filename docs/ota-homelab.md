@@ -2,9 +2,11 @@
 
 Issue [#5841](https://github.com/boardsesh/boardsesh/issues/5841) moves the OTA
 server and its databases to a dedicated Debian 13 VM on Proxmox/Ceph. The
-committed `infra/ota/hosting.json` is the deployment owner: `railway` during
-preparation, `homelab` after the verified cutover. Changing it does not copy data
-or switch DNS by itself.
+committed `infra/ota/hosting.json` selects the desired deployment owner. Its
+`homelab` declaration activates the deployment and DNS reconciliation paths when
+applied; it is not evidence that the live cutover has completed. Changing it does
+not copy data or switch DNS by itself. Merge the ownership change only during
+the controlled cutover below.
 
 ## Client and data contract
 
@@ -45,8 +47,11 @@ Ceph storage. Provisioning verifies the reservation and live VMID before writing
 One dedicated remotely managed Cloudflare Tunnel targets `http://ota:8080`.
 Its connector token lives in 1Password. `infra/cloudflare/config.ts` owns the
 proxied CNAME for `updates.boardsesh.com` once hosting switches to `homelab`.
-Set its `OTA_TUNNEL_ID` from the created tunnel before cutover; a missing UUID
-blocks homelab DNS reconciliation. The ownership switch triggers Cloudflare apply.
+The created `boardsesh-ota-homelab` tunnel has UUID
+`834b2553-d21a-4cd4-9244-bedec9a52d6f`, recorded as `OTA_TUNNEL_ID`. A missing UUID
+blocks homelab DNS reconciliation. The ownership switch normally triggers
+Cloudflare apply through Production Deploy; the frozen cutover applies it
+separately from the reviewed merge commit.
 Preserve the existing GeoIP header transform, asset compression/cache rules and
 the exclusion of the update hostname from crawler challenges. Database ports
 and `/metrics` are private. `/hc` and `/ready` remain externally probeable.
@@ -127,7 +132,17 @@ or explicitly restore matching databases and image; do not blindly downgrade.
    downloads. Do not publish, collect production telemetry or run cleanup against
    the rehearsal copy. Measure the full transfer and recovery procedure.
 3. Freeze and drain publishers, rollout controllers, preview cleanup and OTA
-   upgrades. Disable and drain **Railway Config** before fencing Railway: an old
+   upgrades. Include Production Deploy and its reusable OTA publisher, backports,
+   previews and their follow-up/refresh dispatchers, preview sweep, staged
+   promotion, Daily Stable OTA, Mobile OTA Unlock, OTA Config Apply, OTA Rollout
+   Proof, R2 Frozen Reader Publication and storage migration. Disable Production
+   Deploy Watchdog first; drain native release, iOS and Android workflows too,
+   because their completion can dispatch another OTA publish. Leave
+   `OTA_STABLE_RELEASE_ENABLED` unchanged: setting it false permits direct stable
+   publication in Production Deploy. After disabling every entry point, require
+   no requested, waiting, pending, queued or in-progress runs, including reusable
+   jobs listed under their caller. Save workflow states and active rollout state.
+   Disable and drain **Railway Config** before fencing Railway: an old
    workflow rerun checks out historical code and can still redeploy the retained
    service despite the new provider filter. Stop the old OTA process, including
    its background jobs and health projectors, and fence every listener, including
@@ -138,10 +153,17 @@ or explicitly restore matching databases and image; do not blindly downgrade.
    cannot be met.
 4. Restore final data, start healthy dependencies before OTA, and verify the
    restored signing identity, readiness, manifests and Observe history. Activate
-   `provider: homelab` and apply the tunnel DNS record only at this controlled
-   cutover. Verify the exact release receipt and public endpoints, then unfreeze
-   publishing and Observe ingestion. Measure manifest latency from a US GitHub
-   runner and record it below. Keep the old server fenced.
+   `provider: homelab` only at this controlled cutover. Enable **OTA Server
+   Deploy** before merging the ownership change so its main-push run can satisfy
+   the publishing gate; a manual dispatch alone cannot. Keep Production Deploy,
+   OTA Config Apply and Railway Config disabled. Verify the exact release receipt,
+   then run `vp run cf:apply` and `vp run cf:apply -- --apply` from that merge commit
+   after inspecting the plan. The receiver verifies the VM locally; its receipt
+   does not prove public DNS or tunnel delivery. Verify the public endpoints and
+   unchanged signed client contract before restoring previously active publishing
+   workflows and Observe ingestion. Restore dispatchers and the watchdog last;
+   resume from current main rather than replaying historical runs. Measure manifest
+   latency from a US GitHub runner and record it below. Keep the old server fenced.
 5. Observe **seven clean days** and test recovery. Keep old Railway databases and
    volumes intact. Before re-enabling Railway automation, prevent historical
    workflows from changing the retired services (remove their mutating credential
@@ -153,8 +175,9 @@ or explicitly restore matching databases and image; do not blindly downgrade.
 ## Backups, rollback and evidence
 
 The private R2 bucket `boardsesh-ota-backups` has no public custom domain or
-`r2.dev` access. Hourly Postgres and daily ClickHouse backups use `scheduled/`
-and expire after 14 days. `rehearsal/` and `cutover/` do not expire automatically;
+`r2.dev` access. Hourly Postgres backups and daily paired Postgres/native
+ClickHouse backups use `scheduled/` and expire after 14 days. `rehearsal/` and
+`cutover/` do not expire automatically;
 keep cutover copies until retirement completes. The VM also participates in the
 existing nightly Proxmox backup job. Restore drills must prove the databases
 and their unchanged master key work together.
@@ -167,6 +190,20 @@ Switching DNS alone would discard publications, token changes, and telemetry.
 The owner explicitly waived the issue's UPS/NUT prerequisite on 2026-11-20.
 Backups and restore checks remain required; UPS protection is not represented
 as installed or proven.
+
+`OTA Public Health` (`ota-public-health.yml`) checks the public `/hc` and `/ready`
+endpoints from GitHub-hosted runners every 15 minutes and on manual dispatch.
+It reads current main's hosting declaration and stays inactive while Railway
+owns OTA. Each endpoint gets three anonymous GET attempts with a 10-second
+timeout and five seconds between retries. Both must return HTTP 200; redirects
+fail. Logs and the job summary contain response codes and latency, never response
+bodies. The probe has no environment approval or application credentials.
+The existing `ota-stable-release` Discord webhook receives failure alerts and a
+recovery notice after the previous completed probe failed. Delivery is best
+effort; a runner/setup failure before the ownership check may only leave a failed
+Actions run, and recovery refers to the probe job's outcome. The failed GitHub
+run remains the durable check record. GitHub scheduling
+can be delayed, so the 15-minute schedule is not a guaranteed detection deadline.
 
 Record cutover time, source and destination release digests, backup IDs and
 checksums, restore timings, schema/data checks, signed-manifest and asset checks,
