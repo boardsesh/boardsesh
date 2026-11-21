@@ -49,13 +49,14 @@ branch. The source-build job has a read-only token, no deployment secrets and no
 shared Actions cache. Directly dispatching the build workflow on `main` cannot
 execute PR code.
 
-After the build, a separate trusted job explicitly dispatches the publisher
+After the build and sandbox-branch cleanup finish, a separate trusted job explicitly dispatches the publisher
 with the source run ID; this avoids relying on `workflow_run` events from a
 `GITHUB_TOKEN`-dispatched run. The publisher reads the source run from GitHub,
 checks it against the trusted request and current PR head, and downloads only
 that run's expected artifact. Hosting rules and Pages Functions come from the
 trusted checkout, not the artifact. Publishing, requests and cleanup share a
-per-PR mutation lock.
+per-PR mutation lock. Both workflows retain queued runs with `queue: max`, so
+later activity does not replace a pending fork approval or cleanup request.
 
 The trusted lifecycle and publisher jobs use the existing **`Production`**
 GitHub environment on `main` to access Cloudflare credentials. That environment
@@ -74,14 +75,31 @@ revision or failure details. While a source build runs or fails, the previously
 deployed preview stays available. A failure after upload is reported as a
 publication failure; the smoke does not itself roll the branch back.
 
-PR close/merge and removal of the remaining app diff remove the preview's
-managed domain, DNS alias and branch deployments. The daily sweep reconciles
+PR close/merge and removal of the remaining app diff retire the preview. Pages
+protects each branch's latest deployment from deletion, so cleanup first uploads
+and verifies a tiny trusted "This preview is closed" page. It then removes the
+managed domain, DNS alias and older app deployments, leaving only that inactive
+page on the provider's branch hostname. Fully retired branches leave the sweep;
+interrupted cleanup remains discoverable and is retried.
+
+Every request, build and publication checks that the live PR still targets the
+repository's default branch. Changing the base to or from `main` triggers
+reconciliation, including canceling requests that have not uploaded anything yet.
+Retargeted PR code cannot publish or renew a preview through comments or manual
+requests. The trusted credential-bearing workflows continue to run from `main`.
+
+The daily sweep reconciles
 missed cleanup and dispatches per-PR renewal after 21 days, before Pages'
 30-day retention window. A fork renewal can repeat an approved current SHA; it
 cannot authorize new fork code. The `refresh` dispatch input is an internal
 sweep flag; normal manual requests need only `pr`.
 
 ## First activation
+
+For a public repository, confirm an applicable Actions event policy explicitly
+allows this workflow's `pull_request_target` event. GitHub begins blocking that
+event by default on December 2, 2026; use workflow-file targeting for the
+exception. See [GitHub's policy announcement](https://github.blog/changelog/2026-11-02-pull_request_target-blocked-by-default-december-2/).
 
 1. Merge the preview code and deploy the updated shared origin allowlist to
    **both www and the backend**. Until both serve it, a valid preview certificate

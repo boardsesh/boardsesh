@@ -1,6 +1,16 @@
 // Trusted control plane. PR code only runs in the secret-free sandbox build.
 const { execFileSync } = require('node:child_process');
-const { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } = require('node:fs');
+const {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} = require('node:fs');
+const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { handOffToSandbox } = require('./ci-sandbox.cjs');
@@ -54,6 +64,7 @@ async function cloudflareClient() {
     token: process.env.CLOUDFLARE_API_TOKEN,
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
     zoneId: process.env.CLOUDFLARE_ZONE_ID || undefined,
+    retireDeployment: (identity) => retirePreview(identity.prNumber),
   });
 }
 
@@ -79,10 +90,16 @@ async function hasAppChanges(github, context, number) {
   return hasAppAffectingChanges(await changedPaths(github, context, number));
 }
 
+function targetsDefaultBranch(pullRequest, context) {
+  const defaultBranch = context.payload.repository?.default_branch;
+  return typeof defaultBranch === 'string' && pullRequest.base.ref === defaultBranch;
+}
+
 async function currentHead(github, context, number, sha, headRepository) {
   const pullRequest = await getPullRequest(github, context, number);
   return (
     pullRequest.state === 'open' &&
+    targetsDefaultBranch(pullRequest, context) &&
     pullRequest.head.sha === sha &&
     pullRequest.head.repo?.full_name === headRepository &&
     (await hasAppChanges(github, context, number))
@@ -117,8 +134,10 @@ async function deployments(github, context, number, task = PREVIEW_TASK) {
 }
 
 async function retireRequests(github, context, number, exceptHead) {
+  let hadRequests = false;
   for (const request of await deployments(github, context, number, REQUEST_TASK)) {
     if (!validRequest(request, number) || (exceptHead && request.sha === exceptHead)) continue;
+    hadRequests = true;
     const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
       ...context.repo,
       deployment_id: request.id,
@@ -128,6 +147,7 @@ async function retireRequests(github, context, number, exceptHead) {
       await updateDeployment(github, context, request.id, 'inactive', 'Preview request closed or superseded');
     }
   }
+  return hadRequests;
 }
 
 async function latestPreview(github, context, number) {
@@ -282,17 +302,20 @@ async function createBuildRequest({
 }
 
 async function cleanupPreview({ github, context, core, number, cloudflare, force = false }) {
-  await retireRequests(github, context, number);
+  const hadRequests = await retireRequests(github, context, number);
   const previous = await deployments(github, context, number);
-  if (force || previous.some((deployment) => isBot(deployment) && deployment.task === PREVIEW_TASK)) {
+  const hadPreview = previous.some((deployment) => isBot(deployment) && deployment.task === PREVIEW_TASK);
+  if (force || hadPreview) {
     await (cloudflare || (await cloudflareClient())).removePreview(number);
     for (const deployment of previous.filter(isBot))
       await updateDeployment(github, context, deployment.id, 'inactive', 'Preview removed');
+  }
+  if (force || hadPreview || hadRequests) {
     await comment(
       github,
       context,
       number,
-      'Browser preview removed: the PR is closed or has no remaining app changes.',
+      'Browser preview removed: the PR is closed, targets another branch, or has no remaining app changes.',
     );
   }
   core.info(`Preview pr-${number} reconciled.`);
@@ -301,7 +324,11 @@ async function cleanupPreview({ github, context, core, number, cloudflare, force
 async function reconcilePullRequest(options) {
   const { github, context, core, number, force = false, commentId, cloudflare } = options;
   const pullRequest = await getPullRequest(github, context, number);
-  if (pullRequest.state !== 'open' || !(await hasAppChanges(github, context, number))) {
+  if (
+    pullRequest.state !== 'open' ||
+    !targetsDefaultBranch(pullRequest, context) ||
+    !(await hasAppChanges(github, context, number))
+  ) {
     await cleanupPreview({ github, context, core, number, cloudflare, force: options.refresh });
     return 'cleanup';
   }
@@ -356,7 +383,11 @@ async function runLifecycle(options) {
     const client = cloudflare || (await cloudflareClient());
     for (const preview of await client.listPreviews()) {
       const pullRequest = await getPullRequest(github, context, preview.prNumber);
-      if (pullRequest.state !== 'open' || !(await hasAppChanges(github, context, preview.prNumber))) {
+      if (
+        pullRequest.state !== 'open' ||
+        !targetsDefaultBranch(pullRequest, context) ||
+        !(await hasAppChanges(github, context, preview.prNumber))
+      ) {
         // Per-PR dispatch shares the publisher's mutation lock, including orphans.
         await github.rest.actions.createWorkflowDispatch({
           ...context.repo,
@@ -603,6 +634,68 @@ function prepareArtifact(directory, trustedDirectory, number, sha, hostDirectory
   writeFileSync(join(directory, 'preview-meta.json'), `${JSON.stringify({ prNumber: prNumber(number), sha })}\n`);
 }
 
+async function uploadPagesArtifact({ directory, hostDirectory, number, sha, commitMessage = 'Expo web PR preview' }) {
+  const numberToUpload = prNumber(number);
+  if (!SHA_PATTERN.test(sha)) throw new Error('Full preview source SHA is required.');
+  execFileSync(
+    'vp',
+    [
+      'dlx',
+      'wrangler@4',
+      'pages',
+      'deploy',
+      directory,
+      '--cwd',
+      hostDirectory,
+      '--project-name=boardsesh-app-previews',
+      `--branch=pr-${numberToUpload}`,
+      `--commit-hash=${sha}`,
+      `--commit-message=${commitMessage}`,
+    ],
+    { stdio: 'inherit', cwd: hostDirectory, timeout: 10 * 60 * 1000 },
+  );
+}
+
+async function retirePreview(
+  number,
+  { upload = uploadPagesArtifact, temporaryRoot = process.env.RUNNER_TEMP || tmpdir() } = {},
+) {
+  const previewNumber = prNumber(number);
+  const { RETIRED_COMMIT_SHA, RETIRED_COMMIT_MESSAGE } = await import(
+    pathToFileURL(join(__dirname, 'expo-web-preview-cloudflare.mjs')).href
+  );
+  const directory = mkdtempSync(join(temporaryRoot, 'expo-web-preview-retired-'));
+  try {
+    // The retained branch is inert trusted HTML: no app code, credentials,
+    // functions, analytics or calls to the production backend survive cleanup.
+    writeFileSync(
+      join(directory, 'index.html'),
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex, follow">' +
+        '<title>Preview closed</title></head><body><h1>This preview is closed</h1>' +
+        `<p><a href="https://github.com/boardsesh/boardsesh/pull/${previewNumber}">See the pull request</a> for its current status.</p></body></html>\n`,
+    );
+    writeFileSync(
+      join(directory, '_headers'),
+      '/*\n  X-Robots-Tag: noindex, follow\n  Cache-Control: no-store\n  X-Content-Type-Options: nosniff\n',
+    );
+    writeFileSync(join(directory, '_redirects'), '/* /index.html 200\n');
+    writeFileSync(join(directory, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+    writeFileSync(
+      join(directory, 'preview-meta.json'),
+      `${JSON.stringify({ prNumber: previewNumber, retired: true })}\n`,
+    );
+    await upload({
+      directory,
+      hostDirectory: directory,
+      number: previewNumber,
+      sha: RETIRED_COMMIT_SHA,
+      commitMessage: RETIRED_COMMIT_MESSAGE,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function publish(options) {
   const { github, context, core, directory, trustedDirectory, cloudflare, upload } = options;
   const source = await sourceRequest(github, context);
@@ -641,24 +734,7 @@ async function publish(options) {
       return true;
     };
     if (await superseded()) return;
-    if (upload) await upload({ directory, hostDirectory, number, sha: payload.headSha });
-    else
-      execFileSync(
-        'vp',
-        [
-          'dlx',
-          'wrangler@4',
-          'pages',
-          'deploy',
-          directory,
-          '--cwd',
-          hostDirectory,
-          '--project-name=boardsesh-app-previews',
-          `--branch=pr-${number}`,
-          `--commit-hash=${payload.headSha}`,
-        ],
-        { stdio: 'inherit', cwd: hostDirectory, timeout: 10 * 60 * 1000 },
-      );
+    await (upload || uploadPagesArtifact)({ directory, hostDirectory, number, sha: payload.headSha });
     if (await superseded()) return;
     await client.ensurePreviewDomain(number);
     const url = await client.smokePreview(number, payload.headSha);
@@ -698,6 +774,7 @@ module.exports = {
   prepareArtifact,
   publish,
   reconcilePullRequest,
+  retirePreview,
   reportPublishFailure,
   runLifecycle,
   sourceRequest,

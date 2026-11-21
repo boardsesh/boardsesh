@@ -4,8 +4,7 @@ name: Expo Web Preview Lifecycle
 # an isolated ci-sandbox ref by the controller; it never sees these credentials.
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, closed]
-    branches: [main]
+    types: [opened, synchronize, reopened, edited, closed]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -28,10 +27,20 @@ permissions:
 concurrency:
   group: expo-web-preview-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.run_id }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   lifecycle:
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'issue_comment' || (github.event.issue.pull_request && startsWith(github.event.comment.body, '/web-preview')))
+    # pull_request_target always executes the default-branch workflow/ref.
+    # Receive retargets away from main too, but skip title/body-only edits.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issue_comment' ||
+        (github.event.issue.pull_request && startsWith(github.event.comment.body, '/web-preview'))) &&
+      (github.event_name != 'pull_request_target' ||
+        ((github.event.action != 'edited' || github.event.changes.base.ref.from) &&
+          (github.event.pull_request.base.ref == 'main' ||
+            (github.event.action == 'edited' && github.event.changes.base.ref.from == 'main'))))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The existing credential store is named Production; the trusted controller
@@ -48,6 +57,12 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
+
+      - name: Set up trusted preview publishing tools
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
 
       - name: Reconcile app preview requests and hosting
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

@@ -14,6 +14,7 @@ declare const controller: {
   ): void;
   publish(options: Record<string, unknown>): Promise<void>;
   reconcilePullRequest(options: Record<string, unknown>): Promise<string>;
+  retirePreview(number: number, options?: Record<string, unknown>): Promise<void>;
   reportPublishFailure(options: Record<string, unknown>): Promise<void>;
   runLifecycle(options: Record<string, unknown>): Promise<void>;
   sourceRequest(github: unknown, context: unknown): Promise<unknown>;
