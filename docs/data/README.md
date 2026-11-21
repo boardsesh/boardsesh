@@ -33,6 +33,7 @@ a production rollout or a physical-device result.
 | [Inferred sessions](inferred-sessions.md) | `inferred-sessions.md` |
 | [Kilter live history integration](kilter-live-history.md) | `kilter-live-history.md` |
 | [Kilter Sync](kilter-sync.md) | `kilter-sync.md` |
+| [Legacy timestamp audit](legacy-timestamp-audit.md) | `legacy-timestamp-audit.md` |
 | [MoonBoard catalog import](moonboard-catalog-import.md) | `moonboard-catalog-import.md` |
 | [MoonBoard Sync](moonboard-sync.md) | `moonboard-sync.md` |
 | [Offline mode fleet health and default decision](offline-mode-health-2026-11-21.md) | `offline-mode-health-2026-11-21.md` |

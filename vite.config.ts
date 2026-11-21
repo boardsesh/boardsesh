@@ -368,7 +368,7 @@ export default defineConfig({
         // safety. It must target the primary, not a hot standby: its
         // SERIALIZABLE READ ONLY DEFERRABLE snapshot is rejected there
         // ("cannot use serializable mode in a hot standby"). Replicas are only
-        // for the plain-EXPLAIN plan review in docs/legacy-timestamp-audit.md.
+        // for the plain-EXPLAIN plan review in docs/data/legacy-timestamp-audit.md.
         cache: false,
       },
       'db:refresh-climb-grades': {
