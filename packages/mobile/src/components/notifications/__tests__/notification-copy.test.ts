@@ -48,6 +48,7 @@ describe('notificationCopy', () => {
   // Bare branches — no commentBody, no setterUsername, no gymName. Keys are the
   // exact ones web's getNotificationText returns for the same input.
   const bareCases: Array<[NotificationType, string]> = [
+    ['app_feedback_reply', 'items.bugReportReply'],
     ['new_follower', 'items.newFollower'],
     ['follow_request', 'items.followRequest'],
     ['comment_reply', 'items.commentReply'],

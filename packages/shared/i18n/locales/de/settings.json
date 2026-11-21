@@ -405,7 +405,8 @@
     "successRating": "Danke — ist notiert.",
     "successBug": "Fehler notiert — danke.",
     "errorRating": "Ging nicht raus — versuch es gleich noch mal.",
-    "joinDiscord": "Discord beitreten"
+    "joinDiscord": "Discord beitreten",
+    "successBugSignedIn": "Fehler gemeldet. Du findest ihn unter „Deine Fehlermeldungen“."
   },
   "feedbackForm": {
     "bugPlaceholder": "Was hast du gemacht? Was hast du erwartet, was kam stattdessen?",
@@ -413,10 +414,11 @@
     "remainingChars": "Noch {{count}} Zeichen",
     "bluetoothBugLabel": "Ich habe Bluetooth-Probleme",
     "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deins nicht verbindet. Es wird kein Board gesteuert — wir hören nur zu.",
-    "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
-    "contactConsentDescription": "So können wir dir den Link zum Issue mailen und nachfragen, wenn uns Details fehlen.",
+    "contactConsentLabel": "E-Mails zu dieser Meldung erhalten",
+    "contactConsentDescription": "Wir dürfen dir den Issue-Link und Rückfragen per E-Mail schicken. Antworten in der App sind immer verfügbar.",
     "starRating_one": "{{count}} Stern",
-    "starRating_other": "{{count}} Sterne"
+    "starRating_other": "{{count}} Sterne",
+    "inAppRepliesDescription": "Lies und beantworte unsere Nachrichten unter „Deine Fehlermeldungen“. Deine Antworten erscheinen öffentlich in unserer Fehlerübersicht."
   },
   "boardConfigMismatch": {
     "title": "Board-Konfiguration passt nicht",
@@ -777,5 +779,33 @@
     "notEligible": "Wir können diesem Konto hier kein Passwort hinzufügen. Wenn es schon eins hat, melde dich damit an.",
     "tryAgainSoon": "Wir konnten den Link nicht schicken. Versuch es später erneut.",
     "back": "Zurück zu den Einstellungen"
+  },
+  "bugReports": {
+    "title": "Deine Fehlermeldungen",
+    "detailTitle": "Fehlermeldung",
+    "empty": "Deine Fehlermeldungen erscheinen hier.",
+    "signIn": "Melde dich an, um deine Fehlermeldungen zu sehen",
+    "loadError": "Deine Meldungen konnten nicht geladen werden.",
+    "threadError": "Diese Unterhaltung konnte nicht geladen werden.",
+    "notFound": "Diese Meldung ist nicht mehr verfügbar.",
+    "retry": "Erneut versuchen",
+    "loadOlder": "Ältere Nachrichten laden",
+    "loadMore": "Weitere Meldungen laden",
+    "replyPlaceholder": "Antwort hinzufügen",
+    "send": "Antwort senden",
+    "sendError": "Deine Antwort konnte nicht gesendet werden. Versuche es erneut.",
+    "staff": "Boardsesh",
+    "you": "Du",
+    "readOnly": "Du kannst antworten, sobald deine Meldung mit einem GitHub-Issue verknüpft ist.",
+    "github": "Öffentliche Fehlermeldungen",
+    "statusNew": "Erhalten",
+    "statusInProgress": "In Bearbeitung",
+    "statusResolved": "Behoben",
+    "statusWontFix": "Geschlossen",
+    "noMessages": "Antworten von Boardsesh erscheinen hier.",
+    "publicNotice": "Deine Antwort erscheint öffentlich in unserer Fehlerübersicht auf GitHub. Alle können sie lesen. Du brauchst kein GitHub-Konto. Gib keine persönlichen Informationen an.",
+    "pending": "Wartet auf Veröffentlichung…",
+    "failed": "Diese Antwort ist noch nicht in der Fehlerübersicht angekommen.",
+    "retrySend": "Erneut senden"
   }
 }

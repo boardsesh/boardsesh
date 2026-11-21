@@ -4,6 +4,14 @@
  */
 
 import { readFileSync } from 'node:fs';
+// Notification types are text in this fixture; reuse the generated conversation DDL.
+const feedbackConversationSchema = readFileSync(
+  new URL('../../../db/drizzle/0331_feedback_github_conversations.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
+  .join('\n');
 const partnerSessionHintPrivacySchema = readFileSync(
   new URL('../../../db/drizzle/0330_session_hint_privacy.sql', import.meta.url),
   'utf8',
@@ -1633,6 +1641,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- packages/db/src/schema/app/feedback.ts. status/resolved_* + github_issue_*
   -- were added in migration 0183. status is plain text here (prod uses the
   -- app_feedback_status enum); the resolvers only read the string value.
+  DROP TABLE IF EXISTS "app_feedback_messages";
   DROP TABLE IF EXISTS "app_feedback" CASCADE;
   CREATE TABLE IF NOT EXISTS "app_feedback" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -1661,6 +1670,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
   CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
+  ${feedbackConversationSchema}
 
   -- Crowdsourced-QA verdicts a tester filed on a PR preview. Mirrors
   -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206; device_model/

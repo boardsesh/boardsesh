@@ -68,6 +68,7 @@ describe('native notification update bridge', () => {
       { queryKey: ['sprayImportProgress'] },
       { queryKey: ['spray-wall-detection'] },
       { queryKey: ['notifications'] },
+      { queryKey: ['bug-reports', 'account'] },
     ]);
   });
 
@@ -89,8 +90,20 @@ describe('native notification update bridge', () => {
     act(() =>
       sink.next({ data: { notificationReceived: { notification: { type: 'spray_wall_detection_completed' } } } }),
     );
-    expect(mocks.invalidate).toHaveBeenCalledTimes(5);
+    expect(mocks.invalidate).toHaveBeenCalledTimes(6);
     expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['notifications'] });
+  });
+
+  it('refreshes only this account’s conversations and the bell on a staff reply', () => {
+    renderHook(() => useNotificationUpdates(true, 'account'));
+    const sink = mocks.subscribe.mock.calls[0][1] as {
+      next: (payload: { data: { notificationReceived: { notification: { type: string } } } }) => void;
+    };
+    act(() => sink.next({ data: { notificationReceived: { notification: { type: 'app_feedback_reply' } } } }));
+    expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([
+      { queryKey: ['bug-reports', 'account'] },
+      { queryKey: ['notifications'] },
+    ]);
   });
 
   it('replaces account-scoped subscriptions on account change and cleans up every listener', () => {

@@ -51,7 +51,8 @@
     "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del rocódromo",
     "default": "Tienes una nueva notificación",
     "sprayWallReady": "{{wall}} está listo para revisar.",
-    "sprayWallReadyGeneric": "La foto de tu Spraywall está lista para revisar."
+    "sprayWallReadyGeneric": "La foto de tu Spraywall está lista para revisar.",
+    "bugReportReply": "Boardsesh ha respondido a tu informe de error"
   },
   "followRequest": {
     "approve": "Aprobar",
@@ -65,6 +66,8 @@
   },
   "push": {
     "sprayWallTitle": "Listo para revisar",
-    "sprayWallBody": "La foto de {{wall}} está lista. Revisa las presas."
+    "sprayWallBody": "La foto de {{wall}} está lista. Revisa las presas.",
+    "bugReportTitle": "Boardsesh ha respondido",
+    "bugReportBody": "Abre tu informe de error para leer nuestra respuesta."
   }
 }
