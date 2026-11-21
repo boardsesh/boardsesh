@@ -23,6 +23,7 @@ a production rollout or a physical-device result.
 | --- | --- |
 | [Android screenshots](android-emulator-screenshots.md) | `android-emulator-screenshots.md` |
 | [Backend test database isolation](backend-test-isolation.md) | `backend-test-isolation.md` |
+| [Board account warning browser evidence: #6694](6694/README.md) | `6694/README.md` |
 | [Crowdsourced QA — the mobile half](crowdsourced-qa-mobile.md) | `crowdsourced-qa-mobile.md` |
 | [Crowdsourced QA](crowdsourced-qa.md) | `crowdsourced-qa.md` |
 | [iOS simulator performance after the HIG changes — 9 October 2026](ios-performance-hig-2026-10-09.md) | `ios-performance-hig-2026-10-09.md` |

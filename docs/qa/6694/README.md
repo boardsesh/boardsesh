@@ -2,6 +2,8 @@
 
 These four browser captures compare main `e9c73ee954804b810ba43553f892743bb0e900b5` with implementation commit `5b409bd5e3` on 21 November 2026. Each image has five independent 390px columns: an active account with the logbook warning, an ordinary failed sync, and warning copy in German, Italian, and Simplified Chinese.
 
+These are retained historical captures, not new screenshots of the rebased branch. The PR was later rebased onto main `c1b124dd47ff4de5fe65cd32983497316936bd41` after the documentation reorganization. The captured card sources, styles, and catalogs are byte-identical to the captured implementation; new-main documentation references changed elsewhere in the sync source. The retained images do not establish fresh native rendering or current-head OTA compatibility.
+
 | Capture | Dimensions | Bytes |
 | --- | --- | ---: |
 | [mobile-before.png](mobile-before.png) | 2100 × 650 | 45,612 |
