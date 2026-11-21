@@ -49,7 +49,11 @@
           "lastWorkoutYesterday": "Last workout · Yesterday",
           "lastWorkoutOn": "Last workout · {{day}}",
           "lastWorkoutSends_one": "{{count}} send",
-          "lastWorkoutSends_other": "{{count}} sends"
+          "lastWorkoutSends_other": "{{count}} sends",
+          "joinName": "Join {{name}}",
+          "startOwn": "Start my own",
+          "moreLive_one": "+ {{count}} more climbing now",
+          "moreLive_other": "+ {{count}} more climbing now"
         },
         "projects": {
           "title": "Back to your projects",

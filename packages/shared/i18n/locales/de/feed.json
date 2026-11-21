@@ -49,7 +49,11 @@
           "lastWorkoutYesterday": "Letztes Workout · Gestern",
           "lastWorkoutOn": "Letztes Workout · {{day}}",
           "lastWorkoutSends_one": "{{count}} Begehung",
-          "lastWorkoutSends_other": "{{count}} Begehungen"
+          "lastWorkoutSends_other": "{{count}} Begehungen",
+          "joinName": "Mit {{name}} klettern",
+          "startOwn": "Eigene starten",
+          "moreLive_one": "+ {{count}} weitere Session live",
+          "moreLive_other": "+ {{count}} weitere Sessions live"
         },
         "projects": {
           "title": "Zurück zu deinen Projekten",

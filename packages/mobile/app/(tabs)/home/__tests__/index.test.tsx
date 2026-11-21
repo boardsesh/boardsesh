@@ -10,6 +10,7 @@ const recorded = vi.hoisted(() => ({
   crewFeedEnabled: [] as boolean[],
   sessionFeedEnabled: [] as boolean[],
   railProps: [] as Array<{ enabled: boolean; showStartPrompt?: boolean }>,
+  sessionProps: [] as Array<{ liveBoardUuid: string | null; liveEnabled: boolean }>,
   betaProps: [] as Array<{ boardType: string | null; layoutId: number | null; enabled: boolean }>,
   chrome: [] as Array<{ showScopeMenu: boolean; scopeTitle: string; scopeActions: unknown[] }>,
   customizeSheet: [] as boolean[],
@@ -143,7 +144,10 @@ vi.mock('../../../../src/components/home/HomeBoardSection', () => ({
   HomeBoardSection: () => createElement('div', { 'data-testid': 'section-board' }),
 }));
 vi.mock('../../../../src/components/home/HomeSessionSection', () => ({
-  HomeSessionSection: () => createElement('div', { 'data-testid': 'section-session' }),
+  HomeSessionSection: (props: { liveBoardUuid: string | null; liveEnabled: boolean }) => {
+    recorded.sessionProps.push(props);
+    return createElement('div', { 'data-testid': 'section-session' });
+  },
 }));
 vi.mock('../../../../src/components/home/HomeProjectsSection', () => ({
   HomeProjectsSection: () => createElement('div', { 'data-testid': 'section-projects' }),
@@ -242,6 +246,7 @@ beforeEach(() => {
   recorded.crewFeedEnabled = [];
   recorded.sessionFeedEnabled = [];
   recorded.railProps = [];
+  recorded.sessionProps = [];
   recorded.betaProps = [];
   recorded.chrome = [];
   recorded.customizeSheet = [];
@@ -257,16 +262,13 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
-  it('draws This week, Session, Climbing now, Back to your projects, At your level, then the feed by default', () => {
+  it('draws This week, Session, Back to your projects, At your level, then the feed by default', () => {
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual([
-      'section-week',
-      'section-session',
-      'section-climbingNow',
-      'section-projects',
-      'section-playlists',
-    ]);
-    expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
+    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-projects', 'section-playlists']);
+    // Climbing now is off by default: the Session card leads with live sessions (#7689).
+    expect(recorded.railProps).toEqual([]);
+    // The Session card asks for live sessions in Home's scope (crew mode: no board).
+    expect(recorded.sessionProps.at(-1)).toEqual({ liveBoardUuid: null, liveEnabled: true });
     expect(screen.getByText('mobile.home.feedTitle')).toBeTruthy();
     expect(screen.getByTestId('home-customize')).toBeTruthy();
     expect(recorded.crewFeedEnabled.at(-1)).toBe(true);
@@ -296,7 +298,7 @@ describe('Home sections', () => {
   it('draws the sections in the order the climber chose', () => {
     homeSectionsStore.apply({
       order: ['playlists', 'climbingNow', 'board', 'session', 'feed'],
-      visible: { ...HOME_SECTIONS.defaults.visible, playlists: true, board: true },
+      visible: { ...HOME_SECTIONS.defaults.visible, playlists: true, board: true, climbingNow: true },
     });
     render(createElement(HomeTab));
     expect(sectionOrder()).toEqual([
@@ -310,6 +312,7 @@ describe('Home sections', () => {
   });
 
   it('keeps Start out of Climbing now while the Session card shows', () => {
+    homeSectionsStore.setVisible('climbingNow', true);
     render(createElement(HomeTab));
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
     cleanup();
@@ -360,7 +363,6 @@ describe('Home sections', () => {
     expect(sectionOrder()).toEqual([
       'section-week',
       'section-session',
-      'section-climbingNow',
       'section-projects',
       'section-playlists',
       'section-board',
@@ -378,21 +380,33 @@ describe('Home sections', () => {
     unmount();
 
     refresh.invalidateQueries.mockClear();
+    // Focused keeps the Session card, which leads with live sessions too.
     homeSectionsStore.apply(focusedHomeLayout(homeSectionsStore.getLayout()));
+    const { unmount: unmount2 } = render(createElement(HomeTab));
+    act(() => refresh.onRefresh?.());
+    expect(refresh.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([
+      { queryKey: ['followed'] },
+      { queryKey: ['sessionSummary'] },
+      { queryKey: ['mySmartPlaylistCounts'] },
+    ]);
+    unmount2();
+
+    // Without the Session card and Climbing now, nobody asks for live sessions.
+    refresh.invalidateQueries.mockClear();
+    homeSectionsStore.setVisible('session', false);
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
     expect(refresh.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([
-      { queryKey: ['sessionSummary'] },
       { queryKey: ['mySmartPlaylistCounts'] },
     ]);
   });
 
   it('keeps the spinner up while the cards refetch when the feed is hidden', async () => {
-    let settle: () => void = () => {};
+    const settles: Array<() => void> = [];
     refresh.invalidateQueries.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
-          settle = resolve;
+          settles.push(resolve);
         }),
     );
     homeSectionsStore.apply({
@@ -401,9 +415,15 @@ describe('Home sections', () => {
     });
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
+    // Live sessions and the session summary, both for the Session card.
+    expect(settles).toHaveLength(2);
     expect(refresh.refreshing).toBe(true);
     await act(async () => {
-      settle();
+      settles[0]();
+    });
+    expect(refresh.refreshing).toBe(true);
+    await act(async () => {
+      settles[1]();
     });
     expect(refresh.refreshing).toBe(false);
   });
@@ -435,7 +455,6 @@ describe('Home sections', () => {
     expect(sectionOrder()).toEqual([
       'section-week',
       'section-session',
-      'section-climbingNow',
       'section-projects',
       'section-playlists',
       'section-beta',
@@ -500,15 +519,18 @@ describe('Home sections', () => {
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
     act(() => refresh.onRefresh?.());
-    expect(settles).toHaveLength(2);
+    // Two per pull: live sessions and the session summary.
+    expect(settles).toHaveLength(4);
     expect(refresh.refreshing).toBe(true);
     await act(async () => {
       settles[0]();
+      settles[1]();
     });
     // The first pull is done, the second is still out.
     expect(refresh.refreshing).toBe(true);
     await act(async () => {
-      settles[1]();
+      settles[2]();
+      settles[3]();
     });
     expect(refresh.refreshing).toBe(false);
   });

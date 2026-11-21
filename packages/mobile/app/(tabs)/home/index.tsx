@@ -95,7 +95,8 @@ export default function HomeTab() {
   const feedVisible = sectionLayout.visible.feed;
   const climbingNowVisible = sectionLayout.visible.climbingNow;
   // The scope menu picks whose sessions the feed and Climbing now show; without
-  // either there is nothing for it to scope.
+  // either there is nothing for it to scope. The Session card's live state
+  // follows the same scope, but on its own does not earn the menu.
   const scopeVisible = feedVisible || climbingNowVisible;
   const topSectionIds = useMemo(() => visibleTopHomeSections(sectionLayout), [sectionLayout]);
   const homeEmpty = topSectionIds.length === 0 && !feedVisible;
@@ -133,7 +134,9 @@ export default function HomeTab() {
   const feedInput = useMemo(() => deriveFeedScopeInput(mode, selectedBoard?.uuid ?? null), [mode, selectedBoard]);
   // "Climbing now" adds the selected board's sessions only when the climber is
   // looking at that board (gym mode); crew mode is people only.
-  const liveBoardUuid = mode === 'gym' ? (selectedBoard?.uuid ?? null) : null;
+  // Without the scope menu on screen (no feed, no Climbing now) a gym pick from
+  // earlier could not be undone, so the Session card falls back to the crew.
+  const liveBoardUuid = mode === 'gym' && scopeVisible ? (selectedBoard?.uuid ?? null) : null;
 
   // Hold both queries until home-board inference settles, so a cold start never
   // fires the unscoped global feed first (initial state is gym + no board) and
@@ -296,7 +299,8 @@ export default function HomeTab() {
     // Only what is on screen. Each section subscribes to its own query, so the
     // screen refreshes it by key; Your board reads the phone and has nothing to fetch.
     const sectionRefetches: Promise<void>[] = [];
-    if (climbingNowVisible) {
+    // The Session card leads with live sessions too, from the rail's query.
+    if (climbingNowVisible || sessionCardVisible) {
       sectionRefetches.push(queryClient.invalidateQueries({ queryKey: FOLLOWED_LIVE_SESSIONS_QUERY_KEY }));
     }
     if (sessionCardVisible)
