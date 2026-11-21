@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Readable } from 'node:stream';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CATALOG_SNAPSHOT_TABLES } from '../../packages/db/src/catalog-snapshot';
+import { CATALOG_SNAPSHOT_REDACTED_VALUE, CATALOG_SNAPSHOT_TABLES } from '../../packages/db/src/catalog-snapshot';
 import { ARTIFACT_SCHEMA_VERSION } from '../../packages/shared/offline-sync/src/db/migrations';
 import type {
   SnapshotManifest,
@@ -15,6 +15,7 @@ import {
   assertCoverage,
   downloadDecoded,
   parseVerificationArgs,
+  parseTrustedCoverageManifest,
   timestampMicros,
   verifySnapshots,
   verifySqlite,
@@ -49,6 +50,7 @@ afterEach(async () => {
 async function sqliteFixture(kind: 'main' | 'grades' | 'catalog', artifactShape: 1 | 2 = 1): Promise<Buffer> {
   const filePath = join(fixtureDirectory, `${kind}.db`);
   const database = new DatabaseSync(filePath);
+  database.exec('BEGIN');
   database.exec(
     `CREATE TABLE snapshot_meta (table_name TEXT PRIMARY KEY, row_count INTEGER, built_at TEXT, schema_version INTEGER, format_version INTEGER, watermark_updated_at TEXT, watermark_sync_seq TEXT)`,
   );
@@ -60,15 +62,20 @@ async function sqliteFixture(kind: 'main' | 'grades' | 'catalog', artifactShape:
         : ['board_climbs', 'board_climb_stats'];
   for (const tableName of tables) {
     if (kind === 'catalog') {
-      database.exec(`CREATE TABLE ${tableName} (id INTEGER); INSERT INTO ${tableName} VALUES (1)`);
+      database.exec(
+        `CREATE TABLE ${tableName} (id INTEGER, board_type TEXT); INSERT INTO ${tableName} VALUES (1, 'kilter')`,
+      );
     } else {
       const cursorColumn = kind === 'grades' ? 'computed_at' : 'updated_at';
+      const privacyColumns = tableName === 'board_climbs' ? ', user_id TEXT, is_draft INTEGER, is_listed INTEGER' : '';
       const storage = artifactShape === 2 ? ', PRIMARY KEY (board_type, climb_uuid)) WITHOUT ROWID' : ')';
       database.exec(
-        `CREATE TABLE ${tableName} (uuid TEXT, climb_uuid TEXT, board_type TEXT, layout_id INTEGER, ${cursorColumn} TEXT, sync_seq INTEGER${storage}`,
+        `CREATE TABLE ${tableName} (uuid TEXT, climb_uuid TEXT, board_type TEXT, layout_id INTEGER, ${cursorColumn} TEXT, sync_seq INTEGER${privacyColumns}${storage}`,
       );
       database
-        .prepare(`INSERT INTO ${tableName} VALUES (?, ?, ?, ?, ?, ?)`)
+        .prepare(
+          `INSERT INTO ${tableName} (uuid, climb_uuid, board_type, layout_id, ${cursorColumn}, sync_seq) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
         .run('climb-1', 'climb-1', 'kilter', 1, WATERMARK_TIME, BigInt(SEQUENCE));
     }
     database
@@ -87,6 +94,7 @@ async function sqliteFixture(kind: 'main' | 'grades' | 'catalog', artifactShape:
     database
       .prepare('INSERT INTO snapshot_meta VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run('sync_deletions', 0, BUILD_TIME, ARTIFACT_SCHEMA_VERSION, 2, WATERMARK_TIME, '0');
+  database.exec('COMMIT');
   if (artifactShape === 2 && kind !== 'catalog') database.exec('VACUUM');
   database.close();
   return readFile(filePath);
@@ -117,6 +125,7 @@ async function fixture(artifactShape: 1 | 2 = 1) {
           ? ['board_climb_grades']
           : ['board_climbs', 'board_climb_stats'];
     return {
+      ...(kind === 'catalog' ? {} : { privacyVersion: 1 }),
       key,
       url: `${BASE}/${key}`,
       bytes: stored.length,
@@ -329,6 +338,122 @@ describe('complete snapshot verification', () => {
       'Manifest contains duplicate layouts',
     );
     expect(readObject).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null, 0, 2, '1'])('rejects a layout privacy marker of %s', async (privacyVersion) => {
+    const setup = await fixture();
+    setup.setManifest('board-snapshots/v1', {
+      ...setup.manifest(setup.identity),
+      entries: [{ ...setup.identity, privacyVersion }],
+    });
+    await expect(verifySnapshots(setup.options, setup.dependencies)).rejects.toThrow('privacy version');
+  });
+
+  it.each([undefined, null, 0, 2, '1'])('rejects a grades privacy marker of %s', async (privacyVersion) => {
+    const setup = await fixture();
+    setup.setManifest('board-snapshots/v1-gzip', {
+      ...setup.manifest(setup.gzip),
+      entries: [{ ...setup.gzip, grades: { ...setup.gzip.grades, privacyVersion } }],
+    });
+    await expect(verifySnapshots(setup.options, setup.dependencies)).rejects.toThrow('privacy version');
+  });
+
+  it('uses the CLI parser for genuine format-1 coverage without trusting its artifact metadata', async () => {
+    const setup = await fixture();
+    const expectedManifest = parseTrustedCoverageManifest({
+      formatVersion: 1,
+      entries: [{ boardType: 'kilter', layoutId: 1, url: 'https://old.example.invalid/private', grades: {} }],
+    });
+    expect(expectedManifest).toEqual({ formatVersion: 1, entries: [{ boardType: 'kilter', layoutId: 1, grades: {} }] });
+    await verifySnapshots({ ...setup.options, expectedManifest }, setup.dependencies);
+    expect(setup.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'passed' }));
+  });
+
+  it.each([
+    { formatVersion: 3, entries: [{ boardType: 'kilter', layoutId: 1 }] },
+    { formatVersion: 1, entries: [{ boardType: 'kilter', layoutId: 1, grades: 'present' }] },
+    { formatVersion: 1, entries: [{ boardType: 'spray', layoutId: 1 }] },
+    { formatVersion: 1, entries: [{ boardType: 'kilter', layoutId: 1.5 }] },
+    { formatVersion: 1, entries: Array.from({ length: 10_001 }, () => ({ boardType: 'kilter', layoutId: 1 })) },
+  ])('rejects unsupported, malformed or excessive trusted coverage', (manifest) => {
+    expect(() => parseTrustedCoverageManifest(manifest)).toThrow();
+  });
+
+  it('still rejects a current published format-1 manifest', async () => {
+    const setup = await fixture();
+    setup.setManifest('board-snapshots/v1', { ...setup.manifest(setup.identity), formatVersion: 1 });
+    await expect(verifySnapshots(setup.options, setup.dependencies)).rejects.toThrow('invalid shared manifest');
+  });
+
+  it.each([
+    { column: 'user_id', contents: 'account-1' },
+    { column: 'is_draft', contents: 1 },
+    { column: 'is_draft', contents: 'true' },
+  ])('rejects private climbs despite consistent row counts: $column=$contents', async ({ column, contents }) => {
+    const setup = await fixture();
+    const filePath = join(fixtureDirectory, 'main.db');
+    const database = new DatabaseSync(filePath);
+    database.prepare(`UPDATE board_climbs SET ${column} = ?`).run(contents);
+    database.close();
+    expect(() => verifySqlite(filePath, setup.identity, false)).toThrow('authored or draft climbs');
+  });
+
+  it.each([null, 0])(
+    'preserves published imported climbs with is_draft=%s, including unlisted rows',
+    async (isDraft) => {
+      const setup = await fixture();
+      const filePath = join(fixtureDirectory, 'main.db');
+      const database = new DatabaseSync(filePath);
+      database.prepare('UPDATE board_climbs SET is_draft = ?, is_listed = 0').run(isDraft);
+      database.close();
+      expect(() => verifySqlite(filePath, setup.identity, false)).not.toThrow();
+    },
+  );
+
+  it.each(['board_holes', 'board_beta_links', 'board_climb_aliases'])(
+    'rejects private spray rows in catalog %s despite consistent row counts',
+    async (tableName) => {
+      const setup = await fixture();
+      const filePath = join(fixtureDirectory, 'catalog.db');
+      const database = new DatabaseSync(filePath);
+      database.exec(`UPDATE ${tableName} SET board_type = 'spray'`);
+      database.close();
+      expect(() => verifySqlite(filePath, setup.catalogArtifact, true)).toThrow('private board rows');
+    },
+  );
+
+  it.each(['created_by_user_id', 'tick_uuid', 'board_id'])(
+    'rejects the catalog beta association column %s even when its values are null',
+    async (column) => {
+      const setup = await fixture();
+      const filePath = join(fixtureDirectory, 'catalog.db');
+      const database = new DatabaseSync(filePath);
+      database.exec(`ALTER TABLE board_beta_links ADD COLUMN ${column} TEXT`);
+      database.close();
+      expect(() => verifySqlite(filePath, setup.catalogArtifact, true)).toThrow('private association column');
+    },
+  );
+
+  it.each(['board_products', 'board_layouts'])('rejects an unredacted credential in catalog %s', async (tableName) => {
+    const setup = await fixture();
+    const filePath = join(fixtureDirectory, 'catalog.db');
+    const database = new DatabaseSync(filePath);
+    database.exec(`ALTER TABLE ${tableName} ADD COLUMN password TEXT`);
+    database.prepare(`UPDATE ${tableName} SET password = ?`).run('fixture-credential');
+    database.close();
+    expect(() => verifySqlite(filePath, setup.catalogArtifact, true)).toThrow('unredacted credential');
+  });
+
+  it.each([null, CATALOG_SNAPSHOT_REDACTED_VALUE])('accepts catalog credential masks of %s', async (password) => {
+    const setup = await fixture();
+    const filePath = join(fixtureDirectory, 'catalog.db');
+    const database = new DatabaseSync(filePath);
+    for (const tableName of ['board_products', 'board_layouts']) {
+      database.exec(`ALTER TABLE ${tableName} ADD COLUMN password TEXT`);
+      database.prepare(`UPDATE ${tableName} SET password = ?`).run(password);
+    }
+    database.close();
+    expect(() => verifySqlite(filePath, setup.catalogArtifact, true)).not.toThrow();
   });
 
   it('rejects omitted layouts and omitted grades from the trusted coverage baseline', async () => {

@@ -1946,6 +1946,23 @@ operator authorization; code deployment alone does not complete this rollout gat
 Policy reads use the primary database. Replicas must not make privacy decisions
 unless a verified replication watermark proves the latest revocation is visible.
 
+The read-only release verifier (`scripts/verify-board-snapshots.ts`) requires
+`privacyVersion: 1` on every current layout and grades entry, independently of
+the trusted pre-export manifest used only for coverage. Its separate coverage
+parser accepts historical format 1 and current format 2, retaining only layout
+identifiers and whether a grades artifact is expected. Old URLs are never used;
+downloaded current manifests still require format 2. It checks the existing
+format-2 SQLite metadata and rejects authored or draft climbs even when their
+row counts and watermarks match. Stats and grades must reference their verified
+layout's climb set. The separate format-1 catalogue is checked for excluded spray
+rows and forbidden beta association columns using the shared export contract.
+Where password columns are present, they must contain NULL or the shared
+redaction marker, never a credential.
+These artifact checks cannot reconstruct source-only provenance such as
+`is_boardsesh_authored` or a beta row's removed ownership columns. They do not
+verify historical-object withdrawal, installed readers, or production audience
+policies; those remain separate release gates.
+
 
 ### One-time snapshot supplementation (#6653)
 

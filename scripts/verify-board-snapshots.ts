@@ -10,7 +10,13 @@ import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 import { createGunzip } from 'node:zlib';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { CATALOG_SNAPSHOT_TABLES } from '../packages/db/src/catalog-snapshot';
+import {
+  CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES,
+  CATALOG_SNAPSHOT_EXCLUDED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_VALUE,
+  CATALOG_SNAPSHOT_TABLES,
+} from '../packages/db/src/catalog-snapshot';
 import { ARTIFACT_SCHEMA_VERSION } from '../packages/shared/offline-sync/src/db/migrations';
 import {
   parseSnapshotManifest,
@@ -22,6 +28,7 @@ import {
 const PREFIXES = ['board-snapshots/v1', 'board-snapshots/v1-gzip', 'board-snapshots/v1-catalog'] as const;
 const PUBLIC_BASE_URL = 'https://snapshots.boardsesh.com';
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
+const MAX_COVERAGE_ENTRIES = 10_000;
 const REQUEST_TIMEOUT_MS = 300_000;
 const MAX_ARTIFACT_BYTES = 2 * 1024 ** 3;
 const CURSOR_COLUMNS = {
@@ -31,8 +38,12 @@ const CURSOR_COLUMNS = {
 } as const;
 
 export type VerificationOptions = {
-  expectedManifest: SnapshotManifest;
+  expectedManifest: SnapshotCoverageManifest;
   builtAfter: string;
+};
+export type SnapshotCoverageManifest = {
+  formatVersion: 1 | 2;
+  entries: { boardType: string; layoutId: number; grades?: object }[];
 };
 export type StoredObject = {
   body: AsyncIterable<Uint8Array>;
@@ -49,6 +60,7 @@ export type VerificationDependencies = {
   report: (message: Record<string, unknown>) => void;
 };
 export type ArtifactToVerify = {
+  privacyVersion?: number;
   key: string;
   url: string;
   bytes: number;
@@ -83,7 +95,7 @@ function layoutKey(entry: { boardType: string; layoutId: number }): string {
   return `${entry.boardType}:${entry.layoutId}`;
 }
 
-function validatedLayoutKeys(manifest: SnapshotManifest): Set<string> {
+function validatedLayoutKeys(manifest: Pick<SnapshotCoverageManifest, 'entries'>): Set<string> {
   const layoutKeys = manifest.entries.map(layoutKey);
   const uniqueLayoutKeys = new Set(layoutKeys);
   requireCondition(uniqueLayoutKeys.size === layoutKeys.length, 'Manifest contains duplicate layouts');
@@ -91,11 +103,49 @@ function validatedLayoutKeys(manifest: SnapshotManifest): Set<string> {
   return uniqueLayoutKeys;
 }
 
-export function assertCoverage(actual: SnapshotManifest, expected: SnapshotManifest): void {
+export function assertCoverage(actual: SnapshotManifest, expected: SnapshotCoverageManifest): void {
   const actualKeys = validatedLayoutKeys(actual);
   for (const expectedKey of validatedLayoutKeys(expected)) {
     requireCondition(actualKeys.has(expectedKey), `Missing expected layout: ${expectedKey}`);
   }
+}
+
+/** A trusted historical baseline supplies coverage only, never URLs or publishable artifacts. */
+export function parseTrustedCoverageManifest(input: unknown): SnapshotCoverageManifest {
+  requireCondition(
+    typeof input === 'object' && input !== null && !Array.isArray(input),
+    'Invalid trusted coverage manifest',
+  );
+  const manifest = input as Record<string, unknown>;
+  requireCondition(manifest.formatVersion === 1 || manifest.formatVersion === 2, 'Invalid trusted coverage format');
+  requireCondition(
+    Array.isArray(manifest.entries) && manifest.entries.length <= MAX_COVERAGE_ENTRIES,
+    'Invalid trusted coverage entries',
+  );
+  const entries = manifest.entries.map((inputEntry: unknown) => {
+    requireCondition(
+      typeof inputEntry === 'object' && inputEntry !== null && !Array.isArray(inputEntry),
+      'Invalid trusted coverage entry',
+    );
+    const entry = inputEntry as Record<string, unknown>;
+    requireCondition(
+      typeof entry.boardType === 'string' && typeof entry.layoutId === 'number',
+      'Invalid trusted layout scope',
+    );
+    requireCondition(
+      entry.grades === undefined ||
+        (typeof entry.grades === 'object' && entry.grades !== null && !Array.isArray(entry.grades)),
+      'Invalid trusted grades coverage',
+    );
+    return {
+      boardType: entry.boardType,
+      layoutId: entry.layoutId,
+      ...(entry.grades === undefined ? {} : { grades: {} }),
+    };
+  });
+  const coverage: SnapshotCoverageManifest = { formatVersion: manifest.formatVersion, entries };
+  validatedLayoutKeys(coverage);
+  return coverage;
 }
 
 function assertFresh(timestamp: string, builtAfter: string, now: number, label: string): void {
@@ -111,6 +161,9 @@ function assertArtifact(
   options: VerificationOptions,
   now: number,
 ) {
+  if (prefix !== 'board-snapshots/v1-catalog') {
+    requireCondition(artifact.privacyVersion === 1, `${artifact.key}: missing or unsupported privacy version`);
+  }
   requireCondition(
     artifact.key.startsWith(`${prefix}/`) &&
       /^[A-Za-z0-9/_.-]+$/.test(artifact.key) &&
@@ -322,7 +375,34 @@ export function verifySqlite(
     const expectedMetaRows =
       allowedTables.length + (metaRows.some((row) => row.table_name === 'sync_deletions') ? 1 : 0);
     requireCondition(metaRows.length === expectedMetaRows, `${artifact.key}: unexpected metadata tables`);
-    if (!catalog) {
+    if (catalog) {
+      for (const { name: tableName } of CATALOG_SNAPSHOT_TABLES) {
+        const columns = new Set(
+          database
+            .prepare(`PRAGMA table_info(${tableName})`)
+            .all()
+            .map((row) => row.name),
+        );
+        requireCondition(columns.has('board_type'), `${artifact.key}: missing board type in ${tableName}`);
+        const placeholders = CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES.map(() => '?').join(', ');
+        const privateRows = database
+          .prepare(
+            `SELECT count(*) AS count FROM ${tableName} WHERE board_type IS NULL OR board_type IN (${placeholders})`,
+          )
+          .get(...CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES)?.count;
+        requireCondition(privateRows === 0, `${artifact.key}: private board rows in ${tableName}`);
+        for (const column of CATALOG_SNAPSHOT_EXCLUDED_COLUMNS[tableName] ?? []) {
+          requireCondition(!columns.has(column), `${artifact.key}: private association column in ${tableName}`);
+        }
+        for (const column of CATALOG_SNAPSHOT_REDACTED_COLUMNS[tableName] ?? []) {
+          if (!columns.has(column)) continue;
+          const exposedCredentials = database
+            .prepare(`SELECT count(*) AS count FROM ${tableName} WHERE ${column} IS NOT NULL AND ${column} <> ?`)
+            .get(CATALOG_SNAPSHOT_REDACTED_VALUE)?.count;
+          requireCondition(exposedCredentials === 0, `${artifact.key}: unredacted credential in ${tableName}`);
+        }
+      }
+    } else {
       requireCondition(
         artifact.boardType !== undefined && artifact.layoutId !== undefined,
         `${artifact.key}: missing layout scope`,
@@ -334,6 +414,12 @@ export function verifySqlite(
         requireCondition(outsideBoard === 0, `${artifact.key}: rows belong to another board`);
       }
       if (allowedTables.includes('board_climbs')) {
+        const privateClimbs = database
+          .prepare(
+            'SELECT count(*) AS count FROM board_climbs WHERE user_id IS NOT NULL OR (is_draft IS NOT NULL AND is_draft <> 0)',
+          )
+          .get()?.count;
+        requireCondition(privateClimbs === 0, `${artifact.key}: authored or draft climbs in public snapshot`);
         const outsideLayout = database
           .prepare('SELECT count(*) AS count FROM board_climbs WHERE layout_id IS NULL OR layout_id <> ?')
           .get(artifact.layoutId)?.count;
@@ -429,8 +515,7 @@ export async function verifySnapshots(
 ): Promise<void> {
   const base = PUBLIC_BASE_URL;
   timestampMicros(options.builtAfter);
-  requireCondition(parseSnapshotManifest(options.expectedManifest), 'Invalid trusted coverage manifest');
-  validatedLayoutKeys(options.expectedManifest);
+  const expectedManifest = parseTrustedCoverageManifest(options.expectedManifest);
   const workDirectory = await mkdtemp(join(tmpdir(), 'boardsesh-snapshot-verify-'));
   let artifactCount = 0;
   let identityManifest: SnapshotManifest | undefined;
@@ -479,11 +564,11 @@ export async function verifySnapshots(
       } else {
         const manifest = parseSnapshotManifest(parsed);
         requireCondition(manifest, `${key}: invalid shared manifest`);
-        assertCoverage(manifest, options.expectedManifest);
+        assertCoverage(manifest, expectedManifest);
         if (identityManifest) {
           assertCoverage(manifest, identityManifest);
           assertCoverage(identityManifest, manifest);
-          for (const expectedEntry of options.expectedManifest.entries.filter((entry) => entry.grades)) {
+          for (const expectedEntry of expectedManifest.entries.filter((entry) => entry.grades)) {
             requireCondition(
               manifest.entries.find((entry) => layoutKey(entry) === layoutKey(expectedEntry))?.grades,
               `${key}: missing expected grades for ${layoutKey(expectedEntry)}`,
@@ -625,10 +710,9 @@ async function main(): Promise<void> {
     expectedManifestFile.isFile() && expectedManifestFile.size > 0 && expectedManifestFile.size <= MAX_MANIFEST_BYTES,
     'Trusted coverage manifest exceeds the bounded JSON limit or is not a file',
   );
-  const expectedManifest = parseSnapshotManifest(
+  const expectedManifest = parseTrustedCoverageManifest(
     JSON.parse(await readFile(argumentsParsed.expectedManifestPath, 'utf8')),
   );
-  requireCondition(expectedManifest, 'Invalid trusted coverage manifest');
   const requiredEnvironment = (name: string): string => {
     const configured = process.env[name]?.trim();
     requireCondition(configured, `Missing environment variable: ${name}`);
