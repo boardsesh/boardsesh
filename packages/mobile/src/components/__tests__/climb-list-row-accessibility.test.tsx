@@ -70,10 +70,19 @@ vi.mock('react-native', () => {
     Platform: platform,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
-    View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
+    View: ({
+      children,
+      testID,
+      style,
+      ...rest
+    }: { children?: ReactNode; testID?: string; style?: unknown } & AccessibilityCapture) => {
       if (testID === 'climb-row') a11y.row = capture(rest);
       if (testID === 'climb-row-more-button') a11y.moreButton = capture(rest);
-      return createElement('div', { 'data-testid': testID }, children);
+      return createElement(
+        'div',
+        { 'data-testid': testID, 'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))) },
+        children,
+      );
     },
     StyleSheet: {
       create: (styles: Record<string, unknown>) => styles,
@@ -230,7 +239,7 @@ vi.mock('../../lib/haptics', () => ({
 
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { background: '#fff', separator: '#ccc', secondaryLabel: '#888' },
+    systemColors: { background: '#fff', secondaryBackground: '#eee', separator: '#ccc', secondaryLabel: '#888' },
     brandColors: { primary: '#6D28D9', success: '#0a0' },
   }),
 }));
@@ -304,6 +313,38 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     expect(readPanels()).toEqual(idlePanels);
     fireEvent.click(screen.getByRole('button', { name: 'mobile.climbActions.playNext' }));
     expect(onPlayNext).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-2' }));
+  });
+
+  it('keeps glass clear while idle, after swiping, and after climb replacement', () => {
+    const props = { ...boardProps, transparentBackground: true, onPlayNext: vi.fn(), onOpenPlaylist: vi.fn() };
+    const screen = render(<ClimbListRow climb={climb} {...props} />);
+    const panelStyles = () =>
+      ['mobile.climbActions.playNext', 'actions.playlist.popover.title'].map(
+        (label) =>
+          JSON.parse(screen.getByRole('button', { name: label }).getAttribute('data-style') ?? '{}') as {
+            opacity?: number;
+          },
+      );
+    const surfaceColor = () => {
+      const surface = screen.getByTestId('climb-row').parentElement?.parentElement;
+      return (JSON.parse(surface?.getAttribute('data-style') ?? '{}') as { backgroundColor?: string }).backgroundColor;
+    };
+    const startDrag = panels.props?.onSwipeableOpenStartDrag as () => void;
+    const closeSwipe = panels.props?.onSwipeableClose as () => void;
+    expect(surfaceColor()).toBe('transparent');
+    expect(panelStyles().map((style) => style.opacity)).toEqual([0, 0]);
+
+    act(startDrag);
+    expect(surfaceColor()).toBe('#eee');
+    expect(panelStyles().every((style) => style.opacity !== 0)).toBe(true);
+    act(closeSwipe);
+    expect(surfaceColor()).toBe('transparent');
+    expect(panelStyles().map((style) => style.opacity)).toEqual([0, 0]);
+
+    act(startDrag);
+    screen.rerender(<ClimbListRow climb={{ ...climb, uuid: 'replacement' }} {...props} />);
+    expect(surfaceColor()).toBe('transparent');
+    expect(panelStyles().map((style) => style.opacity)).toEqual([0, 0]);
   });
 
   it('keeps render callbacks for unchanged labels and refreshes translated panels', () => {
@@ -380,6 +421,14 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(climbMenuTestState.openedRows?.map((row) => row.id)).toEqual(['share']);
     expect(onOpenActions).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('opens the lifted menu from a glass row without adding an ellipsis', () => {
+    const { queryByTestId } = render(
+      <ClimbListRow climb={climb} {...boardProps} transparentBackground onOpenActions={vi.fn(resolveClimbActions)} />,
+    );
+    expect(rowGestures.exclusive.find((gesture) => gesture.kind === 'longPress')?.enabled).toBe(true);
+    expect(queryByTestId('climb-row-more-button')).toBeNull();
   });
 
   it('makes the main-list hold exclusive with opening the player, even when its ellipsis is hidden', () => {
