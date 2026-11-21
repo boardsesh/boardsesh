@@ -1119,6 +1119,46 @@ describe('middleware cross-subdomain auth CORS', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
   });
 
+  it.each(['/api/auth/session', '/api/internal/ws-auth', '/api/auth/providers-config'])(
+    'allows credentialed reads from the flat PR app on %s',
+    (path) => {
+      const preview = 'https://pr-123.boardsesh.com';
+      const response = middleware(makeCorsRequest(path, { origin: preview }));
+
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
+      expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+      expect(response.headers.get('Vary')).toContain('Origin');
+    },
+  );
+
+  it('allows a flat PR app credentials preflight', () => {
+    const preview = 'https://pr-123.boardsesh.com';
+    const response = middleware(
+      makeCorsRequest('/api/auth/callback/credentials', { origin: preview, method: 'OPTIONS' }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
+  });
+
+  it.each([
+    'http://pr-123.boardsesh.com',
+    'https://pr-0.boardsesh.com',
+    'https://pr-0123.boardsesh.com',
+    'https://pr-example.boardsesh.com',
+    'https://pr-123.boardsesh.com.evil.com',
+    'https://evil-pr-123.boardsesh.com',
+    'https://pr-123.boardsesh.com:8443',
+    'https://pr-123.boardsesh.com/path',
+  ])('does not grant credentialed CORS to %s', (origin) => {
+    const response = middleware(makeCorsRequest('/api/auth/session', { origin }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBeNull();
+  });
+
   it.each(['/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password'])(
     'echoes the app origin on the credentials flow endpoint %s',
     (path) => {

@@ -12,8 +12,9 @@
 // The production origin of the standalone Expo-web app.
 export const DEFAULT_APP_ORIGIN = 'https://app.boardsesh.com';
 
-// Numbered homelab app previews: https://{N}.app.boardsesh.com. `^…$`-anchored
-// and matched against a full origin (scheme+host+port, no path), so look-alikes
-// such as https://app.boardsesh.com.evil.com or https://evil-app.boardsesh.com
-// never match.
-export const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
+// Flat Pages app previews: https://pr-{N}.boardsesh.com. Their single subdomain
+// level avoids the certificate-depth limitation of the earlier homelab names.
+// Retain those numbered homelab origins for compatibility. The whole origin is
+// anchored (HTTPS, no non-default port or path), so look-alike suffixes and
+// arbitrary boardsesh.com subdomains never become trusted auth origins.
+export const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/(?:pr-[1-9][0-9]*\.boardsesh\.com|\d+\.app\.boardsesh\.com)$/;

@@ -28,6 +28,7 @@ a production rollout or a physical-device result.
 | [Database connectivity: connect retries and health probes](db-connectivity.md) | `db-connectivity.md` |
 | [Database migrations: numbering, collisions, and the renumber bot](db-migrations.md) | `db-migrations.md` |
 | [Expo web deployment: dev /app proxy vs prod subdomain (app.boardsesh.com)](expo-web-deployment.md) | `expo-web-deployment.md` |
+| [Expo web PR previews](expo-web-previews.md) | `expo-web-previews.md` |
 | [Feature flags](feature-flags.md) | `feature-flags.md` |
 | [Homelab worker deploys](homelab-deploys.md) | `homelab-deploys.md` |
 | [Mobile OTA updates (production: self-hosted expo-open-ota V3)](mobile-ota-updates.md) | `mobile-ota-updates.md` |

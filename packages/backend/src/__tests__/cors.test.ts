@@ -210,6 +210,26 @@ describe('CORS Handler', () => {
       expect(isOriginAllowed('https://123.app.boardsesh.com')).toBe(true);
     });
 
+    it.each(['https://pr-1.boardsesh.com', 'https://pr-123.boardsesh.com'])(
+      'allows the flat app preview origin %s',
+      (origin) => {
+        expect(isOriginAllowed(origin)).toBe(true);
+      },
+    );
+
+    it.each([
+      'http://pr-123.boardsesh.com',
+      'https://pr-0.boardsesh.com',
+      'https://pr-0123.boardsesh.com',
+      'https://pr-example.boardsesh.com',
+      'https://pr-123.boardsesh.com.evil.com',
+      'https://evil-pr-123.boardsesh.com',
+      'https://pr-123.boardsesh.com:8443',
+      'https://pr-123.boardsesh.com/path',
+    ])('rejects the untrusted flat preview origin %s', (origin) => {
+      expect(isOriginAllowed(origin)).toBe(false);
+    });
+
     it('returns false for non-numeric or look-alike app subdomains', () => {
       expect(isOriginAllowed('https://pr-5.app.boardsesh.com')).toBe(false);
       expect(isOriginAllowed('http://app.boardsesh.com')).toBe(false); // http not https

@@ -14,6 +14,11 @@ driven by `BOARDSESH_WEB_BASE_URL` (read by `resolveWebPlatforms` in
 `BOARDSESH_WEB=1`, so native builds (flag unset) resolve a byte-identical config
 and keep their OTA fingerprint.
 
+PR previews reuse the standalone export at `https://pr-N.boardsesh.com`, on
+Cloudflare Pages Free, when app inputs change. They use production login and
+backend data. Setup, fork approval and cleanup are documented in
+[Expo web PR previews](./expo-web-previews.md).
+
 `/app` on `www.boardsesh.com` is **not** a production surface. Since W-24
 (#4438) it is the dev Metro proxy plus the local static bake behind
 `vp run dev:mobile:web-static`, and nothing else — see

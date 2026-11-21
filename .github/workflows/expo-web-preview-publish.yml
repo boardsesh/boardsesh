@@ -1,0 +1,120 @@
+name: Expo Web Preview Publish
+
+# Download only the exact successful sandbox run's artifact. Deploy tooling,
+# host configuration and Pages Functions always come from this trusted commit.
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Sandbox build run ID to validate and publish'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.inspect.outputs.publish }}
+      pr_number: ${{ steps.inspect.outputs.pr_number }}
+      sha: ${{ steps.inspect.outputs.sha }}
+      artifact: ${{ steps.inspect.outputs.artifact }}
+      request_id: ${{ steps.inspect.outputs.request_id }}
+      head_repository: ${{ steps.inspect.outputs.head_repository }}
+    steps:
+      - name: Check out trusted artifact validator
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Validate the completed source build
+        id: inspect
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.inspectPublish({ github, context, core, inspectOnly: true });
+
+  publish:
+    needs: inspect
+    if: needs.inspect.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Reuse the existing Cloudflare credentials. The trusted publisher permits
+    # only the fixed preview project and numbered preview domains as targets.
+    environment: Production
+    concurrency:
+      group: expo-web-preview-${{ needs.inspect.outputs.pr_number || github.run_id }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - name: Check out trusted publisher and hosting configuration
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Recheck the current request inside the PR mutation lane
+        id: publish
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.inspectPublish({ github, context, core });
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        if: steps.publish.outputs.publish == 'true'
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Download the exact source build's static export
+        if: steps.publish.outputs.publish == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.inspect.outputs.artifact }}
+          path: ${{ runner.temp }}/export
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Publish and verify this PR preview
+        if: steps.publish.outputs.publish == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          EXPORT_DIRECTORY: ${{ runner.temp }}/export
+          TRUSTED_SHA: ${{ github.workflow_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.publish({
+              github, context, core,
+              directory: process.env.EXPORT_DIRECTORY,
+              trustedDirectory: process.env.GITHUB_WORKSPACE,
+              trustedSha: process.env.TRUSTED_SHA,
+            });
+
+      - name: Report a failed publication
+        if: failure()
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.reportPublishFailure({ github, context, core });
