@@ -1,4 +1,5 @@
 import { DEFAULT_KEEP_LIGHTING } from '../lib/keep-lighting';
+import { DEFAULT_PLAYER_PREVIOUS_NEXT } from '../lib/player-navigation-default';
 import type { AppSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -53,7 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playerButtonsV3: null,
   playerButtonsV4: null,
   miniPlayerButtonsV1: null,
-  playerPreviousNext: false,
+  playerPreviousNext: DEFAULT_PLAYER_PREVIOUS_NEXT,
   playerButtonsPosition: 'below',
   homeSectionsV1: null,
   playlistSortsV1: null,

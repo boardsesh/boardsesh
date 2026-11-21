@@ -13,14 +13,19 @@ this page covers the buttons, the MiniPlayer and what they share.
   **Previous and next**; a **Board control**, Wall button (the default) or Lightbulb; and a **Position**, Below the
   board (the default) or Above the board. A pinned preview draws the bar for the board on screen as the climber
   changes it. Settings › Climb view has the same Board control picker.
-- **Defaults**: Mirror, Angle, Play next, Favorite, Share, Queue in that order, all on, with Previous and next off. The first
+- **Defaults**: Mirror, Angle, Play next, Favorite, Share, Queue in that order, all on. Previous and next starts on
+  when the browser has an input that can hover and point precisely (a mouse or trackpad), detected at startup.
+  Touch-only browsers, iOS and Android start with it off. Screen width and the presence of a touchscreen do not
+  override those capabilities; a touch-primary tablet with a mouse gets arrows too. With navigation off, the first
   candidate and last three fill the four positions around Log: `⇄ ♡ ✓ Share ☰` on a board that mirrors,
   `Angle ♡ ✓ Share ☰` on an adjustable board that doesn't, and `Play next ♡ ✓ Share ☰` when neither Mirror nor
   Angle applies. Hide Angle or move Play next first to put it in the row on an adjustable board. Play next stays
   visible but disabled on the active climb; on another climb it moves or adds that climb to the front of Up next.
-  Queue still opens the queue. Actions outside the row remain in ⋯.
+  Queue still opens the queue. With navigation on, Previous and Next sit immediately beside Log, and the other
+  actions share the two ends of the row. Actions outside the row remain in ⋯.
 - **Restore defaults** on the Buttons tab brings back that bar, with the wall button below the board and Previous
-  and next off. The Below the climb tab has its own Restore defaults for the sections.
+  and next following the startup input default in the browser, or off on iOS and Android.
+  The Below the climb tab has its own Restore defaults for the sections.
 - Existing customized button choices, position and board control survive the upgrade. An untouched layout adopts
   the new defaults. Explicitly stored Previous and next choices stay as they were.
 
