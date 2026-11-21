@@ -105,8 +105,9 @@
     "reporter": {
       "anonymous": "Anonymous",
       "copyEmail": "Copy email",
-      "consentYes": "Contact OK",
-      "consentNo": "No consent"
+      "consentYes": "Email allowed",
+      "consentNo": "Email declined",
+      "showReports": "See this reporter’s bugs"
     },
     "rating": {
       "value": "{{rating}}/5"
@@ -148,6 +149,26 @@
       "updateFailed": "Couldn't update status",
       "emailCopied": "Email copied",
       "copyFailed": "Couldn't copy"
+    },
+    "conversation": {
+      "title": "Conversation",
+      "open": "Read conversation",
+      "loadError": "Couldn’t load this conversation.",
+      "loadOlder": "Load earlier messages",
+      "empty": "Replies to this report will appear here.",
+      "staff": "Boardsesh",
+      "reporter": "Reporter",
+      "close": "Close",
+      "retry": "Try again",
+      "latestReply": "Latest reply",
+      "publicNotice": "Replies are shared on the linked public GitHub issue.",
+      "openGithub": "Reply on GitHub",
+      "githubHint": "To message the reporter, start a GitHub comment with #replytocustomer. Only authorized Boardsesh contributors can send these messages."
+    },
+    "filters": {
+      "reporter": "Reporter account ID",
+      "needsReply": "Needs reply",
+      "clearReporter": "Show all reporters"
     }
   },
   "retention": {

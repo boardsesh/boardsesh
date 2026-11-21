@@ -405,7 +405,8 @@
     "successRating": "Thanks — logged.",
     "successBug": "Bug logged — thanks.",
     "errorRating": "Couldn't send that — try again in a moment.",
-    "joinDiscord": "Join Discord"
+    "joinDiscord": "Join Discord",
+    "successBugSignedIn": "Bug logged. Find it in Your bug reports."
   },
   "feedbackForm": {
     "bugPlaceholder": "What were you doing? What did you expect vs see?",
@@ -413,10 +414,11 @@
     "remainingChars": "{{count}} more characters to go",
     "bluetoothBugLabel": "I'm having Bluetooth trouble",
     "bluetoothBugDescription": "Scans for nearby boards and sends us what they broadcast, so we can figure out why yours won't connect. No board is controlled — we just listen.",
-    "contactConsentLabel": "Can we contact you about this?",
-    "contactConsentDescription": "Lets us email you the issue link and follow up if we need more detail.",
+    "contactConsentLabel": "Email me about this report",
+    "contactConsentDescription": "Lets us email you the issue link and follow up. In-app replies are always available.",
     "starRating_one": "{{count}} star",
-    "starRating_other": "{{count}} stars"
+    "starRating_other": "{{count}} stars",
+    "inAppRepliesDescription": "Read and reply to our messages in Your bug reports. Your replies appear publicly on our bug tracker."
   },
   "boardConfigMismatch": {
     "title": "Board configuration doesn't match",
@@ -765,5 +767,33 @@
     "notEligible": "We can't add a password to this account from here. If it already has one, sign in with it.",
     "tryAgainSoon": "We couldn't send the link. Try again later.",
     "back": "Back to Settings"
+  },
+  "bugReports": {
+    "title": "Your bug reports",
+    "detailTitle": "Bug report",
+    "empty": "Your bug reports will appear here.",
+    "signIn": "Sign in to see your bug reports",
+    "loadError": "Couldn’t load your reports.",
+    "threadError": "Couldn’t load this conversation.",
+    "notFound": "This report is no longer available.",
+    "retry": "Try again",
+    "loadOlder": "Load earlier messages",
+    "loadMore": "Load more reports",
+    "replyPlaceholder": "Add a reply",
+    "send": "Send reply",
+    "sendError": "Couldn’t send your reply. Try again.",
+    "staff": "Boardsesh",
+    "you": "You",
+    "readOnly": "Replies will be available once your report has a linked GitHub issue.",
+    "github": "Public bug tracker",
+    "statusNew": "Received",
+    "statusInProgress": "In progress",
+    "statusResolved": "Resolved",
+    "statusWontFix": "Closed",
+    "noMessages": "Replies from Boardsesh will appear here.",
+    "publicNotice": "Your reply appears publicly on our GitHub bug tracker. Anyone can read it. You don’t need a GitHub account. Don’t include personal information.",
+    "pending": "Waiting to post…",
+    "failed": "This reply hasn’t reached the bug tracker yet.",
+    "retrySend": "Try sending again"
   }
 }

@@ -105,6 +105,8 @@ const FEEDBACK_TYPE_FILTERS = ['bugs', 'ratings', 'all'] as const;
 
 export const AdminAppFeedbackInputSchema = z
   .object({
+    reporterId: z.string().trim().min(1).max(200).optional().nullable(),
+    needsReply: z.boolean().optional().nullable(),
     type: z.enum(FEEDBACK_TYPE_FILTERS).optional().nullable(),
     status: z.enum(FEEDBACK_STATUSES).optional().nullable(),
     platform: z.string().trim().max(32).optional().nullable(),
@@ -124,3 +126,50 @@ export const UpdateAppFeedbackStatusInputSchema = z
 
 export type AdminAppFeedbackInput = z.infer<typeof AdminAppFeedbackInputSchema>;
 export type UpdateAppFeedbackStatusInput = z.infer<typeof UpdateAppFeedbackStatusInputSchema>;
+
+const feedbackRowId = z
+  .string()
+  .regex(/^[1-9]\d{0,18}$/)
+  .refine((id) => /^[1-9]\d{0,18}$/.test(id) && BigInt(id) <= 9223372036854775807n);
+export const AppBugReportIdSchema = feedbackRowId;
+export const AppBugReportsInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(100).optional().nullable(),
+    after: feedbackRowId.optional().nullable(),
+  })
+  .strict();
+const messageCursorSchema = z
+  .string()
+  .max(300)
+  .transform((cursor, context) => {
+    try {
+      return z
+        .object({
+          createdAt: z
+            .string()
+            .min(1)
+            .max(40)
+            .refine((date) => Number.isFinite(Date.parse(date))),
+          id: feedbackRowId,
+        })
+        .strict()
+        .parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
+    } catch {
+      context.addIssue({ code: 'custom', message: 'Invalid message cursor' });
+      return z.NEVER;
+    }
+  });
+export const AppBugReportMessagesInputSchema = z
+  .object({
+    reportId: feedbackRowId,
+    limit: z.number().int().min(1).max(100).optional().nullable(),
+    before: messageCursorSchema.optional().nullable(),
+  })
+  .strict();
+export const SendAppBugReportMessageInputSchema = z
+  .object({
+    reportId: feedbackRowId,
+    body: z.string().trim().min(1).max(2000),
+    clientMutationId: z.string().uuid(),
+  })
+  .strict();

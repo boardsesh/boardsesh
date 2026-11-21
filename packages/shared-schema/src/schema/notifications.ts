@@ -11,6 +11,7 @@ export const notificationsTypeDefs = /* GraphQL */ `
   # ============================================
 
   enum NotificationType {
+    app_feedback_reply
     new_follower
     comment_reply
     comment_on_tick

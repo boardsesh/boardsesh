@@ -3,3 +3,6 @@
 // single-bigint advisory lock space; the wall's two-integer space is separate.
 export const NOTIFICATION_DEVICE_TOKEN_LOCK_SEED = 192704;
 export const NOTIFICATION_DELIVERY_LOCK_SEED = 192705;
+
+export const FEEDBACK_COMMENT_LOCK_SEED = 192706;
+export const FEEDBACK_ISSUE_LOCK_SEED = 192707;

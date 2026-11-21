@@ -102,7 +102,7 @@ export const feedbackMutations = {
             // not affect the already-committed feedback row.
             await db
               .update(dbSchema.appFeedback)
-              .set({ githubIssueNumber: issue.number, githubIssueUrl: issue.htmlUrl })
+              .set({ githubIssueNumber: issue.number, githubIssueUrl: issue.htmlUrl, githubIssueState: 'open' })
               .where(eq(dbSchema.appFeedback.id, row.id));
 
             if (contactConsent && userId) {

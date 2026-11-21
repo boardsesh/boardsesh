@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as Application from 'expo-application';
 import type { RefObject } from 'react';
 import type { FeedbackMetadataReader } from './FeedbackMetadataCollector';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   SUBMIT_APP_FEEDBACK,
   type SubmitAppFeedbackMutationResponse,
@@ -13,6 +13,7 @@ import { getHttpClient } from '../graphql/client';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
 import { readMobileReleaseContext } from '../release-context';
 import { requestReport } from '../graphql/request-report';
+import { bugReportQueryKeys } from './bug-report-query-keys';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
   SubmitAppFeedbackInput,
@@ -48,6 +49,7 @@ async function submitMobileAppFeedback(payload: SubmitAppFeedbackInput): Promise
 }
 
 export function useSubmitMobileAppFeedback(readerRef: RefObject<FeedbackMetadataReader | null>) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: MobileSubmitAppFeedbackPayload): Promise<boolean> => {
       const readMetadata = readerRef.current;
@@ -62,6 +64,11 @@ export function useSubmitMobileAppFeedback(readerRef: RefObject<FeedbackMetadata
         appVersion: getNativeAppVersion(),
         releaseContext: readMobileReleaseContext(),
       });
+    },
+    onSuccess: (_, payload) => {
+      if (payload.source === 'shake-bug' || payload.source === 'drawer-bug') {
+        void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.all });
+      }
     },
   });
 }

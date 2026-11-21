@@ -81,7 +81,8 @@
       "testPlan": "Plan de pruebas #{{prNumber}}",
       "badge": "QA"
     },
-    "accountTitle": "Cuenta"
+    "accountTitle": "Cuenta",
+    "myBugReports": "Tus informes de errores"
   },
   "qa": {
     "shared": {

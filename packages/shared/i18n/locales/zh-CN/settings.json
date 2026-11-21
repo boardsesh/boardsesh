@@ -405,7 +405,8 @@
     "successRating": "已收到，谢谢。",
     "successBug": "问题已记录，谢谢。",
     "errorRating": "无法发送，请稍后重试。",
-    "joinDiscord": "加入 Discord"
+    "joinDiscord": "加入 Discord",
+    "successBugSignedIn": "错误已记录，可在“你的错误报告”中查看。"
   },
   "feedbackForm": {
     "bugPlaceholder": "当时你在做什么？预期结果和实际看到的有什么不同？",
@@ -413,10 +414,11 @@
     "remainingChars": "还需要 {{count}} 个字符",
     "bluetoothBugLabel": "我遇到了蓝牙问题",
     "bluetoothBugDescription": "扫描附近训练板并发送其广播信息，帮助我们查明为何无法连接。不会控制训练板，只会监听。",
-    "contactConsentLabel": "可以就此事联系你吗？",
-    "contactConsentDescription": "允许我们通过邮件发送问题链接，并在需要更多信息时跟进。",
+    "contactConsentLabel": "通过邮件跟进此报告",
+    "contactConsentDescription": "允许我们通过邮件发送问题链接并跟进。应用内回复始终可用。",
     "starRating_one": "{{count}} 星",
-    "starRating_other": "{{count}} 星"
+    "starRating_other": "{{count}} 星",
+    "inAppRepliesDescription": "在“你的错误报告”中阅读并回复我们的消息。你的回复会公开显示在我们的问题跟踪中。"
   },
   "boardConfigMismatch": {
     "title": "训练板配置不匹配",
@@ -765,5 +767,33 @@
     "notEligible": "无法在这里为这个账号添加密码。如果已设置密码，请用密码登录。",
     "tryAgainSoon": "链接发送失败，请稍后重试。",
     "back": "返回设置"
+  },
+  "bugReports": {
+    "title": "你的错误报告",
+    "detailTitle": "错误报告",
+    "empty": "你的错误报告会显示在这里。",
+    "signIn": "登录以查看你的错误报告",
+    "loadError": "无法加载你的报告。",
+    "threadError": "无法加载此对话。",
+    "notFound": "此报告已不可用。",
+    "retry": "重试",
+    "loadOlder": "加载更早的消息",
+    "loadMore": "加载更多报告",
+    "replyPlaceholder": "添加回复",
+    "send": "发送回复",
+    "sendError": "无法发送回复，请重试。",
+    "staff": "Boardsesh",
+    "you": "你",
+    "readOnly": "报告关联 GitHub 问题后即可回复。",
+    "github": "公开问题跟踪",
+    "statusNew": "已收到",
+    "statusInProgress": "处理中",
+    "statusResolved": "已解决",
+    "statusWontFix": "已关闭",
+    "noMessages": "Boardsesh 的回复会显示在这里。",
+    "publicNotice": "你的回复会公开显示在我们的 GitHub 问题跟踪中。任何人都可以阅读。你无需 GitHub 账户，请勿包含个人信息。",
+    "pending": "等待发布…",
+    "failed": "此回复尚未发布到问题跟踪中。",
+    "retrySend": "重新发送"
   }
 }

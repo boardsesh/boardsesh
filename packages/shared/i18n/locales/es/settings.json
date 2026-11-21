@@ -405,7 +405,8 @@
     "successRating": "Gracias — registrado.",
     "successBug": "Fallo registrado — gracias.",
     "errorRating": "No se pudo enviar — inténtalo de nuevo en un momento.",
-    "joinDiscord": "Únete a Discord"
+    "joinDiscord": "Únete a Discord",
+    "successBugSignedIn": "Error registrado. Lo encontrarás en «Tus informes de errores»."
   },
   "feedbackForm": {
     "bugPlaceholder": "¿Qué estabas haciendo? ¿Qué esperabas y qué viste?",
@@ -415,8 +416,9 @@
     "starRating_other": "{{count}} estrellas",
     "bluetoothBugLabel": "Tengo problemas con el Bluetooth",
     "bluetoothBugDescription": "Busca plafones cercanos y nos envía lo que emiten, para entender por qué el tuyo no se conecta. No se controla ningún plafón: solo escuchamos.",
-    "contactConsentLabel": "¿Podemos contactarte sobre esto?",
-    "contactConsentDescription": "Nos permite enviarte por correo el enlace al problema y escribirte si necesitamos más detalles."
+    "contactConsentLabel": "Envíame correos sobre este informe",
+    "contactConsentDescription": "Nos permite enviarte el enlace de la incidencia y hacer un seguimiento por correo. Las respuestas en la app siempre están disponibles.",
+    "inAppRepliesDescription": "Lee y responde a nuestros mensajes en «Tus informes de errores». Tus respuestas aparecen públicamente en nuestro seguimiento de errores."
   },
   "boardConfigMismatch": {
     "title": "La configuración del plafón no coincide",
@@ -765,5 +767,33 @@
     "notEligible": "No podemos añadir una contraseña a esta cuenta desde aquí. Si ya tiene una, inicia sesión con ella.",
     "tryAgainSoon": "No pudimos enviar el enlace. Inténtalo más tarde.",
     "back": "Volver a Ajustes"
+  },
+  "bugReports": {
+    "title": "Tus informes de errores",
+    "detailTitle": "Informe de error",
+    "empty": "Tus informes de errores aparecerán aquí.",
+    "signIn": "Inicia sesión para ver tus informes de errores",
+    "loadError": "No se han podido cargar tus informes.",
+    "threadError": "No se ha podido cargar esta conversación.",
+    "notFound": "Este informe ya no está disponible.",
+    "retry": "Reintentar",
+    "loadOlder": "Cargar mensajes anteriores",
+    "loadMore": "Cargar más informes",
+    "replyPlaceholder": "Añade una respuesta",
+    "send": "Enviar respuesta",
+    "sendError": "No se ha podido enviar tu respuesta. Inténtalo de nuevo.",
+    "staff": "Boardsesh",
+    "you": "Tú",
+    "readOnly": "Podrás responder cuando tu informe tenga una incidencia de GitHub enlazada.",
+    "github": "Seguimiento público de errores",
+    "statusNew": "Recibido",
+    "statusInProgress": "En curso",
+    "statusResolved": "Resuelto",
+    "statusWontFix": "Cerrado",
+    "noMessages": "Las respuestas de Boardsesh aparecerán aquí.",
+    "publicNotice": "Tu respuesta aparece públicamente en nuestro seguimiento de errores de GitHub. Cualquiera puede leerla. No necesitas una cuenta de GitHub. No incluyas información personal.",
+    "pending": "Pendiente de publicación…",
+    "failed": "Esta respuesta aún no ha llegado al seguimiento de errores.",
+    "retrySend": "Volver a enviar"
   }
 }

@@ -33,6 +33,7 @@ import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
 import { handleSprayWallPhotoUpload } from './handlers/spray-wall-photos';
+import { handleGithubFeedbackWebhook } from './handlers/github-feedback-webhook';
 import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots';
 import {
   handleStaticAvatar,
@@ -584,6 +585,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // configured rather than accepting unverifiable bodies. The method check
       // is the handler's — it answers 405, which is the honest code for a GET
       // to a route that exists, and it is covered by a test.
+      if (pathname === '/api/github/feedback-webhook') {
+        await handleGithubFeedbackWebhook(req, res);
+        return;
+      }
+
       if (pathname === '/api/cnc/stripe/webhook') {
         await handleCncStripeWebhook(req, res);
         return;

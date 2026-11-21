@@ -106,6 +106,8 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
   const isHide = proposalType === 'hide' && proposalValue !== 'false';
 
   switch (notification.type) {
+    case 'app_feedback_reply':
+      return { textI18nKey: 'items.bugReportReply', params: {} };
     case 'new_follower':
       return { textI18nKey: 'items.newFollower', params: { actor } };
     case 'follow_request':
@@ -207,6 +209,8 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
 /** The leading glyph for a row, matching web's icon choice per type. */
 export function notificationIconName(type: NotificationType): IconName {
   switch (type) {
+    case 'app_feedback_reply':
+      return 'comment';
     case 'new_follower':
     case 'follow_request':
       return 'person.badge.plus';

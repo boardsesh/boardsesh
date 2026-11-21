@@ -1,5 +1,5 @@
 import type { AppFeedbackReport, AppFeedbackStatus, ConnectionContext } from '@boardsesh/shared-schema';
-import { and, count, desc, eq, ilike, inArray, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -33,6 +33,9 @@ const reportColumns = {
   context: feedback.context,
   screenshotKeys: feedback.screenshotKeys,
   createdAt: feedback.createdAt,
+  lastMessageAt: feedback.lastMessageAt,
+  lastMessagePreview: feedback.lastMessagePreview,
+  needsReply: feedback.needsReply,
   status: feedback.status,
   resolvedAt: feedback.resolvedAt,
   githubIssueNumber: feedback.githubIssueNumber,
@@ -56,6 +59,9 @@ type FeedbackRow = {
   context: FeedbackContext | null;
   screenshotKeys: string[] | null;
   createdAt: string;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  needsReply: boolean;
   status: AppFeedbackStatus;
   resolvedAt: string | null;
   githubIssueNumber: number | null;
@@ -78,6 +84,9 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
     angle: row.angle,
     contactConsent: row.contactConsent,
     createdAt: row.createdAt,
+    lastMessageAt: row.lastMessageAt,
+    lastMessagePreview: row.lastMessagePreview,
+    needsReply: row.needsReply,
     status: row.status,
     resolvedAt: row.resolvedAt,
     resolvedBy: row.resolvedByEmail ?? null,
@@ -131,6 +140,8 @@ export const feedbackQueries = {
           : undefined;
     const platformCondition = validated.platform ? eq(feedback.platform, validated.platform) : undefined;
     const searchCondition = validated.search ? ilike(feedback.comment, `%${escapeLike(validated.search)}%`) : undefined;
+    const reporterCondition = validated.reporterId ? eq(feedback.userId, validated.reporterId) : undefined;
+    const replyCondition = validated.needsReply != null ? eq(feedback.needsReply, validated.needsReply) : undefined;
     const statusCondition = validated.status ? eq(feedback.status, validated.status) : undefined;
 
     const combine = (parts: Array<SQL | undefined>): SQL | undefined => {
@@ -140,8 +151,15 @@ export const feedbackQueries = {
 
     // The list respects every filter; the status-tab counts respect everything
     // except status (so each tab shows how many rows it would reveal).
-    const listWhere = combine([typeCondition, platformCondition, searchCondition, statusCondition]);
-    const countsWhere = combine([typeCondition, platformCondition, searchCondition]);
+    const listWhere = combine([
+      typeCondition,
+      platformCondition,
+      searchCondition,
+      statusCondition,
+      reporterCondition,
+      replyCondition,
+    ]);
+    const countsWhere = combine([typeCondition, platformCondition, searchCondition, reporterCondition, replyCondition]);
 
     // The page, the filtered total, and the per-status counts are independent
     // reads — run them concurrently rather than paying three serial round-trips.
@@ -154,7 +172,7 @@ export const feedbackQueries = {
         .where(listWhere)
         // Secondary sort on id keeps ordering (and offset pagination) stable when
         // rows share a created_at.
-        .orderBy(desc(feedback.createdAt), desc(feedback.id))
+        .orderBy(desc(sql`coalesce(${feedback.lastMessageAt}, ${feedback.createdAt})`), desc(feedback.id))
         .limit(limit + 1)
         .offset(offset),
       db.select({ value: count() }).from(feedback).where(listWhere),

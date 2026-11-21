@@ -33,6 +33,34 @@ describe('native import notification handlers', () => {
     mocks.lastResponse.mockReturnValue(null);
   });
 
+  it('opens bug report replies and rejects malformed or missing report ids', async () => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply', reportId: '42' }))).toEqual({
+      path: '/bug-reports/[id]',
+      params: { id: '42' },
+    });
+    expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply', reportId: '../settings' }))).toBeNull();
+    expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply', reportId: 42 }))).toBeNull();
+    expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply' }))).toBeNull();
+  });
+
+  it('refreshes report history after a push and consumes its tap once', async () => {
+    const incoming = response({ type: 'app_feedback_reply', reportId: '42' }, 'report-reply');
+    const { setupNotificationHandlers } = await import('../handlers');
+    const router = { push: vi.fn() };
+    const refresh = vi.fn();
+    const cleanup = setupNotificationHandlers(router, { onBugReportReply: refresh });
+    const receive = mocks.listenReceived.mock.calls[0][0] as (received: Notification) => void;
+    const tap = mocks.listenResponse.mock.calls[0][0] as (tapped: NotificationResponse) => void;
+    receive(incoming.notification);
+    tap(incoming);
+    tap(incoming);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(router.push).toHaveBeenCalledOnce();
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/bug-reports/[id]', params: { id: '42' } });
+    cleanup();
+  });
+
   it('resolves a new import to its exact draft and a reset import to the wall it replaces', async () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(resolveNotificationRoute(notification(completed))).toEqual({

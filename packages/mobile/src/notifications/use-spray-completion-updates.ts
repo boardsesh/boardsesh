@@ -5,15 +5,17 @@ import { NOTIFICATION_RECEIVED_SUBSCRIPTION } from '@boardsesh/graphql/operation
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { subscribeWsClientDisposed } from '../lib/graphql/ws-client-lifecycle';
+import { bugReportQueryKeys } from '../lib/feedback/bug-report-query-keys';
 
-/** Native and browser imports share live completion refreshes. */
+/** Native and browser share the notification stream and foreground refreshes. */
 export function useSprayCompletionUpdates(authenticated: boolean, accountId: string | null | undefined) {
   const queryClient = useQueryClient();
   const refreshCompletion = useCallback(() => {
     for (const key of ['myBoards', 'mySprayWalls', 'sprayImportProgress', 'spray-wall-detection', 'notifications']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
-  }, [queryClient]);
+    if (accountId) void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.account(accountId) });
+  }, [queryClient, accountId]);
   useEffect(() => {
     if (!authenticated) return;
     // Offline mode disposes the client this stream runs on, and graphql-ws
@@ -46,6 +48,10 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
         {
           next: ({ data }) => {
             if (data?.notificationReceived.notification.type === 'spray_wall_detection_completed') refreshCompletion();
+            if (data?.notificationReceived.notification.type === 'app_feedback_reply' && accountId) {
+              void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.account(accountId) });
+              void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+            }
           },
           error: () => {},
           complete: () => {},
@@ -75,6 +81,6 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
       unsubscribeConnectivity();
       release();
     };
-  }, [authenticated, accountId, refreshCompletion]);
+  }, [authenticated, accountId, refreshCompletion, queryClient]);
   return refreshCompletion;
 }

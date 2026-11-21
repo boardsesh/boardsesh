@@ -405,7 +405,8 @@
     "successRating": "Merci, c'est noté.",
     "successBug": "Bug enregistré, merci.",
     "errorRating": "Envoi impossible. Réessayez dans un instant.",
-    "joinDiscord": "Rejoindre Discord"
+    "joinDiscord": "Rejoindre Discord",
+    "successBugSignedIn": "Bug enregistré. Retrouve-le dans « Tes signalements de bugs »."
   },
   "feedbackForm": {
     "bugPlaceholder": "Que faisiez-vous ? Qu'attendiez-vous et qu'avez-vous vu ?",
@@ -415,8 +416,9 @@
     "starRating_other": "{{count}} étoiles",
     "bluetoothBugLabel": "J'ai des problèmes de Bluetooth",
     "bluetoothBugDescription": "Recherche les boards à proximité et nous envoie ce qu'elles diffusent, pour comprendre pourquoi la tienne ne se connecte pas. Aucune board n'est commandée : on se contente d'écouter.",
-    "contactConsentLabel": "Pouvons-nous vous contacter à ce sujet ?",
-    "contactConsentDescription": "Nous permet de vous envoyer le lien du problème par e-mail et de revenir vers vous si besoin de plus de détails."
+    "contactConsentLabel": "Recevoir des e-mails à propos de ce signalement",
+    "contactConsentDescription": "Nous permet de t’envoyer le lien du ticket et de te recontacter par e-mail. Les réponses dans l’app restent toujours disponibles.",
+    "inAppRepliesDescription": "Lis nos messages et réponds-y dans « Tes signalements de bugs ». Tes réponses apparaissent publiquement dans notre suivi des bugs."
   },
   "boardConfigMismatch": {
     "title": "La configuration de la board ne correspond pas",
@@ -765,5 +767,33 @@
     "notEligible": "Impossible d'ajouter un mot de passe à ce compte depuis ici. S'il en a déjà un, connectez-vous avec.",
     "tryAgainSoon": "Impossible d'envoyer le lien. Réessayez plus tard.",
     "back": "Retour aux Paramètres"
+  },
+  "bugReports": {
+    "title": "Tes signalements de bugs",
+    "detailTitle": "Signalement de bug",
+    "empty": "Tes signalements de bugs apparaîtront ici.",
+    "signIn": "Connecte-toi pour voir tes signalements de bugs",
+    "loadError": "Impossible de charger tes signalements.",
+    "threadError": "Impossible de charger cette conversation.",
+    "notFound": "Ce signalement n’est plus disponible.",
+    "retry": "Réessayer",
+    "loadOlder": "Charger les messages précédents",
+    "loadMore": "Charger plus de signalements",
+    "replyPlaceholder": "Ajoute une réponse",
+    "send": "Envoyer la réponse",
+    "sendError": "Impossible d’envoyer ta réponse. Réessaie.",
+    "staff": "Boardsesh",
+    "you": "Toi",
+    "readOnly": "Tu pourras répondre dès qu’un ticket GitHub sera lié à ton signalement.",
+    "github": "Suivi public des bugs",
+    "statusNew": "Reçu",
+    "statusInProgress": "En cours",
+    "statusResolved": "Résolu",
+    "statusWontFix": "Fermé",
+    "noMessages": "Les réponses de Boardsesh apparaîtront ici.",
+    "publicNotice": "Ta réponse apparaît publiquement dans notre suivi des bugs sur GitHub. Tout le monde peut la lire. Tu n’as pas besoin de compte GitHub. N’inclus pas d’informations personnelles.",
+    "pending": "En attente de publication…",
+    "failed": "Cette réponse n’est pas encore arrivée dans le suivi des bugs.",
+    "retrySend": "Réessayer l’envoi"
   }
 }

@@ -19,6 +19,9 @@
  * the app stopped sending.
  */
 export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
+  // Only the explicit /bug-reports/[id] destination; capture flows never open a support conversation.
+  'AppBugReport',
+  'AppBugReportMessages',
   'AppWorkout', // Only explicit /w launch links; capture flows never open a partner workout.
   'BetaLinkPreview',
   'BoardClimbRecentSenders',
@@ -98,6 +101,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'IncomingFollowRequests',
   // Captures use a dev client: expo-updates is disabled, so no rollout lookup runs.
   'MobileReleaseStatus',
+  'MyAppBugReports', // Only the user drawer's /bug-reports destination; no capture flow opens it.
   'PrivacyRelationship',
   'ProfilePrivacy',
   'ProposalReportReleaseContexts', // Only expanded report reasons for scoped admins.
