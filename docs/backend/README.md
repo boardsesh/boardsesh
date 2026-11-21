@@ -21,6 +21,7 @@ a production rollout or a physical-device result.
 | Document | Path |
 | --- | --- |
 | [Backend email (SMTP)](backend-email.md) | `backend-email.md` |
+| [Bug-report conversations](bug-report-conversations.md) | `bug-report-conversations.md` |
 | [Background workers](background-workers.md) | `background-workers.md` |
 | [Backend Logging](logging.md) | `logging.md` |
 | [Scheduler service (`packages/scheduler`)](scheduler.md) | `scheduler.md` |

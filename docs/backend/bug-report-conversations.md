@@ -66,9 +66,16 @@ find reports needing a reply, then open the issue to respond.
    `https://ws.boardsesh.com/api/github/feedback-webhook` (substitute the backend
    origin for another environment), with JSON payloads and `issue_comment` and
    `issues` events enabled.
-4. Apply the generated database migration and deploy the backend before
-   releasing app clients. The endpoint returns 404 when its secret is absent,
-   rejects invalid HMAC signatures, and acknowledges events after durable enqueue.
+4. Before merging, set the repository variable `APP_WEB_DEPLOY_HOLD=1` to hold
+   the browser app. Merge after required checks pass. Production Deploy applies
+   the generated database migration and initializes the job queues; native OTA
+   promotion waits for the backend deployment. The browser deployment runs
+   independently, so keep its hold until the new backend is live, then clear the
+   variable and dispatch Production Deploy on main to release the browser app.
+   Enable the
+   webhook after the backend is live. The endpoint returns 404 when its secret
+   is absent, rejects invalid HMAC signatures, and acknowledges events after
+   durable enqueue.
 5. Verify with a dedicated test account and issue before using customer reports.
    Test real-device push separately: automated tests and bundle exports cannot
    establish APNs/FCM delivery or phone keyboard behavior.
