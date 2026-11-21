@@ -182,6 +182,30 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('bounds a hung request-ledger preparation so telemetry cannot strand the pull', async () => {
+    vi.useFakeTimers();
+    try {
+      triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, async () => {}, {
+        prepareScopeDownloadContexts: () => new Promise<void>(() => {}),
+      });
+      await flush();
+      expect(mockPullSync).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockPullSync).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('continues a pull after request-ledger preparation rejects', async () => {
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, async () => {}, {
+      prepareScopeDownloadContexts: async () => {
+        throw new Error('ledger unavailable');
+      },
+    });
+    await vi.waitFor(() => expect(mockPullSync).toHaveBeenCalledOnce());
+  });
+
   it('reports a failed viewer resolution without falling back to an older viewer or pulling', async () => {
     const cause = new Error('secure-store unavailable');
     const getViewerUserId = vi.fn().mockRejectedValue(cause);

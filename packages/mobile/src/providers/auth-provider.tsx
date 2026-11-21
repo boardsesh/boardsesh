@@ -69,6 +69,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetOfflineAccountSettings } from '../offline/account-boundary';
+import { getDownloadRequests, transitionDownload, setDownloadLifecycleOwner } from '../offline/download-lifecycle';
 import { clearSprayWallArchives, clearOwnedSprayWallPins } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
@@ -457,6 +458,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // `syncEnabledBoards` on all three sign-out paths and pullSync only ever
       // visits enabled scopes.
       if (localDb && !purgeOfflineBoards) await reportAbandonedDownloadsOnSignOut(localDb);
+      if (!isAuthTransitionCurrent(transitionEpoch)) return false;
+      // Includes requests that never reached SQLite and therefore have no Started marker.
+      for (const request of getDownloadRequests()) {
+        transitionDownload(request, 'abandoned', { reason: 'signed-out' });
+      }
       // Only NOW. Every sign-out event above — the discarded outbox, the wipe's
       // own `Offline Data Wiped On Sign Out`, and the abandonment terminals —
       // has to land on the account that is leaving; after the reset they arrive
@@ -728,6 +734,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
 
       setPartnerWorkoutOwner(authSession.userId ?? userIdFromJwt(authSession.token) ?? null);
+      setDownloadLifecycleOwner(authSession.userId ?? userIdFromJwt(authSession.token) ?? null);
       return handleAuthenticatedTransition(transitionEpoch, authSession);
     },
     [handleAuthenticatedTransition, updateNativeSessionDegraded],

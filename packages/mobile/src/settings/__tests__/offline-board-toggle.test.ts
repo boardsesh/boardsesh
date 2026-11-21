@@ -21,7 +21,8 @@ vi.mock('react-native-mmkv', () => {
 });
 
 import { isOfflineBoardEnabled, setOfflineBoardEnabled } from '../use-offline-board';
-import { getSetting, resetAllSettings } from '../hooks';
+import { getSetting, resetAllSettings, subscribeSettings } from '../hooks';
+import { getDownloadRequest, resetDownloadLifecycle, transitionDownload } from '../../offline/download-lifecycle';
 
 // Pure key encode/parse coverage lives with the helpers in
 // @boardsesh/offline-sync (src/__tests__/offline-board-key.test.ts); this file
@@ -32,6 +33,7 @@ describe('setOfflineBoardEnabled / isOfflineBoardEnabled', () => {
   beforeEach(() => {
     mockStorage.clear();
     resetAllSettings();
+    resetDownloadLifecycle();
   });
 
   it('adds and removes the scope key from syncEnabledBoards', () => {
@@ -59,5 +61,37 @@ describe('setOfflineBoardEnabled / isOfflineBoardEnabled', () => {
 
     setOfflineBoardEnabled(scope, false);
     expect(getSetting('syncEnabledBoards')).toEqual(['tension:8:10']);
+  });
+
+  it('creates a request before publishing enabled settings and retains it for duplicate enables', () => {
+    let requestAtPublication: string | undefined;
+    const unsubscribe = subscribeSettings((change) => {
+      if (change.kind === 'setting' && change.key === 'syncEnabledBoards') {
+        requestAtPublication = getDownloadRequest('kilter:1:5')?.requestId;
+      }
+    });
+    setOfflineBoardEnabled(scope, true, { trigger: 'download-all' });
+    unsubscribe();
+    const request = getDownloadRequest('kilter:1:5');
+    setOfflineBoardEnabled(scope, true, { trigger: 'toggle' });
+
+    expect(request).toMatchObject({ trigger: 'download-all', state: 'requested', origin: 'requested' });
+    expect(requestAtPublication).toBe(request?.requestId);
+    expect(getDownloadRequest('kilter:1:5')).toEqual(request);
+  });
+
+  it('opens another scope generation after disable and rejects the old completion', () => {
+    setOfflineBoardEnabled(scope, true, { trigger: 'toggle' });
+    const previous = getDownloadRequest('kilter:1:5');
+    expect(previous).toBeDefined();
+    if (!previous) throw new Error('download request was not created');
+    setOfflineBoardEnabled(scope, false);
+    expect(getDownloadRequest('kilter:1:5')).toBeUndefined();
+    setOfflineBoardEnabled(scope, true, { trigger: 'toggle' });
+    const replacement = getDownloadRequest('kilter:1:5');
+    transitionDownload(previous, 'completed');
+
+    expect(replacement?.requestId).not.toBe(previous.requestId);
+    expect(getDownloadRequest('kilter:1:5')).toEqual(replacement);
   });
 });

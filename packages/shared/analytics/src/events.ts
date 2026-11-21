@@ -1245,6 +1245,12 @@ export const SHARED_EVENTS = {
   // 'unknown' is an explicit, expected value — the trigger is persisted per scope, but a scope enabled by
   // a build that predates this event has none.
   OfflineBoardDownloadStarted: 'Offline Board Download Started',
+  // Request generation and actual work attempts, including requests held before
+  // SQLite/network readiness. Bootstrap failures remain nonterminal while paging
+  // can recover. Published only through the existing product-consent gate.
+  // Props: { scopeKey, requestId, attemptId?, state, requestedAt, origin, trigger,
+  // reason?, stage?, completionSource? }. Recovered origins have unknown request time.
+  OfflineBoardDownloadLifecycle: 'Offline Board Download Lifecycle',
   // Fired once per board scope when its INITIAL download completes (every board
   // table reached the tail), so the snapshot-bootstrap warm-up can be compared
   // against the plain paged crawl in the field. Props: { scopeKey,

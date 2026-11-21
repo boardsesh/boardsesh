@@ -1520,6 +1520,41 @@ It fails closed, and only where it has to. A claim that fails without deciding a
 
 ## Usage telemetry
 
+### Request generations and download recovery (#7987)
+
+`Offline Board Download Lifecycle` observes requested scopes before SQLite or the
+network admits any work. A dedicated non-reactive MMKV ledger retains a random
+`requestId` through retries and cold launches. Disabling/removing a scope ends that
+generation; re-enabling creates another. Each actual scope execution has an
+`attemptId`, captured with the request before the pull's FIFO wait. Account resets
+clear the ledger, and callbacks cannot update a different request or account.
+Neither storage failures nor lifecycle reporters may interrupt synchronization.
+
+Requested and deferred scopes are distinct from started work. A background
+transition alone is not a pause: native DownloadTask can keep running. An attempt
+that actually stops reports paused/deferred; snapshot errors and snapshot retry
+exhaustion remain nonterminal while paging can recover. HTTP 416 remains an
+unexpected HTTP failure, even though its bounded retry uses the transport ladder.
+Completion follows the committed scope marker. A new request already covered by
+that marker reports `completionSource: cached`; a previous attempt whose commit
+outlived its event reports `recovered`. Legacy enabled scopes have recovered origin
+and unknown request time; they never fabricate an original Requested event.
+
+Existing Started/Completed/Failed events retain their meanings and gain request
+and attempt IDs where captured. Lifecycle terminal records are pruned; byte and
+progress frames are not persisted. Events still pass through product analytics
+consent, with no replay of events observed before consent. Delivery loss and
+historical identity/generation gaps remain unknown outcomes, not failures. No
+hardware identifier is introduced.
+
+The snapshot-only transfer classifier recognizes the observed localized iOS
+decode and Android connection signatures, without changing mutation replay
+classification. Retryability and expected severity are separate: HTTP 416 gets
+`reason: http-range`, bounded transport retries, and `expected: false`; observed
+decode/connection interruptions retain expected treatment. Missing artifact files
+are distinguished without inferring the cause of cache loss. Watermark refusal,
+the separate lock budget, and fallback paging remain in force.
+
 Offline mode's whole value proposition is "you can still climb when the signal
 can't". Until issue #4317 nothing in the telemetry could tell an offline-served
 read apart from an online one, so that claim was unfalsifiable. This section is

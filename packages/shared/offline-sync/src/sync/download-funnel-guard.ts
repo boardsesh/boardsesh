@@ -36,7 +36,7 @@
 // retry in two minutes.
 
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
-import { isNetworkError } from '../mutation-queue/error-classification';
+import { classifySnapshotTransferFailure } from './snapshot-transfer-failure';
 import type { SnapshotBootstrapErrorReport } from './snapshot-bootstrap';
 
 export type BootstrapStage = SnapshotBootstrapErrorReport['stage'];
@@ -126,7 +126,12 @@ export function createDownloadFunnelGuard(options: DownloadFunnelGuardOptions): 
       // The case the field report behind this guard is made of: a SQLite lock on
       // one of the writes that sit outside the import's own catch. Reported at
       // full severity — it is a defect, and Sentry is where it gets diagnosed.
-      emit({ reason: classified, cause: error, aborted: false, expected: isNetworkError(error) });
+      emit({
+        reason: classified,
+        cause: error,
+        aborted: false,
+        expected: classifySnapshotTransferFailure(error)?.expected ?? false,
+      });
     },
     close() {
       const closing = attempt;

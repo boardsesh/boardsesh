@@ -33,6 +33,7 @@ import {
   type ScopeDownloadPhaseBreakdown,
 } from '../pull-client';
 import type { SnapshotBootstrapProgress } from '../snapshot-progress';
+import { SnapshotTransferError } from '../snapshot-transfer-failure';
 import {
   bootstrapScopeFromSnapshot,
   bootstrapScopeGradesFromSnapshot,
@@ -2134,6 +2135,46 @@ describe('pullSync bootstrap: transport failures never spend the structural budg
 
     expect(diskFullSource.downloadArtifact).toHaveBeenCalledTimes(MAX_BOOTSTRAP_ATTEMPTS);
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(MAX_BOOTSTRAP_ATTEMPTS);
+  });
+
+  it.each([
+    { cause: new Error('Unable to download a file: Connection reset'), reason: 'network', expected: true },
+    {
+      cause: new SnapshotBackgroundTransferInterruptedError('无法解码原始数据'),
+      reason: 'background-transfer-decode',
+      expected: true,
+    },
+    {
+      cause: new SnapshotTransferError('http-range', 'server returned HTTP 416', { cause: new Error('HTTP 416') }),
+      reason: 'http-range',
+      expected: false,
+    },
+  ])('finishes through paging after bounded $reason transfer failures', async ({ cause, reason, expected }) => {
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), downloadError: cause });
+    const onSnapshotBootstrapError = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+
+    for (let cycle = 0; cycle < 4; cycle += 1) {
+      await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onSnapshotBootstrapError,
+        onScopeDownloadComplete,
+        now: () => BASE_NOW + cycle * 25 * HOUR_MS,
+        random: () => 0,
+      });
+    }
+
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(MAX_TRANSPORT_DOWNLOAD_FAILURES);
+    expect(onScopeDownloadComplete).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'paged' }),
+    );
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ reason, expected, aborted: false }),
+    );
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, true);
+    expect(state.transportFailures).toBe(MAX_TRANSPORT_DOWNLOAD_FAILURES);
+    expect(state.structuralFailures).toBe(0);
   });
 
   it('gives a broken ARTIFACT exactly one extra round when a new build lands, then stops', async () => {
@@ -4879,6 +4920,41 @@ describe('bootstrapScopeGradesFromSnapshot', () => {
 
 describe('pullSync grades bootstrap', () => {
   it.each([
+    {
+      cause: new SnapshotBackgroundTransferInterruptedError('无法解码原始数据'),
+      reason: 'background-transfer-decode',
+      expected: true,
+    },
+    {
+      cause: new SnapshotTransferError('http-range', 'server returned HTTP 416', { cause: new Error('HTTP 416') }),
+      reason: 'http-range',
+      expected: false,
+    },
+    { cause: new Error('Unable to download a file: Connection reset'), reason: 'network', expected: true },
+  ])('reports consistent reason and severity for grades $reason', async ({ cause, reason, expected }) => {
+    await seedScopeClimb('c1');
+    await markBootstrapDone(db, 'kilter:1:5');
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry({ grades: gradesArtifactBlock() })]),
+      downloadArtifact: async () => null,
+      downloadGradesArtifact: async () => {
+        throw cause;
+      },
+      deleteArtifact: async () => {},
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'grades-download', reason, expected, aborted: false }),
+    );
+    expect(await getGradesBootstrapAttempts(db, 'kilter:1:5')).toBe(1);
+  });
+
+  it.each([
     ['HTTP failure', new Error('HTTP 500'), false],
     ['disk failure', new Error('No space left on device'), false],
     ['programming failure', new TypeError('invalid download state'), false],
@@ -6004,6 +6080,42 @@ describe('pullSync bootstrap funnel invariant', () => {
         ),
       ),
     ).toBe(false);
+  });
+
+  it.each([
+    { cause: new Error('Unable to download a file: Connection reset'), paused: true },
+    {
+      cause: new SnapshotTransferError('http-range', 'server returned HTTP 416', { cause: new Error('HTTP 416') }),
+      paused: false,
+    },
+  ])('distinguishes background interruption from an HTTP verdict: $paused', async ({ cause, paused }) => {
+    const source: SnapshotSource = {
+      fetchManifest: async () => makeManifest([makeEntry()]),
+      downloadArtifact: async () => {
+        setBackgrounded(true);
+        setBackgrounded(false);
+        throw cause;
+      },
+      deleteArtifact: async () => {},
+    };
+    const onSnapshotBootstrapError = vi.fn();
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+      now: () => BASE_NOW,
+      random: () => 0,
+    });
+    const { state } = await readBootstrapRetryState(db, 'kilter:1:5', { now: BASE_NOW, random: () => 0 }, false);
+    expect(state.backgroundPauses).toBe(paused ? 1 : 0);
+    expect(state.transportFailures).toBe(paused ? 0 : 1);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: paused ? 'aborted-background' : 'http-range',
+        aborted: paused,
+        expected: paused,
+      }),
+    );
   });
 
   it('charges a typed background-task marker to transport when AppState is active', async () => {
