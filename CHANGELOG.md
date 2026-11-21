@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Keep your queue within reach from the desktop mini-player while browsing any tab. ([#7978](https://github.com/boardsesh/boardsesh/pull/7978))
+- Follow a climb to its setter with links you can tap. Buttons stay readable when hovered. ([#7939](https://github.com/boardsesh/boardsesh/pull/7939))
 - See your climb's colours in the frosted driving button in your browser. ([#7974](https://github.com/boardsesh/boardsesh/pull/7974))
 - Browse climbs with Previous and Next beside Tick when using a mouse. ([#7963](https://github.com/boardsesh/boardsesh/pull/7963))
 
