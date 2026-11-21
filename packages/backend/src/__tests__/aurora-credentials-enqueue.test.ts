@@ -50,7 +50,13 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
 
 import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
-import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
+import {
+  auroraCredentials,
+  backgroundJobRuns,
+  playlists,
+  providerSyncControls,
+  userDeletedUpstreamPlaylists,
+} from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import {
   deleteAuroraCredential,
@@ -273,6 +279,7 @@ describe('the first sync after a new account links a login another account synce
     await removeFixtures(database, [FIRST_USER], [CLIMB_UUID]);
     await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
     await db.execute(sql`DELETE FROM playlist_ownership WHERE user_id = ${USER_ID}`);
+    await db.delete(userDeletedUpstreamPlaylists).where(eq(userDeletedUpstreamPlaylists.userId, USER_ID));
     await db.execute(sql`DELETE FROM logbook_sync_skips WHERE user_id IN (${USER_ID}, ${FIRST_USER})`);
   };
 
@@ -363,6 +370,50 @@ describe('the first sync after a new account links a login another account synce
       { auroraId: 'psync-ascent-1', userId: USER_ID },
       { auroraId: 'psync-bid-1', userId: USER_ID },
     ]);
+  });
+
+  it('keeps a deleted circuit absent when a link with no synced footprint resets the cursor', async () => {
+    await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    await seedCursor();
+    const circuitId = 'psync-circuit-1';
+    await db.insert(userDeletedUpstreamPlaylists).values({
+      userId: USER_ID,
+      boardType: FIXTURE_BOARD,
+      upstreamSource: 'aurora',
+      upstreamId: circuitId,
+    });
+    const deletedCircuits = () =>
+      db
+        .select({ upstreamId: userDeletedUpstreamPlaylists.upstreamId })
+        .from(userDeletedUpstreamPlaylists)
+        .where(
+          and(
+            eq(userDeletedUpstreamPlaylists.userId, USER_ID),
+            eq(userDeletedUpstreamPlaylists.boardType, FIXTURE_BOARD),
+            eq(userDeletedUpstreamPlaylists.upstreamSource, 'aurora'),
+          ),
+        );
+
+    // The only prior history is the deleted-circuit marker, not a real
+    // synced tick or owned circuit that would preserve the watermark.
+    expect(await tickOwners()).toEqual([]);
+    expect(await db.select({ id: playlists.id }).from(playlists)).toEqual([]);
+    signInMock.mockResolvedValue({ token: 'aurora-token', user_id: AURORA_USER_ID });
+    const status = await link();
+    expect(await logbookCursorTables()).toEqual([]);
+    expect(await deletedCircuits()).toEqual([{ upstreamId: circuitId }]);
+
+    const aurora = stubAuroraApi({ pages: [fullSyncPage(CLIMB_UUID)] });
+    expect(await runNextJob(status.syncRunId)).toBe('succeeded');
+    const request = firstSyncRequest(aurora.fetchMock);
+    for (const tableName of LOGBOOK_TABLES) expect(request.get(tableName)).toBe(FROM_THE_BEGINNING);
+    expect(await deletedCircuits()).toEqual([{ upstreamId: circuitId }]);
+    expect(
+      await db
+        .select({ id: playlists.id })
+        .from(playlists)
+        .where(and(eq(playlists.boardType, FIXTURE_BOARD), eq(playlists.auroraId, circuitId))),
+    ).toEqual([]);
   });
 
   it('leaves every send the first account still holds with it when that account only unlinked', async () => {
