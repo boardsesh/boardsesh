@@ -69,7 +69,7 @@ async function report(userId: string | null, extra: Partial<typeof appFeedback.$
     .returning();
   return row;
 }
-const githubComment = (id = 100, body = '#replytocustomer\nPlease try again.') => ({
+const githubComment = (id = 100, body = '/reply\nPlease try again.') => ({
   id,
   body,
   created_at: '2026-11-21T12:00:00Z',
@@ -247,16 +247,20 @@ describe('reporter-safe bug history and replies', () => {
 });
 
 describe('trusted GitHub comments', () => {
-  it('requires an exact first-line tag', () => {
-    expect(customerReplyBody('#replytocustomer\nHello')).toBe('Hello');
-    for (const body of [
-      'Hello #replytocustomer',
-      '> #replytocustomer\nHello',
-      '```\n#replytocustomer\n```',
-      '#ReplyToCustomer\nHello',
-      '#replytocustomer',
+  it.each(['/reply', '#replytocustomer'])('requires %s alone on the first line', (command) => {
+    expect(customerReplyBody(`${command}\r\nHello\nagain.`)).toBe('Hello\nagain.');
+    expect(customerReplyBody(`  ${command}  \n Hello \n`)).toBe('Hello');
+    for (const comment of [
+      `Hello ${command}`,
+      `> ${command}\nHello`,
+      `\n${command}\nHello`,
+      `\`\`\`\n${command}\n\`\`\``,
+      `${command.toUpperCase()}\nHello`,
+      `${command} extra\nHello`,
+      command,
+      `${command}\n  \n`,
     ]) {
-      expect(customerReplyBody(body)).toBeNull();
+      expect(customerReplyBody(comment)).toBeNull();
     }
   });
   it('imports a trusted reply once, privately notifies the owner, and ignores consent', async () => {
@@ -717,6 +721,7 @@ describe('GitHub issue status', () => {
   });
   it('recovers missed comments and deletions by reconciling a complete paginated snapshot', async () => {
     await db.update(appFeedback).set({ githubIssueState: 'open' }).where(eq(appFeedback.id, activeReport.id));
+    const historicalReply = githubComment(100, '#replytocustomer\nPlease try again.');
     let deleted = false;
     githubRequestMock.mockImplementation(async (path: string) => {
       if (path.includes('/permission')) return { permission: 'write' };
@@ -725,7 +730,7 @@ describe('GitHub issue status', () => {
           ? []
           : path.endsWith('page=1')
             ? Array.from({ length: 100 }, (_, index) => githubComment(1000 + index, 'Internal discussion'))
-            : [githubComment()];
+            : [historicalReply];
       if (path.endsWith('/issues/comments/100')) {
         if (deleted)
           throw new GithubRequestError('GET', path, {
@@ -735,7 +740,7 @@ describe('GitHub issue status', () => {
             rateLimitRemaining: null,
             rateLimitReset: null,
           });
-        return githubComment();
+        return historicalReply;
       }
       return { number: 4711, html_url: activeReport.githubIssueUrl, state: 'open', state_reason: null };
     });

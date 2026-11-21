@@ -163,7 +163,7 @@
       "latestReply": "Dernière réponse",
       "publicNotice": "Les réponses sont partagées sur le ticket GitHub public lié.",
       "openGithub": "Répondre sur GitHub",
-      "githubHint": "Pour écrire à l’auteur du signalement, commence un commentaire GitHub par #replytocustomer. Seuls les contributeurs autorisés de Boardsesh peuvent envoyer ces messages."
+      "githubHint": "Pour écrire à l’auteur du signalement, écris /reply seul sur la première ligne d’un commentaire GitHub. Seuls les contributeurs autorisés de Boardsesh peuvent envoyer ces messages."
     },
     "filters": {
       "reporter": "ID du compte ayant signalé le bug",

@@ -163,7 +163,7 @@
       "latestReply": "最新回复",
       "publicNotice": "回复会同步至关联的公开 GitHub 问题。",
       "openGithub": "在 GitHub 上回复",
-      "githubHint": "要联系报告提交者，请以 #replytocustomer 开头发表 GitHub 评论。只有获得授权的 Boardsesh 贡献者才能发送这些消息。"
+      "githubHint": "要联系报告提交者，请在 GitHub 评论的第一行只写 /reply。只有获得授权的 Boardsesh 贡献者才能发送这些消息。"
     },
     "filters": {
       "reporter": "报告提交者的账户 ID",

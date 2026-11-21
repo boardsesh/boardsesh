@@ -138,9 +138,9 @@ function buildMetadataTable(payload: FeedbackIssuePayload): string {
 
 function buildContactLine(payload: FeedbackIssuePayload): string {
   if (payload.contactConsent) {
-    return `## Contact\n\n✅ Reporter agreed to follow-up — resolve **app_feedback #${payload.feedbackId}** in the DB to reach them.`;
+    return `## Contact\n\n✅ Reporter agreed to email follow-up — resolve **app_feedback #${payload.feedbackId}** in the DB to reach them.`;
   }
-  return '## Contact\n\n🚫 No contact consent — do not reach out.';
+  return '## Contact\n\n🚫 No email consent — do not email the reporter.';
 }
 
 /**
@@ -162,6 +162,10 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
     '## Comment',
     '',
     redactedComment || '_No comment provided._',
+    '',
+    '## Reply to the reporter',
+    '',
+    'Collaborators with write access can put `/reply` alone on the first line of a comment and write their message on the following lines. Signed-in reporters receive the message in the app.',
     '',
     buildMetadataTable(payload),
     ...screenshotMarkdownSection(payload.screenshotUrls ?? []),

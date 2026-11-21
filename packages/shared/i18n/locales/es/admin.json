@@ -274,7 +274,7 @@
       "latestReply": "Última respuesta",
       "publicNotice": "Las respuestas se comparten en la incidencia pública de GitHub enlazada.",
       "openGithub": "Responder en GitHub",
-      "githubHint": "Para escribir a la persona que informó, empieza un comentario de GitHub con #replytocustomer. Solo los colaboradores autorizados de Boardsesh pueden enviar estos mensajes."
+      "githubHint": "Para escribir a la persona que informó, escribe /reply en la primera línea de un comentario de GitHub, sin añadir nada más en esa línea. Solo los colaboradores autorizados de Boardsesh pueden enviar estos mensajes."
     },
     "filters": {
       "reporter": "ID de la cuenta que informó",

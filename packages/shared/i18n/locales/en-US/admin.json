@@ -163,7 +163,7 @@
       "latestReply": "Latest reply",
       "publicNotice": "Replies are shared on the linked public GitHub issue.",
       "openGithub": "Reply on GitHub",
-      "githubHint": "To message the reporter, start a GitHub comment with #replytocustomer. Only authorized Boardsesh contributors can send these messages."
+      "githubHint": "To message the reporter, put /reply alone on the first line of a GitHub comment. Only authorized Boardsesh contributors can send these messages."
     },
     "filters": {
       "reporter": "Reporter account ID",
