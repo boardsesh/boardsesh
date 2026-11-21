@@ -210,6 +210,10 @@ void describe('legacy timestamp audit CLI', () => {
     assert.equal((summary.counts as Record<string, unknown>).nativeTimestampUnverifiedAnchorAbstentions, 5);
   });
 
+  void it('reads the public relation whose schema is validated for artifact provenance', () => {
+    assert.match(AUDIT_SCAN_QUERY, /\bFROM public\.boardsesh_ticks\b/);
+  });
+
   void it('projects native equality and Kilter sync evidence while scanning every native row', () => {
     assert.match(AUDIT_SCAN_QUERY, /\(created_at = updated_at\) AS "createdAtEqualsUpdatedAt"/);
     assert.match(AUDIT_SCAN_QUERY, /kilter_synced_at AT TIME ZONE 'UTC'/);
