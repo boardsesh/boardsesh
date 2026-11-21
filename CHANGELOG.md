@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-21
+
+### Fixed
+
+- Browse climbs with Previous and Next beside Tick when using a mouse. ([#7963](https://github.com/boardsesh/boardsesh/pull/7963))
+
 ## 2026-11-20
 
 ### App update
