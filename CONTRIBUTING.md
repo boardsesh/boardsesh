@@ -105,14 +105,15 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet. To change an existing screen, start with [docs/contributing-to-screens.md](./docs/contributing-to-screens.md).
 
-### JS changes land on `main`, native changes on `release/next`
+### Native and JavaScript PRs target `main`
 
-- JavaScript-only changes target `main` and keep shipping by OTA while `main` matches an accepted store binary.
-- Changes that move the Expo native fingerprint target `release/next`, the release train: merging there is what starts the TestFlight and Play-internal builds. The OTA compatibility check on your PR tells you which kind you have, and fails a fingerprint-moving PR into `main` with the command to retarget it.
-- A native change temporarily makes the current store fleet OTA-ineligible. Keep the native release focused, update the version and localized release notes on the train before the final native change lands, and get matching TestFlight and Play-internal builds out quickly.
+- All native and JavaScript changes target `main`. There is no long-lived native release branch.
+- JavaScript-only changes keep the marketing version and ship by OTA to compatible binaries. The OTA compatibility check on your PR identifies native fingerprint changes.
+- A native fingerprint change starts Main Native Release: changed platforms get new store build numbers, while unchanged platforms reuse their confirmed upload. Public store submission remains manual.
+- Older binaries keep their last compatible OTA until users install a compatible binary. Urgent fixes for an older accepted fingerprint use the explicit OTA backport workflow and immutable release anchor.
 - Split mixed backend/native work when useful so the backward-compatible backend or shared-schema foundation can ship first. Keep server behavior compatible with the currently shipped mobile app until the replacement store release has been adopted.
-- Urgent fixes for an older accepted fingerprint use the existing OTA backport workflow and immutable release anchor.
-- Maintainers close the train by merging `release/next` into `main` as a merge commit (never a squash) and resetting it. Runbook: [docs/mobile-store-release.md](./docs/mobile-store-release.md).
+
+Release coordination, tester distribution and public submission: [docs/mobile-store-release.md](./docs/mobile-store-release.md).
 
 ### Path A: small changes through xprem Branch Surfing
 
