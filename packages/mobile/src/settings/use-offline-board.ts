@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { getSetting, setSetting, useSetting } from './hooks';
 import { offlineBoardKey, type OfflineBoardScope } from '@boardsesh/offline-sync';
+import { getDownloadRequest, requestDownload, transitionDownload } from '../offline/download-lifecycle';
 
 /**
  * Read/write the per-board offline flag on top of the `syncEnabledBoards` setting.
@@ -15,11 +16,20 @@ export function isOfflineBoardEnabled(scope: OfflineBoardScope): boolean {
   return getSetting('syncEnabledBoards').includes(offlineBoardKey(scope));
 }
 
-export function setOfflineBoardEnabled(scope: OfflineBoardScope, enabled: boolean): void {
+export function setOfflineBoardEnabled(
+  scope: OfflineBoardScope,
+  enabled: boolean,
+  options?: { trigger?: string; abandonmentReason?: 'disabled' | 'removed'; preserveDownloadRequest?: boolean },
+): void {
   const key = offlineBoardKey(scope);
   const current = getSetting('syncEnabledBoards');
   const alreadyEnabled = current.includes(key);
   if (enabled === alreadyEnabled) return;
+  if (enabled && !options?.preserveDownloadRequest) requestDownload(key, options?.trigger ?? 'unknown');
+  else if (!enabled && !options?.preserveDownloadRequest) {
+    const request = getDownloadRequest(key);
+    if (request) transitionDownload(request, 'abandoned', { reason: options?.abandonmentReason ?? 'disabled' });
+  }
   const next = enabled ? [...current, key] : current.filter((entry) => entry !== key);
   setSetting('syncEnabledBoards', next);
 }

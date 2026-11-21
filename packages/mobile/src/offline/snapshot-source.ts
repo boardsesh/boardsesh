@@ -18,9 +18,9 @@
 // carrying the underlying exception as its `cause`, and the engine reports that
 // chain — see `runBootstrapPhase`'s `cachedDownload` handling in pull-client.ts.
 // A transport-shaped cause is reported as a warning rather than an error; every
-// failure the engine sees from `downloadArtifact` still burns an attempt, and
-// MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before the scope settles into
-// the ordinary paged crawl (issue #4106: these used to `return null` on real
+// failure the engine sees from `downloadArtifact` still uses its appropriate
+// bounded retry budget before falling back to the ordinary paged crawl
+// (issue #4106: these used to `return null` on real
 // failures, which is a legal contract but reported `cause: null` for
 // everything; issue #4238: the causes that survived were only interpolated into
 // the message, so the classifier could not see them and every offline user's
@@ -33,6 +33,7 @@ import {
   onTeardown,
   SnapshotArtifactTruncatedError,
   SnapshotBackgroundTransferInterruptedError,
+  SnapshotTransferError,
   SnapshotPermanentMissError,
   type SnapshotArtifactHandle,
   type SnapshotDownloadOptions,
@@ -40,6 +41,8 @@ import {
   type SnapshotManifestEntry,
   type SnapshotSource,
   parseSnapshotManifest,
+  classifySnapshotTransferFailure,
+  isSnapshotBackgroundDecodeError,
 } from '@boardsesh/offline-sync';
 import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
@@ -429,20 +432,6 @@ function formatError(error: unknown): string {
 }
 
 /**
- * NSURLErrorCannotDecodeRawData as surfaced by Expo's iOS DownloadTask. The
- * native exception currently exposes no stable numeric code to JavaScript, so
- * walk the bounded cause chain for its exact Foundation description.
- */
-function isCannotDecodeRawDataError(error: unknown, depth = 0): boolean {
-  if (error === null || typeof error !== 'object') return false;
-  const message = (error as { message?: unknown }).message;
-  if (typeof message === 'string' && /cannot decode raw data/i.test(message)) return true;
-  if (depth >= 3) return false;
-  const cause = (error as { cause?: unknown }).cause;
-  return cause !== undefined && cause !== error && isCannotDecodeRawDataError(cause, depth + 1);
-}
-
-/**
  * The disk-space, directory-creation, and actual-download failure branches
  * below used to `return null` on a real error, which is a legal SnapshotSource
  * contract (see the doc comment on downloadArtifact in snapshot-bootstrap.ts —
@@ -624,15 +613,22 @@ async function downloadSnapshotFile(
       // before AppState delivers a background transition as well as while the
       // app is suspended. The native session type + exact Foundation message is
       // the stable signal; lifecycle timing is telemetry, not classification.
-      if (strategy === 'task-background' && isCannotDecodeRawDataError(error)) {
+      if (strategy === 'task-background' && isSnapshotBackgroundDecodeError(error)) {
         throw new SnapshotBackgroundTransferInterruptedError(
           `snapshot download: background transfer interrupted for ${artifact.label}: ${formatError(error)}`,
           { cause: error },
         );
       }
-      throw new Error(`snapshot download: transfer failed for ${artifact.label}: ${formatError(error)}`, {
-        cause: error,
-      });
+      const message = `snapshot download: transfer failed for ${artifact.label}: ${formatError(error)}`;
+      const classified = classifySnapshotTransferFailure(error);
+      if (
+        classified?.reason === 'network' ||
+        classified?.reason === 'http-range' ||
+        classified?.reason === 'artifact-missing'
+      ) {
+        throw new SnapshotTransferError(classified.reason, message, { cause: error });
+      }
+      throw new Error(message, { cause: error });
     }
 
     if (artifact.contentEncoding === 'gzip') {

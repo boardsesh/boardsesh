@@ -23,6 +23,15 @@ import { markUserStartedDownload } from './download-keep-awake-store';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { rememberSprayWallDownloadCapability } from './opened-spray-wall-pins';
+import { getDownloadRequest, getDownloadRequests, transitionDownload } from './download-lifecycle';
+import { getConnectivitySnapshot } from '../lib/connectivity/connectivity-store';
+
+function deferRequestedDownloads(reason: string): void {
+  const enabled = new Set(getSetting('syncEnabledBoards'));
+  for (const request of getDownloadRequests()) {
+    if (enabled.has(request.scopeKey)) transitionDownload(request, 'deferred', { reason });
+  }
+}
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
 export type ToggleSource =
@@ -73,6 +82,8 @@ export function useBoardDownloads() {
   );
 
   const startDownloadCycle = useCallback(() => {
+    const connectivity = getConnectivitySnapshot();
+    if (connectivity.effectiveOffline) deferRequestedDownloads(connectivity.reason ?? 'offline');
     // Reads `syncEnabledBoards` at call time, never a captured list — so a deferred
     // kick downloads what is enabled NOW, not what was enabled when the user tapped.
     // Someone who turns a board on and off again while the schema is unready gets
@@ -126,6 +137,7 @@ export function useBoardDownloads() {
         .then((isReachable) => {
           if (!mountedRef.current || reachabilityProbeGenerationRef.current !== generation) return;
           if (!isReachable) {
+            deferRequestedDownloads('connection-unavailable');
             scheduleNext();
             return;
           }
@@ -134,12 +146,17 @@ export function useBoardDownloads() {
           // arrived while the reachability probe was pending.
           reachabilityProbeGenerationRef.current += 1;
           if (!schemaReadyRef.current) {
+            deferRequestedDownloads('schema-unready');
             downloadKickPendingRef.current = true;
             return;
           }
           startDownloadCycle();
         })
-        .catch(scheduleNext);
+        .catch(() => {
+          if (!mountedRef.current || reachabilityProbeGenerationRef.current !== generation) return;
+          deferRequestedDownloads('connection-probe-failed');
+          scheduleNext();
+        });
     }
 
     runProbe(0);
@@ -170,7 +187,7 @@ export function useBoardDownloads() {
         const scopeKey = offlineBoardKeyForBoard(board);
         if (seenScopeKeys.has(scopeKey)) continue;
         seenScopeKeys.add(scopeKey);
-        setOfflineBoardEnabled(offlineBoardScopeForBoard(board), true);
+        setOfflineBoardEnabled(offlineBoardScopeForBoard(board), true, { trigger });
         // Persisted, then consumed when the download actually starts — which can
         // be a later app launch entirely if the board was enabled with no signal,
         // which is exactly what the arm path below leaves behind.
@@ -181,12 +198,14 @@ export function useBoardDownloads() {
         if (isUserStartedTrigger(trigger)) markUserStartedDownload(scopeKey);
         track(SHARED_EVENTS.OfflineBoardToggled, {
           scopeKey,
+          requestId: getDownloadRequest(scopeKey)?.requestId,
           enabled: true,
           source,
           offlineEngineEnabled: isOfflineEngineEnabled(),
         });
       }
       rememberOfflineBoards(list);
+      if (!schemaReadyRef.current) deferRequestedDownloads('schema-unready');
     },
     [],
   );
@@ -197,6 +216,7 @@ export function useBoardDownloads() {
       if (list.length === 0) return;
       markBoardsEnabled(list, options);
       if (!schemaReady) {
+        deferRequestedDownloads('schema-unready');
         downloadKickPendingRef.current = true;
         return;
       }
@@ -220,6 +240,8 @@ export function useBoardDownloads() {
    */
   const retryFastDownload = useCallback(
     async (board: UserBoard) => {
+      const request = getDownloadRequest(offlineBoardKeyForBoard(board));
+      if (request) transitionDownload(request, 'deferred', { reason: 'user-retry' });
       await restoreBootstrapRetryBudget(db, offlineBoardKeyForBoard(board));
       notifyBootstrapMetadataChanged({ scopeKey: offlineBoardKeyForBoard(board) });
       // A retry is a person asking again, so it holds the screen awake like the

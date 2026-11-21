@@ -35,6 +35,7 @@ import {
   type BootstrapRetryState,
 } from '../bootstrap-retry';
 import { SnapshotArtifactTruncatedError, SnapshotBackgroundTransferInterruptedError } from '../snapshot-bootstrap';
+import { SnapshotTransferError } from '../snapshot-transfer-failure';
 import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import type { OfflineDatabase } from '../../database';
@@ -123,6 +124,27 @@ describe('classifyBootstrapFailure', () => {
     expect(classifyBootstrapFailure({ cause: new Error('insufficient disk space'), stage: 'download' })).toBe(
       'structural-device',
     );
+  });
+
+  it.each([
+    new Error('Unable to download a file: Connection reset'),
+    new Error('Unable to download a file: Failed to connect to snapshots.boardsesh.com/104.21.81.90:443'),
+    new Error('Unable to download a file: Software caused connection abort'),
+    new SnapshotTransferError('http-range', 'server returned HTTP 416', { cause: new Error('HTTP 416') }),
+  ])('bounds observed transfer failures without consuming the structural budget: %o', (cause) => {
+    let current = state();
+    for (let attempt = 1; attempt <= MAX_TRANSPORT_DOWNLOAD_FAILURES; attempt += 1) {
+      const failureKind = classifyBootstrapFailure({ cause, stage: 'download' });
+      expect(failureKind).toBe('transport');
+      current = burn(current, failureKind);
+      expect(current.transportFailures).toBe(attempt);
+      expect(current.structuralFailures).toBe(0);
+      expect(isTerminal(current)).toBe(attempt === MAX_TRANSPORT_DOWNLOAD_FAILURES);
+    }
+    expect(shouldSkipPagedPull({ retryState: current, hasBoardCheckpoint: false, now: NOW })).toBe(false);
+    const recovered = clearTransportFailures(current);
+    expect(recovered.transportFailures).toBe(0);
+    expect(recovered.retryAfter).toBeNull();
   });
 });
 

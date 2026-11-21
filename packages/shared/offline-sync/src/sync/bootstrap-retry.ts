@@ -61,7 +61,7 @@
 // no I/O inside the decision functions. `now` and `random` are always injected.
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
-import { isNetworkError } from '../mutation-queue/error-classification';
+import { classifySnapshotTransferFailure } from './snapshot-transfer-failure';
 import { classifySqliteLockError } from '../db/lock-errors';
 import { runPullWrite } from './pull-write';
 
@@ -282,20 +282,9 @@ export function classifyBootstrapFailure(input: {
 }): BootstrapFailureKind {
   if (classifySqliteLockError(input.cause).locked) return 'database-locked';
   if (input.stage === 'import') return 'structural-artifact';
-  // Keep this module dependency-neutral: snapshot-bootstrap imports the retry
-  // constants below at module initialization time. The mobile adapter converts
-  // iOS's background URLSession decode failure into this stable error name.
-  if (input.cause instanceof Error && input.cause.name === 'SnapshotBackgroundTransferInterruptedError') {
-    return 'transport';
-  }
-  // A short body is a cut-short RESPONSE, so it belongs on the transport ladder
-  // (3 tries, cleared by any success) rather than `structural-device`, where two
-  // occurrences would durably settle the scope onto the paged crawl with no
-  // `builtAt` re-arm — far too harsh for what is at least as likely a one-off
-  // network fluke as a systematic device fault. Ahead of `isNetworkError`, which
-  // does not match it. Issue #4394.
-  if (input.cause instanceof Error && input.cause.name === 'SnapshotArtifactTruncatedError') return 'transport';
-  if (isNetworkError(input.cause)) return 'transport';
+  // Transfer recovery is snapshot-specific: receiving HTTP 416 is retryable,
+  // while still being distinct from a lost connection or a background pause.
+  if (classifySnapshotTransferFailure(input.cause)?.retryable) return 'transport';
   return 'structural-device';
 }
 

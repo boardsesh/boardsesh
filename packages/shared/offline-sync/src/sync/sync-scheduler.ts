@@ -28,6 +28,7 @@ import { purgeNamespaceForScopeKey } from '../offline-board-key';
 export type SyncProgressSink = (progress: SyncProgress) => void;
 
 const FOREGROUND_DEBOUNCE_MS = 2000;
+const DOWNLOAD_CONTEXT_PREPARATION_TIMEOUT_MS = 1000;
 
 type GraphqlFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
 
@@ -55,6 +56,10 @@ export type SchedulerTriggers = {
 };
 
 export type SchedulerOptions = {
+  /** Restore request correlation before pullSync captures its immutable context. Observational only. */
+  prepareScopeDownloadContexts?: () => Promise<void>;
+  getScopeDownloadContext?: SyncOptions['getScopeDownloadContext'];
+  onScopeDownloadLifecycle?: SyncOptions['onScopeDownloadLifecycle'];
   viewerUserId?: SyncOptions['viewerUserId'];
   /** Threaded through to pullSync's SyncOptions — see its doc (#6824). */
   requireOwnedDatabase?: SyncOptions['requireOwnedDatabase'];
@@ -181,6 +186,21 @@ async function runSync(request: SyncRunRequest): Promise<void> {
     // Push first so the subsequent pull reflects our own just-flushed writes.
     await drainQueue();
     const viewerUserId = options?.getViewerUserId ? await options.getViewerUserId() : options?.viewerUserId;
+    if (options?.prepareScopeDownloadContexts) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          options.prepareScopeDownloadContexts(),
+          new Promise<void>((resolve) => {
+            timeout = setTimeout(resolve, DOWNLOAD_CONTEXT_PREPARATION_TIMEOUT_MS);
+          }),
+        ]);
+      } catch {
+        // An unavailable telemetry store must not prevent the pull.
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
+      }
+    }
     await pullSync(db, queryClient, graphqlFetch, {
       viewerUserId,
       requireOwnedDatabase: options?.requireOwnedDatabase,
@@ -195,6 +215,8 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
       onScopeDownloadComplete: options?.onScopeDownloadComplete,
       onScopeDownloadStart: options?.onScopeDownloadStart,
+      getScopeDownloadContext: options?.getScopeDownloadContext,
+      onScopeDownloadLifecycle: options?.onScopeDownloadLifecycle,
       onCoverageReset: options?.onCoverageReset,
       onCoverageEvaluated: options?.onCoverageEvaluated,
       onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,

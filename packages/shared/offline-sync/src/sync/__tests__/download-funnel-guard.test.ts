@@ -135,6 +135,17 @@ describe('download funnel guard', () => {
     );
   });
 
+  it.each([
+    { message: 'Unable to download a file: Connection reset', reason: 'network', expected: true },
+    { message: 'Unable to download a file: server returned HTTP 416', reason: 'http-range', expected: false },
+  ])('keeps snapshot reason and severity consistent for $reason', ({ message, reason, expected }) => {
+    const { report, guard } = makeGuard();
+    guard.arm('kilter:1:5', 'download');
+    guard.settleUncaught(new Error(message));
+    guard.close();
+    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reason, expected, aborted: false }));
+  });
+
   it('reports a SnapshotWipedError as an abort even after the flags cleared', () => {
     // The error IS the proof the cycle was torn down; the live flags may have
     // moved on by the time it unwinds.

@@ -3,6 +3,10 @@
 // re-downloading its whole catalog over cellular right after the user removed it.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getDownloadRequest, resetDownloadLifecycle } from '../download-lifecycle';
+import { setOfflineBoardEnabled } from '../../settings';
+import { track } from '../../lib/analytics';
+vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 const clearPrivateCaches = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
 
@@ -88,6 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockStorage.clear();
   resetAllSettings();
+  resetDownloadLifecycle();
   // clearAllMocks drops the factory implementations above, so restore the two
   // whose RETURN value the code under test depends on.
   beginScopePurge.mockImplementation(() => releasePurge);
@@ -97,6 +102,43 @@ beforeEach(() => {
 });
 
 describe('removeOfflineBoard', () => {
+  it('preserves the request generation when removal is rejected by a newly queued spray write', async () => {
+    const scope: OfflineBoardScope = { boardType: 'spray', layoutId: 42, sizeId: 42 };
+    setOfflineBoardEnabled(scope, true, { trigger: 'toggle' });
+    const original = getDownloadRequest('spray:42:42');
+    hasPendingClimbWrites.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    removeBoardScopeData.mockRejectedValueOnce(new Error('Sync your saved climbs before removing this wall'));
+    await expect(removeOfflineBoard({ db, queryClient, scope })).rejects.toThrow('Sync your saved climbs');
+    expect(getSetting('syncEnabledBoards')).toContain('spray:42:42');
+    expect(getDownloadRequest('spray:42:42')?.requestId).toBe(original?.requestId);
+    const states = vi
+      .mocked(track)
+      .mock.calls.filter(([event]) => event === 'Offline Board Download Lifecycle')
+      .map(([, properties]) => properties?.state);
+    expect(states).not.toContain('abandoned');
+    expect(states.filter((state) => state === 'requested')).toHaveLength(1);
+  });
+
+  it('reports removal abandonment only after the teardown commits', async () => {
+    setOfflineBoardEnabled(KILTER_12X14, true, { trigger: 'toggle' });
+    const original = getDownloadRequest('kilter:1:7');
+    removeBoardScopeData.mockImplementationOnce(async () => {
+      expect(getDownloadRequest('kilter:1:7')?.requestId).toBe(original?.requestId);
+      expect(getDownloadRequest('kilter:1:7')?.reason).toBe('removal-pending');
+      expect(vi.mocked(track).mock.calls.some(([, properties]) => properties?.state === 'abandoned')).toBe(false);
+      return { climbsDeleted: 1, statsDeleted: 0, gradesDeleted: 0, removedAnyRows: true };
+    });
+    await removeOfflineBoard({ db, queryClient, scope: KILTER_12X14 });
+    expect(getDownloadRequest('kilter:1:7')).toBeUndefined();
+    expect(track).toHaveBeenCalledWith(
+      'Offline Board Download Lifecycle',
+      expect.objectContaining({
+        requestId: original?.requestId,
+        state: 'abandoned',
+        reason: 'removed',
+      }),
+    );
+  });
   it('preserves a spray download before changing anything while saved climbs await sync', async () => {
     setSetting('syncEnabledBoards', ['spray:42:42']);
     hasPendingClimbWrites.mockResolvedValueOnce(true);
