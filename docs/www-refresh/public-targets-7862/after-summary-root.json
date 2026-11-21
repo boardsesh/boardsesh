@@ -1,0 +1,146 @@
+[
+  {
+    "width": 390,
+    "visits": [
+      {
+        "page": "list",
+        "targets": 85,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      },
+      {
+        "page": "climb",
+        "targets": 113,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      },
+      {
+        "page": "setter",
+        "targets": 83,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      }
+    ],
+    "hovers": [
+      {
+        "label": "list-next-hover",
+        "passes": true,
+        "minRatio": 4.725153048658342
+      },
+      {
+        "label": "plain-store-hover",
+        "passes": true,
+        "minRatio": 4.725153048658342
+      },
+      {
+        "label": "footer-app-hover",
+        "passes": true,
+        "minRatio": 5.650530516963638
+      },
+      {
+        "label": "footer-language-hover",
+        "passes": true,
+        "minRatio": 5.650530516963638
+      },
+      {
+        "label": "brand-store-hover",
+        "passes": true,
+        "minRatio": 5.879282405764831
+      }
+    ],
+    "focus": [
+      {
+        "label": "list-home-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-breadcrumb-0-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-breadcrumb-1-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-setter-focus",
+        "passes": true
+      }
+    ],
+    "pageErrors": []
+  },
+  {
+    "width": 1440,
+    "visits": [
+      {
+        "page": "list",
+        "targets": 90,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      },
+      {
+        "page": "climb",
+        "targets": 118,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      },
+      {
+        "page": "setter",
+        "targets": 88,
+        "undersized": 0,
+        "overflow": 0,
+        "contrastFailures": 0
+      }
+    ],
+    "hovers": [
+      {
+        "label": "list-next-hover",
+        "passes": true,
+        "minRatio": 4.725153048658342
+      },
+      {
+        "label": "plain-store-hover",
+        "passes": true,
+        "minRatio": 4.725153048658342
+      },
+      {
+        "label": "footer-app-hover",
+        "passes": true,
+        "minRatio": 5.650530516963638
+      },
+      {
+        "label": "footer-language-hover",
+        "passes": true,
+        "minRatio": 5.650530516963638
+      },
+      {
+        "label": "brand-store-hover",
+        "passes": true,
+        "minRatio": 5.879282405764831
+      }
+    ],
+    "focus": [
+      {
+        "label": "list-home-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-breadcrumb-0-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-breadcrumb-1-focus",
+        "passes": true
+      },
+      {
+        "label": "climb-setter-focus",
+        "passes": true
+      }
+    ],
+    "pageErrors": []
+  }
+]

@@ -28,6 +28,7 @@ jobs:
     outputs:
       anyJs: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.anyJs }}
       web: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.web }}
+      publicOverflow: ${{ github.event_name == 'pull_request' && steps.filter.outputs.publicOverflow || 'false' }}
       backend: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.backend }}
       authCompatibility: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.authCompatibility }}
       mobile: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobile }}
@@ -134,6 +135,21 @@ jobs:
               - '!embedded/**'
             web:
               - 'packages/web/**'
+            publicOverflow:
+              - 'packages/web/**'
+              - 'packages/backend/**'
+              - 'packages/db/**'
+              - 'packages/board-constants/**'
+              - 'packages/shared-schema/**'
+              - 'packages/shared/**'
+              - 'docker-compose.yml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'vite.config.ts'
+              - 'scripts/ci/public-page-overflow.sh'
+              - 'scripts/__tests__/public-page-overflow-workflow.test.ts'
+              - '.github/workflows/ci.yml'
             backend:
               - 'packages/backend/**'
               # The backend/web credential proofs run with the backend's disposable Postgres.
@@ -902,6 +918,7 @@ jobs:
             scripts/__tests__/static-asset-deploy-origin.test.ts \
             scripts/cloudflare-apply.test.ts \
             scripts/__tests__/ci-docker-web-workflow.test.ts \
+            scripts/__tests__/public-page-overflow-workflow.test.ts \
             scripts/__tests__/service-image-build-cache.test.ts \
             scripts/__tests__/homelab-dispatch-workflow.test.ts
 
@@ -1042,7 +1059,7 @@ jobs:
   typecheck:
     needs: [changes]
     # Catalog-only changes can grow the homepage RSC payload too.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.publicOverflow == 'true'
     # Stays GitHub-hosted: OOM-killed on the fleet, exit 137, on every run.
     # `vp run typecheck` fans out at --concurrency-limit 4, so `next build` and
     # three `tsc --noEmit` share one slot's ~3.4 GB. Same failure family as
@@ -1053,7 +1070,7 @@ jobs:
     # runner -- hosted and self-hosted alike -- to work around a bound that
     # only exists on ours, and it has not been measured.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
@@ -1067,12 +1084,33 @@ jobs:
       # cache hits, so this is fast on small PRs even though it expresses the
       # full set.
       - name: Typecheck (cache-driven affected)
+        timeout-minutes: 20
         run: vp run typecheck
       # Reuse the runnable standalone output restored by build:web's task cache.
       # The checker fails on missing output; it never starts another build.
       - name: Check rendered homepage gzip budget
         timeout-minutes: 2
         run: vp exec tsx scripts/check-homepage-budget.ts
+
+      - name: Install Chromium for public page checks
+        if: needs.changes.outputs.publicOverflow == 'true'
+        working-directory: packages/web
+        run: vp exec playwright install --with-deps chromium
+      - name: Check public pages in Chromium
+        id: public_overflow
+        if: needs.changes.outputs.publicOverflow == 'true'
+        timeout-minutes: 12
+        run: bash scripts/ci/public-page-overflow.sh
+      - name: Upload public page failure evidence
+        if: failure() && steps.public_overflow.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-page-overflow
+          path: |
+            ${{ runner.temp }}/public-page-overflow-*/
+            packages/web/test-results/
+            packages/web/playwright-report/
+          retention-days: 5
 
   db-migrations:
     needs: [changes]

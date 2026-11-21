@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import MuiLink from '@mui/material/Link';
 import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -35,6 +36,15 @@ const ddSx = {
   fontSize: themeTokens.typography.fontSize.base,
   fontWeight: themeTokens.typography.fontWeight.semibold,
   margin: 0,
+  overflowWrap: 'anywhere' as const,
+};
+
+const setterLinkSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minWidth: 44,
+  minHeight: 44,
+  maxWidth: '100%',
   overflowWrap: 'anywhere' as const,
 };
 
@@ -115,9 +125,9 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
         </Box>
         <Box component="dd" sx={ddSx}>
           {setter ? (
-            <LocaleLink href={`/setter/${encodeURIComponent(setter)}`}>
+            <MuiLink component={LocaleLink} href={`/setter/${encodeURIComponent(setter)}`} sx={setterLinkSx}>
               {t('frontDoor.setterLink', { setter })}
-            </LocaleLink>
+            </MuiLink>
           ) : (
             t('frontDoor.facts.unknown')
           )}

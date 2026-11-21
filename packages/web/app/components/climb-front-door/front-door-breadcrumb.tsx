@@ -36,9 +36,19 @@ const listSx = {
   padding: `${themeTokens.spacing[2]}px 0`,
   fontSize: themeTokens.typography.fontSize.sm,
   color: 'var(--neutral-500)',
+  '& > li': { minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' },
 };
 
 const separatorSx = { color: 'var(--neutral-500)' };
+
+const linkSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minWidth: 44,
+  minHeight: 44,
+  maxWidth: '100%',
+  overflowWrap: 'anywhere' as const,
+};
 
 const currentCrumbSx = { color: 'text.primary', fontWeight: themeTokens.typography.fontWeight.medium };
 
@@ -76,7 +86,7 @@ export default async function FrontDoorBreadcrumb({
       {emitJsonLd ? <JsonLd data={breadcrumbJsonLd} /> : null}
       <Box component="ol" sx={listSx}>
         <li>
-          <MuiLink component={LocaleLink} href="/" underline="hover" color="inherit">
+          <MuiLink component={LocaleLink} href="/" underline="hover" color="inherit" sx={linkSx}>
             {t('frontDoor.breadcrumb.home')}
           </MuiLink>
         </li>
@@ -91,6 +101,7 @@ export default async function FrontDoorBreadcrumb({
                 href={navigationBoardListUrl ?? boardListUrl}
                 underline="hover"
                 color="inherit"
+                sx={linkSx}
               >
                 {boardCrumbLabel}
               </MuiLink>

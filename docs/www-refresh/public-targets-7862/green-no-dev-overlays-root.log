@@ -1,0 +1,12 @@
+[global-setup] PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 — skipping classic-app prewarm.
+
+Running 3 tests using 1 worker
+
+(node:630085) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/3] [chromium] › e2e/public-page-overflow.spec.ts:56:5 › browser audit identifies poor contrast, small targets and unresolved gradients
+[2/3] [chromium] › e2e/public-page-overflow.spec.ts:186:7 › shared list → climb → setter journey stays readable and tappable at 390px
+[3/3] [chromium] › e2e/public-page-overflow.spec.ts:186:7 › shared list → climb → setter journey stays readable and tappable at 1440px
+  3 passed (28.7s)

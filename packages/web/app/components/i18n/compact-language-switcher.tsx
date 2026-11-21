@@ -21,6 +21,9 @@ import { localeHref, stripLocalePrefix } from '@/app/lib/i18n/locale-href';
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 const languageNameSx = { fontSize: 14, lineHeight: 1 };
+const triggerSx = { minWidth: 44, minHeight: 44 };
+// MUI already gives phone menu rows 48px; desktop rows need a 44px floor.
+const menuItemSx = { minHeight: { sm: 44 } };
 
 type LabelProps = {
   ariaLabel: string;
@@ -64,6 +67,7 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
           aria-haspopup="menu"
           aria-expanded={open ? true : undefined}
           size="small"
+          sx={triggerSx}
         >
           <Box component="span" sx={languageNameSx}>
             {LOCALE_LABELS[current]}
@@ -72,7 +76,7 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
       </Tooltip>
       <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
         {SUPPORTED_LOCALES.map((locale) => (
-          <MenuItem key={locale} selected={locale === current} onClick={() => handleSelect(locale)}>
+          <MenuItem key={locale} selected={locale === current} onClick={() => handleSelect(locale)} sx={menuItemSx}>
             <ListItemText>{LOCALE_LABELS[locale]}</ListItemText>
           </MenuItem>
         ))}
@@ -83,7 +87,7 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
 
 function CompactLanguageSwitcherFallback({ ariaLabel, label }: LabelProps) {
   return (
-    <Button disabled size="small" aria-label={ariaLabel}>
+    <Button disabled size="small" aria-label={ariaLabel} sx={triggerSx}>
       <Box component="span" sx={languageNameSx}>
         {label}
       </Box>

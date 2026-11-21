@@ -30,7 +30,7 @@ export default function SetterShareButton({ username, displayName }: SetterShare
   }, [username, displayName, showMessage, t]);
 
   return (
-    <IconButton onClick={handleShare} aria-label={t('setter.shareAriaLabel')}>
+    <IconButton onClick={handleShare} aria-label={t('setter.shareAriaLabel')} sx={{ minWidth: 44, minHeight: 44 }}>
       <IosShare />
     </IconButton>
   );

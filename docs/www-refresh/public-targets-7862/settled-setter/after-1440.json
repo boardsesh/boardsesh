@@ -1,0 +1,2340 @@
+{
+  "phase": "after",
+  "source": "f4914fad26",
+  "width": 1440,
+  "documentStatus": 200,
+  "errors": [],
+  "controls": {
+    "share": {
+      "x": 828,
+      "y": 96,
+      "width": 44,
+      "height": 44
+    },
+    "climb": {
+      "x": 152,
+      "y": 513.390625,
+      "width": 720,
+      "height": 140.1875
+    },
+    "pagination": {
+      "x": 785.765625,
+      "y": 7546.765625,
+      "width": 86.234375,
+      "height": 44
+    }
+  },
+  "audit": {
+    "pathname": "/setter/will_avelar",
+    "width": 1440,
+    "overflow": 0,
+    "h1Count": 1,
+    "targets": [
+      {
+        "scope": "header",
+        "label": "Boardsesh home",
+        "href": "/",
+        "disabled": false,
+        "width": 144.171875,
+        "height": 44,
+        "left": 152,
+        "right": 296.171875
+      },
+      {
+        "scope": "header",
+        "label": "Boards",
+        "href": "/boards",
+        "disabled": false,
+        "width": 44.359375,
+        "height": 44,
+        "left": 320.171875,
+        "right": 364.53125
+      },
+      {
+        "scope": "header",
+        "label": "Gyms",
+        "href": "/gyms",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 384.53125,
+        "right": 428.53125
+      },
+      {
+        "scope": "header",
+        "label": "Spray walls",
+        "href": "/spraywalls",
+        "disabled": false,
+        "width": 71.59375,
+        "height": 44,
+        "left": 448.53125,
+        "right": 520.125
+      },
+      {
+        "scope": "header",
+        "label": "Playlists",
+        "href": "/playlists",
+        "disabled": false,
+        "width": 51.359375,
+        "height": 44,
+        "left": 540.125,
+        "right": 591.484375
+      },
+      {
+        "scope": "header",
+        "label": "Help",
+        "href": "/help",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 611.484375,
+        "right": 655.484375
+      },
+      {
+        "scope": "header",
+        "label": "Sign in",
+        "href": "/auth/login",
+        "disabled": false,
+        "width": 55.390625,
+        "height": 44,
+        "left": 1075.625,
+        "right": 1131.015625
+      },
+      {
+        "scope": "header",
+        "label": "Start climbing in the app",
+        "href": "https://app.boardsesh.com",
+        "disabled": false,
+        "width": 132.984375,
+        "height": 44,
+        "left": 1155.015625,
+        "right": 1288
+      },
+      {
+        "scope": "main",
+        "label": "Back",
+        "href": null,
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 152,
+        "right": 196
+      },
+      {
+        "scope": "main",
+        "label": "Share setter profile",
+        "href": null,
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 828,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "App Store",
+        "href": "https://apps.apple.com/app/boardsesh/id6761350784?ct=setter&mt=8",
+        "disabled": false,
+        "width": 150.015625,
+        "height": 48,
+        "left": 152,
+        "right": 302.015625
+      },
+      {
+        "scope": "main",
+        "label": "Google Play",
+        "href": "https://play.google.com/store/apps/details?id=com.boardsesh.app&utm_source=boardsesh&utm_medium=web&utm_campaign=www&utm_content=setter&referrer=utm_source%3Dboardsesh%26utm_medium%3Dweb%26utm_campaign%3Dwww%26utm_content%3Dsetter",
+        "disabled": false,
+        "width": 170.03125,
+        "height": 48,
+        "left": 318.015625,
+        "right": 488.046875
+      },
+      {
+        "scope": "main",
+        "label": "Floats Your Boat98k sends · 3.1★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/floats-your-boat-D0E5387D5B974D38B4E93FC4DFD61EF6",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Tap Tap Tap64k sends · 3.1★ · will_avelarV3+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/tap-tap-tap-A58DB7F97A3844FEA8CA81EADA7D9598",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Tricks are for Kids37k sends · 3.1★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/tricks-are-for-kids-8D458380B99543F2AD7B57691809426A",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Pump It Up35k sends · 3.2★ · will_avelarV6",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/pump-it-up-1EC0C51FCD4240AE9802215C93439A43",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Monkey Bread26k sends · 3.1★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/monkey-bread-17C02EC83CA147BB8690B330D6F8C6D3",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Another One Bites the Dust26k sends · 3.1★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/another-one-bites-the-dust-E1B1558017F44F02B07EF4EA4249F253",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Tra-la-la24k sends · 3.1★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/tra-la-la-252ABF3DC0CF4CABB9BC671ECCE62C66",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Five Foot One and Three Quarters22k sends · 3.1★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/five-foot-one-and-three-quarters-7F39D6187D9742C08418B2BB39CA45B3",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Tension Tension21k sends · 3.2★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/tension-tension-0941F96477324729842C1B4CAC637A40",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Trust Your Shoes15k sends · 3.1★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/trust-your-shoes-118A615C2B3F4A36892FFF2A96251EFC",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "We Will Rock You14k sends · 3.1★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/we-will-rock-you-1328597D5133433886504492506931B9",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Hot Day...14k sends · 3.2★ · will_avelarV3+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/hot-day-2DFF512BE21140AA86CFED567483C203",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Killer Queen12k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/killer-queen-E16847B090B1456484FADCA88FFAD0F5",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "A-Tension12k sends · 3.2★ · will_avelarV7",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/a-tension-D3B9A73B514F4166AC080E93AB6375F0",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Zamba7.7k sends · 3.2★ · will_avelarV8",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/zamba-815AAA03B548488DA60AB88F510D264B",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Look At This!6.5k sends · 3.1★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/look-at-this-1AC4467737E740D783BF39F01A817085",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "We Are The Champions6.3k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/we-are-the-champions-8CD82FC94E544F6A897CA1969001CA29",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Easy like Sunday Morning5k sends · 3.2★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/easy-like-sunday-morning-76922562A008455A8A36FBC5465CC638",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Wham and Bam4.9k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/wham-and-bam-B510F50DE611494F97F513A9F062E939",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Omg I can’t!4.3k sends · 3.1★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/30/view/omg-i-cant-0D07316178BB4B04A856C7BAC9BA5CB1",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "No Peeking3.7k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/no-peeking-92DF15C7D66647BCAF65AB30726076B4",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Crimp N’ Stab3.2k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/30/view/crimp-n-stab-80369333EEB74444873CC8EAFE8A8FAB",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Shiohama Senpai2.8k sends · 3.2★ · will_avelarV3+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/shiohama-senpai-37FCE76670154CD7996A6929F88D5C5B",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "To Infinity and Beyond!2.1k sends · 3.1★ · will_avelarV1",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/to-infinity-and-beyond-22E2F894981B4FA389079A63E8D912D9",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Crimp N’ Bump2.1k sends · 3.1★ · will_avelarV3+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/25/view/crimp-n-bump-2953F011CE5D46D0B74CA90CAEE6D4AA",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "The Invisible Man1.9k sends · 3.2★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/the-invisible-man-93D83FD9F0D34074832B82D7D852AE63",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "2 for 11.8k sends · 3.3★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/2-for-1-92AFE5C1C4AB48AF96ADDD24693E5604",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Bop It1.7k sends · 3.2★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/bop-it-1BFBF8F958C9447EAB6EB54CAB6C429A",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Nice Lil’ Number1.6k sends · 3.2★ · will_avelarV8",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/nice-lil-number-D33C3BC15E3445E7B9B64E82B8097A95",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Stolen Moves, 1/2-Pad Grooves1.5k sends · 3.2★ · will_avelarV7",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/stolen-moves-12-pad-grooves-C3FBF6BC1BF94D469D6E6AE94C5F4DF4",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Toothless1.5k sends · 3.2★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/toothless-8D98BF0ACCDB41058D6D6A3E69E6CF72",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Snowy Day1.5k sends · 3.3★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/snowy-day-1690ED7C09C64758A97519B8BE072C01",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Pineapple Pizza1.5k sends · 3.3★ · will_avelarV5+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/pineapple-pizza-E8355BF659F74A8A9327A8990C6E23D5",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Shaky Shaky1.4k sends · 3.3★ · will_avelarV4+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/shaky-shaky-484F376CDAAA452C863A4556AFAB5BDD",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Pinch-E1.3k sends · 3.3★ · will_avelarV6",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/pinch-e-219D12EAA2BB4570BAB8E86632746B71",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Rainy Day1.2k sends · 3.3★ · will_avelarV3+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/rainy-day-41F5B42C8CAB4B8E93B4BC3039BAF85F",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Just Cross, Manny.1.2k sends · 3.3★ · will_avelarV4+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/just-cross-manny-3F0B2143916347E0B384D0B98C9DA20C",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Crab Walk1.2k sends · 3.6★ · will_avelarV5",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/crab-walk-2E1CEE93580745EEBBCAC823AD452A1E",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "That Looks Nasty1.1k sends · 3.2★ · will_avelarV7",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/that-looks-nasty-797A1845BBD64A92B6796FE153D9F8A7",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Mr. Krabs1.1k sends · 3.2★ · will_avelarV6",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/mr-krabs-0D2D480700B34C82849A1BB62D1169C8",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Radio Ga Ga1k sends · 3.3★ · will_avelarV4+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/radio-ga-ga-3EA342DD6F1D4938B2CFBDAC1B7B406E",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Climb the Feature!1k sends · 3.2★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/climb-the-feature-12DCD8C2DA2D4E05B77F5BC3C7B8600D",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Oink Oink904 sends · 3.2★ · will_avelarV5+",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/oink-oink-A5DAB6DD81E9419C96A7DFB05288B72A",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "That’s the Final888 sends · 3.3★ · will_avelarV6",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/thats-the-final-328012BDD6F146C59EC521A043DB0B6E",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "It’s Okay843 sends · 3.3★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/its-okay-C850A2B102704751B9608025F6FA6E65",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Jason’s Climb824 sends · 3.2★ · will_avelarV0",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/50/view/jasons-climb-016E012AA0BF4940ACFA7FEBDA413932",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Bam Bam!816 sends · 3.2★ · will_avelarV2",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/bam-bam-74076F744A4F4A4B9509AE244DEC5DB8",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Fortnite794 sends · 2.7★ · will_avelarV1",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/45/view/fortnite-1A1D4984EAFC455FAE8C0B44FA29FD42",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Honey Bunches of Oats732 sends · 3.2★ · will_avelarV3",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/view/honey-bunches-of-oats-8D224E5E782043718D7A9D44DAA71B08",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Drop Yo Knee718 sends · 3.1★ · will_avelarV4",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/35/view/drop-yo-knee-49654A4566D345F9BBC4E4CCD499E0D4",
+        "disabled": false,
+        "width": 720,
+        "height": 140.1875,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "More climbs",
+        "href": "/setter/will_avelar?page=2",
+        "disabled": false,
+        "width": 86.234375,
+        "height": 44,
+        "left": 785.765625,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "See every climb on Kilter",
+        "href": "/kilter/original/12x14-commercial/screw_bolt/40/list",
+        "disabled": false,
+        "width": 720,
+        "height": 44,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "main",
+        "label": "Build a playlist from these climbs",
+        "href": "/playlists",
+        "disabled": false,
+        "width": 720,
+        "height": 44,
+        "left": 152,
+        "right": 872
+      },
+      {
+        "scope": "footer",
+        "label": "Boardsesh home",
+        "href": "/",
+        "disabled": false,
+        "width": 144.171875,
+        "height": 44,
+        "left": 152,
+        "right": 296.171875
+      },
+      {
+        "scope": "footer",
+        "label": "Start climbing in the app",
+        "href": "https://app.boardsesh.com",
+        "disabled": false,
+        "width": 199.40625,
+        "height": 44,
+        "left": 152,
+        "right": 351.40625
+      },
+      {
+        "scope": "footer",
+        "label": "Supported boards",
+        "href": "/boards",
+        "disabled": false,
+        "width": 111.3125,
+        "height": 44,
+        "left": 152,
+        "right": 263.3125
+      },
+      {
+        "scope": "footer",
+        "label": "All gyms",
+        "href": "/gyms",
+        "disabled": false,
+        "width": 52.90625,
+        "height": 44,
+        "left": 152,
+        "right": 204.90625
+      },
+      {
+        "scope": "footer",
+        "label": "Playlists",
+        "href": "/playlists",
+        "disabled": false,
+        "width": 51.359375,
+        "height": 44,
+        "left": 152,
+        "right": 203.359375
+      },
+      {
+        "scope": "footer",
+        "label": "Bring your logbook",
+        "href": "/bring-your-logbook",
+        "disabled": false,
+        "width": 116.75,
+        "height": 44,
+        "left": 152,
+        "right": 268.75
+      },
+      {
+        "scope": "footer",
+        "label": "Set up your spray wall",
+        "href": "/spraywalls",
+        "disabled": false,
+        "width": 137.734375,
+        "height": 44,
+        "left": 444,
+        "right": 581.734375
+      },
+      {
+        "scope": "footer",
+        "label": "Claim your gym",
+        "href": "/gyms?claim=1",
+        "disabled": false,
+        "width": 97.25,
+        "height": 44,
+        "left": 444,
+        "right": 541.25
+      },
+      {
+        "scope": "footer",
+        "label": "Partners and hold makers",
+        "href": "/for-gyms#partners",
+        "disabled": false,
+        "width": 160.3125,
+        "height": 44,
+        "left": 444,
+        "right": 604.3125
+      },
+      {
+        "scope": "footer",
+        "label": "About",
+        "href": "/about",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 736,
+        "right": 780
+      },
+      {
+        "scope": "footer",
+        "label": "Support Boardsesh",
+        "href": "/support",
+        "disabled": false,
+        "width": 119.859375,
+        "height": 44,
+        "left": 736,
+        "right": 855.859375
+      },
+      {
+        "scope": "footer",
+        "label": "Source code",
+        "href": "https://github.com/boardsesh/boardsesh",
+        "disabled": false,
+        "width": 78.609375,
+        "height": 44,
+        "left": 736,
+        "right": 814.609375
+      },
+      {
+        "scope": "footer",
+        "label": "Roadmap",
+        "href": "https://github.com/boardsesh/boardsesh/issues",
+        "disabled": false,
+        "width": 60.703125,
+        "height": 44,
+        "left": 736,
+        "right": 796.703125
+      },
+      {
+        "scope": "footer",
+        "label": "Discord",
+        "href": "https://discord.gg/YXA8GsXfQK",
+        "disabled": false,
+        "width": 47.46875,
+        "height": 44,
+        "left": 736,
+        "right": 783.46875
+      },
+      {
+        "scope": "footer",
+        "label": "Developers",
+        "href": "/docs",
+        "disabled": false,
+        "width": 70.828125,
+        "height": 44,
+        "left": 736,
+        "right": 806.828125
+      },
+      {
+        "scope": "footer",
+        "label": "Help",
+        "href": "/help",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 1028,
+        "right": 1072
+      },
+      {
+        "scope": "footer",
+        "label": "Board won’t connect?",
+        "href": "/help/board-and-bluetooth",
+        "disabled": false,
+        "width": 134.640625,
+        "height": 44,
+        "left": 1028,
+        "right": 1162.640625
+      },
+      {
+        "scope": "footer",
+        "label": "Report a bug",
+        "href": "https://github.com/boardsesh/boardsesh/issues/new",
+        "disabled": false,
+        "width": 80.953125,
+        "height": 44,
+        "left": 1028,
+        "right": 1108.953125
+      },
+      {
+        "scope": "footer",
+        "label": "Legal",
+        "href": "/legal",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 1028,
+        "right": 1072
+      },
+      {
+        "scope": "footer",
+        "label": "Privacy",
+        "href": "/privacy",
+        "disabled": false,
+        "width": 45.90625,
+        "height": 44,
+        "left": 1028,
+        "right": 1073.90625
+      },
+      {
+        "scope": "footer",
+        "label": "Privacy choices",
+        "href": null,
+        "disabled": false,
+        "width": 97.265625,
+        "height": 44,
+        "left": 1028,
+        "right": 1125.265625
+      },
+      {
+        "scope": "footer",
+        "label": "Legal",
+        "href": "/legal#trademark-usage",
+        "disabled": false,
+        "width": 44,
+        "height": 44,
+        "left": 236.046875,
+        "right": 280.046875
+      },
+      {
+        "scope": "footer",
+        "label": "Language: English",
+        "href": null,
+        "disabled": false,
+        "width": 55.921875,
+        "height": 44,
+        "left": 1232.078125,
+        "right": 1288
+      }
+    ],
+    "text": [
+      {
+        "scope": "header",
+        "label": "Boardsesh",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Boards",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Gyms",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Spray walls",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Playlists",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Help",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Sign in",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "header",
+        "label": "Start climbing",
+        "ratio": null,
+        "inactive": false,
+        "unresolved": "filtered background"
+      },
+      {
+        "scope": "main",
+        "label": "Climbs set by will_avelar",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "will_avelar has set 240 climbs on Grasshopper and Kilter.",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "240",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "climbs",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Grasshopper",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Kilter",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "0",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "followers",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Get the free app and climb will_avelar’s problems on your board.",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "App Store",
+        "ratio": 4.623499863037048,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Google Play",
+        "ratio": 6.488667053928703,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Every climb by will_avelar",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Floats Your Boat",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "98k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Tap Tap Tap",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "64k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3+",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Tricks are for Kids",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "37k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Pump It Up",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "35k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V6",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Monkey Bread",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "26k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Another One Bites the Dust",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "26k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Tra-la-la",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "24k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Five Foot One and Three Quarters",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "22k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Tension Tension",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "21k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Trust Your Shoes",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "15k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "We Will Rock You",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "14k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Hot Day...",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "14k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3+",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Killer Queen",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "12k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "A-Tension",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "12k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V7",
+        "ratio": 8.871584765642407,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Zamba",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "7.7k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V8",
+        "ratio": 9.031724029137635,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Look At This!",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "6.5k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "We Are The Champions",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "6.3k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Easy like Sunday Morning",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "5k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Wham and Bam",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "4.9k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Omg I can’t!",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "4.3k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "No Peeking",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "3.7k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Crimp N’ Stab",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "3.2k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Shiohama Senpai",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "2.8k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3+",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "To Infinity and Beyond!",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "2.1k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V1",
+        "ratio": 13.753326333147793,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Crimp N’ Bump",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "2.1k sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3+",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "The Invisible Man",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.9k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "2 for 1",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.8k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Bop It",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.7k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Nice Lil’ Number",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.6k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V8",
+        "ratio": 9.031724029137635,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Stolen Moves, 1/2-Pad Grooves",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.5k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V7",
+        "ratio": 8.871584765642407,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Toothless",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.5k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Snowy Day",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.5k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Pineapple Pizza",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.5k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5+",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Shaky Shaky",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.4k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4+",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Pinch-E",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.3k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V6",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Rainy Day",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.2k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3+",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Just Cross, Manny.",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.2k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4+",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Crab Walk",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.2k sends · 3.6★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "That Looks Nasty",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.1k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V7",
+        "ratio": 8.871584765642407,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Mr. Krabs",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1.1k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V6",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Radio Ga Ga",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1k sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4+",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Climb the Feature!",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "1k sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Oink Oink",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "904 sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V5+",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "That’s the Final",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "888 sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V6",
+        "ratio": 8.7711008861186,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "It’s Okay",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "843 sends · 3.3★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Jason’s Climb",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "824 sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V0",
+        "ratio": 15.018996757071017,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Bam Bam!",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "816 sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V2",
+        "ratio": 12.670895537550559,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Fortnite",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "794 sends · 2.7★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V1",
+        "ratio": 13.753326333147793,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Honey Bunches of Oats",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "732 sends · 3.2★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V3",
+        "ratio": 10.672732282239695,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Drop Yo Knee",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "718 sends · 3.1★ · will_avelar",
+        "ratio": 8.152695336839507,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "V4",
+        "ratio": 9.967742067663368,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Page 1",
+        "ratio": 15.195723716808427,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "More climbs",
+        "ratio": 8.076926025583042,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "See every climb on Kilter",
+        "ratio": 8.076926025583042,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "main",
+        "label": "Build a playlist from these climbs",
+        "ratio": 8.076926025583042,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Boardsesh",
+        "ratio": 16.608552168440532,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Your boards. One app. Free for your next session.",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Open it in your browser",
+        "ratio": 6.325532013766866,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Climb",
+        "ratio": 14.813679919796408,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Supported boards",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "All gyms",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Playlists",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Bring your logbook",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "For walls",
+        "ratio": 14.813679919796408,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Set up your spray wall",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Claim your gym",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Partners and hold makers",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Project",
+        "ratio": 14.813679919796408,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "About",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Support Boardsesh",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Source code",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Roadmap",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Discord",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Developers",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Help",
+        "ratio": 14.813679919796408,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Help",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Board won’t connect?",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Report a bug",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Legal",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Privacy",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Privacy choices",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Works with Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Woods boards. Boardsesh is independent and is not made or endorsed by any board maker, including Aurora Climbing. Trademarks belong to their owners.",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "Legal",
+        "ratio": 7.94772407384378,
+        "inactive": false,
+        "unresolved": null
+      },
+      {
+        "scope": "footer",
+        "label": "English",
+        "ratio": 6.325532013766866,
+        "inactive": false,
+        "unresolved": null
+      }
+    ],
+    "targetText": [],
+    "focusOutline": null
+  }
+}

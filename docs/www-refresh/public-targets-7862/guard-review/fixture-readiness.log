@@ -1,0 +1,8 @@
+Cold web response (verbatim log excerpts):
+[setter] board catalogue unavailable; rendering climbs unlinked Error: [sitemap] boards shard: the backend returned no board configs; its cache is still filling.
+[setter] board catalogue unavailable; rendering climbs unlinked Error: [sitemap] boards shard: the backend returned no board configs; its cache is still filling.
+[setter] board catalogue unavailable; rendering climbs unlinked Error: [sitemap] boards shard: the backend returned no board configs; its cache is still filling.
+Cold backend refresh (verbatim log excerpts):
+[[32minfo[39m] [PopularConfigs] Refreshed 47 configs in 20632 ms
+Fresh warm backend refresh (verbatim log excerpts):
+[[32minfo[39m] [PopularConfigs] Refreshed 47 configs in 20119 ms

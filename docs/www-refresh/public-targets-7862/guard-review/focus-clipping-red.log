@@ -1,0 +1,35 @@
+
+Running 1 test using 1 worker
+
+(node:706574) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/1] [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/review-guard-red/old-helper.spec.ts:57:5 › browser audit identifies poor contrast, small targets and unresolved gradients
+  1) [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/review-guard-red/old-helper.spec.ts:57:5 › browser audit identifies poor contrast, small targets and unresolved gradients 
+
+    Error: {"visible":true,"width":2,"style":"solid","color":"rgb(255, 255, 255)","alpha":1,"ratio":21,"unresolved":null}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      132 |       expect(focusAudit.focusOutline?.ratio).toBeLessThan(3);
+      133 |     }
+    > 134 |     expect(hasVisibleFocusOutline(focusAudit), JSON.stringify(focusAudit.focusOutline)).toBe(visible);
+          |                                                                                         ^
+      135 |   }
+      136 | });
+      137 |
+        at /tmp/bugbash7844/7862-bugbash7844/review-guard-red/old-helper.spec.ts:134:89
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/old-helper-browser-audit-i-ccc70-ts-and-unresolved-gradients-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/old-helper-browser-audit-i-ccc70-ts-and-unresolved-gradients-chromium/error-context.md
+
+
+  1 failed
+    [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/review-guard-red/old-helper.spec.ts:57:5 › browser audit identifies poor contrast, small targets and unresolved gradients 

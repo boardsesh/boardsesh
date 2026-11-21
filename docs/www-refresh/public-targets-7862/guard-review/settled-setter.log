@@ -1,0 +1,10 @@
+
+Running 2 tests using 1 worker
+
+(node:721258) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/2] [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/settled-setter/settled.spec.ts:5:7 › settled setter 390
+[2/2] [chromium] › ../../../../../../../../tmp/bugbash7844/7862-bugbash7844/settled-setter/settled.spec.ts:5:7 › settled setter 1440
+  2 passed (6.7s)

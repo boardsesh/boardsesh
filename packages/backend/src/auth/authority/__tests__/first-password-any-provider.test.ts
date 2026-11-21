@@ -10,7 +10,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { createProviderSecurityEnvironment } from './provider-security-fixture';
-import { captureFirstPasswordRuntime } from '../first-password-policy';
+import { captureFirstPasswordRuntime, FIRST_PASSWORD_CHALLENGE_LIFETIME_MS } from '../first-password-policy';
 import { withFirstPasswordAuthority } from '../first-password-context';
 import { readFirstPasswordChallenge, requestFirstPasswordChallenge } from '../first-password-challenges';
 import { finalizeFirstPasswordChallenge, prepareFirstPasswordChallenge } from '../first-password-finalizer';
@@ -194,15 +194,20 @@ describe('first password for any account without one (decision of 2026-11-18)', 
     expect(await challengeRows(owner.userId)).toEqual(hourRows);
 
     // Move those five back two hours: the hour has room again, the day has five.
+    const issuedAt = new Date(Date.now() - 2 * 60 * 60_000);
+    const agedChallengeTimes = {
+      issuedAt,
+      expiresAt: new Date(issuedAt.getTime() + FIRST_PASSWORD_CHALLENGE_LIFETIME_MS),
+    };
     await environment.database
       .update(authFirstPasswordChallenges)
-      .set({ issuedAt: new Date(Date.now() - 2 * 60 * 60_000), expiresAt: new Date(Date.now() - 115 * 60_000) })
+      .set(agedChallengeTimes)
       .where(eq(authFirstPasswordChallenges.userId, owner.userId));
     for (let request = 0; request < 5; request += 1)
       await requestFirstPasswordChallenge(environment.database, runtime(), { actor: owner.webActor });
     await environment.database
       .update(authFirstPasswordChallenges)
-      .set({ issuedAt: new Date(Date.now() - 2 * 60 * 60_000), expiresAt: new Date(Date.now() - 115 * 60_000) })
+      .set(agedChallengeTimes)
       .where(
         and(eq(authFirstPasswordChallenges.userId, owner.userId), eq(authFirstPasswordChallenges.phase, 'terminal')),
       );
