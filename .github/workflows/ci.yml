@@ -747,6 +747,16 @@ jobs:
         id: install
         run: vp install --frozen-lockfile
 
+      # These contracts read workflows and the historical ruleset through the
+      # filesystem, so test-default's --changed import graph cannot select them.
+      - name: required-ci-status (required context covers every CI gate)
+        id: required-ci-status
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: >-
+          vp test run --project scripts
+          scripts/__tests__/ci-status-rollup.test.ts
+          scripts/__tests__/required-checks-payload.test.ts --reporter=agent
+
       # Guards against committed binary churn (screenshots, build outputs,
       # vendored binaries) re-bloating the pack after the 2026 history cleanup.
       # Runs on every run regardless of which file types changed (a binary-only
@@ -2247,6 +2257,10 @@ jobs:
             " "$openapi_path"
           '
 
+  # The required context must aggregate every gating job. The guards job includes
+  # the ungated large-files check; do not restore the retired standalone jobs.
+  # scripts/__tests__/ci-status-rollup.test.ts checks the current job graph.
+  # See docs/ci-required-checks.md for absent-check recovery.
   ci-status:
     needs:
       - changes
