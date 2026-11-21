@@ -814,6 +814,18 @@ async function readMetadata(
   return metadata;
 }
 
+/** Construct the bounded client lazily; CLI help/output validation must not load database configuration. */
+export async function createAuditDatabaseClient(databaseUrl: string) {
+  const { scriptDatabaseConnectionOptions } = await import('./db-connection.js');
+  return postgres(databaseUrl, {
+    ...scriptDatabaseConnectionOptions(databaseUrl),
+    connect_timeout: AUDIT_CONNECT_TIMEOUT_SECONDS,
+    idle_timeout: 5,
+    max: 1,
+    prepare: false,
+  });
+}
+
 export async function runDatabaseAudit(
   databaseUrl: string,
   policy: AuditPolicy,
@@ -821,12 +833,7 @@ export async function runDatabaseAudit(
   pseudonymSecret: Uint8Array,
   onMetadata?: (metadata: DatabaseAuditMetadata) => Promise<void>,
 ): Promise<{ counters: AuditCounters; metadata: DatabaseAuditMetadata }> {
-  const client = postgres(databaseUrl, {
-    connect_timeout: AUDIT_CONNECT_TIMEOUT_SECONDS,
-    idle_timeout: 5,
-    max: 1,
-    prepare: false,
-  });
+  const client = await createAuditDatabaseClient(databaseUrl);
   let connection: postgres.ReservedSql | null = null;
   let forceClosed = false;
   const counters = emptyCounters();
@@ -911,8 +918,8 @@ async function resolveDatabaseUrl(databaseUrl: string | undefined): Promise<stri
   // Keep dotenv loading and database configuration entirely off --help and
   // invalid-output paths. Output validation and exclusive staging happen
   // before this dynamic import runs.
-  const { getScriptDatabaseUrl } = await import('./db-connection.js');
-  return getScriptDatabaseUrl();
+  const { resolveScriptDatabaseUrl } = await import('./db-connection.js');
+  return resolveScriptDatabaseUrl();
 }
 
 export async function runAuditCommand(cliArgs: CliArgs, databaseUrl?: string): Promise<string> {

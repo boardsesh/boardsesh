@@ -21,6 +21,12 @@ for the plain-`EXPLAIN` plan review in [Query-plan check](#query-plan-check).
 This phase does **not** repair historical rows or close #3909. Release notes for
 the audit-only PR are `none`.
 
+The audit constructs its client only after CLI and output-path validation. It
+uses the shared database-script transport options: remote connections require
+TLS, explicit certificate verification is preserved, and plaintext is permitted
+only for known local development hosts. Missing database configuration throws
+through the artifact cleanup path, leaving no staging output behind.
+
 ## Verified deployment policy is required
 
 The timestamp-normalizer source lineage has six distinct points:
