@@ -58,7 +58,12 @@ export function useClimbSearchAnalytics({
     // Skip the default state (no search text, no active filters): the initial
     // tab-mount load is not a user search/apply, and web suppresses it the same
     // way (only fires when at least one filter/term is active).
-    if (name.length === 0 && !hasActiveFilters(filters) && !hasActiveBoardFilters(boardFilters)) return;
+    if (name.length === 0 && !hasActiveFilters(filters) && !hasActiveBoardFilters(boardFilters)) {
+      // Clearing a settled search ends that interaction. Repeating the same
+      // query later is a new search, even when React Query reuses its results.
+      lastSearchTrackKeyRef.current = null;
+      return;
+    }
     const trackKey = JSON.stringify({ name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle });
     if (lastSearchTrackKeyRef.current === trackKey) return;
     lastSearchTrackKeyRef.current = trackKey;
