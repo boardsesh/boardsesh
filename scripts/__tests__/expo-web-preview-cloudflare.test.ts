@@ -207,6 +207,43 @@ describe('Cloudflare web preview ownership and provisioning', () => {
     expect(mock.mutations()).toHaveLength(0);
   });
 
+  it('accepts a complete legacy SinglePage of 100 domains without requesting another page', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/domains')) {
+        expect(request.url.searchParams.get('page')).toBe('1');
+        expect(request.url.searchParams.get('per_page')).toBe('25');
+        return { result: Array.from({ length: 100 }, (_, index) => ({ name: `pr-${index + 100}.boardsesh.com` })) };
+      }
+      return normalApi(request);
+    });
+    await expect(client(mock.fetchImpl).ensurePreviewDomain(42)).rejects.toThrow('capacity reached (100/100)');
+    expect(mock.calls.filter((request) => request.url.pathname.endsWith('/domains'))).toHaveLength(1);
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it.each(['total_pages', 'total_count'] as const)(
+    'checks all four 25-domain pages using %s before enforcing capacity',
+    async (totalField) => {
+      const mock = apiMock((request) => {
+        if (request.url.pathname.endsWith('/domains')) {
+          const page = Number(request.url.searchParams.get('page'));
+          expect(request.url.searchParams.get('per_page')).toBe('25');
+          expect(page).toBeLessThanOrEqual(4);
+          return {
+            result: Array.from({ length: 25 }, (_, index) => ({
+              name: `pr-${100 + (page - 1) * 25 + index}.boardsesh.com`,
+            })),
+            resultInfo: { page, per_page: 25, [totalField]: totalField === 'total_pages' ? 4 : 100 },
+          };
+        }
+        return normalApi(request);
+      });
+      await expect(client(mock.fetchImpl).ensurePreviewDomain(42)).rejects.toThrow('capacity reached (100/100)');
+      expect(mock.calls.filter((request) => request.url.pathname.endsWith('/domains'))).toHaveLength(4);
+      expect(mock.mutations()).toHaveLength(0);
+    },
+  );
+
   it('rejects Cloudflare success=false even when the HTTP status is 200', async () => {
     const mock = apiMock(() => ({ success: false, errors: [{ code: 10000, message: 'Missing Pages scope' }] }));
     await expect(client(mock.fetchImpl).ensureProject()).rejects.toThrow('10000: Missing Pages scope');
@@ -236,6 +273,77 @@ function deployment(prNumber: number, sha: string, createdOn: string, id = `depl
 }
 
 describe('Cloudflare web preview cleanup and retention discovery', () => {
+  it('checks every declared domain page before deleting the requested hostname', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/domains') && request.method === 'GET') {
+        const page = Number(request.url.searchParams.get('page'));
+        return {
+          result: Array.from({ length: 25 }, (_, index) => ({
+            name: `pr-${(page - 1) * 25 + index + 1}.boardsesh.com`,
+          })),
+          resultInfo: { page, per_page: 25, total_count: 100 },
+        };
+      }
+      return normalApi(request);
+    });
+    await client(mock.fetchImpl).removePreview(42);
+    const firstDelete = mock.calls.findIndex((request) => request.method === 'DELETE');
+    expect(
+      mock.calls.slice(0, firstDelete).filter((request) => request.url.pathname.endsWith('/domains')),
+    ).toHaveLength(4);
+    expect(mock.mutations().map((request) => request.url.pathname)).toEqual([
+      '/client/v4/zones/zone/dns_records/record42',
+      `/client/v4${PROJECT_PATH}/domains/pr-42.boardsesh.com`,
+    ]);
+  });
+
+  it('keeps deployments paginated when a full page has no metadata', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/deployments')) {
+        expect(request.url.searchParams.get('per_page')).toBe('25');
+        return request.url.searchParams.get('page') === '1'
+          ? {
+              result: [
+                deployment(42, SHA, '2026-11-20T00:00:00Z'),
+                ...Array.from({ length: 24 }, (_, index) => deployment(100 + index, SHA, '2026-11-20T00:00:00Z')),
+              ],
+            }
+          : { result: [deployment(42, SHA, '2026-11-21T00:00:00Z', 'deployment42b')] };
+      }
+      return normalApi(request);
+    });
+    await client(mock.fetchImpl).removePreview(42);
+    expect(mock.calls.filter((request) => request.url.pathname.endsWith('/deployments'))).toHaveLength(2);
+    expect(mock.mutations().filter((request) => request.url.pathname.includes('/deployments/'))).toHaveLength(2);
+  });
+
+  it.each([
+    { page: 1, per_page: 25, total_count: -1 },
+    { page: 99, per_page: 25, total_count: 1 },
+    { page: 1, per_page: 25, total_pages: 1, total_count: 100 },
+  ])('does not delete resources from an inconsistent domain listing %j', async (resultInfo) => {
+    const mock = apiMock((request) =>
+      request.url.pathname.endsWith('/domains') ? { result: [domain], resultInfo } : normalApi(request),
+    );
+    await expect(client(mock.fetchImpl).removePreview(42)).rejects.toThrow(
+      /pagination metadata|truncated or inconsistent listing/,
+    );
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it('does not accept a short first page or empty next page before total_count is satisfied', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/domains')) {
+        const page = Number(request.url.searchParams.get('page'));
+        return { result: page === 1 ? [domain] : [], resultInfo: { page, per_page: 25, total_count: 100 } };
+      }
+      return normalApi(request);
+    });
+    await expect(client(mock.fetchImpl).removePreview(42)).rejects.toThrow('truncated listing before its final page');
+    expect(mock.calls.filter((request) => request.url.pathname.endsWith('/domains'))).toHaveLength(2);
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
   it('collects the newest exact branch revision and orphan domains/DNS across all pages', async () => {
     const mock = apiMock((request) => {
       if (request.url.pathname.endsWith('/domains'))

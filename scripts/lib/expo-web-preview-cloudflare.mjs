@@ -4,6 +4,7 @@ export const PREVIEW_PROJECT = 'boardsesh-app-previews';
 const API_ORIGIN = 'https://api.cloudflare.com/client/v4';
 const ZONE_NAME = 'boardsesh.com';
 const PAGE_SIZE = 100;
+const PAGES_PAGE_SIZE = 25;
 const DOMAIN_LIMIT = 100;
 const MAX_PAGES = 1000;
 const PR_PATTERN = /^pr-([1-9][0-9]*)$/;
@@ -129,13 +130,13 @@ export function createCloudflareClient({
     return envelope;
   }
 
-  async function list(path, allowMissing = false) {
+  async function list(path, allowMissing = false, { pageSize = PAGE_SIZE, singlePageWithoutInfo = false } = {}) {
     const results = [];
     for (let page = 1; page <= MAX_PAGES; page += 1) {
       const separator = path.includes('?') ? '&' : '?';
       const envelope = await request(
         'GET',
-        `${path}${separator}page=${page}&per_page=${PAGE_SIZE}`,
+        `${path}${separator}page=${page}&per_page=${pageSize}`,
         undefined,
         allowMissing,
       );
@@ -143,16 +144,37 @@ export function createCloudflareClient({
       if (!Array.isArray(envelope.result)) throw new Error(`Cloudflare ${path} did not return a list.`);
       results.push(...envelope.result);
       const pageInfo = envelope.result_info;
-      if (pageInfo?.total_pages !== undefined) {
+      if (pageInfo !== undefined && pageInfo !== null) {
+        object(pageInfo, 'pagination metadata');
+        const effectivePageSize = pageInfo.per_page ?? pageSize;
         if (
-          !Number.isSafeInteger(pageInfo.total_pages) ||
-          pageInfo.total_pages < 0 ||
+          !Number.isSafeInteger(effectivePageSize) ||
+          effectivePageSize < 1 ||
+          (pageInfo.total_pages !== undefined &&
+            (!Number.isSafeInteger(pageInfo.total_pages) || pageInfo.total_pages < 0)) ||
+          (pageInfo.total_count !== undefined &&
+            (!Number.isSafeInteger(pageInfo.total_count) || pageInfo.total_count < 0)) ||
           (pageInfo.page !== undefined && pageInfo.page !== page)
         ) {
           throw new Error(`Cloudflare ${path} returned invalid pagination metadata.`);
         }
-        if (page >= pageInfo.total_pages) return results;
-      } else if (envelope.result.length < PAGE_SIZE) {
+        const totalPages =
+          pageInfo.total_pages ??
+          (pageInfo.total_count === undefined ? undefined : Math.ceil(pageInfo.total_count / effectivePageSize));
+        if (totalPages !== undefined && page >= totalPages) {
+          if (
+            (totalPages === 0 && results.length > 0) ||
+            (pageInfo.total_count !== undefined && results.length !== pageInfo.total_count)
+          ) {
+            throw new Error(`Cloudflare ${path} returned a truncated or inconsistent listing.`);
+          }
+          return results;
+        }
+        if (totalPages !== undefined && envelope.result.length === 0) {
+          throw new Error(`Cloudflare ${path} returned a truncated listing before its final page.`);
+        }
+        if (totalPages === undefined && envelope.result.length < effectivePageSize) return results;
+      } else if (singlePageWithoutInfo || envelope.result.length < pageSize) {
         return results;
       }
     }
@@ -161,7 +183,7 @@ export function createCloudflareClient({
 
   async function zonePath() {
     if (!resolvedZoneId) {
-      const zones = await list(`/zones?name=${encodeURIComponent(ZONE_NAME)}`);
+      const zones = await list(`/zones?name=${encodeURIComponent(ZONE_NAME)}`, false, { pageSize: PAGES_PAGE_SIZE });
       const matching = zones.filter((zone) => zone.name === ZONE_NAME);
       if (matching.length !== 1)
         throw new Error(
@@ -199,10 +221,21 @@ export function createCloudflareClient({
     return list(`${await zonePath()}/dns_records?name=${encodeURIComponent(identity.hostname)}`);
   }
 
+  function listDomains() {
+    // The REST contract permits pages of at most 25. Older API/SDK versions
+    // return one complete SinglePage without result_info, even for 100 domains.
+    // https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/domains/methods/list/
+    return list(`${projectPath}/domains`, false, { pageSize: PAGES_PAGE_SIZE, singlePageWithoutInfo: true });
+  }
+
+  function listDeployments() {
+    return list(`${projectPath}/deployments`, false, { pageSize: PAGES_PAGE_SIZE });
+  }
+
   async function ensurePreviewDomain(prNumber) {
     const identity = previewIdentity(prNumber);
     if (!(await projectOrMissing())) throw new Error(`Create ${PREVIEW_PROJECT} before attaching preview domains.`);
-    const domains = await list(`${projectPath}/domains`);
+    const domains = await listDomains();
     let domainExists = domains.some((domain) => domain.name === identity.hostname);
     if (!domainExists && domains.length >= DOMAIN_LIMIT) {
       throw new Error(
@@ -243,8 +276,8 @@ export function createCloudflareClient({
     const identity = previewIdentity(prNumber);
     const project = await projectOrMissing();
     // Finish every listing and all ownership checks before the first deletion.
-    const domains = project ? await list(`${projectPath}/domains`) : [];
-    const deployments = project ? await list(`${projectPath}/deployments`) : [];
+    const domains = project ? await listDomains() : [];
+    const deployments = project ? await listDeployments() : [];
     const records = await domainRecords(identity);
     const domainExists = domains.some((domain) => domain.name === identity.hostname);
     if (records.length > 1 || records.some((record) => !ownsRecord(record, identity, domainExists))) {
@@ -270,8 +303,8 @@ export function createCloudflareClient({
 
   async function listPreviews() {
     const project = await projectOrMissing();
-    const domains = project ? await list(`${projectPath}/domains`) : [];
-    const deployments = project ? await list(`${projectPath}/deployments`) : [];
+    const domains = project ? await listDomains() : [];
+    const deployments = project ? await listDeployments() : [];
     const records = await list(`${await zonePath()}/dns_records`);
     const previews = new Map();
     function include(prNumber) {
