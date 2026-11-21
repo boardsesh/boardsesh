@@ -1,0 +1,1 @@
+Disposable canary: documentation-only revision to verify browser preview reuse.
