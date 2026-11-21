@@ -502,7 +502,7 @@ enum BoardBleEncoding {
     // MARK: - Woods
 
     // Woods Board speaks a plain-ASCII protocol: `led,role` pairs joined by
-    // commas and closed with a literal `,!` (docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md
+    // commas and closed with a literal `,!` (docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md
     // §5), with LED indices looked up per board size from WoodsBoardData and
     // wire role codes Foot 1 / Hand 2 / Finish 3 / Start 4 (§6). Ported from
     // packages/shared/ble-protocol/src/woods.ts; keep the two in lockstep

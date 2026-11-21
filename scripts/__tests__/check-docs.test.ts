@@ -200,6 +200,79 @@ describe('documentation references', () => {
     ]);
   });
 
+  it.each([
+    ['packages/mobile/modules/live-activity/ios/BoardBleEncoding.swift', 'WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards'],
+    [
+      'packages/mobile/modules/live-activity/ios/BoardBleManager.swift',
+      'MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md',
+      'boards',
+    ],
+    ['packages/mobile/modules/live-activity/ios/SharedConstants.swift', 'og-climb.md', 'web'],
+    ['packages/mobile/targets/BoardseshWidgets/SharedConstants.swift', 'og-climb.md', 'web'],
+    ['packages/mobile/modules/live-activity/ios/WoodsBoardData.swift', 'WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards'],
+    ['packages/board-constants/scripts/woods-led-maps-sources.ts', 'WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards'],
+    [
+      'packages/mobile/modules/memory-trim/android/src/main/java/expo/modules/memorytrim/MemoryTrimModule.kt',
+      'react-native-performance.md',
+      'mobile',
+    ],
+    ['packages/mobile/targets/BoardseshWidgets/ClimbSessionLiveActivity.swift', 'ai-design-guidelines.md', 'design'],
+  ])('validates the retained native guide in %s without exempting other references', (filename, guide, topic) => {
+    const checkout = repository({
+      [filename]: `// See docs/${guide}#existing.\n// See docs/missing-guide.md.`,
+      [`docs/${topic}/${guide}`]: '# Existing',
+    });
+    expect(checkDocumentation(checkout)).toEqual([
+      { source: filename, line: 2, target: 'docs/missing-guide.md', reason: 'missing file docs/missing-guide.md' },
+    ]);
+  });
+
+  it('does not alias a native guide in a neighboring source or a different guide in an allowed source', () => {
+    const checkout = repository({
+      'packages/mobile/modules/live-activity/ios/Neighbor.swift': '// See docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md.',
+      'packages/mobile/modules/live-activity/ios/BoardBleEncoding.swift': '// See docs/og-climb.md.',
+      'docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md': '# Woods',
+      'docs/web/og-climb.md': '# Rendering',
+    });
+    expect(checkDocumentation(checkout)).toEqual([
+      {
+        source: 'packages/mobile/modules/live-activity/ios/BoardBleEncoding.swift',
+        line: 1,
+        target: 'docs/og-climb.md',
+        reason: 'missing file docs/og-climb.md',
+      },
+      {
+        source: 'packages/mobile/modules/live-activity/ios/Neighbor.swift',
+        line: 1,
+        target: 'docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md',
+        reason: 'missing file docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md',
+      },
+    ]);
+  });
+
+  it.each(['missing file', 'untracked file', 'missing anchor'] as const)(
+    'still validates the canonical native guide destination: %s',
+    (failure) => {
+      const filename = 'packages/mobile/modules/live-activity/ios/SharedConstants.swift';
+      const destination = 'docs/web/og-climb.md';
+      const checkout = repository({
+        [filename]: '// See docs/og-climb.md#existing.',
+        ...(failure === 'missing file'
+          ? {}
+          : { [destination]: failure === 'missing anchor' ? '# Other' : '# Existing' }),
+      });
+      if (failure === 'untracked file') checkout.files = checkout.files.filter((source) => source !== destination);
+      const reasons = {
+        'missing file': `missing file ${destination}`,
+        'untracked file': `file absent from repository inventory: ${destination}`,
+        'missing anchor': `missing heading #existing in ${destination}`,
+      };
+      expect(checkDocumentation(checkout)).toEqual([
+        { source: filename, line: 1, target: 'docs/og-climb.md#existing', reason: reasons[failure] },
+      ]);
+    },
+  );
+
   it('skips remote URLs, app routes, runtime capture files and the separate Ansible runbook', () => {
     const checkout = repository({
       'docs/guide.md': [

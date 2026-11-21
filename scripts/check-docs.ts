@@ -31,6 +31,27 @@ const RETAINED_OTA_GUIDE_SOURCES = new Set([
   'scripts/lib/ota-boot-check.ts',
 ]);
 
+// Native fingerprints include comment bytes. Keep these released 2.8.0 references
+// intact, including the Swift generator's header, while validating their current
+// destinations. Match both the source file and the historical path; neighboring
+// files and other references in the same source retain the ordinary checks.
+const RETAINED_NATIVE_GUIDE_REFERENCES = new Map<string, readonly [string, string]>([
+  ['packages/mobile/modules/live-activity/ios/BoardBleEncoding.swift', ['WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards']],
+  [
+    'packages/mobile/modules/live-activity/ios/BoardBleManager.swift',
+    ['MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md', 'boards'],
+  ],
+  ['packages/mobile/modules/live-activity/ios/SharedConstants.swift', ['og-climb.md', 'web']],
+  ['packages/mobile/targets/BoardseshWidgets/SharedConstants.swift', ['og-climb.md', 'web']],
+  ['packages/mobile/modules/live-activity/ios/WoodsBoardData.swift', ['WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards']],
+  ['packages/board-constants/scripts/woods-led-maps-sources.ts', ['WOODS_BLUETOOTH_PROTOCOL_SPEC.md', 'boards']],
+  [
+    'packages/mobile/modules/memory-trim/android/src/main/java/expo/modules/memorytrim/MemoryTrimModule.kt',
+    ['react-native-performance.md', 'mobile'],
+  ],
+  ['packages/mobile/targets/BoardseshWidgets/ClimbSessionLiveActivity.swift', ['ai-design-guidelines.md', 'design']],
+]);
+
 /** Preserve offsets and line numbers while removing illustrative fenced/indented code. */
 export function withoutCodeBlocks(markdown: string): string {
   let fence: { marker: string; length: number } | undefined;
@@ -221,6 +242,15 @@ export function checkDocumentation({ cwd, files }: { cwd: string; files: readonl
         RETAINED_OTA_GUIDE_SOURCES.has(source)
       )
         pathname = 'docs/operations/mobile-ota-updates.md';
+      const retainedNativeGuide = RETAINED_NATIVE_GUIDE_REFERENCES.get(source);
+      if (
+        reference.repositoryRelative &&
+        retainedNativeGuide &&
+        pathname === path.posix.join('docs', retainedNativeGuide[0])
+      ) {
+        const [filename, topic] = retainedNativeGuide;
+        pathname = path.posix.join('docs', topic, filename);
+      }
       const resolved = !pathname
         ? absoluteSource
         : reference.repositoryRelative || pathname.startsWith('/')

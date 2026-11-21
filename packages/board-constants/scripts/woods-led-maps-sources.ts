@@ -95,8 +95,8 @@ export function renderWoodsBoardDataSwift(tables: WoodsLedTables): string {
 //   node --import tsx packages/board-constants/scripts/generate-woods-led-maps.ts
 //
 // Woods Board LED lookup tables for the native iOS BLE layer (#3314).
-// Source of truth: docs/boards/woods-board-led-maps/light-map-{8x10,12x12}.json
-// (docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md §7). Maps a hold's baseHoldLocation
+// Source of truth: docs/woods-board-led-maps/light-map-{8x10,12x12}.json
+// (docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md §7). Maps a hold's baseHoldLocation
 // to its physical LED index, per board size. A missing key means that position
 // has no LED on that board size and is skipped when encoding.
 
