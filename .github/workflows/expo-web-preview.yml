@@ -98,7 +98,7 @@ jobs:
           retention-days: 30
 
   notify:
-    needs: [inspect, build]
+    needs: [inspect, build, cleanup]
     if: always() && needs.inspect.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -126,7 +126,7 @@ jobs:
             });
 
   cleanup:
-    needs: [inspect, build, notify]
+    needs: [inspect, build]
     if: always() && startsWith(github.ref, 'refs/heads/ci-sandbox/web-preview/')
     runs-on: ubuntu-latest
     timeout-minutes: 5

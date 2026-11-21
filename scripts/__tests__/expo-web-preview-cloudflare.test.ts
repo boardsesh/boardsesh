@@ -1,7 +1,13 @@
 /// <reference types="node" />
 
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudflareClient, PREVIEW_PROJECT } from '../lib/expo-web-preview-cloudflare.mjs';
+import {
+  createCloudflareClient,
+  PREVIEW_PROJECT,
+  RETIRED_COMMIT_MESSAGE,
+  RETIRED_COMMIT_SHA,
+  type PreviewDomain,
+} from '../lib/expo-web-preview-cloudflare.mjs';
 
 const SHA = 'a'.repeat(40);
 const PROJECT_PATH = `/accounts/account/pages/projects/${PREVIEW_PROJECT}`;
@@ -51,12 +57,16 @@ function apiMock(handler: ApiHandler) {
   return { fetchImpl, calls, mutations: () => calls.filter((call) => call.method !== 'GET') };
 }
 
-function client(fetchImpl: typeof fetch) {
+function client(
+  fetchImpl: typeof fetch,
+  retireDeployment?: (identity: PreviewDomain & { prNumber: number }) => Promise<void>,
+) {
   return createCloudflareClient({
     token: 'private-test-token',
     accountId: 'account',
     zoneId: 'zone',
     fetch: fetchImpl,
+    retireDeployment,
     sleep: async () => undefined,
   });
 }
@@ -272,6 +282,17 @@ function deployment(prNumber: number, sha: string, createdOn: string, id = `depl
   };
 }
 
+function retiredDeployment(prNumber = 42, id = `retired${prNumber}`, status = 'success', stageName = 'deploy') {
+  const retired = deployment(prNumber, RETIRED_COMMIT_SHA, '2026-11-22T00:00:00Z', id);
+  return {
+    ...retired,
+    deployment_trigger: {
+      metadata: { ...retired.deployment_trigger.metadata, commit_message: RETIRED_COMMIT_MESSAGE },
+    },
+    latest_stage: { name: stageName, status },
+  };
+}
+
 describe('Cloudflare web preview cleanup and retention discovery', () => {
   it('checks every declared domain page before deleting the requested hostname', async () => {
     const mock = apiMock((request) => {
@@ -308,7 +329,7 @@ describe('Cloudflare web preview cleanup and retention discovery', () => {
                 ...Array.from({ length: 24 }, (_, index) => deployment(100 + index, SHA, '2026-11-20T00:00:00Z')),
               ],
             }
-          : { result: [deployment(42, SHA, '2026-11-21T00:00:00Z', 'deployment42b')] };
+          : { result: [deployment(42, SHA, '2026-11-21T00:00:00Z', 'deployment42b'), retiredDeployment()] };
       }
       return normalApi(request);
     });
@@ -390,7 +411,7 @@ describe('Cloudflare web preview cleanup and retention discovery', () => {
         return {
           result: first
             ? [deployment(42, SHA, '2026-11-20T00:00:00Z'), deployment(43, SHA, '2026-11-21T00:00:00Z')]
-            : [deployment(42, SHA, '2026-11-21T00:00:00Z', 'deployment42b')],
+            : [deployment(42, SHA, '2026-11-21T00:00:00Z', 'deployment42b'), retiredDeployment()],
           resultInfo: { page: first ? 1 : 2, total_pages: 2 },
         };
       }
@@ -400,8 +421,8 @@ describe('Cloudflare web preview cleanup and retention discovery', () => {
     expect(mock.mutations().map((call) => call.url.pathname)).toEqual([
       '/client/v4/zones/zone/dns_records/record42',
       `/client/v4${PROJECT_PATH}/domains/pr-42.boardsesh.com`,
-      `/client/v4${PROJECT_PATH}/deployments/deployment42`,
       `/client/v4${PROJECT_PATH}/deployments/deployment42b`,
+      `/client/v4${PROJECT_PATH}/deployments/deployment42`,
     ]);
     expect(
       mock
@@ -455,6 +476,244 @@ describe('Cloudflare web preview cleanup and retention discovery', () => {
     );
     await expect(client(mock.fetchImpl).removePreview(42)).rejects.toThrow('unrelated DNS');
     expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it('retires a branch before cleanup, preserves the protected latest deployment and repeats idempotently', async () => {
+    let storedDeployments = [
+      deployment(42, SHA, '2026-11-20T00:00:00Z', 'app42old'),
+      deployment(42, SHA, '2026-11-21T00:00:00Z', 'app42new'),
+      deployment(43, SHA, '2026-11-21T00:00:00Z', 'app43'),
+    ];
+    let storedDomains = [domain, { name: 'pr-43.boardsesh.com' }];
+    let storedRecords = [
+      record,
+      {
+        ...record,
+        id: 'record43',
+        name: 'pr-43.boardsesh.com',
+        content: `pr-43.${PREVIEW_PROJECT}.pages.dev`,
+        comment: 'boardsesh:web-preview:pr-43',
+      },
+    ];
+    let protectedDeletes = 0;
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/domains')) return { result: storedDomains };
+      if (request.url.pathname.endsWith('/deployments')) return { result: storedDeployments };
+      if (request.url.pathname.endsWith('/dns_records')) {
+        const name = request.url.searchParams.get('name');
+        return { result: name ? storedRecords.filter((entry) => entry.name === name) : storedRecords };
+      }
+      if (request.method === 'DELETE') {
+        const id = request.url.pathname.split('/').at(-1);
+        if (request.url.pathname.includes('/deployments/')) {
+          const candidate = storedDeployments.find((entry) => entry.id === id);
+          if (!candidate) return { status: 404 };
+          const latest = storedDeployments
+            .filter(
+              (entry) => entry.deployment_trigger.metadata.branch === candidate.deployment_trigger.metadata.branch,
+            )
+            .sort((left, right) => Date.parse(right.created_on) - Date.parse(left.created_on))[0];
+          if (candidate.id === latest?.id) {
+            protectedDeletes += 1;
+            return {
+              status: 400,
+              errors: [{ code: 1000, message: 'The latest deployment for a branch cannot be deleted.' }],
+            };
+          }
+          storedDeployments = storedDeployments.filter((entry) => entry.id !== id);
+        } else if (request.url.pathname.includes('/dns_records/')) {
+          storedRecords = storedRecords.filter((entry) => entry.id !== id);
+        } else if (request.url.pathname.includes('/domains/')) {
+          storedDomains = storedDomains.filter((entry) => entry.name !== id);
+        }
+        return { result: {} };
+      }
+      return normalApi(request);
+    });
+    const retire = vi.fn(async (identity: PreviewDomain & { prNumber: number }) => {
+      expect(identity).toEqual({
+        prNumber: 42,
+        branch: 'pr-42',
+        hostname: domain.name,
+        url: 'https://pr-42.boardsesh.com',
+      });
+      expect(mock.mutations()).toHaveLength(0);
+      storedDeployments.push(retiredDeployment());
+    });
+    const previewClient = client(mock.fetchImpl, retire);
+    await previewClient.removePreview(42);
+    await previewClient.removePreview(42);
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(protectedDeletes).toBe(0);
+    expect(storedDeployments.map((entry) => entry.id).sort()).toEqual(['app43', 'retired42']);
+    expect(storedDomains).toEqual([{ name: 'pr-43.boardsesh.com' }]);
+    expect(storedRecords.map((entry) => entry.id)).toEqual(['record43']);
+    await expect(previewClient.listPreviews()).resolves.toEqual([
+      { prNumber: 43, sha: SHA, createdOn: '2026-11-21T00:00:00Z' },
+    ]);
+  });
+
+  it('requires a retirement uploader before deleting resources from a live branch', async () => {
+    const mock = apiMock((request) =>
+      request.url.pathname.endsWith('/deployments')
+        ? { result: [deployment(42, SHA, '2026-11-21T00:00:00Z')] }
+        : normalApi(request),
+    );
+    await expect(client(mock.fetchImpl).removePreview(42)).rejects.toThrow('requires a trusted tombstone uploader');
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it.each(['failure', 'idle', 'active'])(
+    'does not delete resources after a %s retirement deployment',
+    async (status) => {
+      let retired = false;
+      const mock = apiMock((request) =>
+        request.url.pathname.endsWith('/deployments')
+          ? {
+              result: [
+                deployment(42, SHA, '2026-11-21T00:00:00Z'),
+                ...(retired ? [retiredDeployment(42, 'retired42', status)] : []),
+              ],
+            }
+          : normalApi(request),
+      );
+      const retire = vi.fn(async () => {
+        retired = true;
+      });
+      await expect(client(mock.fetchImpl, retire).removePreview(42)).rejects.toThrow(
+        'not the successful trusted retirement marker',
+      );
+      expect(retire).toHaveBeenCalledTimes(1);
+      expect(mock.mutations()).toHaveLength(0);
+    },
+  );
+
+  it('does not accept a successful deployment with the wrong retirement message', async () => {
+    let uploaded = false;
+    const retired = retiredDeployment();
+    const candidate = {
+      ...retired,
+      deployment_trigger: { metadata: { ...retired.deployment_trigger.metadata, commit_message: 'some other upload' } },
+    };
+    const mock = apiMock((request) =>
+      request.url.pathname.endsWith('/deployments')
+        ? { result: [deployment(42, SHA, '2026-11-21T00:00:00Z'), ...(uploaded ? [candidate] : [])] }
+        : normalApi(request),
+    );
+    await expect(
+      client(mock.fetchImpl, async () => {
+        uploaded = true;
+      }).removePreview(42),
+    ).rejects.toThrow('not the successful trusted retirement marker');
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it.each(['build', 'initialize'])(
+    'does not delete resources after an intermediate %s stage succeeds',
+    async (stageName) => {
+      let uploaded = false;
+      const mock = apiMock((request) =>
+        request.url.pathname.endsWith('/deployments')
+          ? {
+              result: [
+                deployment(42, SHA, '2026-11-21T00:00:00Z'),
+                ...(uploaded ? [retiredDeployment(42, 'retired42', 'success', stageName)] : []),
+              ],
+            }
+          : normalApi(request),
+      );
+      await expect(
+        client(mock.fetchImpl, async () => {
+          uploaded = true;
+        }).removePreview(42),
+      ).rejects.toThrow('not the successful trusted retirement marker');
+      expect(mock.mutations()).toHaveLength(0);
+      expect(mock.calls.filter((request) => request.url.pathname.endsWith('/deployments'))).toHaveLength(13);
+    },
+  );
+
+  it('waits for the final deploy stage before deleting the previous app', async () => {
+    let uploaded = false;
+    let propagationReads = 0;
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/deployments')) {
+        if (uploaded) propagationReads += 1;
+        return {
+          result: [
+            deployment(42, SHA, '2026-11-21T00:00:00Z'),
+            ...(uploaded
+              ? [retiredDeployment(42, 'retired42', 'success', propagationReads < 3 ? 'build' : 'deploy')]
+              : []),
+          ],
+        };
+      }
+      return normalApi(request);
+    });
+    const sleep = vi.fn(async () => {
+      expect(mock.mutations()).toHaveLength(0);
+    });
+    const previewClient = createCloudflareClient({
+      token: 'token',
+      accountId: 'account',
+      zoneId: 'zone',
+      fetch: mock.fetchImpl,
+      sleep,
+      retireDeployment: async () => {
+        uploaded = true;
+      },
+    });
+    await previewClient.removePreview(42);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(propagationReads).toBe(3);
+    expect(mock.mutations().map((request) => request.url.pathname)).toEqual([
+      '/client/v4/zones/zone/dns_records/record42',
+      `/client/v4${PROJECT_PATH}/domains/pr-42.boardsesh.com`,
+      `/client/v4${PROJECT_PATH}/deployments/deployment42`,
+    ]);
+  });
+
+  it('does not upload a retirement deployment when DNS ownership fails preflight', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/deployments'))
+        return { result: [deployment(42, SHA, '2026-11-21T00:00:00Z')] };
+      if (request.url.pathname.endsWith('/dns_records')) return { result: [{ ...record, comment: 'another-owner' }] };
+      return normalApi(request);
+    });
+    const retire = vi.fn(async () => undefined);
+    await expect(client(mock.fetchImpl, retire).removePreview(42)).rejects.toThrow('unrelated DNS');
+    expect(retire).not.toHaveBeenCalled();
+    expect(mock.mutations()).toHaveLength(0);
+  });
+
+  it.each(['domain', 'dns', 'old-app', 'failed-retirement'] as const)(
+    'discovers a retired branch with remaining %s cleanup',
+    async (remaining) => {
+      const mock = apiMock((request) => {
+        if (request.url.pathname.endsWith('/domains')) return { result: remaining === 'domain' ? [domain] : [] };
+        if (request.url.pathname.endsWith('/dns_records')) return { result: remaining === 'dns' ? [record] : [] };
+        if (request.url.pathname.endsWith('/deployments'))
+          return {
+            result: [
+              retiredDeployment(42, 'retired42', remaining === 'failed-retirement' ? 'failure' : 'success'),
+              ...(remaining === 'old-app' ? [deployment(42, SHA, '2026-11-21T00:00:00Z')] : []),
+            ],
+          };
+        return normalApi(request);
+      });
+      const discovered = await client(mock.fetchImpl).listPreviews();
+      expect(discovered.map((entry) => entry.prNumber)).toEqual([42]);
+    },
+  );
+
+  it('surfaces an older deployment deletion failure instead of treating cleanup as successful', async () => {
+    const mock = apiMock((request) => {
+      if (request.url.pathname.endsWith('/deployments'))
+        return { result: [deployment(42, SHA, '2026-11-21T00:00:00Z'), retiredDeployment()] };
+      if (request.method === 'DELETE' && request.url.pathname.includes('/deployments/'))
+        return { status: 403, errors: [{ code: 10000, message: 'Deployment delete denied' }] };
+      return normalApi(request);
+    });
+    await expect(client(mock.fetchImpl).removePreview(42)).rejects.toThrow('Deployment delete denied');
   });
 });
 

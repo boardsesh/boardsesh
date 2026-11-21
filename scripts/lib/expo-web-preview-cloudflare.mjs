@@ -1,6 +1,8 @@
 // This module runs only from trusted preview tooling. PR artifacts never choose
 // the Pages project, DNS zone, branch, hostname or deletion targets.
 export const PREVIEW_PROJECT = 'boardsesh-app-previews';
+export const RETIRED_COMMIT_SHA = '0000000000000000000000000000000000000000';
+export const RETIRED_COMMIT_MESSAGE = 'boardsesh:retired-web-preview:v1';
 const API_ORIGIN = 'https://api.cloudflare.com/client/v4';
 const ZONE_NAME = 'boardsesh.com';
 const PAGE_SIZE = 100;
@@ -52,6 +54,37 @@ function assertProject(project) {
   return project;
 }
 
+function hasRetirementMarker(deployment, branch) {
+  const metadata = deployment?.deployment_trigger?.metadata;
+  return (
+    deployment?.environment === 'preview' &&
+    metadata?.branch === branch &&
+    metadata.commit_hash === RETIRED_COMMIT_SHA &&
+    metadata.commit_message === RETIRED_COMMIT_MESSAGE
+  );
+}
+
+function isRetiredDeployment(deployment, branch) {
+  return (
+    hasRetirementMarker(deployment, branch) &&
+    deployment.latest_stage?.name === 'deploy' &&
+    deployment.latest_stage?.status === 'success'
+  );
+}
+
+function branchDeployments(deployments, branch) {
+  const targets = deployments.filter((deployment) => deployment.deployment_trigger?.metadata?.branch === branch);
+  for (const deployment of targets) {
+    identifier(deployment.id, 'deployment ID');
+    if (deployment.environment !== 'preview')
+      throw new Error(`Refusing to delete a non-preview deployment on ${branch}.`);
+    if (typeof deployment.created_on !== 'string' || !Number.isFinite(Date.parse(deployment.created_on))) {
+      throw new Error(`Cannot identify the latest deployment on ${branch}: invalid creation timestamp.`);
+    }
+  }
+  return targets.sort((left, right) => Date.parse(right.created_on) - Date.parse(left.created_on));
+}
+
 function ownsRecord(record, identity, domainExists) {
   // Pages can create its ordinary project CNAME while a custom domain is being
   // attached. Adopt only that exact target on a domain already attached to THIS
@@ -87,6 +120,7 @@ export function createCloudflareClient({
   token,
   accountId,
   zoneId,
+  retireDeployment,
   fetch: fetchImpl = globalThis.fetch,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }) {
@@ -283,20 +317,44 @@ export function createCloudflareClient({
     if (records.length > 1 || records.some((record) => !ownsRecord(record, identity, domainExists))) {
       throw new Error(`Refusing to delete unrelated DNS for ${identity.hostname}.`);
     }
-    const targets = deployments.filter(
-      (deployment) => deployment.deployment_trigger?.metadata?.branch === identity.branch,
-    );
-    for (const deployment of targets) {
-      identifier(deployment.id, 'deployment ID');
-      if (deployment.environment !== 'preview')
-        throw new Error(`Refusing to delete a non-preview deployment on ${identity.branch}.`);
-    }
+    let targets = branchDeployments(deployments, identity.branch);
     for (const record of records) identifier(record.id, 'DNS record ID');
+    if (targets.length > 0 && !isRetiredDeployment(targets[0], identity.branch)) {
+      // Pages protects the newest deployment of EACH branch, even with force.
+      // Move the alias to a trusted inert document before deleting old app code.
+      // https://developers.cloudflare.com/pages/configuration/preview-deployments/#delete-preview-deployments
+      if (typeof retireDeployment !== 'function') {
+        throw new Error(`Retiring ${identity.branch} requires a trusted tombstone uploader before cleanup.`);
+      }
+      await retireDeployment({
+        prNumber: identity.prNumber,
+        branch: identity.branch,
+        hostname: identity.hostname,
+        url: identity.url,
+      });
+      // Wrangler can return while the provider still reports an intermediate
+      // stage. A successful build/initialize is not proof the inert site serves.
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        targets = branchDeployments(await listDeployments(), identity.branch);
+        if (isRetiredDeployment(targets[0], identity.branch)) break;
+        const failed =
+          hasRetirementMarker(targets[0], identity.branch) &&
+          ['failure', 'canceled'].includes(targets[0].latest_stage?.status);
+        if (failed || attempt === 11) {
+          throw new Error(
+            `Cannot clean ${identity.branch}: its latest deployment is not the successful trusted retirement marker.`,
+          );
+        }
+        await sleep(5000);
+      }
+    }
     for (const record of records) {
       await request('DELETE', `${await zonePath()}/dns_records/${record.id}`, undefined, true);
     }
     if (domainExists) await request('DELETE', `${projectPath}/domains/${identity.hostname}`, undefined, true);
-    for (const deployment of targets) {
+    // Keep the one provider-protected newest tombstone. Older tombstones are
+    // deletable too, so interrupted cleanup does not accumulate retirement code.
+    for (const deployment of targets.slice(1)) {
       await request('DELETE', `${projectPath}/deployments/${deployment.id}?force=true`, undefined, true);
     }
   }
@@ -328,7 +386,7 @@ export function createCloudflareClient({
     for (const deployment of deployments) {
       const metadata = deployment.deployment_trigger?.metadata;
       const match = PR_PATTERN.exec(metadata?.branch ?? '');
-      if (!match || deployment.environment !== 'preview') continue;
+      if (!match || deployment.environment !== 'preview' || isRetiredDeployment(deployment, metadata.branch)) continue;
       const preview = include(match[1]);
       if (!preview.createdOn || Date.parse(deployment.created_on) > Date.parse(preview.createdOn)) {
         if (typeof deployment.created_on === 'string' && Number.isFinite(Date.parse(deployment.created_on)))

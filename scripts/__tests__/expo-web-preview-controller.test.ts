@@ -1,5 +1,14 @@
 /// <reference types="node" />
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +27,7 @@ function fixture() {
     number: 42,
     state: 'open',
     head: { sha: HEAD, repo: { full_name: 'boardsesh/boardsesh' } },
-    base: { repo: { full_name: 'boardsesh/boardsesh' } },
+    base: { ref: 'main', repo: { full_name: 'boardsesh/boardsesh' } },
   };
   const request = {
     id: 10,
@@ -64,10 +73,11 @@ function fixture() {
     },
   };
   const core = { setOutput: vi.fn(), info: vi.fn(), warning: vi.fn(), notice: vi.fn() };
+  const comments: Array<{ id: number; user: { login: string }; body: string }> = [];
   const github = {
     paginate: vi.fn(async (_endpoint: unknown, options: Record<string, unknown>) => {
       if ('pull_number' in options) return [{ filename: 'packages/mobile/app/index.tsx' }];
-      if ('issue_number' in options) return [];
+      if ('issue_number' in options) return comments;
       if ('run_id' in options) return [{ name: `expo-web-preview-42-${HEAD}`, expired: false }];
       return options.task === 'expo-web-preview-request' ? [request] : [];
     }),
@@ -110,7 +120,18 @@ function fixture() {
     listPreviews: vi.fn(async () => [] as Array<{ prNumber: number; createdOn: string }>),
     smokePreview: vi.fn(async () => 'https://pr-42.boardsesh.com'),
   };
-  return { github, context, core, cloudflare, pullRequest, request, run, trustedSha: TRUSTED, handoff: vi.fn() };
+  return {
+    github,
+    context,
+    core,
+    cloudflare,
+    pullRequest,
+    request,
+    run,
+    comments,
+    trustedSha: TRUSTED,
+    handoff: vi.fn(),
+  };
 }
 
 function artifact() {
@@ -125,6 +146,78 @@ function artifact() {
 }
 
 describe('trusted preview requests', () => {
+  it('retires a first-build request and updates its comment when retargeted away', async () => {
+    const options = fixture();
+    options.context.eventName = 'pull_request_target';
+    options.pullRequest.base.ref = 'release/next';
+    options.github.rest.repos.listDeploymentStatuses.mockResolvedValue({ data: [{ state: 'in_progress' }] });
+    options.comments.push({
+      id: 7,
+      user: { login: 'github-actions[bot]' },
+      body: '<!-- boardsesh:expo-web-preview -->\nBuilding',
+    });
+    await controller.runLifecycle(options);
+    expect(options.github.rest.repos.createDeploymentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ deployment_id: 10, state: 'inactive' }),
+    );
+    expect(options.github.rest.issues.updateComment).toHaveBeenCalledWith(
+      expect.objectContaining({ comment_id: 7, body: expect.stringContaining('Browser preview removed') }),
+    );
+    expect(options.github.rest.issues.createComment).not.toHaveBeenCalled();
+    expect(options.cloudflare.removePreview).not.toHaveBeenCalled();
+    expect(options.handoff).not.toHaveBeenCalled();
+  });
+
+  it('does not add a preview comment to unrelated PRs', async () => {
+    const options = fixture();
+    options.context.eventName = 'pull_request_target';
+    options.pullRequest.base.ref = 'release/next';
+    options.github.paginate.mockResolvedValue([]);
+    await controller.runLifecycle(options);
+    expect(options.github.rest.issues.createComment).not.toHaveBeenCalled();
+    expect(options.github.rest.issues.updateComment).not.toHaveBeenCalled();
+    expect(options.cloudflare.removePreview).not.toHaveBeenCalled();
+  });
+
+  it.each(['workflow_dispatch', 'issue_comment'])(
+    'does not build another base branch through %s',
+    async (eventName) => {
+      const options = fixture();
+      options.context.eventName = eventName;
+      options.pullRequest.base.ref = 'release/next';
+      await controller.runLifecycle(options);
+      expect(options.handoff).not.toHaveBeenCalled();
+      expect(options.github.rest.repos.createDeployment).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the repository default branch rather than assuming a base name', async () => {
+    const options = fixture();
+    options.context.payload.repository.default_branch = 'trunk';
+    options.pullRequest.base.ref = 'trunk';
+    await expect(controller.reconcilePullRequest({ ...options, number: 42 })).resolves.toBe('build');
+    expect(options.handoff).toHaveBeenCalledOnce();
+  });
+
+  it('daily cleanup reconciles a hosted PR retargeted away from the default branch', async () => {
+    const options = fixture();
+    options.context.eventName = 'schedule';
+    options.pullRequest.base.ref = 'release/next';
+    options.cloudflare.listPreviews.mockResolvedValue([{ prNumber: 42, createdOn: new Date().toISOString() }]);
+    await controller.runLifecycle(options);
+    expect(options.github.rest.actions.createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow_id: 'expo-web-preview-lifecycle.yml',
+        inputs: { pr: '42', refresh: 'true' },
+      }),
+    );
+    options.context.eventName = 'workflow_dispatch';
+    options.context.payload.inputs.refresh = 'true';
+    await controller.runLifecycle(options);
+    expect(options.cloudflare.removePreview).toHaveBeenCalledWith(42);
+    expect(options.handoff).not.toHaveBeenCalled();
+  });
+
   it('hands same-repository app PRs to a sandbox bound to exact source and control SHAs', async () => {
     const options = fixture();
     await expect(controller.reconcilePullRequest({ ...options, number: 42 })).resolves.toBe('build');
@@ -216,6 +309,16 @@ describe('trusted preview requests', () => {
 });
 
 describe('source and artifact provenance', () => {
+  it('does not build or accept an artifact after the PR changes its base', async () => {
+    const options = fixture();
+    options.pullRequest.base.ref = 'release/next';
+    await expect(controller.sourceRequest(options.github, options.context)).resolves.toBeNull();
+    options.context.eventName = 'workflow_dispatch';
+    options.context.ref = `refs/heads/${options.request.payload.sandboxRef}`;
+    await controller.inspectBuild(options);
+    expect(options.core.setOutput).not.toHaveBeenCalledWith('build', 'true');
+  });
+
   it('accepts GitHub workflow paths with an explicit ref suffix', async () => {
     const options = fixture();
     options.run.path += '@refs/heads/ci-sandbox/web-preview/pr-42/9001';
@@ -351,6 +454,55 @@ describe('source and artifact provenance', () => {
 });
 
 describe('reuse and publication', () => {
+  it('does not activate a hostname when the base changes during upload', async () => {
+    const options = fixture();
+    await controller.publish({
+      ...options,
+      ...artifact(),
+      upload: async () => {
+        options.pullRequest.base.ref = 'release/next';
+      },
+    });
+    expect(options.cloudflare.ensurePreviewDomain).not.toHaveBeenCalled();
+    expect(options.github.rest.repos.createDeploymentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'inactive' }),
+    );
+  });
+
+  it('uploads an inert retirement page using a reserved provider marker and cleans its files', async () => {
+    let uploadedDirectory = '';
+    const upload = vi.fn(
+      async (options: {
+        directory: string;
+        hostDirectory: string;
+        number: number;
+        sha: string;
+        commitMessage: string;
+      }) => {
+        uploadedDirectory = options.directory;
+        expect(options.number).toBe(42);
+        expect(options.sha).toBe('0'.repeat(40));
+        expect(options.commitMessage).toBe('boardsesh:retired-web-preview:v1');
+        expect(options.hostDirectory).toBe(options.directory);
+        const html = readFileSync(join(options.directory, 'index.html'), 'utf8');
+        expect(html).toContain('This preview is closed');
+        expect(html).not.toMatch(/<script|ws\.boardsesh\.com|www\.boardsesh\.com/);
+        expect(readdirSync(options.directory)).toEqual(
+          expect.arrayContaining(['index.html', '_headers', '_redirects', 'robots.txt', 'preview-meta.json']),
+        );
+        expect(existsSync(join(options.directory, 'functions'))).toBe(false);
+        expect(readFileSync(join(options.directory, '_headers'), 'utf8')).toContain('no-store');
+        expect(JSON.parse(readFileSync(join(options.directory, 'preview-meta.json'), 'utf8'))).toEqual({
+          prNumber: 42,
+          retired: true,
+        });
+      },
+    );
+    await controller.retirePreview(42, { upload });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(existsSync(uploadedDirectory)).toBe(false);
+  });
+
   it.each([
     ['matching deployed revision', PREVIOUS, 'reuse'],
     ['superseded or failed upload replaced the branch', HEAD, 'build'],
