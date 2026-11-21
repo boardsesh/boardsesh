@@ -1,0 +1,147 @@
+name: Expo Web Preview Build
+
+# The lifecycle controller dispatches this trusted workflow on a short-lived
+# ci-sandbox branch. The source build runs in a separate job with read-only
+# permissions, no deployment credentials and no shared Actions cache.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number from the trusted deployment request'
+        required: true
+        type: string
+      sha:
+        description: 'Full PR head SHA approved by the request'
+        required: true
+        type: string
+      request:
+        description: 'Trusted GitHub deployment request ID'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_STATIC_ASSET_BASE_URL: https://assets.boardsesh.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_PUBLIC_SENTRY_ENVIRONMENT: preview-web
+
+jobs:
+  inspect:
+    if: startsWith(github.ref, 'refs/heads/ci-sandbox/web-preview/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      pull-requests: read
+    outputs:
+      build: ${{ steps.inspect.outputs.build }}
+      head_sha: ${{ steps.inspect.outputs.head_sha }}
+      head_repository: ${{ steps.inspect.outputs.head_repository }}
+      artifact: ${{ steps.inspect.outputs.artifact }}
+    steps:
+      - name: Check out trusted request validator
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Validate the sandbox and exact PR revision
+        id: inspect
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.inspectBuild({ github, context, core });
+
+  build:
+    needs: inspect
+    if: needs.inspect.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the approved PR source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ needs.inspect.outputs.head_repository }}
+          ref: ${{ needs.inspect.outputs.head_sha }}
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Build the browser app against production
+        env:
+          BOARDSESH_EXPORT_EXPECT_URLS: https://ws.boardsesh.com https://www.boardsesh.com
+        run: bash scripts/build-expo-web-export.sh --subdomain "$RUNNER_TEMP/export"
+
+      - name: Upload the static export
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.inspect.outputs.artifact }}
+          path: ${{ runner.temp }}/export
+          if-no-files-found: error
+          retention-days: 30
+
+  notify:
+    needs: [inspect, build, cleanup]
+    if: always() && needs.inspect.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out trusted publication notification
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      # GITHUB_TOKEN-dispatched workflows do not reliably emit workflow_run.
+      # workflow_dispatch is an explicit exception to that event suppression.
+      - name: Request trusted publication of this build
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              ...context.repo,
+              workflow_id: 'expo-web-preview-publish.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { source_run_id: String(context.runId) },
+            });
+
+  cleanup:
+    needs: [inspect, build]
+    if: always() && startsWith(github.ref, 'refs/heads/ci-sandbox/web-preview/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out trusted sandbox cleanup
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Remove this build's sandbox ref
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { deleteOwnSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
+            await deleteOwnSandbox({ github, context, core, workflowKey: 'web-preview' });

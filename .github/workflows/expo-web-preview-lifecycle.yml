@@ -1,0 +1,77 @@
+name: Expo Web Preview Lifecycle
+
+# Only metadata and trusted main-branch tooling run here. PR code is handed to
+# an isolated ci-sandbox ref by the controller; it never sees these credentials.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, closed]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Open PR number to preview'
+        required: true
+        type: string
+      refresh:
+        description: 'Reconcile or renew an existing preview from the daily sweep'
+        required: false
+        default: 'false'
+        type: string
+  schedule:
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expo-web-preview-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.run_id }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  lifecycle:
+    # pull_request_target always executes the default-branch workflow/ref.
+    # Receive retargets away from main too, but skip title/body-only edits.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issue_comment' ||
+        (github.event.issue.pull_request && startsWith(github.event.comment.body, '/web-preview'))) &&
+      (github.event_name != 'pull_request_target' ||
+        ((github.event.action != 'edited' || github.event.changes.base.ref.from) &&
+          (github.event.pull_request.base.ref == 'main' ||
+            (github.event.action == 'edited' && github.event.changes.base.ref.from == 'main'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The existing credential store is named Production; the trusted controller
+    # restricts writes to the fixed preview project and numbered preview DNS.
+    environment: Production
+    permissions:
+      actions: write
+      contents: write
+      deployments: write
+      pull-requests: write
+    steps:
+      - name: Check out trusted preview tooling
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Set up trusted preview publishing tools
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Reconcile app preview requests and hosting
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          TRUSTED_SHA: ${{ github.workflow_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        with:
+          script: |
+            const controller = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/expo-web-preview-controller.cjs`);
+            await controller.runLifecycle({ github, context, core, trustedSha: process.env.TRUSTED_SHA });

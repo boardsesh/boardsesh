@@ -15,6 +15,11 @@
     "types": ["node"]
   },
   "include": [
+    "lib/expo-web-inputs.d.mts",
+    "lib/expo-web-inputs.test.ts",
+    "lib/expo-web-preview-cloudflare.d.mts",
+    "lib/expo-web-preview-controller.d.cts",
+    "__tests__/expo-web-preview*.test.ts",
     "check-homepage-budget.ts",
     "check-homepage-budget.test.ts",
     "duo-startup-diagnostics.ts",

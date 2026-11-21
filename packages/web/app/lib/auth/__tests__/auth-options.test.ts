@@ -1173,6 +1173,24 @@ describe('authOptions.callbacks.redirect', () => {
     expect(await callRedirect({ url: previewCallback, baseUrl: BASE_URL })).toBe(previewCallback);
   });
 
+  it('returns Google and Apple sign-in to the flat PR app origin and original route', async () => {
+    const previewCallback = 'https://pr-123.boardsesh.com/auth/callback?next=%2Fclimbs';
+    expect(await callRedirect({ url: previewCallback, baseUrl: BASE_URL })).toBe(previewCallback);
+  });
+
+  it.each([
+    'http://pr-123.boardsesh.com/climbs',
+    'https://pr-0.boardsesh.com/climbs',
+    'https://pr-0123.boardsesh.com/climbs',
+    'https://pr-example.boardsesh.com/climbs',
+    'https://pr-123.boardsesh.com.evil.com/climbs',
+    'https://evil-pr-123.boardsesh.com/climbs',
+    'https://pr-123.boardsesh.com:8443/climbs',
+    'https://pr-123.boardsesh.com@evil.com/climbs',
+  ])('refuses an untrusted preview callback %s', async (url) => {
+    expect(await callRedirect({ url, baseUrl: BASE_URL })).toBe(BASE_URL);
+  });
+
   it('coerces a disallowed cross-origin url to baseUrl (open-redirect guard)', async () => {
     expect(await callRedirect({ url: 'https://evil.com/app', baseUrl: BASE_URL })).toBe(BASE_URL);
   });
