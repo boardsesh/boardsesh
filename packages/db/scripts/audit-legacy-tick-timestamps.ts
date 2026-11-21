@@ -72,7 +72,7 @@ SELECT
   CASE WHEN kilter_detached_at IS NULL THEN NULL
        ELSE EXTRACT(EPOCH FROM kilter_detached_at AT TIME ZONE 'UTC')::double precision END
     AS "kilterDetachedAtEpochSeconds"
-FROM boardsesh_ticks
+FROM public.boardsesh_ticks
 WHERE origin IN ('json_import', 'aurora_pull', 'kilter_pull', 'native')
 ORDER BY user_id, board_type, angle, climb_uuid, id
 `;

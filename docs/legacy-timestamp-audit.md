@@ -7,6 +7,8 @@ not a backfill:
 - there is no `--apply` option, generated SQL, delete, update, or migration;
 - the output is an evidence-only JSONL artifact, not an input accepted by any
   Boardsesh command;
+- the scan explicitly reads `public.boardsesh_ticks`, matching the schema
+  validated and fingerprinted in the artifact regardless of the role’s search path;
 - every database read occurs on one reserved PostgreSQL connection in one
   `SERIALIZABLE READ ONLY DEFERRABLE` snapshot, after the command sets and
   verifies `TimeZone=UTC` and a five-minute statement timeout;
