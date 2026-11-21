@@ -150,6 +150,7 @@ vi.mock('../../lib/haptics', () => ({
 
 vi.mock('../../lib/analytics', () => ({
   track: analytics.track,
+  capture: analytics.track,
 }));
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
@@ -1597,11 +1598,16 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
       await expect(connected).resolves.toBe(false);
       // Countable: a tap that never reached a scan otherwise leaves no outcome.
       expect(analytics.track).toHaveBeenCalledWith('Bluetooth Connection Failed', {
+        bleEvidenceVersion: 1,
+        bleEvidenceStatus: 'no_scan',
         boardName: 'moonboard',
         layoutId: 2,
         sizeId: 1,
         failureReason: 'board_switch_timeout',
       });
+      const timeoutFailure = analytics.track.mock.calls.find(([event]) => event === 'Bluetooth Connection Failed');
+      expect(timeoutFailure?.[1]).not.toHaveProperty('bleEvidence');
+      expect(timeoutFailure?.[1]).not.toHaveProperty('bleScanId');
 
       rerenderOn(rerender, MOON_PROPS);
       await act(async () => {});

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { signalStrengthOf, upsertDiscoveredDevice } from '../scan-device-cache';
 import type { DiscoveredDevice } from '../types';
+import { BleEvidenceCollector } from '../controller-evidence';
 
 // The map key is the cache's own business (name for a serial-named box, id
 // otherwise); assert on the rows the picker would see.
@@ -117,6 +118,58 @@ describe('upsertDiscoveredDevice', () => {
     expect(storedDevice(devices, 'a')?.manufacturerData).toBe('4c000215');
     expect(storedDevice(devices, 'a')?.serviceData).toEqual({ 'uuid-1': '0102' });
   });
+
+  it.each(['android', 'ios'])(
+    'refreshes late %s evidence without re-pushing and preserves it across a signal bucket change',
+    (platform) => {
+      const devices = new Map<string, DiscoveredDevice>();
+      const collector = new BleEvidenceCollector('connection_picker', platform, 'split-packet-scan');
+      const firstEvidence = collector.observe({ deviceId: 'controller', localName: 'MoonBoard A' });
+      upsertDiscoveredDevice(devices, {
+        deviceId: 'controller',
+        name: 'MoonBoard A',
+        rssi: -70,
+        evidence: firstEvidence,
+      });
+      const heldRow = storedDevice(devices, 'controller');
+      const lateEvidence = collector.observe({
+        deviceId: 'controller',
+        manufacturerData: '0000313233',
+        serviceData: { '0000fff0-0000-1000-8000-00805f9b34fb': '000102' },
+      });
+      expect(
+        upsertDiscoveredDevice(devices, {
+          deviceId: 'controller',
+          name: 'MoonBoard A',
+          rssi: -70,
+          evidence: lateEvidence,
+        }),
+      ).toBe(false);
+      expect(storedDevice(devices, 'controller')).toBe(heldRow);
+      expect(heldRow?.evidence).toMatchObject({
+        manufacturerData: '0000313233',
+        serviceData: { '0000fff0-0000-1000-8000-00805f9b34fb': '000102' },
+      });
+      // A packet without evidence cannot erase bytes already heard.
+      expect(
+        upsertDiscoveredDevice(devices, {
+          deviceId: 'controller',
+          name: 'MoonBoard A',
+          rssi: -70,
+        }),
+      ).toBe(false);
+      expect(heldRow?.evidence).toBe(lateEvidence);
+      expect(
+        upsertDiscoveredDevice(devices, {
+          deviceId: 'controller',
+          name: 'MoonBoard A',
+          rssi: -50,
+        }),
+      ).toBe(true);
+      expect(storedDevice(devices, 'controller')).not.toBe(heldRow);
+      expect(storedDevice(devices, 'controller')?.evidence).toBe(lateEvidence);
+    },
+  );
 
   it('merges service-data entries across packets and does not clobber existing manufacturer data', () => {
     const devices = new Map<string, DiscoveredDevice>();

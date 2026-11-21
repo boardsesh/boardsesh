@@ -25,7 +25,9 @@ import { bluetoothTransport } from './transport-runtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { advertisedBoardTypesBySerial, type AdvertisedBoardTypes } from './advertised-board-type';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { track } from '../analytics';
+import { capture, track } from '../analytics';
+import { Platform } from 'react-native';
+import { BleEvidenceCollector, blePlxEvidencePacket, bleEvidenceProperties } from './controller-evidence';
 import { getBleManager } from './ble-manager';
 import { claimBleScan, releaseBleScan } from './ble-scan-slot';
 import { waitForBlePoweredOn } from './availability';
@@ -130,6 +132,7 @@ export function useBoardScan({
   const seriallessCountRef = useRef(0);
   const moonboardCountRef = useRef(0);
   const scanAttemptRef = useRef(0);
+  const evidenceCollectorRef = useRef<BleEvidenceCollector | null>(null);
   // Who started the running scan, for its Board Quickstart Scan Finished, which
   // can fire from the timeout, `finish`, an error or unmount. Set when the radio
   // starts, so it is never read empty.
@@ -150,7 +153,8 @@ export function useBoardScan({
     if (scanningRef.current) {
       if (releaseBleScan(scanToken.current)) void getBleManager().stopDeviceScan();
       scanningRef.current = false;
-      track(SHARED_EVENTS.BoardQuickstartScanFinished, {
+      capture(SHARED_EVENTS.BoardQuickstartScanFinished, {
+        ...bleEvidenceProperties(evidenceCollectorRef.current?.snapshot(undefined, true)),
         outcome,
         found_count: foundCountRef.current,
         serialless_count: seriallessCountRef.current,
@@ -237,6 +241,8 @@ export function useBoardScan({
 
       // Keyed by `QuickstartScanDevice.key`: a serial box once per serial, as the
       // lookup has always counted them, a serial-less board once per device id.
+      const evidenceCollector = new BleEvidenceCollector('board_picker', Platform.OS);
+      evidenceCollectorRef.current = evidenceCollector;
       const found = new Map<string, QuickstartScanDevice>();
       // Which entry each BLE device is listed under, so a device that turns out
       // to carry a serial replaces its own serial-less entry.
@@ -275,6 +281,7 @@ export function useBoardScan({
           return;
         }
         if (!device) return;
+        evidenceCollector.observe(blePlxEvidencePacket(device));
         // The unfiltered scan surfaces every nearby peripheral. The classifier
         // gates Aurora names on the same board/service check the picker uses
         // before treating a "#serial" as a board serial, so a stray "Printer

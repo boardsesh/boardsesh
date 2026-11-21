@@ -12,13 +12,14 @@
 
 import { parseApiLevel, parseSerialNumber } from '@boardsesh/ble-protocol';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { track } from '../analytics';
+import { capture } from '../analytics';
+import { Platform } from 'react-native';
+import { BleEvidenceCollector, blePlxEvidencePacket, bleEvidenceProperties } from './controller-evidence';
 import { getBleManager } from './ble-manager';
 import { claimBleScan, releaseBleScan } from './ble-scan-slot';
 import { waitForBlePoweredOn } from './availability';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
 import { isLikelyBoardDevice } from './board-device-filter';
-import { base64ToHex, serviceDataToHex } from './base64';
 import { manufacturerCompanyId } from './advertisement';
 import type { BoardScanFamily } from './types';
 
@@ -55,6 +56,7 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
     rssi?: number;
   };
   const entries = new Map<string, ReconEntry>();
+  const evidenceCollector = new BleEvidenceCollector('bug_report', Platform.OS, reconCorrelationId);
   const scanToken = Symbol('board-advertisement-recon');
   if (!claimBleScan(scanToken)) return 0;
 
@@ -66,9 +68,14 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
       if (releaseBleScan(scanToken)) void getBleManager().stopDeviceScan();
-      for (const entry of entries.values()) {
-        track(SHARED_EVENTS.BleAdvertisementRecon, {
+      for (const [deviceId, entry] of entries) {
+        const observed = evidenceCollector.snapshot(deviceId, true);
+        capture(SHARED_EVENTS.BleAdvertisementRecon, {
           reconCorrelationId,
+          ...bleEvidenceProperties({
+            ...observed,
+            devices: observed.devices.filter((device) => device.deviceId === deviceId),
+          }),
           family: classifyFamily(entry.name, [...entry.serviceUuids]),
           deviceName: entry.name ?? undefined,
           deviceNamePresent: !!entry.name,
@@ -84,15 +91,16 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
       resolve(entries.size);
     };
 
-    void getBleManager().startDeviceScan(null, null, (error, device) => {
+    void getBleManager().startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
       if (error || settled) {
         finish();
         return;
       }
       if (!device) return;
 
-      const name = device.localName ?? device.name ?? undefined;
-      const serviceUuids = [...(device.serviceUUIDs ?? []), ...(device.overflowServiceUUIDs ?? [])];
+      const observation = evidenceCollector.observe(blePlxEvidencePacket(device));
+      const name = observation.localName ?? observation.cachedName;
+      const serviceUuids = observation.serviceUuids;
       // Only keep board-like peripherals so unrelated BLE devices never reach
       // analytics. Classify on this packet's fields plus anything already merged.
       const existing = entries.get(device.id);
@@ -104,8 +112,8 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
       const entry: ReconEntry = existing ?? { serviceUuids: new Set() };
       entry.name = mergedName;
       entry.serviceUuids = mergedServiceUuids;
-      entry.manufacturerData = base64ToHex(device.manufacturerData) ?? entry.manufacturerData;
-      const serviceData = serviceDataToHex(device.serviceData);
+      entry.manufacturerData = observation.manufacturerData ?? entry.manufacturerData;
+      const serviceData = observation.serviceData;
       if (serviceData) entry.serviceData = { ...entry.serviceData, ...serviceData };
       if (device.rssi != null) entry.rssi = device.rssi;
       entries.set(device.id, entry);

@@ -18,6 +18,14 @@ const CONCURRENCY_GATE_DIAGNOSTICS_PROJECT_PATH =
 
 const TEST_SOURCE_FILES = [
   {
+    sourcePath: '../ios-tests/BoardBleEvidenceTests.swift',
+    projectPath: 'BoardseshTests/BoardBleEvidenceTests.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/BoardBleEvidence.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/BoardBleEvidence.swift',
+  },
+  {
     sourcePath: '../ios-tests/LiveActivityWidgetTests.swift',
     projectPath: 'BoardseshTests/LiveActivityWidgetTests.swift',
   },

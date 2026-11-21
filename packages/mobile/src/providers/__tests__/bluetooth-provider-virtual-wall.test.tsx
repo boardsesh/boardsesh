@@ -172,7 +172,7 @@ vi.mock('../../lib/ble/use-board-bluetooth', () => ({ useBoardBluetooth: bluetoo
 vi.mock('../../lib/ble/resolve-serials', () => ({ useResolvedBleDeviceBoards: () => resolvedBoards.value }));
 vi.mock('../../lib/ble/bluetooth-status-store', () => ({ registerBluetoothConnection: vi.fn(() => vi.fn()) }));
 vi.mock('../../lib/haptics', () => haptics);
-vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
+vi.mock('../../lib/analytics', () => ({ track: analytics.track, capture: analytics.track }));
 vi.mock('../../lib/graphql/use-active-board', () => ({ useSetActiveBoard: () => vi.fn(async () => {}) }));
 vi.mock('../../lib/graphql/client', () => ({
   getHttpClient: () => ({ request: graphql.request }),

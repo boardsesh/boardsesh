@@ -80,6 +80,7 @@ vi.mock('@boardsesh/ble-protocol/aurora', async (importOriginal) => ({
 const mockTrack = vi.hoisted(() => vi.fn());
 vi.mock('../../analytics', () => ({
   track: mockTrack,
+  capture: mockTrack,
 }));
 
 const mockGetLedPlacements = vi.hoisted(() => vi.fn());
@@ -289,6 +290,185 @@ describe('useBoardBluetooth', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('attaches the selected failed attempt evidence without adding events', async () => {
+    const evidence = {
+      scan: {
+        version: 1 as const,
+        scanId: 'failed-scan',
+        source: 'test',
+        devices: [],
+        complete: true,
+        droppedCount: 0,
+        capability: 'supported' as const,
+      },
+      selectedDeviceId: 'failed-controller',
+      discoveredServices: ['unhandled-controller-service'],
+      discoveryMode: 'full' as const,
+      discoveryOutcome: 'failed' as const,
+    };
+    const fakeAdapter = {
+      ...makeFakeAdapter({
+        requestAndConnect: vi.fn().mockRejectedValue(new Error('UART write characteristic not found')),
+      }),
+      getControllerEvidence: () => evidence,
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    const failures = mockTrack.mock.calls.filter(([event]) => event === 'Bluetooth Connection Failed');
+    expect(failures).toHaveLength(1);
+    expect(JSON.parse(failures[0][1].bleEvidence)).toMatchObject(evidence);
+    const started = mockTrack.mock.calls.find(([event]) => event === 'Bluetooth Scan Started');
+    expect(failures[0][1].bleConnectionAttemptId).toBe(started?.[1].bleConnectionAttemptId);
+    expect(mockTrack.mock.calls.filter(([event]) => event === 'Bluetooth Connection Success')).toHaveLength(0);
+  });
+
+  it('retains connection evidence for its disconnect after adapter diagnostics clear', async () => {
+    const evidence = {
+      scan: {
+        version: 1 as const,
+        scanId: 'own-scan',
+        source: 'test',
+        devices: [],
+        complete: true,
+        droppedCount: 0,
+        capability: 'supported' as const,
+      },
+      selectedDeviceId: 'own-controller',
+    };
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      getControllerEvidence: vi.fn(() => evidence),
+    };
+    const onConnectionEnded = vi.fn();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, onConnectionEnded }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+    fakeAdapter.getControllerEvidence.mockReturnValue(undefined as unknown as typeof evidence);
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    expect(onConnectionEnded).toHaveBeenCalledWith(expect.objectContaining({ controllerEvidence: evidence }));
+    const success = mockTrack.mock.calls.find(([event]) => event === 'Bluetooth Connection Success');
+    expect(JSON.parse(success?.[1].bleEvidence)).toMatchObject(evidence);
+  });
+
+  it.each(['device-1', 'another-controller'])(
+    'merges native GATT diagnostics only for the selected controller: %s',
+    async (diagnosticDeviceId) => {
+      const scanEvidence = {
+        scan: {
+          version: 1 as const,
+          scanId: 'original-native-scan',
+          source: 'native_ios_picker',
+          devices: [],
+          complete: true,
+          droppedCount: 0,
+          capability: 'supported' as const,
+        },
+        selectedDeviceId: 'device-1',
+      };
+      const fakeAdapter = { ...makeFakeAdapter(), getControllerEvidence: () => scanEvidence };
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValueOnce({
+        deviceId: diagnosticDeviceId,
+        controllerEvidence: {
+          deviceId: diagnosticDeviceId,
+          advertisementStatus: 'not_observed',
+          discoveredServices: ['native-write-service'],
+          discoveryMode: 'targeted',
+          discoveryOutcome: 'complete',
+          writeServiceUuid: 'native-write-service',
+          writeCharacteristicUuid: 'native-write-characteristic',
+        },
+      });
+      const onConnectionEnded = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, onConnectionEnded }),
+      );
+      await act(async () => {
+        await result.current.connect();
+      });
+      const success = mockTrack.mock.calls.find(([event]) => event === 'Bluetooth Connection Success');
+      const reported = JSON.parse(success?.[1].bleEvidence);
+      expect(reported.scan.scanId).toBe('original-native-scan');
+      expect(reported.selectedDeviceId).toBe('device-1');
+      if (diagnosticDeviceId === 'device-1') {
+        expect(reported).toMatchObject({
+          discoveredServices: ['native-write-service'],
+          discoveryMode: 'targeted',
+          discoveryOutcome: 'complete',
+          writeServiceUuid: 'native-write-service',
+          writeCharacteristicUuid: 'native-write-characteristic',
+        });
+      } else {
+        expect(reported).not.toHaveProperty('discoveredServices');
+      }
+      expect(scanEvidence).not.toHaveProperty('discoveredServices');
+      await act(async () => {
+        await result.current.disconnect();
+      });
+      expect(onConnectionEnded).toHaveBeenCalledWith(expect.objectContaining({ controllerEvidence: reported }));
+    },
+  );
+
+  it('does not reuse a previous selected controller after an unselected failure', async () => {
+    const previousEvidence = {
+      scan: {
+        version: 1 as const,
+        scanId: 'previous-scan',
+        source: 'test',
+        devices: [],
+        complete: true,
+        droppedCount: 0,
+        capability: 'supported' as const,
+      },
+      selectedDeviceId: 'previous-controller',
+    };
+    let currentEvidence: typeof previousEvidence | undefined = previousEvidence;
+    let requests = 0;
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      requestAndConnect: vi.fn(async () => {
+        requests += 1;
+        if (requests > 1) {
+          currentEvidence = undefined;
+          throw new Error('Target board not found during scan');
+        }
+        return { deviceId: 'previous-controller', deviceName: 'MoonBoard' };
+      }),
+      getControllerEvidence: () => currentEvidence,
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    await act(async () => {
+      await result.current.connect();
+    });
+    const failure = mockTrack.mock.calls.find(([event]) => event === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ bleEvidenceStatus: 'not_observed' });
+    expect(failure?.[1]).not.toHaveProperty('bleEvidence');
   });
 
   it('shows permission copy and stops before adapter availability when Android BLE permission is denied', async () => {
@@ -3082,6 +3262,10 @@ describe('useBoardBluetooth native connection adoption', () => {
     });
     expect(result.current.isConnected).toBe(false);
     expect(onConnectionEnded).toHaveBeenCalledWith({
+      controllerEvidence: expect.objectContaining({
+        selectedDeviceId: 'native-dev-1',
+        scan: expect.objectContaining({ capability: 'unsupported' }),
+      }),
       reason: 'unexpected',
       disconnectTrigger: 'link_drop',
       connectionDurationSec: 10,
@@ -4272,9 +4456,26 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     // lightbulb over a null adapter: every later send then early-returned with
     // skipReason 'no_adapter' and the wall stayed dark until the climber toggled
     // the connection off and back on.
-    const fakeAdapter = makeFakeAdapter({
-      write: vi.fn().mockRejectedValue(new Error('Not connected')),
-    });
+    const attemptEvidence = {
+      scan: {
+        version: 1 as const,
+        scanId: 'initial-write-scan',
+        source: 'test',
+        devices: [],
+        complete: true,
+        droppedCount: 0,
+        capability: 'supported' as const,
+      },
+      selectedDeviceId: 'controller-before-drop',
+    };
+    let evidenceAvailable = true;
+    const fakeAdapter = {
+      ...makeFakeAdapter({ write: vi.fn().mockRejectedValue(new Error('Not connected')) }),
+      getControllerEvidence: () => (evidenceAvailable ? attemptEvidence : undefined),
+      disconnect: vi.fn(async () => {
+        evidenceAvailable = false;
+      }),
+    };
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
     );
@@ -4296,6 +4497,8 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
     const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
     expect(failure?.[1]).toMatchObject({ boardName: 'kilter', failureReason: 'dropped_after_connect' });
+    expect(JSON.parse(failure?.[1].bleEvidence)).toMatchObject(attemptEvidence);
+    expect(mockTrack.mock.calls.filter(([event]) => event === 'Bluetooth Connection Failed')).toHaveLength(1);
     if (browser) {
       expect(showGuidance).toHaveBeenCalledExactlyOnceWith('kilter', {
         category: 'connect_failed',
