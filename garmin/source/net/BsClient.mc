@@ -192,6 +192,30 @@ class BsClient {
 }
 
 module BsAuthReply {
+    // Session discovery asks for authenticatedUserId beside mySessions.
+    // Only its exact refusal proves that [] would mean anonymous; an honest
+    // empty list, unavailable read or unrelated error must not spend a secret.
+    function graphqlSessionsAuthRequired(code as Lang.Number, response) as Lang.Boolean {
+        if (code < 200 || code >= 300 || !(response instanceof Lang.Dictionary)) { return false; }
+        var errors = response["errors"];
+        if (!(errors instanceof Lang.Array)) { return false; }
+        for (var index = 0; index < errors.size(); index += 1) {
+            var error = errors[index];
+            if (error instanceof Lang.Dictionary) {
+                var path = error["path"];
+                var extensions = error["extensions"];
+                if (path instanceof Lang.Array && path.size() == 1 &&
+                        "authenticatedUserId".equals(path[0]) &&
+                        extensions instanceof Lang.Dictionary &&
+                        "UNAUTHENTICATED".equals(extensions["code"]) &&
+                        "Authentication required".equals(error["message"])) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     // True for the reply /graphql gives an expired or invalid access token.
     // yoga.ts reads such a bearer as anonymous (a refused credential is an
     // HTTP 401 instead), so the request answers HTTP 200 and an auth-gated
@@ -315,7 +339,8 @@ class BsRequest {
         // An expired token on /graphql answers 200 with an auth error, not
         // 401. Both take the same refresh and one retry; the retried reply
         // goes to the caller whatever it is.
-        if (_authed && !_retried && (code == 401 || BsAuthReply.graphqlAuthRequired(code, response))) {
+        if (_authed && !_retried && (code == 401 || BsAuthReply.graphqlAuthRequired(code, response) ||
+                ("mySessions".equals(_unwrapField) && BsAuthReply.graphqlSessionsAuthRequired(code, response)))) {
             _retried = true;
             _client.handleUnauthorized(self);
             return;

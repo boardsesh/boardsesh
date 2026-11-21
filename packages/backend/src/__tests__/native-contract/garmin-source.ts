@@ -25,9 +25,13 @@ export function garminFunction(recording: GarminRecording, path: string, name: s
  * have no recorded checkpoint yet. It proves only what the recorded replay
  * proves, for the source in this tree.
  */
-export function currentGarminFunction(path: string, name: string, scope: Scope) {
+export function currentGarminFunction(path: string, name: string, scope: Scope, className?: string) {
   const source = readFileSync(new URL(`../../../../../garmin/source/${path}`, import.meta.url), 'utf8');
-  return replayGarminFunction(source, `current:${path}`, name, scope);
+  // BsRefreshFlight and BsRequest both have onResponse. Select its class
+  // explicitly rather than accidentally replaying the first method by name.
+  const start = className ? source.indexOf(`class ${className} {`) : 0;
+  if (start < 0) throw new Error(`Garmin class absent: ${className}`);
+  return replayGarminFunction(source.slice(start), `current:${path}`, name, scope);
 }
 
 function replayGarminFunction(source: string, label: string, name: string, scope: Scope) {

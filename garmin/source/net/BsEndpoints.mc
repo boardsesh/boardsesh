@@ -58,10 +58,11 @@ module BsEndpoints {
 
     // ---- GraphQL bodies -----------------------------------------------------
 
-    // query { mySessions { id name boardPath isActive } }
+    // mySessions alone returns [] for an anonymous caller. The existing
+    // identity scalar proves admission without another request or DB read.
     function mySessionsBody() as Lang.Dictionary {
         return {
-            "query" => "query { mySessions { id name boardPath isActive } }",
+            "query" => "query { authenticatedUserId mySessions { id name boardPath isActive } }",
             "variables" => {}
         };
     }

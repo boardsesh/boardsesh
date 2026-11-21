@@ -163,6 +163,14 @@ cannot acquire an owner from an ambiguous result. A successful rotation whose
 storage write fails never publishes its new tokens and requires explicit
 recovery. Pending ticks remain stored throughout.
 
+At launch, session discovery requests `authenticatedUserId` alongside
+`mySessions`. The latter alone answers an anonymous request with an empty list.
+The identity scalar instead returns an explicit `UNAUTHENTICATED` error, which
+starts the same single-flight refresh and one retry. An authenticated empty
+list still opens No session without refreshing; outages and unrelated errors
+also never spend a refresh secret. This fixes #7768 without changing the
+backend's optional-session query or the installed native/watch protocol.
+
 This distinguishes Garmin's documented pre-send refusal codes from timeout and
 connection-loss outcomes; see
 [Communications error meanings](https://developer.garmin.com/connect-iq/api-docs/Toybox/Communications.html).

@@ -43,7 +43,7 @@ function testPairAndRefreshBodies(logger as Test.Logger) as Lang.Boolean {
 (:test)
 function testGraphqlBodies(logger as Test.Logger) as Lang.Boolean {
     var my = BsEndpoints.mySessionsBody();
-    Test.assertEqual(my["query"], "query { mySessions { id name boardPath isActive } }");
+    Test.assertEqual(my["query"], "query { authenticatedUserId mySessions { id name boardPath isActive } }");
 
     var tick = BsEndpoints.saveTickGraphqlBody({ "climbUuid" => "abc" });
     Test.assertEqual(
