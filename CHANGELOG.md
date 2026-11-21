@@ -6,6 +6,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ## 2026-11-21
 
+### New
+
+- Keep track of your bug reports and reply to the Boardsesh crew without leaving the app. ([#7991](https://github.com/boardsesh/boardsesh/pull/7991))
+
 ### Fixed
 
 - Bug reports from Sign in with Apple accounts no longer trigger undeliverable acknowledgement emails. ([#7990](https://github.com/boardsesh/boardsesh/pull/7990))

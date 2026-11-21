@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-21T13:55:56.389Z",
+  "generatedAt": "2026-11-21T17:03:18.954Z",
   "entries": [
+    {
+      "prNumber": 7991,
+      "category": "new",
+      "title": "Keep track of your bug reports and reply to the Boardsesh crew without leaving the app.",
+      "mergedAt": "2026-11-21T16:18:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7991"
+    },
     {
       "prNumber": 7990,
       "category": "fixed",
