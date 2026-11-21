@@ -200,19 +200,22 @@ describe('player-to-create handoff', () => {
     await act(async () => vi.advanceTimersByTimeAsync(550));
 
     expect(router.dismiss).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        forkFrames: 'p1129r15p1130r12',
-        forkName: 'Sloper Traverse',
-        forkDescription: 'Start matched on the jug',
-        forkParentUuid: handoffClimb.uuid,
-        boardName: 'kilter',
-        layoutId: '8',
-        sizeId: '17',
-        setIds: '26,27',
-        angle: '40',
+    expect(router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: {
+          forkFrames: 'p1129r15p1130r12',
+          forkName: 'Sloper Traverse',
+          forkDescription: 'Start matched on the jug',
+          forkParentUuid: handoffClimb.uuid,
+          boardName: 'kilter',
+          layoutId: '8',
+          sizeId: '17',
+          setIds: '26,27',
+          angle: '40',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 });

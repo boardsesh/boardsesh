@@ -140,8 +140,11 @@ function pushClimbReference(
   };
   const target = activate ? buildBoardClimbTarget(params, 'view', args.climbUuid) : null;
   const activationIntent = target ? createClimbHandoffIntent(target) : undefined;
-  router.push({
-    pathname: '/(tabs)/climbs/[climbUuid]',
-    params: { ...params, ...(activationIntent ? { activationIntent } : {}) },
-  });
+  router.push(
+    {
+      pathname: '/(tabs)/climbs/[climbUuid]',
+      params: { ...params, ...(activationIntent ? { activationIntent } : {}) },
+    },
+    { withAnchor: true },
+  );
 }
