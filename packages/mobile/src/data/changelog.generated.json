@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-21T11:51:57.492Z",
+  "generatedAt": "2026-11-21T13:55:56.389Z",
   "entries": [
+    {
+      "prNumber": 7990,
+      "category": "fixed",
+      "title": "Bug reports from Sign in with Apple accounts no longer trigger undeliverable acknowledgement emails.",
+      "mergedAt": "2026-11-21T13:37:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7990"
+    },
     {
       "prNumber": 7978,
       "category": "fixed",

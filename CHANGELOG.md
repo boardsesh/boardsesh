@@ -2,12 +2,13 @@
 
 User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
-manual changes). See docs/mobile-ota-updates.md.
+manual changes). See docs/operations/mobile-ota-updates.md.
 
 ## 2026-11-21
 
 ### Fixed
 
+- Bug reports from Sign in with Apple accounts no longer trigger undeliverable acknowledgement emails. ([#7990](https://github.com/boardsesh/boardsesh/pull/7990))
 - Keep your queue within reach from the desktop mini-player while browsing any tab. ([#7978](https://github.com/boardsesh/boardsesh/pull/7978))
 - Follow a climb to its setter with links you can tap. Buttons stay readable when hovered. ([#7939](https://github.com/boardsesh/boardsesh/pull/7939))
 - See your climb's colours in the frosted driving button in your browser. ([#7974](https://github.com/boardsesh/boardsesh/pull/7974))
