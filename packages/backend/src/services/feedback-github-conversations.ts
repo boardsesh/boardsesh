@@ -31,7 +31,8 @@ export type FeedbackGithubInboundJob = { commentId: number; issueNumber: number;
 /** Only the exact marker on its own first line publishes a collaborator response. */
 export function customerReplyBody(comment: string): string | null {
   const [firstLine, ...bodyLines] = comment.split('\n');
-  if (firstLine.trim() !== '#replytocustomer') return null;
+  const command = firstLine.trim();
+  if (command !== '/reply' && command !== '#replytocustomer') return null;
   return bodyLines.join('\n').trim() || null;
 }
 

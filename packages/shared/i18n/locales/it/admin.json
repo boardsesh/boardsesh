@@ -125,7 +125,7 @@
       "latestReply": "Ultima risposta",
       "publicNotice": "Le risposte vengono condivise nel ticket GitHub pubblico collegato.",
       "openGithub": "Rispondi su GitHub",
-      "githubHint": "Per scrivere a chi ha inviato la segnalazione, inizia un commento GitHub con #replytocustomer. Solo i collaboratori autorizzati di Boardsesh possono inviare questi messaggi."
+      "githubHint": "Per scrivere a chi ha inviato la segnalazione, scrivi solo /reply nella prima riga di un commento GitHub. Solo i collaboratori autorizzati di Boardsesh possono inviare questi messaggi."
     },
     "filters": {
       "reporter": "ID account di chi ha segnalato",

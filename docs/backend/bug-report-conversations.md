@@ -8,15 +8,17 @@ Pending app replies are a durable outbox, not a separate discussion.
 
 ## Replying from GitHub
 
-Start a comment on the report's linked issue with this exact first line:
+Each new bug-report issue includes a reminder for collaborators. To reply,
+start a comment on the report's linked issue with this exact first line:
 
 ```text
-#replytocustomer
+/reply
 Could you try refreshing your board list and tell us what happens?
 ```
 
-The marker must be on its own first line. It is removed from the app's displayed
-message. Only human repository collaborators whose current GitHub permission is
+Write the reply on the following lines. The app displays only the reply text.
+Existing comments using `#replytocustomer` on its own first line still work.
+Only human repository collaborators whose current GitHub permission is
 write, maintain, or admin can publish these replies. The backend checks the
 comment's current author and repository permission through GitHub; webhook
 author-association strings are not an authorization source. Ordinary comments,

@@ -163,7 +163,7 @@
       "latestReply": "Letzte Antwort",
       "publicNotice": "Antworten werden im verlinkten öffentlichen GitHub-Issue geteilt.",
       "openGithub": "Auf GitHub antworten",
-      "githubHint": "Um der meldenden Person zu schreiben, beginne einen GitHub-Kommentar mit #replytocustomer. Nur autorisierte Boardsesh-Mitwirkende können diese Nachrichten senden."
+      "githubHint": "Um der meldenden Person zu schreiben, setze /reply allein in die erste Zeile eines GitHub-Kommentars. Nur autorisierte Boardsesh-Mitwirkende können diese Nachrichten senden."
     },
     "filters": {
       "reporter": "Konto-ID der meldenden Person",

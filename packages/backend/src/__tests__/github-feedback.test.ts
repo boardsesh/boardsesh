@@ -118,10 +118,20 @@ describe('buildFeedbackIssue', () => {
     expect(wire).toContain('[redacted email]');
   });
 
-  it('shows a consent line that flips with contactConsent', () => {
-    expect(buildFeedbackIssue(bugPayload({ contactConsent: true }))?.body).toContain('✅ Reporter agreed to follow-up');
-    expect(buildFeedbackIssue(bugPayload({ contactConsent: false }))?.body).toContain('🚫 No contact consent');
-    expect(buildFeedbackIssue(bugPayload({ contactConsent: null }))?.body).toContain('🚫 No contact consent');
+  it.each(['shake-bug', 'drawer-bug'] as const)('explains in-app replies on %s issues', (source) => {
+    const body = buildFeedbackIssue(bugPayload({ source, contactConsent: false }))?.body;
+    expect(body).toContain('Collaborators with write access');
+    expect(body).toContain('`/reply` alone on the first line of a comment');
+    expect(body).toContain('write their message on the following lines');
+    expect(body).toContain('Signed-in reporters receive the message in the app.');
+  });
+
+  it('limits email follow-up to reporters who consented', () => {
+    expect(buildFeedbackIssue(bugPayload({ contactConsent: true }))?.body).toContain(
+      '✅ Reporter agreed to email follow-up',
+    );
+    expect(buildFeedbackIssue(bugPayload({ contactConsent: false }))?.body).toContain('🚫 No email consent');
+    expect(buildFeedbackIssue(bugPayload({ contactConsent: null }))?.body).toContain('🚫 No email consent');
   });
 
   it('renders attached screenshots between the metadata table and the contact line', () => {

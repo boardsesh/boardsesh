@@ -60,7 +60,7 @@ describe('GitHub-backed feedback conversations', () => {
     render(<FeedbackConversation report={report} token="admin-token" onClose={vi.fn()} />);
 
     expect(await screen.findByText(staffMessage.body)).toBeTruthy();
-    expect(screen.getByText(/#replytocustomer/)).toBeTruthy();
+    expect(screen.getByText(/\/reply/)).toBeTruthy();
     expect(screen.getByText('Replies are shared on the linked public GitHub issue.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Reply on GitHub' }).getAttribute('href')).toBe(report.githubIssueUrl);
     expect(screen.queryByRole('textbox')).toBeNull();
