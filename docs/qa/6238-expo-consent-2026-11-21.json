@@ -1,0 +1,58 @@
+{
+  "issue": 2644,
+  "epic": 6238,
+  "origin": "https://app.boardsesh.com",
+  "method": {
+    "profiles": "two fresh signed-out Chromium contexts",
+    "dynamicTraffic": "all GraphQL, flags, telemetry, replay, attribution and WebSockets intercepted",
+    "network": "deployed same-origin static GETs and app documents only",
+    "region": "synthetic US; promptRequired=false; GPC also echoed synthetically",
+    "sourceCommit": null,
+    "nativeRuntime": null
+  },
+  "result": {
+    "browser": "Chromium 151.0.7922.34",
+    "regional": {
+      "startedUtc": "2026-11-21T11:11:43.301Z",
+      "globalPrivacyControl": false,
+      "bundles": [
+        "__expo-metro-runtime-8c088df87a31e4e6accd81c554ec290d.js",
+        "__common-1247af860059527f66ab0466d7437483.js",
+        "entry-fa0aa81e65ed969b4c228a436c1da2d6.js"
+      ],
+      "regionQueries": 1,
+      "flagsRequests": 8,
+      "captureAttempts": [
+        {
+          "method": "POST",
+          "endpoint": "/api/posthog/batch/",
+          "screenEvents": 1,
+          "grantedHeader": true
+        }
+      ],
+      "observationMs": 16000,
+      "choice": "regional default",
+      "finalRoute": "/auth/login"
+    },
+    "gpc": {
+      "startedUtc": "2026-11-21T11:11:43.304Z",
+      "globalPrivacyControl": true,
+      "bundles": [
+        "__expo-metro-runtime-8c088df87a31e4e6accd81c554ec290d.js",
+        "__common-1247af860059527f66ab0466d7437483.js",
+        "entry-fa0aa81e65ed969b4c228a436c1da2d6.js"
+      ],
+      "regionQueries": 1,
+      "flagsRequests": 8,
+      "captureAttempts": [],
+      "observationMs": 16000,
+      "choice": "absent",
+      "finalRoute": "/auth/login"
+    }
+  },
+  "limits": [
+    "Proves controlled deployed-client capture attempts, not real regional detection or ingestion.",
+    "No authenticated, account-transition, replay or withdrawal behavior established.",
+    "Expo Settings required sign-in; withdrawal was not exercised and the separate website was not tested by this harness."
+  ]
+}

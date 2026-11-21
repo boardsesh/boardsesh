@@ -134,7 +134,40 @@ read-only audit refreshed the following evidence at **2026-11-21 10:29 UTC**.
 | Retention and erasure | The October ledger records approval for daily 60-day activity retention and exactly two retries. Its manual retention run deleted zero rows. One historical discovery still failed with HTTP 504 at 13/13 attempts; the other approved retry succeeded and its deletion request was accepted. [#6817](https://github.com/boardsesh/boardsesh/pull/6817) later bounded lookup memory. | Current scheduled retention results, the failed discovery's eventual result and downstream erasure receipts. The code fix and provider acceptance are not proof of erasure. No current backend job/retention readback was available. |
 | Store availability | Compatible Android 2.7.0 was offered on the public [US](https://play.google.com/store/apps/details?id=com.boardsesh.app&gl=US&hl=en_US) and [Australian](https://play.google.com/store/apps/details?id=com.boardsesh.app&gl=AU&hl=en) listings on 21 November. All eleven tagged Android 2.7.0 builds contain #6359; the approved release/build anchors resolve to `38aa9d18976eaa96d98118b2201a9190deab0b14`. | The listing does not expose versionCode or first availability. A conservative full 30 days from this observation ends **21 December 10:29 UTC**; earlier dated availability proof can establish an earlier bound. The historically verified iOS deadline remains **14 November 00:26:59 UTC**. |
 | Legacy ingestion | A 19 November screen-event preview found 386 iOS and 156 Android events from seven known pre-consent binary cohorts among 2,705 production app screen events. [Transformation readback](https://us.posthog.com/project/412845/pipeline) listed one enabled GeoIP transformation. | Preview all affected event classes and replay separately, establish each platform's grace period, obtain the recorded explicit confirmation and verify old/current/operational traffic before enabling a cutoff. The screen sample is not a complete rule preview. |
-| Release QA and Sentry | [#6607](https://github.com/boardsesh/boardsesh/pull/6607) fixed browser account identification. | Dated physical iOS/Android release-device evidence, authenticated deployed Expo auth/replay/US-default capture checks, and Sentry organization/project IP-storage readbacks remain open. Connected tools did not expose the Sentry admin settings. |
+| Release QA and Sentry | [#6607](https://github.com/boardsesh/boardsesh/pull/6607) fixed browser account identification. Controlled deployed Expo US-default and GPC capture checks passed below. | Dated physical iOS/Android release-device evidence, authenticated Expo auth/replay/withdrawal checks and Sentry organization/project IP-storage readbacks remain open. No available Sentry tool or relevant local authorization could read the admin settings. |
+
+### Additional controlled Expo browser evidence
+
+At **2026-11-21 11:11 UTC**, an independently repeated Vite+-launched probe loaded
+the deployed Expo browser bundle in two fresh signed-out Chromium 151.0.7922.34
+contexts. [Sanitized traffic evidence](qa/6238-expo-consent-2026-11-21.json) records
+the immutable entry bundle
+`entry-fa0aa81e65ed969b4c228a436c1da2d6.js`. No native runtime or source commit
+was inferred from the bundle name.
+
+Only app documents and same-origin static assets reached the deployed origin.
+GraphQL, functional flags, analytics, replay, attribution and WebSockets were
+intercepted. The region response and flag responses were synthetic; no production
+analytics event or account mutation was sent.
+
+1. With US and `promptRequired=false`, the app had a regional-default
+   `boardsesh-consent` cookie at the end of the observation and attempted one `$screen` POST to `/api/posthog/batch/` carrying
+   `x-boardsesh-analytics-consent: granted`.
+2. With navigator GPC, `Sec-GPC: 1` and the matching synthetic server response,
+   the app had no `boardsesh-consent` cookie at the end of the observation
+   and attempted no requests to the monitored PostHog capture endpoints during
+   16 seconds.
+3. Functional-flag requests were still attempted in both profiles. Their mocked
+   responses do not attest the live flag service.
+4. Expo Settings required sign-in, so no withdrawal control was exercised.
+   These two profiles did not test the separate website. No access control was
+   bypassed.
+
+This closes the missing controlled US-default capture observation. Real regional
+detection, ingestion, authenticated transitions, replay and withdrawal still need
+their own evidence. Local Android tooling reported zero connected devices and
+native iOS tooling was unavailable, so no physical release-device acceptance was
+claimed.
 
 Never select a legacy cohort by numeric build number alone: current and old iOS
 versions both used build number 13 in the inspected sample. Use platform plus exact
