@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { isNativeAppAffecting } from '../lib/app-build-inputs.mjs';
 
 // Guards the two properties that make the gate useful and safe: it must re-run
 // when a description is edited (otherwise a fixed body stays red until the next
@@ -85,16 +86,10 @@ function backendLabelDecision(): (paths: string[]) => boolean {
   if (!step?.with?.script) throw new Error('pr-test-plan.yml has no backend-label step');
   const script = step.with.script;
 
-  // The two path lists, verbatim. Each is matched on its own shape rather than
-  // on whatever happens to be its last entry: anchoring on the final path meant
-  // adding one below it silently broke the extraction.
   const prefixes = /const BACKEND_PREFIXES = \[[^\]]*\];/.exec(script);
   if (!prefixes) throw new Error('backend-label step has no BACKEND_PREFIXES list');
-  // The closure body contains no semicolon until it ends, so the lazy match
-  // stops in the right place however many paths it grows.
-  const closure = /const affectsMobilePreview = \(path\) =>[\s\S]*?;\n/.exec(script);
-  if (!closure) throw new Error('backend-label step has no affectsMobilePreview closure');
-  const declarations = `${prefixes[0]}\n${closure[0]}`;
+  expect(script).toContain('isNativeAppAffecting: affectsMobilePreview');
+  expect(script).toContain('scripts/lib/app-build-inputs.mjs');
 
   // The decision itself, verbatim — so the test cannot drift from the composition.
   const expression = /wanted =\s*([\s\S]*?);\n/.exec(script);
@@ -108,7 +103,11 @@ function backendLabelDecision(): (paths: string[]) => boolean {
   // body. The eval adds no reach the test file did not already have, and it is
   // what makes the guard impossible to satisfy by copying the logic.
   // oxlint-disable-next-line no-implied-eval
-  return new Function('paths', `${declarations}\nreturn (${expression[1]});`) as (paths: string[]) => boolean;
+  const evaluate = new Function('paths', 'affectsMobilePreview', `${prefixes[0]}\nreturn (${expression[1]});`) as (
+    paths: string[],
+    affectsMobilePreview: typeof isNativeAppAffecting,
+  ) => boolean;
+  return (paths) => evaluate(paths, isNativeAppAffecting);
 }
 
 describe('pr-test-plan backend label', () => {
@@ -160,37 +159,39 @@ describe('pr-test-plan backend label', () => {
   });
 });
 
-/**
- * The `affectsMobilePreview` closure the backend-label step uses is a third
- * verbatim copy of the one in mobile-ota-preview.yml (the second lives in
- * mobile-ota-preview-prompt.yml). Extracting it into a shared file is the real
- * fix and is not this change; until then, this asserts the copies agree.
- *
- * The failure it exists for is silent: someone narrows the OTA trigger list,
- * pr-test-plan.yml keeps the old one, and PRs quietly get labelled `backend`
- * for a preview that no longer publishes.
- */
-function mobilePreviewPaths(workflow: string): string[] {
-  const closure = /const affectsMobilePreview = \(path\) =>([\s\S]*?);\n/.exec(workflow);
-  if (!closure) throw new Error('workflow has no affectsMobilePreview closure');
-  return [...closure[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
-}
+describe('policy checkout isolation', () => {
+  it('keeps sparse policy files outside the later dependency-install checkout', () => {
+    const workflow = parse(WORKFLOW) as {
+      jobs: {
+        check: {
+          steps: Array<{
+            name?: string;
+            uses?: string;
+            with?: { path?: string; script?: string };
+          }>;
+        };
+      };
+    };
+    const steps = workflow.jobs.check.steps;
+    const policyIndex = steps.findIndex((step) => step.name === 'Check out app input policy');
+    expect(policyIndex).toBeGreaterThanOrEqual(0);
+    expect(steps[policyIndex].with?.path).toBe('app-input-policy');
+    const fullCheckout = steps.slice(policyIndex + 1).find((step) => step.uses?.startsWith('actions/checkout@'));
+    expect(fullCheckout).toBeDefined();
+    expect(fullCheckout?.with?.path).toBeUndefined();
+    const label = steps.find((step) => step.name === 'Label PRs that also need a backend deploy');
+    expect(label?.with?.script).toContain('/app-input-policy/scripts/lib/app-build-inputs.mjs');
+  });
+});
 
-describe('affectsMobilePreview stays in step across workflows', () => {
-  const OTA_PREVIEW = readFileSync(
-    join(__dirname, '..', '..', '.github', 'workflows', 'mobile-ota-preview.yml'),
-    'utf8',
+describe('shared app input policy across workflows', () => {
+  it.each(['mobile-ota-preview.yml', 'mobile-ota-preview-prompt.yml', 'pr-test-plan.yml'])(
+    '%s imports the common policy before deciding eligibility',
+    (filename) => {
+      const source = readFileSync(join(__dirname, '../../.github/workflows', filename), 'utf8');
+      expect(source).toContain('scripts/lib/app-build-inputs.mjs');
+      expect(source).toContain('await import(');
+      expect(source).not.toContain("path.startsWith('packages/shared/')");
+    },
   );
-
-  it('the backend-label step matches the OTA preview gate', () => {
-    expect(mobilePreviewPaths(WORKFLOW)).toEqual(mobilePreviewPaths(OTA_PREVIEW));
-  });
-
-  it('matches the fork prompt too', () => {
-    const prompt = readFileSync(
-      join(__dirname, '..', '..', '.github', 'workflows', 'mobile-ota-preview-prompt.yml'),
-      'utf8',
-    );
-    expect(mobilePreviewPaths(prompt)).toEqual(mobilePreviewPaths(OTA_PREVIEW));
-  });
 });

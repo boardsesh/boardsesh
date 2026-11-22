@@ -3,6 +3,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isAppAffecting } from './lib/expo-web-inputs.mjs';
+import { isNativeAppAffecting } from './lib/app-build-inputs.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -162,29 +163,11 @@ function isWebAffecting(filePath) {
   );
 }
 
-// Keep this in step with the main-push paths formerly owned by
-// mobile-ota-production.yml. Cumulative detection also recovers an OTA push
-// whose earlier production-deploy run was superseded while pending.
+// OTA and browser builds use the same app-input policy. The generated changelog
+// is written by promotion itself, so it must not queue another OTA.
 function isOtaAffecting(filePath) {
   return (
-    (filePath.startsWith('packages/mobile/') && filePath !== 'packages/mobile/src/data/changelog.generated.json') ||
-    filePath.startsWith('packages/shared/') ||
-    filePath.startsWith('packages/board-constants/') ||
-    filePath.startsWith('packages/shared-schema/') ||
-    filePath === 'package.json' ||
-    filePath === 'pnpm-lock.yaml' ||
-    filePath === 'pnpm-workspace.yaml' ||
-    filePath.startsWith('patches/') ||
-    filePath === 'scripts/mobile-publish.ts' ||
-    filePath === 'scripts/lib/mobile-publish-retry.ts' ||
-    filePath === 'scripts/lib/ota-branch-probe.ts' ||
-    filePath === 'scripts/lib/eoas.ts' ||
-    filePath === 'scripts/mobile-ota-promote.ts' ||
-    filePath === 'scripts/mobile-ota-unreleased-native.ts' ||
-    filePath === 'scripts/mobile-ota-schema-ready.mjs' ||
-    filePath === 'scripts/mobile-ota-server-ready.mjs' ||
-    filePath === 'scripts/mobile-ota-stage-verify.ts' ||
-    filePath === '.github/workflows/mobile-ota-production.yml'
+    filePath !== 'packages/mobile/src/data/changelog.generated.json' && isNativeAppAffecting(filePath, 'production')
   );
 }
 
@@ -231,7 +214,9 @@ function createCliGit({ cwd = process.cwd() } = {}) {
       }
     },
     changedFiles(baseSha, headSha) {
-      const output = runGit(['diff', '--name-only', baseSha, headSha]);
+      // Treat a move as deletion + addition so moving app code outside its
+      // roots still rebuilds the app that lost that code.
+      const output = runGit(['diff', '--no-renames', '--name-only', baseSha, headSha]);
       return output === '' ? [] : output.split('\n').filter(Boolean);
     },
   };
@@ -370,6 +355,12 @@ function runCli(argv) {
   if (result.changedFiles.length > 0) {
     console.error(`Changed files since deployment baseline:\n${result.changedFiles.join('\n')}`);
   }
+  console.error(
+    `Native OTA: ${result.ota ? 'build' : 'skip'}; qualifying paths: ${result.changedFiles.filter(isOtaAffecting).join(', ') || '(none)'}`,
+  );
+  console.error(
+    `Browser app: ${result.app ? 'build' : 'skip'}; qualifying paths: ${result.changedFiles.filter(isAppAffecting).join(', ') || '(none)'}`,
+  );
   return result;
 }
 

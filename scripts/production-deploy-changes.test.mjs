@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import {
   classifyChangedFiles,
+  createCliGit,
   determineProductionDeployChanges,
   formatGitHubOutputs,
   selectLatestSuccessfulPriorRun,
@@ -29,6 +32,49 @@ function validGit(changedFiles = []) {
     changedFiles: () => changedFiles,
   };
 }
+
+void test('moving app code into the backend rebuilds both app targets', (context) => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'boardsesh-production-deploy-changes-'));
+  context.after(() => rmSync(repoRoot, { recursive: true, force: true }));
+  const git = (args) =>
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'core.hooksPath=/dev/null',
+        '-c',
+        'commit.gpgSign=false',
+        '-c',
+        'user.name=Boardsesh tests',
+        '-c',
+        'user.email=tests@boardsesh.invalid',
+        ...args,
+      ],
+      { cwd: repoRoot, encoding: 'utf8' },
+    ).trim();
+  const sourcePath = 'packages/mobile/src/session.ts';
+  const destinationPath = 'packages/backend/src/session.ts';
+
+  git(['init', '--quiet']);
+  git(['config', 'diff.renames', 'true']);
+  mkdirSync(dirname(join(repoRoot, sourcePath)), { recursive: true });
+  writeFileSync(join(repoRoot, sourcePath), 'export const sessionLabel = "Ready to climb";\n');
+  git(['add', '.']);
+  git(['commit', '--quiet', '-m', 'Add app session module']);
+  const baseSha = git(['rev-parse', 'HEAD']);
+  mkdirSync(dirname(join(repoRoot, destinationPath)), { recursive: true });
+  git(['mv', sourcePath, destinationPath]);
+  git(['commit', '--quiet', '-m', 'Move session module into backend']);
+  const headSha = git(['rev-parse', 'HEAD']);
+
+  // This is a real rename; name-only without --no-renames loses the app path.
+  assert.equal(git(['diff', '--name-only', baseSha, headSha]), destinationPath);
+  const changedPaths = createCliGit({ cwd: repoRoot }).changedFiles(baseSha, headSha);
+  assert.deepEqual(new Set(changedPaths), new Set([sourcePath, destinationPath]));
+  const targets = classifyChangedFiles(changedPaths);
+  assert.equal(targets.app, true);
+  assert.equal(targets.ota, true);
+});
 
 void test('selects the newest successful prior run and skips unfinished ones', () => {
   const selected = selectLatestSuccessfulPriorRun(
@@ -181,6 +227,49 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
       cloudflare: false,
       staticAssets: false,
     });
+  }
+});
+
+void test('app and OTA builds skip backend changes with only shared tests or QA recordings', () => {
+  const targets = classifyChangedFiles([
+    'packages/backend/src/graphql/resolvers/queue.ts',
+    'packages/db/src/schema/app/queue.ts',
+    'packages/shared/queue/src/__tests__/reducer.test.ts',
+    'packages/mobile/.maestro/queue.yaml',
+    'packages/mobile/screenshot-fixtures/GetBoard/recording.json',
+    'packages/mobile/docs/session.md',
+  ]);
+
+  assert.equal(targets.backend, true);
+  assert.equal(targets.web, true);
+  assert.equal(targets.app, false);
+  assert.equal(targets.ota, false);
+});
+
+void test('browser-only app changes export the browser app without staging an OTA', () => {
+  for (const filePath of [
+    'packages/mobile/src/components/climb-row.web.tsx',
+    'packages/mobile/src/web-shims/bottom-sheet.tsx',
+    'packages/mobile/web-runtime/pnpm-lock.yaml',
+    'packages/mobile/public/index.html',
+  ]) {
+    const targets = classifyChangedFiles([filePath]);
+    assert.equal(targets.app, true, filePath);
+    assert.equal(targets.ota, false, filePath);
+  }
+});
+
+void test('shared schemas and dependency files still stage both app targets', () => {
+  for (const filePath of [
+    'packages/shared-schema/src/generated/types.ts',
+    'packages/shared/graphql/src/generated/graphql.ts',
+    'pnpm-lock.yaml',
+    'packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.webp',
+    'scripts/lib/app-build-inputs.mjs',
+  ]) {
+    const targets = classifyChangedFiles([filePath]);
+    assert.equal(targets.app, true, filePath);
+    assert.equal(targets.ota, true, filePath);
   }
 });
 

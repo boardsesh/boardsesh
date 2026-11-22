@@ -128,6 +128,20 @@ describe('preview base-context reconciliation', () => {
     );
   });
 
+  it('offers a successful unchanged-base preview to the reuse verifier only for automatic events', async () => {
+    const previous = { ...previousDeployment(), sha: 'd'.repeat(40) };
+    const automatic = await fixture({ previous }).run('pull_request');
+    expect(JSON.parse(String(automatic.get('reuse_candidate')))).toEqual({ deployment: previous, status: 'success' });
+    expect((await fixture({ previous }).run('workflow_dispatch')).get('reuse_candidate')).toBe('');
+  });
+
+  it.each([{ status: 'failure' }, { nativeReset: true }, { main: 'd'.repeat(40) }])(
+    'does not offer unsafe publication context for reuse: %j',
+    async (change) => {
+      expect((await fixture(change).run()).get('reuse_candidate')).toBe('');
+    },
+  );
+
   it.each(['pull_request', 'workflow_dispatch'])(
     'resets each new JS-only revision on %s before a conflict or failed upload can retain older variants',
     async (eventName) => {

@@ -162,7 +162,7 @@ jobs:
       deployments: read
       pull-requests: read
     outputs:
-      action: ${{ steps.decide.outputs.action }}
+      action: ${{ steps.reuse.outputs.reuse == 'true' && 'reuse' || steps.decide.outputs.action }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
       branch: ${{ steps.decide.outputs.branch }}
       fork_skip: ${{ steps.decide.outputs.fork_skip }}
@@ -182,6 +182,13 @@ jobs:
       # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
       # every workflow. An app installation token has its own, larger budget (#7659).
       # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Check out app input policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Mint API token
         id: api_token
         continue-on-error: true
@@ -208,30 +215,8 @@ jobs:
             // directly; for comment / dispatch we resolve it via the API below.
             let headSha = '';
 
-            const affectsMobilePreview = (path) =>
-              path.startsWith('packages/mobile/') ||
-              path.startsWith('packages/shared/') ||
-              path.startsWith('packages/board-constants/') ||
-              path.startsWith('packages/shared-schema/') ||
-              path.startsWith('patches/') ||
-              path === 'package.json' ||
-              path === 'pnpm-lock.yaml' ||
-              path === 'pnpm-workspace.yaml' ||
-              path === 'scripts/mobile-publish.ts' ||
-              path === 'scripts/lib/mobile-publish-retry.ts' ||
-              path === 'scripts/lib/ota-branch-probe.ts' ||
-              path === 'scripts/lib/eoas.ts' ||
-              path === 'scripts/mobile-ota-boot-check.ts' ||
-              path === 'scripts/mobile-ota-boot-fixture.gradle' ||
-              path === 'scripts/mobile-ota-boot-preview.ts' ||
-              path === 'scripts/mobile-ota-preview-candidates.ts' ||
-              path === 'scripts/mobile-ota-preview-source.ts' ||
-              path === 'scripts/lib/mobile-release-policy.ts' ||
-              path === 'scripts/lib/ota-boot-check.ts' ||
-              path === 'scripts/lib/ota-preview-boot-receipt.ts' ||
-              path === 'scripts/lib/ota-publish-protocol.ts' ||
-              path === '.github/workflows/mobile-ota-boot-check.yml' ||
-              path === '.github/workflows/mobile-ota-preview.yml';
+            const { nativeAppAffectingPaths } =
+              await import(`${process.env.GITHUB_WORKSPACE}/scripts/lib/app-build-inputs.mjs`);
 
             // Paths that can move the native fingerprint, and therefore turn a
             // platform native-only mid-PR. Mirrors the native-input globs the
@@ -271,8 +256,12 @@ jobs:
                 pull_number: Number(number),
                 per_page: 100,
               });
-              needsReset = files.some((file) => affectsNativeFingerprint(file.filename));
-              return files.some((file) => affectsMobilePreview(file.filename));
+              if (files.length >= 3000) throw new Error('PR exceeds the complete changed-file listing limit. Split the PR.');
+              const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean));
+              needsReset = paths.some(affectsNativeFingerprint);
+              const inputs = nativeAppAffectingPaths(paths);
+              core.info(`Native preview inputs: ${inputs.join(', ') || '(none; skipping build)'}`);
+              return inputs.length > 0;
             };
 
             if (context.eventName === 'pull_request') {
@@ -450,6 +439,30 @@ jobs:
             core.setOutput('source_base_sha', bases.sourceBaseSha);
             core.setOutput('source_base_ref', bases.sourceBaseRef);
             core.setOutput('main_sha', bases.mainSha);
+            // Only automatic pushes can reuse; an explicit request always retries publication.
+            const canCheckReuse = context.eventName === 'pull_request' && !nativeReset &&
+              sameDeployment && sameBases && previousStatus === 'success';
+            core.setOutput('reuse_candidate', canCheckReuse
+              ? JSON.stringify({ deployment: previous, status: previousStatus }) : '');
+
+      - name: Set up the reuse verifier
+        if: steps.pin.outputs.reuse_candidate != ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Keep a verified unchanged preview
+        id: reuse
+        if: steps.pin.outputs.reuse_candidate != ''
+        env:
+          OTA_REUSE_CANDIDATE: ${{ steps.pin.outputs.reuse_candidate }}
+          HEAD_SHA: ${{ steps.decide.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.decide.outputs.pr_number }}
+          MAIN_SHA: ${{ steps.pin.outputs.main_sha }}
+          SOURCE_BASE_SHA: ${{ steps.pin.outputs.source_base_sha }}
+          SOURCE_BASE_REF: ${{ steps.pin.outputs.source_base_ref }}
+          GH_TOKEN: ${{ steps.api_token.outputs.token || github.token }}
+        run: node --experimental-strip-types scripts/mobile-ota-preview-reuse.ts
 
   # ── Default-branch runs never execute PR code. Re-dispatch this workflow on a
   # fresh `ci-sandbox/ota-preview/pr-<n>/<run id>` branch at the same trusted commit;
@@ -797,6 +810,7 @@ jobs:
               environment: 'pr-preview',
               task: `ota-preview-pr-${process.env.PR_NUMBER}`,
               payload: {
+                otaPreviewRunId: context.runId,
                 otaPreviewBases: {
                   version: 2,
                   mainSha: process.env.MAIN_SHA,

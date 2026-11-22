@@ -3484,13 +3484,27 @@ Every PR with React Native changes can publish its JS bundle to its own self-hos
 above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
 `mobile-ota-preview-sweep.yml`).
 
+- **Shared build-input policy.** `scripts/lib/app-build-inputs.mjs` classifies native OTA and
+  browser app inputs for previews and automatic production builds. Backend/database-only changes,
+  documentation, tests/mocks, Maestro flows and recorded screenshot fixtures skip app exports and
+  uploads. Browser-only source forks, browser shims/runtime and public web assets skip native OTAs.
+  Shared code/schema, board catalogue/art, root manifests/lockfiles and patches stay conservative:
+  they still trigger app builds. Generic runtime fixture directories remain inputs. Gate logs name
+  the qualifying paths. Manual production recovery still builds every target.
 - **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
   mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
   runs `eoas publish --branch pr-<number>` for each compatible platform. The production channel stays
   baked in app config and no same-named channel or map job is created. Xprem exposes the branch
   through `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the
   running binary's exact runtimeVersion/platform.
-- **Reset before every new revision.** A JS-only commit can conflict on one base or fail one upload.
+- **Reuse a proven unchanged preview.** An automatic same-repository push can keep the last
+  successful preview when the complete revision comparison has no native app inputs and the pinned
+  main/source bases match. The gate validates the prior automatic run, its unexpired receipt artifact
+  and both public device manifests against the frozen update IDs and bundle hashes, then rechecks
+  the live PR and deployment state. It skips reset, export and upload and retains the actual served
+  SHA. Missing/legacy/partial proof, expired receipts, uncertain comparisons and changed bases rebuild.
+  Explicit `/ota-preview` and manual dispatch requests still retry publication.
+- **Reset before every changed app revision.** A JS-only commit can conflict on one base or fail one upload.
   Clearing the previous revision first prevents an omitted runtime from keeping old code surfable.
   Native changes and base advances also reset. Historical dual-base records reset once during migration.
   The gate scans the PR diff for
@@ -3499,7 +3513,7 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   `locales/`, `targets/`, `ios/`, `android/`, `packages/mobile/package.json`, `patches/`, the root
   manifest and lockfile — every repo-local source
   `vp exec expo-updates fingerprint:generate --platform <p> --debug` lists) and emits
-  a native-change signal. Every run also compares the pinned main SHA and the PR's base
+  a native-change signal. Every publishing run also compares the pinned main SHA and the PR's base
   ref/SHA against the latest per-PR deployment's versioned `otaPreviewBases` payload. That deployment
   must have completed successfully, and its SHA must match the current PR head. Only a retry of
   that same revision with identical bases can skip the reset. New revisions, changed bases, missing
