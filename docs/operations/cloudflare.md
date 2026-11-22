@@ -1104,12 +1104,16 @@ final: Node calls it on the first `write` or on `end`, however the body is sent.
   The follow-up is the Cache Response Rule below, which can match response
   headers as well as status. It needs the page to mark the degradation on a
   response header first, because a 200 status looks the same either way.
-- The production smoke (`scripts/production-smoke.ts`, "a missing list page 404s
-  without a CDN cache TTL") checks the whole path on every deploy against the
-  Railway origin, and every 30 minutes against www. Cloudflare passes
-  `CDN-Cache-Control` downstream; only `Cloudflare-CDN-Cache-Control` stays at
-  the edge. The check adds a query key that changes on every run, so the edge
-  has never stored the URL it asks for.
+- The production smoke (`scripts/production-smoke.ts`, "a missing climb view
+  404s without a CDN cache TTL") checks the whole path on every deploy against
+  the Railway origin, and every 30 minutes against www. It asks for a climb that
+  does not exist, because a missing climb view 404s with the same day-long
+  header. It avoids list URLs because the `boardsesh:climb-view-challenge` rule
+  challenges every `/list` and `/setter/` path on www, and the smoke's
+  User-Agent is not allowlisted. Cloudflare passes `CDN-Cache-Control`
+  downstream; only `Cloudflare-CDN-Cache-Control` stays at the edge. The check
+  adds a query key that changes on every run, so the edge has never stored the
+  URL it asks for.
 
 **Edge options considered and not adopted:**
 

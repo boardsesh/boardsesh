@@ -326,12 +326,21 @@ function missingRequiredShards(response: SmokeResponse): RequiredSitemapShard[] 
 }
 
 /**
- * A list URL whose board size does not exist. The middleware stamps the list
- * page's day-long `CDN-Cache-Control` on it before the page renders, then the
- * page calls `notFound()`: the exact shape of the 404 Cloudflare kept serving
- * for a real list page on 2026-11-22.
+ * A climb-view URL for a climb that does not exist, on a real board config. The
+ * middleware stamps the climb view's day-long `CDN-Cache-Control` on it before
+ * the page renders, then the page 404s: the same shape as the list page 404
+ * Cloudflare kept serving on 2026-11-22.
+ *
+ * Not a list URL on purpose. On www, every path ending in `/list` (and every
+ * `/setter/` path) sits behind the `boardsesh:climb-view-challenge`
+ * managed challenge (`BOARD_CONTENT_CHALLENGE_EXPRESSION` in
+ * `infra/cloudflare/config.ts`), and this smoke's User-Agent is not on
+ * `CRAWLER_ALLOW_TOKENS`. The 30-minute www run would get the challenge page
+ * instead of the 404 and fail every time. `/view/` is only rate-limited, and one
+ * request per run with two retries stays far under that limit.
  */
-export const MISSING_LIST_PAGE_PATH = '/kilter/original/99x99-not-a-size/screw_bolt/40/list';
+export const MISSING_CLIMB_VIEW_PATH =
+  '/kilter/original/12x12-square/screw_bolt/40/view/not-a-real-climb-00000000000000000000000000000000';
 
 /**
  * A query key that is new on every run. Cloudflare's default cache key carries
@@ -588,10 +597,10 @@ export const WWW_CHECKS: SmokeCheck[] = [
   {
     // The only proof that the error-response guard works inside Next rather than
     // only on a bare node:http server: unit tests cannot boot instrumentation.ts,
-    // run the middleware and render a notFound() in one process. A rollback to a
+    // run the middleware and render a page 404 in one process. A rollback to a
     // build from before the guard fails this check, by design.
-    name: 'a missing list page 404s without a CDN cache TTL',
-    path: `${MISSING_LIST_PAGE_PATH}?${EDGE_CACHE_MISS_QUERY}`,
+    name: 'a missing climb view 404s without a CDN cache TTL',
+    path: `${MISSING_CLIMB_VIEW_PATH}?${EDGE_CACHE_MISS_QUERY}`,
     assert: (response) =>
       firstFailure(
         expectStatus(response, 404),
