@@ -17,3 +17,9 @@ animation frames. Fixture scenes do not exercise accounts, persistence, or BLE.
 | Light, painted climb | [Before](before-light.png) | [After](after-light.png) |
 
 [Grouped metadata and publication settings](after-settings.png).
+
+The secondary Add holds row follows the primary painting controls and is excluded
+from wall sizing. [Small-viewport measurements](wall-sizing.json) verify that the
+375 × 667 preview renders a 332.8 px wall in idle, opening, and failure states.
+Hiding the row or increasing its minimum height to 240 px leaves the wall height
+unchanged. The measured wall matches its maximum available size to pixel rounding.

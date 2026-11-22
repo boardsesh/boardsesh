@@ -69,8 +69,8 @@ export type BoardBudget = {
   insetBottom: number;
   /** Whether the route transport is on screen — a boulder pays nothing for it. */
   showRouteTransport: boolean;
-  /** Measured Add holds / missing-hold rows, including translated text. */
-  extraControlsHeight?: number;
+  /** Save-blocking missing-hold notice only. Secondary actions never reduce the wall. */
+  missingHoldsHeight?: number;
   /** Measured brush, tool and status rows; large text can grow all three. */
   actionBarHeight?: number;
 };
@@ -86,6 +86,6 @@ export function computeBoardMaxHeight(budget: BoardBudget): number {
       ABOVE_FOLD_CHROME -
       ((budget.actionBarHeight ?? CREATE_ACTION_BAR_HEIGHT) - CREATE_ACTION_BAR_HEIGHT) -
       routeSlotReserve -
-      (budget.extraControlsHeight ?? 0),
+      (budget.missingHoldsHeight ?? 0),
   );
 }

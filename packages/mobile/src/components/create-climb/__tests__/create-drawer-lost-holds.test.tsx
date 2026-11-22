@@ -225,7 +225,17 @@ describe('visible hold-maintenance controls', () => {
     expect(view.queryByText('mobile.create.holds.openFailed')).toBeNull();
   });
 
-  it('labels the entry and calls it directly from beneath the board', () => {
+  it('keeps Add holds after the painting tools and outside their height budget', () => {
+    const element = drawerWith(undefined);
+    const view = render(createElement(CreateDrawer, { ...element.props, onAddHolds: async () => undefined }));
+    const addHolds = view.getByRole('button', { name: 'mobile.create.holds.add' });
+    const actionBar = view.container.querySelector('[data-node="action-bar"]');
+    if (!actionBar) throw new Error('Expected painting tools');
+    expect(actionBar.compareDocumentPosition(addHolds) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(view.container.querySelector('[data-testid="create-drawer-board-block"]')?.contains(addHolds)).toBe(false);
+  });
+
+  it('labels the entry and calls it directly from below the painting controls', () => {
     const onAddHolds = vi.fn(async () => {});
     const element = drawerWith(undefined);
     const view = render(createElement(CreateDrawer, { ...element.props, onAddHolds }));

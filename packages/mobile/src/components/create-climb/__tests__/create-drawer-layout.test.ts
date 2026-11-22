@@ -68,7 +68,7 @@ describe('create drawer board budget', () => {
   });
 });
 
-describe('hold maintenance controls', () => {
+describe('primary editor controls', () => {
   it('reserves actual translated and large-text controls while keeping the board floor', () => {
     const budget = { windowHeight: 900, insetTop: 24, insetBottom: 34, showRouteTransport: false };
     const compact = computeBoardMaxHeight(budget);
@@ -77,9 +77,9 @@ describe('hold maintenance controls', () => {
     expect(computeBoardMaxHeight({ ...budget, actionBarHeight: 1000 })).toBe(MIN_BOARD_HEIGHT);
   });
 
-  it('reserves their measured height so painting tools stay visible', () => {
+  it('reserves only the save-blocking missing-hold notice', () => {
     const budget = { windowHeight: 900, insetTop: 24, insetBottom: 34, showRouteTransport: false };
-    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 92 })).toBe(computeBoardMaxHeight(budget) - 92);
-    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 180 })).toBe(computeBoardMaxHeight(budget) - 180);
+    expect(computeBoardMaxHeight({ ...budget, missingHoldsHeight: 92 })).toBe(computeBoardMaxHeight(budget) - 92);
+    expect(computeBoardMaxHeight({ ...budget, missingHoldsHeight: 180 })).toBe(computeBoardMaxHeight(budget) - 180);
   });
 });

@@ -67,7 +67,6 @@ function CreateClimbStory({ state, onReady, onError }: StoryRenderControls & { s
     state === 'loading' ? 'opening' : state === 'error' ? 'failed' : 'idle',
   );
   const [host, setHost] = useState({ width: windowDimensions.width, height: windowDimensions.height });
-  const [holdEntryHeight, setHoldEntryHeight] = useState(0);
   const [actionBarHeight, setActionBarHeight] = useState<number | undefined>(undefined);
   const frames = cleared ? '' : initialFrames;
   const paintedHolds = useMemo(() => parseFramesToHoldRows('spray', frames), [frames]);
@@ -80,7 +79,6 @@ function CreateClimbStory({ state, onReady, onError }: StoryRenderControls & { s
     insetTop: insets.top,
     insetBottom: windowInsetBottom,
     showRouteTransport: false,
-    extraControlsHeight: holdEntryHeight,
     actionBarHeight,
   });
   const boardHeight = Math.min(boardMaxHeight, ((host.width - spacing[4] * 2) * geometry.height) / geometry.width);
@@ -105,9 +103,6 @@ function CreateClimbStory({ state, onReady, onError }: StoryRenderControls & { s
         ? previous
         : { width: layout.width, height: layout.height },
     );
-  }, []);
-  const measureHoldEntry = useCallback(({ nativeEvent: { layout } }: LayoutChangeEvent) => {
-    setHoldEntryHeight((previous) => (previous === layout.height ? previous : layout.height));
   }, []);
   const measureActionBar = useCallback(({ nativeEvent: { layout } }: LayoutChangeEvent) => {
     if (layout.height > 0) {
@@ -163,17 +158,13 @@ function CreateClimbStory({ state, onReady, onError }: StoryRenderControls & { s
         keyboardDismissMode="on-drag"
         automaticallyAdjustKeyboardInsets
       >
-        <View style={{ height: boardHeight, marginTop: spacing[2], paddingHorizontal: spacing[4] }}>
+        <View
+          testID="create-climb-story-board"
+          style={{ height: boardHeight, marginTop: spacing[2], paddingHorizontal: spacing[4] }}
+        >
           <StorySprayBoard geometry={geometry} frames={frames} onReady={onReady} onError={onError} />
         </View>
-        <View onLayout={measureHoldEntry}>
-          <CreateAddHoldsRow
-            onPress={() => setHoldEditorState('opening')}
-            opening={holdEditorState === 'opening'}
-            failed={holdEditorState === 'failed'}
-          />
-        </View>
-        <View onLayout={measureActionBar}>
+        <View testID="create-climb-story-actions" onLayout={measureActionBar}>
           <CreateDrawerActionBar
             boardName="spray"
             selectedBrush={selectedBrush}
@@ -202,6 +193,11 @@ function CreateClimbStory({ state, onReady, onError }: StoryRenderControls & { s
             heatmapActive={heatmapActive}
           />
         </View>
+        <CreateAddHoldsRow
+          onPress={() => setHoldEditorState('opening')}
+          opening={holdEditorState === 'opening'}
+          failed={holdEditorState === 'failed'}
+        />
         <View style={{ paddingHorizontal: spacing[4], paddingTop: spacing[4] }}>
           <CreateDrawerFormView
             partnerAppsEnabled={false}

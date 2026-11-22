@@ -31,9 +31,10 @@ rows, and the measured action-bar height contributes to the board's vertical
 budget. Status text may wrap without covering the board.
 
 On an editable Spraywall, Add holds is one full-width navigation row below the
-photo, including its hint, opening state and inline failure. The whole row is
-one target. Keep it inside the measured maintenance subtree so longer translated
-copy and failures still reserve space for painting controls. Description, climb
+painting controls, including its hint, opening state and inline failure. The
+whole row is one target. This secondary action is outside the wall-height budget:
+showing it, opening it, or displaying longer copy never takes space from the wall.
+Only save-blocking missing-hold guidance stays in the measured primary controls. Description, climb
 rules and publication controls remain below the tools; rule switches share an
 inset group, with Save as draft in its own group.
 

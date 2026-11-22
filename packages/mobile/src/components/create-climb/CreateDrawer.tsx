@@ -108,7 +108,7 @@ export function CreateDrawer({
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const [holdListVisible, setHoldListVisible] = useState(false);
-  const [holdEntryHeight, setHoldEntryHeight] = useState(0);
+  const [missingHoldsHeight, setMissingHoldsHeight] = useState(0);
   const [actionBarHeight, setActionBarHeight] = useState<number | undefined>(undefined);
   const measureActionBar = useCallback((event: LayoutChangeEvent) => {
     const height = event.nativeEvent.layout.height;
@@ -117,9 +117,9 @@ export function CreateDrawer({
   const handleAddHolds = useCallback(() => {
     void onAddHolds?.();
   }, [onAddHolds]);
-  const measureHoldEntry = useCallback((event: LayoutChangeEvent) => {
+  const measureMissingHolds = useCallback((event: LayoutChangeEvent) => {
     const height = event.nativeEvent.layout.height;
-    setHoldEntryHeight((previous) => (previous === height ? previous : height));
+    setMissingHoldsHeight((previous) => (previous === height ? previous : height));
   }, []);
   const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
@@ -246,7 +246,7 @@ export function CreateDrawer({
     insetBottom: windowInsetBottom,
     showRouteTransport: controller.showRouteTransport,
     actionBarHeight,
-    extraControlsHeight: onAddHolds || controller.missingHoldCount > 0 ? holdEntryHeight : 0,
+    missingHoldsHeight: controller.missingHoldCount > 0 ? missingHoldsHeight : 0,
   });
 
   // Fit the board to the measured editing card. Window dimensions seed the
@@ -474,15 +474,7 @@ export function CreateDrawer({
                 />
               </View>
 
-              <View onLayout={measureHoldEntry}>
-                {onAddHolds ? (
-                  <CreateAddHoldsRow
-                    onPress={handleAddHolds}
-                    disabled={controller.saveState === 'saving' || controller.pendingNewClimb}
-                    opening={openingHoldEditor}
-                    failed={holdEditorOpenFailed}
-                  />
-                ) : null}
+              <View onLayout={measureMissingHolds}>
                 {controller.missingHoldCount > 0 ? (
                   <View style={styles.holdEntry}>
                     <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
@@ -540,6 +532,16 @@ export function CreateDrawer({
                 />
               </View>
             </View>
+
+            {/* Secondary wall maintenance stays below painting and never sizes the wall. */}
+            {onAddHolds ? (
+              <CreateAddHoldsRow
+                onPress={handleAddHolds}
+                disabled={controller.saveState === 'saving' || controller.pendingNewClimb}
+                opening={openingHoldEditor}
+                failed={holdEditorOpenFailed}
+              />
+            ) : null}
 
             <View style={styles.belowFold}>
               <CreateDrawerForm
