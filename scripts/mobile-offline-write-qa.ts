@@ -364,6 +364,15 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     console.log(`[offline-write-qa] passed ${runId}; native PID ${afterPid} survived reload`);
   } catch (error) {
     summary.error = error instanceof Error ? error.message : String(error);
+    if (options.platform === 'ios') {
+      try {
+        // Preserve the exact dedicated simulator's visible startup state,
+        // including system dialogs that cannot produce a JavaScript receipt.
+        simCommand(['io', options.device, 'screenshot', join(options.outputDir, `${runId}-screen.png`)]);
+      } catch {
+        summary.screenshotUnavailable = true;
+      }
+    }
     // Restrict native logs to this test app's process; never collect a device's
     // unrelated application logs when startup fails before a PID is known.
     try {
