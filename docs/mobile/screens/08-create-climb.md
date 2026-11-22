@@ -42,3 +42,6 @@ Component previews are available as `create-climb--spraywall`, `--empty`,
 the real prop-driven views and bundled photo fixture. They do not establish
 backend/persistence behavior or native modal placement; test the actual route
 on device for those contracts.
+
+[Before and after design captures](images/create-climb-design/README.md) document
+the component-level visual review and its device-testing limits.
