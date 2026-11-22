@@ -175,6 +175,7 @@ export function AddBetaVideoSheet({
       snapPoints={snapPoints}
       onDisplaced={onClose}
       onClose={guard.requestClose}
+      onRequestClose={guard.requestClose}
       enablePanDownToClose={guard.enablePanDownToClose}
       onFullyDismissed={handleFullyDismissed}
       scrollable

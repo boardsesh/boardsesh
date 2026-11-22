@@ -200,9 +200,12 @@ export function AppMenu(props: AppMenuProps) {
       </PressableSurface>
     );
 
+  // React Native Web supports dataSet; the native View type omits it.
+  const menuBrowserProps = { dataSet: visible ? { boardseshPlayerShortcutBlock: 'true' } : undefined };
+
   return (
     <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>
-      <View onLayout={visible ? props.onPresented : undefined}>
+      <View onLayout={visible ? props.onPresented : undefined} {...menuBrowserProps}>
         {resolved.map((action, index) => (
           // Composite key: scope entries can share a display name (two gyms named
           // the same), so the label alone isn't unique — pair it with the position.

@@ -90,6 +90,7 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
 
   return (
     <ModalSheet
+      surfaceSize="list"
       visible={visible && climbUuid !== null}
       snapPoints={SNAP_POINTS}
       onClose={onClose}

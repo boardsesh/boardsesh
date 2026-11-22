@@ -96,6 +96,7 @@ export function ReportSprayWallSheet({
       scrollable
       onDisplaced={onClose}
       onClose={guard.requestClose}
+      onRequestClose={guard.requestClose}
       enablePanDownToClose={guard.enablePanDownToClose}
       contentContainerStyle={styles.body}
       header={header}

@@ -1,6 +1,6 @@
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { BOARD_FILTER_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import type { BottomSheet } from '../sheet-presentation';
 import { type RefObject, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';

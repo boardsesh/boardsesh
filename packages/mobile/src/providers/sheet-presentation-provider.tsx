@@ -49,6 +49,7 @@ import {
   type RefObject,
 } from 'react';
 import { Platform } from 'react-native';
+import { getOpeningInput } from '../lib/opening-input';
 import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 
 export type PresenterGroup = 'root' | (string & {});
@@ -142,6 +143,8 @@ export type SheetCoordinator = {
    * over the still-animating dismiss. */
   notifyClosed: (id: string) => void;
   isPresented: (id: string) => boolean;
+  /** A physically involved host has a pending close, so focus cannot reopen it. */
+  isClosing: (id: string) => boolean;
   isBusy: (group?: PresenterGroup) => boolean;
 };
 
@@ -594,6 +597,10 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         return groupState(group).presentedId === id;
       },
 
+      isClosing(id) {
+        return nativeInvolved(id) && desired.current.get(id)?.open !== true;
+      },
+
       isBusy(group = 'root') {
         return groups.current.get(group)?.inFlight != null;
       },
@@ -716,12 +723,23 @@ export function useManagedSheet({
     [coordinator, id, group, parentId, present, dismiss, fireFullyDismissed, fireDisplaced],
   );
 
+  const requestOpen = useCallback(() => {
+    const sheet = sheetRef.current;
+    if (sheet && 'preparePresentation' in sheet && typeof sheet.preparePresentation === 'function') {
+      sheet.preparePresentation(getOpeningInput());
+    }
+    coordinator.setDesiredOpen(id, true);
+  }, [coordinator, id, sheetRef]);
+
   // Controlled mode only: an imperative consumer leaves `open` undefined so this
   // effect never overrides a ref-driven present/dismiss.
   useEffect(() => {
     if (open === undefined) return;
-    coordinator.setDesiredOpen(id, open);
-  }, [coordinator, id, open]);
+    if (open) requestOpen();
+    else {
+      coordinator.setDesiredOpen(id, false);
+    }
+  }, [coordinator, id, open, requestOpen]);
 
   const handleNativeChange = useCallback(
     (index: number) => {
@@ -749,26 +767,35 @@ export function useManagedSheet({
 
   const handle = useMemo<ManagedSheetHandle>(
     () => ({
-      present: () => coordinator.setDesiredOpen(id, true),
-      dismiss: () => coordinator.setDesiredOpen(id, false),
-      dismissAndWait: () => coordinator.dismissAndWait(id),
-      close: () => coordinator.setDesiredOpen(id, false),
-      forceClose: () => coordinator.setDesiredOpen(id, false),
+      present: requestOpen,
+      dismiss: () => {
+        coordinator.setDesiredOpen(id, false);
+      },
+      dismissAndWait: () => {
+        return coordinator.dismissAndWait(id);
+      },
+      close: () => {
+        coordinator.setDesiredOpen(id, false);
+      },
+      forceClose: () => {
+        coordinator.setDesiredOpen(id, false);
+      },
       snapToIndex: (index: number) => {
         if (index < 0) {
           coordinator.setDesiredOpen(id, false);
           return;
         }
+        if (coordinator.isClosing(id)) return;
         desiredIndexRef.current = index;
         // Already up → just change the detent live; otherwise open at this index.
         if (coordinator.isPresented(id)) sheetRef.current?.snapToIndex(index);
-        else coordinator.setDesiredOpen(id, true);
+        else requestOpen();
       },
       snapToPosition: (position: string | number) => sheetRef.current?.snapToPosition(position),
       expand: () => sheetRef.current?.expand(),
       collapse: () => sheetRef.current?.collapse(),
     }),
-    [coordinator, id, sheetRef],
+    [coordinator, id, sheetRef, requestOpen],
   );
 
   return {

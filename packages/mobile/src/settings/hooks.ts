@@ -79,6 +79,12 @@ export function setSetting<K extends SettingsKey>(key: K, value: AppSettings[K])
   writeSetting(key, value);
 }
 
+/** Restore one preference to its default without persisting today's default. */
+export function resetSetting(key: SettingsKey): void {
+  storage.remove(key);
+  emitChange({ kind: 'setting', key });
+}
+
 export function getAllSettings(): AppSettings {
   if (cachedSettings) return cachedSettings;
 

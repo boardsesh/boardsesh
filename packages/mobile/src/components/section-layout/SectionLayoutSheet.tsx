@@ -65,6 +65,7 @@ export function SectionLayoutSheetFrame({
   const ground = useSectionLayoutSheetGround();
   return (
     <ModalSheet
+      surfaceSize="list"
       visible={visible}
       onClose={onClose}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}

@@ -158,3 +158,47 @@ describe('web sheet presentation', () => {
     expect(sheetApiA.snapToIndex).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('late focus during coordinated dismissal', () => {
+  it('ignores snaps during close and permits a fresh imperative opening after settlement', () => {
+    const sheetApi = createSheetApi();
+    let managed: ReturnType<typeof useManagedSheet> | undefined;
+    function SheetHarness() {
+      const sheetRef = useRef(sheetApi as unknown as BottomSheetMethods);
+      managed = useManagedSheet({ sheetRef });
+      return null;
+    }
+    render(createElement(SheetPresentationProvider, null, createElement(SheetHarness)));
+    act(() => managed?.handle.present());
+    void act(() => vi.advanceTimersByTime(WEB_SETTLE_MS));
+    expect(sheetApi.snapToIndex).toHaveBeenCalledTimes(1);
+    act(() => {
+      managed?.handle.dismiss();
+      managed?.handle.snapToIndex(1);
+    });
+    expect(sheetApi.dismiss).toHaveBeenCalledTimes(1);
+    expect(sheetApi.snapToIndex).toHaveBeenCalledTimes(1);
+    act(() => managed?.onFullyDismissed());
+    void act(() => vi.advanceTimersByTime(WEB_SETTLE_MS));
+    expect(sheetApi.snapToIndex).toHaveBeenCalledTimes(1);
+    act(() => managed?.handle.snapToIndex(0));
+    expect(sheetApi.snapToIndex).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('idempotent managed close', () => {
+  it('permits snap opening after closing a never-presented host', () => {
+    const sheetApi = createSheetApi();
+    let managed: ReturnType<typeof useManagedSheet> | undefined;
+    function SheetHarness() {
+      const sheetRef = useRef(sheetApi as unknown as BottomSheetMethods);
+      managed = useManagedSheet({ sheetRef });
+      return null;
+    }
+    render(createElement(SheetPresentationProvider, null, createElement(SheetHarness)));
+    act(() => managed?.handle.close());
+    expect(sheetApi.dismiss).not.toHaveBeenCalled();
+    act(() => managed?.handle.snapToIndex(0));
+    expect(sheetApi.snapToIndex).toHaveBeenCalledWith(0);
+  });
+});

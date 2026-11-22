@@ -1,6 +1,6 @@
 import { useStorySheetPresentation } from '../../dev/stories/use-story-sheet-presentation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import type { BottomSheetModal } from '../sheet-presentation';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ClimbQueueItem } from '@boardsesh/queue';

@@ -14,7 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import BottomSheet, { BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetScrollView } from './sheet-presentation';
 import Constants from 'expo-constants';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Text } from './Text';

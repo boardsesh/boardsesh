@@ -1,5 +1,5 @@
 import type { SectionLayout, SectionLayoutSpec } from './section-layout';
-import { DEFAULT_PLAYER_PREVIOUS_NEXT } from './player-navigation-default';
+import { DEFAULT_PLAYER_PREVIOUS_NEXT, getDefaultPlayerPreviousNext } from './player-navigation-default';
 
 export { DEFAULT_PLAYER_PREVIOUS_NEXT };
 
@@ -56,5 +56,5 @@ export function sanitisePlayerButtonsPosition(stored: unknown): PlayerButtonsPos
 
 /** Preserve a stored choice; a missing or unrecognized value uses today's default. */
 export function sanitisePlayerPreviousNext(stored: unknown): boolean {
-  return typeof stored === 'boolean' ? stored : DEFAULT_PLAYER_PREVIOUS_NEXT;
+  return typeof stored === 'boolean' ? stored : getDefaultPlayerPreviousNext();
 }

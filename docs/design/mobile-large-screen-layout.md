@@ -40,6 +40,49 @@ a segmented control for Up next (the queue sheet's own `QueueListBody`), Logbook
 Beta (`BetaVideosSection`), opening on Up next, with Switch board at its foot where Music keeps AirPlay.
 The queue button then selects Up next instead of stacking the queue sheet over the player.
 
+## Secondary surfaces on web and tablets
+
+Sheet presentation follows the platform and the current available window. On the browser only,
+the input that opens a surface also matters:
+
+| Surface when opened | Presentation | Width |
+| --- | --- | --- |
+| Browser below 700 CSS px | Compact bottom sheet | Available width |
+| Browser at least 700 CSS px, mouse or keyboard opener | Centered dialog | Forms up to 560px; lists up to 672px |
+| Browser at least 700 CSS px, touch or pen opener | Bottom sheet | Up to 640px |
+| Native iPad | System page/form sheet or the existing anchored picker | System-controlled |
+| Native Android tablet | Material bottom sheet | System-controlled, bounded by Material's 640dp default |
+
+The 700px browser opening rule is a Boardsesh presentation threshold. It is independent of the
+physical-screen tablet qualifier, shell panes, and Material's window size classes. Opening a native
+sheet with a trackpad or keyboard keeps its native treatment. Apple recommends centered page/form
+presentations on iPad in [HIG: Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets).
+Android's [Compose bottom sheets](https://developer.android.com/develop/ui/compose/components/bottom-sheets),
+[default sheet width](https://developer.android.com/reference/kotlin/androidx/compose/material3/BottomSheetDefaults#SheetMaxWidth()),
+and [adaptive window size classes](https://developer.android.com/develop/ui/compose/layouts/adaptive/use-window-size-classes)
+provide the native sizing model. The native facade forwards children directly to Expo without a
+new width cap or layout wrapper. Keep content within its actual sheet host rather than assuming
+that a native sheet occupies the full window width.
+
+Wide browser overlays leave at least 24px horizontal gutters; dialogs also keep 24px above and
+below the surface. Bottom sheets stay anchored to the bottom. A dialog has one bounded scroll body,
+a fixed header and actions, and no detents or drag-to-resize requirement. Its height is the smaller
+of 720px and the visible viewport height minus 48px, floored at zero. Touch sheets retain their
+existing detents and keyboard interaction. The full-screen player, board editor, wall display,
+and existing persistent panes keep their own layout contracts.
+
+Choose and latch the presentation for each opening. Dialogs follow the visible viewport's size and
+position through resize, zoom, and keyboard changes. Touch sheets update their horizontal width and
+position while retaining Gorhom's existing vertical detents and keyboard behavior. These updates do
+not change the host or discard edits, focus, or scroll position. A dialog opened wide stays a dialog if the window becomes narrow; a sheet opened
+compact stays a sheet if the window grows. Closing and reopening chooses again from the new width
+and initiating input. `src/lib/sheet-presentation-policy.ts` and `src/lib/opening-input.web.ts` own
+these decisions. Screens supply semantic size, a label, and their close request through the
+`src/components/sheet-presentation.tsx` facade (`.web.tsx` on the browser).
+`sheet-presentation-context.tsx` exposes presentation capabilities to shared content.
+
+## JS tablet shell
+
 The rest of this section describes the **JS tablet shell**, which Android tablets, Expo web and an iPad
 on the Material variant still use.
 
@@ -54,8 +97,8 @@ width by `hooks/use-device-layout.ts`:
 - **`compact`** — every phone, plus a tablet window narrower than `REGULAR_WIDTH_BREAKPOINT` (700dp:
   iPad Slide Over / a narrow Split View, Android split-screen / freeform / DeX). Renders today's phone
   UI; no phase may regress it.
-- **`regular`** — a tablet window wide enough for the sidebar rail (replacing the bottom tab bar) + a
-  content column + a detail pane. `expanded` (≥1024dp) is a flag on top.
+- **`regular`** — a tablet window wide enough for the sidebar rail (replacing the bottom tab bar) and a
+  content column. The detail pane needs its own width budget; `expanded` (≥1024dp) is a separate flag.
 
 **Eligibility, not idiom.** The shell admits iPad (`Platform.isPad`) plus Android and web screens whose
 smallest physical-screen width clears **600dp/CSS px** (`resolveIsTablet`, matching Android's
@@ -110,9 +153,9 @@ without committing to the queue (`openPlayDrawer(..., { previewQueueItem })`, ca
 sidebarWidth })` → `'none' | 'strip' | 'column'`):
 
 - Ambient `SidebarWallCell` in the rail footer (always, `regular`) — the glanceable cross-tab anchor.
-- A dedicated **`column`** on the trailing edge in landscape, when sidebar + browse list (≥
-  `WALL_COLUMN_CONTENT_FLOOR` 400pt) + detail pane (`DETAIL_PANE_WIDTH_WITH_WALL` 320pt) +
-  `WALL_COLUMN_WIDTH` (300pt) all fit (≈≥1116pt → both 11" and 13" landscape).
+- A dedicated **`column`** on the trailing edge when the 96pt sidebar and 300pt wall column leave
+  at least `WALL_COLUMN_BALANCED_CONTENT_FLOOR` (390pt) each for browse content and the detail pane.
+  The balanced budget is 96 + 300 + 390 + 390 = **1176pt**; width, rather than orientation, decides.
 - A compact **`strip`** docked atop the detail pane in portrait, where a 4th column would crush the
   list (11" 834pt / 13" 1032pt).
 

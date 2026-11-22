@@ -2,7 +2,7 @@ import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typog
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal, BottomSheetView } from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { MOONBOARD_ANGLES } from '@boardsesh/board-config';

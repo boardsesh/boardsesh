@@ -29,7 +29,7 @@ import { BoardSheetView } from './BoardSheetView';
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal } from '../sheet-presentation';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';

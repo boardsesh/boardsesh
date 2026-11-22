@@ -402,6 +402,7 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 
 import { LogAscentSheet } from '../LogAscentSheet';
+import { SheetPresentationContext } from '../sheet-presentation-context';
 import { track } from '../../lib/analytics';
 
 function renderSheet(overrides: Partial<Parameters<typeof LogAscentSheet>[0]> = {}) {
@@ -1267,3 +1268,29 @@ vi.mock('../privacy/use-publication-audience', () => ({
     chooseAudience: () => {},
   }),
 }));
+
+describe('LogAscentSheet fixed dialog content', () => {
+  it('shows the complete form and full note without a detent or focus expansion', () => {
+    const { getByTestId } = render(
+      createElement(
+        SheetPresentationContext,
+        { value: { mode: 'dialog', supportsDetents: false } },
+        createElement(LogAscentSheet, {
+          visible: true,
+          onClose: vi.fn(),
+          climbUuid: 'climb-1',
+          boardName: 'kilter',
+          angle: 40,
+          isMirror: false,
+          isBenchmark: false,
+          baseAscensionistCount: 10,
+          layoutId: 7,
+        }),
+      ),
+    );
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
+    expect(getByTestId('tick-note').getAttribute('data-compact')).toBe('false');
+    fireEvent.focus(getByTestId('tick-note'));
+    expect(sheetControls.snapToIndex).not.toHaveBeenCalled();
+  });
+});

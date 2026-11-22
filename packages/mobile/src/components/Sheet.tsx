@@ -1,3 +1,4 @@
+import type { SheetPresentationOptions } from '../lib/sheet-presentation-policy';
 import { useSheetPresented } from './use-sheet-presented';
 import {
   forwardRef,
@@ -19,11 +20,7 @@ import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, typ
 // Present/dismiss route through the SheetPresentationProvider coordinator so two
 // native sheet transitions never overlap (the iOS UIKit deadlock / app freeze —
 // see sheet-presentation-provider.tsx).
-import BottomSheet, {
-  BottomSheetScrollView,
-  BottomSheetView,
-  type BottomSheetMethods,
-} from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetScrollView, BottomSheetView, type BottomSheetMethods } from './sheet-presentation';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -48,7 +45,7 @@ import {
   type PresenterGroup,
 } from '../providers/sheet-presentation-provider';
 
-type SheetProps = {
+type SheetProps = SheetPresentationOptions & {
   children: ReactNode;
   /** Controlled open state. Leave undefined for purely imperative consumers that
    * drive the sheet through the forwarded ref. */
@@ -134,6 +131,9 @@ function canWaitForDismissal(
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   {
     children,
+    surfaceSize,
+    accessibilityLabel,
+    onRequestClose,
     visible,
     snapPoints: customSnapPoints,
     enableDynamicSizing = false,
@@ -339,6 +339,9 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
 
   return (
     <BottomSheet
+      surfaceSize={surfaceSize}
+      accessibilityLabel={accessibilityLabel}
+      onRequestClose={onRequestClose}
       ref={sheetRef}
       index={-1}
       snapPoints={useContentFitting ? undefined : effectiveSnapPoints}

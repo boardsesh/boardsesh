@@ -60,6 +60,7 @@ import { usePlaySelectionController, type PlayNavigationStep } from './use-play-
 import { trackQueueNavigation, trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
 import { queueSheetOpenContext } from '../../lib/queue-sheet-open-context';
 import { useAnySheetVisible } from '../../lib/sheet-visibility-store';
+import { usePlayerKeyboardNavigation } from './use-player-keyboard-navigation';
 import {
   buildPlayDrawerActionsContext,
   isPlayDrawerWallControlRendered,
@@ -3095,6 +3096,15 @@ export function PlayCore({
     climberLogsOpen ||
     fullLogbookClimbUuid !== null ||
     bleControlVisible;
+  const playerKeyboardProps = usePlayerKeyboardNavigation({
+    enabled: displayedClimb != null && !routeHasOpenWork && !anySheetVisible,
+    label: displayedClimb?.name,
+    canPrevious: navigationState.canPrevious,
+    canNext: canPressNext,
+    onPrevious: handlePrevButton,
+    onNext: handleNextPress,
+    onEscape: trackEndCardVisible ? closeTrackEndCard : isPane ? undefined : handleDismiss,
+  });
   usePlayDrawerActionsExposure({
     context: actionsAnalytics,
     climbUuid: displayedClimbUuid ?? null,
@@ -3289,6 +3299,7 @@ export function PlayCore({
     // The board column is always its own view, so a rotation that brings the
     // side panel in or out never remounts the board.
     <View
+      {...playerKeyboardProps}
       ref={actionsVisibility.viewportRef}
       collapsable={false}
       onLayout={actionsVisibility.onLayout}

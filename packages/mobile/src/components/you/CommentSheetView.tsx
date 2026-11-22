@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from 'react';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import type { BottomSheet } from '../sheet-presentation';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';

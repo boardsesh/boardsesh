@@ -1,6 +1,6 @@
 import { forwardRef, useMemo, type ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal } from '../sheet-presentation';
 import { useTheme } from '../../providers/theme-provider';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -24,6 +24,7 @@ export const BoardSheetView = forwardRef<
 
   return (
     <BottomSheetModal
+      surfaceSize="list"
       ref={ref}
       index={0}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}

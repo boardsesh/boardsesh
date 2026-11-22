@@ -1,8 +1,9 @@
 import { forwardRef, type ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal } from '../sheet-presentation';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useSheetBackgroundStyle } from '../use-sheet-background-style';
 
@@ -16,9 +17,12 @@ export const QueueSheetView = forwardRef<
   }
 >(function QueueSheetView({ children, isDragging, onChange, onFullyDismissed }, ref) {
   const { sheet } = useTheme();
+  const { t } = useTranslation('session');
   const sheetBackgroundStyle = useSheetBackgroundStyle();
   return (
     <BottomSheetModal
+      surfaceSize="list"
+      accessibilityLabel={t('queueDrawer.title')}
       ref={ref}
       index={0}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}

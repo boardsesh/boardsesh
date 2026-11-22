@@ -5,6 +5,7 @@ import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { TickStatus } from '@boardsesh/play-view';
 import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 import { ModalSheet } from './ModalSheet';
+import { SheetPresentationContent } from './sheet-presentation-context';
 import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
 import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS, useSwipeUpToOpen } from './tick';
 import type { ManagedSheetHandle, PresenterGroup } from '../providers/sheet-presentation-provider';
@@ -125,6 +126,8 @@ export function LogAscentSheetView({
       stacked={stacked}
       ref={sheetRef}
       visible={visible}
+      accessibilityLabel={climbName ?? t('mobile.tick.fallbackTitle')}
+      onRequestClose={onClose}
       onClose={onClose}
       onFullyDismissed={onFullyDismissed}
       onPresented={onPresented}
@@ -153,33 +156,37 @@ export function LogAscentSheetView({
         </View>
       }
       footer={
-        <TickActionBar
-          note={
-            <TickNoteField
-              value={form.comment}
-              onChangeText={form.onCommentChange}
-              placeholder={t('mobile.tick.notePlaceholder')}
-              accessibilityLabel={t('mobile.tick.noteAria')}
-              compact={compactNote}
-              onFocus={handleNoteFocus}
+        <SheetPresentationContent>
+          {({ supportsDetents }) => (
+            <TickActionBar
+              note={
+                <TickNoteField
+                  value={form.comment}
+                  onChangeText={form.onCommentChange}
+                  placeholder={t('mobile.tick.notePlaceholder')}
+                  accessibilityLabel={t('mobile.tick.noteAria')}
+                  compact={supportsDetents && compactNote}
+                  onFocus={supportsDetents ? handleNoteFocus : undefined}
+                />
+              }
+              error={form.lastError}
+              secondary={{
+                title: t('mobile.tick.attempt'),
+                onPress: form.onAttempt,
+                disabled: form.isPending,
+                accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns.attempt }),
+              }}
+              primary={{
+                title: form.saveLabel,
+                onPress: form.onSave,
+                loading: form.isPending,
+                disabled: form.saveBlockedByGrade,
+                icon: SAVE_ICON,
+                accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
+              }}
             />
-          }
-          error={form.lastError}
-          secondary={{
-            title: t('mobile.tick.attempt'),
-            onPress: form.onAttempt,
-            disabled: form.isPending,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns.attempt }),
-          }}
-          primary={{
-            title: form.saveLabel,
-            onPress: form.onSave,
-            loading: form.isPending,
-            disabled: form.saveBlockedByGrade,
-            icon: SAVE_ICON,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
-          }}
-        />
+          )}
+        </SheetPresentationContent>
       }
     >
       <View
@@ -189,7 +196,16 @@ export function LogAscentSheetView({
         collapsable={false}
         {...swipeUpHandlers}
       >
-        {renderFields({ showNote: false, showDate: showDetails, showAngle: showDetails, detailsDisclosure })}
+        <SheetPresentationContent>
+          {({ supportsDetents }) =>
+            renderFields({
+              showNote: false,
+              showDate: !supportsDetents || showDetails,
+              showAngle: !supportsDetents || showDetails,
+              detailsDisclosure: supportsDetents ? detailsDisclosure : undefined,
+            })
+          }
+        </SheetPresentationContent>
         <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
       </View>
     </ModalSheet>

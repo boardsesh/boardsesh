@@ -14,7 +14,8 @@ import { LargeContentViewer } from './LargeContentViewer';
 // The spacer gives way first when room runs short, so a long title goes
 // off-centre before it truncates. Only the title can move when the flanks
 // measure; the actions sit at the edges from the first frame.
-import React, { useCallback, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useSheetPresentation } from './sheet-presentation-context';
 import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { textFontScale } from '../theme/dynamic-type';
 import { useTranslation } from 'react-i18next';
@@ -401,6 +402,10 @@ export const SheetTopBar = React.memo(function SheetTopBar({
   reserveErrorSlot = false,
   testID,
 }: SheetTopBarProps) {
+  const { setAccessibleTitle } = useSheetPresentation();
+  useEffect(() => {
+    setAccessibleTitle?.(title);
+  }, [setAccessibleTitle, title]);
   const { systemColors, brandColors, spacing, textStyles } = useTheme();
   const hasAccent = accentColor !== undefined;
   const { fontScale } = useWindowDimensions();

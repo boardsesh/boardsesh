@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Platform, View, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import {
@@ -386,6 +386,7 @@ export function LogbookFilterSheet({
 
   return (
     <BottomSheetModal
+      surfaceSize="list"
       key={presentEpoch}
       ref={sheetRef}
       index={0}
