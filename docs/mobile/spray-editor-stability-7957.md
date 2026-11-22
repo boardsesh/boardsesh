@@ -69,3 +69,6 @@ native frame time, peak memory, palm rejection, or freedom from OS termination.
 Keep those claims open until physical-device evidence is available. Deep-zoom
 line disappearance also needs a native reproduction; the zoom limit has not
 been reduced to hide it.
+
+[Phone and tablet browser rendering captures](screens/images/spray-editor-stability-7957/README.md)
+record the real component previews and their verification limits.
