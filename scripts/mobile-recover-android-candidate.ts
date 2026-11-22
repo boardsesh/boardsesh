@@ -167,18 +167,22 @@ export function validateRecoveryGateLog(log: string, sourceSha: string): string 
   return runtimes[0]!;
 }
 
-export function requireReviewedPlayBuild(input: unknown, track: 'internal' | 'beta', versionCode: string): void {
+export function requireReviewedPlayBuild(
+  input: unknown,
+  track: 'internal' | 'beta' | 'production',
+  versionCode: string,
+): void {
   const matches = trackSummaries(input, track).filter((release) =>
     release.activeArtifacts.some((artifact) => String(artifact.versionCode) === versionCode),
   );
   const accepted =
-    track === 'internal'
-      ? ['RELEASE_LIFECYCLE_STATE_PUBLISHED']
-      : [
+    track === 'beta'
+      ? [
           'RELEASE_LIFECYCLE_STATE_IN_REVIEW',
           'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
           'RELEASE_LIFECYCLE_STATE_PUBLISHED',
-        ];
+        ]
+      : ['RELEASE_LIFECYCLE_STATE_PUBLISHED'];
   if (matches.length !== 1 || !accepted.includes(matches[0]!.releaseLifecycleState))
     throw new Error(`Play ${track} does not confirm this exact submitted build.`);
 }
@@ -453,7 +457,11 @@ async function main(): Promise<void> {
       throw new Error('APK runtime differs from its original native gate.');
     const token = await createAuditAccessToken(required('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'));
     const states: Record<string, unknown> = {};
-    for (const track of ['internal', 'beta'] as const) {
+    // Public binaries may no longer appear in either tester track. A lost
+    // upload response requires public publication and independent APK bytes;
+    // ordinary candidate recovery retains its original two-track admission.
+    const tracks = source.uploadConfirmed === false ? (['production'] as const) : (['internal', 'beta'] as const);
+    for (const track of tracks) {
       const evidence = await readProductionReleaseSummaries(token, track);
       requireReviewedPlayBuild(evidence, track, identity.versionCode);
       states[track] = trackSummaries(evidence, track);

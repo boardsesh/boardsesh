@@ -333,6 +333,10 @@ manifests, package, versionCode, marketing version and full runtime. Missing or
 different evidence stops before publication. It never creates a Play edit or
 uploads a binary. Google documents these reads in the
 [generated APK API](https://developers.google.com/android-publisher/api-ref/rest/v3/generatedapks/list).
+This explicit lost-response path requires the exact build to be published in
+production. Tester tracks may have already replaced or removed it; they cannot
+establish whether a public binary is still offered. Normal recovery after a
+confirmed successful upload continues to require both tester-track readbacks.
 
 Native tag publication tokens request both Contents write and Workflows write.
 The latter uses the App's existing permission and allows tags for native sources
