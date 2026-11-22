@@ -1,31 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
-const fixture = vi.hoisted(() => ({
-  boardType: 'spray',
-  ownerId: 'wall-owner',
-  deleteWall: vi.fn(async () => true),
-  previewTombstone: vi.fn(async () => {}),
-  updateBoard: vi.fn(),
-}));
-vi.mock('../db/client', () => ({
-  db: {
+const { fixture, boardRow, executor } = vi.hoisted(() => {
+  const fixture = {
+    boardType: 'spray',
+    ownerId: 'wall-owner',
+    deleteWall: vi.fn(),
+    previewTombstone: vi.fn(async () => {}),
+    updateBoard: vi.fn(),
+  };
+  const boardRow = () => ({
+    id: 31,
+    uuid: 'b6e35c95-8468-4912-b4ef-2bd80d3f0647',
+    ownerId: fixture.ownerId,
+    gymId: null,
+    boardType: fixture.boardType,
+    isPublic: true,
+  });
+  const executor = {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () => [
-            {
-              id: 31,
-              ownerId: fixture.ownerId,
-              boardType: fixture.boardType,
-              isPublic: true,
-            },
-          ],
+          limit: () => Object.assign(Promise.resolve([boardRow()]), { for: async () => [boardRow()] }),
         }),
       }),
     }),
     update: () => ({ set: fixture.updateBoard.mockImplementation(() => ({ where: async () => {} })) }),
+  };
+  return { fixture, boardRow, executor };
+});
+vi.mock('../db/client', () => ({
+  db: {
+    ...executor,
+    transaction: async (callback: (tx: typeof executor) => Promise<void>) => callback(executor),
   },
+}));
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canAccessResource: vi.fn(async () => true),
 }));
 vi.mock('../graphql/resolvers/board/spray-walls', () => ({
   sprayWallMutations: { deleteSprayWall: fixture.deleteWall },
@@ -47,12 +59,25 @@ beforeEach(() => {
   vi.clearAllMocks();
   fixture.boardType = 'spray';
   fixture.ownerId = 'wall-owner';
+  fixture.deleteWall.mockImplementation(
+    async (
+      _root: unknown,
+      args: { beforeBoardDelete?: (board: ReturnType<typeof boardRow>, tx: typeof executor) => Promise<void> },
+    ) => {
+      await args.beforeBoardDelete?.(boardRow(), executor);
+      return true;
+    },
+  );
 });
 
 describe('deleting a spray board through the generic picker mutation', () => {
   it('uses wall cleanup and still retracts the public queue preview', async () => {
     expect(await socialBoardMutations.deleteBoard(null, { boardUuid }, context)).toBe(true);
-    expect(fixture.deleteWall).toHaveBeenCalledWith(null, { uuid: boardUuid }, context);
+    expect(fixture.deleteWall).toHaveBeenCalledWith(
+      null,
+      { uuid: boardUuid, beforeBoardDelete: expect.any(Function) },
+      context,
+    );
     expect(fixture.updateBoard).not.toHaveBeenCalled();
     expect(fixture.previewTombstone).toHaveBeenCalledWith(31);
   });

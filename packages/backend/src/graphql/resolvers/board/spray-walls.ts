@@ -3610,7 +3610,18 @@ export const sprayWallMutations = {
     return true;
   },
 
-  deleteSprayWall: async (_: unknown, { uuid }: { uuid: unknown }, ctx: ConnectionContext) => {
+  deleteSprayWall: async (
+    _: unknown,
+    {
+      uuid,
+      beforeBoardDelete,
+    }: {
+      uuid: unknown;
+      /** Internal hook for deleteBoard; not a GraphQL argument. */
+      beforeBoardDelete?: (board: typeof dbSchema.userBoards.$inferSelect, tx: SprayWriteTransaction) => Promise<void>;
+    },
+    ctx: ConnectionContext,
+  ) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'deleteSprayWall');
 
@@ -3637,6 +3648,20 @@ export const sprayWallMutations = {
       // flight would stamp `current_version_id` onto a wall this transaction is
       // deleting.
       await lockWallForWrite(tx, wall.id);
+
+      if (beforeBoardDelete) {
+        // Gym links can change while this delete waits for the wall locks.
+        // Lock the current board only AFTER the account and wall locks so this
+        // path keeps the same order as every other spray-wall writer.
+        const [currentBoard] = await tx
+          .select()
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+          .limit(1)
+          .for('update');
+        if (!currentBoard || currentBoard.ownerId !== board.ownerId) throw notFoundError();
+        await beforeBoardDelete(currentBoard, tx);
+      }
 
       // A deleted wall stops being reachable, so its feed rows have to go too —
       // they are served straight from `feed_items` and would outlive it otherwise.

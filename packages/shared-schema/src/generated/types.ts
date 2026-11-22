@@ -5030,7 +5030,7 @@ export type Mutation = {
   deleteAccount: Scalars['Boolean']['output'];
   /** Delete stored Aurora credentials for a board type. */
   deleteAuroraCredential: Scalars['Boolean']['output'];
-  /** Soft-delete a board. */
+  /** Soft-delete a board as its owner or an owner/admin of its linked gym. */
   deleteBoard: Scalars['Boolean']['output'];
   /**
    * Delete one of the current user's spray wall climbs, published or not, while

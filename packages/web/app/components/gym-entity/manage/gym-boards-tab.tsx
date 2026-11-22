@@ -21,18 +21,27 @@ import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
 import AddLinkOutlined from '@mui/icons-material/AddLinkOutlined';
 import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { useEntityMutation } from '@/app/hooks/use-entity-mutation';
+import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import {
+  GET_GYM,
   GET_GYM_BOARDS,
   GET_MY_BOARDS,
+  DELETE_BOARD,
   LINK_BOARD_TO_GYM,
   STRAY_BOARDS_FOR_GYM,
   ATTACH_BOARD_TO_GYM,
   type GetGymBoardsQueryResponse,
   type GetGymBoardsQueryVariables,
+  type GetGymQueryResponse,
+  type GetGymQueryVariables,
+  type DeleteBoardMutationResponse,
+  type DeleteBoardMutationVariables,
   type GetMyBoardsQueryResponse,
   type LinkBoardToGymMutationResponse,
   type LinkBoardToGymMutationVariables,
@@ -46,7 +55,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { boardPosterConsoleHref } from '@/app/lib/board-poster';
-import { canManageGymBoards, canUnlinkBoard, linkableBoards } from './gym-board-permissions';
+import { canManageGymBoards, canUnlinkBoard, canDeleteGymBoard, linkableBoards } from './gym-board-permissions';
 import ConfirmDialog from './confirm-dialog';
 import type { GymManageTabProps } from './tab-props';
 import GymBoardEditor from './gym-board-editor';
@@ -62,8 +71,45 @@ export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 
   return <Chip size="small" variant="outlined" label={t('manage.boards.visibility.private')} />;
 }
 
-export default function GymBoardsTab({ gym, onDirtyChange }: GymManageTabProps) {
-  return <GymBoardAssociation gym={gym} onDirtyChange={onDirtyChange} />;
+export default function GymBoardsTab({ gym, onGymChange, onDirtyChange }: GymManageTabProps) {
+  const { token } = useWsAuthToken();
+  const { data: session } = useSession();
+  const viewerUserId = session?.user?.id ?? null;
+  const refreshContextRef = useRef({ gymUuid: gym.uuid, viewerUserId });
+  const isMountedRef = useRef(true);
+  if (refreshContextRef.current.gymUuid !== gym.uuid || refreshContextRef.current.viewerUserId !== viewerUserId) {
+    refreshContextRef.current = { gymUuid: gym.uuid, viewerUserId };
+  }
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const refreshContext = refreshContextRef.current;
+  const refreshGym = async () => {
+    if (!token || !isMountedRef.current || refreshContextRef.current !== refreshContext) return;
+    try {
+      const client = createGraphQLHttpClient(token);
+      const response = await client.request<GetGymQueryResponse, GetGymQueryVariables>(GET_GYM, { gymUuid: gym.uuid });
+      if (isMountedRef.current && refreshContextRef.current === refreshContext && response.gym)
+        onGymChange(response.gym);
+    } catch (error) {
+      console.error('Failed to refresh gym after board change:', error);
+    }
+  };
+
+  return (
+    <GymBoardAssociation
+      key={`${gym.uuid}:${viewerUserId ?? ''}`}
+      gym={gym}
+      onDirtyChange={onDirtyChange}
+      onAssociated={refreshGym}
+      allowDelete
+    />
+  );
 }
 
 /** Shared by initial gym setup and the management console. */
@@ -71,25 +117,34 @@ export function GymBoardAssociation({
   gym,
   onAssociated,
   onDirtyChange,
+  allowDelete = false,
 }: {
   gym: GymManageTabProps['gym'];
   onAssociated?: () => Promise<void>;
   onDirtyChange?: (isDirty: boolean) => void;
+  allowDelete?: boolean;
 }) {
   const { t } = useTranslation('kiosk');
   const { t: tGyms } = useTranslation('gyms');
   const { t: tBoards } = useTranslation('boards');
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
+  const { showMessage } = useSnackbar();
+  const router = useLocaleRouter();
   const viewerUserId = session?.user?.id ?? null;
   const [boards, setBoards] = useState<UserBoard[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<UserBoard | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserBoard | null>(null);
+  const [deletingBoardUuid, setDeletingBoardUuid] = useState<string | null>(null);
+  const deletionPendingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const boardRequestGenerationRef = useRef(0);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingBoardUuid, setEditingBoardUuid] = useState<string | null>(null);
   const linkedBoardUuids = useMemo(() => new Set((boards ?? []).map((board) => board.uuid)), [boards]);
   // Backend contract: linking requires gym owner/admin; unlinking requires
-  // owning the board. Editors (canEdit) still see the list, read-only.
+  // owning the board. Deletion also accepts the linked gym's owner/admin.
   const canLinkBoards = canManageGymBoards(gym, viewerUserId);
 
   // Link and unlink are the SAME backend mutation — LINK_BOARD_TO_GYM with
@@ -103,8 +158,12 @@ export function GymBoardAssociation({
     LINK_BOARD_TO_GYM,
     { successMessage: t('manage.boards.unlinked'), errorMessage: t('manage.boards.unlinkFailed') },
   );
+  const deleteMutation = useEntityMutation<DeleteBoardMutationResponse, DeleteBoardMutationVariables>(DELETE_BOARD, {
+    errorMessage: tBoards('boardEntity.snackbar.deleteFailed'),
+  });
 
   const fetchBoards = useCallback(async () => {
+    const requestGeneration = ++boardRequestGenerationRef.current;
     if (!token) return;
     setLoadError(false);
     try {
@@ -112,8 +171,10 @@ export function GymBoardAssociation({
       const data = await client.request<GetGymBoardsQueryResponse, GetGymBoardsQueryVariables>(GET_GYM_BOARDS, {
         gymUuid: gym.uuid,
       });
+      if (requestGeneration !== boardRequestGenerationRef.current || !isMountedRef.current) return;
       setBoards(data.gymBoards ?? []);
     } catch (error) {
+      if (requestGeneration !== boardRequestGenerationRef.current || !isMountedRef.current) return;
       console.error('Failed to load gym boards:', error);
       setLoadError(true);
       setBoards([]);
@@ -122,7 +183,17 @@ export function GymBoardAssociation({
 
   useEffect(() => {
     void fetchBoards();
+    return () => {
+      boardRequestGenerationRef.current += 1;
+    };
   }, [fetchBoards]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const handleUnlinkConfirm = async () => {
     if (!unlinkTarget) return;
@@ -132,6 +203,36 @@ export function GymBoardAssociation({
     if (result) {
       await fetchBoards();
       await onAssociated?.();
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (
+      !allowDelete ||
+      !deleteTarget ||
+      deletionPendingRef.current ||
+      !canDeleteGymBoard(deleteTarget, gym, viewerUserId)
+    )
+      return;
+    const target = deleteTarget;
+    deletionPendingRef.current = true;
+    setDeletingBoardUuid(target.uuid);
+    setDeleteTarget(null);
+    try {
+      const response = await deleteMutation.execute({ boardUuid: target.uuid });
+      if (!isMountedRef.current) return;
+      if (!response?.deleteBoard) {
+        if (response) showMessage(tBoards('boardEntity.snackbar.deleteFailed'), 'error');
+        return;
+      }
+      setBoards((previous) => previous?.filter((board) => board.uuid !== target.uuid) ?? null);
+      showMessage(tBoards('boardEntity.snackbar.deleted'), 'success');
+      router.refresh();
+      await fetchBoards();
+      if (isMountedRef.current) await onAssociated?.();
+    } finally {
+      deletionPendingRef.current = false;
+      if (isMountedRef.current) setDeletingBoardUuid(null);
     }
   };
 
@@ -230,6 +331,7 @@ export function GymBoardAssociation({
                     color="error"
                     startIcon={<LinkOffOutlined />}
                     onClick={() => setUnlinkTarget(board)}
+                    disabled={deletingBoardUuid !== null}
                     sx={{ textTransform: 'none' }}
                   >
                     {t('manage.boards.unlink')}
@@ -253,6 +355,7 @@ export function GymBoardAssociation({
                         size="small"
                         startIcon={<EditOutlined />}
                         onClick={() => setEditingBoardUuid(board.uuid)}
+                        disabled={deletingBoardUuid !== null}
                         sx={{ textTransform: 'none' }}
                       >
                         {tBoards('boardEntity.actions.edit')}
@@ -262,6 +365,19 @@ export function GymBoardAssociation({
                         in the fixed-width secondary slot would run over the
                         board's name on a phone. */}
                     <BoardPosterAction board={board} />
+                    {allowDelete && canDeleteGymBoard(board, gym, viewerUserId) && (
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteOutlined />}
+                        onClick={() => setDeleteTarget(board)}
+                        disabled={deletingBoardUuid !== null}
+                        loading={deletingBoardUuid === board.uuid}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        {tBoards('boardEntity.actions.delete')}
+                      </Button>
+                    )}
                   </Box>
                 }
                 secondary={`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
@@ -280,6 +396,16 @@ export function GymBoardAssociation({
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={tBoards('boardEntity.delete.title')}
+        body={tBoards('boardEntity.delete.confirm', { name: deleteTarget?.name ?? '' })}
+        confirmLabel={tBoards('boardEntity.delete.delete')}
+        cancelLabel={tBoards('boardEntity.delete.cancel')}
+        onConfirm={() => void handleDeleteConfirm()}
+        onClose={() => setDeleteTarget(null)}
+      />
 
       <Dialog open={unlinkTarget !== null} onClose={() => setUnlinkTarget(null)}>
         <DialogTitle>{t('manage.boards.unlinkTitle')}</DialogTitle>

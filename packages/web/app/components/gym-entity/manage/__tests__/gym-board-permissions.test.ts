@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { canManageGymBoards, canUnlinkBoard, linkableBoards } from '../gym-board-permissions';
+import { canManageGymBoards, canUnlinkBoard, canDeleteGymBoard, linkableBoards } from '../gym-board-permissions';
 
 const GYM_UUID = 'gym-1';
 const OWNER = 'user-owner';
@@ -31,6 +31,35 @@ describe('canUnlinkBoard', () => {
   it('denies everyone else, including gym admins', () => {
     expect(canUnlinkBoard({ ownerId: OWNER }, OTHER)).toBe(false);
     expect(canUnlinkBoard({ ownerId: OWNER }, null)).toBe(false);
+  });
+});
+
+describe('canDeleteGymBoard', () => {
+  const gym = { uuid: GYM_UUID, ownerId: OWNER, myRole: null };
+  const board = { ownerId: OTHER, gymUuid: GYM_UUID };
+
+  it('allows the board owner without gym management permissions', () => {
+    expect(canDeleteGymBoard(board, gym, OTHER)).toBe(true);
+  });
+
+  it('allows the linked gym owner and admin', () => {
+    expect(canDeleteGymBoard(board, gym, OWNER)).toBe(true);
+    expect(canDeleteGymBoard(board, { ...gym, myRole: 'admin' }, 'gym-admin')).toBe(true);
+  });
+
+  it('denies gym editors, moderators with no gym role, and signed-out viewers', () => {
+    expect(canDeleteGymBoard(board, { ...gym, myRole: 'editor' }, 'gym-editor')).toBe(false);
+    expect(canDeleteGymBoard(board, gym, 'community-admin')).toBe(false);
+    expect(canDeleteGymBoard(board, { ...gym, myRole: 'admin' }, null)).toBe(false);
+  });
+
+  it('allows gym management when a listed board location redacts its gym link', () => {
+    expect(canDeleteGymBoard({ ...board, gymUuid: null }, gym, OWNER)).toBe(true);
+    expect(canDeleteGymBoard({ ...board, gymUuid: null }, { ...gym, myRole: 'admin' }, 'gym-admin')).toBe(true);
+  });
+
+  it('denies gym management access when a board is explicitly linked elsewhere', () => {
+    expect(canDeleteGymBoard({ ...board, gymUuid: 'another-gym' }, gym, OWNER)).toBe(false);
   });
 });
 

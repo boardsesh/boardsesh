@@ -20,6 +20,7 @@ a production rollout or a physical-device result.
 
 | Document | Path |
 | --- | --- |
+| [Manage gym boards](gym-board-management.md) | `gym-board-management.md` |
 | [Gym place search](gym-place-search.md) | `gym-place-search.md` |
 | [Climb OG share cards (`GET /og/climb`)](og-climb.md) | `og-climb.md` |
 | [Share metadata and Open Graph images](og-smartlinks-roadmap.md) | `og-smartlinks-roadmap.md` |
