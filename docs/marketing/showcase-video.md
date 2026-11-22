@@ -386,7 +386,7 @@ Useful flags:
 | `--skip-anchor-check` | Record without requiring the callout anchors. |
 | `--env-file <path>` | Where the credentials file is. |
 | `--dry-run` | Print the plan and which credentials are set; touch nothing. |
-| `--end-session <id>` | Record nothing: rejoin that session on the primary and end it (a crashed run's leftover; the crew take logs the id). |
+| `--end-session <id>` | Local backend only: rejoin and end a crashed run's session. End production sessions through their creator's app. |
 | `--platform android` | Film on the Android emulator instead (see [Android recording](#android-recording)). |
 | `--hold` | Stop once the phone is ready and wait for Ctrl-C, for calibrating flows by hand. |
 
@@ -938,7 +938,7 @@ Each failure names the take. The fixes:
 | `never logged anchor(s) ...` | The flow never reached the screen, or the bundle lacks the anchor hooks. | Check the flow's coordinates against a screenshot; `--skip-anchor-check` only while the hooks are missing. |
 | `its flow ... failed (Maestro exit N)` | A Maestro step failed. | Read `work/logs/maestro/<run>/console.log`. |
 | `"Show this session live" was not switched off` | The switch tap missed, or a session was already running. | End any running session on the account; check the point in `session-private.yaml`. |
-| `could not confirm the live session ended` | The end tap missed or the backend refused. Teardown retries once on exit. | `vp run video:record -- --end-session <id>` with the id from `hidden session <id> started`. "Session not found" there means the backend already closed it. |
+| `could not confirm the live session ended` | The end tap missed or the backend refused. Teardown retries once on exit. | On production, end the session through its creator's app. Locally, use `vp run video:record -- --backend local --end-session <id>` with the logged id. "Session not found" means the backend already closed it. |
 | `never reached home` | Sign-in failed or the bundle did not load. | Read `work/logs/metro-<phone>.log`: a wrong password shows as `auto sign-in FAILED`. |
 | `No free primary Metro port` | All recorder ports are occupied. | Free one of 8081 or 8090–8099; existing servers are never stopped. |
 
