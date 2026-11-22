@@ -102,7 +102,7 @@ type ComparedRow = {
 };
 
 /** Aurora encodes is_listed across a few wire shapes; only tombstone on explicit false. */
-function isAuroraListedFalse(value: unknown): boolean {
+export function isAuroraListedFalse(value: unknown): boolean {
   return value === false || value === 0 || value === '0' || value === 'false';
 }
 

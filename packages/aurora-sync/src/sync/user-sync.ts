@@ -32,6 +32,7 @@ import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/sche
 import { formatDbError } from './db-error';
 import { applyAuroraAscents, applyAuroraBids } from './apply-user-logbook';
 import { auroraCircuitAdvisoryLockStatement, normalizeAuroraCircuitItems } from './circuit-arbitration';
+import { userSyncWriteBatches } from './user-sync-batches';
 
 const BATCH_SIZE = 100;
 
@@ -790,26 +791,27 @@ export type SyncUserDataOptions = {
   /** The daemon runner supplies its structured error logger; direct callers fall back to console.error. */
   logError?: (message: string) => void;
   /**
-   * Runs each page's writes in one transaction. Defaults to `db.transaction`.
-   * A background job passes its fenced runner here so every page commits only
-   * while the job still owns its attempt, the link generation and the lease.
+   * Run bounded write units and a final page checkpoint through this fence.
+   * A background job supplies it so each unit commits only while the job owns
+   * its attempt, link generation and credential lease. Without it, the daemon
+   * retains a single transaction for all of a page's writes.
    */
   transaction?: SyncBatchRunner;
-  /** Checked between pages and passed to the Aurora request. */
+  /** Checked between write units and pages, and passed to the Aurora request. */
   signal?: AbortSignal;
   /**
-   * Recompute `board_climb_stats` after each page commits, in its own batches of
-   * at most 500 keys, instead of inside the page transaction. Defaults to on
-   * when `transaction` is given: a background job's fenced batch holds the
-   * run-row lock, so no heartbeat lands while it runs, and keeping the
-   * recompute out of the page keeps every batch well inside the heartbeat
-   * window. The daemon (no `transaction`) keeps the inline recompute.
+   * Recompute `board_climb_stats` after a page's data writes, in separate
+   * batches of at most 500 keys. Workers commit the page checkpoint only after
+   * this flush; interrupted writes leave durable pending markers for recovery.
+   * Defaults to on with `transaction`, since the fence blocks heartbeats while
+   * held. The daemon (no `transaction`) keeps its inline recompute.
    */
   deferStatsRecompute?: boolean;
 };
 
 /**
- * Pull this user's tables from Aurora page by page, one transaction per page.
+ * Pull this user's tables from Aurora page by page. Workers commit bounded
+ * write units; the standalone daemon retains one transaction per page.
  *
  * Provider HTTP always runs between transactions, never inside one, so a
  * fenced runner never holds its locks across a network call.
@@ -860,93 +862,100 @@ export async function syncUserData(
 
       const syncResults = await userSync(board, auroraUserId, currentSyncParams, token, signal);
 
+      const applyRows = async (transaction: DrizzleDb, tableName: string, rows: AuroraApiRow[]) => {
+        const upsertResult = await upsertTableData(
+          transaction,
+          board,
+          tableName,
+          auroraUserId,
+          nextAuthUserId,
+          rows,
+          log,
+          recompute,
+          logError,
+        );
+        const tableResult = (totalResults[tableName] ??= { synced: 0 });
+        tableResult.synced += upsertResult.synced;
+        if (upsertResult.skipped > 0) {
+          tableResult.skipped = (tableResult.skipped ?? 0) + upsertResult.skipped;
+          // An ownership refusal remains more specific than a later malformed
+          // row, including when the two arrive in separate write transactions.
+          if (!tableResult.skippedReason || upsertResult.skippedReason === DUPLICATE_CIRCUIT_OWNER_SKIP_REASON) {
+            tableResult.skippedReason = upsertResult.skippedReason;
+          }
+          if (upsertResult.circuitPlaylistRefusals) {
+            const accumulated = (tableResult.circuitPlaylistRefusals ??= { foreign: 0, ambiguous: 0, invariant: 0 });
+            accumulated.foreign += upsertResult.circuitPlaylistRefusals.foreign;
+            accumulated.ambiguous += upsertResult.circuitPlaylistRefusals.ambiguous;
+            accumulated.invariant += upsertResult.circuitPlaylistRefusals.invariant;
+          }
+        }
+      };
+
+      const writeBatch = async (callback: (transaction: DrizzleDb) => Promise<void>) => {
+        signal?.throwIfAborted();
+        try {
+          await runBatch(async (transaction) => {
+            deferredStats?.begin();
+            // Always precede target-row locks with the user tick lock, matching
+            // the worker fence and every other logbook writer's lock order.
+            if (nextAuthUserId) await acquireUserTickMutationLock(transaction, nextAuthUserId);
+            await callback(transaction as unknown as DrizzleDb);
+          });
+          deferredStats?.commit();
+        } catch (error) {
+          // Previously committed chunks retain their durable pending markers;
+          // only this transaction's uncommitted keys are forgotten.
+          deferredStats?.rollback();
+          throw error;
+        }
+      };
+
       try {
-        await runBatch(async (tx) => {
-          deferredStats?.begin();
-          // Every page takes the user tick lock before its first row lock, so
-          // the daemon and a fenced worker batch (which takes it first too)
-          // lock in one order. Taken only when the ascents table was reached,
-          // the daemon would hold board_users/board_walls/board_climbs rows
-          // while waiting for the lock a worker batch holds while waiting for
-          // those rows: a deadlock on a just-linked account both sync.
-          if (nextAuthUserId) await acquireUserTickMutationLock(tx, nextAuthUserId);
+        if (options.transaction) {
+          // A worker's fence holds its run/queue locks. One whole Aurora page
+          // can exceed the heartbeat window, so release them between bounded
+          // units. No cursor moves until every unit (and its stats) succeeded.
           for (const tableName of tables) {
+            totalResults[tableName] ??= { synced: 0 };
             log(`Syncing ${tableName} for user ${auroraUserId} (batch ${syncAttempts})`);
-            if (syncResults[tableName] && Array.isArray(syncResults[tableName])) {
-              const data = syncResults[tableName];
-
-              const upsertResult = await upsertTableData(
-                tx as unknown as DrizzleDb,
-                board,
-                tableName,
-                auroraUserId,
-                nextAuthUserId,
-                data,
-                log,
-                recompute,
-                logError,
-              );
-
-              if (!totalResults[tableName]) {
-                totalResults[tableName] = { synced: 0 };
-              }
-              totalResults[tableName].synced += upsertResult.synced;
-              if (upsertResult.skipped > 0) {
-                totalResults[tableName].skipped = (totalResults[tableName].skipped || 0) + upsertResult.skipped;
-                // Keep the legacy duplicate-account marker if any page saw a
-                // genuine owner conflict; a later invariant refusal must not
-                // overwrite it. Detailed counts preserve every category.
-                if (
-                  !totalResults[tableName].skippedReason ||
-                  upsertResult.skippedReason === DUPLICATE_CIRCUIT_OWNER_SKIP_REASON
-                ) {
-                  totalResults[tableName].skippedReason = upsertResult.skippedReason;
-                }
-                if (upsertResult.circuitPlaylistRefusals) {
-                  const accumulated = totalResults[tableName].circuitPlaylistRefusals ?? {
-                    foreign: 0,
-                    ambiguous: 0,
-                    invariant: 0,
-                  };
-                  accumulated.foreign += upsertResult.circuitPlaylistRefusals.foreign;
-                  accumulated.ambiguous += upsertResult.circuitPlaylistRefusals.ambiguous;
-                  accumulated.invariant += upsertResult.circuitPlaylistRefusals.invariant;
-                  totalResults[tableName].circuitPlaylistRefusals = accumulated;
-                }
-              }
-            } else if (!totalResults[tableName]) {
-              totalResults[tableName] = { synced: 0 };
+            const rows = syncResults[tableName];
+            if (!Array.isArray(rows)) continue;
+            for (const batch of userSyncWriteBatches(tableName, rows as AuroraApiRow[])) {
+              await writeBatch((transaction) => applyRows(transaction, tableName, batch));
             }
           }
-
-          if (syncResults['user_syncs']) {
-            await updateUserSyncs(tx as unknown as DrizzleDb, board, syncResults['user_syncs']);
-
-            const newUserSyncs = syncResults['user_syncs'].map(
-              (sync: { table_name: string; last_synchronized_at: string }) => ({
-                table_name: sync.table_name,
-                last_synchronized_at: sync.last_synchronized_at,
-                user_id: Number(auroraUserId),
-              }),
-            );
-
-            currentSyncParams = {
-              ...currentSyncParams,
-              userSyncs: newUserSyncs,
-            };
+          if (deferredStats) await deferredStats.flush(runBatch);
+          const checkpoints = syncResults.user_syncs;
+          if (checkpoints) {
+            await writeBatch((transaction) => updateUserSyncs(transaction, board, checkpoints));
           }
-        });
-        if (deferredStats) {
-          deferredStats.commit();
-          // The page's rows are in; now its stats, in batches of their own.
-          await deferredStats.flush(runBatch);
+        } else {
+          // The standalone daemon has no job heartbeat and retains its atomic
+          // cross-table page contract. Shared appliers/ownership rules stay the
+          // same for both paths.
+          await writeBatch(async (transaction) => {
+            for (const tableName of tables) {
+              totalResults[tableName] ??= { synced: 0 };
+              log(`Syncing ${tableName} for user ${auroraUserId} (batch ${syncAttempts})`);
+              const rows = syncResults[tableName];
+              if (Array.isArray(rows)) await applyRows(transaction, tableName, rows as AuroraApiRow[]);
+            }
+            if (syncResults.user_syncs) await updateUserSyncs(transaction, board, syncResults.user_syncs);
+          });
+          if (deferredStats) await deferredStats.flush(runBatch);
+        }
+        if (syncResults.user_syncs) {
+          currentSyncParams = {
+            ...currentSyncParams,
+            userSyncs: syncResults.user_syncs.map((sync) => ({
+              table_name: sync.table_name,
+              last_synchronized_at: sync.last_synchronized_at,
+              user_id: Number(auroraUserId),
+            })),
+          };
         }
       } catch (error) {
-        // A page that rolled back owes no recompute; after a commit this is a
-        // no-op (nothing is staged).
-        deferredStats?.rollback();
-        // A fence refusal or an abort is not a database failure: rethrow it as
-        // itself so the caller can tell "stop" from "this credential failed".
         if (signal?.aborted || isSyncFenceError(error)) throw error;
         const formatted = formatDbError(error);
         log(formatted);

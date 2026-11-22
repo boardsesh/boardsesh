@@ -830,9 +830,19 @@ The Kilter token refresh keeps its own unfenced `FOR UPDATE` transaction on the
 credential row, exactly as the daemon runs it. A fenced batch holds the run-row lock, so
 no heartbeat lands while it runs, and pg-boss fails an active job at
 `heartbeat_on + heartbeatSeconds`. The families' 300 s heartbeat window is
-therefore a hard ceiling on one batch: one Aurora page, one 500-op Kilter
-flush, or the whole circuits phase. A batch that needs longer can never
-succeed. The stats recompute those batches trigger is not part of them: with a
+therefore a hard ceiling on one batch. Aurora workers release those locks between
+100-row write units (duplicate log IDs stay together), and between individual
+circuits. Kilter keeps its 500-op flushes and existing circuits phase. A batch
+that needs longer can never succeed. Aurora advances the page's checkpoints only
+after every write unit and its stats flush finish. Interrupted pages replay from
+their previous checkpoint; already committed rows must remain idempotent. Ascents
+apply all page tombstones before live rows, and circuits are deduplicated and sorted
+across the complete page before slicing. A circuit's source, ownership arbitration
+and playlist replacement remain one transaction; an exceptionally large individual
+circuit can still exceed the heartbeat window. The standalone Aurora daemon keeps
+its atomic page writes because it has no job heartbeat.
+
+The stats recompute those batches trigger is not part of them: with a
 batch runner the appliers write the `(climb, angle)` keys they touched to
 `climb_stats_recompute_pending` in the page or flush transaction itself (an
 upsert, so the key commits with the ticks), and after the page or flush commits
@@ -1217,6 +1227,14 @@ removed per invocation. Active/retryable records are never purged. A third step
 clears up to 100 `provider_sync_controls` rows whose `pending_run_id` or
 `active_run_id` points at a finished or purged run, so a worker that died
 mid-sync never leaves "Sync now" coalescing onto a dead run.
+
+Before clearing those pointers, reconciliation exposes an exhausted or expired
+interactive provider import through the existing credential sync error. It checks
+the run's account, board and link generation under the control-row lock, preserves
+a live replacement run, later successful sync, existing error or expired login,
+and keeps the account retryable. A missing ledger row cannot establish ownership
+and only clears the stale pointer. This does not backfill failures whose pointers
+were already cleared; those accounts need another Sync now after deployment.
 
 ## Operator commands and health
 

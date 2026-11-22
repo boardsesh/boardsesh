@@ -698,6 +698,13 @@ export const schemaSQL = `
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;
 
+  -- Aurora's claim UPDATE casts to the production enum. A text-only fixture
+  -- hid that write path until the interrupted-import claim regressions.
+  DO $$ BEGIN
+    CREATE TYPE aurora_table_type AS ENUM ('ascents', 'bids');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
   DROP TABLE IF EXISTS "boardsesh_ticks" CASCADE;
   CREATE TABLE IF NOT EXISTS "boardsesh_ticks" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -720,7 +727,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "session_id" text,
     "board_id" bigint,
-    "aurora_type" text,
+    "aurora_type" aurora_table_type,
     "aurora_id" text,
     "aurora_synced_at" timestamp,
     "aurora_sync_error" text,
