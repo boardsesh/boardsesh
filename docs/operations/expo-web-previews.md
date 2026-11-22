@@ -9,11 +9,15 @@ account is real.** Sentry and PostHog events carry `preview-web`.
 ## Which PRs get a preview
 
 Same-repository PRs targeting `main` publish automatically, including drafts,
-when their diff contains an app input. `scripts/lib/expo-web-inputs.mjs` is the
-shared classifier for previews and the production browser export: mobile code,
+when their diff contains an app input. `scripts/lib/app-build-inputs.mjs` owns
+the native/browser path policy; `scripts/lib/expo-web-inputs.mjs` preserves the
+browser interface for previews and production exports: mobile code,
 shared packages/schema, board catalogue/WASM, dependencies/patches, export
 helpers and shipped hosting configuration. Documentation, tests, backend-only
-and marketing-only changes do not qualify.
+and marketing-only changes do not qualify. Maestro flows, recorded screenshot
+fixtures and browser test configuration also skip builds. Runtime fixtures under
+`src/dev` remain app inputs. Shared schema, root manifests, lockfiles and patches
+stay conservative: changing them still builds the app, even on a backend PR.
 Bundled board-background `.webp` files under the web image roots `decoy`, `grasshopper`, `kilter`, `moonboard`, `soill`, `tension`, `touchstone` and `woods` also qualify because the app imports those files directly.
 
 A later push whose app inputs match the last successful preview reuses that

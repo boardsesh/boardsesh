@@ -13,6 +13,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
+import * as appBuildInputs from '../lib/app-build-inputs.mjs';
 
 type Step = { name?: string; id?: string; uses?: string; run?: string; with?: Record<string, unknown> };
 type Job = { if?: string; steps?: Step[]; uses?: string };
@@ -367,13 +368,20 @@ async function runGateStep(
     notice: vi.fn(),
     warning: vi.fn(),
   };
+  // Inject the imported module: Vitest's VM cannot dynamically import inside new Function.
+  const executable = script.replace(
+    /await import\(`\$\{process.env.GITHUB_WORKSPACE\}\/scripts\/lib\/app-build-inputs.mjs`\)/g,
+    'appBuildInputs',
+  );
   // oxlint-disable-next-line no-implied-eval
-  const run = new Function('github', 'context', 'core', `return (async () => {\n${script}\n})();`) as (
-    github: unknown,
-    context: unknown,
-    core: unknown,
-  ) => Promise<void>;
-  await run(github, context, core);
+  const run = new Function(
+    'github',
+    'context',
+    'core',
+    'appBuildInputs',
+    `return (async () => {\n${executable}\n})();`,
+  ) as (github: unknown, context: unknown, core: unknown, appBuildInputs: unknown) => Promise<void>;
+  await run(github, context, core, appBuildInputs);
   return outputs;
 }
 
@@ -419,6 +427,56 @@ describe('mobile-ota-preview gate', () => {
     );
     expect(outputs.get('action')).toBe('publish');
     expect(outputs.get('head_sha')).toBe(headSha);
+  });
+
+  it.each([
+    'packages/backend/src/server.ts',
+    'packages/db/src/schema/app/users.ts',
+    'packages/mobile/src/__tests__/queue.test.ts',
+    'packages/mobile/.maestro/login.yaml',
+    'packages/mobile/screenshot-fixtures/operations.json',
+    'packages/mobile/src/lib/auth.web.ts',
+  ])('does not build for an unrelated revision: %s', async (filename) => {
+    const client = { ...github, paginate: vi.fn(async () => [{ filename }]) };
+    const outputs = await runGateStep(
+      'mobile-ota-preview.yml',
+      'gate',
+      'decide',
+      client,
+      dispatchOn('refs/heads/main'),
+    );
+    expect(outputs.get('action')).toBe('cleanup');
+    expect(outputs.get('cleanup_reason')).toBe('no-mobile');
+  });
+
+  it('does not miss native inputs renamed into an unrelated directory', async () => {
+    const client = {
+      ...github,
+      paginate: vi.fn(async () => [
+        {
+          filename: 'docs/retired.ts',
+          previous_filename: 'packages/mobile/src/app.tsx',
+        },
+      ]),
+    };
+    const outputs = await runGateStep(
+      'mobile-ota-preview.yml',
+      'gate',
+      'decide',
+      client,
+      dispatchOn('refs/heads/main'),
+    );
+    expect(outputs.get('action')).toBe('handoff');
+  });
+
+  it('rejects the API file limit rather than skipping a possibly truncated app diff', async () => {
+    const client = {
+      ...github,
+      paginate: vi.fn(async () => Array.from({ length: 3000 }, () => ({ filename: 'docs/readme.md' }))),
+    };
+    await expect(
+      runGateStep('mobile-ota-preview.yml', 'gate', 'decide', client, dispatchOn('refs/heads/main')),
+    ).rejects.toThrow('complete changed-file listing limit');
   });
 
   it('only lets publish and announce run on action=publish', () => {

@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { isNativeAppAffecting } from './lib/app-build-inputs.mjs';
 
 import {
   minimumPublishJobTimeoutMinutes,
@@ -529,7 +530,7 @@ describe('production OTA workflow reliability', () => {
       expect(parse(production).on.push).toBeUndefined();
       // Preview intentionally has no trigger paths filter: every synchronize
       // must run so removing the final mobile change tears down the old branch.
-      expect(preview).toContain(`path === '${implementationPath}'`);
+      expect(isNativeAppAffecting(implementationPath), implementationPath).toBe(true);
     }
   });
 
@@ -637,15 +638,10 @@ describe('publisher helper preview routing', () => {
       const boot = parse(readFileSync(resolve(WORKFLOW_DIR, 'mobile-ota-boot-check.yml'), 'utf8')) as {
         on: { pull_request: { paths: string[] } };
       };
-      const declaration = /const affectsMobilePreview = \(path\) =>[\s\S]*?;\n/.exec(workflow);
-      if (!declaration) throw new Error(`${filename} has no preview predicate`);
-      // Execute the actual workflow classifier so a source-only PR cannot wait
-      // for boot proof while the publication workflow silently skips its path.
-      // oxlint-disable-next-line no-implied-eval
-      const affectsPreview = new Function('path', `${declaration[0]} return affectsMobilePreview(path);`) as (
-        path: string,
-      ) => boolean;
-      for (const path of boot.on.pull_request.paths) expect(affectsPreview(path), `${filename}: ${path}`).toBe(true);
+      expect(workflow).toContain('nativeAppAffectingPaths');
+      expect(workflow).toContain('scripts/lib/app-build-inputs.mjs');
+      for (const path of boot.on.pull_request.paths)
+        expect(isNativeAppAffecting(path), `${filename}: ${path}`).toBe(true);
     },
   );
 
@@ -653,15 +649,9 @@ describe('publisher helper preview routing', () => {
     '%s treats a probe-only diff as a mobile preview change',
     (filename) => {
       const workflow = readFileSync(resolve(WORKFLOW_DIR, filename), 'utf8');
-      const declaration = /const affectsMobilePreview = \(path\) =>[\s\S]*?;\n/.exec(workflow);
-      if (!declaration) throw new Error(`${filename} has no preview predicate`);
-      // Execute the workflow's own predicate so this cannot pass against a copied test implementation.
-      // oxlint-disable-next-line no-implied-eval
-      const affectsPreview = new Function('path', `${declaration[0]} return affectsMobilePreview(path);`) as (
-        path: string,
-      ) => boolean;
-      expect(affectsPreview('scripts/lib/ota-branch-probe.ts')).toBe(true);
-      expect(affectsPreview('docs/unrelated.md')).toBe(false);
+      expect(workflow).toContain('scripts/lib/app-build-inputs.mjs');
+      expect(isNativeAppAffecting('scripts/lib/ota-branch-probe.ts')).toBe(true);
+      expect(isNativeAppAffecting('docs/unrelated.md')).toBe(false);
     },
   );
 });

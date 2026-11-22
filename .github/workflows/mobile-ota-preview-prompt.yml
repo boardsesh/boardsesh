@@ -36,6 +36,14 @@ jobs:
       head_sha: ${{ steps.inspect.outputs.head_sha }}
       cleanup_reason: ${{ steps.inspect.outputs.cleanup_reason }}
     steps:
+      - name: Check out app input policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/app-build-inputs.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Decide trusted fork follow-up
         id: inspect
         uses: actions/github-script@v7
@@ -52,37 +60,19 @@ jobs:
               return;
             }
 
-            const affectsMobilePreview = (path) =>
-              path.startsWith('packages/mobile/') ||
-              path.startsWith('packages/shared/') ||
-              path.startsWith('packages/board-constants/') ||
-              path.startsWith('packages/shared-schema/') ||
-              path.startsWith('patches/') ||
-              path === 'package.json' ||
-              path === 'pnpm-lock.yaml' ||
-              path === 'pnpm-workspace.yaml' ||
-              path === 'scripts/mobile-publish.ts' ||
-              path === 'scripts/lib/mobile-publish-retry.ts' ||
-              path === 'scripts/lib/ota-branch-probe.ts' ||
-              path === 'scripts/lib/eoas.ts' ||
-              path === 'scripts/mobile-ota-boot-check.ts' ||
-              path === 'scripts/mobile-ota-boot-fixture.gradle' ||
-              path === 'scripts/mobile-ota-boot-preview.ts' ||
-              path === 'scripts/mobile-ota-preview-candidates.ts' ||
-              path === 'scripts/mobile-ota-preview-source.ts' ||
-              path === 'scripts/lib/mobile-release-policy.ts' ||
-              path === 'scripts/lib/ota-boot-check.ts' ||
-              path === 'scripts/lib/ota-preview-boot-receipt.ts' ||
-              path === 'scripts/lib/ota-publish-protocol.ts' ||
-              path === '.github/workflows/mobile-ota-boot-check.yml' ||
-              path === '.github/workflows/mobile-ota-preview.yml';
+            const { nativeAppAffectingPaths } =
+              await import(`${process.env.GITHUB_WORKSPACE}/scripts/lib/app-build-inputs.mjs`);
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber,
               per_page: 100,
             });
-            const mobileChanges = files.some((file) => affectsMobilePreview(file.filename));
+            if (files.length >= 3000) throw new Error('PR exceeds the complete changed-file listing limit. Split the PR.');
+            const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean));
+            const inputs = nativeAppAffectingPaths(paths);
+            core.info(`Native preview inputs: ${inputs.join(', ') || '(none; skipping build)'}`);
+            const mobileChanges = inputs.length > 0;
             const action = pr.state === 'open' && mobileChanges ? 'prompt' : 'cleanup';
             const cleanupReason = pr.state === 'open' ? 'no-mobile' : 'closed';
 

@@ -184,6 +184,49 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
   }
 });
 
+void test('app and OTA builds skip backend changes with only shared tests or QA recordings', () => {
+  const targets = classifyChangedFiles([
+    'packages/backend/src/graphql/resolvers/queue.ts',
+    'packages/db/src/schema/app/queue.ts',
+    'packages/shared/queue/src/__tests__/reducer.test.ts',
+    'packages/mobile/.maestro/queue.yaml',
+    'packages/mobile/screenshot-fixtures/GetBoard/recording.json',
+    'packages/mobile/docs/session.md',
+  ]);
+
+  assert.equal(targets.backend, true);
+  assert.equal(targets.web, true);
+  assert.equal(targets.app, false);
+  assert.equal(targets.ota, false);
+});
+
+void test('browser-only app changes export the browser app without staging an OTA', () => {
+  for (const filePath of [
+    'packages/mobile/src/components/climb-row.web.tsx',
+    'packages/mobile/src/web-shims/bottom-sheet.tsx',
+    'packages/mobile/web-runtime/pnpm-lock.yaml',
+    'packages/mobile/public/index.html',
+  ]) {
+    const targets = classifyChangedFiles([filePath]);
+    assert.equal(targets.app, true, filePath);
+    assert.equal(targets.ota, false, filePath);
+  }
+});
+
+void test('shared schemas and dependency files still stage both app targets', () => {
+  for (const filePath of [
+    'packages/shared-schema/src/generated/types.ts',
+    'packages/shared/graphql/src/generated/graphql.ts',
+    'pnpm-lock.yaml',
+    'packages/web/public/images/kilter/product_sizes_layouts_sets/36-1.webp',
+    'scripts/lib/app-build-inputs.mjs',
+  ]) {
+    const targets = classifyChangedFiles([filePath]);
+    assert.equal(targets.app, true, filePath);
+    assert.equal(targets.ota, true, filePath);
+  }
+});
+
 void test('a watchdog file alongside real code still deploys the real code', () => {
   // The skip is per-file, not per-changeset: a commit touching both must still
   // deploy what it changed, or the exclusion would swallow a real release.

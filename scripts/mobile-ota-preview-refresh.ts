@@ -23,6 +23,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { isNativeAppAffecting as affectsMobilePreview } from './lib/app-build-inputs.mjs';
 import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -79,42 +80,8 @@ export const RUNTIME_INPUTS: readonly RuntimeInput[] = [
   { path: 'scripts/lib/eoas.ts', platforms: BOTH },
 ];
 
-const MOBILE_PREVIEW_PREFIXES = [
-  'packages/mobile/',
-  'packages/shared/',
-  'packages/board-constants/',
-  'packages/shared-schema/',
-  'patches/',
-];
-const MOBILE_PREVIEW_FILES = new Set([
-  'package.json',
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
-  'scripts/mobile-publish.ts',
-  'scripts/lib/mobile-publish-retry.ts',
-  'scripts/lib/ota-branch-probe.ts',
-  'scripts/lib/eoas.ts',
-  'scripts/mobile-ota-boot-check.ts',
-  'scripts/mobile-ota-boot-fixture.gradle',
-  'scripts/mobile-ota-boot-preview.ts',
-  'scripts/mobile-ota-preview-candidates.ts',
-  'scripts/mobile-ota-preview-source.ts',
-  'scripts/lib/mobile-release-policy.ts',
-  'scripts/lib/ota-boot-check.ts',
-  'scripts/lib/ota-preview-boot-receipt.ts',
-  'scripts/lib/ota-publish-protocol.ts',
-  '.github/workflows/mobile-ota-boot-check.yml',
-  '.github/workflows/mobile-ota-preview.yml',
-]);
-
-/**
- * PR files that make the publisher gate publish rather than clean up. Exactly
- * the gate's `affectsMobilePreview` (the test compares them): a broader list
- * would dispatch PRs the gate only cleans up, on every base push.
- */
-export function affectsMobilePreview(path: string): boolean {
-  return MOBILE_PREVIEW_PREFIXES.some((prefix) => path.startsWith(prefix)) || MOBILE_PREVIEW_FILES.has(path);
-}
+// Publication, fork prompts and base refreshes share one path policy.
+export { isNativeAppAffecting as affectsMobilePreview } from './lib/app-build-inputs.mjs';
 
 export interface BaseSnapshot {
   sha: string;
@@ -376,7 +343,7 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string, no
   for (const pull of pulls) {
     try {
       const files = await api.pullFiles(pull.number);
-      if (files.some(affectsMobilePreview)) {
+      if (files.some((filePath) => affectsMobilePreview(filePath))) {
         pending.push({ pull: pull.number, headSha: pull.headSha, record: await api.latestPreview(pull.number) });
         continue;
       }
@@ -558,10 +525,12 @@ export function createGitHubRefreshApi(options: {
       });
     },
     async pullFiles(pull) {
-      return (await paged(`/pulls/${pull}/files`)).map((input) => {
-        const filename = objectRecord(input, 'Pull request file').filename;
-        if (typeof filename !== 'string') throw new Error('Pull request file has no name.');
-        return filename;
+      const files = await paged(`/pulls/${pull}/files`);
+      if (files.length >= 3000) throw new Error('PR exceeds the complete changed-file listing limit.');
+      return files.flatMap((input) => {
+        const file = objectRecord(input, 'Pull request file');
+        if (typeof file.filename !== 'string') throw new Error('Pull request file has no name.');
+        return typeof file.previous_filename === 'string' ? [file.filename, file.previous_filename] : [file.filename];
       });
     },
     async branchHead(branch) {

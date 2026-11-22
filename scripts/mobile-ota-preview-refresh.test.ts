@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
+import * as appBuildInputs from './lib/app-build-inputs.mjs';
 import {
   affectsMobilePreview,
   appConfigDigest,
@@ -356,21 +357,12 @@ describe('runtime inputs', () => {
       'scripts/lib/eoas.ts',
     ]);
   });
-  it('treats exactly the files the publisher gate publishes for as mobile changes', () => {
-    const body = /const affectsMobilePreview = \(path\) =>([\s\S]*?);\n\n/.exec(decideScript)?.[1];
-    expect(body).toBeTruthy();
-    // oxlint-disable-next-line no-implied-eval
-    const gate = new Function('path', `return (${body});`) as (path: string) => boolean;
-    const literals = [...String(body).matchAll(/'([^']+)'/g)].map((match) => match[1]);
-    expect(literals.length).toBeGreaterThan(10);
-    const samples = [
-      ...literals,
-      ...literals.map((literal) => `${literal}x`),
-      'packages/web/app/page.tsx',
-      '.github/workflows/mobile-ota-production.yml',
-      'scripts/mobile-ota-preview-refresh.ts',
-    ];
-    for (const path of samples) expect(affectsMobilePreview(path), path).toBe(gate(path));
+  it('loads the shared path policy in the publisher gate', () => {
+    expect(decideScript).toContain('nativeAppAffectingPaths');
+    expect(decideScript).toContain('scripts/lib/app-build-inputs.mjs');
+    expect(affectsMobilePreview('packages/backend/src/server.ts')).toBe(false);
+    expect(affectsMobilePreview('packages/shared/queue/src/__tests__/reducer.test.ts')).toBe(false);
+    expect(affectsMobilePreview('packages/shared-schema/src/schema.ts')).toBe(true);
   });
 
   it('covers the repo-local sources the fingerprint hashes, on the platforms that hash them', () => {
@@ -443,6 +435,34 @@ describe('parsePreviewBases', () => {
     { otaPreviewBases: { ...bases, sourceBaseRef: '' } },
   ])('rejects %j', (payload) => {
     expect(parsePreviewBases(payload)).toBeNull();
+  });
+});
+
+describe('refresh changed-path inventory', () => {
+  it('includes both filenames of a rename', async () => {
+    const api = createGitHubRefreshApi({
+      token: 'test',
+      repository: 'boardsesh/boardsesh',
+      fetchImpl: vi.fn(async () =>
+        Response.json([{ filename: 'docs/retired.ts', previous_filename: 'packages/mobile/src/app.tsx' }]),
+      ),
+    });
+    expect(await api.pullFiles(7)).toEqual(['docs/retired.ts', 'packages/mobile/src/app.tsx']);
+  });
+
+  it('rejects an API listing that reaches the 3000-file cap', async () => {
+    const api = createGitHubRefreshApi({
+      token: 'test',
+      repository: 'boardsesh/boardsesh',
+      fetchImpl: vi.fn(async (url) =>
+        Response.json(
+          Number(new URL(String(url)).searchParams.get('page')) <= 30
+            ? Array.from({ length: 100 }, () => ({ filename: 'docs/readme.md' }))
+            : [],
+        ),
+      ),
+    });
+    await expect(api.pullFiles(7)).rejects.toThrow('exceeded 30 pages');
   });
 });
 
@@ -882,12 +902,18 @@ describe('refresh workflow shape', () => {
       notice: vi.fn(),
       setOutput: (key: string, result: unknown) => outputs.set(key, result),
     };
+    const executable = decideScript.replace(
+      /await import\(`\$\{process.env.GITHUB_WORKSPACE\}\/scripts\/lib\/app-build-inputs.mjs`\)/g,
+      'appBuildInputs',
+    );
     // oxlint-disable-next-line no-implied-eval
-    const run = new Function('github', 'context', 'core', `return (async () => {\n${decideScript}\n})();`) as (
-      github: unknown,
-      context: unknown,
-      core: unknown,
-    ) => Promise<void>;
+    const run = new Function(
+      'github',
+      'context',
+      'core',
+      'appBuildInputs',
+      `return (async () => {\n${executable}\n})();`,
+    ) as (github: unknown, context: unknown, core: unknown, appBuildInputs: unknown) => Promise<void>;
     await run(
       github,
       {
@@ -897,6 +923,7 @@ describe('refresh workflow shape', () => {
         payload: { repository: { default_branch: 'main' }, inputs: { pr: '7' } },
       },
       core,
+      appBuildInputs,
     );
     expect(outputs.get('action')).toBe('cleanup');
     expect(outputs.get('cleanup_reason')).toBe('no-mobile');

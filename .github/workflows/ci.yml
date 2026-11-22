@@ -256,6 +256,20 @@ jobs:
             # the export/build scripts that produce it, and the workflow that
             # deploys it. See deploy/app-subdomain/README.md.
             deployConfig:
+              # OTA/browser gates read workflows and policy files through fs.
+              - 'scripts/lib/app-build-inputs.*'
+              - 'scripts/lib/expo-web-inputs.*'
+              - 'scripts/mobile-ota-preview-reuse*'
+              - 'scripts/mobile-ota-preview-refresh*'
+              - 'scripts/mobile-ota-preview-base-context.test.ts'
+              - 'scripts/mobile-ota-publish-workflow.test.ts'
+              - 'scripts/production-deploy-changes*'
+              - 'scripts/__tests__/pr-test-plan-workflow.test.ts'
+              - 'scripts/__tests__/untrusted-code-workflow-guard.test.ts'
+              - 'scripts/__tests__/expo-web-preview*.test.ts'
+              - '.github/workflows/mobile-ota-preview*.yml'
+              - '.github/workflows/pr-test-plan.yml'
+              - '.github/workflows/expo-web-preview*.yml'
               - 'deploy/app-subdomain/**'
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
@@ -940,6 +954,18 @@ jobs:
             scripts/__tests__/public-page-overflow-workflow.test.ts \
             scripts/__tests__/service-image-build-cache.test.ts \
             scripts/__tests__/homelab-dispatch-workflow.test.ts
+          vp test run --project scripts --reporter=agent \
+            scripts/lib/app-build-inputs.test.ts \
+            scripts/lib/expo-web-inputs.test.ts \
+            scripts/mobile-ota-preview-reuse.test.ts \
+            scripts/mobile-ota-preview-refresh.test.ts \
+            scripts/mobile-ota-preview-base-context.test.ts \
+            scripts/mobile-ota-publish-workflow.test.ts \
+            scripts/__tests__/pr-test-plan-workflow.test.ts \
+            scripts/__tests__/untrusted-code-workflow-guard.test.ts \
+            scripts/__tests__/expo-web-preview-controller.test.ts \
+            scripts/__tests__/expo-web-preview-workflows.test.ts
+          vp exec node --test scripts/production-deploy-changes.test.mjs
 
       # Same rationale as deploy-config: these two suites read their inputs
       # (fastlane/metadata/**/*.txt, packages/mobile/locales/*.json) via fs at
