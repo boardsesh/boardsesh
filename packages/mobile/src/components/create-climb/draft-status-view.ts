@@ -12,6 +12,8 @@ export type DraftStatusTone = 'muted' | 'warning' | 'error';
 export type DraftStatusView = {
   text: string;
   tone: DraftStatusTone;
+  /** This line reassures the setter that the current copy is saved. */
+  savedReassurance?: boolean;
   /**
    * Whether entering this state is worth speaking to assistive tech. True only
    * for the states that change the ANSWER to "is my work safe?" — never for the
@@ -119,13 +121,20 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   const savingAsDraft = state.isDraft ?? true;
 
   if (state.hasSavedClimb) {
-    if (state.waitingToSync) return { text: t('mobile.create.autosave.waitingToSync'), tone: 'muted', announce: true };
+    if (state.waitingToSync)
+      return { text: t('mobile.create.autosave.waitingToSync'), tone: 'muted', savedReassurance: true, announce: true };
     if (state.hasUnsavedEdits) {
-      return { text: t('mobile.create.autosave.unsyncedEdits'), tone: 'muted', announce: false };
+      return {
+        text: t('mobile.create.autosave.unsyncedEdits'),
+        tone: 'muted',
+        savedReassurance: true,
+        announce: false,
+      };
     }
     return {
       text: savingAsDraft ? t('mobile.create.autosave.inAccount') : t('mobile.create.autosave.inAccountPublish'),
       tone: 'muted',
+      savedReassurance: true,
       announce: true,
     };
   }
@@ -133,6 +142,15 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   return {
     text: savingAsDraft ? t('mobile.create.autosave.onDevice') : t('mobile.create.autosave.onDevicePublish'),
     tone: 'muted',
+    savedReassurance: true,
     announce: false,
   };
+}
+
+/** The failed hold-editor checkpoint already explains that the latest work is not durable. */
+export function draftStatusWithHoldEditorFailure(
+  draftStatus: DraftStatusView | null,
+  failed: boolean,
+): DraftStatusView | null {
+  return failed && draftStatus?.savedReassurance === true ? null : draftStatus;
 }

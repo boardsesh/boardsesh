@@ -1,4 +1,28 @@
 // @vitest-environment jsdom
+vi.mock('../CreateAddHoldsRow', () => ({
+  CreateAddHoldsRow: ({
+    onPress,
+    disabled,
+    opening,
+    failed,
+  }: {
+    onPress: () => void;
+    disabled?: boolean;
+    opening?: boolean;
+    failed?: boolean;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement(
+        'button',
+        { onClick: onPress, disabled: disabled || opening },
+        opening ? 'mobile.create.holds.opening' : 'mobile.create.holds.add',
+      ),
+      createElement('span', null, 'mobile.create.holds.hint'),
+      failed ? createElement('span', null, 'mobile.create.holds.openFailed') : null,
+    ),
+}));
 vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
@@ -189,7 +213,29 @@ describe('CreateDrawer with a remix that lost holds', () => {
 });
 
 describe('visible hold-maintenance controls', () => {
-  it('labels the entry and calls it directly from beneath the board', () => {
+  it('restores ordinary status when edit access hides the failed handoff entry', () => {
+    const saved = { text: 'saved', tone: 'muted' as const, announce: false, savedReassurance: true };
+    const element = drawerWith(undefined);
+    const props = { ...element.props, controller: { ...controller, draftStatus: saved }, holdEditorOpenFailed: true };
+    const view = render(createElement(CreateDrawer, { ...props, onAddHolds: async () => undefined }));
+    expect(captured.actionBar?.draftStatus).toBeNull();
+    expect(view.getByText('mobile.create.holds.openFailed')).toBeTruthy();
+    view.rerender(createElement(CreateDrawer, props));
+    expect(captured.actionBar?.draftStatus).toBe(saved);
+    expect(view.queryByText('mobile.create.holds.openFailed')).toBeNull();
+  });
+
+  it('keeps Add holds after the painting tools and outside their height budget', () => {
+    const element = drawerWith(undefined);
+    const view = render(createElement(CreateDrawer, { ...element.props, onAddHolds: async () => undefined }));
+    const addHolds = view.getByRole('button', { name: 'mobile.create.holds.add' });
+    const actionBar = view.container.querySelector('[data-node="action-bar"]');
+    if (!actionBar) throw new Error('Expected painting tools');
+    expect(actionBar.compareDocumentPosition(addHolds) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(view.container.querySelector('[data-testid="create-drawer-board-block"]')?.contains(addHolds)).toBe(false);
+  });
+
+  it('labels the entry and calls it directly from below the painting controls', () => {
     const onAddHolds = vi.fn(async () => {});
     const element = drawerWith(undefined);
     const view = render(createElement(CreateDrawer, { ...element.props, onAddHolds }));

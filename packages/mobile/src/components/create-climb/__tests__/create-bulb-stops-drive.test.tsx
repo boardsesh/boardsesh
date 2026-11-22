@@ -35,6 +35,8 @@ vi.mock('../../ble/use-board-connection-state', () => ({
   }),
 }));
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: {
@@ -87,9 +89,17 @@ vi.mock('../CreateDraftStatusRow', () => ({ CreateDraftStatusRow: () => null, st
 vi.mock('../use-rate-limited-announcer', () => ({ useRateLimitedAnnouncer: () => vi.fn() }));
 vi.mock('../../../lib/hold-color-overrides', () => ({ useHoldColorOverrides: () => ({ overrides: {} }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { label: '#000' }, brandColors: { warning: '#B45309', primary: '#A78BFA' } }),
+  useTheme: () => ({
+    selection: { fill: '#EDE5FF', checkmark: '#5B22F2' },
+    radii: { button: 10 },
+    systemColors: { label: '#000' },
+    brandColors: { warning: '#B45309', primary: '#A78BFA' },
+  }),
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
+vi.mock('../../../theme/tokens', () => ({
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 12: 48 },
+  borderRadius: { md: 8 },
+}));
 
 import { CreateDrawerActionBar } from '../CreateDrawerActionBar';
 import {

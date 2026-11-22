@@ -29,6 +29,8 @@ import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { AccessibleHoldList } from './AccessibleHoldList';
 import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
 import { centeredZoomViewport } from '../play-drawer/zoom-viewport-clamp';
+import { draftStatusWithHoldEditorFailure } from './draft-status-view';
+import { CreateAddHoldsRow } from './CreateAddHoldsRow';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
@@ -106,10 +108,18 @@ export function CreateDrawer({
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const [holdListVisible, setHoldListVisible] = useState(false);
-  const [holdEntryHeight, setHoldEntryHeight] = useState(0);
-  const measureHoldEntry = useCallback((event: LayoutChangeEvent) => {
+  const [missingHoldsHeight, setMissingHoldsHeight] = useState(0);
+  const [actionBarHeight, setActionBarHeight] = useState<number | undefined>(undefined);
+  const measureActionBar = useCallback((event: LayoutChangeEvent) => {
     const height = event.nativeEvent.layout.height;
-    setHoldEntryHeight((previous) => (previous === height ? previous : height));
+    if (height > 0) setActionBarHeight((previous) => (previous === height ? previous : height));
+  }, []);
+  const handleAddHolds = useCallback(() => {
+    void onAddHolds?.();
+  }, [onAddHolds]);
+  const measureMissingHolds = useCallback((event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    setMissingHoldsHeight((previous) => (previous === height ? previous : height));
   }, []);
   const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
@@ -235,7 +245,8 @@ export function CreateDrawer({
     insetTop: insets.top,
     insetBottom: windowInsetBottom,
     showRouteTransport: controller.showRouteTransport,
-    extraControlsHeight: onAddHolds || controller.missingHoldCount > 0 ? holdEntryHeight : 0,
+    actionBarHeight,
+    missingHoldsHeight: controller.missingHoldCount > 0 ? missingHoldsHeight : 0,
   });
 
   // Fit the board to the measured editing card. Window dimensions seed the
@@ -463,34 +474,7 @@ export function CreateDrawer({
                 />
               </View>
 
-              <View onLayout={measureHoldEntry}>
-                {onAddHolds ? (
-                  <View style={styles.holdEntry}>
-                    <PressableSurface
-                      onPress={() => void onAddHolds()}
-                      disabled={openingHoldEditor || controller.saveState === 'saving' || controller.pendingNewClimb}
-                      accessibilityRole="button"
-                      accessibilityHint={t('mobile.create.holds.hint')}
-                      accessibilityState={{
-                        disabled: openingHoldEditor || controller.saveState === 'saving' || controller.pendingNewClimb,
-                        busy: openingHoldEditor,
-                      }}
-                      style={styles.holdEntryButton}
-                    >
-                      <Text variant="headline" color={systemColors.accent}>
-                        {openingHoldEditor ? t('mobile.create.holds.opening') : t('mobile.create.holds.add')}
-                      </Text>
-                    </PressableSurface>
-                    <Text variant="caption1" color={systemColors.secondaryLabel}>
-                      {t('mobile.create.holds.hint')}
-                    </Text>
-                    {holdEditorOpenFailed ? (
-                      <Text variant="caption1" color={systemColors.error} accessibilityLiveRegion="polite">
-                        {t('mobile.create.holds.openFailed')}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
+              <View onLayout={measureMissingHolds}>
                 {controller.missingHoldCount > 0 ? (
                   <View style={styles.holdEntry}>
                     <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
@@ -520,29 +504,44 @@ export function CreateDrawer({
                 onPaceChange={controller.setFramesPace}
               />
 
-              <CreateDrawerActionBar
-                boardName={board.boardName}
-                selectedBrush={controller.selectedBrush}
-                onSelectBrush={controller.setSelectedBrush}
-                canUndo={controller.canUndo}
-                canRedo={controller.canRedo}
-                onUndo={controller.undo}
-                onRedo={controller.redo}
-                onClearHolds={controller.handleClearHolds}
-                frameCount={controller.frameCount}
-                frameDeletions={controller.frameDeletions}
-                currentFrameIndex={controller.currentFrameIndex}
-                canSetActive={controller.canSetActive}
-                onSetActive={controller.handleSetActive}
-                lightbulb={lightbulb}
-                draftStatus={controller.draftStatus}
-                onToggleHeatmap={heatmap?.toggle}
-                heatmapActive={heatmapActive}
-                heatmapBusy={heatmap?.busy ?? false}
-                heatmapLine={heatmapLine}
-                saveBlockedLine={saveBlockedLine}
-              />
+              <View onLayout={measureActionBar}>
+                <CreateDrawerActionBar
+                  boardName={board.boardName}
+                  selectedBrush={controller.selectedBrush}
+                  onSelectBrush={controller.setSelectedBrush}
+                  canUndo={controller.canUndo}
+                  canRedo={controller.canRedo}
+                  onUndo={controller.undo}
+                  onRedo={controller.redo}
+                  onClearHolds={controller.handleClearHolds}
+                  frameCount={controller.frameCount}
+                  frameDeletions={controller.frameDeletions}
+                  currentFrameIndex={controller.currentFrameIndex}
+                  canSetActive={controller.canSetActive}
+                  onSetActive={controller.handleSetActive}
+                  lightbulb={lightbulb}
+                  draftStatus={draftStatusWithHoldEditorFailure(
+                    controller.draftStatus,
+                    Boolean(onAddHolds && holdEditorOpenFailed),
+                  )}
+                  onToggleHeatmap={heatmap?.toggle}
+                  heatmapActive={heatmapActive}
+                  heatmapBusy={heatmap?.busy ?? false}
+                  heatmapLine={heatmapLine}
+                  saveBlockedLine={saveBlockedLine}
+                />
+              </View>
             </View>
+
+            {/* Secondary wall maintenance stays below painting and never sizes the wall. */}
+            {onAddHolds ? (
+              <CreateAddHoldsRow
+                onPress={handleAddHolds}
+                disabled={controller.saveState === 'saving' || controller.pendingNewClimb}
+                opening={openingHoldEditor}
+                failed={holdEditorOpenFailed}
+              />
+            ) : null}
 
             <View style={styles.belowFold}>
               <CreateDrawerForm

@@ -23,3 +23,26 @@ must not keep drawing or autosaving against the prior generation. Read
 
 Use the existing unsaved-work and player-dismissal handling when navigating into
 or out of the task. Presentation follows [sheets versus routes](../mobile-sheets-vs-routes.md).
+
+The editable header uses normal title contrast, with a separate accessible name.
+Brush controls keep hold colors in their swatches; the active brush also has a
+checkmark, selection fill, and border. Larger text wraps the controls into wider
+rows, and the measured action-bar height contributes to the board's vertical
+budget. Status text may wrap without covering the board.
+
+On an editable Spraywall, Add holds is one full-width navigation row below the
+painting controls, including its hint, opening state and inline failure. The
+whole row is one target. This secondary action is outside the wall-height budget:
+showing it, opening it, or displaying longer copy never takes space from the wall.
+Only save-blocking missing-hold guidance stays in the measured primary controls. Description, climb
+rules and publication controls remain below the tools; rule switches share an
+inset group, with Save as draft in its own group.
+
+Component previews are available as `create-climb--spraywall`, `--empty`,
+`--long-title`, `--loading`, and `--error` in the isolated story harness. They use
+the real prop-driven views and bundled photo fixture. They do not establish
+backend/persistence behavior or native modal placement; test the actual route
+on device for those contracts.
+
+[Before and after design captures](images/create-climb-design/README.md) document
+the component-level visual review and its device-testing limits.

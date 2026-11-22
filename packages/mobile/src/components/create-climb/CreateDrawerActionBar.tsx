@@ -1,6 +1,7 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { textFontScale } from '../../theme/dynamic-type';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -122,7 +123,12 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   saveBlockedLine = null,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors: schemeBrandColors } = useTheme();
+  const { systemColors, brandColors: schemeBrandColors, selection, radii } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const brushMinWidth =
+    fontScale > 1.3
+      ? Math.max(spacing[4] * 5, spacing[12] * textFontScale('caption1', fontScale, Platform.OS))
+      : spacing[12];
   const roleLabels = useBrushRoleLabels();
   const { overrides: holdColorOverrides } = useHoldColorOverrides();
   // One voice for this whole surface, so a status transition and a frame
@@ -191,12 +197,20 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
               accessibilityState={{ selected }}
               style={[
                 styles.chip,
-                { backgroundColor: systemColors.fill },
-                selected && { borderColor: color, borderWidth: 2 },
+                { minWidth: brushMinWidth },
+                { backgroundColor: selected ? selection.fill : systemColors.tertiaryFill, borderRadius: radii.button },
+                selected && { borderColor: selection.checkmark },
               ]}
             >
-              <View style={[styles.swatch, { backgroundColor: color }]} />
-              <Text emphasized variant="caption1" numberOfLines={1}>
+              <View style={styles.marker} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                <View style={[styles.swatch, { backgroundColor: color }]} />
+                {selected ? (
+                  <View style={styles.selectionMark}>
+                    <Icon name="check.small" size={10} color={selection.checkmark} maxFontSizeMultiplier={1} />
+                  </View>
+                ) : null}
+              </View>
+              <Text emphasized variant="caption1" style={styles.brushLabel}>
                 {label}
               </Text>
             </PressableSurface>
@@ -209,12 +223,23 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           accessibilityState={{ selected: selectedBrush === 'OFF' }}
           style={[
             styles.chip,
-            { backgroundColor: systemColors.fill },
-            selectedBrush === 'OFF' && { borderColor: systemColors.label, borderWidth: 2 },
+            { minWidth: brushMinWidth },
+            {
+              backgroundColor: selectedBrush === 'OFF' ? selection.fill : systemColors.tertiaryFill,
+              borderRadius: radii.button,
+            },
+            selectedBrush === 'OFF' && { borderColor: selection.checkmark },
           ]}
         >
-          <Icon maxFontSizeMultiplier={1} name="eraser" size={18} color={systemColors.label} />
-          <Text emphasized variant="caption1" numberOfLines={1}>
+          <View style={styles.marker} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <Icon maxFontSizeMultiplier={1} name="eraser" size={16} color={systemColors.label} />
+            {selectedBrush === 'OFF' ? (
+              <View style={styles.selectionMark}>
+                <Icon name="check.small" size={10} color={selection.checkmark} maxFontSizeMultiplier={1} />
+              </View>
+            ) : null}
+          </View>
+          <Text emphasized variant="caption1" style={styles.brushLabel}>
             {t('mobile.create.brush.erase')}
           </Text>
         </PressableSurface>
@@ -364,12 +389,15 @@ const styles = StyleSheet.create({
   brushRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    flexWrap: 'wrap',
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     gap: spacing[2],
   },
   chip: {
     flex: 1,
+    minWidth: spacing[12],
+    minHeight: spacing[12],
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[1],
@@ -379,11 +407,10 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     borderWidth: 2,
   },
-  swatch: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-  },
+  marker: { width: 32, height: spacing[4], alignItems: 'center', justifyContent: 'center' },
+  selectionMark: { position: 'absolute', end: -spacing[1], top: 0 },
+  brushLabel: { textAlign: 'center' },
+  swatch: { width: spacing[4], height: spacing[4], borderRadius: borderRadius.full },
   // Up to six tools spread across the width. `gap: 0` overrides rowSecondary's
   // 8dp: with it, six tools need 336dp and the last one clips at 320pt.
   // space-between does the spacing instead. The status row carries the bar's

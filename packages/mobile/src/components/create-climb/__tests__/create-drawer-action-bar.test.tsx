@@ -20,6 +20,8 @@ import { createElement, type ReactNode } from 'react';
 type PressMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 const announceSpy = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: unknown }) => {
     // Flattened so a test can read the row's resolved gap.
     const flat = [style]
@@ -108,13 +110,15 @@ vi.mock('../../../lib/hold-color-overrides', () => ({ useHoldColorOverrides: () 
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { fill: '#EFEFF0', label: '#000000', secondaryLabel: '#5B5563' },
+    selection: { fill: '#EDE5FF', checkmark: '#5B22F2' },
+    radii: { button: 10 },
+    systemColors: { tertiaryFill: '#EAEAEA', fill: '#EFEFF0', label: '#000000', secondaryLabel: '#5B5563' },
     brandColors: { warning: '#B45309', error: '#C81E1E', primary: '#A78BFA' },
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
-  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 12: 48 },
   borderRadius: { md: 8 },
 }));
 

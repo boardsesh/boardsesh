@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ABOVE_FOLD_CHROME,
+  CREATE_ACTION_BAR_HEIGHT,
   MIN_BOARD_HEIGHT,
   PLAYBACK_TRANSPORT_RESERVE,
   computeBoardMaxHeight,
@@ -67,10 +68,18 @@ describe('create drawer board budget', () => {
   });
 });
 
-describe('hold maintenance controls', () => {
-  it('reserves their measured height so painting tools stay visible', () => {
+describe('primary editor controls', () => {
+  it('reserves actual translated and large-text controls while keeping the board floor', () => {
     const budget = { windowHeight: 900, insetTop: 24, insetBottom: 34, showRouteTransport: false };
-    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 92 })).toBe(computeBoardMaxHeight(budget) - 92);
-    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 180 })).toBe(computeBoardMaxHeight(budget) - 180);
+    const compact = computeBoardMaxHeight(budget);
+    expect(computeBoardMaxHeight({ ...budget, actionBarHeight: CREATE_ACTION_BAR_HEIGHT })).toBe(compact);
+    expect(computeBoardMaxHeight({ ...budget, actionBarHeight: CREATE_ACTION_BAR_HEIGHT + 80 })).toBe(compact - 80);
+    expect(computeBoardMaxHeight({ ...budget, actionBarHeight: 1000 })).toBe(MIN_BOARD_HEIGHT);
+  });
+
+  it('reserves only the save-blocking missing-hold notice', () => {
+    const budget = { windowHeight: 900, insetTop: 24, insetBottom: 34, showRouteTransport: false };
+    expect(computeBoardMaxHeight({ ...budget, missingHoldsHeight: 92 })).toBe(computeBoardMaxHeight(budget) - 92);
+    expect(computeBoardMaxHeight({ ...budget, missingHoldsHeight: 180 })).toBe(computeBoardMaxHeight(budget) - 180);
   });
 });

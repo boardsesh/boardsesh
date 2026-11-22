@@ -1,0 +1,59 @@
+[
+  {
+    "state": "empty",
+    "wallHeight": 332.8125,
+    "expectedMaximum": 332.81963470319636,
+    "hiddenUtilityWallHeight": 332.8125,
+    "enlargedUtilityWallHeight": 332.8125,
+    "actionBar": {
+      "x": 0,
+      "y": 396.8125,
+      "width": 375,
+      "height": 157
+    },
+    "addHolds": {
+      "x": 16,
+      "y": 561.8125,
+      "width": 343,
+      "height": 66
+    }
+  },
+  {
+    "state": "loading",
+    "wallHeight": 332.8125,
+    "expectedMaximum": 332.81963470319636,
+    "hiddenUtilityWallHeight": 332.8125,
+    "enlargedUtilityWallHeight": 332.8125,
+    "actionBar": {
+      "x": 0,
+      "y": 396.8125,
+      "width": 375,
+      "height": 157
+    },
+    "addHolds": {
+      "x": 16,
+      "y": 561.8125,
+      "width": 343,
+      "height": 66
+    }
+  },
+  {
+    "state": "error",
+    "wallHeight": 332.8125,
+    "expectedMaximum": 332.81963470319636,
+    "hiddenUtilityWallHeight": 332.8125,
+    "enlargedUtilityWallHeight": 332.8125,
+    "actionBar": {
+      "x": 0,
+      "y": 396.8125,
+      "width": 375,
+      "height": 157
+    },
+    "addHolds": {
+      "x": 16,
+      "y": 561.8125,
+      "width": 343,
+      "height": 66
+    }
+  }
+]
