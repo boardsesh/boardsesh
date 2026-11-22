@@ -38,11 +38,7 @@
       "description": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}. {{ascents}} croix, note de {{quality}} sur 5. Allume-le sur ta board avec Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sur la board {{boardName}}",
       "fallbackTitle": "Bloc",
-      "fallbackDescription": "Voir les détails du bloc et les vidéos de beta",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Bloc sur {{layoutName}} à {{angle}}°",
-      "seoSetterSuffix": " ouvert par {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} croix enregistrées"
+      "fallbackDescription": "Voir les détails du bloc et les vidéos de beta"
     }
   },
   "list": {
@@ -952,7 +948,24 @@
       "board": "{{boardName}}",
       "list": "Blocs à {{angle}}°"
     },
+    "hero": {
+      "gradeForSearch": ", {{grade}}",
+      "qualityAria": "Noté {{quality}} sur 5",
+      "setBy": "ouvert par {{setter}}",
+      "boardAtAngle": "{{board}} à {{angle}}°"
+    },
     "boardImageAlt": "{{climbName}} allumé sur la board {{boardName}} {{layoutName}} à {{angle}}°",
+    "legend": {
+      "aria": "Prises de ce bloc",
+      "start_one": "{{formattedCount}} départ",
+      "start_other": "{{formattedCount}} départs",
+      "hand_one": "{{formattedCount}} main",
+      "hand_other": "{{formattedCount}} mains",
+      "finish_one": "{{formattedCount}} fin",
+      "finish_other": "{{formattedCount}} fins",
+      "foot_one": "{{formattedCount}} pied",
+      "foot_other": "{{formattedCount}} pieds"
+    },
     "setterLink": "Plus de blocs de {{setter}}",
     "facts": {
       "grade": "Cotation",

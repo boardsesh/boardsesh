@@ -7,23 +7,25 @@ import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-f
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
-import { buildBoardArtLayers, toDarkArtUrl } from '@/app/components/board-renderer/util';
-import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
+import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
-import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardImageDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
+import ClimbBoardStage from './climb-board-stage';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import FrontDoorInstall from './front-door-install';
+import HoldLegend from './hold-legend';
+import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
+import styles from './climb-front-door.module.css';
 
 type ClimbFrontDoorProps = {
   climb: Climb;
@@ -62,32 +64,6 @@ type ClimbFrontDoorProps = {
   noindex?: boolean;
 };
 
-const containerSx = {
-  width: '100%',
-  boxSizing: 'border-box' as const,
-  minWidth: 0,
-  maxWidth: 1200,
-  margin: '0 auto',
-  paddingBlock: `${themeTokens.spacing[4]}px`,
-  paddingInline: 'var(--page-gutter, var(--spacing-6))',
-  '& > *': { maxWidth: 720, minWidth: 0 },
-};
-
-// The board photo and the holds render are separate images on a themed board, so they stack
-// in one CSS grid cell. Grid rather than absolute positioning, matching BoardImageLayers:
-// absolutely positioned images inside an aspect-ratio container hit iOS 18.x WebKit bugs.
-const boardArtSx = {
-  display: 'grid',
-  maxWidth: 560,
-  '& > img': { gridArea: '1 / 1' },
-};
-
-const boardLayerStyle: React.CSSProperties = {
-  maxWidth: '100%',
-  height: 'auto',
-  width: '100%',
-};
-
 // Setters type notes with line breaks; keep them rather than collapsing the
 // whole thing onto one line.
 const setterNotesSx = {
@@ -98,15 +74,6 @@ const setterNotesSx = {
 // One rhythm for every `<h2>` band below the board art, so the page reads as a
 // stack of sections rather than a run of UA-default headings.
 const sectionSx = { mt: 4 };
-
-// Named explicitly for the same reason as the h1 in `ClimbViewSeoFragment`:
-// the MUI variant's font-family beats the global `h2` display-face rule.
-const sectionHeadingSx = {
-  fontFamily: 'var(--font-display), sans-serif',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  letterSpacing: '-0.02em',
-  mb: 1.5,
-};
 
 // Shared by the "nothing here yet" and the "this did not load" lines. Same
 // muted weight for both: a degraded read is not an error the reader caused, and
@@ -120,11 +87,11 @@ const emptySectionSx = { m: 0, color: 'var(--neutral-500)' };
  *
  * Three deliberate absences:
  *
- *  1. **No board renderer.** The board art is a plain `<img>` pointing at the
- *     Railway `/render/board` overlay, with explicit dimensions so it
- *     reserves its box before it loads. `BoardRenderer` and `BoardImageLayers`
- *     are both hook-bearing client components; this image is the page's LCP and
- *     has to be in the first HTML byte-for-byte.
+ *  1. **No board renderer.** The board art (`ClimbBoardStage`) is a plain
+ *     `<img>` pointing at the Railway `/render/board` overlay, with explicit
+ *     dimensions so it reserves its box before it loads. `BoardRenderer` and
+ *     `BoardImageLayers` are both hook-bearing client components; this image is
+ *     the page's LCP and has to be in the first HTML byte-for-byte.
  *  2. **No logbook, no ascent badges.** `middleware.ts` puts a shared
  *     `Vercel-CDN-Cache-Control: s-maxage` on every climb-view URL with no
  *     session split, on the premise that the page is personalization-free.
@@ -161,11 +128,8 @@ export default async function ClimbFrontDoor({
   // those differ, and the JSON-LD has to name the URL the page claims.
   const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, climb.uuid, climbName);
   const isCanonicalAngle = angle === canonicalAngle;
-  // Woods art has a white ground that glares in dark mode, so it ships a dark sibling. Rather
-  // than render the whole composite twice — one WASM + sharp job per theme, per climb — the
-  // board photo splits out as static layers the stylesheet picks between, and the holds
-  // render once on top. See buildBoardArtLayers. The JSON-LD below keeps the overlay URL
-  // either way: a crawler has no theme.
+  // Board photo layers (Woods only) and the holds render, split as `ClimbBoardStage`
+  // documents. The JSON-LD below keeps the overlay URL either way: a crawler has no theme.
   const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, false);
   // The setter's own words about the climb — the one genuinely unique piece of
   // indexable prose on this page. User-written, so it renders verbatim (never
@@ -198,7 +162,7 @@ export default async function ClimbFrontDoor({
       : null;
 
   return (
-    <Box component="main" sx={containerSx}>
+    <main className={styles.page}>
       <FrontDoorBreadcrumb
         boardName={formatBoardDisplayName(boardDetails.board_name)}
         angle={angle}
@@ -207,7 +171,6 @@ export default async function ClimbFrontDoor({
         leaf={{ label: climbName, url: canonicalClimbUrl }}
         emitJsonLd={!noindex && isCanonicalAngle}
       />
-
       {noindex || !isCanonicalAngle ? null : (
         <ClimbCreativeWorkJsonLd
           climb={climb}
@@ -219,132 +182,116 @@ export default async function ClimbFrontDoor({
         />
       )}
 
-      <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} angle={angle} />
-
-      <ClimbHandoffCta
-        pathname={handoffPath}
-        label={t('frontDoor.cta.climbThis')}
-        ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
-        helperText={t('frontDoor.cta.helper')}
-        surface="climb_front_door"
-        tree={tree}
-        boardName={boardDetails.board_name}
-        layoutId={boardDetails.layout_id}
-        angle={angle}
-        climbUuid={climb.uuid}
-        locale={locale}
-      >
-        <FrontDoorInstall
-          placement="climb-view"
-          helperText={t('frontDoor.install.helper')}
-          labels={storeButtonLabels}
-        />
-      </ClimbHandoffCta>
-
-      {overlayUrl ? (
-        <Box sx={boardArtSx}>
-          {backgroundUrls.map((backgroundUrl) => (
-            <React.Fragment key={backgroundUrl}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={backgroundUrl}
-                alt=""
-                width={boardDetails.boardWidth}
-                height={boardDetails.boardHeight}
-                className={boardArtStyles.lightArt}
-                fetchPriority="high"
-                decoding="async"
-                style={boardLayerStyle}
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={toDarkArtUrl(backgroundUrl)}
-                alt=""
-                width={boardDetails.boardWidth}
-                height={boardDetails.boardHeight}
-                className={boardArtStyles.darkArt}
-                fetchPriority="high"
-                decoding="async"
-                style={boardLayerStyle}
-              />
-            </React.Fragment>
-          ))}
-          {/* eslint-disable-next-line @next/next/no-img-element -- the overlay route
-              is already an optimised render endpoint; next/image would add a second
-              proxy hop in front of the page's LCP element for no gain. */}
-          <img
-            src={overlayUrl}
-            alt={t('frontDoor.boardImageAlt', {
-              climbName,
-              boardName: boardDetails.board_name,
-              layoutName,
-              angle,
-            })}
-            width={boardDetails.boardWidth}
-            height={boardDetails.boardHeight}
-            fetchPriority="high"
-            decoding="async"
-            style={boardLayerStyle}
+      <div className={styles.hero}>
+        <div className={styles.title}>
+          <ClimbViewSeoFragment
+            climb={climb}
+            boardDetails={boardDetails}
+            angle={angle}
+            currentAngleStats={currentAngleStats}
           />
-        </Box>
-      ) : null}
+        </div>
 
-      <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
+        {overlayUrl ? (
+          <div className={styles.stage}>
+            <ClimbBoardStage
+              backgroundUrls={backgroundUrls}
+              overlayUrl={overlayUrl}
+              boardWidth={boardDetails.boardWidth}
+              boardHeight={boardDetails.boardHeight}
+              alt={t('frontDoor.boardImageAlt', {
+                climbName,
+                boardName: boardDetails.board_name,
+                layoutName,
+                angle,
+              })}
+            >
+              <HoldLegend board={boardDetails.board_name} frames={climb.frames} />
+            </ClimbBoardStage>
+          </div>
+        ) : null}
 
-      {setterNotes ? (
-        <Box component="section" sx={sectionSx}>
-          <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
-            {t('frontDoor.setterNotes.heading')}
-          </Typography>
-          <Typography variant="body1" component="p" sx={setterNotesSx}>
-            {setterNotes}
-          </Typography>
-        </Box>
-      ) : null}
+        <div className={styles.cta}>
+          <ClimbHandoffCta
+            pathname={handoffPath}
+            label={t('frontDoor.cta.climbThis')}
+            ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
+            helperText={t('frontDoor.cta.helper')}
+            surface="climb_front_door"
+            tree={tree}
+            boardName={boardDetails.board_name}
+            layoutId={boardDetails.layout_id}
+            angle={angle}
+            climbUuid={climb.uuid}
+            locale={locale}
+          >
+            <FrontDoorInstall
+              placement="climb-view"
+              helperText={t('frontDoor.install.helper')}
+              labels={storeButtonLabels}
+            />
+          </ClimbHandoffCta>
+        </div>
 
-      <AngleCrossLinks
-        boardDetails={boardDetails}
-        boardSlug={boardSlug}
-        climbUuid={climb.uuid}
-        climbName={climbName}
-        currentAngle={angle}
-        angleStats={angleStats}
-      />
+        <div className={styles.details}>
+          <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
+
+          {setterNotes ? (
+            <Box component="section" sx={sectionSx}>
+              <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
+                {t('frontDoor.setterNotes.heading')}
+              </Typography>
+              <Typography variant="body1" component="p" sx={setterNotesSx}>
+                {setterNotes}
+              </Typography>
+            </Box>
+          ) : null}
+
+          <AngleCrossLinks
+            boardDetails={boardDetails}
+            boardSlug={boardSlug}
+            climbUuid={climb.uuid}
+            climbName={climbName}
+            currentAngle={angle}
+            angleStats={angleStats}
+          />
+
+          <Box component="section" sx={sectionSx}>
+            <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
+              {t('frontDoor.beta.heading')}
+            </Typography>
+            {/* Three states, not two. `frontDoor.beta.empty` says nobody has filmed
+              this climb, which is a claim about the climb — it may only be
+              rendered when the backend actually answered. This section has no
+              client-side query to recover it, so the degraded copy asks for the
+              one thing that does. */}
+            {betaLinks.status === 'unavailable' ? (
+              <Typography variant="body2" component="p" sx={emptySectionSx}>
+                {t('frontDoor.beta.unavailable')}
+              </Typography>
+            ) : betaLinks.items.length > 0 ? (
+              <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" />
+            ) : (
+              <Typography variant="body2" component="p" sx={emptySectionSx}>
+                {t('frontDoor.beta.empty')}
+              </Typography>
+            )}
+          </Box>
+        </div>
+      </div>
 
       <Box component="section" sx={sectionSx}>
-        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
-          {t('frontDoor.beta.heading')}
-        </Typography>
-        {/* Three states, not two. `frontDoor.beta.empty` says nobody has filmed
-            this climb, which is a claim about the climb — it may only be
-            rendered when the backend actually answered. This section has no
-            client-side query to recover it, so the degraded copy asks for the
-            one thing that does. */}
-        {betaLinks.status === 'unavailable' ? (
-          <Typography variant="body2" component="p" sx={emptySectionSx}>
-            {t('frontDoor.beta.unavailable')}
-          </Typography>
-        ) : betaLinks.items.length > 0 ? (
-          <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" />
-        ) : (
-          <Typography variant="body2" component="p" sx={emptySectionSx}>
-            {t('frontDoor.beta.empty')}
-          </Typography>
-        )}
-      </Box>
-
-      <Box component="section" sx={sectionSx}>
-        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+        <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
           {t('frontDoor.similar.heading')}
         </Typography>
         {/* On an unavailable read the list gets NO seed, which is the retry:
-            React Query treats a seeded query as fresh for five minutes, so
-            handing it `[]` would pin "No similar climbs on this layout." on the
-            page for the whole visit. Unseeded, the browser fetches the section
-            itself on hydration — off the server-render budget, and against the
-            reader's own IP rather than the web server's single shared one.
-            `pendingMessage` is what the crawler (and the reader, for that one
-            round trip) reads meanwhile: prose, never a bare spinner. */}
+              React Query treats a seeded query as fresh for five minutes, so
+              handing it `[]` would pin "No similar climbs on this layout." on the
+              page for the whole visit. Unseeded, the browser fetches the section
+              itself on hydration — off the server-render budget, and against the
+              reader's own IP rather than the web server's single shared one.
+              `pendingMessage` is what the crawler (and the reader, for that one
+              round trip) reads meanwhile: prose, never a bare spinner. */}
         <SimilarClimbsList
           boardType={boardDetails.board_name as BoardName}
           boardSlug={boardSlug}
@@ -361,7 +308,7 @@ export default async function ClimbFrontDoor({
       </Box>
 
       <Box component="section" sx={sectionSx}>
-        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+        <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
           {t('frontDoor.community.heading')}
         </Typography>
         <ClimbSocialSection
@@ -372,6 +319,6 @@ export default async function ClimbFrontDoor({
           boardName={boardDetails.board_name}
         />
       </Box>
-    </Box>
+    </main>
   );
 }

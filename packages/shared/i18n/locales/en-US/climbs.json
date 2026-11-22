@@ -38,11 +38,7 @@
       "description": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}. {{ascents}} sends, rated {{quality}} of 5. Light it on your board with Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
       "fallbackTitle": "Climb",
-      "fallbackDescription": "View climb details and beta videos",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "{{layoutName}} climb at {{angle}}°",
-      "seoSetterSuffix": " set by {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} sends logged"
+      "fallbackDescription": "View climb details and beta videos"
     }
   },
   "list": {
@@ -952,7 +948,24 @@
       "board": "{{boardName}}",
       "list": "Climbs at {{angle}}°"
     },
+    "hero": {
+      "gradeForSearch": ", {{grade}}",
+      "qualityAria": "Rated {{quality}} out of 5",
+      "setBy": "set by {{setter}}",
+      "boardAtAngle": "{{board}} at {{angle}}°"
+    },
     "boardImageAlt": "{{climbName}} lit up on the {{boardName}} {{layoutName}} at {{angle}}°",
+    "legend": {
+      "aria": "Holds on this climb",
+      "start_one": "{{formattedCount}} start",
+      "start_other": "{{formattedCount}} start",
+      "hand_one": "{{formattedCount}} hand",
+      "hand_other": "{{formattedCount}} hand",
+      "finish_one": "{{formattedCount}} finish",
+      "finish_other": "{{formattedCount}} finish",
+      "foot_one": "{{formattedCount}} foot",
+      "foot_other": "{{formattedCount}} foot"
+    },
     "setterLink": "More climbs from {{setter}}",
     "facts": {
       "grade": "Grade",

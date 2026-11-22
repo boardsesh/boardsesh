@@ -532,6 +532,55 @@ export function parseFramesToHoldRows(board: BoardName, frames: string | null | 
 }
 
 /**
+ * The roles a hold legend counts, in the order a climber reads a climb: where
+ * the hands start, the holds in between, the finish, then the feet.
+ */
+export const HOLD_LEGEND_ROLES = ['STARTING', 'HAND', 'FINISH', 'FOOT'] as const;
+export type HoldLegendRole = (typeof HOLD_LEGEND_ROLES)[number];
+
+/** One legend entry: how many holds the climb lights in a role, and the colour it draws them. */
+export type HoldRoleSummary = { role: HoldLegendRole; count: number; color: HoldColor };
+
+/**
+ * The state info a legend draws a role's swatch from: the board's canonical
+ * write code for the role, else the first code the board maps to it (MoonBoard
+ * has no canonical FOOT, only the firmware's preview code).
+ */
+function legendRoleInfo(board: BoardName, role: HoldLegendRole): HoldStateInfo | undefined {
+  const primaryCode = STATE_TO_PRIMARY_CODE[board]?.[role];
+  const primaryInfo = primaryCode === undefined ? undefined : HOLD_STATE_MAP[board]?.[primaryCode];
+  return primaryInfo ?? Object.values(HOLD_STATE_MAP[board] ?? {}).find((info) => info.name === role);
+}
+
+/**
+ * How many holds a climb lights in each role, for a legend beside its render.
+ *
+ * Counts the same snapshot a static render draws (`flattenFramesToUnion`: a
+ * hold lit in any frame, the last frame's role winning), so the legend and the
+ * picture next to it never disagree on a multi-frame climb. That is the one
+ * place it differs from `parseFramesToHoldRows`, whose first-wins rule mirrors
+ * a database quirk rather than anything a climber sees.
+ *
+ * Roles come back in `HOLD_LEGEND_ROLES` order with zero counts left out, and
+ * each colour is the Aura screen colour the render paints that role in.
+ * Sentinel states from unknown role codes are not counted.
+ */
+export function summarizeHoldRoles(board: BoardName, frames: string | null | undefined): HoldRoleSummary[] {
+  if (!frames) return [];
+  const litHolds = flattenFramesToUnion(accumulateFramesToMaps(frames, board));
+  const countByState = new Map<string, number>();
+  for (const hold of Object.values(litHolds)) {
+    countByState.set(hold.state, (countByState.get(hold.state) ?? 0) + 1);
+  }
+  return HOLD_LEGEND_ROLES.flatMap((role) => {
+    const count = countByState.get(role) ?? 0;
+    const roleInfo = legendRoleInfo(board, role);
+    if (count === 0 || !roleInfo) return [];
+    return [{ role, count, color: getHoldDisplayColor(roleInfo, 'aura') }];
+  });
+}
+
+/**
  * Convert a frames string into a map of frame index → lit-state snapshot.
  * Each frame maps hold IDs to their state, color, and display color.
  *

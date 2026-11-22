@@ -3,6 +3,7 @@ import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
+import { BEST_QUALITY, normalizedQuality, WORST_QUALITY } from './normalized-quality';
 
 type ClimbCreativeWorkJsonLdProps = {
   climb: Climb;
@@ -19,48 +20,21 @@ type ClimbCreativeWorkJsonLdProps = {
 };
 
 /**
- * Rating bounds. `board_climb_stats.quality_average` is the canonical 1-5 blend
- * — but only on rows where `quality_normalized` is true (Aurora reports 1-3).
- */
-const WORST_RATING = 1;
-const BEST_RATING = 5;
-
-/**
- * `aggregateRating`, or nothing at all.
- *
- * Three conditions, all required, and the negative cases are the point:
- *
- *  1. `quality_normalized` — otherwise the value is on Aurora's raw 1-3 scale
- *     and publishing it with `bestRating: 5` understates the climb. ~235k
- *     JSON-imported Kilter tick rows are still on that scale.
- *  2. `quality_average` is present and lands inside [1, 5].
- *  3. The rating count is at least 1, and it is the *blend's own denominator*,
- *     not `ascensionist_count`. Stated precisely, because the loose version
- *     ("never ascents") is not a promise this expression can make: on a climb
- *     whose quality came from Aurora and which has no native ratings yet, the
- *     denominator is `upstream_ascensionist_count` — and that is correct, since
- *     Aurora's average IS taken over the ascents that rated it. What is excluded
- *     is the Boardsesh ascent count, and the upstream ascents of a climb upstream
- *     never rated at all (`upstream_quality_average IS NULL` → 0).
- *
- * A climb that fails any of them ships without a rating. Omitting is free;
- * publishing a wrong one is a manual action.
+ * `aggregateRating`, or nothing at all. The conditions live in
+ * `normalizedQuality`, shared with the star in the page heading: a climb that
+ * fails any of them ships without a rating. Omitting is free; publishing a
+ * wrong one is a manual action.
  */
 function buildAggregateRating(stats: ClimbStatsForAngle | undefined): Record<string, unknown> | null {
-  if (!stats || !stats.quality_normalized) return null;
-
-  const ratingValue = stats.quality_average === null ? Number.NaN : Number(stats.quality_average);
-  if (!Number.isFinite(ratingValue) || ratingValue < WORST_RATING || ratingValue > BEST_RATING) return null;
-
-  const ratingCount = Number(stats.rating_count);
-  if (!Number.isFinite(ratingCount) || ratingCount < 1) return null;
+  const quality = normalizedQuality(stats);
+  if (!quality) return null;
 
   return {
     '@type': 'AggregateRating',
-    ratingValue: Math.round(ratingValue * 100) / 100,
-    ratingCount: Math.trunc(ratingCount),
-    bestRating: BEST_RATING,
-    worstRating: WORST_RATING,
+    ratingValue: Math.round(quality.average * 100) / 100,
+    ratingCount: quality.ratingCount,
+    bestRating: BEST_QUALITY,
+    worstRating: WORST_QUALITY,
   };
 }
 
