@@ -1,4 +1,5 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type InfiniteData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AppBugReportMessageConnection } from '@boardsesh/shared-schema';
 import {
   MY_APP_BUG_REPORTS,
   APP_BUG_REPORT,
@@ -21,10 +22,17 @@ import {
 } from '@boardsesh/graphql/operations/notifications';
 import { getHttpClient } from '../graphql/client';
 import { bugReportQueryKeys } from './bug-report-query-keys';
+import { mergeBugReportMessage } from './bug-report-cache';
+import {
+  applyNotificationGroupRead,
+  GROUPED_NOTIFICATIONS_QUERY_KEY,
+  NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+} from '../graphql/notification-read-cache';
+import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../auth-store';
 
 const PAGE_SIZE = 20;
 
-export function useMyAppBugReports(accountId: string | undefined) {
+export function useMyAppBugReports(accountId: string | undefined, enabled = true) {
   return useInfiniteQuery({
     queryKey: bugReportQueryKeys.list(accountId),
     initialPageParam: null as string | null,
@@ -34,7 +42,7 @@ export function useMyAppBugReports(accountId: string | undefined) {
       return response.myAppBugReports;
     },
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.endCursor : undefined),
-    enabled: !!accountId,
+    enabled: !!accountId && enabled,
     staleTime: 30_000,
   });
 }
@@ -49,7 +57,6 @@ export function useAppBugReport(accountId: string | undefined, reportId: string,
     },
     enabled: !!accountId && /^\d+$/.test(reportId) && enabled,
     staleTime: 30_000,
-    refetchInterval: 15_000,
   });
 }
 
@@ -70,16 +77,14 @@ export function useAppBugReportMessages(accountId: string | undefined, reportId:
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.endCursor : undefined),
     enabled: !!accountId && /^\d+$/.test(reportId) && enabled,
     staleTime: 15_000,
-    refetchInterval: (query) =>
-      query.state.data?.pages.some((page) => page.messages.some((message) => message.deliveryStatus === 'pending'))
-        ? 5_000
-        : 15_000,
   });
 }
 
 export function useRetryAppBugReportMessage(accountId: string, reportId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    onMutate: () =>
+      queryClient.cancelQueries({ queryKey: bugReportQueryKeys.messages(accountId, reportId), exact: true }),
     mutationFn: async (id: string) => {
       const response = await getHttpClient().request<RetryAppBugReportMessageMutationResponse>(
         RETRY_APP_BUG_REPORT_MESSAGE,
@@ -87,9 +92,12 @@ export function useRetryAppBugReportMessage(accountId: string, reportId: string)
       );
       return response.retryAppBugReportMessage;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.messages(accountId, reportId) });
-      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.list(accountId) });
+    onSuccess: (message) => {
+      const queryKey = bugReportQueryKeys.messages(accountId, reportId);
+      queryClient.setQueryData<InfiniteData<AppBugReportMessageConnection>>(queryKey, (previous) =>
+        mergeBugReportMessage(previous, message),
+      );
+      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.list(accountId), refetchType: 'none' });
     },
   });
 }
@@ -97,6 +105,10 @@ export function useRetryAppBugReportMessage(accountId: string, reportId: string)
 export function useSendAppBugReportMessage(accountId: string, reportId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    // Cancel reads that predate the write. A later delivery-event read must
+    // survive the mutation response, or its canonical sent state can be lost.
+    onMutate: () =>
+      queryClient.cancelQueries({ queryKey: bugReportQueryKeys.messages(accountId, reportId), exact: true }),
     mutationFn: async (input: SendAppBugReportMessageMutationVariables['input']) => {
       const response = await getHttpClient().request<SendAppBugReportMessageMutationResponse>(
         SEND_APP_BUG_REPORT_MESSAGE,
@@ -104,10 +116,16 @@ export function useSendAppBugReportMessage(accountId: string, reportId: string) 
       );
       return response.sendAppBugReportMessage;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.messages(accountId, reportId) });
-      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.report(accountId, reportId) });
-      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.list(accountId) });
+    onSuccess: (message) => {
+      const queryKey = bugReportQueryKeys.messages(accountId, reportId);
+      queryClient.setQueryData<InfiniteData<AppBugReportMessageConnection>>(queryKey, (previous) =>
+        mergeBugReportMessage(previous, message),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: bugReportQueryKeys.report(accountId, reportId),
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.list(accountId), refetchType: 'none' });
     },
   });
 }
@@ -116,14 +134,41 @@ export function useSendAppBugReportMessage(accountId: string, reportId: string) 
 export function useMarkAppBugReportRead(reportId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      getHttpClient().request<MarkGroupNotificationsReadMutationResponse>(MARK_GROUP_NOTIFICATIONS_READ, {
-        type: 'app_feedback_reply',
-        entityType: null,
-        entityId: reportId,
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    onMutate: () => ({ credentialGeneration: captureAuthCredentialGeneration() }),
+    mutationFn: async () => {
+      const response = await getHttpClient().request<MarkGroupNotificationsReadMutationResponse>(
+        MARK_GROUP_NOTIFICATIONS_READ,
+        {
+          type: 'app_feedback_reply',
+          entityType: null,
+          entityId: reportId,
+        },
+      );
+      return response.markGroupNotificationsRead;
+    },
+    onSuccess: async (markedCount, _variables, context) => {
+      if (!context || !isAuthCredentialGenerationCurrent(context.credentialGeneration)) return;
+      const pendingReads = queryClient
+        .getQueryCache()
+        .findAll({ queryKey: ['notifications'] })
+        .filter((query) => query.state.fetchStatus === 'fetching')
+        .flatMap((query) => {
+          const pendingRequest = query.promise;
+          return pendingRequest ? [pendingRequest] : [];
+        });
+      // Let older reads (including the grouped query's count write) settle.
+      // A concurrent response may already include this acknowledgement, so
+      // subtracting markedCount from that snapshot could count the read twice.
+      await Promise.allSettled(pendingReads);
+      if (!isAuthCredentialGenerationCurrent(context.credentialGeneration)) return;
+      applyNotificationGroupRead(queryClient, { type: 'app_feedback_reply', entityId: reportId }, 0);
+      if (markedCount > 0 || pendingReads.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY, refetchType: 'none' });
+        await queryClient.invalidateQueries(
+          { queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, exact: true },
+          { cancelRefetch: false },
+        );
+      }
     },
   });
 }

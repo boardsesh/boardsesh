@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Existing flow fixtures begin after the privacy choice has settled.
 vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { focusManager } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
@@ -19,8 +20,11 @@ const mocks = vi.hoisted(() => ({
   removeConnected: vi.fn(),
   locale: { language: 'en-US' },
 }));
-const queryClient = { invalidateQueries: mocks.invalidate };
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => queryClient }));
+const queryClient = { invalidateQueries: mocks.invalidate, getQueryCache: () => ({ findAll: () => [] }) };
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => queryClient,
+}));
 vi.mock('react-native', () => ({ AppState: { addEventListener: mocks.listenAppState } }));
 vi.mock('expo-notifications', () => ({ addPushTokenListener: mocks.listenToken }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: mocks.locale }) }));
@@ -33,9 +37,23 @@ vi.mock('../handlers', () => ({ setupNotificationHandlers: mocks.setupHandlers }
 
 import { useNotificationUpdates } from '../use-notification-updates';
 
+async function advance() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  focusManager.setFocused(undefined);
+  vi.useRealTimers();
+});
+
 describe('native notification update bridge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    focusManager.setFocused(true);
     mocks.locale.language = 'en-US';
     mocks.register.mockResolvedValue(undefined);
     mocks.setupHandlers.mockReturnValue(mocks.removeHandlers);
@@ -59,12 +77,13 @@ describe('native notification update bridge', () => {
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
   });
 
-  it('refreshes exact board, detection, and bell cache prefixes on foreground without prompting', () => {
+  it('refreshes exact board, detection, and bell cache prefixes on foreground without prompting', async () => {
     renderHook(() => useNotificationUpdates(true, 'account'));
     const changeAppState = mocks.listenAppState.mock.calls[0][1] as (state: string) => void;
     act(() => changeAppState('background'));
     expect(mocks.register).toHaveBeenCalledOnce();
     act(() => changeAppState('active'));
+    await advance();
     expect(mocks.register).toHaveBeenCalledTimes(2);
     expect(mocks.register.mock.calls.every((args) => args.length === 0)).toBe(true);
     expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([
@@ -74,6 +93,7 @@ describe('native notification update bridge', () => {
       { queryKey: ['spray-wall-detection'] },
       { queryKey: ['notifications'] },
       { queryKey: ['bug-reports', 'account'] },
+      { queryKey: ['notifications'] },
     ]);
   });
 
@@ -95,18 +115,25 @@ describe('native notification update bridge', () => {
     act(() =>
       sink.next({ data: { notificationReceived: { notification: { type: 'spray_wall_detection_completed' } } } }),
     );
-    expect(mocks.invalidate).toHaveBeenCalledTimes(6);
+    expect(mocks.invalidate).toHaveBeenCalledTimes(5);
     expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['notifications'] });
   });
 
-  it('refreshes only this account’s conversations and the bell on a staff reply', () => {
+  it('coalesces native push and websocket staff replies without refreshing spray caches', async () => {
     renderHook(() => useNotificationUpdates(true, 'account'));
     const sink = mocks.subscribe.mock.calls[0][1] as {
-      next: (payload: { data: { notificationReceived: { notification: { type: string } } } }) => void;
+      next: (payload: { data: { notificationReceived: { notification: { type: string; entityId: string } } } }) => void;
     };
-    act(() => sink.next({ data: { notificationReceived: { notification: { type: 'app_feedback_reply' } } } }));
+    const handlers = mocks.setupHandlers.mock.calls[0][1] as { onBugReportReply: (reportId: string) => void };
+    act(() => {
+      sink.next({ data: { notificationReceived: { notification: { type: 'app_feedback_reply', entityId: '42' } } } });
+      handlers.onBugReportReply('42');
+    });
+    await advance();
     expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([
-      { queryKey: ['bug-reports', 'account'] },
+      { queryKey: ['bug-reports', 'account', 'list'], exact: true },
+      { queryKey: ['bug-reports', 'account', 'report', '42'], exact: true },
+      { queryKey: ['bug-reports', 'account', 'messages', '42'], exact: true },
       { queryKey: ['notifications'] },
     ]);
   });

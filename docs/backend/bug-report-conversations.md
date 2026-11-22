@@ -46,13 +46,24 @@ is posted.
 Edits and deletions on GitHub update or withdraw cached messages, including
 bot-posted reporter replies. Removing the staff marker withdraws that message
 from the app. The original GitHub timestamps determine the conversation order.
-The app refreshes focused conversations to reconcile missed live events.
+The app refreshes conversations when they open, the app returns to the foreground,
+or the socket reconnects. Open conversations do not poll periodically.
 
 Status changes, comment edits and withdrawals, and reply delivery updates also
 refresh report history, conversations, and the bell through a dedicated
 authenticated subscription. Each event rechecks current report ownership. This
 stream works even when a change has no visible notification row; the notification
 stream keeps its existing persistence and privacy checks.
+
+Report events refresh only the changed conversation and the visible history/bell.
+Events arriving within 200 milliseconds share a refresh; a change arriving during
+a request gets a trailing refresh after that request finishes. Hidden history
+and notification lists stay stale until reopened. Sending or retrying a reply
+uses the mutation's returned message immediately, without reloading history.
+Read acknowledgements mark the matching bell group locally. Reading new replies
+reconciles only the unread badge count, after older notification reads settle;
+this avoids subtracting a read twice from a concurrent response. Own replies and
+delivery updates do not acknowledge the thread again.
 
 GitHub does not automatically redeliver failed webhooks. Opening a report also
 requests a complete comment reconciliation, throttled to one refresh per report

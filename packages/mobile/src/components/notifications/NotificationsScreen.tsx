@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useNavigation } from 'expo-router';
+import { useIsFocused, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
@@ -60,6 +60,7 @@ export default function NotificationsScreen() {
   const { systemColors, brandColors } = useTheme();
   const navigation = useNavigation();
   const bottomChrome = useBottomChromeMetrics();
+  const focused = useIsFocused();
 
   // Destructured, not held as `query`: React Query mints a fresh result object
   // on every render, so a callback listing the whole object as a dep gets a new
@@ -76,7 +77,7 @@ export default function NotificationsScreen() {
     isFetchingNextPage,
     fetchNextPage,
     refetch,
-  } = useGroupedNotifications();
+  } = useGroupedNotifications(focused);
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   // Stable (React Query's mutateAsync), so it can ride into every memoized row.
@@ -107,11 +108,12 @@ export default function NotificationsScreen() {
   const showError = !showOffline && isError && groups.length === 0;
 
   const handleMarkAllAsRead = useCallback(() => markAllAsRead(), [markAllAsRead]);
-  const handleRefresh = useCallback(() => void refetch(), [refetch]);
+  const handleRefresh = useCallback(() => void refetch({ cancelRefetch: false }), [refetch]);
 
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (focused && hasNextPage && !isFetchingNextPage && !isRefetching && fetchStatus === 'idle')
+      void fetchNextPage({ cancelRefetch: false });
+  }, [focused, hasNextPage, isFetchingNextPage, isRefetching, fetchStatus, fetchNextPage]);
 
   // "Mark all as read" lives in the native header rather than the list body, so
   // it stays reachable while the list is scrolled (the `setters` / `zone` filter

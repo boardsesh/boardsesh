@@ -56,8 +56,20 @@ describe('native import notification handlers', () => {
     tap(incoming);
     tap(incoming);
     expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh.mock.calls).toEqual([['42'], ['42']]);
     expect(router.push).toHaveBeenCalledOnce();
     expect(router.push).toHaveBeenCalledWith({ pathname: '/bug-reports/[id]', params: { id: '42' } });
+    cleanup();
+  });
+
+  it('ignores malformed bug-reply pushes before refreshing caches', async () => {
+    const { setupNotificationHandlers } = await import('../handlers');
+    const refresh = vi.fn();
+    const cleanup = setupNotificationHandlers({ push: vi.fn() }, { onBugReportReply: refresh });
+    const receive = mocks.listenReceived.mock.calls[0][0] as (received: Notification) => void;
+    receive(notification({ type: 'app_feedback_reply', reportId: '../settings' }));
+    receive(notification({ type: 'app_feedback_reply' }));
+    expect(refresh).not.toHaveBeenCalled();
     cleanup();
   });
 

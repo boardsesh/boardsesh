@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
-import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { AppBugReport } from '@boardsesh/shared-schema';
@@ -62,16 +62,17 @@ export default function BugReportsScreen() {
   const screenOptions = useStackScreenOptions();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const query = useMyAppBugReports(isAuthenticated ? userId : undefined);
-  const { data, refetch, fetchNextPage, hasNextPage, isFetchingNextPage, isRefetching } = query;
+  const focused = useIsFocused();
+  const query = useMyAppBugReports(isAuthenticated ? userId : undefined, focused);
+  const { data, refetch, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, isRefetching } = query;
   const offline = useOfflineQueryState(query);
   const reports = useMemo(() => data?.pages.flatMap((page) => page.reports) ?? EMPTY_REPORTS, [data]);
   const handleRefresh = useCallback(() => {
-    void refetch();
+    void refetch({ cancelRefetch: false });
   }, [refetch]);
   const handleLoadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (focused && hasNextPage && !isFetching) void fetchNextPage({ cancelRefetch: false });
+  }, [focused, hasNextPage, isFetching, fetchNextPage]);
   const openReport = useCallback(
     (report: AppBugReport) => {
       router.push({ pathname: '/bug-reports/[id]', params: { id: report.id } });
@@ -86,7 +87,7 @@ export default function BugReportsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isAuthenticated && userId) void refetch();
+      if (isAuthenticated && userId) void refetch({ cancelRefetch: false });
     }, [isAuthenticated, userId, refetch]),
   );
 

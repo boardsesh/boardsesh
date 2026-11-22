@@ -88,6 +88,28 @@ beforeEach(() => {
 });
 
 describe('useGroupedNotifications', () => {
+  it('does not refetch cached notification pages while hidden and catches up on focus', async () => {
+    requestMock.mockResolvedValue({ groupedNotifications: makeConnection(3, false, 7) });
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+      pages: [makeConnection(3, false, 4)],
+      pageParams: [0],
+    });
+    const hook = renderHook(({ focused }) => useGroupedNotifications(focused), {
+      wrapper: Wrapper,
+      initialProps: { focused: false },
+    });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    });
+    expect(requestMock).not.toHaveBeenCalled();
+    hook.rerender({ focused: true });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(7));
+    hook.unmount();
+    queryClient.clear();
+  });
+
   it('requests the completed wall and exact review target over the actual query document', async () => {
     const completed = makeGroup('completed-detection', {
       type: 'spray_wall_detection_completed',
@@ -189,21 +211,30 @@ describe('useMarkGroupAsRead', () => {
     requestMock.mockResolvedValue({ markGroupNotificationsRead: 3 });
 
     const { queryClient, Wrapper } = makeWrapper();
+    const selected = makeGroup('a', { type: 'app_feedback_reply', entityId: '42' });
     queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 10);
     queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
-      pages: [{ groups: [makeGroup('a'), makeGroup('b')], totalCount: 2, unreadCount: 10, hasMore: false }],
+      pages: [
+        {
+          groups: [selected, makeGroup('b', { type: 'app_feedback_reply', entityId: '17' })],
+          totalCount: 2,
+          unreadCount: 10,
+          hasMore: false,
+        },
+      ],
       pageParams: [0],
     });
 
     const { result } = renderHook(() => useMarkGroupAsRead(), { wrapper: Wrapper });
     await act(async () => {
-      await result.current.mutateAsync(makeGroup('a'));
+      await result.current.mutateAsync(selected);
     });
 
     const cached = queryClient.getQueryData<{ pages: GroupedNotificationConnection[] }>(
       GROUPED_NOTIFICATIONS_QUERY_KEY,
     );
     expect(cached?.pages[0].groups.map((group) => group.isRead)).toEqual([true, false]);
+    expect(cached?.pages[0].unreadCount).toBe(7);
     // A group can hold several notification rows — the badge drops by 3, not 1.
     expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(7);
   });

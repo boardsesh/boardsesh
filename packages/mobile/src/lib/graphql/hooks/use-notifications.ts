@@ -31,20 +31,17 @@ import { useAuthToken } from '../use-auth-token';
 // Neither file can import the other (see that module's note), so the constant
 // lives on its own rather than as a literal in both.
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
+import {
+  applyNotificationGroupRead,
+  GROUPED_NOTIFICATIONS_QUERY_KEY,
+  NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+} from '../notification-read-cache';
+export { GROUPED_NOTIFICATIONS_QUERY_KEY, NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY } from '../notification-read-cache';
 
 /** Groups per page — matches web's `use-grouped-notifications.ts`. */
 const PAGE_SIZE = 20;
 
 const NOTIFICATIONS_STALE_TIME_MS = 60 * 1000;
-
-/**
- * Keys stay next to their hooks rather than in `query-keys.ts`: nothing reads
- * either cache imperatively (`queryClient.getQueryData`), which is that file's
- * stated admission rule. The mutations below write through `queryClient`, but
- * they import the keys from this module, so the compiler links them.
- */
-export const GROUPED_NOTIFICATIONS_QUERY_KEY = ['notifications', 'grouped'] as const;
-export const NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY = ['notifications', 'unreadCount'] as const;
 
 /** The shape React Query stores for the infinite grouped-notifications query. */
 type GroupedNotificationPages = { pages: GroupedNotificationConnection[]; pageParams: unknown[] };
@@ -59,7 +56,7 @@ type GroupedNotificationPages = { pages: GroupedNotificationConnection[]; pagePa
  * key, so the Home bell's badge settles the moment the list loads instead of
  * waiting for its own request to come back.
  */
-export function useGroupedNotifications() {
+export function useGroupedNotifications(enabled = true) {
   const { data: authToken } = useAuthToken();
   const queryClient = useQueryClient();
 
@@ -82,7 +79,7 @@ export function useGroupedNotifications() {
     // `hasMore` from `offset + groups.length < totalCount`.
     getNextPageParam: (lastPage, allPages) =>
       lastPage.hasMore ? allPages.reduce((total, page) => total + page.groups.length, 0) : undefined,
-    enabled: !!authToken,
+    enabled: !!authToken && enabled,
     staleTime: NOTIFICATIONS_STALE_TIME_MS,
   });
 }
@@ -164,7 +161,7 @@ export function useUnreadNotificationCount(): number {
 
 /**
  * Mark one group read. Cache semantics mirror web exactly: flip `isRead` on the
- * matching uuid across every loaded page, then subtract the count the server
+ * matching group across every loaded page, then subtract the count the server
  * actually marked from the unread total (a group can hold several rows).
  */
 export function useMarkGroupAsRead() {
@@ -184,23 +181,7 @@ export function useMarkGroupAsRead() {
       return response.markGroupNotificationsRead;
     },
     onSuccess: (markedCount, notification) => {
-      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
-        previous
-          ? {
-              ...previous,
-              pages: previous.pages.map((page) => ({
-                ...page,
-                groups: page.groups.map((group) =>
-                  group.uuid === notification.uuid ? { ...group, isRead: true } : group,
-                ),
-              })),
-            }
-          : previous,
-      );
-
-      queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
-        Math.max(0, (previousCount ?? 0) - markedCount),
-      );
+      applyNotificationGroupRead(queryClient, notification, markedCount);
     },
   });
 }
