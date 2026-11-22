@@ -19,6 +19,12 @@ import {
 // environment, so an empty one is the honest fixture.
 const emptyChildEnvironment = {} as NodeJS.ProcessEnv;
 
+// Production Deploy 45073152969: Android assets uploaded, then the object store
+// throttled the server's final verification. This must use the existing ladder.
+const HEAD_OBJECT_429 =
+  'invalid update: checking blob fixture: HeadObject error: operation error S3: HeadObject, ' +
+  'https response error StatusCode: 429, RequestID: , HostID: , api error TooManyRequests: Too Many Requests';
+
 function outputCollector(): { output: TextOutput; read: () => string } {
   const chunks: string[] = [];
   return {
@@ -43,6 +49,31 @@ describe('self-hosted publish failure classification', () => {
     expect(classifyPublishFailure('uploaded 503 assets')).toBe('unknown');
   });
 
+  it('recognizes the object-store HeadObject 429 and explicit HTTP throttle statuses', () => {
+    for (const output of [HEAD_OBJECT_429, 'HTTP 429 Too Many Requests', 'HTTP/1.1 429', 'response status: 429']) {
+      expect(classifyPublishFailure(output)).toBe('http-429');
+    }
+    expect(classifyPublishFailure('uploaded 429 assets')).toBe('unknown');
+    expect(classifyPublishFailure('TooManyRequests without an HTTP status')).toBe('unknown');
+    expect(classifyPublishFailure('response status: 4290')).toBe('unknown');
+  });
+
+  it.each([400, 401, 403, 404, 408, 409, 422, 428, 430, 499])('still treats HTTP %i as permanent', (status) => {
+    expect(classifyPublishFailure(`response status: ${status}`)).toBe('permanent');
+  });
+
+  it.each([
+    'HTTP 401 Unauthorized',
+    'response status: 403',
+    '<Code>AccessDenied</Code>',
+    'authentication failed',
+    'invalid configuration',
+    'expo export failed',
+  ])('keeps permanent evidence stronger than a 429 throttle: %s', (permanentFailure) => {
+    expect(classifyPublishFailure(`${HEAD_OBJECT_429}\n${permanentFailure}`)).toBe('permanent');
+    expect(classifyPublishFailure(`${permanentFailure}\n${HEAD_OBJECT_429}`)).toBe('permanent');
+  });
+
   it('lets permanent evidence veto retryable evidence', () => {
     expect(classifyPublishFailure('HTTP 503, then response status 403')).toBe('permanent');
     expect(classifyPublishFailure('Response code: 503; retry returned Response code: 401')).toBe('permanent');
@@ -59,6 +90,23 @@ describe('self-hosted publish failure classification', () => {
     scanner.push('Down</Code><Message>Please reduce your request');
     scanner.push(' rate.</Message></Error>');
     expect(scanner.classify()).toBe('s3-slowdown');
+  });
+
+  it('classifies a HeadObject throttle at every output chunk boundary', () => {
+    for (let splitIndex = 1; splitIndex < HEAD_OBJECT_429.length; splitIndex++) {
+      const scanner = new PublishFailureEvidenceScanner();
+      scanner.push(HEAD_OBJECT_429.slice(0, splitIndex));
+      scanner.push(HEAD_OBJECT_429.slice(splitIndex));
+      expect(scanner.classify()).toBe('http-429');
+    }
+  });
+
+  it('retains permanent evidence after it leaves the scanner window', () => {
+    const scanner = new PublishFailureEvidenceScanner();
+    scanner.push('HTTP 401 Unauthorized\n');
+    scanner.push('export progress\n'.repeat(1000));
+    scanner.push(HEAD_OBJECT_429);
+    expect(scanner.classify()).toBe('permanent');
   });
 });
 
@@ -101,6 +149,69 @@ describe('self-hosted publish backoff budget', () => {
 });
 
 describe('self-hosted publish retries', () => {
+  it('retries a throttled Android finalization and accepts the next successful publish', async () => {
+    const runner = vi
+      .fn<PublishCommandRunner>()
+      .mockImplementationOnce(async ({ onStderr }) => {
+        onStderr(HEAD_OBJECT_429);
+        return { exitCode: 1 };
+      })
+      .mockResolvedValueOnce({ exitCode: 0 });
+    const sleeper = vi.fn(async () => undefined);
+    const stderr = outputCollector();
+
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      { platform: 'android', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
+    );
+
+    expect(outcome).toEqual({ platform: 'android', success: true, attempts: 2, failureKind: null, noChange: false });
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(sleeper).toHaveBeenCalledExactlyOnceWith(SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS[0]);
+    expect(stderr.read()).toContain('HTTP 429 Too Many Requests; retrying');
+  });
+
+  it('stops persistent 429 throttles at the existing retry budget', async () => {
+    const runner = vi.fn<PublishCommandRunner>(async ({ onStderr }) => {
+      onStderr(HEAD_OBJECT_429);
+      return { exitCode: 1 };
+    });
+    const sleeper = vi.fn(async (_delayMs: number) => undefined);
+
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      { platform: 'android', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { runner, sleeper, stdout: outputCollector().output, stderr: outputCollector().output },
+    );
+
+    expect(outcome).toEqual({
+      platform: 'android',
+      success: false,
+      attempts: SELF_HOSTED_PUBLISH_MAX_ATTEMPTS,
+      failureKind: 'http-429',
+      noChange: false,
+    });
+    expect(runner).toHaveBeenCalledTimes(SELF_HOSTED_PUBLISH_MAX_ATTEMPTS);
+    expect(sleeper.mock.calls.map(([delayMs]) => delayMs)).toEqual([...SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS]);
+  });
+
+  it('does not retry a 429 accompanied by an authentication failure', async () => {
+    const runner = vi.fn<PublishCommandRunner>(async ({ onStdout, onStderr }) => {
+      onStdout(HEAD_OBJECT_429);
+      onStderr('HTTP 401 Unauthorized\n');
+      return { exitCode: 1 };
+    });
+    const sleeper = vi.fn(async () => undefined);
+
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      { platform: 'android', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { runner, sleeper, stdout: outputCollector().output, stderr: outputCollector().output },
+    );
+
+    expect(outcome).toMatchObject({ success: false, attempts: 1, failureKind: 'permanent' });
+    expect(runner).toHaveBeenCalledOnce();
+    expect(sleeper).not.toHaveBeenCalled();
+  });
+
   it('retries through the whole backoff ladder before succeeding', async () => {
     const attempts: number[] = [];
     const runner: PublishCommandRunner = async ({ onStderr }) => {

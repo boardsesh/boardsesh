@@ -636,7 +636,10 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     ]) {
       expect(preview).toContain(nativePath);
     }
-    expect(preview).toContain('needsReset = files.some((file) => affectsNativeFingerprint(file.filename));');
+    expect(preview).toContain(
+      'const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean));',
+    );
+    expect(preview).toContain('needsReset = paths.some(affectsNativeFingerprint);');
     expect(preview).toMatch(
       /^  reset:\n\s+needs: gate\n\s+if: needs\.gate\.outputs\.action == 'publish' && needs\.gate\.outputs\.needs_reset == 'true'$/m,
     );

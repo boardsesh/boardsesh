@@ -655,8 +655,10 @@ superseded.
 The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
 
 **Transient upload failures** are retried only when eoas output contains the exact S3 SlowDown XML
-response or an explicit HTTP 5xx status. Each platform gets at most six attempts, with 1, 3, 5, 10,
-and 15 minute waits — 34 minutes of backoff per platform. HTTP 4xx, authentication, configuration,
+response or an explicit HTTP 429 or 5xx status. This includes an object-store `HeadObject`
+429 during final verification, as seen in Production Deploy run `45073152969`.
+Each platform gets at most six attempts, with 1, 3, 5, 10,
+and 15 minute waits — 34 minutes of backoff per platform. Other HTTP 4xx, authentication, configuration,
 export/build errors, unknown failures, and mixed permanent/retryable evidence fail immediately.
 Child output stays live and is not echoed again from a captured tail. The EAS-hosted preview path
 (`eas update`) is unchanged and does not use these retries.

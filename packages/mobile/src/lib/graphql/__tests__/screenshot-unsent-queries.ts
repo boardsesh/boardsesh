@@ -90,7 +90,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSprayWallTrainingConsent',
   'GetSprayWallWithVersions',
   'GetUserAscentCaptionMatches',
-  'GetUserAscentsFeed',
   'GetUserClimbs',
   'GetUserDataExport',
   'GetUserDataExportDownload',

@@ -697,6 +697,7 @@ describe('native smoke request coverage', () => {
   });
 
   const requests: Array<[string, Record<string, unknown>]> = [
+    ['GetUserAscentsFeed', { userId: manifest.accountUserId, input: { statusMode: 'attempt', limit: 50, offset: 0 } }],
     ['ResolveBoardForUuid', { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' }],
     ['RecordBoardOpened', { input: { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' } }],
     ['GetSprayWallByLayout', { layoutId: 62 }],
