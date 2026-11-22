@@ -83,6 +83,7 @@ const privateWallQueryFamilies = new Set([
   'sprayWallByLayout',
   'sprayWallRenderData',
   'sprayWallWithVersions',
+  'sprayWallThumbnail',
 ]);
 
 function recordFields(payload: unknown): Record<string, unknown> | undefined {
@@ -98,9 +99,15 @@ function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, 
       if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
       const response = recordFields(query.state.data);
       const render = recordFields(response?.sprayWallRenderData);
-      const wall = recordFields(response?.sprayWallByLayout ?? render?.wall ?? response);
-      if (wall?.layoutId !== layoutId && !(query.queryKey[0] === 'sprayWallByLayout' && query.queryKey[1] === layoutId))
+      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
+      if (
+        wall?.layoutId !== layoutId &&
+        !(query.queryKey[0] === 'sprayWallByLayout' && query.queryKey[1] === layoutId) &&
+        !(query.queryKey[0] === 'sprayWallThumbnail' && query.queryKey[2] === layoutId)
+      )
         continue;
+      if (query.queryKey[0] === 'sprayWallThumbnail' && typeof query.queryKey[1] === 'string')
+        wallUuids.add(query.queryKey[1]);
       if (typeof wall?.uuid === 'string') wallUuids.add(wall.uuid);
     }
   }

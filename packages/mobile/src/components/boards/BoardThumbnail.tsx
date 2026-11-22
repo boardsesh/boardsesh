@@ -1,5 +1,5 @@
-import { memo, useMemo, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
 import { formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
 import { BoardImageNative } from '../BoardImageNative';
 import { Icon } from '../Icon';
@@ -9,6 +9,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { useSprayPhotoOnDisk } from '../../lib/spray/use-spray-photo-on-disk';
+import { useSprayWallThumbnail } from '../../lib/spray/use-spray-wall-thumbnail';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import { borderRadius } from '../../theme/tokens';
 
@@ -17,10 +18,12 @@ export type BoardThumbnailSize = ArtSize | number;
 
 /** The board fields a thumbnail needs: a structural subset of the active board and of a board row. */
 export type BoardThumbnailBoard = {
+  uuid?: string;
   boardType: string;
   layoutId: number;
   sizeId: number;
   setIds: string;
+  sprayImport?: { versionId: string | null } | null;
 };
 
 /** What the slot shows when there is no art: a camera for a spray wall, the boards glyph otherwise. */
@@ -127,7 +130,54 @@ const FILL_ART_BOX = { width: '100%', height: '100%' } as const;
  * Renders at 400px wide whatever the slot, so it shares the bundled thumbnail
  * and the native raster cache with board discovery.
  */
-export const BoardThumbnail = memo(function BoardThumbnail({
+export const BoardThumbnail = memo(function BoardThumbnail({ board, ...props }: BoardThumbnailProps) {
+  if (board.boardType === 'spray' && board.uuid) {
+    return <SprayPhotoThumbnail {...props} board={board} wallUuid={board.uuid} />;
+  }
+  return <RenderedBoardThumbnail {...props} board={board} />;
+});
+
+/** A saved wall carries its UUID; its preview needs only the authorized photo. */
+function SprayPhotoThumbnail({
+  board,
+  wallUuid,
+  size,
+  accessibilityHidden = true,
+  onArtReadinessChange,
+}: BoardThumbnailProps & { wallUuid: string }) {
+  const preview = useSprayWallThumbnail({
+    wallUuid,
+    layoutId: board.layoutId,
+    draftVersionId: board.sprayImport?.versionId ?? null,
+  });
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const uri = preview?.uri ?? null;
+  const source = useMemo(() => (uri ? { uri } : undefined), [uri]);
+  const onLoad = useCallback(() => onArtReadinessChange?.('ready'), [onArtReadinessChange]);
+  const onError = useCallback(() => {
+    setFailedUri(uri);
+    onArtReadinessChange?.('failed');
+  }, [uri, onArtReadinessChange]);
+  const drawable = preview !== null && uri !== failedUri;
+
+  return (
+    <BoardThumbnailView
+      size={size}
+      aspectRatio={drawable ? preview.aspectRatio : null}
+      placeholder="camera"
+      accessibilityHidden={accessibilityHidden}
+      accessibilityLabel={formatBoardDisplayName(board.boardType)}
+      art={
+        drawable ? (
+          <Image source={source} resizeMode="contain" style={FILL_ART_BOX} onLoad={onLoad} onError={onError} />
+        ) : null
+      }
+    />
+  );
+}
+
+/** Catalogue art and config-only callers retain the shared board renderer. */
+const RenderedBoardThumbnail = memo(function RenderedBoardThumbnail({
   board,
   size,
   accessibilityHidden = true,

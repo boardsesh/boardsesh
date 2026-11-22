@@ -154,6 +154,7 @@ vi.mock('../../Icon', () => ({
 vi.mock('../../../lib/board-details', () => ({
   getBoardRenderData: () => ({ boardWidth: 1461, boardHeight: 1144 }),
 }));
+vi.mock('../../../lib/spray/use-spray-wall-thumbnail', () => ({ useSprayWallThumbnail: () => null }));
 
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: (props: Record<string, unknown>) => {
