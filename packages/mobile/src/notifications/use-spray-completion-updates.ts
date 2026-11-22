@@ -1,22 +1,23 @@
-import { useCallback, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef } from 'react';
+import { focusManager, useQueryClient } from '@tanstack/react-query';
 import type { Client } from '@boardsesh/graphql-client';
 import { APP_BUG_REPORT_CHANGED, type AppBugReportChangedSubscriptionResponse } from '@boardsesh/graphql/operations';
 import { NOTIFICATION_RECEIVED_SUBSCRIPTION } from '@boardsesh/graphql/operations/notifications';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { subscribeWsClientDisposed } from '../lib/graphql/ws-client-lifecycle';
-import { bugReportQueryKeys } from '../lib/feedback/bug-report-query-keys';
+import { createBugReportRefresh } from '../lib/feedback/bug-report-refresh';
 
 /** Native and browser share notification and owned-report update streams. */
 export function useSprayCompletionUpdates(authenticated: boolean, accountId: string | null | undefined) {
   const queryClient = useQueryClient();
+  const reportRefresh = useRef<ReturnType<typeof createBugReportRefresh> | null>(null);
+  const refreshReports = useCallback((reportId?: string) => reportRefresh.current?.refresh(reportId), []);
   const refreshCompletion = useCallback(() => {
     for (const key of ['myBoards', 'mySprayWalls', 'sprayImportProgress', 'spray-wall-detection', 'notifications']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
-    if (accountId) void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.account(accountId) });
-  }, [queryClient, accountId]);
+  }, [queryClient]);
   useEffect(() => {
     if (!authenticated) return;
     // Offline mode disposes the client this stream runs on, and graphql-ws
@@ -33,6 +34,8 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
     let deferredForOfflineMode = false;
 
     const release = () => {
+      reportRefresh.current?.dispose();
+      reportRefresh.current = null;
       releaseStream?.();
       releaseStream = null;
       releaseReportStream?.();
@@ -50,15 +53,17 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
       }
       const client = getWsClient();
       boundClient = client;
-      releaseStream = client.subscribe<{ notificationReceived: { notification: { type: string } } }>(
+      if (accountId) reportRefresh.current = createBugReportRefresh(queryClient, accountId);
+      releaseStream = client.subscribe<{
+        notificationReceived: { notification: { type: string; entityId?: string | null } };
+      }>(
         { query: NOTIFICATION_RECEIVED_SUBSCRIPTION },
         {
           next: ({ data }) => {
             if (cancelled || boundClient !== client) return;
             if (data?.notificationReceived.notification.type === 'spray_wall_detection_completed') refreshCompletion();
             if (data?.notificationReceived.notification.type === 'app_feedback_reply' && accountId) {
-              void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.account(accountId) });
-              void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+              refreshReports(data.notificationReceived.notification.entityId ?? undefined);
             }
           },
           error: () => {},
@@ -66,11 +71,9 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
         },
       );
       if (accountId) {
-        const refreshReports = () => {
+        const catchUpReports = () => {
           if (cancelled || boundClient !== client) return;
-          void queryClient.invalidateQueries({ queryKey: bugReportQueryKeys.account(accountId) });
-          // Withdrawn staff messages also disappear from the visible bell group.
-          void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          refreshReports();
         };
         // The notification stream deliberately requires a visible persisted row.
         // Status changes, edits and withdrawals have their own owner-checked stream.
@@ -78,14 +81,15 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
           { query: APP_BUG_REPORT_CHANGED },
           {
             next: ({ data }) => {
-              if (data?.appBugReportChanged) refreshReports();
+              if (cancelled || boundClient !== client) return;
+              if (data?.appBugReportChanged) refreshReports(data.appBugReportChanged.reportId);
             },
             error: () => {},
             complete: () => {},
           },
         );
         // Catch up changes missed while this socket was disconnected.
-        releaseConnected = client.on('connected', refreshReports);
+        releaseConnected = client.on('connected', catchUpReports);
       }
     };
 
@@ -103,14 +107,18 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
         start();
       }
     });
+    const unsubscribeFocus = focusManager.subscribe((focused) => {
+      if (focused && !cancelled && boundClient) refreshReports();
+    });
 
     start();
     return () => {
       cancelled = true;
       unsubscribeClientDisposed();
       unsubscribeConnectivity();
+      unsubscribeFocus();
       release();
     };
-  }, [authenticated, accountId, refreshCompletion, queryClient]);
-  return refreshCompletion;
+  }, [authenticated, accountId, refreshCompletion, refreshReports, queryClient]);
+  return { refreshCompletion, refreshReports };
 }

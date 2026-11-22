@@ -13,15 +13,15 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
   const consentSettled = useConsentSettled();
   const { i18n } = useTranslation();
   const locale = i18n.language;
-  const refreshCompletion = useSprayCompletionUpdates(authenticated, accountId);
+  const { refreshCompletion, refreshReports } = useSprayCompletionUpdates(authenticated, accountId);
   useEffect(
     () =>
       setupNotificationHandlers(router, {
         canNavigate: authenticated && consentSettled,
         onSprayCompletion: refreshCompletion,
-        onBugReportReply: refreshCompletion,
+        onBugReportReply: refreshReports,
       }),
-    [authenticated, accountId, refreshCompletion, consentSettled],
+    [authenticated, accountId, refreshCompletion, refreshReports, consentSettled],
   );
   useEffect(() => {
     if (!authenticated) return;
@@ -30,6 +30,7 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
       if (state === 'active') {
         void registerNotificationDevice();
         refreshCompletion();
+        refreshReports();
       }
     });
     const token = Notifications.addPushTokenListener((devicePushToken) => {
@@ -39,5 +40,5 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
       foreground.remove();
       token.remove();
     };
-  }, [authenticated, accountId, locale, refreshCompletion]);
+  }, [authenticated, accountId, locale, refreshCompletion, refreshReports]);
 }

@@ -88,6 +88,28 @@ beforeEach(() => {
 });
 
 describe('useGroupedNotifications', () => {
+  it('does not refetch cached notification pages while hidden and catches up on focus', async () => {
+    requestMock.mockResolvedValue({ groupedNotifications: makeConnection(3, false, 7) });
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+      pages: [makeConnection(3, false, 4)],
+      pageParams: [0],
+    });
+    const hook = renderHook(({ focused }) => useGroupedNotifications(focused), {
+      wrapper: Wrapper,
+      initialProps: { focused: false },
+    });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    });
+    expect(requestMock).not.toHaveBeenCalled();
+    hook.rerender({ focused: true });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(7));
+    hook.unmount();
+    queryClient.clear();
+  });
+
   it('requests the completed wall and exact review target over the actual query document', async () => {
     const completed = makeGroup('completed-detection', {
       type: 'spray_wall_detection_completed',

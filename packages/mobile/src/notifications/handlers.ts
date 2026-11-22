@@ -7,7 +7,7 @@ export type NotificationRoute = { path: string; params?: Record<string, string> 
 export type NotificationHandlerOptions = {
   canNavigate?: boolean;
   onSprayCompletion?: () => void;
-  onBugReportReply?: () => void;
+  onBugReportReply?: (reportId: string) => void;
 };
 // Keep process-lifetime tap IDs across auth/provider remounts so the OS response cannot navigate twice.
 const consumedResponses = new Set<string>();
@@ -64,7 +64,7 @@ export function setupNotificationHandlers(router: RouterLike, options: Notificat
     consumedResponses.add(identifier);
     if (response.notification.request.content.data?.type === 'spray_wall_detection_completed')
       options.onSprayCompletion?.();
-    if (response.notification.request.content.data?.type === 'app_feedback_reply') options.onBugReportReply?.();
+    if (route.path === '/bug-reports/[id]' && route.params?.id) options.onBugReportReply?.(route.params.id);
     const href = (route.params ? { pathname: route.path, params: route.params } : route.path) as never;
     // Over the full-screen Wall display, a push to a tab would stack the tabs on
     // top of the kiosk. Close back down to the tabs instead. Root modals (the
@@ -76,8 +76,10 @@ export function setupNotificationHandlers(router: RouterLike, options: Notificat
   const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
     if (options.canNavigate !== false && notification.request.content.data?.type === 'spray_wall_detection_completed')
       options.onSprayCompletion?.();
-    if (options.canNavigate !== false && notification.request.content.data?.type === 'app_feedback_reply')
-      options.onBugReportReply?.();
+    if (options.canNavigate !== false && notification.request.content.data?.type === 'app_feedback_reply') {
+      const route = resolveNotificationRoute(notification);
+      if (route?.params?.id) options.onBugReportReply?.(route.params.id);
+    }
   });
   // Preserve the OS response for the existing launch gate; consume once after auth resolves.
   const lastResponse = Notifications.getLastNotificationResponse();

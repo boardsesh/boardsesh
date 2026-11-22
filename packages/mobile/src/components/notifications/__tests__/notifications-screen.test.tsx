@@ -28,6 +28,7 @@ const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 // Mutable slices each test dials in.
 const state = vi.hoisted(() => ({
   query: null as unknown as Query,
+  focused: true,
   unreadCount: 0,
   offline: { isOffline: false, isBlocked: false, reason: null as null | 'offline' | 'error' },
 }));
@@ -55,9 +56,11 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 // `useRouter` hands back one stable object, matching expo-router: its
 // implementation returns the module-level imperative api, not a fresh handle.
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
+const groupedEnabled = vi.hoisted(() => vi.fn());
 
 vi.mock('expo-router', () => ({
   useNavigation: () => navMock,
+  useIsFocused: () => state.focused,
   useRouter: () => routerMock,
 }));
 
@@ -104,7 +107,10 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
-  useGroupedNotifications: () => state.query,
+  useGroupedNotifications: (enabled: boolean) => {
+    groupedEnabled(enabled);
+    return state.query;
+  },
   useUnreadNotificationCount: () => state.unreadCount,
   // Stable objects: an unstable `mutate` would churn the nav callback and, with
   // it, `renderItem` — which is exactly what the perf test measures.
@@ -238,6 +244,7 @@ function lastHeaderRight(): unknown {
 beforeEach(() => {
   vi.clearAllMocks();
   state.query = makeQuery();
+  state.focused = true;
   state.unreadCount = 0;
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   list.renderItem = null;
@@ -249,6 +256,15 @@ beforeEach(() => {
 });
 
 describe('NotificationsScreen states', () => {
+  it('disables its list query while hidden and enables it when focused', () => {
+    state.focused = false;
+    const { rerender } = render(<NotificationsScreen />);
+    expect(groupedEnabled).toHaveBeenLastCalledWith(false);
+    state.focused = true;
+    rerender(<NotificationsScreen />);
+    expect(groupedEnabled).toHaveBeenLastCalledWith(true);
+  });
+
   it('renders the empty copy when the list came back empty', () => {
     const { container, queryByText } = render(<NotificationsScreen />);
     expect(queryByText('empty')).not.toBeNull();
@@ -721,6 +737,19 @@ describe('NotificationsScreen follow request rows', () => {
 });
 
 describe('NotificationsScreen pagination', () => {
+  it('does not load another page while hidden or refreshing', () => {
+    state.query = makeQuery({ hasNextPage: true });
+    state.focused = false;
+    const { rerender } = render(<NotificationsScreen />);
+    list.onEndReached?.();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+    state.focused = true;
+    state.query = makeQuery({ hasNextPage: true, isRefetching: true, fetchStatus: 'fetching' });
+    rerender(<NotificationsScreen />);
+    list.onEndReached?.();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
   it('fetches exactly one page per end-reach', () => {
     state.query = makeQuery({
       data: { pages: [{ groups: [makeNotification()], hasMore: true, unreadCount: 0 }] },

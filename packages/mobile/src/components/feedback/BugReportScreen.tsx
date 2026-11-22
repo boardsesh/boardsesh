@@ -117,7 +117,7 @@ export function BugReportConversation({
     if (issueUrl) void openExternalUrl(issueUrl, 'bug-report-issue');
   }, [issueUrl]);
   const messagesQuery = useAppBugReportMessages(accountId, report.id, focused);
-  const { data, refetch, fetchNextPage, hasNextPage, isFetchingNextPage, isRefetching } = messagesQuery;
+  const { data, refetch, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, isRefetching } = messagesQuery;
   const { mutateAsync: sendMessage, isPending: sending } = useSendAppBugReportMessage(accountId, report.id);
   const { mutate: markRead } = useMarkAppBugReportRead(report.id);
   const {
@@ -129,23 +129,38 @@ export function BugReportConversation({
   // Every server page is newest-first. Reverse a fresh flattened array once,
   // then let FlashList maintain the viewport when earlier messages are added.
   const messages = useMemo(() => data?.pages.flatMap((page) => page.messages).reverse() ?? EMPTY_MESSAGES, [data]);
-  const newestMessageId = data?.pages[0]?.messages[0]?.id;
+  const readStaffMessageIds = useRef<Set<string> | null>(null);
   const messagesLoaded = !!data;
   useEffect(() => {
-    if (messagesLoaded && focused) markRead();
-  }, [messagesLoaded, newestMessageId, focused, markRead]);
+    if (!focused) {
+      readStaffMessageIds.current = null;
+      return;
+    }
+    if (!messagesLoaded) return;
+    // Only the newest page can bring a new reply. Older pagination, our own
+    // replies and delivery updates cannot make the staff notification unread.
+    const staffMessageIds =
+      data.pages[0]?.messages.filter((message) => message.authorRole === 'staff').map((message) => message.id) ?? [];
+    const previousStaffMessageIds = readStaffMessageIds.current;
+    const hasNewStaffMessage =
+      previousStaffMessageIds === null || staffMessageIds.some((id) => !previousStaffMessageIds.has(id));
+    const seenStaffMessageIds = previousStaffMessageIds ?? new Set<string>();
+    for (const id of staffMessageIds) seenStaffMessageIds.add(id);
+    readStaffMessageIds.current = seenStaffMessageIds;
+    if (hasNewStaffMessage) markRead();
+  }, [data, messagesLoaded, focused, markRead]);
   useFocusEffect(
     useCallback(() => {
-      void refetch();
+      void refetch({ cancelRefetch: false });
     }, [refetch]),
   );
   const handleRefresh = useCallback(() => {
-    void refetch();
+    void refetch({ cancelRefetch: false });
     onRefreshReport?.();
   }, [refetch, onRefreshReport]);
   const loadEarlier = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (focused && hasNextPage && !isFetching) void fetchNextPage({ cancelRefetch: false });
+  }, [focused, hasNextPage, isFetching, fetchNextPage]);
   const changeDraft = useCallback((next: string) => {
     setDraft(next);
     setSendError(false);
@@ -282,12 +297,12 @@ export default function BugReportScreen() {
   const { data: report, refetch } = query;
   const offline = useOfflineQueryState(query);
   const handleRetry = useCallback(() => {
-    void refetch();
+    void refetch({ cancelRefetch: false });
   }, [refetch]);
   const signIn = useCallback(() => router.push('/auth/login'), [router]);
   useFocusEffect(
     useCallback(() => {
-      if (isAuthenticated && userId && /^\d+$/.test(reportId)) void refetch();
+      if (isAuthenticated && userId && /^\d+$/.test(reportId)) void refetch({ cancelRefetch: false });
     }, [isAuthenticated, userId, reportId, refetch]),
   );
   const loading = authLoading || accountLoading || (isAuthenticated && userId && query.isPending);

@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   earlier: vi.fn(),
   uuid: vi.fn(),
   messages: [] as AppBugReportMessage[],
+  olderMessages: [] as AppBugReportMessage[],
+  focused: true,
+  messagesLoaded: true,
+  fetching: false,
   hasMore: false,
 }));
 
@@ -27,8 +31,11 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: vi.fn() }),
   useLocalSearchParams: () => ({ id: '42' }),
-  useIsFocused: () => true,
-  useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
+  useIsFocused: () => mocks.focused,
+  useFocusEffect: (callback: () => void) =>
+    useEffect(() => {
+      if (mocks.focused) return callback();
+    }, [callback, mocks.focused]),
 }));
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 0 }));
 vi.mock('expo-crypto', () => ({ randomUUID: mocks.uuid }));
@@ -96,11 +103,14 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 vi.mock('../../../lib/feedback/use-bug-reports', () => ({
   useAppBugReportMessages: () => ({
-    data: { pages: [{ messages: mocks.messages }] },
+    data: mocks.messagesLoaded
+      ? { pages: [{ messages: mocks.messages }, { messages: mocks.olderMessages }] }
+      : undefined,
     refetch: mocks.refresh,
     fetchNextPage: mocks.earlier,
     hasNextPage: mocks.hasMore,
     isFetchingNextPage: false,
+    isFetching: mocks.fetching,
     isRefetching: false,
     isPending: false,
     isError: false,
@@ -135,6 +145,10 @@ const message = (id: string, deliveryStatus: 'pending' | 'sent' | 'failed', body
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.messages = [];
+  mocks.olderMessages = [];
+  mocks.focused = true;
+  mocks.messagesLoaded = true;
+  mocks.fetching = false;
   mocks.hasMore = false;
   mocks.send.mockResolvedValue(message('1', 'pending', 'More detail'));
   mocks.uuid
@@ -204,5 +218,69 @@ describe('bug-report conversation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'bugReports.loadOlder' }));
     expect(mocks.earlier).toHaveBeenCalledOnce();
     expect(mocks.read).toHaveBeenCalledOnce();
+  });
+
+  it('does not acknowledge our own replies, delivery changes or older pages again', () => {
+    const { rerender } = render(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledOnce();
+    mocks.messages = [message('2', 'pending', 'Our reply')];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    mocks.messages = [message('2', 'sent', 'Our reply')];
+    mocks.olderMessages = [{ ...message('1', 'sent', 'Earlier staff reply'), authorRole: 'staff' }];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledOnce();
+  });
+
+  it('acknowledges new staff replies below our pending message without repeating on withdrawals or reorders', () => {
+    const firstStaffReply = { ...message('1', 'sent', 'Staff reply'), authorRole: 'staff' as const };
+    mocks.messages = [message('3', 'pending', 'Our reply'), firstStaffReply];
+    const { rerender } = render(<BugReportConversation accountId="reporter" report={report} />);
+    mocks.messages = [
+      message('3', 'pending', 'Our reply'),
+      { ...message('2', 'sent', 'Another staff reply'), authorRole: 'staff' },
+      firstStaffReply,
+    ];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    mocks.messages = [firstStaffReply];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    mocks.messages = [firstStaffReply, { ...message('2', 'sent', 'Another staff reply'), authorRole: 'staff' }];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for loaded messages and catches up once whenever the thread regains focus', () => {
+    mocks.messagesLoaded = false;
+    const { rerender } = render(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).not.toHaveBeenCalled();
+    mocks.messagesLoaded = true;
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledOnce();
+    mocks.focused = false;
+    mocks.messages = [{ ...message('1', 'sent', 'Unread staff reply'), authorRole: 'staff' }];
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledOnce();
+    mocks.focused = true;
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    expect(mocks.refresh).toHaveBeenLastCalledWith({ cancelRefetch: false });
+  });
+
+  it('does not load earlier pages while hidden or already fetching', () => {
+    mocks.hasMore = true;
+    mocks.fetching = true;
+    const { rerender } = render(<BugReportConversation accountId="reporter" report={report} />);
+    fireEvent.click(screen.getByRole('button', { name: 'bugReports.loadOlder' }));
+    expect(mocks.earlier).not.toHaveBeenCalled();
+    mocks.fetching = false;
+    mocks.focused = false;
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    fireEvent.click(screen.getByRole('button', { name: 'bugReports.loadOlder' }));
+    expect(mocks.earlier).not.toHaveBeenCalled();
+    mocks.focused = true;
+    rerender(<BugReportConversation accountId="reporter" report={report} />);
+    fireEvent.click(screen.getByRole('button', { name: 'bugReports.loadOlder' }));
+    expect(mocks.earlier).toHaveBeenCalledWith({ cancelRefetch: false });
   });
 });
