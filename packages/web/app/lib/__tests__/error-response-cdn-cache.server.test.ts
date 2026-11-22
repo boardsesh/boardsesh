@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { createServer, get, ServerResponse, type IncomingHttpHeaders, type Server } from 'node:http';
+import { createServer, request, ServerResponse, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 import {
@@ -25,13 +25,23 @@ function startServer(writeResponse: ResponseWriter): Promise<Server> {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
-function fetchHead(server: Server): Promise<{ statusCode: number; headers: IncomingHttpHeaders }> {
+function fetchResponse(
+  server: Server,
+  method: 'GET' | 'HEAD' = 'GET',
+): Promise<{ statusCode: number; headers: IncomingHttpHeaders; body: string }> {
   const { port } = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
-    get({ host: '127.0.0.1', port, path: '/kilter/original/12x12-square/screw_bolt/40/list' }, (incoming) => {
-      incoming.resume();
-      incoming.on('end', () => resolve({ statusCode: incoming.statusCode ?? 0, headers: incoming.headers }));
-    }).on('error', reject);
+    request(
+      { host: '127.0.0.1', port, method, path: '/kilter/original/12x12-square/screw_bolt/40/list' },
+      (incoming) => {
+        let body = '';
+        incoming.setEncoding('utf8');
+        incoming.on('data', (chunk: string) => (body += chunk));
+        incoming.on('end', () => resolve({ statusCode: incoming.statusCode ?? 0, headers: incoming.headers, body }));
+      },
+    )
+      .on('error', reject)
+      .end();
   });
 }
 
@@ -55,7 +65,7 @@ afterEach(async () => {
 describe('installErrorResponseCdnCacheGuard', () => {
   it.each([404, 410, 500, 503])('turns the middleware TTL into no-store on a %i', async (statusCode) => {
     server = await startServer(nextStyleResponse(statusCode));
-    const { statusCode: received, headers } = await fetchHead(server);
+    const { statusCode: received, headers } = await fetchResponse(server);
     expect(received).toBe(statusCode);
     expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
     expect(headers['vercel-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
@@ -65,7 +75,7 @@ describe('installErrorResponseCdnCacheGuard', () => {
 
   it('keeps the TTL on a 200', async () => {
     server = await startServer(nextStyleResponse(200));
-    const { headers } = await fetchHead(server);
+    const { headers } = await fetchResponse(server);
     expect(headers['cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
     expect(headers['vercel-cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
   });
@@ -77,20 +87,29 @@ describe('installErrorResponseCdnCacheGuard', () => {
       response.statusCode = 308;
       response.end();
     });
-    const { statusCode, headers } = await fetchHead(server);
+    const { statusCode, headers } = await fetchResponse(server);
     expect(statusCode).toBe(308);
     expect(headers['cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
   });
 
-  it('catches a status set after the body started streaming headers implicitly', async () => {
+  it('rewrites headers sent implicitly on the first write', async () => {
     server = await startServer((response) => {
       response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
       response.statusCode = 500;
       response.write('<html>');
       response.end('</html>');
     });
-    const { headers } = await fetchHead(server);
+    const { headers } = await fetchResponse(server);
     expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+  });
+
+  it('rewrites the headers of a HEAD request, which sends no body', async () => {
+    server = await startServer(nextStyleResponse(404));
+    const { statusCode, headers, body } = await fetchResponse(server, 'HEAD');
+    expect(statusCode).toBe(404);
+    expect(body).toBe('');
+    expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    expect(headers['vercel-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
   });
 
   it('adds no shared-cache header to an error that never had one', async () => {
@@ -98,7 +117,7 @@ describe('installErrorResponseCdnCacheGuard', () => {
       response.statusCode = 404;
       response.end();
     });
-    const { headers } = await fetchHead(server);
+    const { headers } = await fetchResponse(server);
     expect(headers['cdn-cache-control']).toBeUndefined();
     expect(headers['vercel-cdn-cache-control']).toBeUndefined();
     expect(headers['cloudflare-cdn-cache-control']).toBeUndefined();
@@ -109,7 +128,7 @@ describe('installErrorResponseCdnCacheGuard', () => {
       response.writeHead(503, { 'Cloudflare-CDN-Cache-Control': 's-maxage=60', 'X-Kept': 'yes' });
       response.end();
     });
-    const { headers } = await fetchHead(server);
+    const { headers } = await fetchResponse(server);
     expect(headers['cloudflare-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
     expect(headers['x-kept']).toBe('yes');
   });
@@ -120,7 +139,7 @@ describe('installErrorResponseCdnCacheGuard', () => {
       response.writeHead(404, 'Not Found', ['CDN-Cache-Control', 's-maxage=60', 'X-Kept', 'yes']);
       response.end();
     });
-    const { headers } = await fetchHead(server);
+    const { headers } = await fetchResponse(server);
     expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
     expect(headers['vercel-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
     expect(headers['x-kept']).toBe('yes');

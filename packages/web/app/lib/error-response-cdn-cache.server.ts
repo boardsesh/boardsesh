@@ -79,10 +79,20 @@ function isHeadersArgument(argument: unknown): argument is HeadersArgument {
  * `CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800` on list and
  * climb-view URLs before the page renders, and Next copies middleware headers
  * onto the response with `res.setHeader` before it renders
- * (`next/dist/server/lib/router-server.js`). When the page then 404s or throws,
- * Next only rewrites `Cache-Control` (`base-server.js` `renderErrorImpl`, the
- * router-server 404 branch); `CDN-Cache-Control` survives. Cloudflare ranks it
- * above `Cache-Control`, so the `boardsesh:www-html-edge-cache` rule stored a
+ * (`next/dist/server/lib/router-server.js`). Nothing on the error paths
+ * removes it (all in Next 16.3.5):
+ *
+ *  - An in-page `notFound()` or a thrown render error lands in app-render's
+ *    shell catch (`server/app-render/app-render.js`, the "errorRecovery
+ *    classification" block), which only sets `res.statusCode` to 404 or 500 and
+ *    renders the fallback. `Cache-Control` comes from
+ *    `build/templates/app-page-runtime.js` and `send-payload.js`
+ *    `sendRenderResult`, both of which set it only when none is set yet.
+ *  - The unmatched-route 404 in `router-server.js` and `base-server.js`
+ *    `renderErrorImpl` overwrite `Cache-Control` and leave every other header alone.
+ *
+ * Cloudflare ranks `CDN-Cache-Control` above `Cache-Control`, so the
+ * `boardsesh:www-html-edge-cache` rule stored a
  * one-off 404 for a day plus seven days of stale-while-revalidate. Whether a
  * page will 404 is not knowable in the middleware, so the decision has to be
  * made when the status is final, which is when the head is written.

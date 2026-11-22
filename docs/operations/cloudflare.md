@@ -1065,12 +1065,22 @@ missing climb under `/view/` returned the same header.
 
 **Why.** The middleware stamps `CDN-Cache-Control` before the page renders.
 Next copies middleware headers onto the response with `res.setHeader` before
-it renders (`next/dist/server/lib/router-server.js`). On a 404 or a render
-error it rewrites only `Cache-Control` (`base-server.js` `renderErrorImpl`,
-and the 404 branch in `router-server.js`), so `CDN-Cache-Control` survives.
-Cloudflare ranks that header above `Cache-Control`, and `bypass_by_default`
-honours it. One 404 from a deploy blip or a failed read was therefore served
-from the edge for 24 hours, and then for up to 7 more days as stale content.
+it renders (`next/dist/server/lib/router-server.js`). No error path in Next
+16.3.5 removes the header:
+
+- An in-page `notFound()` or a thrown render error ends in app-render's shell
+  catch (`server/app-render/app-render.js`, the "errorRecovery classification"
+  block). That only sets the status to 404 or 500. `Cache-Control` comes from
+  `build/templates/app-page-runtime.js` and `send-payload.js`
+  `sendRenderResult`, and both set it only when no `Cache-Control` exists yet.
+- The unmatched-route 404 in `router-server.js` and `base-server.js`
+  `renderErrorImpl` overwrite `Cache-Control` and leave other headers alone.
+
+Cloudflare ranks `CDN-Cache-Control` above `Cache-Control`, and
+`bypass_by_default` honours it. One 404 from a deploy blip or a failed read was
+therefore served from the edge for 24 hours, and then for up to 7 more days as
+stale content. Moving the TTL into `Cache-Control` would not help: the shell
+catch keeps a `Cache-Control` set beforehand in exactly the same way.
 
 **Fix: at the origin, on any plan.** `app/lib/error-response-cdn-cache.server.ts`
 wraps `ServerResponse.prototype.writeHead`, and `instrumentation.ts` installs it
@@ -1088,6 +1098,18 @@ final: Node calls it on the first `write` or on `end`, however the body is sent.
 - The cost: a URL that is permanently missing now renders at the origin on every
   request. An out-of-range `?page` 404s before the query runs, so that render is
   cheap.
+- Not covered: a degraded page that still answers 200 keeps the full TTL. One
+  example is a setter page whose `generateMetadata` falls back to noindex
+  metadata during a database brownout. That copy stays at the edge for the TTL.
+  The follow-up is the Cache Response Rule below, which can match response
+  headers as well as status. It needs the page to mark the degradation on a
+  response header first, because a 200 status looks the same either way.
+- The production smoke (`scripts/production-smoke.ts`, "a missing list page 404s
+  without a CDN cache TTL") checks the whole path on every deploy against the
+  Railway origin, and every 30 minutes against www. Cloudflare passes
+  `CDN-Cache-Control` downstream; only `Cloudflare-CDN-Cache-Control` stays at
+  the edge. The check adds a query key that changes on every run, so the edge
+  has never stored the URL it asks for.
 
 **Edge options considered and not adopted:**
 

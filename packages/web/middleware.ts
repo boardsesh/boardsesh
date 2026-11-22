@@ -294,17 +294,22 @@ function routeRequest(request: NextRequest) {
     });
   }
 
-  // Use Vercel-CDN-Cache-Control because Next.js overwrites Cache-Control
-  // for dynamic pages (pages that use searchParams) with "private, no-store".
-  // Vercel-CDN-Cache-Control is the highest-priority header for Vercel's CDN
-  // and is not touched by Next.js rendering.
+  // The TTL goes in CDN-Cache-Control, which Cloudflare reads ahead of
+  // Cache-Control and browsers ignore, plus the Vercel-CDN-Cache-Control copy.
+  // Next never touches either. Cache-Control is left to Next: in 16.3.5 a
+  // dynamic page gets "private, no-cache, no-store" only when no Cache-Control
+  // is set yet (app-page-runtime, send-payload's sendRenderResult), so it does
+  // not overwrite one set here.
+  // Moving the TTL into Cache-Control would not stop errors being cached either.
+  // An in-page notFound() or render error only changes the status
+  // (app-render's shell catch), so the 404 or 500 would keep the TTL there too.
+  // This runs before the page renders and cannot know it will 404 or fail;
+  // `installErrorResponseCdnCacheGuard` (instrumentation.ts) turns these headers
+  // into `no-store` on any 4xx or 5xx once the status is final.
   // Cache-key follows the original (locale-prefixed) URL, so en and es never collide.
   // Climb view pages are equally URL-determined and personalization-free, so they
   // cache the same way — including their legacy numeric variants, whose permanent
   // redirect the CDN can then serve without re-rendering.
-  // This runs before the page renders, so it cannot know the page will 404 or
-  // fail. `installErrorResponseCdnCacheGuard` (instrumentation.ts) turns the
-  // header into `no-store` on any 4xx or 5xx once the status is final.
   const cacheTTL =
     getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
     getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
