@@ -539,7 +539,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     adminUpdateBoard(input: UpdateBoardInput!): AdminBoard!
 
     """
-    Soft-delete a board.
+    Soft-delete a board as its owner or an owner/admin of its linked gym.
     """
     deleteBoard(boardUuid: ID!): Boolean!
 

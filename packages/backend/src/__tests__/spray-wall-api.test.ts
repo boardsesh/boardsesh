@@ -16,6 +16,7 @@ import {
 } from '@boardsesh/db/schema';
 import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
 import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
+import { createBarrier, handleLater } from './helpers/concurrency';
 
 /**
  * The spray wall API end to end, against the real database.
@@ -4200,17 +4201,100 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
   });
 
-  it('generic picker deletion keeps the owner authorization guard', async () => {
-    const { wall } = await createPublishedWall(OWNER);
+  it('lets a linked gym admin delete a public spray board with its wall and photo cleanup', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
     const gym = await gymWith(STRANGER, 'admin');
     await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
 
+    expect(await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).toBe(true);
+    const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    const [deletedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(deletedWall.deletedAt).toBeInstanceOf(Date);
+    expect(deletedBoard.deletedAt).toEqual(deletedWall.deletedAt);
+    expect(deletedBoard.syncFrozenAt).toEqual(deletedWall.deletedAt);
+    expect(deletedWall.publicPhotoKey).toBeNull();
+    expect(deletedPublicKeys).toContain(publicKey);
+  });
+
+  it.each(['editor', 'member'] as const)('denies a linked gym %s generic spray deletion', async (role) => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    const gym = await gymWith(STRANGER, role);
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
     await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
       'Not authorized to delete this board',
     );
     const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
     expect(stillLive.deletedAt).toBeNull();
+    expect(deletedPublicKeys).toHaveLength(0);
   });
+
+  it('does not let a linked gym admin delete an inaccessible private spray board', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const gym = await gymWith(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+    await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
+      'Board not found',
+    );
+    const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    expect(stillLive.deletedAt).toBeNull();
+  });
+
+  it.each(['unlink', 'demote'] as const)(
+    'rechecks generic spray deletion authority after a concurrent %s',
+    async (change) => {
+      const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+      const gym = await gymWith(STRANGER, 'admin');
+      await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+      const [wallRow] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+      const wallLocked = createBarrier();
+      const releaseWrite = createBarrier();
+      const writer = db.transaction(async (tx) => {
+        await lockWallForWrite(tx, wallRow.id);
+        wallLocked.release();
+        await releaseWrite.promise;
+        if (change === 'unlink') {
+          await tx.update(userBoards).set({ gymId: null }).where(eq(userBoards.uuid, wall.uuid));
+        } else {
+          await tx
+            .update(gymMembers)
+            .set({ role: 'editor' })
+            .where(and(eq(gymMembers.gymId, gym.id), eq(gymMembers.userId, STRANGER)));
+        }
+      });
+      handleLater(writer);
+      await wallLocked.promise;
+      const deletion = socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER));
+      handleLater(deletion);
+      try {
+        await vi.waitFor(
+          async () => {
+            const [lock] = (await db.execute(sql`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_locks
+                WHERE locktype = 'advisory'
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                  AND classid = ${SPRAY_WALL_WRITE_LOCK_NAMESPACE}
+                  AND objid = ${wallRow.id}
+                  AND objsubid = 2
+                  AND NOT granted
+              ) AS waiting
+            `)) as unknown as Array<{ waiting: boolean }>;
+            expect(lock.waiting).toBe(true);
+          },
+          { timeout: 5000 },
+        );
+      } finally {
+        releaseWrite.release();
+        await writer;
+      }
+      await expect(deletion).rejects.toThrow('Not authorized');
+      const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.id, wallRow.id));
+      expect(stillLive.deletedAt).toBeNull();
+      expect(deletedPublicKeys).toHaveLength(0);
+    },
+  );
 
   it('refuses a visibility change from anyone but the wall owner', async () => {
     // A gym ADMIN passes `requireBoardEditAccess` and may edit the gym's wall.

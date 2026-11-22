@@ -302,6 +302,22 @@ async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardE
   return !!adminMembership;
 }
 
+/** Deletion requires ownership or administration of the board's current gym. */
+async function requireBoardDeleteAccess(
+  userId: string,
+  board: Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'ownerId' | 'gymId'>,
+  executor: BoardEditExecutor = db,
+): Promise<void> {
+  if (board.ownerId === userId) return;
+  if (board.gymId == null || !(await viewerCanAdminGym(board.gymId, userId, executor))) {
+    throw new Error('Not authorized to delete this board');
+  }
+  // Gym management does not reveal another climber's private board by UUID.
+  if (!(await canAccessResource('board', board.uuid, userId, executor))) {
+    throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+  }
+}
+
 /**
  * A community admin/leader's edit reach covers public listings and the seeded
  * system catalog — the boards this moderation exists to fix. A stranger's
@@ -2789,9 +2805,10 @@ export const socialBoardMutations = {
     const [board] = await db
       .select({
         id: dbSchema.userBoards.id,
+        uuid: dbSchema.userBoards.uuid,
         ownerId: dbSchema.userBoards.ownerId,
+        gymId: dbSchema.userBoards.gymId,
         boardType: dbSchema.userBoards.boardType,
-        isPublic: dbSchema.userBoards.isPublic,
       })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
@@ -2801,37 +2818,51 @@ export const socialBoardMutations = {
       throw new Error('Board not found');
     }
 
-    if (board.ownerId !== userId) {
-      throw new Error('Not authorized to delete this board');
-    }
+    await requireBoardDeleteAccess(userId, board);
+
+    let retractPreview = false;
 
     if (isSprayBoardType(board.boardType)) {
       // Every caller, including older apps, must tombstone the wall and retract
       // its feed and public photo. Load lazily because spray-walls uses board
-      // authorization helpers from this module. Keep the owner check above:
-      // generic board deletion must not grant gym editors wall deletion.
+      // authorization helpers from this module. Recheck the stricter generic
+      // deletion gate after its account/wall locks, against the current gym.
       const { sprayWallMutations } = await import('../board/spray-walls');
-      await sprayWallMutations.deleteSprayWall(_, { uuid: boardUuid }, ctx);
+      await sprayWallMutations.deleteSprayWall(
+        _,
+        {
+          uuid: boardUuid,
+          beforeBoardDelete: async (currentBoard, tx) => {
+            await requireBoardDeleteAccess(userId, currentBoard, tx);
+            retractPreview = await canAccessResource('board', boardUuid, null, tx);
+          },
+        },
+        ctx,
+      );
     } else {
-      // Freeze it too, so a later sync can't resurrect the board the owner
-      // deliberately removed (the board upsert clears deletedAt).
-      const deletedAt = new Date();
-      await db
-        .update(dbSchema.userBoards)
-        .set({ deletedAt, syncFrozenAt: deletedAt })
-        .where(eq(dbSchema.userBoards.id, board.id));
+      await db.transaction(async (tx) => {
+        const [currentBoard] = await tx
+          .select()
+          .from(dbSchema.userBoards)
+          .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+          .limit(1)
+          .for('update');
+        if (!currentBoard) throw new Error('Board not found');
+        await requireBoardDeleteAccess(userId, currentBoard, tx);
+        retractPreview = await canAccessResource('board', boardUuid, null, tx);
+
+        // Freeze it too, so a later sync cannot resurrect the removed board.
+        const deletedAt = new Date();
+        await tx
+          .update(dbSchema.userBoards)
+          .set({ deletedAt, syncFrozenAt: deletedAt })
+          .where(eq(dbSchema.userBoards.id, board.id));
+      });
     }
 
-    // Same reasoning as the public→private flip in updateBoard: a soft-deleted
-    // board drops out of the anon-readable set, so the preview producer goes
-    // quiet and kiosks would keep the last snapshot. Gate on the pre-delete
-    // row's anon-readability (a private board's channel never carried a
-    // snapshot, and publishing on it would leak the deletion's timing).
-    // `isPublic` alone is the whole gate: the other half of
-    // `isBoardAnonReadable` — system-owned boards — is unreachable here,
-    // because the ownership check above only lets the authenticated owner
-    // through and nobody can authenticate as the synthetic system owner.
-    if (board.isPublic) {
+    // Use the policy before deletion, including system-owned and Unlisted
+    // boards. Private channels must not reveal the timing of a deletion.
+    if (retractPreview) {
       try {
         await publishBoardQueuePreviewTombstoneForBoard(board.id);
       } catch (error) {

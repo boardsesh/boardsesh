@@ -2,7 +2,8 @@
 // linkBoardToGym contract: BOTH link and unlink require the viewer to own the
 // board (`board.ownerId === userId`), and linking additionally requires the
 // viewer to be the gym's owner or an admin (requireGymOwnerOrAdmin). Gym
-// editors can open the tab (canEdit) but see the board list read-only.
+// editors can open the tab (canEdit), but gym membership alone does not grant
+// deletion. Deleting requires board ownership or ownership/admin of its gym.
 
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 
@@ -15,6 +16,16 @@ export function canManageGymBoards(gym: Pick<Gym, 'ownerId' | 'myRole'>, viewerU
 /** True when the viewer may unlink this board (they own the board itself). */
 export function canUnlinkBoard(board: Pick<UserBoard, 'ownerId'>, viewerUserId: string | null): boolean {
   return !!viewerUserId && board.ownerId === viewerUserId;
+}
+
+/** Only call for boards the viewer may read, as returned by gymBoards. */
+export function canDeleteGymBoard(
+  board: Pick<UserBoard, 'ownerId' | 'gymUuid'>,
+  gym: Pick<Gym, 'uuid' | 'ownerId' | 'myRole'>,
+  viewerUserId: string | null,
+): boolean {
+  if (!viewerUserId) return false;
+  return board.ownerId === viewerUserId || (board.gymUuid === gym.uuid && canManageGymBoards(gym, viewerUserId));
 }
 
 /**
