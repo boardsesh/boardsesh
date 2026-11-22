@@ -1329,7 +1329,20 @@ export function SprayWallWizardScreen({
           .then(() => {
             if (leaveStillApplies(checkpoint, stateRef.current, readEditorLeaveState())) onConfirm();
           })
-          .catch(() => undefined);
+          .catch(() =>
+            confirmDiscardSprayEdits(
+              true,
+              () => {
+                if (leaveStillApplies(checkpoint, stateRef.current, readEditorLeaveState())) onConfirm();
+              },
+              {
+                title: t('sprayEditor.draft.leaveTitle'),
+                message: t('sprayEditor.draft.leaveBody'),
+                keep: t('sprayWizard.leave.stay'),
+                discard: t('sprayEditor.draft.leaveAnyway'),
+              },
+            ),
+          );
         return;
       }
       const decision = leaveDecision(state, readEditorLeaveState(), consentSavingNow());

@@ -1199,7 +1199,12 @@
       "changed": "Diese gespeicherten Änderungen gehören zu einer früheren Version dieses Entwurfs. Deine lokale Kopie bleibt erhalten.",
       "addLater": "Du kannst fehlende Griffe später beim Setzen eines Boulders hinzufügen.",
       "useSaved": "Gespeicherte Griffe verwenden",
-      "discardBody": "Deine wiederhergestellten Änderungen werden verworfen. Die bereits auf dieser Spraywall gespeicherten Griffe bleiben verfügbar."
+      "discardBody": "Deine wiederhergestellten Änderungen werden verworfen. Die bereits auf dieser Spraywall gespeicherten Griffe bleiben verfügbar.",
+      "openElsewhere": "Dieser Entwurf ist in einem anderen Editor geöffnet. Schließe ihn dort, um hier fortzufahren.",
+      "lockUnavailable": "Dieser Browser kann Änderungen an Griffen nicht sicher speichern. Versuche einen anderen Browser.",
+      "leaveTitle": "Vor dem Speichern verlassen?",
+      "leaveBody": "Deine letzten Griffänderungen werden möglicherweise nicht gespeichert. Dein zuletzt gespeicherter Entwurf bleibt auf diesem Gerät.",
+      "leaveAnyway": "Trotzdem verlassen"
     }
   },
   "sprayWizard": {

@@ -95,6 +95,7 @@ vi.mock('../use-create-climb-screen', () => ({
       notifyDraftKeptOnDismiss: state.notify,
       persistWorkingDraft: state.persist,
       saveState: state.saveState,
+      missingHoldIds: [42],
       removeMissingHolds: state.removeMissingHolds,
     };
   },
@@ -311,7 +312,7 @@ it('acknowledges remix ghosts with the removed selections in one action', () => 
   state.ghosts = [{ id: 42, cx: 10, cy: 20, r: 8 }];
   renderScreen();
   act(() => state.drawer?.onRemoveMissingHolds?.());
-  expect(state.dismissGhost).toHaveBeenCalledOnce();
+  expect(state.dismissGhost).toHaveBeenCalledExactlyOnceWith([42]);
   expect(state.removeMissingHolds).toHaveBeenCalledOnce();
 });
 
@@ -319,6 +320,6 @@ it('acknowledges missing remix IDs before their geometry has loaded', () => {
   state.ghosts = [];
   renderScreen();
   act(() => state.drawer?.onRemoveMissingHolds?.());
-  expect(state.dismissGhost).toHaveBeenCalledOnce();
+  expect(state.dismissGhost).toHaveBeenCalledExactlyOnceWith([42]);
   expect(state.removeMissingHolds).toHaveBeenCalledOnce();
 });

@@ -1199,7 +1199,12 @@
       "changed": "Estos cambios guardados pertenecen a una versión anterior de este borrador. Tu copia local se conserva.",
       "addLater": "Puedes añadir las presas que faltan más tarde, mientras montas un bloque.",
       "useSaved": "Usar las presas guardadas",
-      "discardBody": "Se descartarán tus cambios recuperados. Las presas ya guardadas en este Spraywall seguirán disponibles."
+      "discardBody": "Se descartarán tus cambios recuperados. Las presas ya guardadas en este Spraywall seguirán disponibles.",
+      "openElsewhere": "Este borrador está abierto en otro editor. Ciérralo allí para continuar aquí.",
+      "lockUnavailable": "Este navegador no puede guardar los cambios de presas de forma segura. Prueba con otro navegador.",
+      "leaveTitle": "¿Salir antes de guardar?",
+      "leaveBody": "Puede que no se guarden los últimos cambios de presas. El último borrador guardado seguirá en este dispositivo.",
+      "leaveAnyway": "Salir de todos modos"
     }
   },
   "sprayWizard": {

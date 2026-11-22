@@ -168,7 +168,7 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
     };
   }, [prepare]);
 
-  const finish = useCallback(async () => {
+  const publishAndRefresh = useCallback(async () => {
     const prepared = draftRef.current;
     if (!prepared || busyRef.current) return;
     busyRef.current = true;
@@ -236,6 +236,12 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
     }
   }, [queryClient, refreshRegisteredWall]);
 
+  const finish = useCallback(() => {
+    if (busyRef.current) return Promise.resolve();
+    const runCommit = editorPersistenceRef.current?.runCommit;
+    return runCommit ? runCommit(publishAndRefresh) : publishAndRefresh();
+  }, [publishAndRefresh]);
+
   // An open draft this screen cannot edit: a new-photo draft the retired
   // in-place reset left. Discarding it keeps the wall and its climbs; only the
   // draft goes. Only ever on a tap.
@@ -295,7 +301,20 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
           .then(() => {
             if (!busyRef.current && !editorHandingOverRef.current) continueLeaving();
           })
-          .catch(() => undefined);
+          .catch(() =>
+            confirmDiscardSprayEdits(
+              true,
+              () => {
+                if (!busyRef.current && !editorHandingOverRef.current) continueLeaving();
+              },
+              {
+                title: t('sprayEditor.draft.leaveTitle'),
+                message: t('sprayEditor.draft.leaveBody'),
+                keep: t('sprayMaintenance.leave.stay'),
+                discard: t('sprayEditor.draft.leaveAnyway'),
+              },
+            ),
+          );
         return;
       }
       confirmDiscardSprayEdits(
@@ -314,7 +333,8 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
       );
     },
     !finished &&
-      (status === 'preparing' ||
+      (status === 'editing' ||
+        status === 'preparing' ||
         status === 'publishing' ||
         status === 'refreshing' ||
         editorDirty ||
@@ -326,20 +346,19 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
     if (finished) returnToBoards();
   }, [finished, returnToBoards]);
 
-  if (status === 'editing' && draft) {
-    return (
-      <SprayHoldEditorScreen
-        {...draft}
-        primaryLabel={entry === 'climb-editor' ? t('sprayMaintenance.publishAndReturn') : t('sprayMaintenance.publish')}
-        initialMode={entry === 'climb-editor' ? 'add' : undefined}
-        onPersistenceReady={onPersistenceReady}
-        onCommitted={onCommitted}
-        onDirtyChange={onDirtyChange}
-        onHandoverChange={onHandoverChange}
-        confirmHoldRemoval={confirmHoldRemoval}
-      />
-    );
-  }
+  const editorNode = draft ? (
+    <SprayHoldEditorScreen
+      {...draft}
+      hostPaused={status !== 'editing'}
+      primaryLabel={entry === 'climb-editor' ? t('sprayMaintenance.publishAndReturn') : t('sprayMaintenance.publish')}
+      initialMode={entry === 'climb-editor' ? 'add' : undefined}
+      onPersistenceReady={onPersistenceReady}
+      onCommitted={onCommitted}
+      onDirtyChange={onDirtyChange}
+      onHandoverChange={onHandoverChange}
+      confirmHoldRemoval={confirmHoldRemoval}
+    />
+  ) : null;
 
   const graphqlMessage = extractGraphqlMessage(failure);
   const lifecycleRefusal = sprayWallLifecycleRefusal(failure);
@@ -373,37 +392,42 @@ export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; en
   const finalRefusal = isFinalRefusal(failure);
 
   return (
-    <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-      {status === 'failed' ? (
-        <>
-          <Text variant="headline" style={styles.message}>
-            {failureText}
-          </Text>
-          {discardFailed ? (
-            <Text variant="subheadline" style={styles.message}>
-              {t('sprayMaintenance.discardLeftoverFailed')}
-            </Text>
-          ) : null}
-          {leftoverVersionId ? (
-            <Button
-              title={t('sprayMaintenance.discardLeftover')}
-              onPress={() => void discardOpenDraft(leftoverVersionId)}
-              loading={discardLeftover.isPending}
-              disabled={discardLeftover.isPending}
-            />
-          ) : finalRefusal ? null : (
-            <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+    <View style={styles.screen}>
+      {editorNode ? <View style={status === 'editing' ? styles.screen : styles.hidden}>{editorNode}</View> : null}
+      {status !== 'editing' ? (
+        <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+          {status === 'failed' ? (
+            <>
+              <Text variant="headline" style={styles.message}>
+                {failureText}
+              </Text>
+              {discardFailed ? (
+                <Text variant="subheadline" style={styles.message}>
+                  {t('sprayMaintenance.discardLeftoverFailed')}
+                </Text>
+              ) : null}
+              {leftoverVersionId ? (
+                <Button
+                  title={t('sprayMaintenance.discardLeftover')}
+                  onPress={() => void discardOpenDraft(leftoverVersionId)}
+                  loading={discardLeftover.isPending}
+                  disabled={discardLeftover.isPending}
+                />
+              ) : finalRefusal ? null : (
+                <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+              )}
+              <Button title={t('sprayWizard.back')} variant="text" onPress={returnToBoards} />
+            </>
+          ) : (
+            <>
+              <ActivityIndicator size="large" />
+              <Text variant="subheadline" style={styles.message}>
+                {workingText}
+              </Text>
+            </>
           )}
-          <Button title={t('sprayWizard.back')} variant="text" onPress={returnToBoards} />
-        </>
-      ) : (
-        <>
-          <ActivityIndicator size="large" />
-          <Text variant="subheadline" style={styles.message}>
-            {workingText}
-          </Text>
-        </>
-      )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -425,6 +449,8 @@ function maintenanceFailureText(reason: SprayHoldMaintenanceError['reason'], t: 
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  hidden: { display: 'none' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing[4], padding: spacing[6] },
   message: { textAlign: 'center' },
 });

@@ -301,11 +301,16 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // Scan the frames themselves rather than the flattened union. A hold can
   // legitimately change from STARTING in one frame to FINISH in a later frame;
   // the union keeps only its last state and would incorrectly reject that route.
-  const missingHoldCount = useMemo(
+  const missingHoldIds = useMemo(
     () =>
-      availableHoldIds ? Object.keys(unionHolds).filter((holdId) => !availableHoldIds.has(Number(holdId))).length : 0,
+      availableHoldIds
+        ? Object.keys(unionHolds)
+            .map(Number)
+            .filter((holdId) => !availableHoldIds.has(holdId))
+        : [],
     [unionHolds, availableHoldIds],
   );
+  const missingHoldCount = missingHoldIds.length;
   const canSave = totalHolds > 0 && missingHoldCount === 0;
   const canPublish = useMemo(() => {
     if (missingHoldCount > 0) return false;
@@ -351,12 +356,17 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // Reset every frame back to a single empty one (undoable).
   const resetHolds = useCallback(() => dispatch({ type: 'RESET' }), []);
 
-  // Replace the entire frame sequence in one shot (draft load / edit seed /
-  // fork / autosave restore). Establishes a fresh undo baseline and drops
-  // unsupported holds, and holds no longer on the wall, from every frame.
+  // Server edits and remixes start with the roles and placements available today.
   const loadFrames = useCallback(
     (frames: LitUpHoldsMap[]) =>
       dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames, availableHoldIdsRef.current) }),
+    [boardName],
+  );
+
+  // A working copy contains the setter's own selections. Restore supported roles
+  // across every frame so the setter can acknowledge any holds removed since.
+  const restoreWorkingFrames = useCallback(
+    (frames: LitUpHoldsMap[]) => dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames) }),
     [boardName],
   );
 
@@ -397,11 +407,13 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     isValid,
     canSave,
     canPublish,
+    missingHoldIds,
     missingHoldCount,
     removeMissingHolds,
     resetHolds,
     loadHolds,
     loadFrames,
+    restoreWorkingFrames,
     duplicateFrame,
     deleteFrame,
     goToFrame,

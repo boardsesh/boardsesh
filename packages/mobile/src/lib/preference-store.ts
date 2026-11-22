@@ -33,7 +33,7 @@ export async function getPreference<T>(
   if (raw === null) return null;
   try {
     const parsedPreference = JSON.parse(raw) as T | null;
-    if (strictParsing && parsedPreference === null) throw new Error('Stored preference record was null');
+    if (strictParsing && parsedPreference === null) throw new SyntaxError('Stored preference record was null');
     return parsedPreference;
   } catch (parseError) {
     // Ownership records must distinguish corruption from a missing key.

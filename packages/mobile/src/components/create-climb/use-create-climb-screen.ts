@@ -345,10 +345,12 @@ export function useCreateClimbScreen({
     isValid,
     canSave,
     canPublish,
+    missingHoldIds,
     missingHoldCount,
     removeMissingHolds,
     resetHolds,
     loadFrames,
+    restoreWorkingFrames,
     duplicateFrame,
     deleteFrame,
     goToFrame,
@@ -689,9 +691,9 @@ export function useCreateClimbScreen({
       let restoredFrameCount = 0;
       try {
         const restoredFrames = draft.framesJson
-          ? (JSON.parse(draft.framesJson) as Parameters<typeof loadFrames>[0])
-          : [JSON.parse(draft.holdsJson) as Parameters<typeof loadFrames>[0][number]];
-        loadFrames(restoredFrames);
+          ? (JSON.parse(draft.framesJson) as Parameters<typeof restoreWorkingFrames>[0])
+          : [JSON.parse(draft.holdsJson) as Parameters<typeof restoreWorkingFrames>[0][number]];
+        restoreWorkingFrames(restoredFrames);
         restoredFrameCount = restoredFrames.length;
       } catch {
         // Corrupt holds payload — keep whatever is already loaded.
@@ -717,7 +719,7 @@ export function useCreateClimbScreen({
       setRouteMode(draft.routeMode ?? restoredFrameCount > 1);
       setFramesPaceMs(resolveStoredPaceMs(draft.framesPaceMs));
     },
-    [loadFrames, usesNoMatchDescription],
+    [restoreWorkingFrames, usesNoMatchDescription],
   );
 
   type EditFailureRestoreState = 'idle' | 'loading' | 'found' | 'empty';
@@ -1527,8 +1529,10 @@ export function useCreateClimbScreen({
   // (CreateDrawer's `climbReady`), and the status line under the tools says what
   // is missing, so a disabled Save is never mute: `publishBlocked` names the
   // start and finish, `noHolds` asks for a first hold.
-  const publishBlocked = !isDraft && hasContent && !canPublish;
-  const noHolds = !canSave;
+  // A separate, actionable notice explains removed selections.
+  const hasMissingHolds = missingHoldCount > 0;
+  const publishBlocked = !hasMissingHolds && !isDraft && hasContent && !canPublish;
+  const noHolds = !hasMissingHolds && !canSave;
   const localPersistenceAvailable = isDraftStorageAvailable();
   const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
 
@@ -1915,10 +1919,14 @@ export function useCreateClimbScreen({
       throw new Error('Climb draft storage is not ready');
     }
     playbackPause();
-    await persistAutosaveSlot(autosaveDraftRef.current);
-    if (saveInFlightRef.current || startNewInFlightRef.current) {
-      throw new Error('Climb save or reset started while preserving the draft');
-    }
+    let snapshot: CreateClimbDraft;
+    do {
+      snapshot = autosaveDraftRef.current;
+      await persistAutosaveSlot(snapshot);
+      if (saveInFlightRef.current || startNewInFlightRef.current) {
+        throw new Error('Climb save or reset started while preserving the draft');
+      }
+    } while (snapshot !== autosaveDraftRef.current);
   }, [persistAutosaveSlot, playbackPause]);
 
   return {
@@ -1937,6 +1945,7 @@ export function useCreateClimbScreen({
     handleClearHolds,
     /** The wall's current hold ids; undefined off spray. */
     availableHoldIds,
+    missingHoldIds,
     missingHoldCount,
     removeMissingHolds,
     /**

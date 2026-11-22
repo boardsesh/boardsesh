@@ -89,6 +89,145 @@ afterEach(() => {
 });
 
 describe('hold-editor recovery', () => {
+  it('keeps editing locked after network success until its deferred recovery acknowledgement completes', async () => {
+    let finishClear: (() => void) | undefined;
+    storage.clear.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        }),
+    );
+    const { result } = renderHook(() => harness());
+    await settle();
+    await act(async () => result.current.flush());
+    let commit: Promise<void> | undefined;
+    act(() => {
+      commit = result.current.runCommit(async () => {
+        // The network write has already returned; retiring recovery is still pending.
+        await result.current.acknowledge();
+      });
+    });
+    await settle();
+    expect(storage.clear).toHaveBeenCalledTimes(1);
+    expect(result.current.committing).toBe(true);
+    await act(async () => {
+      finishClear?.();
+      await commit;
+    });
+    expect(result.current.committing).toBe(false);
+  });
+
+  it('does not rewrite an unchanged restored reducer wrapper when writes are unavailable', async () => {
+    storage.load.mockResolvedValue(recovery);
+    storage.save.mockRejectedValue(new Error('disk full'));
+    const { result, rerender } = renderHook(harness, { initialProps: { present: empty } });
+    await settle();
+    rerender({ present: { ...edited } });
+    await act(async () => vi.advanceTimersByTimeAsync(HOLD_AUTOSAVE_DELAY_MS));
+    await act(async () => result.current.flush());
+    expect(result.current.status).toBe('saved');
+    expect(storage.save).not.toHaveBeenCalled();
+  });
+
+  it('retains a late acknowledged removal checkpoint while retiring an in-flight commit', async () => {
+    const before = JSON.stringify({ holds: [{ id: 101 }, { id: 102 }] });
+    const after = JSON.stringify({ holds: [{ id: 102 }] });
+    let acknowledgeRemoval: (() => void) | undefined;
+    const removed = new Promise<void>((resolve) => {
+      acknowledgeRemoval = resolve;
+    });
+    const { result, unmount } = renderHook(() => harness({ baseline: before, paused: false }));
+    await settle();
+    await act(async () => result.current.flush());
+    let commit: Promise<void> | undefined;
+    let retirement: Promise<void> | undefined;
+    let retired = false;
+    act(() => {
+      commit = result.current.runCommit(async () => {
+        await removed;
+        await result.current.checkpointRemoved([101]);
+        throw new Error('screen unmounted before upsert');
+      });
+      void commit.catch(() => undefined);
+      retirement = result.current.retire();
+      unmount();
+      void retirement.then(() => {
+        retired = true;
+      });
+    });
+    await settle();
+    expect(retired).toBe(false);
+    await act(async () => {
+      acknowledgeRemoval?.();
+      await retirement;
+    });
+    expect(retired).toBe(true);
+    expect(storage.save).toHaveBeenCalledTimes(2);
+    expect(storage.save).toHaveBeenLastCalledWith({
+      ...recovery,
+      baseline: after,
+      present: { ...edited, removedIds: [] },
+    });
+  });
+
+  it('retains the reducer seed baseline when a clean editor observes newer server holds', async () => {
+    const { result, rerender } = renderHook(harness, {
+      initialProps: { present: empty, dirty: false, baseline: 'seed-A' },
+    });
+    await settle();
+    rerender({ present: empty, dirty: false, baseline: 'remote-A-and-B' });
+    rerender({ present: edited, dirty: true, baseline: 'remote-A-and-B' });
+    await act(async () => result.current.flush());
+    expect(storage.save).toHaveBeenLastCalledWith({ ...recovery, baseline: 'seed-A' });
+  });
+
+  it('settles saved status after a failed network save unpauses an already durable edit', async () => {
+    const { result, rerender } = renderHook(harness, { initialProps: { present: edited, dirty: true, paused: false } });
+    await settle();
+    await act(async () => result.current.flush());
+    rerender({ present: edited, dirty: true, paused: true });
+    rerender({ present: edited, dirty: true, paused: false });
+    await act(async () => vi.advanceTimersByTimeAsync(HOLD_AUTOSAVE_DELAY_MS));
+    expect(result.current.status).toBe('saved');
+    expect(storage.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains a pending clear before retirement and refuses late acknowledgements', async () => {
+    let finishClear: (() => void) | undefined;
+    storage.clear.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        }),
+    );
+    const { result } = renderHook(() => harness());
+    await settle();
+    let discard: Promise<void> | undefined;
+    let retirement: Promise<void> | undefined;
+    act(() => {
+      discard = result.current.discardRecovery();
+    });
+    await settle();
+    act(() => {
+      retirement = result.current.retire();
+    });
+    let retired = false;
+    void retirement?.then(() => {
+      retired = true;
+    });
+    await settle();
+    expect(retired).toBe(false);
+    await act(async () => {
+      finishClear?.();
+      await discard;
+      await retirement;
+    });
+    expect(retired).toBe(true);
+    await act(async () => result.current.acknowledge());
+    expect(storage.clear).toHaveBeenCalledTimes(1);
+    await act(async () => expect(result.current.checkpointRemoved([101])).rejects.toThrow('closing'));
+  });
+
   it('restores exact local ids, removals and geometry before allowing edits', async () => {
     storage.load.mockResolvedValue(recovery);
     const { result } = renderHook(() => harness());
