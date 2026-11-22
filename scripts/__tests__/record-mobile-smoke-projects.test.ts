@@ -94,7 +94,7 @@ function addFixture(operationName: string, query: string, variables: unknown, re
     response,
     status: 200,
     recordedAt: manifest.recordedAt,
-    upstream: UPSTREAM,
+    upstream: 'authorized-screenshot-demo-profile',
   };
   mkdirSync(dirname(join(baseDirectory, file)), { recursive: true });
   writeFileSync(join(baseDirectory, file), JSON.stringify(fixture));

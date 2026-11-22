@@ -122,8 +122,7 @@ export async function recordMobileSmokeProjects(
         actualKey.variablesHash !== entry.variablesHash ||
         fixture.documentHash !== entry.documentHash ||
         fixture.variablesHash !== entry.variablesHash ||
-        fixture.operationName !== entry.operationName ||
-        fixture.upstream !== UPSTREAM
+        fixture.operationName !== entry.operationName
       )
         throw new Error('Original recording identity differs');
     }
