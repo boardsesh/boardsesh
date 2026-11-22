@@ -38,6 +38,7 @@ vi.mock('@/app/lib/auth/server-auth', () => ({
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
+const { getLocale } = await import('@/app/lib/i18n/get-locale');
 const GymPage = (await import('../page')).default;
 
 function mergedGym(canonicalSlug: string): Gym {
@@ -70,9 +71,16 @@ async function redirectTargetFor(
 
 beforeEach(() => {
   executeAuthenticatedGraphQL.mockReset();
+  vi.mocked(getLocale).mockResolvedValue('en-US');
 });
 
 describe('merged-gym 308 redirect', () => {
+  it('preserves the locale when a crawler follows a merged listing', async () => {
+    vi.mocked(getLocale).mockResolvedValue('fr');
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: mergedGym('canonical-fr') });
+    await expect(redirectTargetFor('old-fr', {})).resolves.toBe('/fr/gym/canonical-fr');
+  });
+
   it('keeps a printed poster attributable after the gym is merged into another listing', async () => {
     // #4379's headline acceptance criterion. The poster is laminated and on a
     // wall; the gym it names gets merged a year later. Before this change the

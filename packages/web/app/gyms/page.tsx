@@ -12,8 +12,8 @@ import { generateGymDirectoryMetadata, renderGymDirectory, type DirectoryRoutePr
  * drift — and #4381's sitemap gets four static paths instead of a regex it has
  * to keep in sync.
  */
-export async function generateMetadata(): Promise<Metadata> {
-  return generateGymDirectoryMetadata('all');
+export async function generateMetadata(props: DirectoryRouteProps): Promise<Metadata> {
+  return generateGymDirectoryMetadata('all', await props.searchParams);
 }
 
 export default async function GymsDirectoryPage(props: DirectoryRouteProps) {

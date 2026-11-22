@@ -1,19 +1,32 @@
+import { gymDirectoryIndexingEnabled } from '../gym-directory-indexing';
+import { FACET_BASE_PATHS } from '@/app/gyms/directory-facets';
 import type { SitemapItem } from './entries';
 
-/**
- * Declared-empty shard. The route exists and returns a valid `<urlset>` so
- * #4381 only has to fill this builder.
- *
- * It cannot carry URLs yet for two reasons:
- *   1. There is no public-gyms enumeration query — `searchGyms` and `myGyms`
- *      are both input-driven, so nothing can list the directory.
- *   2. The gym-discovery epic (#4372) gates the gyms shard behind draining the
- *      duplicate queue: indexing a directory with live duplicates is an SEO
- *      own-goal, and indexed duplicates outlive their merges in Google's cache.
- *
- * Until then, gym pages stay reachable through crawlable links from kiosk and
- * board pages.
- */
-export function buildGymEntries(): SitemapItem[] {
-  return [];
+/** Publish directory routes and eligible canonical venues in one rollout. */
+export async function buildGymEntries(): Promise<SitemapItem[]> {
+  if (!gymDirectoryIndexingEnabled()) return [];
+
+  // Load the transport only when enabled; a disabled rollout makes no request.
+  const { fetchGymSitemapRows } = await import('./gym-query');
+  const gyms = await fetchGymSitemapRows();
+  const entries: SitemapItem[] = Object.values(FACET_BASE_PATHS).map((path) => ({
+    path,
+    changeFrequency: 'weekly',
+    priority: 0.7,
+  }));
+  const slugs = new Set<string>();
+  for (const gym of gyms) {
+    const updatedAt = new Date(gym.updatedAt);
+    if (!gym.slug.trim() || Number.isNaN(updatedAt.getTime()) || slugs.has(gym.slug)) {
+      throw new Error('Invalid or duplicate gym sitemap row');
+    }
+    slugs.add(gym.slug);
+    entries.push({
+      path: `/gym/${encodeURIComponent(gym.slug)}`,
+      lastModified: updatedAt,
+      changeFrequency: 'weekly',
+      priority: 0.6,
+    });
+  }
+  return entries;
 }

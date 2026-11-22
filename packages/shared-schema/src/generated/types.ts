@@ -4341,6 +4341,13 @@ export type GymOwnershipUserSummary = {
   userId: Scalars['ID']['output'];
 };
 
+/** A public canonical venue URL and its last content update, without private gym fields. */
+export type GymSitemapEntry = {
+  __typename?: 'GymSitemapEntry';
+  slug: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
 /**
  * A gym owner's activity snapshot for the current window and the window
  * immediately before it (same length), for week-over-week deltas. Every
@@ -8403,6 +8410,8 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Only the registered app's public name; never the workout title, notes or blocks. */
   publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
+  /** Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded. */
+  publicGymSitemap: Array<GymSitemapEntry>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
   /**
@@ -10407,6 +10416,8 @@ export type SearchGymsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Only gyms with valid geographic coordinates. Opt-in; excludes personal walls without a location. */
+  requireLocation?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers. */
   requireSlug?: InputMaybe<Scalars['Boolean']['input']>;
   /** Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board. */
@@ -14091,6 +14102,7 @@ export type ResolversTypes = ResolversObject<{
   GymOwnershipLookupResult: ResolverTypeWrapper<GymOwnershipLookupResult>;
   GymOwnershipSummary: ResolverTypeWrapper<GymOwnershipSummary>;
   GymOwnershipUserSummary: ResolverTypeWrapper<GymOwnershipUserSummary>;
+  GymSitemapEntry: ResolverTypeWrapper<GymSitemapEntry>;
   GymStats: ResolverTypeWrapper<GymStats>;
   GymStatsInput: GymStatsInput;
   GymStatsPeriod: GymStatsPeriod;
@@ -14697,6 +14709,7 @@ export type ResolversParentTypes = ResolversObject<{
   GymOwnershipLookupResult: GymOwnershipLookupResult;
   GymOwnershipSummary: GymOwnershipSummary;
   GymOwnershipUserSummary: GymOwnershipUserSummary;
+  GymSitemapEntry: GymSitemapEntry;
   GymStats: GymStats;
   GymStatsInput: GymStatsInput;
   GymStatsWindow: GymStatsWindow;
@@ -17217,6 +17230,15 @@ export type GymOwnershipUserSummaryResolvers<
   email?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymSitemapEntryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymSitemapEntry'] = ResolversParentTypes['GymSitemapEntry'],
+> = ResolversObject<{
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -19886,6 +19908,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryPublicAppWorkoutLaunchArgs, 'id'>
   >;
+  publicGymSitemap?: Resolver<Array<ResolversTypes['GymSitemapEntry']>, ParentType, ContextType>;
   publicProfile?: Resolver<
     Maybe<ResolversTypes['PublicUserProfile']>,
     ParentType,
@@ -22277,6 +22300,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymOwnershipLookupResult?: GymOwnershipLookupResultResolvers<ContextType>;
   GymOwnershipSummary?: GymOwnershipSummaryResolvers<ContextType>;
   GymOwnershipUserSummary?: GymOwnershipUserSummaryResolvers<ContextType>;
+  GymSitemapEntry?: GymSitemapEntryResolvers<ContextType>;
   GymStats?: GymStatsResolvers<ContextType>;
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;

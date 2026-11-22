@@ -752,6 +752,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     Search public gyms.
     """
     searchGyms(input: SearchGymsInput!): GymConnection!
+    "Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded."
+    publicGymSitemap: [GymSitemapEntry!]!
     "City/town suggestions; query must contain 3–80 characters. At most five results."
     searchPlaces(query: String!): [PlaceSuggestion!]!
 

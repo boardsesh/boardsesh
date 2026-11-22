@@ -81,7 +81,7 @@ vi.mock('../playlist-query', () => ({
  * index's side once it awaits — the cast is the price of faking that through a
  * sync signature.
  */
-const pureBuilder = (real: () => SitemapItem[]): SitemapItem[] => {
+const pureBuilder = (real: () => SitemapItem[] | Promise<SitemapItem[]>): SitemapItem[] | Promise<SitemapItem[]> => {
   if (pureBuilders.hang) {
     return forever<SitemapItem[]>() as unknown as SitemapItem[];
   }

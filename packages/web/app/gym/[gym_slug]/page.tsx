@@ -1,6 +1,7 @@
 import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
+import { localeHref } from '@/app/lib/i18n/locale-href';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -266,7 +267,8 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // A public gym advertises its family card, which draws the gym's own photo when
   // it has one. A private gym is only ever seen by an editor previewing it, and
   // the backend card answers 404 for it, so it keeps the generic site card.
-  const shareCard = gym.isPublic ? await buildGymShareCard(gym, gym_slug, locale, t) : {};
+  const canonicalSlug = gym.slug || gym_slug;
+  const shareCard = gym.isPublic ? await buildGymShareCard(gym, canonicalSlug, locale, t) : {};
 
   // A gym that isn't a public venue — a private listing, or a climber's personal
   // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO
@@ -285,7 +287,7 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   return createPageMetadata({
     title,
     description,
-    path: `/gym/${gym_slug}`,
+    path: `/gym/${encodeURIComponent(canonicalSlug)}`,
     locale,
     ...shareCard,
   });
@@ -319,11 +321,13 @@ export default async function GymPage(props: GymRouteProps) {
   // The slug is percent-encoded now that a query rides behind it: a `#` in one
   // would open a fragment and swallow the params, the same case `gymQrUrl`
   // already guards when it builds the printed URL.
+  const locale = await getLocale();
   if (gym.slug && gym.slug !== gym_slug) {
-    permanentRedirect(`/gym/${encodeURIComponent(gym.slug)}${gymRedirectAttributionQuery(searchParams)}`);
+    permanentRedirect(
+      `${localeHref(`/gym/${encodeURIComponent(gym.slug)}`, locale)}${gymRedirectAttributionQuery(searchParams)}`,
+    );
   }
 
-  const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
   const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),

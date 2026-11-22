@@ -201,6 +201,8 @@ describe('gym page share card', () => {
     const metadata = await metadataFor('old-twin', {});
 
     expect(ogImages(metadata)[0].url).toMatch(CARD_URL('survivor'));
+    expect(metadata.alternates?.canonical).toBe('/gym/survivor');
+    expect(metadata.alternates?.languages).toMatchObject({ fr: '/fr/gym/survivor' });
   });
 
   it('keeps the generic card for a private gym, which the backend card refuses', async () => {

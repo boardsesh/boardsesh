@@ -29,6 +29,8 @@ import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
+import { gymLocationFilter } from './gym-discovery-filters';
+import { publicGymSitemap } from './gym-sitemap';
 
 // ============================================
 // Helpers
@@ -780,6 +782,7 @@ async function resolveViewableGym(
 }
 
 export const socialGymQueries = {
+  publicGymSitemap,
   gym: async (_: unknown, { gymUuid }: { gymUuid: string }, ctx: ConnectionContext) => {
     validateInput(UUIDSchema, gymUuid, 'gymUuid');
 
@@ -874,6 +877,7 @@ export const socialGymQueries = {
       angles,
       multiBoardTypeOnly,
       requireSlug,
+      requireLocation,
       prioritizeClaimed,
       latitude,
       longitude,
@@ -957,6 +961,7 @@ export const socialGymQueries = {
         // `proximityFilterClause`, so they can never disagree about which gyms
         // are in the result set.
         slugPresentFilter(requireSlug, sql`gyms.slug`),
+        gymLocationFilter(requireLocation, sql`gyms.latitude`, sql`gyms.longitude`),
       ].filter((clause): clause is SQL => clause !== null);
       const proximityFilterClause =
         proximityFilters.length > 0 ? sql` AND ${sql.join(proximityFilters, sql` AND `)}` : sql.empty();
@@ -1026,6 +1031,12 @@ export const socialGymQueries = {
     // below both derive from the same `whereClause`.
     const textSlugPresent = slugPresentFilter(requireSlug, sql`${dbSchema.gyms.slug}`);
     if (textSlugPresent) conditions.push(textSlugPresent);
+    const textLocation = gymLocationFilter(
+      requireLocation,
+      sql`${dbSchema.gyms.latitude}`,
+      sql`${dbSchema.gyms.longitude}`,
+    );
+    if (textLocation) conditions.push(textLocation);
 
     const whereClause = and(...conditions);
 

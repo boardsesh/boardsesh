@@ -891,3 +891,17 @@ export type ReportGymDuplicateMutationVariables = {
 export type ReportGymDuplicateMutationResponse = {
   reportGymDuplicate: ReportGymDuplicateResult;
 };
+
+/** Public canonical venue enumeration, bounded by the backend sitemap budget. */
+export const PUBLIC_GYM_SITEMAP = gql`
+  query PublicGymSitemap {
+    publicGymSitemap {
+      slug
+      updatedAt
+    }
+  }
+`;
+
+export type PublicGymSitemapQueryResponse = {
+  publicGymSitemap: Array<{ slug: string; updatedAt: string }>;
+};
