@@ -130,6 +130,11 @@ that window belong to older native runtimes. The observed SDK58 cohorts have
 zero retry events but only nine download starts in the complete seven-day
 window; this is limited coverage, not proof of reliability.
 
+The [next completed-day check](evidence/offline-write-runtime-triage-2026-11-22.json)
+for 21 November UTC returned four retry events: three recovered and one exhausted
+tick on Android 2.7.0, runtime `1e5c2708a94683a437bc4fecf3a601cd58479914`.
+It does not demonstrate a cause on the SDK58 receiving line or establish tick loss.
+
 Keep #7985 open until matching iPhone evidence and measured receiving-release
 outcomes are recorded. Simulator success, no observed analytics events, or a small
 receiving cohort is insufficient to remove the automatic-download blocker in

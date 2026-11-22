@@ -1,0 +1,56 @@
+{
+  "project_id": 412845,
+  "collected_on": "2026-11-22",
+  "window_utc": {
+    "from": "2026-11-21T00:00:00Z",
+    "to": "2026-11-22T00:00:00Z"
+  },
+  "source_url": "https://us.posthog.com/project/412845/sql",
+  "issue": "https://github.com/boardsesh/boardsesh/issues/7985",
+  "metric_status": "Noncanonical incremental debugging aggregate; do not add grouped people counts.",
+  "interpretation": "Four retry events: three recovered and one exhausted. The exhausted tick was on Android 2.7.0, runtime 1e5c2708a94683a437bc4fecf3a601cd58479914. These events do not establish lost server writes or a demonstrated SDK58 cause.",
+  "limitations": [
+    "Same consent, event-delivery and retry-ladder coverage limits as the 21 November baseline.",
+    "A lack of SDK58 retry events does not qualify the receiving release or provide a save-success denominator."
+  ],
+  "query": "SELECT properties.$os AS os, properties.$app_version AS version, properties.$app_build AS build, properties.ota_runtime_version AS runtime, properties.ota_update_id AS ota, properties.ota_is_embedded AS embedded, properties.tableName AS table_name, properties.operation AS operation, properties.outcome AS outcome, properties.wasOffline AS offline, properties.jsRestartCount AS restarts, count() AS events, uniq(person_id) AS people FROM events WHERE timestamp >= '2026-11-21' AND timestamp < '2026-11-22' AND event = 'Offline Local Write Attempt Failed' AND {filters} GROUP BY os,version,build,runtime,ota,embedded,table_name,operation,outcome,offline,restarts ORDER BY events DESC LIMIT 150",
+  "filters": {
+    "filterTestAccounts": true,
+    "properties": [
+      {
+        "type": "event",
+        "key": "environment",
+        "operator": "exact",
+        "value": "production"
+      },
+      {
+        "type": "event",
+        "key": "$os",
+        "operator": "exact",
+        "value": [
+          "iOS",
+          "iPadOS",
+          "Android"
+        ]
+      },
+      {
+        "type": "hogql",
+        "key": "coalesce(properties.ota_branch, 'production') = 'production'"
+      },
+      {
+        "type": "event",
+        "key": "$app_namespace",
+        "operator": "exact",
+        "value": "com.boardsesh.app"
+      }
+    ]
+  },
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "os|version|build|runtime|ota|embedded|table_name|operation|outcome|offline|restarts|events|people\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|user_favorites|create|recovered|False|0.0|2|1\nAndroid|2.7.0|2001566|1e5c2708a94683a437bc4fecf3a601cd58479914|148ac5c4-4159-dc74-4184-ae7bdc0a4ad6|False|boardsesh_ticks|create|exhausted|False|0.0|1|1\nAndroid|2.7.0|2001566|1e5c2708a94683a437bc4fecf3a601cd58479914|148ac5c4-4159-dc74-4184-ae7bdc0a4ad6|False|session_workouts|create|recovered|False|0.0|1|1"
+      }
+    ]
+  }
+}
