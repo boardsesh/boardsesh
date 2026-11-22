@@ -334,13 +334,8 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
         `exp+boardsesh://expo-development-client/?url=${encodeURIComponent(`http://localhost:${options.metroPort}`)}`,
       );
     }
-    await waitFor(async () => {
-      const response = await fetch(`http://127.0.0.1:${options.metroPort}/json/list`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      const contexts: unknown = await response.json();
-      return Array.isArray(contexts) && contexts.length > 0 ? true : undefined;
-    }, options.timeoutMs);
+    // The durable command can precede JS startup. Its actual receipt is the
+    // readiness signal; a slow inspector endpoint must not abort a cold bundle.
     await phaseReceipt('contention', 'passed');
     const beforePid = readPid();
     if (!/^\d+$/.test(beforePid)) throw new Error('Cannot identify one native process before reload');
