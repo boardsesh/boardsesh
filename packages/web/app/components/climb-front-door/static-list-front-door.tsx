@@ -17,6 +17,7 @@ import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import ClimbListJsonLd from './climb-list-json-ld';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import FrontDoorInstall from './front-door-install';
+import { frontDoorSectionHeadingSx, frontDoorTitleSx } from './front-door-heading-sx';
 
 type StaticListFrontDoorProps = {
   boardDetails: BoardImageDetails;
@@ -51,7 +52,7 @@ const containerSx = {
   '& > *': { maxWidth: 720, minWidth: 0 },
 };
 
-const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mt: 1, mb: 1 };
+const headingSx = { ...frontDoorTitleSx, mt: 1, mb: 1 };
 
 const introSx = { color: 'var(--neutral-500)', m: 0, mb: 3, maxWidth: '68ch' };
 
@@ -190,7 +191,7 @@ export default async function StaticListFrontDoor({
         />
       </ClimbHandoffCta>
 
-      <Typography component="h2" variant="h5" sx={{ mt: 4, mb: 2 }}>
+      <Typography component="h2" variant="h5" sx={{ ...frontDoorSectionHeadingSx, mt: 4, mb: 2 }}>
         {t('list.frontDoor.climbsHeading', { angle })}
       </Typography>
       <StaticClimbList

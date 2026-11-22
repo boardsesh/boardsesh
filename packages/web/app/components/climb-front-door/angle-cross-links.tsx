@@ -7,6 +7,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity } from '@/app/lib/types';
+import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
 
 type AngleCrossLinksProps = {
   boardDetails: BoardRouteIdentity;
@@ -19,8 +20,6 @@ type AngleCrossLinksProps = {
 
 // Matches the section rhythm the other `<h2>` bands use in `climb-front-door`.
 const sectionSx = { mt: 4 };
-
-const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
 
 const listSx = {
   display: 'flex',
@@ -71,7 +70,7 @@ export default async function AngleCrossLinks({
 
   return (
     <Box component="section" sx={sectionSx}>
-      <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+      <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
         {t('frontDoor.angles.heading')}
       </Typography>
       <Box component="ul" sx={listSx}>

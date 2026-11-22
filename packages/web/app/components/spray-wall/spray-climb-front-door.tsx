@@ -18,6 +18,7 @@ import type { SprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.s
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { Climb } from '@/app/lib/types';
+import { frontDoorSectionHeadingSx, frontDoorTitleSx } from '@/app/components/climb-front-door/front-door-heading-sx';
 
 type SprayClimbFrontDoorProps = {
   climb: Climb;
@@ -41,7 +42,7 @@ const setterNotesSx = { whiteSpace: 'pre-line', margin: 0 };
 
 const sectionSx = { mt: 4 };
 
-const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
+const sectionHeadingSx = frontDoorSectionHeadingSx;
 
 /**
  * The server-rendered page for one climb on a spray wall.
@@ -105,7 +106,7 @@ export default async function SprayClimbFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
-      <Typography variant="h1" sx={{ fontSize: '1.75rem', fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 }}>
+      <Typography variant="h1" sx={{ ...frontDoorTitleSx, fontSize: '1.75rem', mb: 1 }}>
         {t('spray.heading', { climbName, grade })}
       </Typography>
 
