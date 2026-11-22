@@ -7,14 +7,35 @@ import type { SharedValue } from 'react-native-reanimated';
 import type { GestureTouchEvent } from 'react-native-gesture-handler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const installed = vi.hoisted(() => ({ callbacks: new Map<string, unknown>(), kind: '' }));
+const installed = vi.hoisted(() => ({
+  callbacks: new Map<string, unknown>(),
+  kind: '',
+  deferred: false,
+  queued: [] as Array<() => void>,
+}));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: { absoluteFill: {} },
 }));
 vi.mock('react-native-reanimated', () => ({
-  useSharedValue: <T,>(initial: T) => ({ value: initial }),
-  runOnJS: <T,>(callback: T) => callback,
+  useSharedValue: <T,>(initial: T) => ({
+    value: initial,
+    get() {
+      return this.value;
+    },
+  }),
+  runOnJS:
+    <Arguments extends unknown[], Result>(callback: (...args: Arguments) => Result) =>
+    (...args: Arguments) => {
+      if (installed.deferred) {
+        installed.queued.push(() => {
+          callback(...args);
+        });
+        return;
+      }
+      return callback(...args);
+    },
+  runOnUI: <T,>(callback: T) => callback,
 }));
 vi.mock('react-native-gesture-handler', () => {
   const builder = (kind: string) => {
@@ -45,6 +66,12 @@ vi.mock('react-native-gesture-handler', () => {
   };
 });
 import { DrawStrokeOverlay } from '../DrawStrokeOverlay';
+import {
+  clearOwnedStroke,
+  type DrawStrokeBinding,
+  type DrawStrokeContext,
+  type DrawStrokeSession,
+} from '../draw-stroke-session';
 import { fallbackRadiusAt, selectedDragIdAt } from '../spray-gesture-math';
 import type { SprayLoupeFeed } from '../spray-loupe-feed';
 
@@ -100,6 +127,9 @@ function loupeFeed(): SprayLoupeFeed {
   };
 }
 type OptIns = {
+  ownedPointerInput?: boolean;
+  strokeBinding?: DrawStrokeBinding;
+  clearCompleted?: boolean;
   closeOnReturn?: boolean;
   declineOnSelection?: number[];
   declineHitHolds?: number[];
@@ -110,17 +140,26 @@ type OptIns = {
 function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = {}) {
   const points = shared<number[]>([]);
   const start = vi.fn();
-  const end = vi.fn();
-  const cancel = vi.fn();
+  const end = vi.fn((_points: number[], session?: DrawStrokeSession) => {
+    if (optIns.clearCompleted && optIns.strokeBinding && session)
+      clearOwnedStroke(points, optIns.strokeBinding.previewIdSV, session.id);
+  });
+  const cancel = vi.fn((session?: DrawStrokeSession) => {
+    if (optIns.clearCompleted && optIns.strokeBinding && session)
+      clearOwnedStroke(points, optIns.strokeBinding.previewIdSV, session.id);
+  });
+  const zoom = shared(2);
   const selection = optIns.declineOnSelection ? shared<number[]>(optIns.declineOnSelection) : undefined;
   const manager = { begin: vi.fn(), activate: vi.fn(), end: vi.fn(), fail: vi.fn() };
   render(
     <DrawStrokeOverlay
       acceptStationaryTaps={acceptStationaryTaps}
+      ownedPointerInput={optIns.ownedPointerInput}
+      strokeBinding={optIns.strokeBinding}
       closeOnReturn={optIns.closeOnReturn}
       pointsSV={points}
       fingerDrawSV={shared(fingerDraw)}
-      scaleSV={shared(2)}
+      scaleSV={zoom}
       translateXSV={shared(10)}
       translateYSV={shared(20)}
       containerWidthSV={shared(100)}
@@ -143,9 +182,13 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = 
       | undefined;
     callback?.(payload, success ?? manager);
   }
-  return { points, start, end, cancel, manager, send, selection };
+  return { points, start, end, cancel, manager, send, selection, zoom };
 }
-beforeEach(() => installed.callbacks.clear());
+beforeEach(() => {
+  installed.callbacks.clear();
+  installed.deferred = false;
+  installed.queued = [];
+});
 describe('Add Draw pointer lifecycle', () => {
   it.each(['stationary tap', 'stationary long press'])('commits a %s without a Pan start event', (kind) => {
     const stroke = mount();
@@ -541,5 +584,96 @@ describe('Pencil surface opt-ins', () => {
     stroke.send('up', upEvent([touch()], [], STYLUS));
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
     expect(stroke.manager.fail).not.toHaveBeenCalled();
+  });
+});
+
+function strokeBinding(): DrawStrokeBinding {
+  return {
+    contextSV: shared<DrawStrokeContext>({
+      epoch: 1,
+      generation: 1,
+      enabled: true,
+      tool: 'add',
+      targetId: 17,
+      brushPt: 2,
+      brushMode: 'add',
+    }),
+    sequenceSV: shared(0),
+    previewIdSV: shared(0),
+    activeIdSV: shared(0),
+  };
+}
+function drainJS() {
+  while (installed.queued.length > 0) installed.queued.shift()?.();
+}
+describe('delayed drawing completion', () => {
+  it('keeps B intact when A finishes on JS after B starts at exactly the same point', () => {
+    const binding = strokeBinding();
+    const stroke = mount(true, true, { strokeBinding: binding, clearCompleted: true });
+    installed.deferred = true;
+    stroke.send('down');
+    stroke.send('move', event([touch(7, 44, 60)]));
+    stroke.send('up', upEvent([touch(7, 48, 60)]));
+    stroke.send('finalize');
+    stroke.send('down');
+    stroke.send('move', event([touch(7, 40, 65)]));
+    const secondPreview = [...stroke.points.value];
+    drainJS();
+    expect(stroke.points.value).toEqual(secondPreview);
+    expect(binding.activeIdSV.value).toBe(2);
+    stroke.send('up', upEvent([touch(7, 40, 70)]));
+    drainJS();
+    expect(stroke.end.mock.calls.map(([points]) => points)).toEqual([
+      [80, 90, 84, 90, 88, 90],
+      [80, 90, 80, 95, 80, 100],
+    ]);
+    expect(stroke.end.mock.calls.map(([, session]) => session?.id)).toEqual([1, 2]);
+    expect(binding.activeIdSV.value).toBe(0);
+  });
+
+  it('does not erase B when A cancellation reaches JS late', () => {
+    const binding = strokeBinding();
+    const stroke = mount(true, true, { strokeBinding: binding, clearCompleted: true });
+    installed.deferred = true;
+    stroke.send('down');
+    stroke.send('cancel');
+    stroke.send('finalize');
+    stroke.send('down');
+    stroke.send('move', event([touch(7, 40, 65)]));
+    const preview = [...stroke.points.value];
+    drainJS();
+    expect(stroke.points.value).toEqual(preview);
+    expect(stroke.cancel).toHaveBeenCalledTimes(1);
+    expect(binding.activeIdSV.value).toBe(2);
+  });
+
+  it('Trace samples only its owned Pencil and snapshots starting zoom and target', () => {
+    const binding = strokeBinding();
+    binding.contextSV.value = { ...binding.contextSV.value, tool: 'trace' };
+    const stroke = mount(false, false, { strokeBinding: binding, ownedPointerInput: true });
+    expect(installed.kind).toBe('manual');
+    stroke.send('down', event([touch()], [touch()], 1));
+    stroke.send('down', event([touch(8, 90, 90)], [touch(), touch(8, 90, 90)]));
+    stroke.send('move', event([touch(8, 85, 85)], [touch(), touch(8, 85, 85)]));
+    stroke.send('move', event([touch(7, 44, 60)], [touch(7, 44, 60), touch(8, 85, 85)]));
+    stroke.send('up', upEvent([touch(7, 48, 60)], [touch(8, 85, 85)]));
+    stroke.zoom.value = 8;
+    binding.contextSV.value = { ...binding.contextSV.value, targetId: 99 };
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith(
+      [80, 90, 84, 90, 88, 90],
+      expect.objectContaining({ id: 1, zoom: 2, targetId: 17, tool: 'trace', isStylus: true }),
+    );
+  });
+
+  it('abandons a live owned stroke when a new editor epoch arrives', () => {
+    const binding = strokeBinding();
+    const stroke = mount(true, true, { strokeBinding: binding });
+    stroke.send('down');
+    binding.contextSV.value = { ...binding.contextSV.value, epoch: 2 };
+    stroke.send('move', event([touch(7, 44, 60)]));
+    stroke.send('up', upEvent());
+    expect(stroke.cancel).toHaveBeenCalledTimes(1);
+    expect(stroke.end).not.toHaveBeenCalled();
+    expect(stroke.points.value).toEqual([]);
   });
 });

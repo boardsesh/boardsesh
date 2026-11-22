@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedProps,
@@ -8,11 +8,12 @@ import Animated, {
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { G, Path } from 'react-native-svg';
+import Svg, { G, Path, type PathProps } from 'react-native-svg';
 import { overlays } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { holdRole, type SprayEditorHold } from './spray-hold-editor-reducer';
-import { holdPathData } from './spray-hold-path';
+import type { SprayEditorHold } from './spray-hold-editor-reducer';
+import { EMPTY_SPRAY_HOLD_PATH_CHUNKS, reconcileSprayHoldPathChunks } from './spray-hold-path-chunks';
+import { useSprayLoupeVisibleHolds } from './spray-loupe-viewport';
 import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -110,24 +111,189 @@ type SprayHoldSvgLayerProps = {
 };
 
 /**
- * Every hold on the wall, in one SVG.
- *
- * Concatenated by ROLE rather than per hold, exactly as `OutlineSvgLayer` does
- * and for the same reason: a wall may carry 1500 holds, and one `<Path>` each
- * would be 1500 native views to mount and diff on a phone. Three roles, two of
- * them doubled for the halo, plus the live Trace stroke is eight nodes however big
- * the wall is; the Corners preview adds seven more only while it is mounted. Each hold's path string is built only when the holds change; a
- * selection only re-joins the buckets, moving the selected hold into the OFF
- * bucket as a ghost while `SelectedHoldOverlay` draws its ring.
- *
- * Coordinates are BOARD px — which on a wall are the photograph's own pixels —
- * mapped to the rendered box by the `viewBox`.
+ * Separate native SVG roots keep live-point invalidation away from committed
+ * rings. Each committed path covers at most 32 holds, so a completed edit does
+ * not send one wall-sized string back through RNSVGPathParser.
  */
-export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
+export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer(props: SprayHoldSvgLayerProps) {
+  if (props.renderWidth <= 0 || props.renderHeight <= 0) return null;
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <SprayCommittedHoldSvgLayer
+        holds={props.holds}
+        showMaybes={props.showMaybes}
+        selectedId={props.selectedId}
+        maybeOpacitySV={props.maybeOpacitySV}
+        scaleSV={props.scaleSV}
+        boardWidth={props.boardWidth}
+        boardHeight={props.boardHeight}
+        renderWidth={props.renderWidth}
+        renderHeight={props.renderHeight}
+      />
+      <SprayLiveHoldSvgLayer
+        draftPointsSV={props.draftPointsSV}
+        polygonSV={props.polygonSV}
+        scaleSV={props.scaleSV}
+        geometryScaleSV={props.geometryScaleSV}
+        boardWidth={props.boardWidth}
+        boardHeight={props.boardHeight}
+        renderWidth={props.renderWidth}
+        renderHeight={props.renderHeight}
+      />
+    </View>
+  );
+});
+
+/** Unchanged strings/styles must not enter native updateProps (which reparses d). */
+const CommittedPath = React.memo(function CommittedPath(props: PathProps) {
+  return <Path {...props} />;
+});
+
+type CommittedProps = Pick<
+  SprayHoldSvgLayerProps,
+  | 'holds'
+  | 'showMaybes'
+  | 'selectedId'
+  | 'maybeOpacitySV'
+  | 'scaleSV'
+  | 'boardWidth'
+  | 'boardHeight'
+  | 'renderWidth'
+  | 'renderHeight'
+>;
+
+const SprayCommittedHoldSvgLayer = React.memo(function SprayCommittedHoldSvgLayer({
   holds,
   showMaybes,
   selectedId,
   maybeOpacitySV,
+  scaleSV,
+  boardWidth,
+  boardHeight,
+  renderWidth,
+  renderHeight,
+}: CommittedProps) {
+  const { brandColors } = useTheme();
+  const zoomStep = useZoomStrokeStep(scaleSV);
+  const visibleHolds = useSprayLoupeVisibleHolds(holds, boardWidth, boardHeight);
+  const committedChunksRef = useRef(EMPTY_SPRAY_HOLD_PATH_CHUNKS);
+  const pathChunks = useMemo(
+    () => reconcileSprayHoldPathChunks(committedChunksRef.current, visibleHolds, selectedId),
+    [visibleHolds, selectedId],
+  );
+  useLayoutEffect(() => {
+    committedChunksRef.current = pathChunks;
+  }, [pathChunks]);
+  const stroke = useMemo(
+    () => ({
+      on: RING.onWidth / zoomStep,
+      onHalo: (RING.onWidth + RING.haloExtra) / zoomStep,
+      maybe: RING.maybeWidth / zoomStep,
+      maybeHalo: (RING.maybeWidth + RING.haloExtra) / zoomStep,
+      off: RING.offWidth / zoomStep,
+      maybeDash: RING.maybeDash.map((points) => points / zoomStep),
+      offDash: RING.offDash.map((points) => points / zoomStep),
+    }),
+    [zoomStep],
+  );
+  const maybeGroupProps = useAnimatedProps(() => ({ opacity: maybeOpacitySV.value }));
+  const chunks = pathChunks.chunks;
+  return (
+    <Svg
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      width={renderWidth}
+      height={renderHeight}
+      viewBox={`0 0 ${boardWidth} ${boardHeight}`}
+    >
+      {chunks.map((chunk) =>
+        chunk.off ? (
+          <CommittedPath
+            key={`off-${chunk.key}`}
+            d={chunk.off}
+            fill="none"
+            stroke={overlays.onScrim}
+            strokeOpacity={RING.offOpacity}
+            strokeWidth={stroke.off}
+            strokeDasharray={stroke.offDash}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null,
+      )}
+      <AnimatedG animatedProps={maybeGroupProps}>
+        {showMaybes
+          ? chunks.map((chunk) =>
+              chunk.maybe ? (
+                <CommittedPath
+                  key={`maybe-halo-${chunk.key}`}
+                  d={chunk.maybe}
+                  fill="none"
+                  stroke={overlays.scrim}
+                  strokeWidth={stroke.maybeHalo}
+                  strokeDasharray={stroke.maybeDash}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null,
+            )
+          : null}
+        {showMaybes
+          ? chunks.map((chunk) =>
+              chunk.maybe ? (
+                <CommittedPath
+                  key={`maybe-line-${chunk.key}`}
+                  d={chunk.maybe}
+                  fill="none"
+                  stroke={brandColors.accent}
+                  strokeWidth={stroke.maybe}
+                  strokeDasharray={stroke.maybeDash}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null,
+            )
+          : null}
+      </AnimatedG>
+      {chunks.map((chunk) =>
+        chunk.on ? (
+          <CommittedPath
+            key={`on-halo-${chunk.key}`}
+            d={chunk.on}
+            fill="none"
+            stroke={overlays.scrim}
+            strokeWidth={stroke.onHalo}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null,
+      )}
+      {chunks.map((chunk) =>
+        chunk.on ? (
+          <CommittedPath
+            key={`on-line-${chunk.key}`}
+            d={chunk.on}
+            fill="none"
+            stroke={overlays.onScrim}
+            strokeWidth={stroke.on}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null,
+      )}
+    </Svg>
+  );
+});
+
+type LiveProps = Pick<
+  SprayHoldSvgLayerProps,
+  | 'draftPointsSV'
+  | 'polygonSV'
+  | 'scaleSV'
+  | 'geometryScaleSV'
+  | 'boardWidth'
+  | 'boardHeight'
+  | 'renderWidth'
+  | 'renderHeight'
+>;
+
+const SprayLiveHoldSvgLayer = React.memo(function SprayLiveHoldSvgLayer({
   draftPointsSV,
   polygonSV,
   scaleSV,
@@ -136,31 +302,10 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
   boardHeight,
   renderWidth,
   renderHeight,
-}: SprayHoldSvgLayerProps) {
+}: LiveProps) {
   const { brandColors } = useTheme();
   const zoomStep = useZoomStrokeStep(scaleSV);
   const geometryZoomStep = useZoomStrokeStep(geometryScaleSV ?? scaleSV);
-
-  // The expensive half — one path string per hold — keyed on the holds alone,
-  // so a selection on a 1500-hold wall only re-joins strings.
-  const holdPaths = useMemo(
-    () => holds.map((hold) => ({ id: hold.id, role: holdRole(hold), path: holdPathData(hold) })),
-    [holds],
-  );
-
-  const buckets = useMemo(() => {
-    const on: string[] = [];
-    const maybe: string[] = [];
-    const off: string[] = [];
-    for (const { id, role, path } of holdPaths) {
-      // The selected hold is a ghost whatever its role: its real ring is the
-      // overlay's, and drawing both would show two rings mid-drag.
-      if (id === selectedId || role === 'off') off.push(path);
-      else if (role === 'on') on.push(path);
-      else maybe.push(path);
-    }
-    return { on: on.join(''), maybe: maybe.join(''), off: off.join('') };
-  }, [holdPaths, selectedId]);
 
   // Arrays and widths memoised on the step, so a render that did not move the
   // zoom hands react-native-svg the same prop identities to diff.
@@ -236,11 +381,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
     return { d: path };
   });
 
-  const maybeGroupProps = useAnimatedProps(() => ({ opacity: maybeOpacitySV.value }));
-
   if (renderWidth <= 0 || renderHeight <= 0) return null;
-
-  const maybePath = showMaybes ? buckets.maybe : '';
 
   return (
     <Svg
@@ -250,48 +391,6 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
       height={renderHeight}
       viewBox={`0 0 ${boardWidth} ${boardHeight}`}
     >
-      <Path
-        d={buckets.off}
-        fill="none"
-        stroke={overlays.onScrim}
-        strokeOpacity={RING.offOpacity}
-        strokeWidth={stroke.off}
-        strokeDasharray={stroke.offDash}
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-      <AnimatedG animatedProps={maybeGroupProps}>
-        <Path
-          d={maybePath}
-          fill="none"
-          stroke={overlays.scrim}
-          strokeWidth={stroke.maybeHalo}
-          strokeDasharray={stroke.maybeDash}
-          vectorEffect="non-scaling-stroke"
-        />
-        <Path
-          d={maybePath}
-          fill="none"
-          stroke={brandColors.accent}
-          strokeWidth={stroke.maybe}
-          strokeDasharray={stroke.maybeDash}
-          vectorEffect="non-scaling-stroke"
-        />
-      </AnimatedG>
-      <Path
-        d={buckets.on}
-        fill="none"
-        stroke={overlays.scrim}
-        strokeWidth={stroke.onHalo}
-        vectorEffect="non-scaling-stroke"
-      />
-      <Path
-        d={buckets.on}
-        fill="none"
-        stroke={overlays.onScrim}
-        strokeWidth={stroke.on}
-        vectorEffect="non-scaling-stroke"
-      />
       <AnimatedPath
         animatedProps={draftProps}
         fill="none"

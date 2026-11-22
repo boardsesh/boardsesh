@@ -176,11 +176,13 @@ describe('buildSprayHoldWritePlan', () => {
     // 1499 stored + one valid addition + one off-wall addition lands exactly ON
     // the cap, because the off-wall one is never written.
     const holds = Array.from({ length: 1499 }, (_, index) => storedHold(index + 1));
-    const state = run(
-      holds,
-      { type: 'ADD_HOLD', geometry: { cx: 10, cy: 10, r: 5, outline: null } },
-      { type: 'ADD_HOLD', geometry: { cx: 200_000, cy: 10, r: 5, outline: null } },
-    );
+    // A legacy recovery may exceed today's reducer admission cap; the writer
+    // still validates the geometry it can actually send.
+    const state = run([
+      ...holds,
+      storedHold(-1, { cx: 10, cy: 10, r: 5, dirty: true }),
+      storedHold(-2, { cx: 200_000, cy: 10, r: 5, dirty: true }),
+    ]);
     const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
     expect(plan.unmappableIds).toEqual([-2]);
     expect(plan.overCap).toBe(false);
@@ -206,7 +208,7 @@ describe('buildSprayHoldWritePlan', () => {
     // re-checks the wall's total after the upsert. A per-batch bound would never
     // catch it, and the climber would get a raw server error.
     const holds = Array.from({ length: 1500 }, (_, index) => storedHold(index + 1));
-    const state = run(holds, { type: 'ADD_HOLD', geometry: { cx: 1, cy: 1, r: 5, outline: null } });
+    const state = run([...holds, storedHold(-1, { cx: 1, cy: 1, r: 5, dirty: true })]);
     const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
     expect(plan.upsert).toHaveLength(1);
     expect(plan.overCap).toBe(true);

@@ -87,6 +87,8 @@ type Session = {
 export type SprayRefineSession = {
   /** Null when nothing is being refined. */
   view: RefineView | null;
+  /** Latest completed brush state, including a stroke React has not painted yet. */
+  getSnapshot: () => RefineView | null;
   /** Open a hold: its outline, or its circle, becomes the area to brush. */
   start: (hold: HoldGeometry & { id: number }) => void;
   /** One stroke, in board px. Kept only when the result is still a storable hold. */
@@ -127,20 +129,22 @@ export function useSprayRefineSession(): SprayRefineSession {
   const brush = useBrushSession();
   const sessionRef = useRef<Session | null>(null);
   const [view, setView] = useState<RefineView | null>(null);
+  const viewRef = useRef<RefineView | null>(null);
+  const getSnapshot = useCallback(() => viewRef.current, []);
 
   const publish = useCallback((session: Session | null) => {
-    setView(
-      session
-        ? {
-            holdId: session.holdId,
-            outlineBoardPx: fromBrushFrame(session.outlineBrushPx, session.frame),
-            strokeCount: session.undo.length,
-            changed: session.netStrokes > 0,
-            holdRadiusBoardPx: session.holdRadius / session.frame.scale,
-            frame: session.frame,
-          }
-        : null,
-    );
+    const nextView = session
+      ? {
+          holdId: session.holdId,
+          outlineBoardPx: fromBrushFrame(session.outlineBrushPx, session.frame),
+          strokeCount: session.undo.length,
+          changed: session.netStrokes > 0,
+          holdRadiusBoardPx: session.holdRadius / session.frame.scale,
+          frame: session.frame,
+        }
+      : null;
+    viewRef.current = nextView;
+    setView(nextView);
   }, []);
 
   const start = useCallback<SprayRefineSession['start']>(
@@ -290,8 +294,8 @@ export function useSprayRefineSession(): SprayRefineSession {
   }, [result, cancel]);
 
   return useMemo(
-    () => ({ view, start, applyStroke, undo, result, finish, cancel }),
-    [view, start, applyStroke, undo, result, finish, cancel],
+    () => ({ view, getSnapshot, start, applyStroke, undo, result, finish, cancel }),
+    [view, getSnapshot, start, applyStroke, undo, result, finish, cancel],
   );
 }
 

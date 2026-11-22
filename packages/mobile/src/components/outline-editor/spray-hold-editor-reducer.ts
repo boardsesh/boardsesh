@@ -27,6 +27,7 @@
  * Nothing here maps to canonical coordinates; that is the write path's job.
  */
 
+import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { mergeHoldGeometry, SPRAY_ON_CUTOFF, type HoldGeometry } from './spray-hold-tools';
 
 /** How many undo steps are kept. Matches the create-climb history limit. */
@@ -114,6 +115,8 @@ export type SprayEditorPresent = {
 };
 
 export type SprayEditorState = SprayEditorPresent & {
+  /** Ephemeral add-mode resize focus; not part of recovery or undo snapshots. */
+  lastAddedId?: number | null;
   /** A cold recovery still holds decisions even though its undo history is empty. */
   recovered?: boolean;
   past: readonly SprayEditorPresent[];
@@ -136,6 +139,7 @@ export type SprayEditorAction =
   | { type: 'SWITCH_OFF'; id: number }
   /** `select` picks the new hold in the same step, so nothing can take its id in between. */
   | { type: 'ADD_HOLD'; geometry: HoldGeometry; select?: boolean }
+  | { type: 'CLEAR_ADD_FOCUS' }
   | { type: 'MOVE_HOLD'; id: number; cx: number; cy: number }
   | { type: 'RESIZE_HOLD'; id: number; r: number }
   | { type: 'SET_OUTLINE'; id: number; geometry: HoldGeometry }
@@ -298,7 +302,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
     case 'RESTORE':
       return { ...action.present, past: [], future: [], recovered: true };
     case 'LOAD': {
-      return { ...state, ...presentFromHolds(action.holds), past: [], future: [], recovered: false };
+      return { ...state, ...presentFromHolds(action.holds), past: [], future: [], recovered: false, lastAddedId: null };
     }
 
     case 'START_OVER': {
@@ -326,7 +330,11 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       return switchOff(state, hold);
     }
 
+    case 'CLEAR_ADD_FOCUS':
+      return state.lastAddedId == null ? state : { ...state, lastAddedId: null };
+
     case 'ADD_HOLD': {
+      if (countEditorHolds(state.holds, state.removedIds.length).on >= MAX_HOLDS_PER_WALL) return state;
       const id = state.nextLocalId;
       const hold: SprayEditorHold = {
         ...action.geometry,
@@ -338,12 +346,15 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
         review: 'accepted',
         dirty: true,
       };
-      return commit(state, {
-        ...snapshotOf(state),
-        holds: { ...state.holds, [id]: hold },
-        nextLocalId: id - 1,
-        ...(action.select ? { selectedId: id } : {}),
-      });
+      return {
+        ...commit(state, {
+          ...snapshotOf(state),
+          holds: { ...state.holds, [id]: hold },
+          nextLocalId: id - 1,
+          ...(action.select ? { selectedId: id } : {}),
+        }),
+        lastAddedId: id,
+      };
     }
 
     case 'MOVE_HOLD': {
@@ -483,6 +494,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       return {
         ...state,
         ...previous,
+        lastAddedId: null,
         past: state.past.slice(0, -1),
         future: capHistory([...state.future, snapshotOf(state)]),
       };
@@ -494,6 +506,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       return {
         ...state,
         ...next,
+        lastAddedId: null,
         past: capHistory([...state.past, snapshotOf(state)]),
         future: state.future.slice(0, -1),
       };

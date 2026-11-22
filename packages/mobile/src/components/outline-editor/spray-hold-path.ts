@@ -10,3 +10,14 @@ export function holdPathData(hold: HoldGeometry): string {
   const placement = { id: 0, cx: hold.cx, cy: hold.cy, r: hold.r };
   return hold.outline ? ringToPathData(radiusRingToBoardPx(hold.outline, placement)) : placementRingPathData(placement);
 }
+
+/** Reducer geometry is immutable; board and active loupe can share its path. */
+const cachedPaths = new WeakMap<HoldGeometry, string>();
+
+export function cachedHoldPathData(hold: HoldGeometry): string {
+  const cached = cachedPaths.get(hold);
+  if (cached !== undefined) return cached;
+  const path = holdPathData(hold);
+  cachedPaths.set(hold, path);
+  return path;
+}

@@ -1843,8 +1843,9 @@ What the editor does with a wall is decided by this document rather than by tast
     within 10 screen pt is a tap and drops a circle at the median radius. Add
     captures raw pointer DOWN and matching UP with a Manual gesture, so a
     stationary tap or long press commits without waiting for Pan movement.
-    Cancellation releases that pointer before handing a pinch back. Trace
-    keeps its existing Pan recognizer. If a
+    Cancellation releases that pointer before handing a pinch back. Spray Trace
+    uses the same owned-pointer recognizer, but refuses short outlines instead
+    of placing a circle. The catalogue editor keeps its Pan recognizer. If a
     second finger lands during a finger stroke, the stroke is dropped and the
     pinch zooms (Trace works the same way); a Pencil stroke still ignores a
     resting palm.
@@ -4803,6 +4804,10 @@ those IDs from the frames and their undo history while retaining other work.
 
 The hold editor locally autosaves completed changes, including additions,
 removals and refined outlines, during initial setup and later maintenance.
+The idle delay is 500 ms; continuous edits start a checkpoint within two
+seconds of the first eligible unsaved change while JavaScript can run. Both
+timers use one serialized writer, so slow storage does not build a queue of
+periodic snapshots. The two-second bound is scheduling, not disk durability.
 These recovery copies belong to the authenticated account, wall UUID and exact
 draft-version ID. App backgrounding and browser visibility changes flush them;
 normal Back waits for a durable copy. The status beside the controls reports
@@ -4815,6 +4820,14 @@ edits. The recovery copy remains available until the climber explicitly confirms
 using the server's saved holds. Successful writes retire only acknowledged work;
 failed saving or publishing keeps recoverable edits. Cold recovery restores the
 current work, while undo history remains scoped to the mounted editing session.
+
+For dense walls, live strokes and committed rings use separate native SVG roots.
+Committed paths are split into stable chunks of at most 32 holds, and unchanged
+geometry keeps its cached path. The inactive magnifier retains no native artwork;
+an active magnifier queries an overscanned local spatial index rather than parsing
+the whole wall again. See [hold-editor stability and device QA](../mobile/spray-editor-stability-7957.md)
+for the stroke ownership, rendering and recovery contracts and the limits of
+automated verification.
 
 ### Hold maintenance and photo reset draft ownership
 

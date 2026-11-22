@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, useState } from 'react';
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -19,7 +19,6 @@ import Animated, {
   useSharedValue,
   withDelay,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from 'expo-router';
@@ -56,6 +55,15 @@ import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { SegmentedControl } from '../SegmentedControl';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
+import { createSprayEditorStore } from './spray-editor-store';
+import { waitForDrawCallbacks } from './draw-input-admission';
+import {
+  clearOwnedStroke,
+  strokeSessionIsCurrent,
+  type DrawStrokeBinding,
+  type DrawStrokeContext,
+  type DrawStrokeSession,
+} from './draw-stroke-session';
 import { PolygonTapOverlay } from './PolygonTapOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SprayHoldsOnlyPreview } from './SprayHoldsOnlyPreview';
@@ -141,7 +149,6 @@ import {
   editorIsDirty,
   holdRole,
   holdsInIdOrder,
-  initialSprayEditorState,
   sprayEditorReducer,
   type SprayEditorAction,
   type SprayEditorHold,
@@ -183,26 +190,12 @@ const CELEBRATION_REDUCED_MS = 450;
 const NO_POINTS: number[] = [];
 const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
 const NO_SELECTION: number[] = [];
-const NO_EDITOR_HOLDS: SprayEditorHold[] = [];
 const NO_READING_ORDER: number[] = [];
 /** A read-only viewer: the scope is still the root, with nothing to answer. */
 const NO_SHORTCUT_COMMANDS: NativeShortcutCommand[] = [];
 
 /** A cancelled Refine stroke needs nothing: the overlay clears its own points. */
 const IGNORE_STROKE_CANCEL = () => {};
-
-/**
- * Clear Refine's stroke preview, but only if it is still the stroke JS just
- * handled. Run on the UI thread, where the draw overlay writes the same value,
- * so the check and the clear cannot be split by the next stroke's touch-down:
- * a quick second dab that has already started keeps its points (a different
- * first sample), and its own end reads them intact.
- */
-function clearStrokeIfStill(pointsSV: SharedValue<number[]>, firstX: number, firstY: number) {
-  'worklet';
-  const points = pointsSV.value;
-  if (points.length >= 2 && points[0] === firstX && points[1] === firstY) pointsSV.value = [];
-}
 
 /** The screen-reader actions the wall always has. See `SprayWallAccessibility`. */
 const WALL_A11Y_ACTIONS: readonly AccessibilityActionInfo[] = [
@@ -479,7 +472,9 @@ function SprayHoldEditorSession({
     return editorTargetCapabilities(target);
   }, [wallUuid, layoutId, versionId, viewerCanEdit]);
 
-  const [tool, setTool] = useState<SprayEditorTool>(initialMode === 'add' ? 'add' : 'edit');
+  const [tool, setToolState] = useState<SprayEditorTool>(initialMode === 'add' ? 'add' : 'edit');
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   /** "Joined 2 holds · Undo" after a heavy action, until it times out or the next edit. */
   const [undoToast, setUndoToast] = useState<SprayUndoToastContent | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -492,7 +487,9 @@ function SprayHoldEditorSession({
    * there the selection has to stay put.
    */
   const [joinCursorId, setJoinCursorId] = useState<number | null>(null);
-  const [state, dispatch] = useReducer(sprayEditorReducer, undefined, () => initialSprayEditorState());
+  const [editorStore] = useState(createSprayEditorStore);
+  const state = useSyncExternalStore(editorStore.subscribe, editorStore.getSnapshot, editorStore.getSnapshot);
+  const dispatch = editorStore.dispatch;
   /** The first seed has run, so "no holds" now means no holds rather than not loaded yet. */
   const [seeded, setSeeded] = useState(false);
   const [revealDone, setRevealDone] = useState(!revealOnMount);
@@ -508,7 +505,8 @@ function SprayHoldEditorSession({
    * until the next add or the next touch on the wall, so a hold that went in
    * the wrong size is fixed without leaving add mode.
    */
-  const [lastAddedId, setLastAddedId] = useState<number | null>(null);
+  const lastAddedId = state.lastAddedId ?? null;
+  const clearAddFocus = useCallback(() => dispatch({ type: 'CLEAR_ADD_FOCUS' }), [dispatch]);
 
   /**
    * Refine's brush: Add or Erase for the visit, and its size in screen points,
@@ -558,6 +556,56 @@ function SprayHoldEditorSession({
   }, [refineBrushPt, refineBrushPtSV]);
 
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
+  const strokeSequenceSV = useSharedValue(0);
+  const draftStrokeIdSV = useSharedValue(0);
+  const refineStrokeIdSV = useSharedValue(0);
+  const drawingIdSV = useSharedValue(0);
+  const strokeEpochRef = useRef(0);
+  const primaryAdmissionRef = useRef(false);
+  const [inputGateRevision, setInputGateRevision] = useState(0);
+  const strokeEpochKeyRef = useRef('');
+  const strokeContextSV = useSharedValue<DrawStrokeContext>({
+    epoch: 0,
+    generation: 0,
+    enabled: false,
+    tool: 'edit',
+    targetId: null,
+    brushPt: 2,
+    brushMode: 'add',
+  });
+  const draftStrokeBinding = useMemo<DrawStrokeBinding>(
+    () => ({
+      contextSV: strokeContextSV,
+      sequenceSV: strokeSequenceSV,
+      previewIdSV: draftStrokeIdSV,
+      activeIdSV: drawingIdSV,
+    }),
+    [strokeContextSV, strokeSequenceSV, draftStrokeIdSV, drawingIdSV],
+  );
+  const refineStrokeBinding = useMemo<DrawStrokeBinding>(
+    () => ({
+      contextSV: strokeContextSV,
+      sequenceSV: strokeSequenceSV,
+      previewIdSV: refineStrokeIdSV,
+      activeIdSV: drawingIdSV,
+    }),
+    [strokeContextSV, strokeSequenceSV, refineStrokeIdSV, drawingIdSV],
+  );
+  const invalidateStrokeEpoch = useCallback(() => {
+    strokeEpochRef.current += 1;
+    strokeContextSV.value = { ...strokeContextSV.get(), epoch: strokeEpochRef.current, enabled: false };
+  }, [strokeContextSV]);
+  const setTool = useCallback(
+    (nextTool: SprayEditorTool) => {
+      if (toolRef.current !== nextTool) {
+        invalidateStrokeEpoch();
+        toolRef.current = nextTool;
+      }
+      setToolState(nextTool);
+    },
+    [invalidateStrokeEpoch],
+  );
+
   /** Refine's live brush stroke, in board px. Its own value, so it is drawn as a brush and not as Trace's line. */
   const refinePointsSV = useSharedValue<number[]>(NO_POINTS);
   const cornersSV = useSharedValue<number[]>(NO_POINTS);
@@ -618,11 +666,21 @@ function SprayHoldEditorSession({
   reduceMotionRef.current = reduceMotion;
 
   /** Sets `committingRef` and tells the host, once per change. */
-  const setHandingOver = useCallback((handingOver: boolean) => {
-    if (committingRef.current === handingOver) return;
-    committingRef.current = handingOver;
-    onHandoverChangeRef.current?.(handingOver);
-  }, []);
+  const setHandingOver = useCallback(
+    (handingOver: boolean) => {
+      if (committingRef.current === handingOver) return;
+      committingRef.current = handingOver;
+      if (handingOver) {
+        canEditRef.current = false;
+        invalidateStrokeEpoch();
+      } else {
+        // An immediate failure may batch busy=true/false back to the same UI state.
+        setInputGateRevision((revision) => revision + 1);
+      }
+      onHandoverChangeRef.current?.(handingOver);
+    },
+    [invalidateStrokeEpoch],
+  );
 
   useEffect(
     () => () => {
@@ -666,8 +724,7 @@ function SprayHoldEditorSession({
 
   // Read by callbacks without being their dependencies, so the gesture handlers
   // and the board's render props keep one identity across edits.
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const stateRef = editorStore;
 
   useEffect(() => {
     if (!wall) return;
@@ -835,19 +892,16 @@ function SprayHoldEditorSession({
     () => (showMaybes ? allEditorHolds : allEditorHolds.filter((hold) => holdRole(hold) !== 'maybe')),
     [allEditorHolds, showMaybes],
   );
-  const visibleHoldsRef = useRef(visibleHolds);
-  visibleHoldsRef.current = visibleHolds;
-  /** The maybes a tap cannot see while they are hidden — see `handleTap`. */
-  const hiddenMaybes = useMemo(
-    () => (showMaybes ? NO_EDITOR_HOLDS : allEditorHolds.filter((hold) => holdRole(hold) === 'maybe')),
-    [allEditorHolds, showMaybes],
-  );
-  const hiddenMaybesRef = useRef(hiddenMaybes);
-  hiddenMaybesRef.current = hiddenMaybes;
 
   const counts = useMemo(() => countEditorHolds(state.holds, state.removedIds.length), [state.holds, state.removedIds]);
-  const countsRef = useRef(counts);
-  countsRef.current = counts;
+  const countsRef = useMemo(
+    () => ({
+      get current() {
+        return editorStore.counts;
+      },
+    }),
+    [editorStore],
+  );
 
   // An open Refine with strokes in it is unsaved work too: they reach the
   // reducer only on Done.
@@ -856,33 +910,48 @@ function SprayHoldEditorSession({
     () => (storageUserId && viewerCanEdit ? { userId: storageUserId, wallUuid, versionId } : null),
     [storageUserId, viewerCanEdit, wallUuid, versionId],
   );
-  const recoveryPresent = useMemo(() => {
-    const present: SprayEditorPresent = {
-      holds: state.holds,
-      removedIds: state.removedIds,
-      selectedId: state.selectedId,
-      nextLocalId: state.nextLocalId,
+  const recoverySnapshotRef = useRef<{
+    state: typeof state;
+    view: typeof refineView;
+    present: SprayEditorPresent;
+    dirty: boolean;
+  } | null>(null);
+  const readRecoverySnapshot = useCallback(() => {
+    const current = editorStore.current;
+    const view = refineRef.current.getSnapshot();
+    const cached = recoverySnapshotRef.current;
+    if (cached?.state === current && cached.view === view) return cached;
+    let present: SprayEditorPresent = {
+      holds: current.holds,
+      removedIds: current.removedIds,
+      selectedId: current.selectedId,
+      nextLocalId: current.nextLocalId,
     };
-    // Refine's completed strokes reach the normal reducer on Done. Recovery
-    // records that same geometry without closing the live brush session.
-    if (!refineView?.changed) return present;
-    const refined = refineRef.current.result();
-    if (!refined?.ok) return present;
-    const refinedState = sprayEditorReducer(
-      { ...present, past: [], future: [] },
-      {
-        type: 'SET_OUTLINE',
-        id: refineView.holdId,
-        geometry: refined.hold,
-      },
-    );
-    return {
-      holds: refinedState.holds,
-      removedIds: refinedState.removedIds,
-      selectedId: refinedState.selectedId,
-      nextLocalId: refinedState.nextLocalId,
+    if (view?.changed) {
+      const refined = refineRef.current.result();
+      if (refined?.ok) {
+        const refinedState = sprayEditorReducer(
+          { ...present, past: [], future: [] },
+          { type: 'SET_OUTLINE', id: view.holdId, geometry: refined.hold },
+        );
+        present = {
+          holds: refinedState.holds,
+          removedIds: refinedState.removedIds,
+          selectedId: refinedState.selectedId,
+          nextLocalId: refinedState.nextLocalId,
+        };
+      }
+    }
+    const snapshot = {
+      state: current,
+      view,
+      present,
+      dirty: editorIsDirty(current, editorStore.counts) || (view?.changed ?? false),
     };
-  }, [state.holds, state.removedIds, state.selectedId, state.nextLocalId, refineView]);
+    recoverySnapshotRef.current = snapshot;
+    return snapshot;
+  }, [editorStore]);
+  const recoverySnapshot = useMemo(readRecoverySnapshot, [state, refineView, readRecoverySnapshot]);
   const restoreLocalDraft = useCallback((present: SprayEditorPresent) => {
     localRestoredRef.current = true;
     dispatch({ type: 'RESTORE', present });
@@ -890,7 +959,8 @@ function SprayHoldEditorSession({
   const holdAutosave = useSprayHoldAutosave({
     identity: draftIdentity,
     baseline: seeded ? seedBaseline : null,
-    present: recoveryPresent,
+    present: recoverySnapshot.present,
+    readLatestPresent: readRecoverySnapshot,
     dirty,
     paused: saveHolds.isPending || celebrating,
     onRestore: restoreLocalDraft,
@@ -993,8 +1063,14 @@ function SprayHoldEditorSession({
     !holdsOnlyPreview;
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
+  useEffect(
+    () => () => {
+      canEditRef.current = false;
+      invalidateStrokeEpoch();
+    },
+    [invalidateStrokeEpoch],
+  );
+
   /** A Refine session is open on a hold: Undo and Redo are about its strokes, and Publish waits. */
   const refineOpen = refineView != null;
   /**
@@ -1005,6 +1081,41 @@ function SprayHoldEditorSession({
   const modePicking = tool === 'refine' ? !refineOpen : (tool === 'trace' || tool === 'join') && selectedHold == null;
   const modePickingRef = useRef(modePicking);
   modePickingRef.current = modePicking;
+  useLayoutEffect(() => {
+    const key = `${tool}:${addShape}:${modePicking}:${tool === 'edit' || tool === 'add' ? null : state.selectedId}:${refineHoldId}:${gestureEpoch}:${layout}:${canEdit}:${storageUserId}:${wallUuid}:${versionId}:${editorStore.generation}`;
+    if (strokeEpochKeyRef.current !== key) {
+      strokeEpochKeyRef.current = key;
+      strokeEpochRef.current += 1;
+    }
+    strokeContextSV.value = {
+      epoch: strokeEpochRef.current,
+      generation: editorStore.generation,
+      enabled: canEdit && !modePicking && !primaryAdmissionRef.current,
+      tool,
+      targetId: tool === 'refine' ? (refineHoldId ?? null) : state.selectedId,
+      brushPt: refineBrushPt,
+      brushMode: refineMode,
+    };
+  }, [
+    inputGateRevision,
+    tool,
+    addShape,
+    modePicking,
+    state.selectedId,
+    refineHoldId,
+    refineView,
+    gestureEpoch,
+    layout,
+    canEdit,
+    refineBrushPt,
+    refineMode,
+    storageUserId,
+    wallUuid,
+    versionId,
+    editorStore,
+    editorStore.generation,
+    strokeContextSV,
+  ]);
 
   // A hover left over from before a tool change must not flash up on the way back.
   useEffect(() => {
@@ -1217,14 +1328,13 @@ function SprayHoldEditorSession({
   /** One hand-added hold, with the cap check every add shares. False when the cap refused it. */
   const addHold = useCallback(
     (geometry: HoldGeometry) => {
-      if (countsRef.current.on >= MAX_HOLDS_PER_WALL) {
+      const before = stateRef.current;
+      const committed = dispatch({ type: 'ADD_HOLD', geometry });
+      if (committed === before) {
         refuseOverCap();
         return false;
       }
       hapticMedium();
-      // The id ADD_HOLD is about to take: add mode keeps a resize handle on it.
-      setLastAddedId(stateRef.current.nextLocalId);
-      dispatch({ type: 'ADD_HOLD', geometry });
       pulseSpotlight('add', geometry);
       recordHint('add');
       return true;
@@ -1239,6 +1349,7 @@ function SprayHoldEditorSession({
    */
   const openRefineSession = useCallback(
     (hold: SprayEditorHold) => {
+      invalidateStrokeEpoch();
       setErrorText(null);
       setRefineNotice(null);
       setUndoToast(null);
@@ -1270,11 +1381,14 @@ function SprayHoldEditorSession({
     setErrorText(t('sprayEditor.errors.needsOnHold'));
   }, [t]);
 
+  const showMaybesRef = useRef(showMaybes);
+  showMaybesRef.current = showMaybes;
   const handleTap = useCallback(
     (boardX: number, boardY: number, zoom: number, isStylus = false) => {
       if (!canEditRef.current) return;
       setErrorText(null);
       const current = stateRef.current;
+      const hitHolds = stateRef.getHitHolds(showMaybesRef.current);
       const fallbackRadius = fallbackRadiusAt(boardScale, zoom);
       // Past the photo's edge (the dark band round a zoomed wall) nothing is
       // picked, switched or added: the tap only puts the picked hold down.
@@ -1283,12 +1397,10 @@ function SprayHoldEditorSession({
       // the maybe rather than finding nothing. Not in a mode's pick step,
       // which only takes ON holds: there a ring the climber can't see is bare
       // wall, not a "switch it on first" warning.
-      const visibleHit = onPhoto ? holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) : null;
+      const visibleHit = onPhoto ? holdAtPoint(hitHolds.visible, boardX, boardY, fallbackRadius) : null;
       const hit =
         visibleHit ??
-        (onPhoto && !modePickingRef.current
-          ? holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius)
-          : null);
+        (onPhoto && !modePickingRef.current ? holdAtPoint(hitHolds.hidden, boardX, boardY, fallbackRadius) : null);
 
       // The Pencil's own rule applies on the iPad layout only.
       const input = tabletRef.current && isStylus ? 'pencil' : 'finger';
@@ -1458,13 +1570,11 @@ function SprayHoldEditorSession({
         refuseOverCap();
         return;
       }
-      const newId = stateRef.current.nextLocalId;
       // The finger can slide past the board's edge before it lifts.
       const centre = clampPointToPhoto(boardX, boardY, photoWidth, photoHeight);
       const geometry = holdFromTap(centre.x, centre.y, medianRadiusRef.current);
       clearPlacementOnRenderRef.current = true;
-      dispatch({ type: 'ADD_HOLD', geometry });
-      dispatch({ type: 'SELECT', id: newId });
+      dispatch({ type: 'ADD_HOLD', geometry, select: true });
       pulseSpotlight('add', geometry);
       recordHint('add');
     },
@@ -1545,19 +1655,24 @@ function SprayHoldEditorSession({
     fadeRefineSizeRing();
   }, [refineBrushPt, refineBrushPtSV, fadeRefineSizeRing]);
 
-  const handleRefineStrokeStart = useCallback(() => {
-    setErrorText(null);
-    setRefineNotice(null);
-  }, []);
+  const handleRefineStrokeStart = useCallback(
+    (stroke?: DrawStrokeSession) => {
+      if (!strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'refine', stateRef.generation) || !canEditRef.current)
+        return;
+      setErrorText(null);
+      setRefineNotice(null);
+    },
+    [stateRef],
+  );
 
-  /** A kept stroke's first sample; the layout effect below clears its preview in the commit that draws the new area. */
-  const pendingRefineClearRef = useRef<readonly [number, number] | null>(null);
+  /** The kept stroke's id; the commit clears only its own preview. */
+  const pendingRefineClearRef = useRef<number | null>(null);
   useLayoutEffect(() => {
     const pending = pendingRefineClearRef.current;
-    if (!pending) return;
+    if (pending === null) return;
     pendingRefineClearRef.current = null;
-    runOnUI(clearStrokeIfStill)(refinePointsSV, pending[0], pending[1]);
-  }, [refineView, refinePointsSV]);
+    runOnUI(clearOwnedStroke)(refinePointsSV, refineStrokeIdSV, pending);
+  }, [refineView, refinePointsSV, refineStrokeIdSV]);
 
   /**
    * One Refine stroke lifted: paint it into the area with the brush size in
@@ -1567,26 +1682,23 @@ function SprayHoldEditorSession({
    * the area is untouched.
    */
   const handleRefineStrokeEnd = useCallback(
-    (strokeBoardPoints: number[]) => {
-      if (strokeBoardPoints.length < 2) return;
-      const firstX = strokeBoardPoints[0];
-      const firstY = strokeBoardPoints[1];
+    (strokeBoardPoints: number[], stroke?: DrawStrokeSession) => {
+      if (!stroke || strokeBoardPoints.length < 2) return;
+      const clearPreview = () => runOnUI(clearOwnedStroke)(refinePointsSV, refineStrokeIdSV, stroke.id);
+      if (!strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'refine', stateRef.generation)) {
+        clearPreview();
+        return;
+      }
       const session = refineRef.current;
       const view = session.view;
-      if (!canEditRef.current || !view) {
-        runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
+      if (!canEditRef.current || !view || view.holdId !== stroke.targetId) {
+        clearPreview();
         return;
       }
       const { floorBoardPx, capBoardPx } = refineBrushLimits(view.holdRadiusBoardPx, view.frame);
-      const radius = refineBrushRadiusAtZoom(
-        refineBrushPtSV.get(),
-        boardScale,
-        refineStrokeZoomSV.get(),
-        floorBoardPx,
-        capBoardPx,
-      );
+      const radius = refineBrushRadiusAtZoom(stroke.brushPt, boardScale, stroke.zoom, floorBoardPx, capBoardPx);
       const liftStartedAt = __DEV__ ? performance.now() : 0;
-      const outcome = session.applyStroke(strokeBoardPoints, radius, refineModeRef.current);
+      const outcome = session.applyStroke(strokeBoardPoints, radius, stroke.brushMode);
       // Device QA reads the real per-lift cost here; Node's numbers are in spray-refine.ts.
       if (__DEV__) {
         console.info(
@@ -1600,7 +1712,7 @@ function SprayHoldEditorSession({
         // The preview stays until the commit that draws the new area, so the
         // stroke does not blink out while JS works (at most a frame between the
         // clear and the new path mounting on Fabric).
-        pendingRefineClearRef.current = [firstX, firstY];
+        pendingRefineClearRef.current = stroke.id;
         if (limitLine) {
           hapticWarning();
           setRefineNotice(limitLine);
@@ -1612,7 +1724,7 @@ function SprayHoldEditorSession({
         }
         return;
       }
-      runOnUI(clearStrokeIfStill)(refinePointsSV, firstX, firstY);
+      clearPreview();
       // A stroke that painted nothing (erasing bare wall, adding inside) is not
       // an error — unless it painted nothing because it was all past the limit.
       if (outcome.reason === 'no-change') {
@@ -1625,7 +1737,7 @@ function SprayHoldEditorSession({
       hapticWarning();
       setErrorText(refineRejectionMessage(outcome.reason, t));
     },
-    [refinePointsSV, refineBrushPtSV, refineStrokeZoomSV, boardScale, t],
+    [refinePointsSV, refineStrokeIdSV, boardScale, t],
   );
 
   const handleCancelTool = useCallback(() => {
@@ -1683,7 +1795,7 @@ function SprayHoldEditorSession({
 
   const handleCornerAdded = useCallback(() => {
     setErrorText(null);
-    setLastAddedId(null);
+    clearAddFocus();
     hapticSelection();
   }, []);
 
@@ -1699,7 +1811,7 @@ function SprayHoldEditorSession({
     if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return false;
     clearCorners();
     draftPointsSV.value = NO_POINTS;
-    setLastAddedId(null);
+    clearAddFocus();
     setTool('edit');
     return true;
   }, [takeAndCloseCorners, clearCorners, cornersSV, draftPointsSV]);
@@ -1710,7 +1822,7 @@ function SprayHoldEditorSession({
     clearCorners();
     // Nothing is picked up while adding, so nothing stays picked up either.
     dispatch({ type: 'SELECT', id: null });
-    setLastAddedId(null);
+    clearAddFocus();
     setTool('add');
   }, [clearCorners, draftPointsSV]);
 
@@ -1791,19 +1903,28 @@ function SprayHoldEditorSession({
 
   const handleAddShapeChange = useCallback(
     (shape: SprayAddShape) => {
+      if (shape === addShape) return;
+      invalidateStrokeEpoch();
       setErrorText(null);
       clearCorners();
       draftPointsSV.value = NO_POINTS;
       pickAddShape(shape);
     },
-    [clearCorners, draftPointsSV, pickAddShape],
+    [addShape, clearCorners, draftPointsSV, pickAddShape, invalidateStrokeEpoch],
   );
 
   /** A Draw stroke in add mode: a new hold round it, or a circle when it was really a tap. */
   const handleAddStrokeEnd = useCallback(
-    (strokeBoardPoints: number[], zoom: number) => {
-      draftPointsSV.value = NO_POINTS;
-      if (!canEditRef.current || strokeBoardPoints.length < 2) return;
+    (strokeBoardPoints: number[], stroke?: DrawStrokeSession) => {
+      if (!stroke) return;
+      runOnUI(clearOwnedStroke)(draftPointsSV, draftStrokeIdSV, stroke.id);
+      if (
+        !strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'add', stateRef.generation) ||
+        !canEditRef.current ||
+        strokeBoardPoints.length < 2
+      )
+        return;
+      const zoom = stroke.zoom;
       const tapSlop = (ADD_TAP_SLOP_PT * boardScale) / Math.max(1, zoom);
       if (strokeExtent(strokeBoardPoints) <= tapSlop) {
         setErrorText(null);
@@ -1819,7 +1940,7 @@ function SprayHoldEditorSession({
       setErrorText(null);
       addHold(drawn.hold);
     },
-    [draftPointsSV, boardScale, addHold, t],
+    [draftPointsSV, draftStrokeIdSV, boardScale, addHold, t],
   );
 
   /** Delete the picked hold — only ever a ghost, so a removal is always two deliberate steps. */
@@ -1842,20 +1963,40 @@ function SprayHoldEditorSession({
     switchHold(selectedHold, true);
   }, [canEdit, selectedHold, switchHold]);
 
-  const handleStrokeStart = useCallback(() => setErrorText(null), []);
+  const handleStrokeStart = useCallback(
+    (stroke?: DrawStrokeSession) => {
+      if (
+        !strokeSessionIsCurrent(stroke, strokeEpochRef.current, toolRef.current, stateRef.generation) ||
+        !canEditRef.current
+      )
+        return;
+      setErrorText(null);
+    },
+    [stateRef],
+  );
   /** A touch on the wall in add mode: the last hold added is done with, so its handle goes. */
-  const handleAddStrokeStart = useCallback(() => {
-    setErrorText(null);
-    setLastAddedId(null);
-  }, []);
-  const handleStrokeCancel = useCallback(() => {
-    draftPointsSV.value = NO_POINTS;
-  }, [draftPointsSV]);
+  const handleAddStrokeStart = useCallback(
+    (stroke?: DrawStrokeSession) => {
+      if (!strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'add', stateRef.generation) || !canEditRef.current)
+        return;
+      setErrorText(null);
+      clearAddFocus();
+    },
+    [stateRef, clearAddFocus],
+  );
+  const handleStrokeCancel = useCallback(
+    (stroke?: DrawStrokeSession) => {
+      if (stroke) runOnUI(clearOwnedStroke)(draftPointsSV, draftStrokeIdSV, stroke.id);
+    },
+    [draftPointsSV, draftStrokeIdSV],
+  );
 
   const handleStrokeEnd = useCallback(
-    (strokeBoardPoints: number[]) => {
-      draftPointsSV.value = NO_POINTS;
-      const targetId = stateRef.current.selectedId;
+    (strokeBoardPoints: number[], stroke?: DrawStrokeSession) => {
+      if (!stroke) return;
+      runOnUI(clearOwnedStroke)(draftPointsSV, draftStrokeIdSV, stroke.id);
+      if (!strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'trace', stateRef.generation)) return;
+      const targetId = stroke.targetId;
       if (!canEditRef.current || targetId == null) return;
       const target = stateRef.current.holds[targetId];
       if (!target) return;
@@ -1876,7 +2017,7 @@ function SprayHoldEditorSession({
       recordHint('edit');
       setTool('edit');
     },
-    [draftPointsSV, editWouldPassCap, t, recordHint],
+    [draftPointsSV, draftStrokeIdSV, editWouldPassCap, t, recordHint],
   );
 
   /**
@@ -1986,9 +2127,17 @@ function SprayHoldEditorSession({
    * the loop is centred inside it.
    */
   const handlePencilStroke = useCallback(
-    (strokeBoardPoints: number[], zoom: number) => {
-      draftPointsSV.value = NO_POINTS;
-      if (!canEditRef.current || toolRef.current !== 'edit' || strokeBoardPoints.length < 2) return;
+    (strokeBoardPoints: number[], stroke?: DrawStrokeSession) => {
+      if (!stroke) return;
+      runOnUI(clearOwnedStroke)(draftPointsSV, draftStrokeIdSV, stroke.id);
+      if (
+        !strokeSessionIsCurrent(stroke, strokeEpochRef.current, 'edit', stateRef.generation) ||
+        !canEditRef.current ||
+        toolRef.current !== 'edit' ||
+        strokeBoardPoints.length < 2
+      )
+        return;
+      const zoom = stroke.zoom;
       const tapSlop = (ADD_TAP_SLOP_PT * boardScale) / Math.max(1, zoom);
       if (strokeExtent(strokeBoardPoints) <= tapSlop) {
         handleTap(strokeBoardPoints[0], strokeBoardPoints[1], zoom, true);
@@ -2002,7 +2151,7 @@ function SprayHoldEditorSession({
       }
       setErrorText(null);
       const current = stateRef.current;
-      const selected = current.selectedId != null ? (current.holds[current.selectedId] ?? null) : null;
+      const selected = stroke.targetId != null ? (current.holds[stroke.targetId] ?? null) : null;
       const target = pencilStrokeTarget(drawn.hold, selected);
       if (target.kind === 'add' || !selected) {
         addHold(drawn.hold);
@@ -2013,7 +2162,7 @@ function SprayHoldEditorSession({
       dispatch({ type: 'SET_OUTLINE', id: target.id, geometry: drawn.hold });
       recordHint('edit');
     },
-    [draftPointsSV, boardScale, handleTap, addHold, editWouldPassCap, recordHint, t],
+    [draftPointsSV, draftStrokeIdSV, boardScale, handleTap, addHold, editWouldPassCap, recordHint, t],
   );
 
   /** iPad: a quick two-finger tap takes back the last wall edit. */
@@ -2154,9 +2303,31 @@ function SprayHoldEditorSession({
       holdsOnlyPreviewRef.current ||
       homography == null ||
       committingRef.current ||
-      refineRef.current.view
+      primaryAdmissionRef.current ||
+      refineRef.current.getSnapshot()
     )
       return;
+    primaryAdmissionRef.current = true;
+    strokeContextSV.value = { ...strokeContextSV.get(), enabled: false };
+    try {
+      await waitForDrawCallbacks();
+    } finally {
+      primaryAdmissionRef.current = false;
+    }
+    // Anything still being drawn at the barrier belongs to a retired input epoch.
+    invalidateStrokeEpoch();
+    if (
+      unmountedRef.current ||
+      !viewerCanEdit ||
+      hostPaused ||
+      !canEditRef.current ||
+      committingRef.current ||
+      refineRef.current.getSnapshot()
+    ) {
+      if (!unmountedRef.current)
+        strokeContextSV.value = { ...strokeContextSV.get(), enabled: canEditRef.current && !modePickingRef.current };
+      return;
+    }
     // Ask before taking stored holds off a live wall that climbs may use. The
     // press owns the screen while the host asks (`committingRef`), so a second
     // press waits, and a declined check leaves every edit where it was.
@@ -2170,7 +2341,10 @@ function SprayHoldEditorSession({
           stillHere: () => !unmountedRef.current,
         })
       : planPrimary();
-    if (!planned) return;
+    if (!planned) {
+      strokeContextSV.value = { ...strokeContextSV.get(), enabled: canEditRef.current && !modePickingRef.current };
+      return;
+    }
     const { plan, holdCount } = planned;
     // Keep the last on-screen edit before a network save can be interrupted.
     setHandingOver(true);
@@ -2503,8 +2677,9 @@ function SprayHoldEditorSession({
       // the nearest point of the wall, never in the dark band beside it.
       const { x: boardX, y: boardY } = clampPointToPhoto(viewCentreX, viewCentreY, photoWidth, photoHeight);
       announceNextRef.current = true;
-      const visibleHit = holdAtPoint(visibleHoldsRef.current, boardX, boardY);
-      const hiddenHit = visibleHit ? null : holdAtPoint(hiddenMaybesRef.current, boardX, boardY);
+      const hitHolds = stateRef.getHitHolds(showMaybesRef.current);
+      const visibleHit = holdAtPoint(hitHolds.visible, boardX, boardY);
+      const hiddenHit = visibleHit ? null : holdAtPoint(hitHolds.hidden, boardX, boardY);
       if (hiddenHit && !toggleHold(hiddenHit)) return;
       const hit = visibleHit ?? hiddenHit;
       if (hit) {
@@ -2517,12 +2692,9 @@ function SprayHoldEditorSession({
         return;
       }
       hapticMedium();
-      // ADD_HOLD takes the next local id; selecting it straight after puts the
-      // new ring under the chip bar and the cursor.
-      const newId = stateRef.current.nextLocalId;
+      // Placement and selection share one reducer transaction.
       const geometry = holdFromTap(boardX, boardY, medianRadiusRef.current);
-      dispatch({ type: 'ADD_HOLD', geometry });
-      dispatch({ type: 'SELECT', id: newId });
+      dispatch({ type: 'ADD_HOLD', geometry, select: true });
       pulseSpotlight('add', geometry);
       recordHint('add');
     },
@@ -3002,6 +3174,7 @@ function SprayHoldEditorSession({
             <DrawStrokeOverlay
               key={gestureEpoch}
               pointsSV={draftPointsSV}
+              strokeBinding={draftStrokeBinding}
               acceptStationaryTaps
               fingerDrawSV={addDrawSV}
               scaleSV={scaleSV}
@@ -3013,7 +3186,7 @@ function SprayHoldEditorSession({
               pinchRef={context.pinchRef}
               startsOnPhotoOnly
               onStrokeStart={handleAddStrokeStart}
-              onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
+              onStrokeEnd={handleAddStrokeEnd}
               onStrokeCancel={handleStrokeCancel}
               loupe={loupeFeed}
               onStylusSeen={tablet ? handlePencilSeen : undefined}
@@ -3032,6 +3205,7 @@ function SprayHoldEditorSession({
           <DrawStrokeOverlay
             key={gestureEpoch}
             pointsSV={refinePointsSV}
+            strokeBinding={refineStrokeBinding}
             acceptStationaryTaps
             closeOnReturn={false}
             fingerDrawSV={fingerDrawSV}
@@ -3057,6 +3231,8 @@ function SprayHoldEditorSession({
           <DrawStrokeOverlay
             key={gestureEpoch}
             pointsSV={draftPointsSV}
+            strokeBinding={draftStrokeBinding}
+            ownedPointerInput
             fingerDrawSV={fingerDrawSV}
             scaleSV={context.scaleSV}
             translateXSV={context.translateXSV}
@@ -3111,12 +3287,15 @@ function SprayHoldEditorSession({
             hoverRadiusSV={tablet ? medianRadiusSV : undefined}
             onStylusSeen={tablet ? handlePencilSeen : undefined}
             onTwoFingerTap={tablet ? handleTwoFingerUndo : undefined}
+            drawingIdSV={drawingIdSV}
+            strokeSequenceSV={strokeSequenceSV}
             stylusAddsElsewhere={pencilSurfaceShown}
             viewCentre={viewCentre}
           >
             {pencilSurfaceShown ? (
               <SprayPencilSurface
                 pointsSV={draftPointsSV}
+                strokeBinding={draftStrokeBinding}
                 selectedHoldSV={selectedHoldSV}
                 hitHoldsSV={hitHoldsSV}
                 scaleSV={context.scaleSV}
@@ -3127,7 +3306,7 @@ function SprayHoldEditorSession({
                 boardScale={boardScale}
                 pinchRef={context.pinchRef}
                 onStrokeStart={handleStrokeStart}
-                onStrokeEnd={(strokeBoardPoints) => handlePencilStroke(strokeBoardPoints, context.scaleSV.value)}
+                onStrokeEnd={handlePencilStroke}
                 onStrokeCancel={handleStrokeCancel}
                 onStylusSeen={handlePencilSeen}
               />
