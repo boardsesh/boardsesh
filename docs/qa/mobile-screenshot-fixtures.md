@@ -1474,6 +1474,11 @@ official recording backend, plus its session/tick vote summaries and workout
 headlines. The four first-page requests cover omitted timezone, UTC,
 America/Los_Angeles and America/New_York. Each genuine response contains 20 feed
 items; this does not provide arbitrary timezone, pagination or mutation coverage.
+The November 22 extension adds the exact Home projects attempts page from
+[recording run 45075291456](https://github.com/boardsesh/boardsesh/actions/runs/45075291456).
+It preserves all 369 previous response and asset files and adds one genuine
+`GetUserAscentsFeed` response for attempts, limit 50, offset 0. Other filters and
+pages still require their own recordings.
 View-story captures use no replay backend; actual native ActivityKit capture is
 a separate dev setup that uses replay only for native thumbnail assets.
 

@@ -109,7 +109,7 @@ export function minimumPublishJobTimeoutMinutes(
 }
 
 export type OtaPublishPlatform = 'ios' | 'android';
-export type PublishFailureKind = 's3-slowdown' | 'http-5xx' | 'permanent' | 'unknown';
+export type PublishFailureKind = 's3-slowdown' | 'http-429' | 'http-5xx' | 'permanent' | 'unknown';
 
 export type TextOutput = {
   write(chunk: string): unknown;
@@ -172,8 +172,10 @@ const CLASSIFIER_WINDOW_CHARS = 4096;
 
 const EXPLICIT_HTTP_5XX =
   /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)5\d{2}\b/i;
+const EXPLICIT_HTTP_429 =
+  /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)429\b/i;
 const EXPLICIT_HTTP_4XX =
-  /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)4\d{2}\b/i;
+  /(?:\bHTTP(?:\/\d(?:\.\d)?)?\s+|\b(?:status|statusCode|status code|response (?:status|code))\s*[:=]?\s*)(?!429\b)4\d{2}\b/i;
 /**
  * The finalize call at the very end of a publish: every asset is already in the
  * object store, and this is the request that records the update against the
@@ -211,6 +213,7 @@ const PERMANENT_BUILD_ERROR = /\b(?:expo export|bundle|build) failed\b|\b(?:Refe
 type FailureEvidence = {
   hasSlowDownCode: boolean;
   hasSlowDownMessage: boolean;
+  hasHttp429: boolean;
   hasHttp5xx: boolean;
   hasFinalizeTimeout: boolean;
   hasNoChangeNotice: boolean;
@@ -221,6 +224,7 @@ function emptyEvidence(): FailureEvidence {
   return {
     hasSlowDownCode: false,
     hasSlowDownMessage: false,
+    hasHttp429: false,
     hasHttp5xx: false,
     hasFinalizeTimeout: false,
     hasNoChangeNotice: false,
@@ -241,6 +245,7 @@ export class PublishFailureEvidenceScanner {
     const searchable = `${this.window}${chunk}`;
     this.evidence.hasSlowDownCode ||= S3_SLOWDOWN_CODE.test(searchable);
     this.evidence.hasSlowDownMessage ||= S3_SLOWDOWN_MESSAGE.test(searchable);
+    this.evidence.hasHttp429 ||= EXPLICIT_HTTP_429.test(searchable);
     this.evidence.hasHttp5xx ||= EXPLICIT_HTTP_5XX.test(searchable);
     this.evidence.hasFinalizeTimeout ||= FINALIZE_GATEWAY_TIMEOUT.test(searchable);
     this.evidence.hasNoChangeNotice ||= NO_CHANGE_NOTICE.test(searchable);
@@ -272,6 +277,7 @@ export class PublishFailureEvidenceScanner {
     // appeared earlier in the same command's mixed output.
     if (this.evidence.hasPermanent) return 'permanent';
     if (this.evidence.hasSlowDownCode && this.evidence.hasSlowDownMessage) return 's3-slowdown';
+    if (this.evidence.hasHttp429) return 'http-429';
     if (this.evidence.hasHttp5xx) return 'http-5xx';
     return 'unknown';
   }
@@ -327,15 +333,16 @@ function platformLabel(platform: OtaPublishPlatform): string {
 
 function failureDescription(kind: PublishFailureKind): string {
   if (kind === 's3-slowdown') return 'S3 SlowDown';
+  if (kind === 'http-429') return 'HTTP 429 Too Many Requests';
   if (kind === 'http-5xx') return 'HTTP 5xx';
   if (kind === 'permanent') return 'permanent error evidence';
   return 'no retryable error evidence';
 }
 
 /**
- * Run one platform's self-hosted publish with four total attempts. Only exact
- * S3 SlowDown XML or an explicit HTTP 5xx is retryable. Output is streamed once
- * as it arrives; notices contain classification metadata only.
+ * Run one platform's self-hosted publish through the bounded backoff ladder.
+ * Only exact S3 SlowDown XML or an explicit HTTP 429/5xx is retryable. Output is
+ * streamed once as it arrives; notices contain classification metadata only.
  */
 export async function publishSelfHostedPlatformWithRetry(
   invocation: PublishRetryInvocation,
@@ -433,7 +440,7 @@ export async function publishSelfHostedPlatformWithRetry(
     }
 
     const failureKind = scanner.classify();
-    const retryable = failureKind === 's3-slowdown' || failureKind === 'http-5xx';
+    const retryable = failureKind === 's3-slowdown' || failureKind === 'http-429' || failureKind === 'http-5xx';
     if (!retryable || attempt === SELF_HOSTED_PUBLISH_MAX_ATTEMPTS) {
       const exhausted = retryable ? ' after exhausting the retry budget' : '';
       stderr.write(
