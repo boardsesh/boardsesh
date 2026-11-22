@@ -6,7 +6,6 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statS
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import WebSocket from 'ws';
 import { adbPath, resolveAndroidHome } from './lib/android-sdk';
 import { acquireSimulatorLease } from './lib/ios-simulator-lease';
 
@@ -149,46 +148,6 @@ export async function waitForQaReceipt(
   }, timeoutMs);
 }
 
-export async function reloadMetroRuntime(metroPort: number): Promise<void> {
-  await new Promise<void>((done, reject) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${metroPort}/message`, {
-      origin: `http://localhost:${metroPort}`,
-    });
-    const timeout = setTimeout(() => finish(new Error('Metro reload socket timed out')), 10_000);
-    let settled = false;
-    function finish(error?: Error) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      socket.terminate();
-      if (error) reject(error);
-      else done();
-    }
-    socket.on('error', finish);
-    socket.on('open', () =>
-      socket.send(JSON.stringify({ version: 2, id: 'qa-peers', target: 'server', method: 'getpeers' })),
-    );
-    socket.on('message', (body) => {
-      try {
-        const bytes = Array.isArray(body)
-          ? Buffer.concat(body)
-          : body instanceof ArrayBuffer
-            ? Buffer.from(body)
-            : body;
-        const message = JSON.parse(bytes.toString('utf8')) as { id?: string; result?: Record<string, unknown> };
-        if (message.id !== 'qa-peers') return;
-        if (!message.result || Object.keys(message.result).length !== 1) {
-          finish(new Error('Metro must have exactly one connected app before reload'));
-          return;
-        }
-        socket.send(JSON.stringify({ version: 2, method: 'reload' }), (error) => finish(error ?? undefined));
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-  });
-}
-
 export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
   mkdirSync(options.outputDir, { recursive: true });
   const runId = randomUUID();
@@ -211,12 +170,15 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
   };
   const receiptPath = join(options.outputDir, `${runId}-receipts.jsonl`);
   let activePhase: Phase | undefined;
+  let reloadRuntimeId: string | undefined;
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/command') {
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       response.end(
         JSON.stringify(
-          activePhase ? { runId, phase: activePhase, rows: options.rows, receiptPort: options.controlPort } : null,
+          activePhase
+            ? { runId, phase: activePhase, rows: options.rows, receiptPort: options.controlPort, reloadRuntimeId }
+            : null,
         ),
       );
       return;
@@ -260,6 +222,7 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     waitForQaReceipt(receipts, phase, status, options.timeoutMs, () => {
       summary.stage = phase;
       activePhase = phase;
+      if (phase !== 'prepare-reload') reloadRuntimeId = undefined;
     });
   try {
     summary.stage = 'installing';
@@ -354,7 +317,8 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     }
     await delay(500);
     summary.backgroundedWithOpenWriter = true;
-    await reloadMetroRuntime(options.metroPort);
+    reloadRuntimeId = holding.runtimeId;
+    summary.reloadRequestedForRuntimeId = reloadRuntimeId;
     await phaseReceipt('prepare-reload', 'reloaded');
     const verified = await phaseReceipt('verify-reload', 'passed');
     const afterPid = readPid();

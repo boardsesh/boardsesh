@@ -21,7 +21,8 @@ The host driver asks for three phases on one dedicated simulator or emulator:
 2. `prepare-reload` commits a baseline tick/outbox pair, then opens a transaction
    containing an interrupted pair. It emits `holding` only after the write lock is
    acquired; the transaction has no timer that could release the lock for the test.
-3. The driver requests a real Metro JavaScript reload. `verify-reload` must find
+3. The driver targets the held runtime UUID with React Native's `DevSettings.reload()`.
+   This replaces the JavaScript runtime using its current Metro bundle. `verify-reload` must find
    the committed pair, reject the interrupted pair, and persist a new write. A
    changed JavaScript runtime identity and unchanged native process identity are
    required. A process restart cannot masquerade as runtime recovery.
@@ -82,8 +83,9 @@ vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache
 bash scripts/ci-offline-write-qa.sh ios SIMULATOR-UDID packages/mobile/.app-cache/Boardsesh.app
 ```
 
-The driver acquires the repository's iOS simulator lease. It refuses ambiguous
-Metro clients before broadcasting reload. Both platforms report bounded failures;
+The driver acquires the repository's iOS simulator lease. Only the runtime UUID
+that reported the held writer can act on the reload command, once per run. The
+replacement runtime ignores that old target and reports recovery. Both platforms report bounded failures;
 review the saved receipts and logs when the command exits nonzero. Fix the
 experiment setup separately from a confirmed database failure.
 

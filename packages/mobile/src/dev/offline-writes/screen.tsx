@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, View, Platform } from 'react-native';
+import { ScrollView, Text, View, Platform, DevSettings } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { openDatabaseAsync } from 'expo-sqlite';
 import * as Application from 'expo-application';
@@ -11,17 +11,18 @@ import {
   favoriteAddKey,
   writeAuthorFollowLocal,
 } from '../../hooks/use-offline-mutations';
-import { parseQaRequest, runQaPhase, type QaReceipt, type QaRequest } from './cases';
-import { startQaCommandPolling } from './control';
+import { parseQaRequest, runQaPhase, type QaReceipt } from './cases';
+import { createQaRuntimeReload, startQaCommandPolling, type QaHostCommand } from './control';
 
 const runtimeId = randomUUID();
 const runs = new Map<string, Promise<void>>();
+const requestRuntimeReload = createQaRuntimeReload(runtimeId, () => DevSettings.reload('Offline write QA'));
 
 /** Test transport is explicitly loopback; synthetic writes never reach the backend. */
 export default function OfflineWriteScreen() {
   const params = useLocalSearchParams<{ runId?: string; phase?: string; rows?: string; receiptPort?: string }>();
   const [result, setResult] = useState('Waiting for an offline-write QA command');
-  const [hostCommand, setHostCommand] = useState<QaRequest>();
+  const [hostCommand, setHostCommand] = useState<QaHostCommand>();
   useEffect(() => {
     const port = process.env.EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT;
     if (port === undefined) return;
@@ -76,6 +77,7 @@ export default function OfflineWriteScreen() {
       setResult(`Invalid QA command: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [runId, phase, rows, receiptPort]);
+  useEffect(() => requestRuntimeReload(hostCommand), [hostCommand]);
 
   return (
     <ScrollView contentContainerStyle={{ padding: 24 }}>

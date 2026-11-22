@@ -1,7 +1,38 @@
 import { parseQaRequest, type QaRequest } from './cases';
 
+export type QaHostCommand = QaRequest & { reloadRuntimeId?: string };
+
+export function parseQaHostCommand(command: Record<string, unknown>, port: number): QaHostCommand {
+  const request = parseQaRequest(command);
+  if (request.receiptPort !== port) throw new Error('QA command receipt port mismatch');
+  if (command.reloadRuntimeId === undefined) return request;
+  if (
+    request.phase !== 'prepare-reload' ||
+    typeof command.reloadRuntimeId !== 'string' ||
+    !/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(command.reloadRuntimeId)
+  )
+    throw new Error('Invalid QA reload target');
+  return { ...request, reloadRuntimeId: command.reloadRuntimeId };
+}
+
+/** Retain this receiver at module scope, so a route remount cannot reload twice. */
+export function createQaRuntimeReload(runtimeId: string, reload: () => void) {
+  const requestedRuns = new Set<string>();
+  return (command: QaHostCommand | undefined): void => {
+    if (
+      command?.phase !== 'prepare-reload' ||
+      command.reloadRuntimeId !== runtimeId ||
+      requestedRuns.has(command.runId)
+    )
+      return;
+    requestedRuns.add(command.runId);
+    // Never await the prepare Promise: it deliberately holds the native writer.
+    reload();
+  };
+}
+
 /** A durable loopback command survives JS startup and reload without OS dialogs. */
-export function startQaCommandPolling(port: number, receive: (request: QaRequest) => void): () => void {
+export function startQaCommandPolling(port: number, receive: (request: QaHostCommand) => void): () => void {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid QA control port');
   let stopped = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -14,9 +45,7 @@ export function startQaCommandPolling(port: number, receive: (request: QaRequest
       if (!response.ok) throw new Error('QA command transport failed');
       const command: unknown = await response.json();
       if (!stopped && command !== null && typeof command === 'object' && !Array.isArray(command)) {
-        const request = parseQaRequest(command as Record<string, unknown>);
-        if (request.receiptPort !== port) throw new Error('QA command receipt port mismatch');
-        receive(request);
+        receive(parseQaHostCommand(command as Record<string, unknown>, port));
       }
     } catch {
       // The host can start after JS or be briefly unavailable during teardown.
