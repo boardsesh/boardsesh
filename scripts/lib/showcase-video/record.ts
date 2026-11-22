@@ -149,19 +149,17 @@ export function showcaseFilterPatterns(catalog: ShowcaseFilterCatalog): Record<s
   };
 }
 
-/**
- * The seven walls the board takes sit on, in `SHOWCASE_BOARD_SLOTS` order
- * (kilter, tension, moonboard, woods, decoy, grasshopper, spray). Each entry
- * matches a board's name or layout name on the signed-in account (see
- * packages/mobile/src/dev/integration/screenshot-board-matching.ts). Prod is the App Store
- * account's walls (the Kilter is Marco's own board, the App Store hero wall;
- * the spray wall's name is a placeholder until the account has the wall the
- * video shows); local is the seeded dev DB's, plus the MoonBoard the recorder
- * adds on first run. A wall that is renamed or unfollowed fails the take with
- * the account's roster in the message.
- */
+/** Production selectors target fixtures in the QA gym, in SHOWCASE_BOARD_SLOTS order. */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Liz's Wall",
+  prod: [
+    'Boardsesh QA Kilter Homewall Full',
+    'Boardsesh QA Tension 2 Mirror',
+    'Boardsesh QA MoonBoard 2024',
+    'Boardsesh QA Woods',
+    'Boardsesh QA Decoy',
+    'Boardsesh QA Grasshopper',
+    'Boardsesh QA Spray',
+  ].join('|'),
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 

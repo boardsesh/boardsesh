@@ -52,6 +52,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { formatBoardDisplayName } from '../packages/shared/board-config/src/board-name';
 import { resolveMediaBinary } from './lib/help-clips';
+import {
+  localShowcaseOrigin,
+  SHOWCASE_PROD_ORIGIN,
+  verifyShowcaseQaBoards,
+  type ShowcaseRosterPage,
+} from './lib/showcase-video/qa-boards';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
@@ -524,7 +530,8 @@ function metroEnv(
 ): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = { ...process.env, ...extra };
   for (const key of ['EXPO_PUBLIC_BACKEND_URL', 'EXPO_PUBLIC_WS_URL', 'EXPO_PUBLIC_WEB_URL']) delete base[key];
-  if (backendUrl) base.EXPO_PUBLIC_BACKEND_URL = backendUrl;
+  base.EXPO_PUBLIC_BACKEND_URL = backendUrl ?? SHOWCASE_PROD_ORIGIN;
+  base.EXPO_PUBLIC_WS_URL = base.EXPO_PUBLIC_BACKEND_URL.replace(/^http/, 'ws') + '/graphql';
   base.SCREENSHOT_USER_EMAIL = credentials.email;
   base.SCREENSHOT_USER_PASSWORD = credentials.password;
   const env = buildScreenshotEnv(screenshotOptions(args, null), base, args.locales[0]);
@@ -1410,6 +1417,8 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   if (primary.platform === 'android') cleanAndroidStatusBar(primary.device.udid);
   const leftover = take.privateSession ? restoredSessionId(window.text) : null;
   if (leftover) {
+    if (context.args.backend === 'prod')
+      return failed(take, [`Unexpected restored session ${leftover}. End it in the app before recording.`]);
     // An earlier run died before its teardown; end that session first, or the
     // Record tab opens in-session and the setup flows tap the wrong things.
     console.warn(`${LOG} [${take.id}] ending session ${leftover} left over from an earlier run...`);
@@ -1762,8 +1771,9 @@ async function backendHealthy(url: string): Promise<boolean> {
 async function ensureLocalBackend(): Promise<string> {
   const reuse = process.env.SHOWCASE_LOCAL_BACKEND_URL;
   if (reuse) {
-    if (!(await backendHealthy(reuse))) throw new Error(`SHOWCASE_LOCAL_BACKEND_URL=${reuse} is not healthy`);
-    return reuse;
+    const origin = localShowcaseOrigin(reuse);
+    if (!(await backendHealthy(origin))) throw new Error(`SHOWCASE_LOCAL_BACKEND_URL=${origin} is not healthy`);
+    return origin;
   }
   console.log(`${LOG} local: vp run db:up...`);
   if (spawnSync('vp', ['run', 'db:up'], { cwd: ROOT_DIR, stdio: 'inherit' }).status !== 0) {
@@ -1954,8 +1964,33 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const credentials = resolveCredentials(args.backend, needsSecondary);
     mkdirSync(LOG_DIR, { recursive: true });
 
+    const selectorsByRole = { primary: args.boards, secondary: args.boards };
     const backendUrl = args.backend === 'local' ? await ensureLocalBackend() : null;
     if (backendUrl) await seedLocal(backendUrl);
+    else {
+      if (args.endSession)
+        throw new Error('Production session cleanup requires verifying the session board. End it in the app.');
+      const selectors = args.boards ?? SHOWCASE_DEFAULT_BOARDS.prod;
+      for (const role of ['primary', 'secondary'] as const) {
+        const account = credentials[role];
+        if (!account) continue;
+        const jwt = await signIn(SHOWCASE_PROD_ORIGIN, account);
+        if (!jwt) throw new Error(`Could not sign in the ${role} production recorder account.`);
+        selectorsByRole[role] = await verifyShowcaseQaBoards(
+          selectors,
+          role === 'primary' ? takes : takes.filter((take) => take.secondary),
+          async (input) => {
+            const result = await graphql<{ myBoards: ShowcaseRosterPage }>(
+              SHOWCASE_PROD_ORIGIN,
+              jwt,
+              'query($input: MyBoardsInput!) { myBoards(input: $input) { boards { uuid name layoutName boardType gymUuid } hasMore totalCount } }',
+              { input },
+            );
+            return result.myBoards;
+          },
+        );
+      }
+    }
 
     const signal = await startSignalServer();
     onCleanup('signal server', () => signal.close());
@@ -1992,7 +2027,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         console.warn(`${LOG} ${keychainProblem}`);
       }
     }
-    const primaryEnv = metroEnv(args, credentials.primary, backendUrl);
+    const primaryEnv = metroEnv({ ...args, boards: selectorsByRole.primary }, credentials.primary, backendUrl);
     const primary =
       args.platform === 'android'
         ? await prepareAndroidPhone(args, primaryMetroPort, primaryEnv, backendUrl, signal)
@@ -2019,7 +2054,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         'secondary',
         patchedRecorderApp(appPath, port, 'secondary'),
         port,
-        metroEnv(args, credentials.secondary, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
+        metroEnv({ ...args, boards: selectorsByRole.secondary }, credentials.secondary, backendUrl, {
+          TMPDIR: SECONDARY_METRO_TMP,
+        }),
         signal,
       );
       const secondaryUdid = secondary.device.udid;

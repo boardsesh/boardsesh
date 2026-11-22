@@ -4,6 +4,32 @@ Video recording remains an integration flow against real application state and l
 
 The simulator transport cannot adopt native connections or persist its transient peripheral identity. Widget actions are delivered through JavaScript because simulator APNs tokens cannot authorize production session commands. Shared sessions, queue changes, timing, teardown, measured anchors and video encoding retain the existing real application paths. These recordings exercise integration behavior; isolated view stories remain the capture path for deterministic stills.
 
+## Production board isolation
+
+Simulated Bluetooth still writes real production presence and history. Production
+recordings therefore use the [Boardsesh QA gym](../qa/prod-qa-gym.md), never a
+climber's real wall. The default Kilter, Tension and MoonBoard selectors are
+`Boardsesh QA Kilter Homewall Full`, `Boardsesh QA Tension 2 Mirror` and
+`Boardsesh QA MoonBoard 2024`. The remaining slots use QA-specific names and
+require fixtures in that same gym before their takes can run.
+
+Before launching a simulator or Metro, the recorder reads the recording
+accounts' complete board rosters. The initial board and every selected take's
+board must resolve unambiguously to the QA gym. Both recording accounts need
+the relevant boards in My Boards (owned or followed). `--boards` overrides pass
+the same checks; a name or matching layout alone cannot authorize a real wall.
+The recorder pins each phone's verified UUIDs and gym membership for runtime
+selection. Missing or moved fixtures stop selection without falling back to a
+personal board. Dedicated QA account credentials remain an operator requirement.
+
+Production config-only takes (Touchstone and So iLL) are blocked until they have
+verified QA-board routing. Select supported takes with `--only`, or use
+`--backend local`. The local backend must be on loopback; setting a production
+URL through `SHOWCASE_LOCAL_BACKEND_URL` is rejected. Production
+`--end-session` is also blocked because an arbitrary session UUID does not
+establish a QA-board target; end a leftover session through its creator's normal
+app controls. `--dry-run` only prints the plan and does not verify live access.
+
 The homepage showcase video is three pieces that share one contract
 (`scripts/lib/showcase-video/contract.ts`):
 
@@ -385,23 +411,24 @@ what every coordinate hits.
 
 ### Walls
 
-Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper and the spray wall are
-seven walls on the App Store account, picked by name (`SHOWCASE_DEFAULT_BOARDS`
-in `record.ts`, slot order in `SHOWCASE_BOARD_SLOTS`; the spray wall is slot 6).
-The account has no Touchstone or So iLL wall,
-so those takes deep-link a board CONFIG (`touchstone/1/1/1/40/list`,
-`soill/1/2/1/40/list`, `SHOWCASE_BOARD_CONFIG_LINKS` in `takes.ts`). The app
-resolves that the way a session join does: it reuses a matching board on the
-account or ADDS one to the account's own boards list. So the first prod run
-adds a Touchstone and a So iLL board to `test@boardsesh.com`; every later run
-reuses them. The take checks the link's `Board Route Handoff` resolved.
+Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper and the spray wall occupy
+seven selector slots (`SHOWCASE_DEFAULT_BOARDS` in `record.ts`, slot order in
+`SHOWCASE_BOARD_SLOTS`; the spray wall is slot 6). Production selectors must
+resolve to boards in the QA gym. Kilter, Tension and MoonBoard fixtures already
+exist; the other families need dedicated fixtures before recording. Each
+recording account must own or follow the selected boards.
+
+Touchstone and So iLL use config-only links in the take registry. Those takes
+are blocked on production because config resolution can reuse or create a board
+without proving that it belongs to the QA gym. No production board is created
+by the recorder's preflight.
 
 The spray wall is filmed twice: held still as `boards-spray`, one of the nine
 board phones, and with two swipes as `spray`, the scene of its own. Its photo is
 fetched, so both takes give the last deep link 8 s to draw before recording
 starts (`primeSettleMs` in `takes.ts`; every other take gets 3 s). The default
-name is `Liz's Wall` (the CPP bootstrap renamed the old Home Spray Wall in place);
-point slot 6 at another wall with `--boards`.
+name is `Boardsesh QA Spray`; slot 6 overrides must still resolve to a fixture
+in the QA gym.
 
 The wall's photo was taken by a friend of the project, who agreed to it
 appearing in the video, the store previews and ads. It is not in the repo: to
@@ -411,7 +438,7 @@ public wall copies the photo into the world-readable media bucket and lists the
 wall.
 
 The wall check reads the board type from the app's own log line, which ends
-with it: `[screenshot] board[6] "Liz's Wall" -> "<name>" (<layout> L..
+with it: `[screenshot] board[6] "<selector>" -> "<name>" (<layout> L..
 S.. @..°, spray)`. A spray wall's name and layout are whatever its owner typed, so
 the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
 

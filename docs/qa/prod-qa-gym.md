@@ -4,6 +4,36 @@
 
 The shared production fixture is [Boardsesh QA gym](https://www.boardsesh.com/gym/boardsesh-qa), UUID `ef8b823e-8d2e-4840-8218-761369f9c059`. This UUID is the firmware startup default. Its three boards use the configurations and serials below. All three BLE identities have been observed on a phone; connection routing, payload handling, and display QA remain to be verified on the device.
 
+## Keep test activity off real walls
+
+Production tests and agent-driven checks must use dedicated QA accounts and
+boards in this gym. This includes browser/API probes, simulator recordings,
+presence reports, shared sessions and tick logging. Simulated Bluetooth can
+still produce real backend history; a private session does not isolate its
+board's history. Never use Marco's Board or another climber's wall as a test
+target just because it has the right layout or is already selected.
+
+Before the first write, resolve the intended board and verify its UUID and
+`gymUuid` against this fixture. A QA-looking name alone is insufficient. The
+account must own or follow the fixture when a flow selects from My Boards;
+use its normal authorized access, without changing gym permissions as a
+workaround. If a fixture or QA account is unavailable, use the local seeded
+backend or stop the live check. Additional board families need their own QA
+fixture before recording them against production.
+
+Read-only production lookup on 2026-11-22 confirmed these identities:
+
+| Board | UUID |
+| --- | --- |
+| [Boardsesh QA Kilter Homewall Full](https://www.boardsesh.com/b/boardsesh-qa-kilter-homewall-full) | `cd558849-aaf1-4e24-bce5-4a6b22129d49` |
+| [Boardsesh QA Tension 2 Mirror](https://www.boardsesh.com/b/boardsesh-qa-tension-2-mirror) | `7fb1595d-406a-430c-93ef-310f2da1cceb` |
+| [Boardsesh QA MoonBoard 2024](https://www.boardsesh.com/b/boardsesh-qa-moonboard-2024) | `803099ab-30ae-45e4-82e3-6bb2744af255` |
+
+Read-only inspection of a real wall is fine. Record the source, sender and
+timestamps when investigating unexpected history, and distinguish confirmed
+events from guesses about the test that created them. Do not delete, reassign
+or backdate existing history without the user's explicit approval.
+
 The gym is public by direct link and has `isListed: false`. Its description identifies it as simulated QA hardware, not a climbing venue. No address, location name, latitude, or longitude is invented. The linked boards remain public and listed individually so maintainers opening the gym link can enumerate them; inherited gym listing keeps them off global discovery and indexing. Listing is about discovery only: a party session on one of these walls still hands every joiner the wall's named `/b/{slug}` path, so the crew lands on the same wall and its history (#7013).
 
 | Fixture | Layout | Size | Hold sets | Angle | Preferred serial |
