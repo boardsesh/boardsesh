@@ -29,6 +29,13 @@
     "setter": {
       "title": "Blocchi tracciati da {{name}}",
       "description": "Blocchi creati da {{name}} su Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} blocco tracciato da {{name}} su {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} blocchi tracciati da {{name}} su {{boards}}",
+      "descriptionSetCount_one": "{{name}} ha tracciato {{climbs}} blocco su {{boards}}.",
+      "descriptionSetCount_other": "{{name}} ha tracciato {{climbs}} blocchi su {{boards}}.",
+      "descriptionSends_one": "{{sends}} ripetizione finora.",
+      "descriptionSends_other": "{{sends}} ripetizioni finora.",
+      "descriptionCta": "Scegline uno e illuminalo sul tuo pannello con Boardsesh.",
       "fallbackTitle": "Profilo del tracciatore",
       "fallbackDescription": "Guarda il profilo e i blocchi del tracciatore su Boardsesh",
       "ogAlt": "Il profilo da tracciatore di {{name}}",

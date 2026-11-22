@@ -29,6 +29,13 @@
     "setter": {
       "title": "{{name}} 设置的线路",
       "description": "{{name}} 在 Boardsesh 上创建的线路",
+      "titleWithClimbs_one": "{{name}} 在 {{boards}} 上设置的 {{climbs}} 条线路",
+      "titleWithClimbs_other": "{{name}} 在 {{boards}} 上设置的 {{climbs}} 条线路",
+      "descriptionSetCount_one": "{{name}} 已在 {{boards}} 上设置 {{climbs}} 条线路。",
+      "descriptionSetCount_other": "{{name}} 已在 {{boards}} 上设置 {{climbs}} 条线路。",
+      "descriptionSends_one": "目前已有 {{sends}} 次完攀。",
+      "descriptionSends_other": "目前已有 {{sends}} 次完攀。",
+      "descriptionCta": "选一条，使用 Boardsesh 在训练板上点亮。",
       "fallbackTitle": "定线员主页",
       "fallbackDescription": "在 Boardsesh 查看定线员主页与线路",
       "ogAlt": "{{name}} 的定线员主页",

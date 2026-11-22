@@ -198,6 +198,29 @@ describe('board slug list metadata', () => {
   });
 });
 
+describe('board slug list search copy', () => {
+  it('names the layout and size in the title and description, like its config-tuple twin', async () => {
+    const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
+    vi.mocked(getBoardImageDetailsForBoard).mockReturnValueOnce({
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1, 20],
+      layout_name: 'Kilter Board Original',
+      size_name: '12 x 14',
+    } as unknown as ReturnType<typeof getBoardImageDetailsForBoard>);
+
+    const metadata = await generateMetadata();
+
+    expect(metadata.title).toEqual({
+      absolute: 'metadata.list.title(boardName=Kilter Board Original 12x14,angle=40) | Boardsesh',
+    });
+    expect(metadata.description).toBe('metadata.list.description(boardName=Kilter Board Original 12x14,angle=40)');
+    // The share preview keeps naming the physical board, not the catalogue config.
+    expect(metadata.openGraph?.title).toBe('metadata.list.ogTitle(name=Backspace,angle=40)');
+  });
+});
+
 function imageUrlOf(metadata: Awaited<ReturnType<typeof generateMetadata>>): string | undefined {
   const images = metadata.openGraph?.images as Array<{ url: string }> | undefined;
   return images?.[0]?.url;

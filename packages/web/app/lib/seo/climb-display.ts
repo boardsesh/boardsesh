@@ -21,3 +21,32 @@ export function climbBoardForSearch(boardType: string, layoutName?: string | nul
       : `${board} ${layoutName}`
     : board;
 }
+
+/**
+ * A board size as a reader names it: "12 x 12 with kickboard" → "12x12".
+ *
+ * Null for MoonBoard, whose every layout ships in one size the catalogue calls
+ * "Standard", a word that tells a reader nothing.
+ */
+function boardSizeForSearch(boardType: string, sizeName?: string | null): string | null {
+  if (boardType === 'moonboard') return null;
+  const trimmed = sizeName?.trim();
+  if (!trimmed) return null;
+  const dimensions = /(\d+)\s*x\s*(\d+)/i.exec(trimmed);
+  return dimensions ? `${dimensions[1]}x${dimensions[2]}` : trimmed;
+}
+
+/**
+ * One board configuration named for a search title, layout then size:
+ * "Kilter Board Original 12x12". Without the size, every Kilter layout and size
+ * at one angle shared a single title.
+ */
+export function boardConfigForSearch(board: {
+  board_name: string;
+  layout_name?: string | null;
+  size_name?: string | null;
+}): string {
+  const layout = climbBoardForSearch(board.board_name, board.layout_name);
+  const size = boardSizeForSearch(board.board_name, board.size_name);
+  return size ? `${layout} ${size}` : layout;
+}

@@ -29,6 +29,13 @@
     "setter": {
       "title": "Blocs ouverts par {{name}}",
       "description": "Blocs ouverts par {{name}} sur Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} bloc ouvert par {{name}} sur {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} blocs ouverts par {{name}} sur {{boards}}",
+      "descriptionSetCount_one": "{{name}} a ouvert {{climbs}} bloc sur {{boards}}.",
+      "descriptionSetCount_other": "{{name}} a ouvert {{climbs}} blocs sur {{boards}}.",
+      "descriptionSends_one": "{{sends}} croix pour l'instant.",
+      "descriptionSends_other": "{{sends}} croix pour l'instant.",
+      "descriptionCta": "Choisis-en un et allume-le sur ta board avec Boardsesh.",
       "fallbackTitle": "Profil d'ouvreur",
       "fallbackDescription": "Profil d'ouvreur et ses blocs sur Boardsesh",
       "ogAlt": "Profil d'ouvreur de {{name}}",

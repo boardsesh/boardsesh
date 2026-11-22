@@ -157,8 +157,7 @@ export default async function ClimbFrontDoor({
   // Woods art has a white ground that glares in dark mode, so it ships a dark sibling. Rather
   // than render the whole composite twice — one WASM + sharp job per theme, per climb — the
   // board photo splits out as static layers the stylesheet picks between, and the holds
-  // render once on top. See buildBoardArtLayers. The JSON-LD below keeps the overlay URL
-  // either way: a crawler has no theme.
+  // render once on top. See buildBoardArtLayers.
   const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, false);
   // The setter's own words about the climb — the one genuinely unique piece of
   // indexable prose on this page. User-written, so it renders verbatim (never
@@ -206,8 +205,9 @@ export default async function ClimbFrontDoor({
           climb={climb}
           climbName={climbName}
           canonicalClimbUrl={canonicalClimbUrl}
-          overlayUrl={overlayUrl}
-          currentAngleStats={currentAngleStats}
+          boardDetails={boardDetails}
+          canonicalAngle={canonicalAngle}
+          angleStats={angleStats}
           description={jsonLdDescription}
         />
       )}

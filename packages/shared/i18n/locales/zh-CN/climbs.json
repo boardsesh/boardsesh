@@ -26,7 +26,7 @@
   "metadata": {
     "list": {
       "title": "{{angle}}° 下的 {{boardName}} 线路",
-      "description": "浏览 {{angle}}° 下的 {{boardName}} 线路",
+      "description": "{{angle}}° 下 {{boardName}} 上完攀次数最多的线路。选一条，使用 Boardsesh 在训练板上点亮。",
       "fallbackTitle": "线路",
       "fallbackDescription": "浏览线路",
       "paginatedTitle": "{{angle}}° 下的 {{boardName}} 线路，第 {{page}} 页",
@@ -36,6 +36,14 @@
     "view": {
       "title": "{{climbName}}，{{angle}}° 下的 {{grade}} {{boardName}} 线路",
       "description": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。已有 {{ascents}} 次完攀，评分 {{quality}}/5。使用 Boardsesh 在训练板上点亮。",
+      "descriptionLead": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。",
+      "descriptionLeadNoSetter": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路。",
+      "descriptionSendsRated_one": "已有 {{ascents}} 次完攀，评分 {{quality}}/5。",
+      "descriptionSendsRated_other": "已有 {{ascents}} 次完攀，评分 {{quality}}/5。",
+      "descriptionSends_one": "已有 {{ascents}} 次完攀。",
+      "descriptionSends_other": "已有 {{ascents}} 次完攀。",
+      "descriptionRated": "评分 {{quality}}/5。",
+      "descriptionCta": "使用 Boardsesh 在训练板上点亮。",
       "imageAlt": "{{climbName}}，{{boardName}} 训练板上的 {{grade}} 线路",
       "fallbackTitle": "线路",
       "fallbackDescription": "查看线路详情与攀爬方法视频",

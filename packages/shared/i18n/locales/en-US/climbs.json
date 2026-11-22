@@ -26,7 +26,7 @@
   "metadata": {
     "list": {
       "title": "{{boardName}} climbs at {{angle}}°",
-      "description": "Browse climbs on {{boardName}} at {{angle}}°",
+      "description": "The most-sent climbs on {{boardName}} at {{angle}}°. Pick one and light it on your board with Boardsesh.",
       "fallbackTitle": "Climbs",
       "fallbackDescription": "Browse climbs",
       "paginatedTitle": "{{boardName}} Climbs at {{angle}}° — Page {{page}}",
@@ -36,6 +36,14 @@
     "view": {
       "title": "{{climbName}}, {{grade}} {{boardName}} climb at {{angle}}°",
       "description": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}. {{ascents}} sends, rated {{quality}} of 5. Light it on your board with Boardsesh.",
+      "descriptionLead": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}.",
+      "descriptionLeadNoSetter": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°.",
+      "descriptionSendsRated_one": "{{ascents}} send, rated {{quality}} of 5.",
+      "descriptionSendsRated_other": "{{ascents}} sends, rated {{quality}} of 5.",
+      "descriptionSends_one": "{{ascents}} send.",
+      "descriptionSends_other": "{{ascents}} sends.",
+      "descriptionRated": "Rated {{quality}} of 5.",
+      "descriptionCta": "Light it on your board with Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
       "fallbackTitle": "Climb",
       "fallbackDescription": "View climb details and beta videos",

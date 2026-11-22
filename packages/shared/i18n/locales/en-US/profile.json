@@ -29,6 +29,13 @@
     "setter": {
       "title": "Climbs set by {{name}}",
       "description": "Climbs created by {{name}} on Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} {{boards}} climb set by {{name}}",
+      "titleWithClimbs_other": "{{climbs}} {{boards}} climbs set by {{name}}",
+      "descriptionSetCount_one": "{{name}} has set {{climbs}} climb on {{boards}}.",
+      "descriptionSetCount_other": "{{name}} has set {{climbs}} climbs on {{boards}}.",
+      "descriptionSends_one": "{{sends}} send so far.",
+      "descriptionSends_other": "{{sends}} sends so far.",
+      "descriptionCta": "Pick one and light it on your board with Boardsesh.",
       "fallbackTitle": "Setter Profile",
       "fallbackDescription": "View setter profile and climbs on Boardsesh",
       "ogAlt": "{{name}}'s setter profile",

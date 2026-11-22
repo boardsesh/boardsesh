@@ -19,6 +19,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { getSetterOgSummary, type SetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
+import { buildSetterSearchCopy, joinDescriptionSentences } from '@/app/lib/seo/search-description';
 import {
   frontDoorPagePath,
   isFrontDoorPageOutOfRange,
@@ -105,12 +106,12 @@ const SETTER_SENDS_HERO_MIN = 10;
 type SetterTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
 
 /**
- * Page one of the setter's climbs, most sent first: the climb the card lights.
- * Null when that read fails, which costs the share copy its climb and nothing else.
+ * One page of the setter's climbs, most sent first. Null when that read fails,
+ * which costs the head its counts and the card its climb, and nothing else.
  */
-async function readSetterFirstPage(username: string): Promise<SetterPageView | null> {
+async function readSetterPageView(username: string, page: number): Promise<SetterPageView | null> {
   try {
-    return await getSetterPageView(username, 1);
+    return await getSetterPageView(username, page);
   } catch {
     return null;
   }
@@ -147,7 +148,7 @@ function buildSetterShareCopy(
     ];
     return {
       ogTitle: t('metadata.setter.ogTitleSends', { name, sends }),
-      ogDescription: sentences.filter(Boolean).join(' '),
+      ogDescription: joinDescriptionSentences(sentences, locale),
     };
   }
 
@@ -164,7 +165,7 @@ function buildSetterShareCopy(
       climbCount === null
         ? t('metadata.setter.title', { name })
         : t('metadata.setter.ogTitleSetCount', { name, count: climbCount, climbs: numberFormat.format(climbCount) }),
-    ogDescription: sentences.filter(Boolean).join(' '),
+    ogDescription: joinDescriptionSentences(sentences, locale),
   };
 }
 
@@ -243,10 +244,22 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     }
 
     const displayName = summary.displayName;
-    // Page one is already read for this request (it is the page body's own
-    // read); a later page skips the climb rather than paying for a second read.
-    const firstPage = page === 1 ? await readSetterFirstPage(username) : null;
+    // This page's view is already read for this request: `setterPageHasCrawlableClimb`
+    // above read it, and the page body reads it again, all one `cache()` entry.
+    // The card's climb comes from page one only; a later page skips it rather
+    // than paying for a second read.
+    const pageView = await readSetterPageView(username, page);
+    const firstPage = page === 1 ? pageView : null;
     const { ogTitle, ogDescription } = buildSetterShareCopy(summary, firstPage, locale, t);
+    // The climb count and boards are the setter's own, the same on every page.
+    const { title, description } = buildSetterSearchCopy({
+      t,
+      locale,
+      name: displayName,
+      climbCount: pageView?.data.climbCount ?? null,
+      boardTypes: pageView?.data.boardTypes ?? [],
+      totalAscents: summary.totalAscents,
+    });
     const topClimb = firstPage?.data.climbs[0];
     // A setter with no visible climb returned above, which is the card's own gate.
     const imageUrl = buildOgFamilyImageUrl(
@@ -269,8 +282,8 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     const linklessPage = !hasCrawlableClimb;
 
     return createBoardContentPageMetadata({
-      title: t('metadata.setter.title', { name: displayName }),
-      description: t('metadata.setter.description', { name: displayName }),
+      title,
+      description,
       path,
       locale,
       robots: robots ?? (linklessPage ? NOINDEX_FOLLOW : undefined),

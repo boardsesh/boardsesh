@@ -29,6 +29,13 @@
     "setter": {
       "title": "Boulder von {{name}}",
       "description": "Boulder von {{name}} auf Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} Boulder von {{name}} auf {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} Boulder von {{name}} auf {{boards}}",
+      "descriptionSetCount_one": "{{name}} hat {{climbs}} Boulder auf {{boards}} geschraubt.",
+      "descriptionSetCount_other": "{{name}} hat {{climbs}} Boulder auf {{boards}} geschraubt.",
+      "descriptionSends_one": "Bisher {{sends}} Begehung.",
+      "descriptionSends_other": "Bisher {{sends}} Begehungen.",
+      "descriptionCta": "Such dir einen aus und beleuchte ihn mit Boardsesh an deinem Board.",
       "fallbackTitle": "Routenbauer*in-Profil",
       "fallbackDescription": "Routenbauer*in-Profil und Boulder auf Boardsesh ansehen",
       "ogAlt": "Routenbauer*in-Profil von {{name}}",

@@ -7,6 +7,7 @@ import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/da
 import { getRedirectStatusCodeFromError, getURLFromRedirectError } from 'next/dist/client/components/redirect';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
+import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 
 /**
  * The climb front door's acceptance suite — the vitest form of #4369's curl
@@ -332,6 +333,30 @@ describe('climb front door server HTML', () => {
     expect(creativeWork.description).toBe(
       'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
     );
+  });
+
+  it("links the JSON-LD author to the setter's page and pictures the climb with its share card", async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve(PARAMS),
+    });
+    const [ogImage] = (metadata.openGraph?.images ?? []) as Array<{ url: string }>;
+
+    expect(creativeWork.author).toEqual({
+      '@type': 'Person',
+      name: 'setter-person',
+      url: 'https://www.boardsesh.com/setter/setter-person',
+    });
+    // The card `og:image` names, not the holds render the page draws.
+    expect(creativeWork.image).toBe(ogImage.url);
+    expect(String(creativeWork.image)).not.toContain('variant=overlay');
+    expect(vi.mocked(buildOgBoardRenderUrl)).toHaveBeenCalledWith(
+      expect.objectContaining({ board_name: 'kilter', layout_id: 1, size_id: 7 }),
+      'p1r12',
+      expect.objectContaining({ angle: 40, name: 'Test Climb', setter: 'setter-person' }),
+    );
+    expect(creativeWork).not.toHaveProperty('aggregateRating');
   });
 
   it('omits the description when the current angle has no quality instead of inventing 0/5', async () => {

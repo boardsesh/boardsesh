@@ -11,8 +11,8 @@ import {
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
-import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
+import { boardConfigForSearch } from '@/app/lib/seo/climb-display';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import {
@@ -102,7 +102,6 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       return await buildSprayWallListMetadata(board, searchParams[WALL_CAPABILITY_PARAM]);
     }
 
-    const boardName = formatBoardDisplayName(board.boardType);
     const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
     if (!parsedParams) {
       return createBoardContentPageMetadata({
@@ -114,6 +113,9 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     }
     const angle = parsedParams.angle;
     const page = parseFrontDoorPage(searchParams.page);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
+    // The same layout-and-size name the config-tuple twin titles itself with.
+    const boardName = boardConfigForSearch(boardDetails);
 
     // A1: canonicalise into the config-tuple tree via the same builder that
     // tree's own `/list` page calls, so one board config emits one canonical.
@@ -125,7 +127,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
     const { path, robots } = resolveListPageIndexation({
-      cleanPath: buildCanonicalClimbListUrl(getBoardImageDetailsForBoard(parsedParams), angle),
+      cleanPath: buildCanonicalClimbListUrl(boardDetails, angle),
       page,
       searchParams: searchParams as unknown as ListPageSearchParams,
       boardIsHidden: board.isUnlisted || !board.isPublic || board.gymIsListed === false,

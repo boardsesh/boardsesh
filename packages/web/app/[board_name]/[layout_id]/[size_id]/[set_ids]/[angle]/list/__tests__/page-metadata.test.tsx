@@ -228,3 +228,26 @@ describe('legacy board list page ?page bounds', () => {
     expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 });
+
+describe('legacy board list search copy', () => {
+  it('names the layout and size in the title and description, not just the board brand', async () => {
+    const metadata = await pageModule.generateMetadata({ params, searchParams: emptySearchParams() });
+
+    // Every Kilter layout, size and set at 40° used to share "Kilter climbs at 40°".
+    expect(metadata.title).toEqual({
+      absolute: 'metadata.list.title(boardName=Kilter Board Original 12x12,angle=40) | Boardsesh',
+    });
+    expect(metadata.description).toBe('metadata.list.description(boardName=Kilter Board Original 12x12,angle=40)');
+  });
+
+  it('keeps the layout and size on a paginated title', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params,
+      searchParams: Promise.resolve({ page: '2' } as never),
+    });
+
+    expect(metadata.title).toEqual({
+      absolute: 'metadata.list.paginatedTitle(boardName=Kilter Board Original 12x12,angle=40,page=2) | Boardsesh',
+    });
+  });
+});

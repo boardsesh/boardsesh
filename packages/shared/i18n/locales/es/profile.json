@@ -29,6 +29,13 @@
     "setter": {
       "title": "Bloques de {{name}}",
       "description": "Bloques creados por {{name}} en Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} bloque de {{name}} en {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} bloques de {{name}} en {{boards}}",
+      "descriptionSetCount_one": "{{name}} ha abierto {{climbs}} bloque en {{boards}}.",
+      "descriptionSetCount_other": "{{name}} ha abierto {{climbs}} bloques en {{boards}}.",
+      "descriptionSends_one": "{{sends}} encadene hasta ahora.",
+      "descriptionSends_other": "{{sends}} encadenes hasta ahora.",
+      "descriptionCta": "Elige uno e ilumínalo en tu plafón con Boardsesh.",
       "fallbackTitle": "Perfil de aperturista",
       "fallbackDescription": "Mira el perfil del aperturista y sus bloques en Boardsesh",
       "ogAlt": "Perfil de aperturista de {{name}}",

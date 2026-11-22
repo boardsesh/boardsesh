@@ -1,0 +1,162 @@
+import type { TFunction } from 'i18next';
+import { boardTypeLabel } from '@boardsesh/board-constants';
+import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
+
+/**
+ * Search-result copy for the climb and setter front doors.
+ *
+ * Each description is a run of whole sentences, every one its own catalogue
+ * key, and a sentence is left out when the number behind it is missing or zero.
+ * Whole sentences rather than fragments so a translator never has to make a
+ * clause agree with a neighbour it cannot see; separate keys rather than one
+ * string per combination, because three optional facts would be eight strings
+ * in every locale.
+ */
+
+/** Chinese runs sentences together; the other catalogue locales separate them with a space. */
+export function joinDescriptionSentences(sentences: readonly (string | null)[], locale: string): string {
+  const separator = locale.startsWith('zh') ? '' : ' ';
+  return sentences.filter((sentence): sentence is string => Boolean(sentence)).join(separator);
+}
+
+/** `board_climb_stats.quality_average` is a 1-5 blend, but only on rows where `quality_normalized` is set. */
+const WORST_QUALITY = 1;
+const BEST_QUALITY = 5;
+
+/**
+ * The angle's quality on the five-star scale, or null when there is no honest one.
+ *
+ * Three conditions, all required:
+ *
+ *  1. `quality_normalized`. Otherwise the value is on Aurora's raw 1-3 scale and
+ *     "rated 2.4 of 5" understates a climb rated 2.4 of 3. About 235k
+ *     JSON-imported Kilter tick rows are still on that scale.
+ *  2. `quality_average` is present and inside [1, 5]. A missing average used to
+ *     print as "rated 0 of 5".
+ *  3. At least one rating behind it. `rating_count` is the blend's own
+ *     denominator, not the ascent total: ascents are not ratings.
+ */
+export function climbQualityRating(
+  stats: Pick<ClimbStatsForAngle, 'quality_normalized' | 'quality_average' | 'rating_count'> | undefined,
+): number | null {
+  if (!stats || !stats.quality_normalized) return null;
+
+  const rating = stats.quality_average === null ? Number.NaN : Number(stats.quality_average);
+  if (!Number.isFinite(rating) || rating < WORST_QUALITY || rating > BEST_QUALITY) return null;
+
+  const ratingCount = Number(stats.rating_count);
+  if (!Number.isFinite(ratingCount) || ratingCount < 1) return null;
+
+  return rating;
+}
+
+type ClimbSearchDescriptionInput = {
+  t: TFunction;
+  locale: string;
+  /** Already through `resolveClimbDisplayName`, the same name the title uses. */
+  climbName: string;
+  /** Already through `climbGradeForSearch`. */
+  grade: string;
+  /** Already through `climbBoardForSearch`. */
+  layoutName: string;
+  angle: number;
+  setter: string | null | undefined;
+  /** Sends at the requested angle. */
+  ascents: number | null | undefined;
+  /** The requested angle's stats row; its quality is stated only when `climbQualityRating` vouches for it. */
+  angleStats: ClimbStatsForAngle | undefined;
+};
+
+/**
+ * The climb page's meta description:
+ * "Foo is V5 (6c) on Kilter Board Original at 40°, set by Bar. 12 sends, rated 4.2 of 5. Light it on your board with Boardsesh."
+ *
+ * The setter clause goes when there is no setter, the sends when there are none,
+ * and the rating when `climbQualityRating` cannot vouch for it.
+ */
+export function buildClimbSearchDescription({
+  t,
+  locale,
+  climbName,
+  grade,
+  layoutName,
+  angle,
+  setter,
+  ascents,
+  angleStats,
+}: ClimbSearchDescriptionInput): string {
+  const setterName = setter?.trim();
+  const sendCount = Math.max(0, Math.trunc(Number(ascents) || 0));
+  const rating = climbQualityRating(angleStats);
+  const sends = new Intl.NumberFormat(locale).format(sendCount);
+  const quality = rating === null ? null : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rating);
+
+  const lead = setterName
+    ? t('metadata.view.descriptionLead', { climbName, grade, layoutName, angle, setter: setterName })
+    : t('metadata.view.descriptionLeadNoSetter', { climbName, grade, layoutName, angle });
+
+  let stats: string | null = null;
+  if (sendCount > 0 && quality !== null) {
+    stats = t('metadata.view.descriptionSendsRated', { count: sendCount, ascents: sends, quality });
+  } else if (sendCount > 0) {
+    stats = t('metadata.view.descriptionSends', { count: sendCount, ascents: sends });
+  } else if (quality !== null) {
+    stats = t('metadata.view.descriptionRated', { quality });
+  }
+
+  return joinDescriptionSentences([lead, stats, t('metadata.view.descriptionCta')], locale);
+}
+
+type SetterSearchCopyInput = {
+  t: TFunction;
+  locale: string;
+  name: string;
+  /** Visible climbs, or null when the setter's page could not be read. */
+  climbCount: number | null;
+  /** Board types the visible climbs are on. */
+  boardTypes: readonly string[];
+  /** Sends across the setter's climbs, from the same summary the share card uses. */
+  totalAscents: number;
+};
+
+/**
+ * The setter page's search title and meta description:
+ * "41 Kilter climbs set by Bar" and
+ * "Bar has set 41 climbs on Kilter. 12,345 sends so far. Pick one and light it on your board with Boardsesh."
+ *
+ * Falls back to the plain "Climbs set by Bar" pair when the page read failed and
+ * there is no count or board to name.
+ */
+export function buildSetterSearchCopy({
+  t,
+  locale,
+  name,
+  climbCount,
+  boardTypes,
+  totalAscents,
+}: SetterSearchCopyInput): { title: string; description: string } {
+  if (!climbCount || boardTypes.length === 0) {
+    return {
+      title: t('metadata.setter.title', { name }),
+      description: t('metadata.setter.description', { name }),
+    };
+  }
+
+  const numberFormat = new Intl.NumberFormat(locale);
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(boardTypes.map(boardTypeLabel));
+  const climbs = numberFormat.format(climbCount);
+
+  return {
+    title: t('metadata.setter.titleWithClimbs', { name, boards, count: climbCount, climbs }),
+    description: joinDescriptionSentences(
+      [
+        t('metadata.setter.descriptionSetCount', { name, boards, count: climbCount, climbs }),
+        totalAscents > 0
+          ? t('metadata.setter.descriptionSends', { count: totalAscents, sends: numberFormat.format(totalAscents) })
+          : null,
+        t('metadata.setter.descriptionCta'),
+      ],
+      locale,
+    ),
+  };
+}

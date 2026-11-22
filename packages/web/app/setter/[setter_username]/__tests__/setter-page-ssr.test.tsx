@@ -496,6 +496,37 @@ describe('the setter front door, as a crawler reads its head', () => {
     );
   });
 
+  it('titles the search result with the climb count and boards, and describes the sends', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
+    ogSummary.value = { displayName: 'Marco', totalAscents: 120, version: 'v1' };
+
+    const metadata = await metadataFor();
+
+    // The mocked `t` prints the key and the name; the wording itself is pinned
+    // against the real catalogs in `search-description.test.ts`.
+    expect(metadata.title).toEqual({ absolute: 'metadata.setter.titleWithClimbs:Marco | Boardsesh' });
+    expect(metadata.description).toBe(
+      'metadata.setter.descriptionSetCount:Marco metadata.setter.descriptionSends metadata.setter.descriptionCta',
+    );
+  });
+
+  it('keeps the counts on a later page, from the page the head already read', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
+    ogSummary.value = { displayName: 'Marco', totalAscents: 120, version: 'v1' };
+
+    const metadata = await metadataFor({ page: '2' });
+
+    expect(metadata.title).toEqual({ absolute: 'metadata.setter.titleWithClimbs:Marco | Boardsesh' });
+  });
+
+  it('leaves the sends out of the description for a setter nobody has sent yet', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Fresh' }]);
+
+    const metadata = await metadataFor();
+
+    expect(metadata.description).toBe('metadata.setter.descriptionSetCount:Marco metadata.setter.descriptionCta');
+  });
+
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {
     // Next already decoded the dynamic segment, so the page's own
     // `decodeURIComponent` was a SECOND decode: `50%` threw an unhandled

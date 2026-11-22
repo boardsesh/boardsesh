@@ -1,6 +1,9 @@
 import React from 'react';
 import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
+import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import type { BoardImageDetails } from '@/app/lib/board-image-details';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
 
@@ -10,59 +13,15 @@ type ClimbCreativeWorkJsonLdProps = {
   climbName: string;
   /** The page's CANONICAL path, not the hand-off path. */
   canonicalClimbUrl: string;
-  /** Board-render overlay path, or null when the climb has no frames. */
-  overlayUrl: string | null;
-  /** Stats for the angle being viewed, or undefined when the row is missing. */
-  currentAngleStats: ClimbStatsForAngle | undefined;
+  /** The board the page draws the climb on, which the share card draws too. */
+  boardDetails: BoardImageDetails;
+  /** The angle the canonical names, and so the angle the share card names. */
+  canonicalAngle: number;
+  /** Every angle's stats, for the grade the share card prints at `canonicalAngle`. */
+  angleStats: ClimbStatsForAngle[];
   /** Already-translated description, or null when the facts to fill it are missing. */
   description: string | null;
 };
-
-/**
- * Rating bounds. `board_climb_stats.quality_average` is the canonical 1-5 blend
- * — but only on rows where `quality_normalized` is true (Aurora reports 1-3).
- */
-const WORST_RATING = 1;
-const BEST_RATING = 5;
-
-/**
- * `aggregateRating`, or nothing at all.
- *
- * Three conditions, all required, and the negative cases are the point:
- *
- *  1. `quality_normalized` — otherwise the value is on Aurora's raw 1-3 scale
- *     and publishing it with `bestRating: 5` understates the climb. ~235k
- *     JSON-imported Kilter tick rows are still on that scale.
- *  2. `quality_average` is present and lands inside [1, 5].
- *  3. The rating count is at least 1, and it is the *blend's own denominator*,
- *     not `ascensionist_count`. Stated precisely, because the loose version
- *     ("never ascents") is not a promise this expression can make: on a climb
- *     whose quality came from Aurora and which has no native ratings yet, the
- *     denominator is `upstream_ascensionist_count` — and that is correct, since
- *     Aurora's average IS taken over the ascents that rated it. What is excluded
- *     is the Boardsesh ascent count, and the upstream ascents of a climb upstream
- *     never rated at all (`upstream_quality_average IS NULL` → 0).
- *
- * A climb that fails any of them ships without a rating. Omitting is free;
- * publishing a wrong one is a manual action.
- */
-function buildAggregateRating(stats: ClimbStatsForAngle | undefined): Record<string, unknown> | null {
-  if (!stats || !stats.quality_normalized) return null;
-
-  const ratingValue = stats.quality_average === null ? Number.NaN : Number(stats.quality_average);
-  if (!Number.isFinite(ratingValue) || ratingValue < WORST_RATING || ratingValue > BEST_RATING) return null;
-
-  const ratingCount = Number(stats.rating_count);
-  if (!Number.isFinite(ratingCount) || ratingCount < 1) return null;
-
-  return {
-    '@type': 'AggregateRating',
-    ratingValue: Math.round(ratingValue * 100) / 100,
-    ratingCount: Math.trunc(ratingCount),
-    bestRating: BEST_RATING,
-    worstRating: WORST_RATING,
-  };
-}
 
 /** ISO-ish timestamp or nothing — an unparseable string is worse than no field. */
 function validDate(value: string | null | undefined): string | null {
@@ -73,20 +32,36 @@ function validDate(value: string | null | undefined): string | null {
 
 /**
  * `CreativeWork` for one climb. A boulder problem is a designed artefact, not a
- * product or a place, and it has an author (the setter), a creation date and —
- * where the data honestly supports it — a rating.
+ * product or a place, and it has an author (the setter) and a creation date.
+ *
+ * No `aggregateRating`, on purpose. Google shows review snippets for a fixed
+ * list of types (Product, Book, Course, SoftwareApplication and a few more) and
+ * CreativeWork is not on it, so the field bought nothing. Worse, its count
+ * blended in Aurora's upstream ratings, and Google's review rules forbid
+ * aggregating ratings collected on another site.
  */
 export default function ClimbCreativeWorkJsonLd({
   climb,
   climbName,
   canonicalClimbUrl,
-  overlayUrl,
-  currentAngleStats,
+  boardDetails,
+  canonicalAngle,
+  angleStats,
   description,
 }: ClimbCreativeWorkJsonLdProps) {
-  const aggregateRating = buildAggregateRating(currentAngleStats);
   const setter = climb.setter_username?.trim();
   const dateCreated = validDate(climb.published_at ?? climb.created_at);
+  // The share card `generateMetadata` puts in `og:image`, built from the same
+  // identity at the same canonical angle: one stable URL per climb, cached for
+  // a year, where the bare holds render changed with every renderer version. A
+  // climb with no frames gets no image, because the card endpoint rejects it.
+  const imageUrl = climb.frames
+    ? buildOgBoardRenderUrl(
+        boardDetails,
+        climb.frames,
+        buildOgClimbCardIdentity(climb, boardDetails.board_name, canonicalAngle, angleStats),
+      )
+    : null;
 
   const data: Record<string, unknown> = {
     '@context': 'https://schema.org',
@@ -99,12 +74,15 @@ export default function ClimbCreativeWorkJsonLd({
     // `front-door-breadcrumb.tsx`, which sits on these very pages.
     url: absoluteUrl(canonicalClimbUrl),
     ...(description ? { description } : {}),
-    // Preserve Railway's absolute image URL; the URL constructor also keeps the
-    // same-origin compatibility path valid in local development and old HTML.
-    ...(overlayUrl ? { image: new URL(overlayUrl, SITE_URL).toString() } : {}),
-    ...(setter ? { author: { '@type': 'Person', name: setter } } : {}),
+    // Keeps the backend's absolute card URL; the URL constructor also resolves
+    // the same-origin fallback path when no backend origin is configured.
+    ...(imageUrl ? { image: new URL(imageUrl, SITE_URL).toString() } : {}),
+    // The setter page the front door's setter link opens, locale-free for the
+    // same reason as `url`, and the same address `SetterJsonLd` names the person by.
+    ...(setter
+      ? { author: { '@type': 'Person', name: setter, url: absoluteUrl(`/setter/${encodeURIComponent(setter)}`) } }
+      : {}),
     ...(dateCreated ? { dateCreated } : {}),
-    ...(aggregateRating ? { aggregateRating } : {}),
   };
 
   return <JsonLd data={data} />;

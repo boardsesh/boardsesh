@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
+import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(),
@@ -382,6 +383,80 @@ describe('board slug climb metadata', () => {
     const canonicalUrl =
       typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
     expect(canonicalUrl).not.toMatch(/^\/(es|fr|de)\//);
+  });
+});
+
+describe('climb search description', () => {
+  const METADATA_PROPS = {
+    searchParams: Promise.resolve({}),
+    params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' }),
+  };
+  const LEAD = 'metadata.view.descriptionLead(climbName=Test Climb,grade=V5,layoutName=Kilter,angle=40,setter=setter)';
+  const CTA = 'metadata.view.descriptionCta';
+
+  function stats(overrides: Partial<ClimbStatsForAngle> = {}): ClimbStatsForAngle {
+    return {
+      angle: 40,
+      ascensionist_count: '12',
+      quality_average: '4.20',
+      difficulty_average: 20,
+      display_difficulty: 20,
+      fa_username: null,
+      fa_at: null,
+      difficulty: 'V5',
+      quality_normalized: true,
+      rating_count: '9',
+      ...overrides,
+    };
+  }
+
+  async function describeClimb(climbOverrides: Record<string, unknown>, angleStats: ClimbStatsForAngle[]) {
+    const { getClimb, getClimbStatsForAllAngles } = await import('@/app/lib/data/queries');
+    vi.mocked(getClimb).mockResolvedValueOnce({
+      uuid: 'test-climb',
+      name: 'Test Climb',
+      difficulty: 'V5',
+      setter_username: 'setter',
+      quality_average: 4,
+      ascensionist_count: 12,
+      frames: 'p1r12,p2r13',
+      ...climbOverrides,
+    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce(angleStats);
+    return (await pageModule.generateMetadata(METADATA_PROPS)).description;
+  }
+
+  it('states the rating only from the viewed angle when it is normalised', async () => {
+    expect(await describeClimb({}, [stats()])).toBe(
+      `${LEAD} metadata.view.descriptionSendsRated(count=12,ascents=12,quality=4.2) ${CTA}`,
+    );
+  });
+
+  it('never rates an unrated climb, even when the climb row carries a quality', async () => {
+    const description = await describeClimb({}, [stats({ quality_average: null, rating_count: '0' })]);
+    expect(description).toBe(`${LEAD} metadata.view.descriptionSends(count=12,ascents=12) ${CTA}`);
+  });
+
+  it('drops a rating still on the 1-3 scale', async () => {
+    const description = await describeClimb({}, [stats({ quality_average: '2.40', quality_normalized: false })]);
+    expect(description).toBe(`${LEAD} metadata.view.descriptionSends(count=12,ascents=12) ${CTA}`);
+  });
+
+  it('takes the rating from the viewed angle, not from another angle', async () => {
+    const description = await describeClimb({}, [stats({ angle: 25 })]);
+    expect(description).not.toContain('quality=');
+  });
+
+  it('drops the sends when there are none', async () => {
+    expect(await describeClimb({ ascensionist_count: 0 }, [])).toBe(`${LEAD} ${CTA}`);
+  });
+
+  it('drops the setter clause rather than crediting "Unknown Setter"', async () => {
+    const description = await describeClimb({ setter_username: '' }, []);
+    expect(description).toBe(
+      `metadata.view.descriptionLeadNoSetter(climbName=Test Climb,grade=V5,layoutName=Kilter,angle=40) metadata.view.descriptionSends(count=12,ascents=12) ${CTA}`,
+    );
+    expect(description).not.toContain('Unknown Setter');
   });
 });
 
