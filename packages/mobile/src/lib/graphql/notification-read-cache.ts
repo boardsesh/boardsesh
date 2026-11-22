@@ -8,14 +8,13 @@ type NotificationGroup = Pick<GroupedNotification, 'type' | 'entityType' | 'enti
 type GroupedNotificationPages = { pages: GroupedNotificationConnection[]; pageParams: unknown[] };
 
 /** Patch a read group without reloading notification history. */
-export function applyNotificationGroupRead(client: QueryClient, notification: NotificationGroup, markedCount: number) {
+export function applyNotificationGroupRead(client: QueryClient, notification: NotificationGroup) {
   client.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
     previous
       ? {
           ...previous,
           pages: previous.pages.map((page) => ({
             ...page,
-            unreadCount: Math.max(0, page.unreadCount - markedCount),
             groups: page.groups.map((group) =>
               group.type === notification.type &&
               (group.entityType ?? null) === (notification.entityType ?? null) &&
@@ -26,8 +25,5 @@ export function applyNotificationGroupRead(client: QueryClient, notification: No
           })),
         }
       : previous,
-  );
-  client.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previous) =>
-    previous === undefined ? previous : Math.max(0, previous - markedCount),
   );
 }

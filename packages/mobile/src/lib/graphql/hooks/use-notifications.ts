@@ -31,11 +31,7 @@ import { useAuthToken } from '../use-auth-token';
 // Neither file can import the other (see that module's note), so the constant
 // lives on its own rather than as a literal in both.
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
-import {
-  applyNotificationGroupRead,
-  GROUPED_NOTIFICATIONS_QUERY_KEY,
-  NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
-} from '../notification-read-cache';
+import { GROUPED_NOTIFICATIONS_QUERY_KEY, NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY } from '../notification-read-cache';
 export { GROUPED_NOTIFICATIONS_QUERY_KEY, NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY } from '../notification-read-cache';
 
 /** Groups per page — matches web's `use-grouped-notifications.ts`. */
@@ -161,7 +157,7 @@ export function useUnreadNotificationCount(): number {
 
 /**
  * Mark one group read. Cache semantics mirror web exactly: flip `isRead` on the
- * matching group across every loaded page, then subtract the count the server
+ * matching uuid across every loaded page, then subtract the count the server
  * actually marked from the unread total (a group can hold several rows).
  */
 export function useMarkGroupAsRead() {
@@ -181,7 +177,23 @@ export function useMarkGroupAsRead() {
       return response.markGroupNotificationsRead;
     },
     onSuccess: (markedCount, notification) => {
-      applyNotificationGroupRead(queryClient, notification, markedCount);
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+        previous
+          ? {
+              ...previous,
+              pages: previous.pages.map((page) => ({
+                ...page,
+                groups: page.groups.map((group) =>
+                  group.uuid === notification.uuid ? { ...group, isRead: true } : group,
+                ),
+              })),
+            }
+          : previous,
+      );
+
+      queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
+        Math.max(0, (previousCount ?? 0) - markedCount),
+      );
     },
   });
 }

@@ -161,7 +161,7 @@ export function useMarkAppBugReportRead(reportId: string) {
       // subtracting markedCount from that snapshot could count the read twice.
       await Promise.allSettled(pendingReads);
       if (!isAuthCredentialGenerationCurrent(context.credentialGeneration)) return;
-      applyNotificationGroupRead(queryClient, { type: 'app_feedback_reply', entityId: reportId }, 0);
+      applyNotificationGroupRead(queryClient, { type: 'app_feedback_reply', entityId: reportId });
       if (markedCount > 0 || pendingReads.length > 0) {
         void queryClient.invalidateQueries({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY, refetchType: 'none' });
         await queryClient.invalidateQueries(
