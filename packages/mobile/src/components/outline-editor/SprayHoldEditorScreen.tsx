@@ -26,6 +26,8 @@ import { useNavigation } from 'expo-router';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { SprayHoldEditorLeaseBoundary } from './SprayHoldEditorLeaseBoundary';
+import { sprayHoldDraftKey } from '../../lib/spray/spray-hold-draft-store';
 import { SprayHoldEditorSessionBoundary } from './SprayHoldEditorSessionBoundary';
 import { useSprayHoldAutosave, type SprayHoldPersistence } from './use-spray-hold-autosave';
 import {
@@ -294,6 +296,8 @@ export type SprayHoldEditorScreenProps = {
    */
   primaryLabel: string;
   initialMode?: 'add';
+  /** The host is publishing or showing a publication failure over this editor. */
+  hostPaused?: boolean;
   showAddLaterHint?: boolean;
   /** Lets the host await durable local recovery before removing this editor. */
   onPersistenceReady?: (persistence: SprayHoldPersistence | null) => void;
@@ -376,7 +380,20 @@ export type SprayHoldEditorScreenProps = {
 export function SprayHoldEditorScreen(props: SprayHoldEditorScreenProps) {
   return (
     <SprayHoldEditorSessionBoundary wallUuid={props.wallUuid} versionId={props.versionId}>
-      {(storageUserId) => <SprayHoldEditorSession {...props} storageUserId={storageUserId} />}
+      {(storageUserId) => (
+        <SprayHoldEditorLeaseBoundary
+          storageKey={
+            storageUserId && props.viewerCanEdit
+              ? sprayHoldDraftKey({ userId: storageUserId, wallUuid: props.wallUuid, versionId: props.versionId })
+              : null
+          }
+          onPersistenceReady={props.onPersistenceReady}
+        >
+          {(onReady) => (
+            <SprayHoldEditorSession {...props} storageUserId={storageUserId} onPersistenceReady={onReady} />
+          )}
+        </SprayHoldEditorLeaseBoundary>
+      )}
     </SprayHoldEditorSessionBoundary>
   );
 }
@@ -391,6 +408,7 @@ function SprayHoldEditorSession({
   revealOnMount = false,
   primaryLabel,
   initialMode,
+  hostPaused = false,
   showAddLaterHint = false,
   onPersistenceReady,
   loadingPhoto,
@@ -433,7 +451,7 @@ function SprayHoldEditorSession({
   const [pencilPalette, setPencilPalette] = useState<{ x: number | null; y: number | null } | null>(null);
 
   const { isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls } =
-    useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
+    useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId, { requireFreshEntry: true });
   // The sharper photo for deep zoom (#5911). Null on walls that have none, which
   // keep the base photo alone.
   const fullResolutionPhoto = useMemo(
@@ -644,6 +662,7 @@ function SprayHoldEditorSession({
   /** What the last seed loaded — where "Start over" goes back to. */
   const seedHoldsRef = useRef<readonly SprayEditorHold[]>([]);
   const localRestoredRef = useRef(false);
+  const [seedBaseline, setSeedBaseline] = useState<string | null>(null);
 
   // Read by callbacks without being their dependencies, so the gesture handlers
   // and the board's render props keep one identity across edits.
@@ -676,9 +695,19 @@ function SprayHoldEditorSession({
     const carryOver = holdsToCarryOver(Object.values(stateRef.current.holds));
     const seed = buildEditorSeed(wall, candidates ?? [], seedIncludesCandidates(reason), carryOver);
     seedHoldsRef.current = seed;
+    setSeedBaseline(
+      JSON.stringify({
+        width: wall.photoWidth,
+        height: wall.photoHeight,
+        homography,
+        holds: [...wall.holds]
+          .sort((first, second) => first.id - second.id)
+          .map(({ id, cx, cy, r, outline }) => ({ id, cx, cy, r, outline })),
+      }),
+    );
     dispatch({ type: 'LOAD', holds: seed });
     setSeeded(true);
-  }, [wall, seedKey, candidates]);
+  }, [wall, seedKey, candidates, homography]);
 
   const handleAreaLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -827,20 +856,6 @@ function SprayHoldEditorSession({
     () => (storageUserId && viewerCanEdit ? { userId: storageUserId, wallUuid, versionId } : null),
     [storageUserId, viewerCanEdit, wallUuid, versionId],
   );
-  const serverBaseline = useMemo(
-    () =>
-      wall
-        ? JSON.stringify({
-            width: wall.photoWidth,
-            height: wall.photoHeight,
-            homography,
-            holds: [...wall.holds]
-              .sort((first, second) => first.id - second.id)
-              .map(({ id, cx, cy, r, outline }) => ({ id, cx, cy, r, outline })),
-          })
-        : null,
-    [wall, homography],
-  );
   const recoveryPresent = useMemo(() => {
     const present: SprayEditorPresent = {
       holds: state.holds,
@@ -874,15 +889,20 @@ function SprayHoldEditorSession({
   }, []);
   const holdAutosave = useSprayHoldAutosave({
     identity: draftIdentity,
-    baseline: seeded ? serverBaseline : null,
+    baseline: seeded ? seedBaseline : null,
     present: recoveryPresent,
     dirty,
     paused: saveHolds.isPending || celebrating,
     onRestore: restoreLocalDraft,
   });
   const persistence = useMemo(
-    () => ({ flush: holdAutosave.flush, recoveryPending: draftIdentity === null || !holdAutosave.ready }),
-    [draftIdentity, holdAutosave.flush, holdAutosave.ready],
+    () => ({
+      flush: holdAutosave.flush,
+      retire: holdAutosave.retire,
+      runCommit: holdAutosave.runCommit,
+      recoveryPending: draftIdentity === null || !holdAutosave.ready,
+    }),
+    [draftIdentity, holdAutosave.flush, holdAutosave.retire, holdAutosave.runCommit, holdAutosave.ready],
   );
   const persistenceReadyRef = useRef(onPersistenceReady);
   persistenceReadyRef.current = onPersistenceReady;
@@ -959,10 +979,11 @@ function SprayHoldEditorSession({
   // and while its confirm is up: the press owns the screen, so Save shows its
   // spinner and editing waits, rather than refusing touches with no sign why.
   const [askingRemoval, setAskingRemoval] = useState(false);
-  const committing = saveHolds.isPending || askingRemoval;
+  const committing = saveHolds.isPending || askingRemoval || holdAutosave.committing;
   // Nothing takes a touch until the rings have finished arriving: a tap during
   // the sweep would land on a ring that is not drawn yet.
   const canEdit =
+    !hostPaused &&
     viewerCanEdit &&
     draftIdentity !== null &&
     holdAutosave.ready &&
@@ -2127,6 +2148,7 @@ function SprayHoldEditorSession({
   const handlePrimary = useCallback(async () => {
     if (
       !viewerCanEdit ||
+      hostPaused ||
       !holdAutosave.ready ||
       draftIdentity === null ||
       holdsOnlyPreviewRef.current ||
@@ -2180,52 +2202,51 @@ function SprayHoldEditorSession({
     // Stamped BEFORE the request so a payload registered while it was in flight —
     // a presigned-photo refresh, say — cannot be mistaken for its answer.
     saveStartedAtMsRef.current = Date.now();
-    saveHolds.mutate(
-      {
-        wallUuid,
-        versionNumber,
-        versionId,
-        plan,
-        // Fired between the two calls. If the upsert then fails, the removals
-        // have still landed, and re-sending them on a retry would be refused.
-        onRemoved: async () => {
-          // Gone from the server, so gone from "Start over" too: bringing one
-          // back ON would name a removed id and the next upsert would refuse the
-          // whole batch.
-          const removed = new Set(plan.removeIds);
-          seedHoldsRef.current = seedHoldsRef.current.filter((hold) => !removed.has(hold.id));
-          dispatch({ type: 'MARK_REMOVED' });
-          await holdAutosave.checkpointRemoved(plan.removeIds);
-          if (unmountedRef.current) throw new Error('Hold editing session ended');
-        },
-      },
-      {
-        onSuccess: (result) => {
-          // Clear the dirty flags NOW rather than waiting for the refetch, so a
-          // retry can never re-send holds the server already has.
-          dispatch({ type: 'MARK_SAVED', writtenIds: plan.writtenIds });
-          void holdAutosave.acknowledge();
-          awaitingSavedPayloadRef.current = true;
-          celebrateThenHandOver({ ...result, holdCount });
-        },
-        onError: (error: unknown) => {
-          setHandingOver(false);
-          hapticWarning();
-          // Archived since the editor opened: say so in the climber's words and
-          // re-read the wall for every other surface that still offers an edit.
-          const refusal = sprayWallLifecycleRefusal(error);
-          if (sprayWallRefusalMeansStaleWall(refusal)) refreshSprayWall(layoutId);
-          setErrorText(
-            refusal
-              ? sprayWallLifecycleMessage(refusal, t)
-              : (extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed')),
-          );
-        },
-      },
-    );
+    try {
+      await holdAutosave.runCommit(async () => {
+        if (unmountedRef.current) throw new Error('Hold editing session ended');
+        const result = await saveHolds.mutateAsync({
+          wallUuid,
+          versionNumber,
+          versionId,
+          plan,
+          // Fired between the two calls. If the upsert then fails, the removals
+          // have still landed, and re-sending them on a retry would be refused.
+          onRemoved: async () => {
+            // Gone from the server, so gone from "Start over" too: bringing one
+            // back ON would name a removed id and the next upsert would refuse the
+            // whole batch.
+            const removed = new Set(plan.removeIds);
+            seedHoldsRef.current = seedHoldsRef.current.filter((hold) => !removed.has(hold.id));
+            dispatch({ type: 'MARK_REMOVED' });
+            await holdAutosave.checkpointRemoved(plan.removeIds);
+            if (unmountedRef.current) throw new Error('Hold editing session ended');
+          },
+        });
+        // mutateAsync still settles after unmount; per-observer callbacks do not.
+        await holdAutosave.acknowledge();
+        if (unmountedRef.current) return;
+        dispatch({ type: 'MARK_SAVED', writtenIds: plan.writtenIds });
+        awaitingSavedPayloadRef.current = true;
+        celebrateThenHandOver({ ...result, holdCount });
+      });
+    } catch (error: unknown) {
+      if (unmountedRef.current) return;
+      setHandingOver(false);
+      hapticWarning();
+      const refusal = sprayWallLifecycleRefusal(error);
+      if (sprayWallRefusalMeansStaleWall(refusal)) refreshSprayWall(layoutId);
+      setErrorText(
+        refusal
+          ? sprayWallLifecycleMessage(refusal, t)
+          : (extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed')),
+      );
+    }
   }, [
     viewerCanEdit,
+    hostPaused,
     homography,
+    holdAutosave.runCommit,
     holdAutosave.acknowledge,
     holdAutosave.checkpointRemoved,
     draftIdentity,

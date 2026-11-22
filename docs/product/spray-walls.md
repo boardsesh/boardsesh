@@ -30,6 +30,20 @@ Everything this file says about the hidden flag and the photo purge already
 accounts for that copy: hiding outranks the share link, and the purge sweeps the
 `media` prefix as well as the private one.
 
+## Hold editor recovery
+
+Local hold edits belong to one account, wall, and immutable draft version. The
+editor verifies fresh server geometry before restoring local changes, and its
+recovery baseline follows the reducer seed and acknowledged server removals.
+A photo refresh cannot relabel older local geometry as the newer server draft.
+
+One editor owns that recovery record at a time. Native sessions queue in the JS
+runtime; browser tabs use origin-scoped Web Locks and require that capability.
+A waiting editor stays read-only until the owner closes, completes any started
+server write, and drains local storage. Maintenance keeps ownership through
+publication, refresh, and publication retries. A storage failure offers Retry
+or an explicit Leave anyway warning; the last durable draft remains available.
+
 ## Identity mapping
 
 Every partition in Boardsesh is `(board_type, layout_id)` — the search base

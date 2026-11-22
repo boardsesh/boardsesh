@@ -77,6 +77,33 @@ describe('preference-store', () => {
     await expect(getPreference('locked')).rejects.toThrow('Failed to get values for keys');
   });
 
+  it.each(['null', '{broken'])(
+    'classifies present corrupt hold recovery %s through the real preference wrapper',
+    async (raw) => {
+      const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+        __setRaw: (key: string, stored: string) => void;
+        getItem: (key: string) => Promise<string | null>;
+      };
+      const { loadSprayHoldDraft, sprayHoldDraftKey } = await import('../spray/spray-hold-draft-store');
+      const identity = { userId: 'setter', wallUuid: 'wall', versionId: '17' };
+      const key = sprayHoldDraftKey(identity);
+      asyncStorage.__setRaw(key, raw);
+      await expect(loadSprayHoldDraft(identity)).rejects.toMatchObject({ code: 'INVALID_SPRAY_HOLD_RECOVERY' });
+      expect(await asyncStorage.getItem(key)).toBe(raw);
+    },
+  );
+
+  it('keeps hold recovery storage I/O errors retryable', async () => {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      getItem: ReturnType<typeof vi.fn>;
+    };
+    asyncStorage.getItem.mockRejectedValueOnce(new Error('device locked'));
+    const { loadSprayHoldDraft } = await import('../spray/spray-hold-draft-store');
+    await expect(loadSprayHoldDraft({ userId: 'setter', wallUuid: 'wall', versionId: '17' })).rejects.toThrow(
+      'device locked',
+    );
+  });
+
   it('removePreference deletes the key', async () => {
     const { getPreference, setPreference, removePreference } = await import('../preference-store');
     await setPreference('k', 1);

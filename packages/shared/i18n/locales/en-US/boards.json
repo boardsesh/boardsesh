@@ -1199,7 +1199,12 @@
       "changed": "These saved edits belong to an earlier version of this draft. Your local copy is kept.",
       "addLater": "You can add missing holds later while setting a climb.",
       "useSaved": "Use saved holds",
-      "discardBody": "Your recovered edits will be discarded. The holds already saved to this Spraywall stay available."
+      "discardBody": "Your recovered edits will be discarded. The holds already saved to this Spraywall stay available.",
+      "openElsewhere": "This draft is open in another editor. Close it there to continue here.",
+      "lockUnavailable": "This browser cannot safely save hold edits. Try another browser.",
+      "leaveTitle": "Leave before saving?",
+      "leaveBody": "Your latest hold edits may not be saved. Your last saved draft will stay on this device.",
+      "leaveAnyway": "Leave anyway"
     }
   },
   "sprayWizard": {

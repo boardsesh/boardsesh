@@ -169,17 +169,25 @@ export function useSprayWallDraft(
   wallUuid: string | null,
   versionNumber: number | null,
   versionId: string | null,
+  { requireFreshEntry = false }: { requireFreshEntry?: boolean } = {},
 ): UseSprayWallDraftResult {
   const query = useQuery({
     queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber, versionId),
     queryFn: () => fetchSprayWallDraft(layoutId, wallUuid, versionNumber),
     select: (response) => response.sprayWallRenderData,
     enabled: wallUuid != null && versionNumber != null && versionId != null,
+    refetchOnMount: requireFreshEntry ? 'always' : true,
     staleTime: DRAFT_STALE_TIME_MS,
     structuralSharing: false,
   });
 
-  const renderData = query.data ?? null;
+  // A cached payload may predate another device's edits to this same draft.
+  const entryKey = `${wallUuid}:${versionNumber}:${versionId}`;
+  const verifiedEntryRef = useRef({ key: entryKey, read: false });
+  if (verifiedEntryRef.current.key !== entryKey) verifiedEntryRef.current = { key: entryKey, read: false };
+  if (query.isFetchedAfterMount && query.isSuccess) verifiedEntryRef.current.read = true;
+  const freshEntryRead = !requireFreshEntry || verifiedEntryRef.current.read;
+  const renderData = freshEntryRead ? (query.data ?? null) : null;
   const accessGeneration = useSyncExternalStore(
     subscribeToSprayWalls,
     useCallback(() => `${sprayWallViewerGeneration()}:${sprayWallRemovalGeneration(layoutId)}`, [layoutId]),
@@ -282,14 +290,18 @@ export function useSprayWallDraft(
   // as loading and never as unavailable: a read that gave up is no longer
   // pending, and without this the tap would flash "no photo to edit yet".
   const [retrying, setRetrying] = useState(false);
-  const isLoading = asked && (retrying || query.isPending);
+  const isLoading = asked && (retrying || query.isPending || (!freshEntryRead && query.fetchStatus === 'fetching'));
   // An account/removal transition withdraws private draft geometry immediately.
   // The caller must retry under the current account; delaying that verdict by
   // an effect would expose a stale account's editor for another frame.
-  const isUnavailable = asked && !retrying && !query.isPending && wall == null;
+  const isUnavailable = asked && !retrying && !query.isPending && freshEntryRead && wall == null;
   // `paused` is a retry parked because the phone reads as offline; `isError` is
   // a read that gave up. A retry that is backing off or running is neither.
-  const isStalled = asked && !retrying && query.data === undefined && (query.fetchStatus === 'paused' || query.isError);
+  const isStalled =
+    asked &&
+    !retrying &&
+    (query.data === undefined || !freshEntryRead) &&
+    (query.fetchStatus === 'paused' || query.isError);
   const homography = renderData?.homography ?? null;
   // Only alongside a wall this hook vouches for: the same gates that null `wall`
   // must not leave another account's or a replaced row's photo reachable here.

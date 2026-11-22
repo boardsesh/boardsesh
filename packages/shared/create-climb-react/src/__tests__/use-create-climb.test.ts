@@ -13,6 +13,7 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
     ...actual,
     HOLD_STATE_MAP: {
       woods: actual.HOLD_STATE_MAP.woods,
+      spray: actual.HOLD_STATE_MAP.spray,
       kilter: {
         42: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
         43: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
@@ -33,6 +34,7 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
     },
     STATE_TO_PRIMARY_CODE: {
       woods: actual.STATE_TO_PRIMARY_CODE.woods,
+      spray: actual.STATE_TO_PRIMARY_CODE.spray,
       kilter: { STARTING: 42, HAND: 43, FINISH: 44, FOOT: 45 },
       tension: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
       moonboard: { STARTING: 42, HAND: 43, FINISH: 44 },
@@ -498,6 +500,25 @@ describe('useCreateClimb', () => {
       expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '400']);
       expect(result.current.totalHolds).toBe(2);
       expect(result.current.generateFramesString()).toBe('p100r42p400r44');
+    });
+
+    it('keeps missing local selections until acknowledged after a cold restore', () => {
+      const { result } = renderHook(() => useCreateClimb('spray', { availableHoldIds: new Set([100, 400]) }));
+      act(() =>
+        result.current.restoreWorkingFrames([
+          PARENT_FRAMES[0],
+          { 200: PARENT_FRAMES[0][200], 500: { state: 'OFF', color: '', displayColor: '' } },
+        ]),
+      );
+
+      expect(result.current.missingHoldIds).toEqual([200, 300]);
+      expect(result.current.frames[1]).toEqual({ 200: PARENT_FRAMES[0][200] });
+      expect(result.current.canSave).toBe(false);
+      expect(result.current.canPublish).toBe(false);
+      act(() => result.current.removeMissingHolds());
+      expect(result.current.frames).toEqual([{ 100: PARENT_FRAMES[0][100], 400: PARENT_FRAMES[0][400] }, {}]);
+      expect(result.current.canSave).toBe(true);
+      expect(result.current.canPublish).toBe(true);
     });
 
     it('keeps frames, the active frame and undo when holds are added', () => {

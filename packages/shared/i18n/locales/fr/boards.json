@@ -1199,7 +1199,12 @@
       "changed": "Ces modifications enregistrées appartiennent à une version précédente de ce brouillon. Ta copie locale est conservée.",
       "addLater": "Tu peux ajouter les prises manquantes plus tard, pendant l’ouverture d’un bloc.",
       "useSaved": "Utiliser les prises enregistrées",
-      "discardBody": "Tes modifications récupérées seront abandonnées. Les prises déjà enregistrées sur ce Spraywall resteront disponibles."
+      "discardBody": "Tes modifications récupérées seront abandonnées. Les prises déjà enregistrées sur ce Spraywall resteront disponibles.",
+      "openElsewhere": "Ce brouillon est ouvert dans un autre éditeur. Ferme-le pour continuer ici.",
+      "lockUnavailable": "Ce navigateur ne peut pas enregistrer les modifications des prises de manière sûre. Essaie un autre navigateur.",
+      "leaveTitle": "Partir avant d’enregistrer ?",
+      "leaveBody": "Les dernières modifications des prises risquent de ne pas être enregistrées. Le dernier brouillon enregistré restera sur cet appareil.",
+      "leaveAnyway": "Partir quand même"
     }
   },
   "sprayWizard": {

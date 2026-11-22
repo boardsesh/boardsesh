@@ -18,6 +18,9 @@ const draftStore = vi.hoisted(() => ({
   isDraftStorageAvailable: vi.fn(() => true),
 }));
 
+const login = vi.hoisted(() => ({ owner: null as { userId: string; authSessionId: string } | null }));
+vi.mock('../../../lib/user-storage-owner', () => ({ getCurrentUserStorageOwner: () => login.owner }));
+
 const appState = vi.hoisted(() => ({
   listeners: [] as Array<(state: string) => void>,
   addEventListener: vi.fn((_event: string, handler: (state: string) => void) => {
@@ -59,6 +62,8 @@ const createClimb = vi.hoisted(() => ({
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
   loadFrames: vi.fn(),
+  restoreWorkingFrames: vi.fn(),
+  missingHoldCount: 0,
   duplicateFrame: vi.fn(),
   deleteFrame: vi.fn(),
   goToFrame: vi.fn(),
@@ -161,6 +166,7 @@ function savedKeys(): string[] {
 }
 
 beforeEach(() => {
+  login.owner = null;
   draftStore.saveDraft.mockReset();
   draftStore.saveDraft.mockResolvedValue(undefined);
   draftStore.clearDraft.mockReset();
@@ -173,6 +179,10 @@ beforeEach(() => {
   boardActions.updateClimb.mockReset();
   graphql.climb = undefined;
   graphql.climbFailed = false;
+  createClimb.missingHoldCount = 0;
+  createClimb.canPublish = true;
+  createClimb.canSave = true;
+  createClimb.restoreWorkingFrames.mockClear();
   createClimb.frameCount = 1;
   createClimb.litUpHoldsMap = {};
   createClimb.frames = [{}];
@@ -332,6 +342,131 @@ describe('useCreateClimbScreen autosave flush', () => {
     });
   });
 
+  it('uses working-copy restoration for locally saved selections', async () => {
+    const frames = [{ 101: { state: 'HAND', color: '', displayColor: '' } }];
+    draftStore.loadDraft.mockResolvedValue({
+      framesJson: JSON.stringify(frames),
+      holdsJson: JSON.stringify(frames[0]),
+      name: 'Still being set',
+      description: '',
+      isDraft: true,
+    });
+    renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(createClimb.restoreWorkingFrames).toHaveBeenCalledExactlyOnceWith(frames));
+  });
+
+  it.each([
+    ['account switch', { userId: 'b', authSessionId: 'login-b' }],
+    ['session rotation', { userId: 'a', authSessionId: 'new-login' }],
+    ['sign-out', null],
+  ] as const)('refuses a queued handoff after %s', async (_transition, nextOwner) => {
+    vi.useFakeTimers();
+    const originalOwner = { userId: 'a', authSessionId: 'login-a' };
+    login.owner = originalOwner;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await act(async () => {});
+    act(() => result.current.setName('First edit'));
+    let finishPreviousWrite: (() => void) | undefined;
+    draftStore.saveDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPreviousWrite = resolve;
+        }),
+    );
+    act(() => appState.emit('background'));
+    expect(draftStore.saveDraft).toHaveBeenCalledExactlyOnceWith(
+      'draft-key',
+      expect.objectContaining({ name: 'First edit' }),
+      originalOwner,
+    );
+    act(() => result.current.setName('Queued before switch'));
+    const refused = expect(result.current.persistWorkingDraft()).rejects.toThrow('login changed');
+    login.owner = nextOwner;
+    await act(async () => {
+      finishPreviousWrite?.();
+      await refused;
+    });
+    expect(draftStore.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses navigation if the login ends during the handoff write', async () => {
+    login.owner = { userId: 'a', authSessionId: 'login-a' };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    act(() => result.current.setName('First edit'));
+    let finishWrite: (() => void) | undefined;
+    draftStore.saveDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const refused = expect(result.current.persistWorkingDraft()).rejects.toThrow('login changed');
+    act(() => result.current.setName('Later edit'));
+    login.owner = null;
+    await act(async () => {
+      finishWrite?.();
+      await refused;
+    });
+    expect(draftStore.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a newer edit made while the hold-editor handoff is writing', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    act(() => result.current.setName('First name'));
+
+    let finishFirstWrite: (() => void) | undefined;
+    let finishLatestWrite: (() => void) | undefined;
+    draftStore.saveDraft
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishFirstWrite = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLatestWrite = resolve;
+          }),
+      );
+    const handedOff = vi.fn();
+    const handoff = result.current.persistWorkingDraft().then(handedOff);
+    act(() => result.current.setName('Updated during handoff'));
+
+    await act(async () => finishFirstWrite?.());
+    expect(draftStore.saveDraft.mock.calls.map(([, draft]) => draft.name)).toEqual([
+      'First name',
+      'Updated during handoff',
+    ]);
+    expect(handedOff).not.toHaveBeenCalled();
+    await act(async () => {
+      finishLatestWrite?.();
+      await handoff;
+    });
+    expect(handedOff).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])(
+    'omits generic hold requirements while removed selections block saving (draft=%s)',
+    async (isDraft) => {
+      createClimb.missingHoldCount = 1;
+      createClimb.canSave = false;
+      createClimb.canPublish = false;
+      const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+      await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+      act(() => {
+        result.current.setName('Start and finish both painted');
+        result.current.setIsDraft(isDraft);
+      });
+      expect(result.current.publishBlocked).toBe(false);
+      expect(result.current.draftStatus?.text).toBe(
+        isDraft ? 'mobile.create.autosave.onDevice' : 'mobile.create.autosave.onDevicePublish',
+      );
+    },
+  );
+
   it('refuses the hold-editor handoff while a climb Save owns the session', async () => {
     let resolveSave: ((saved: unknown) => void) | undefined;
     boardActions.saveClimb.mockImplementation(
@@ -439,7 +574,7 @@ describe('useCreateClimbScreen autosave flush', () => {
       await result.current.handleSave();
     });
 
-    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key', null);
   });
 
   it('writes a fork to its own slot and never to the shared new-climb key', async () => {
@@ -946,6 +1081,7 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(draftStore.saveDraft).toHaveBeenCalledWith(
       'edit:kilter:climb-9',
       expect.objectContaining({ name: 'Typed before restore opened' }),
+      null,
     );
   });
 
@@ -993,7 +1129,7 @@ describe('useCreateClimbScreen autosave flush', () => {
       await Promise.resolve();
     });
 
-    expect(draftStore.clearDraft).toHaveBeenCalledWith('edit:kilter:climb-9');
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('edit:kilter:climb-9', null);
     expect(onStartedNewClimb).toHaveBeenCalledTimes(1);
   });
 
@@ -1047,8 +1183,8 @@ describe('useCreateClimbScreen autosave flush', () => {
       await Promise.resolve();
     });
 
-    expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
-    expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key', null);
+    expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key', null);
   });
 
   it('cannot show a stale save failure once the draft toggle moves', async () => {

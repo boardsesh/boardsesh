@@ -70,7 +70,7 @@ describe('useCreateClimbAutosave', () => {
 
     unmount();
 
-    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key', null);
     expect(draftStore.saveDraft).not.toHaveBeenCalled();
   });
 
@@ -79,7 +79,7 @@ describe('useCreateClimbAutosave', () => {
 
     act(() => appState.emit('background'));
 
-    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key', null);
     expect(draftStore.saveDraft).not.toHaveBeenCalled();
   });
 
@@ -97,6 +97,7 @@ describe('useCreateClimbAutosave', () => {
     expect(draftStore.saveDraft).toHaveBeenCalledExactlyOnceWith(
       'draft-key',
       expect.objectContaining({ name: 'work in progress' }),
+      null,
     );
   });
 
@@ -110,7 +111,7 @@ describe('useCreateClimbAutosave', () => {
     });
     unmount();
 
-    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledExactlyOnceWith('draft-key', null);
     expect(draftStore.saveDraft).not.toHaveBeenCalled();
   });
 
@@ -147,7 +148,7 @@ describe('useCreateClimbAutosave', () => {
     });
 
     expect(draftStore.saveDraft).toHaveBeenCalledTimes(2);
-    expect(draftStore.saveDraft).toHaveBeenLastCalledWith('draft-key', linkedDraft);
+    expect(draftStore.saveDraft).toHaveBeenLastCalledWith('draft-key', linkedDraft, null);
   });
 
   it('re-persists the latest draft when a deliberate clear fails', async () => {
@@ -164,6 +165,7 @@ describe('useCreateClimbAutosave', () => {
     expect(draftStore.saveDraft).toHaveBeenCalledWith(
       'draft-key',
       expect.objectContaining({ name: 'latest working copy' }),
+      null,
     );
   });
 });
