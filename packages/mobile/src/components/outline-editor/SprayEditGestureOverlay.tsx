@@ -132,6 +132,9 @@ type SprayEditGestureOverlayProps = {
   onStylusSeen?: () => void;
   /** OPT-IN. A quick two-finger tap (iPad: undo). Fixed at mount. */
   onTwoFingerTap?: () => void;
+  /** A child owns a drawing contact; its palm contacts cannot tap or undo. */
+  drawingIdSV?: SharedValue<number>;
+  strokeSequenceSV?: SharedValue<number>;
   /**
    * OPT-IN. True while `children` holds a Pencil draw surface that adds on bare
    * wall (the iPad layout's edit tool). A stylus press and hold on bare wall
@@ -222,6 +225,8 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   hoverRadiusSV,
   onStylusSeen,
   onTwoFingerTap,
+  drawingIdSV,
+  strokeSequenceSV,
   stylusAddsElsewhere = false,
   viewCentre,
 }: SprayEditGestureOverlayProps) {
@@ -272,6 +277,10 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   // Starts "already reported" when nobody listens.
   const stylusReportedSV = useSharedValue(onStylusSeen == null);
   const twoFingerTapEnabled = onTwoFingerTap != null;
+  const tapSawDrawingSV = useSharedValue(false);
+  const tapStrokeSequenceSV = useSharedValue(0);
+  const twoFingerStrokeSequenceSV = useSharedValue(-1);
+  const twoFingerSawDrawingSV = useSharedValue(false);
 
   const callbacksRef = useRef({
     onTap,
@@ -345,11 +354,19 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
         // see a second one itself: that is a pinch starting, never an edit. Its
         // own count, not only the pinch's shared flag, so a tap can never be
         // swallowed by a flag another handler failed to clear.
-        if (event.numberOfTouches > 1) manager.fail();
+        tapSawDrawingSV.value = (drawingIdSV?.value ?? 0) !== 0;
+        tapStrokeSequenceSV.value = strokeSequenceSV?.value ?? 0;
+        if (event.numberOfTouches > 1 || tapSawDrawingSV.value) manager.fail();
       })
       .onStart((event) => {
         'worklet';
-        if (isPinchingSV.value) return;
+        if (
+          isPinchingSV.value ||
+          tapSawDrawingSV.value ||
+          drawingIdSV?.value ||
+          (strokeSequenceSV && tapStrokeSequenceSV.value !== strokeSequenceSV.value)
+        )
+          return;
         const point = screenToBoard(
           event.x,
           event.y,
@@ -697,12 +714,33 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     }
     if (twoFingerTapEnabled) {
       const twoFingerTap = Gesture.Tap()
+        .onBegin(() => {
+          'worklet';
+          if (drawingIdSV?.value) twoFingerSawDrawingSV.value = true;
+        })
+        .onTouchesDown((event) => {
+          'worklet';
+          if (twoFingerStrokeSequenceSV.value === -1) twoFingerStrokeSequenceSV.value = strokeSequenceSV?.value ?? 0;
+          if (drawingIdSV?.value || event.pointerType === STYLUS_POINTER_TYPE) twoFingerSawDrawingSV.value = true;
+        })
         .minPointers(2)
         .maxDuration(TWO_FINGER_TAP_MAX_DURATION_MS)
         .maxDistance(TAP_MAX_DISTANCE_PX)
         .onEnd((_event, success) => {
           'worklet';
-          if (success) runOnJS(handleTwoFingerTap)();
+          if (
+            success &&
+            !twoFingerSawDrawingSV.value &&
+            !drawingIdSV?.value &&
+            _event.pointerType !== STYLUS_POINTER_TYPE &&
+            (!strokeSequenceSV || twoFingerStrokeSequenceSV.value === strokeSequenceSV.value)
+          )
+            runOnJS(handleTwoFingerTap)();
+        })
+        .onFinalize(() => {
+          'worklet';
+          twoFingerSawDrawingSV.value = false;
+          twoFingerStrokeSequenceSV.value = -1;
         });
       twoFingerTap.simultaneousWithExternalGesture(pinchRef);
       beside.push(twoFingerTap);
@@ -748,6 +786,12 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     hoverRadiusSV,
     stylusReportedSV,
     twoFingerTapEnabled,
+    drawingIdSV,
+    strokeSequenceSV,
+    tapStrokeSequenceSV,
+    twoFingerStrokeSequenceSV,
+    tapSawDrawingSV,
+    twoFingerSawDrawingSV,
   ]);
 
   const viewCentreX = viewCentre?.x;

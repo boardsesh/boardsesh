@@ -1,0 +1,44 @@
+[
+  {
+    "id": "phone-dark",
+    "width": 390,
+    "height": 844,
+    "theme": "dark",
+    "canvases": [
+      {
+        "viewBox": "0 0 1752 1700",
+        "paths": 20,
+        "width": 390,
+        "height": 378.421875
+      },
+      {
+        "viewBox": "0 0 1752 1700",
+        "paths": 2,
+        "width": 390,
+        "height": 378.421875
+      }
+    ],
+    "errors": []
+  },
+  {
+    "id": "tablet-light",
+    "width": 820,
+    "height": 1180,
+    "theme": "light",
+    "canvases": [
+      {
+        "viewBox": "0 0 1752 1700",
+        "paths": 20,
+        "width": 820,
+        "height": 795.65625
+      },
+      {
+        "viewBox": "0 0 1752 1700",
+        "paths": 2,
+        "width": 820,
+        "height": 795.65625
+      }
+    ],
+    "errors": []
+  }
+]

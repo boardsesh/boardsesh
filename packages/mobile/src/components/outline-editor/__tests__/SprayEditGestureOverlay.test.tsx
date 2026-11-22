@@ -83,7 +83,14 @@ function shared<T>(initial: T): SharedValue<T> {
   };
 }
 
-type Options = { hover?: boolean; onStylusSeen?: () => void; onTwoFingerTap?: () => void };
+type Options = {
+  hover?: boolean;
+  onStylusSeen?: () => void;
+  onTwoFingerTap?: () => void;
+  drawingIdSV?: SharedValue<number>;
+  strokeSequenceSV?: SharedValue<number>;
+  selected?: boolean;
+};
 
 // An unzoomed 100 x 100 board drawn at one board px per point: screen and
 // board coordinates are the same, so the rows below read directly.
@@ -103,7 +110,7 @@ function mount(options: Options = {}) {
       pinchRef={{ current: undefined }}
       boardScale={1}
       hitHoldsSV={shared([3, 30, 30, 5])}
-      selectedHoldSV={shared<number[]>([])}
+      selectedHoldSV={shared<number[]>(options.selected ? [3, 30, 30, 5] : [])}
       dragOffsetXSV={shared(0)}
       dragOffsetYSV={shared(0)}
       dragHoldIdSV={shared(0)}
@@ -121,6 +128,8 @@ function mount(options: Options = {}) {
       hoverRadiusSV={options.hover ? shared(12) : undefined}
       onStylusSeen={options.onStylusSeen}
       onTwoFingerTap={options.onTwoFingerTap}
+      drawingIdSV={options.drawingIdSV}
+      strokeSequenceSV={options.strokeSequenceSV}
     />,
   );
   const of = (kind: string, index = 0) => installed.gestures.filter((gesture) => gesture.kind === kind)[index];
@@ -279,5 +288,43 @@ describe('SprayEditGestureOverlay off the photo', () => {
     expect(overlay.hoverSV!.value).toEqual([0, 80, 70, 12]);
     overlay.fire('hover', 'onUpdate', { x: 150, y: 70, pointerType: STYLUS });
     expect(overlay.hoverSV!.value).toEqual([]);
+  });
+});
+
+describe('drawing contacts observed in either native callback order', () => {
+  it('does not tap after the child starts and finishes between parent DOWN and UP', () => {
+    const active = shared(0);
+    const sequence = shared(0);
+    const overlay = mount({ drawingIdSV: active, strokeSequenceSV: sequence });
+    const manager = { fail: vi.fn() };
+    overlay.fire('tap', 'onTouchesDown', { numberOfTouches: 1, pointerType: STYLUS }, manager);
+    sequence.value = 1;
+    active.value = 1;
+    active.value = 0;
+    overlay.fire('tap', 'onStart', { x: 30, y: 30, pointerType: STYLUS });
+    expect(overlay.onTap).not.toHaveBeenCalled();
+  });
+  it('keeps the selected-hold tap when the child declines ownership', () => {
+    const overlay = mount({ drawingIdSV: shared(0), strokeSequenceSV: shared(7), selected: true });
+    overlay.fire('tap', 'onTouchesDown', { numberOfTouches: 1, pointerType: STYLUS }, { fail: vi.fn() });
+    overlay.fire('tap', 'onStart', { x: 30, y: 30, pointerType: STYLUS });
+    expect(overlay.onTap).toHaveBeenCalledExactlyOnceWith(30, 30, 1, true);
+  });
+  it('never resets a stylus/palm exclusion when begin arrives after touch-down', () => {
+    const undo = vi.fn();
+    const active = shared(1);
+    const sequence = shared(1);
+    const overlay = mount({ onTwoFingerTap: undo, drawingIdSV: active, strokeSequenceSV: sequence });
+    const gesture = overlay.of('tap', 1);
+    gesture.handlers.get('onTouchesDown')?.({ pointerType: STYLUS });
+    active.value = 0;
+    gesture.handlers.get('onBegin')?.({});
+    gesture.handlers.get('onEnd')?.({ pointerType: FINGER }, true);
+    expect(undo).not.toHaveBeenCalled();
+    gesture.handlers.get('onFinalize')?.({});
+    gesture.handlers.get('onTouchesDown')?.({ pointerType: FINGER });
+    gesture.handlers.get('onBegin')?.({});
+    gesture.handlers.get('onEnd')?.({ pointerType: FINGER }, true);
+    expect(undo).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,10 +2,12 @@ import React, { type MutableRefObject } from 'react';
 import type { GestureType } from 'react-native-gesture-handler';
 import { useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
+import type { DrawStrokeBinding, DrawStrokeSession } from './draw-stroke-session';
 
 type SprayPencilSurfaceProps = {
   /** The live stroke, in board px. The screen's draft, which the ring layer draws. */
   pointsSV: SharedValue<number[]>;
+  strokeBinding?: DrawStrokeBinding;
   /** The selected hold as `[id, cx, cy, r]`: a Pencil touch inside it is a move, not a stroke. */
   selectedHoldSV: SharedValue<number[]>;
   /**
@@ -20,10 +22,10 @@ type SprayPencilSurfaceProps = {
   containerHeightSV: SharedValue<number>;
   boardScale: number;
   pinchRef: MutableRefObject<GestureType | undefined>;
-  onStrokeStart: () => void;
+  onStrokeStart: (session?: DrawStrokeSession) => void;
   /** A whole stroke or a stationary tap, in board px. The screen decides which it was. */
-  onStrokeEnd: (boardPoints: number[]) => void;
-  onStrokeCancel: () => void;
+  onStrokeEnd: (boardPoints: number[], session?: DrawStrokeSession) => void;
+  onStrokeCancel: (session?: DrawStrokeSession) => void;
   onStylusSeen: () => void;
 };
 
@@ -43,6 +45,7 @@ type SprayPencilSurfaceProps = {
  */
 export const SprayPencilSurface = React.memo(function SprayPencilSurface({
   pointsSV,
+  strokeBinding,
   selectedHoldSV,
   hitHoldsSV,
   scaleSV,
@@ -61,6 +64,7 @@ export const SprayPencilSurface = React.memo(function SprayPencilSurface({
   return (
     <DrawStrokeOverlay
       pointsSV={pointsSV}
+      strokeBinding={strokeBinding}
       acceptStationaryTaps
       fingerDrawSV={fingersNeverDrawSV}
       declineOnSelectionSV={selectedHoldSV}

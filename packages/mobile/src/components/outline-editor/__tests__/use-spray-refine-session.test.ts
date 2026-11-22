@@ -330,3 +330,16 @@ describe('planRefineExit', () => {
     expect(planRefineExit({ ...base, overCap: true })).toEqual({ kind: 'stay', reason: 'cap' });
   });
 });
+
+it('exposes a completed brush stroke to recovery before React paints it', () => {
+  const hook = openSession();
+  const before = hook.result.current.view;
+  act(() => {
+    hook.result.current.applyStroke([640, 400, 652, 400], 8, 'add');
+    expect(hook.result.current.view).toBe(before);
+    const current = hook.result.current.getSnapshot();
+    expect(current?.changed).toBe(true);
+    expect(current?.strokeCount).toBe(1);
+    expect(pointInRing(current?.outlineBoardPx ?? [], 655, 400)).toBe(true);
+  });
+});

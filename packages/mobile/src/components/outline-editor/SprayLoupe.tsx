@@ -1,7 +1,8 @@
-import React, { type ReactNode } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   ReduceMotion,
+  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
@@ -12,6 +13,7 @@ import Animated, {
 import { overlays } from '../../theme/tokens';
 import { LOUPE_SIZE_PT, loupeInnerTransform, stepLoupe, type LoupeTrack } from './spray-gesture-math';
 import type { SprayLoupeFeed } from './spray-loupe-feed';
+import { SprayLoupeViewportContext } from './spray-loupe-viewport';
 
 /** The loupe fades rather than pops, quickly enough to keep up with a finger. */
 const FADE_IN_MS = 90;
@@ -60,10 +62,10 @@ type SprayLoupeProps = {
  * finger. It is mounted in the screen, not inside the board's clip, so it can
  * overhang the board's edge.
  *
- * Always mounted, at opacity 0. Everything that moves — the circle's place,
- * the content's translate and scale, the fade — is a shared value read by an
- * animated style, so a gesture repaints it on the UI thread and React never
- * re-renders it. A touch only shows it once it has lasted 120 ms or moved
+ * The small chrome stays mounted; the board artwork mounts only while the
+ * loupe is visible, including its fade-out. Pencil input and quick taps never
+ * retain a hidden copy of every ring. Movement and fading stay on the UI
+ * thread; React is told only when visibility crosses zero. A touch only shows it once it has lasted 120 ms or moved
  * 4 pt, so a tap never flashes it; a gesture that is already long (a 400 ms
  * pick-up) shows it at once.
  *
@@ -82,6 +84,41 @@ export const SprayLoupe = React.memo(function SprayLoupe({
   children,
 }: SprayLoupeProps) {
   const opacitySV = useSharedValue(0);
+  const [artMounted, setArtMounted] = useState(false);
+  const artReadySV = useSharedValue(false);
+  const viewportReadySV = useSharedValue(false);
+  const viewport = useMemo(
+    () => ({
+      centerXSV: feed.renderXSV,
+      centerYSV: feed.renderYSV,
+      magnificationSV,
+      readySV: viewportReadySV,
+      renderWidth,
+      renderHeight,
+    }),
+    [feed, magnificationSV, viewportReadySV, renderWidth, renderHeight],
+  );
+  const visibilityGenerationSV = useSharedValue(0);
+  const updateArtMounted = useCallback(
+    (visible: boolean, generation: number) => {
+      // A delayed fade-out callback must not unmount a newer finger's artwork.
+      if (generation !== visibilityGenerationSV.value) return;
+      setArtMounted(visible);
+    },
+    [visibilityGenerationSV],
+  );
+  useLayoutEffect(() => {
+    artReadySV.value = artMounted;
+  }, [artMounted, artReadySV]);
+  useAnimatedReaction(
+    () => opacitySV.value > 0,
+    (visible, previous) => {
+      if (visible === previous || (!visible && previous === null)) return;
+      visibilityGenerationSV.value += 1;
+      runOnJS(updateArtMounted)(visible, visibilityGenerationSV.value);
+    },
+    [opacitySV, visibilityGenerationSV, updateArtMounted],
+  );
   /** The circle's centre in the host. Written only by the reaction below. */
   const centreXSV = useSharedValue(0);
   const centreYSV = useSharedValue(0);
@@ -127,7 +164,7 @@ export const SprayLoupe = React.memo(function SprayLoupe({
   );
 
   const circleStyle = useAnimatedStyle(() => ({
-    opacity: opacitySV.value,
+    opacity: artReadySV.value && viewportReadySV.value ? opacitySV.value : 0,
     transform: [
       { translateX: centreXSV.value - LOUPE_SIZE_PT / 2 },
       { translateY: centreYSV.value - LOUPE_SIZE_PT / 2 },
@@ -158,9 +195,11 @@ export const SprayLoupe = React.memo(function SprayLoupe({
       importantForAccessibility="no-hide-descendants"
       style={[styles.circle, circleStyle]}
     >
-      <Animated.View style={[styles.content, { width: renderWidth, height: renderHeight }, contentStyle]}>
-        {children}
-      </Animated.View>
+      {artMounted ? (
+        <Animated.View style={[styles.content, { width: renderWidth, height: renderHeight }, contentStyle]}>
+          <SprayLoupeViewportContext.Provider value={viewport}>{children}</SprayLoupeViewportContext.Provider>
+        </Animated.View>
+      ) : null}
       <View style={[styles.arm, styles.armHorizontal, styles.armLeft]} />
       <View style={[styles.arm, styles.armHorizontal, styles.armRight]} />
       <View style={[styles.arm, styles.armVertical, styles.armTop]} />

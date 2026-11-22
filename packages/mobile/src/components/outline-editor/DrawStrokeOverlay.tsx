@@ -7,10 +7,16 @@ import {
   type LegacyGestureStateManager as GestureStateManager,
   type GestureType,
 } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
+import { runOnJS, runOnUI, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { fallbackRadiusAt, isOnPhoto, selectedDragIdAt, strokeReturnsToHead } from './spray-gesture-math';
 import { CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
+import {
+  clearOwnedStroke,
+  releaseOwnedStroke,
+  type DrawStrokeBinding,
+  type DrawStrokeSession,
+} from './draw-stroke-session';
 import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
 
 /**
@@ -39,8 +45,12 @@ type DrawStrokeOverlayProps = {
    * value, not an in-place push.
    */
   pointsSV: SharedValue<number[]>;
-  /** Add mode accepts stationary taps; Trace keeps its existing pan recognizer. */
+  /** Add mode accepts stationary taps. Catalogue Trace keeps its existing pan recognizer. */
   acceptStationaryTaps?: boolean;
+  /** Spray Trace owns raw pointers too, but still rejects a short outline in its caller. */
+  ownedPointerInput?: boolean;
+  /** Opt-in screen-owned stroke identity and start-time edit context. */
+  strokeBinding?: DrawStrokeBinding;
   /**
    * End the stroke the moment it comes back round to where it started
    * (`strokeReturnsToHead`), instead of on lift. On by default: every stroke
@@ -72,11 +82,11 @@ type DrawStrokeOverlayProps = {
    */
   pinchRef: MutableRefObject<GestureType | undefined>;
   /** Fired once when a stroke actually starts — the screen uses it to stop hold taps. */
-  onStrokeStart: () => void;
+  onStrokeStart: (session?: DrawStrokeSession) => void;
   /** Fired once at stroke end with the whole stroke in board px. */
-  onStrokeEnd: (boardPoints: number[]) => void;
+  onStrokeEnd: (boardPoints: number[], session?: DrawStrokeSession) => void;
   /** Fired once when a stroke is cancelled without committing. */
-  onStrokeCancel: () => void;
+  onStrokeCancel: (session?: DrawStrokeSession) => void;
   /**
    * Opt-in magnifier over the finger, fed for the length of a FINGER stroke
    * (a stylus tip hides nothing). Omitted — the catalogue editor — nothing is
@@ -164,9 +174,9 @@ const NO_HIT_HOLDS: number[] = [];
  * Absolute event coordinates, never `translationX/Y`: a delta would accumulate
  * the zoom scale twice.
  *
- * Add opts into a Manual recognizer that samples the owned raw pointer,
- * avoiding Pan centroid movement and committing stationary matching UP events.
- * Trace retains the Pan behavior above.
+ * Spray Add, Refine and Trace opt into a Manual recognizer that samples the
+ * owned raw pointer, avoiding Pan centroid movement and committing matching UP
+ * events. The catalogue editor retains the Pan behavior above.
  *
  * A stroke that comes back round to its first sample ends right there, as if
  * the pointer had lifted (`closeOnReturn`, on unless a caller paints rather
@@ -186,6 +196,8 @@ const NO_HIT_HOLDS: number[] = [];
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
   acceptStationaryTaps = false,
+  ownedPointerInput = false,
+  strokeBinding,
   closeOnReturn = true,
   fingerDrawSV,
   scaleSV,
@@ -227,6 +239,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   // reports as a success cannot commit the cleared stroke.
   const abandonedSV = useSharedValue(false);
   const ownerPointerIdSV = useSharedValue(-1);
+  const sessionSV = useSharedValue<DrawStrokeSession | null>(null);
   /** When the live stroke's first pointer landed, for the loupe's delay. */
   const strokeDownAtSV = useSharedValue(0);
   useReleaseLoupeOnUnmount(loupe, strokeDownAtSV);
@@ -243,12 +256,34 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   const callbacksRef = useRef({ onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen });
   callbacksRef.current = { onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen };
   // Captured once by the gesture memo — only closes over the stable ref.
-  const handleStart = () => callbacksRef.current.onStrokeStart();
-  const handleEnd = (boardPoints: number[]) => callbacksRef.current.onStrokeEnd(boardPoints);
-  const handleCancel = () => callbacksRef.current.onStrokeCancel();
+  const handleStart = (session?: DrawStrokeSession) => {
+    if (session) callbacksRef.current.onStrokeStart(session);
+    else callbacksRef.current.onStrokeStart();
+  };
+  const handleEnd = (boardPoints: number[], session?: DrawStrokeSession) => {
+    if (session) callbacksRef.current.onStrokeEnd(boardPoints, session);
+    else callbacksRef.current.onStrokeEnd(boardPoints);
+  };
+  const handleCancel = (session?: DrawStrokeSession) => {
+    if (session) callbacksRef.current.onStrokeCancel(session);
+    else callbacksRef.current.onStrokeCancel();
+  };
+  useEffect(
+    () => () => {
+      if (!strokeBinding) return;
+      const session = sessionSV.get();
+      if (!session) return;
+      runOnUI(releaseOwnedStroke)(pointsSV, strokeBinding.previewIdSV, strokeBinding.activeIdSV, session.id);
+    },
+    [pointsSV, sessionSV, strokeBinding],
+  );
   const handleStylusSeen = () => callbacksRef.current.onStylusSeen?.();
 
   const gesture = useMemo(() => {
+    const stopOwnLoupe = () => {
+      'worklet';
+      if (loupe && loupe.touchDownAtSV.value === strokeDownAtSV.value) stopLoupe(loupe);
+    };
     /** Points the loupe at a finger stroke's pointer. Never for a stylus. */
     const followWithLoupe = (screenX: number, screenY: number) => {
       'worklet';
@@ -334,7 +369,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         containerHeightSV.value * boardScaleSV.value,
       );
     };
-    if (acceptStationaryTaps) {
+    if (acceptStationaryTaps || ownedPointerInput) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
       // for a stationary touch. Add owns raw pointer events instead: DOWN seeds
       // a stroke and its matching UP commits it, including a zero-length tap.
@@ -362,8 +397,11 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         'worklet';
         isDrawingSV.value = false;
         ownerPointerIdSV.value = -1;
-        stopLoupe(loupe);
-        runOnJS(handleEnd)(pointsSV.value);
+        stopOwnLoupe();
+        const session = sessionSV.value;
+        if (strokeBinding && session && strokeBinding.activeIdSV.value === session.id)
+          strokeBinding.activeIdSV.value = 0;
+        runOnJS(handleEnd)([...pointsSV.value], session ?? undefined);
         manager.end();
       };
       const cancelStroke = () => {
@@ -372,9 +410,13 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         // Clear ownership before fail/end: either can synchronously finalize.
         isDrawingSV.value = false;
         ownerPointerIdSV.value = -1;
-        pointsSV.value = [];
-        stopLoupe(loupe);
-        runOnJS(handleCancel)();
+        const session = sessionSV.value;
+        if (strokeBinding && session) {
+          if (strokeBinding.activeIdSV.value === session.id) strokeBinding.activeIdSV.value = 0;
+          clearOwnedStroke(pointsSV, strokeBinding.previewIdSV, session.id);
+        } else pointsSV.value = [];
+        stopOwnLoupe();
+        runOnJS(handleCancel)(session ?? undefined);
       };
       const manual = Gesture.Manual()
         .onTouchesDown((event, manager) => {
@@ -383,6 +425,10 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
             // Ignore palm touches before considering a second finger pinch.
             if (strokeIsStylusSV.value) return;
             cancelStroke();
+            manager.fail();
+            return;
+          }
+          if (strokeBinding && !strokeBinding.contextSV.value.enabled) {
             manager.fail();
             return;
           }
@@ -403,18 +449,30 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           strokeIsStylusSV.value = isStylus;
           strokeDownAtSV.value = Date.now();
           isDrawingSV.value = true;
+          if (strokeBinding) {
+            const id = strokeBinding.sequenceSV.value + 1;
+            strokeBinding.sequenceSV.value = id;
+            sessionSV.value = { ...strokeBinding.contextSV.value, id, zoom: scaleSV.value, isStylus };
+            strokeBinding.previewIdSV.value = id;
+            strokeBinding.activeIdSV.value = id;
+          }
           if (strokeZoomSV) strokeZoomSV.value = scaleSV.value;
           pointsSV.value = [];
           farthestSV.value = 0;
           appendSample(pointer.x, pointer.y);
           followWithLoupe(pointer.x, pointer.y);
-          runOnJS(handleStart)();
+          runOnJS(handleStart)(sessionSV.value ?? undefined);
           manager.begin();
           manager.activate();
         })
         .onTouchesMove((event, manager) => {
           'worklet';
           if (!isDrawingSV.value) return;
+          if (strokeBinding && sessionSV.value?.epoch !== strokeBinding.contextSV.value.epoch) {
+            cancelStroke();
+            manager.fail();
+            return;
+          }
           if (!strokeIsStylusSV.value && event.numberOfTouches > 1) {
             cancelStroke();
             manager.fail();
@@ -455,7 +513,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           // Unexpected native interruption cancels once; an UP/fail has already
           // released ownership and cannot be committed again by late callbacks.
           cancelStroke();
-          stopLoupe(loupe);
+          stopOwnLoupe();
         });
       manual.simultaneousWithExternalGesture(pinchRef);
       return manual;
@@ -479,7 +537,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           // Drop the stroke and step aside for the board's zoom.
           abandonedSV.value = true;
           pointsSV.value = [];
-          stopLoupe(loupe);
+          stopOwnLoupe();
           manager.fail();
           return;
         }
@@ -555,7 +613,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         'worklet';
         isDrawingSV.value = false;
         returnedSV.value = false;
-        stopLoupe(loupe);
+        stopOwnLoupe();
         const abandoned = abandonedSV.value;
         abandonedSV.value = false;
         if (success && !abandoned) return;
@@ -571,6 +629,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     // captured once and read render-scoped values through callbacksRef.
   }, [
     acceptStationaryTaps,
+    ownedPointerInput,
+    strokeBinding,
+    sessionSV,
     loupe,
     strokeDownAtSV,
     ownerPointerIdSV,
