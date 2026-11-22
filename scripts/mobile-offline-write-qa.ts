@@ -111,6 +111,29 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, ti
   throw new Error(`Timed out after ${timeoutMs}ms`);
 }
 
+export async function waitForQaReceipt(
+  receipts: readonly QaReceipt[],
+  phase: Phase,
+  status: QaReceipt['status'],
+  timeoutMs: number,
+  reopen?: () => void,
+): Promise<QaReceipt> {
+  let nextReopenAt = 0;
+  return waitFor(() => {
+    const failure = receipts.find((receipt) => receipt.status === 'failed');
+    if (failure) throw new Error(`Harness failed: ${JSON.stringify(failure)}`);
+    const receipt = receipts.find((candidate) => candidate.phase === phase && candidate.status === status);
+    if (!receipt && reopen && Date.now() >= nextReopenAt) {
+      // Inspector registration can precede JS linking listeners, and Android
+      // may retain the original dev-client URL across a reload. Re-deliver the
+      // command until acknowledged; the per-runtime cache prevents duplicates.
+      reopen();
+      nextReopenAt = Date.now() + 2000;
+    }
+    return receipt;
+  }, timeoutMs);
+}
+
 export async function reloadMetroRuntime(metroPort: number): Promise<void> {
   await new Promise<void>((done, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:${metroPort}/message`, {
@@ -207,12 +230,8 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
       .find((line) => line.includes(`UIKitApplication:${bundleId}[`));
     return processLine?.trim().split(/\s+/)[0] ?? '';
   };
-  const phaseReceipt = async (phase: Phase, status: QaReceipt['status']) =>
-    waitFor(() => {
-      const failure = receipts.find((receipt) => receipt.status === 'failed');
-      if (failure) throw new Error(`Harness failed: ${JSON.stringify(failure)}`);
-      return receipts.find((receipt) => receipt.phase === phase && receipt.status === status);
-    }, options.timeoutMs);
+  const phaseReceipt = (phase: Phase, status: QaReceipt['status']) =>
+    waitForQaReceipt(receipts, phase, status, options.timeoutMs, () => openPhase(phase));
   const openPhase = (phase: Phase) =>
     openUrl(
       `com.boardsesh.app://dev/integration/offline-writes?runId=${runId}&phase=${phase}&receiptPort=${receiptPort}&rows=${options.rows}`,
@@ -282,12 +301,10 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
       const contexts: unknown = await response.json();
       return Array.isArray(contexts) && contexts.length > 0 ? true : undefined;
     }, options.timeoutMs);
-    openPhase('contention');
     await phaseReceipt('contention', 'passed');
     const beforePid = readPid();
     if (!/^\d+$/.test(beforePid)) throw new Error('Cannot identify one native process before reload');
     summary.pidBeforeReload = beforePid;
-    openPhase('prepare-reload');
     const holding = await phaseReceipt('prepare-reload', 'holding');
     if (options.platform === 'android') adbCommand(['shell', 'input', 'keyevent', 'KEYCODE_HOME']);
     else simCommand(['launch', options.device, 'com.apple.Preferences']);
@@ -297,7 +314,6 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     summary.backgroundedWithOpenWriter = true;
     await reloadMetroRuntime(options.metroPort);
     await phaseReceipt('prepare-reload', 'reloaded');
-    openPhase('verify-reload');
     const verified = await phaseReceipt('verify-reload', 'passed');
     const afterPid = readPid();
     summary.pidAfterReload = afterPid;

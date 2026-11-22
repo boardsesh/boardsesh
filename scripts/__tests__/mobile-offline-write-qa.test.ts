@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertRuntimeReplacement,
   MAX_RECEIPT_BYTES,
   parseQaOptions,
   parseQaReceipt,
+  waitForQaReceipt,
   type QaReceipt,
 } from '../mobile-offline-write-qa';
 
@@ -22,7 +23,45 @@ const verified: QaReceipt = {
   runtimeId: 'new-runtime',
 };
 
+afterEach(() => vi.useRealTimers());
+
 describe('offline write QA evidence', () => {
+  it('re-delivers the first command when inspector readiness precedes JS linking listeners', async () => {
+    vi.useFakeTimers();
+    const receipts: QaReceipt[] = [];
+    const completed: QaReceipt = { ...verified, phase: 'contention' };
+    const open = vi.fn(() => {
+      if (open.mock.calls.length === 2) receipts.push(completed);
+    });
+    const waiting = waitForQaReceipt(receipts, 'contention', 'passed', 9000, open);
+    await vi.advanceTimersByTimeAsync(2500);
+    await expect(waiting).resolves.toEqual(completed);
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-delivers preparation when the first link reaches the old runtime', async () => {
+    vi.useFakeTimers();
+    const receipts: QaReceipt[] = [holding];
+    const reloaded: QaReceipt = { ...holding, status: 'reloaded', runtimeId: 'replacement-runtime' };
+    const reopen = vi.fn(() => {
+      if (reopen.mock.calls.length === 2) receipts.push(reloaded);
+    });
+    const waiting = waitForQaReceipt(receipts, 'prepare-reload', 'reloaded', 9000, reopen);
+    await vi.advanceTimersByTimeAsync(2500);
+    await expect(waiting).resolves.toEqual(reloaded);
+    expect(reopen).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the original deadline when repeated links receive no acknowledgement', async () => {
+    vi.useFakeTimers();
+    const reopen = vi.fn();
+    const waiting = waitForQaReceipt([holding], 'prepare-reload', 'reloaded', 1000, reopen);
+    const rejection = expect(waiting).rejects.toThrow('Timed out after 1000ms');
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejection;
+    expect(reopen).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts both full-fixture traces while keeping receipt payloads bounded', () => {
     const trace = Array.from({ length: 500 }, (_, index) => ({
       site: 'reconcile-foreground',
