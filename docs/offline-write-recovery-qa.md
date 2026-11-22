@@ -78,6 +78,18 @@ Metro clients before broadcasting reload. Both platforms report bounded failures
 review the saved receipts and logs when the command exits nonzero. Fix the
 experiment setup separately from a confirmed database failure.
 
+For the outstanding physical iPhone gate, install the matching development
+client on a dedicated test phone. Run these deep links with one unique `runId`
+and omit `receiptPort`; receipts remain visible on screen and in the Xcode console.
+
+1. Open `com.boardsesh.app://dev/integration/offline-writes?runId=iphone-7985&phase=contention` and retain its receipt.
+2. Open the same URL with `phase=prepare-reload`; wait for `holding` and record the native PID.
+3. Reload JavaScript through the development menu without terminating the app; retain `reloaded` and the unchanged native PID.
+4. Open the same URL with `phase=verify-reload`; retain its receipt, changed runtime ID, and matching native build identity.
+
+Use a new `runId` for every repeat. This development-menu reload is distinct from
+the app-initiated OTA update path, which requires its own receiving-build evidence.
+
 When Metro is already running in the isolated mode with QA notes, invoke the
 driver directly:
 
