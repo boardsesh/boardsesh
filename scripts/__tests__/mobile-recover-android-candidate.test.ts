@@ -426,6 +426,18 @@ describe('uploaded Android candidate recovery', () => {
     ).toThrow();
   });
 
+  it('requires an exact published production release for a lost upload response', () => {
+    requireReviewedPlayBuild(releases('RELEASE_LIFECYCLE_STATE_PUBLISHED', 2001879), 'production', '2001879');
+    for (const state of ['IN_REVIEW', 'APPROVED_NOT_PUBLISHED', 'DRAFT', 'NOT_APPROVED'])
+      expect(() =>
+        requireReviewedPlayBuild(releases(`RELEASE_LIFECYCLE_STATE_${state}`, 2001879), 'production', '2001879'),
+      ).toThrow();
+    expect(() =>
+      requireReviewedPlayBuild(releases('RELEASE_LIFECYCLE_STATE_PUBLISHED', 2001875), 'production', '2001879'),
+    ).toThrow();
+    expect(() => requireReviewedPlayBuild({ releases: [] }, 'production', '2001879')).toThrow();
+  });
+
   it('only creates missing immutable tags and refuses to replace a different target', () => {
     expect(missingRecoveryTags({ build: null, fingerprint: null }, SOURCE)).toEqual(['build', 'fingerprint']);
     expect(missingRecoveryTags({ build: SOURCE, fingerprint: null }, SOURCE)).toEqual(['fingerprint']);
