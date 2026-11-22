@@ -17,9 +17,13 @@
  * shell ends exactly at the fold and `SiteFooter` starts there. That is the
  * sticky-footer behaviour; dropping it would float the footer mid-screen on a
  * board with three climbs.
+ *
+ * The ground is the page background, not `surface`. Surface is the card colour:
+ * painting the whole page with it left cards no lighter step to sit on, and
+ * washed the board art's own dark ground into a lilac frame.
  */
 export const boardShellSx = {
   minHeight: '100dvh',
   paddingTop: 'var(--global-header-height)',
-  background: 'var(--semantic-surface)',
+  background: 'var(--semantic-background)',
 } as const;

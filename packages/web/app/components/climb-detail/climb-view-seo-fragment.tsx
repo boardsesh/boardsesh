@@ -12,7 +12,16 @@ type ClimbViewSeoFragmentProps = {
   angle?: number;
 };
 
-const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 };
+// `.MuiTypography-h3` sets its own font-family, which beats the global
+// `h1, h2 { font-family: var(--font-display) }` rule in index.css, so the
+// display face has to be named here for the heading to get it.
+const headingSx = {
+  fontFamily: 'var(--font-display), sans-serif',
+  fontWeight: themeTokens.typography.fontWeight.bold,
+  letterSpacing: '-0.025em',
+  textWrap: 'balance' as const,
+  mb: 1,
+};
 
 const summarySx = { m: 0, mb: 2, maxWidth: '68ch' };
 

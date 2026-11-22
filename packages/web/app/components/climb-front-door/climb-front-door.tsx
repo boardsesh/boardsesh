@@ -99,7 +99,14 @@ const setterNotesSx = {
 // stack of sections rather than a run of UA-default headings.
 const sectionSx = { mt: 4 };
 
-const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
+// Named explicitly for the same reason as the h1 in `ClimbViewSeoFragment`:
+// the MUI variant's font-family beats the global `h2` display-face rule.
+const sectionHeadingSx = {
+  fontFamily: 'var(--font-display), sans-serif',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  letterSpacing: '-0.02em',
+  mb: 1.5,
+};
 
 // Shared by the "nothing here yet" and the "this did not load" lines. Same
 // muted weight for both: a degraded read is not an error the reader caused, and
@@ -294,27 +301,6 @@ export default async function ClimbFrontDoor({
           </Typography>
         </Box>
       ) : null}
-
-      <ClimbHandoffCta
-        variant="outlined"
-        pathname={handoffPath}
-        label={t('frontDoor.cta.climbThis')}
-        ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
-        helperText={t('frontDoor.cta.helper')}
-        surface="climb_front_door"
-        tree={tree}
-        boardName={boardDetails.board_name}
-        layoutId={boardDetails.layout_id}
-        angle={angle}
-        climbUuid={climb.uuid}
-        locale={locale}
-      >
-        <FrontDoorInstall
-          placement="climb-view"
-          helperText={t('frontDoor.install.helper')}
-          labels={storeButtonLabels}
-        />
-      </ClimbHandoffCta>
 
       <AngleCrossLinks
         boardDetails={boardDetails}

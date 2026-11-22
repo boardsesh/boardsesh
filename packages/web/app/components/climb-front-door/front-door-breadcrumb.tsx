@@ -52,6 +52,11 @@ const linkSx = {
 
 const currentCrumbSx = { color: 'text.primary', fontWeight: themeTokens.typography.fontWeight.medium };
 
+// Below md the climb crumb sits directly above an h1 that says the same thing,
+// so the leaf and its separator are hidden there. The JSON-LD keeps all three
+// items at every width.
+const leafOnlyFromMdSx = { display: { xs: 'none', md: 'list-item' } };
+
 /**
  * Home → board list → this climb, or Home → board list on the `/list` page
  * itself. The front door's upward links, and the hierarchy signal for
@@ -106,10 +111,10 @@ export default async function FrontDoorBreadcrumb({
                 {boardCrumbLabel}
               </MuiLink>
             </li>
-            <Box component="li" aria-hidden sx={separatorSx}>
+            <Box component="li" aria-hidden sx={{ ...separatorSx, ...leafOnlyFromMdSx }}>
               /
             </Box>
-            <Box component="li" aria-current="page" sx={currentCrumbSx}>
+            <Box component="li" aria-current="page" sx={{ ...currentCrumbSx, ...leafOnlyFromMdSx }}>
               {leaf.label}
             </Box>
           </>
