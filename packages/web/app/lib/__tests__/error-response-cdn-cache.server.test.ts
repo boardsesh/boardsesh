@@ -1,0 +1,171 @@
+// @vitest-environment node
+import { createServer, get, ServerResponse, type IncomingHttpHeaders, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
+import {
+  ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE,
+  installErrorResponseCdnCacheGuard,
+  isErrorStatus,
+  withdrawSharedCacheHeaders,
+} from '../error-response-cdn-cache.server';
+
+// What the middleware stamps on a list or climb-view URL before the page renders.
+const LIST_PAGE_CDN_CACHE = 's-maxage=86400, stale-while-revalidate=604800';
+// What Next writes itself on a 404 or an error render.
+const NEXT_ERROR_CACHE_CONTROL = 'private, no-cache, no-store, max-age=0, must-revalidate';
+
+type ResponseWriter = (response: ServerResponse) => void;
+
+// A subclass per test, so the guard never touches the real ServerResponse
+// prototype other test files in this worker share.
+function startServer(writeResponse: ResponseWriter): Promise<Server> {
+  class GuardedResponse extends ServerResponse {}
+  installErrorResponseCdnCacheGuard(GuardedResponse);
+  const server = createServer({ ServerResponse: GuardedResponse }, (_incoming, response) => writeResponse(response));
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
+function fetchHead(server: Server): Promise<{ statusCode: number; headers: IncomingHttpHeaders }> {
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    get({ host: '127.0.0.1', port, path: '/kilter/original/12x12-square/screw_bolt/40/list' }, (incoming) => {
+      incoming.resume();
+      incoming.on('end', () => resolve({ statusCode: incoming.statusCode ?? 0, headers: incoming.headers }));
+    }).on('error', reject);
+  });
+}
+
+// Next's own path: middleware headers via setHeader, then a status, then the body.
+function nextStyleResponse(statusCode: number): ResponseWriter {
+  return (response) => {
+    response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+    response.setHeader('Vercel-CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+    response.setHeader('Cache-Control', NEXT_ERROR_CACHE_CONTROL);
+    response.statusCode = statusCode;
+    response.end('<html>404: This page could not be found</html>');
+  };
+}
+
+let server: Server | undefined;
+afterEach(async () => {
+  await new Promise((resolve) => (server ? server.close(resolve) : resolve(undefined)));
+  server = undefined;
+});
+
+describe('installErrorResponseCdnCacheGuard', () => {
+  it.each([404, 410, 500, 503])('turns the middleware TTL into no-store on a %i', async (statusCode) => {
+    server = await startServer(nextStyleResponse(statusCode));
+    const { statusCode: received, headers } = await fetchHead(server);
+    expect(received).toBe(statusCode);
+    expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    expect(headers['vercel-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    // Next's own Cache-Control is left as Next wrote it.
+    expect(headers['cache-control']).toBe(NEXT_ERROR_CACHE_CONTROL);
+  });
+
+  it('keeps the TTL on a 200', async () => {
+    server = await startServer(nextStyleResponse(200));
+    const { headers } = await fetchHead(server);
+    expect(headers['cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
+    expect(headers['vercel-cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
+  });
+
+  it('keeps the TTL on a redirect, which the climb-view legacy 308 relies on', async () => {
+    server = await startServer((response) => {
+      response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+      response.setHeader('Location', '/b/kilter-original-12x12/40/view/abc');
+      response.statusCode = 308;
+      response.end();
+    });
+    const { statusCode, headers } = await fetchHead(server);
+    expect(statusCode).toBe(308);
+    expect(headers['cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
+  });
+
+  it('catches a status set after the body started streaming headers implicitly', async () => {
+    server = await startServer((response) => {
+      response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+      response.statusCode = 500;
+      response.write('<html>');
+      response.end('</html>');
+    });
+    const { headers } = await fetchHead(server);
+    expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+  });
+
+  it('adds no shared-cache header to an error that never had one', async () => {
+    server = await startServer((response) => {
+      response.statusCode = 404;
+      response.end();
+    });
+    const { headers } = await fetchHead(server);
+    expect(headers['cdn-cache-control']).toBeUndefined();
+    expect(headers['vercel-cdn-cache-control']).toBeUndefined();
+    expect(headers['cloudflare-cdn-cache-control']).toBeUndefined();
+  });
+
+  it('rewrites headers passed to writeHead as an object', async () => {
+    server = await startServer((response) => {
+      response.writeHead(503, { 'Cloudflare-CDN-Cache-Control': 's-maxage=60', 'X-Kept': 'yes' });
+      response.end();
+    });
+    const { headers } = await fetchHead(server);
+    expect(headers['cloudflare-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    expect(headers['x-kept']).toBe('yes');
+  });
+
+  it('rewrites headers passed to writeHead as a flat array, with a reason phrase', async () => {
+    server = await startServer((response) => {
+      response.setHeader('Vercel-CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+      response.writeHead(404, 'Not Found', ['CDN-Cache-Control', 's-maxage=60', 'X-Kept', 'yes']);
+      response.end();
+    });
+    const { headers } = await fetchHead(server);
+    expect(headers['cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    expect(headers['vercel-cdn-cache-control']).toBe(ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE);
+    expect(headers['x-kept']).toBe('yes');
+  });
+
+  it('wraps a prototype only once', () => {
+    class GuardedResponse extends ServerResponse {}
+    expect(installErrorResponseCdnCacheGuard(GuardedResponse)).toBe(true);
+    const ownWriteHead = (): unknown => Object.getOwnPropertyDescriptor(GuardedResponse.prototype, 'writeHead')?.value;
+    const guardedWriteHead = ownWriteHead();
+    expect(guardedWriteHead).toBeTypeOf('function');
+    expect(installErrorResponseCdnCacheGuard(GuardedResponse)).toBe(false);
+    expect(ownWriteHead()).toBe(guardedWriteHead);
+  });
+});
+
+describe('withdrawSharedCacheHeaders', () => {
+  it('rewrites only the shared-cache headers that are present', () => {
+    const stored = new Map<string, string>([
+      ['cdn-cache-control', LIST_PAGE_CDN_CACHE],
+      ['cache-control', NEXT_ERROR_CACHE_CONTROL],
+    ]);
+    withdrawSharedCacheHeaders({
+      getHeader: (headerName: string) => stored.get(headerName),
+      setHeader(headerName: string, headerValue: string | number | readonly string[]) {
+        stored.set(headerName, String(headerValue));
+        return this as unknown as ServerResponse;
+      },
+    });
+    expect(Object.fromEntries(stored)).toEqual({
+      'cdn-cache-control': ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE,
+      'cache-control': NEXT_ERROR_CACHE_CONTROL,
+    });
+  });
+});
+
+describe('isErrorStatus', () => {
+  it.each([
+    [200, false],
+    [308, false],
+    [399, false],
+    [400, true],
+    [404, true],
+    [599, true],
+  ])('%i is an error: %s', (statusCode, expected) => {
+    expect(isErrorStatus(statusCode)).toBe(expected);
+  });
+});

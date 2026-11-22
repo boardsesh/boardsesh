@@ -302,6 +302,9 @@ function routeRequest(request: NextRequest) {
   // Climb view pages are equally URL-determined and personalization-free, so they
   // cache the same way — including their legacy numeric variants, whose permanent
   // redirect the CDN can then serve without re-rendering.
+  // This runs before the page renders, so it cannot know the page will 404 or
+  // fail. `installErrorResponseCdnCacheGuard` (instrumentation.ts) turns the
+  // header into `no-store` on any 4xx or 5xx once the status is final.
   const cacheTTL =
     getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
     getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
