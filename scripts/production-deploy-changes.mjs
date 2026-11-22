@@ -214,7 +214,9 @@ function createCliGit({ cwd = process.cwd() } = {}) {
       }
     },
     changedFiles(baseSha, headSha) {
-      const output = runGit(['diff', '--name-only', baseSha, headSha]);
+      // Treat a move as deletion + addition so moving app code outside its
+      // roots still rebuilds the app that lost that code.
+      const output = runGit(['diff', '--no-renames', '--name-only', baseSha, headSha]);
       return output === '' ? [] : output.split('\n').filter(Boolean);
     },
   };

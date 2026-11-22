@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import {
   classifyChangedFiles,
+  createCliGit,
   determineProductionDeployChanges,
   formatGitHubOutputs,
   selectLatestSuccessfulPriorRun,
@@ -29,6 +32,49 @@ function validGit(changedFiles = []) {
     changedFiles: () => changedFiles,
   };
 }
+
+void test('moving app code into the backend rebuilds both app targets', (context) => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'boardsesh-production-deploy-changes-'));
+  context.after(() => rmSync(repoRoot, { recursive: true, force: true }));
+  const git = (args) =>
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'core.hooksPath=/dev/null',
+        '-c',
+        'commit.gpgSign=false',
+        '-c',
+        'user.name=Boardsesh tests',
+        '-c',
+        'user.email=tests@boardsesh.invalid',
+        ...args,
+      ],
+      { cwd: repoRoot, encoding: 'utf8' },
+    ).trim();
+  const sourcePath = 'packages/mobile/src/session.ts';
+  const destinationPath = 'packages/backend/src/session.ts';
+
+  git(['init', '--quiet']);
+  git(['config', 'diff.renames', 'true']);
+  mkdirSync(dirname(join(repoRoot, sourcePath)), { recursive: true });
+  writeFileSync(join(repoRoot, sourcePath), 'export const sessionLabel = "Ready to climb";\n');
+  git(['add', '.']);
+  git(['commit', '--quiet', '-m', 'Add app session module']);
+  const baseSha = git(['rev-parse', 'HEAD']);
+  mkdirSync(dirname(join(repoRoot, destinationPath)), { recursive: true });
+  git(['mv', sourcePath, destinationPath]);
+  git(['commit', '--quiet', '-m', 'Move session module into backend']);
+  const headSha = git(['rev-parse', 'HEAD']);
+
+  // This is a real rename; name-only without --no-renames loses the app path.
+  assert.equal(git(['diff', '--name-only', baseSha, headSha]), destinationPath);
+  const changedPaths = createCliGit({ cwd: repoRoot }).changedFiles(baseSha, headSha);
+  assert.deepEqual(new Set(changedPaths), new Set([sourcePath, destinationPath]));
+  const targets = classifyChangedFiles(changedPaths);
+  assert.equal(targets.app, true);
+  assert.equal(targets.ota, true);
+});
 
 void test('selects the newest successful prior run and skips unfinished ones', () => {
   const selected = selectLatestSuccessfulPriorRun(
