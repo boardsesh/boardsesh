@@ -184,29 +184,38 @@ describe('DeferredClimbStatsRecompute', () => {
  * Wraps `database.transaction` and, just before each batch commits, records
  * whether the fixture climb has a stats row yet and how many of its keys are
  * marked pending. Only the recompute creates the stats row, so this shows
- * which transaction ran it. `failOnBatch` makes that batch throw instead, as a
- * worker dying between a page and its flush would.
+ * which transaction ran it. Failure injection can stop at a numbered batch or
+ * after a committed pending marker, without depending on the page's table order.
  */
-function statsProbeRunner(climbUuid: string, failOnBatch?: number) {
+function statsProbeRunner(climbUuid: string, options: { failOnBatch?: number; stopAfterPendingCommit?: boolean } = {}) {
   const statsRowsAtCommit: number[] = [];
   const pendingAtCommit: number[] = [];
+  const checkpointsAtCommit: number[] = [];
   let batch = 0;
   const runBatch = ((callback) => {
     batch += 1;
     // A stopped worker runs nothing after the stop. Failing only the one batch
     // would let a later phase's flush retry the recompute the earlier one owed.
-    if (failOnBatch !== undefined && batch >= failOnBatch) return Promise.reject(new Error('worker stopped'));
+    if (
+      (options.failOnBatch !== undefined && batch >= options.failOnBatch) ||
+      (options.stopAfterPendingCommit && pendingAtCommit.at(-1) === 1)
+    ) {
+      return Promise.reject(new Error('worker stopped'));
+    }
     return database.transaction(async (transaction) => {
       const result = await callback(transaction);
-      const [row] = await transaction.execute<{ stats: number; pending: number }>(sql`
+      const [row] = await transaction.execute<{ stats: number; pending: number; checkpoints: number }>(sql`
         SELECT (SELECT count(*)::int FROM board_climb_stats WHERE climb_uuid = ${climbUuid}) AS stats,
-               (SELECT count(*)::int FROM climb_stats_recompute_pending WHERE climb_uuid = ${climbUuid}) AS pending`);
+               (SELECT count(*)::int FROM climb_stats_recompute_pending WHERE climb_uuid = ${climbUuid}) AS pending,
+               (SELECT count(*)::int FROM board_user_syncs
+                 WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID}) AS checkpoints`);
       statsRowsAtCommit.push(row.stats);
       pendingAtCommit.push(row.pending);
+      checkpointsAtCommit.push(row.checkpoints);
       return result;
     });
   }) as SyncBatchRunner;
-  return { runBatch, statsRowsAtCommit, pendingAtCommit };
+  return { runBatch, statsRowsAtCommit, pendingAtCommit, checkpointsAtCommit };
 }
 
 const countRows = async (table: 'board_climb_stats' | 'climb_stats_recompute_pending', climbUuid: string) =>
@@ -248,28 +257,37 @@ afterAll(async () => {
 });
 
 describe('Aurora page transactions and the stats recompute', () => {
-  it('recomputes after the page commits, in its own transaction, when a batch runner is injected', async () => {
+  it('recomputes committed write batches before checkpointing, in its own transaction', async () => {
     await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
     stubAuroraApi({ pages: [fullSyncPage(ASCENT_CLIMB)] });
-    const { runBatch, statsRowsAtCommit, pendingAtCommit } = statsProbeRunner(ASCENT_CLIMB);
+    const { runBatch, statsRowsAtCommit, pendingAtCommit, checkpointsAtCommit } = statsProbeRunner(ASCENT_CLIMB);
 
     await syncUserData(database, FIXTURE_BOARD, 'token', AURORA_USER_ID, ASCENT_USER, {
       transaction: runBatch,
       log: () => {},
     });
 
-    // The page committed with no stats row and its key marked pending; the next
-    // batch recomputed it and cleared the mark.
-    expect(statsRowsAtCommit).toEqual([0, 1]);
-    expect(pendingAtCommit).toEqual([1, 0]);
+    // Ignore repeated observations from unrelated table batches, but require
+    // each durable transition in order: writes, marker, flush, then cursor.
+    const transitions = statsRowsAtCommit
+      .map((stats, index) => [stats, pendingAtCommit[index], checkpointsAtCommit[index]])
+      .filter(
+        (observation, index, observations) => index === 0 || observation.join() !== observations[index - 1].join(),
+      );
+    expect(transitions).toEqual([
+      [0, 0, 0],
+      [0, 1, 0],
+      [1, 0, 0],
+      [1, 0, 1],
+    ]);
     expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(0);
   });
 
   it('leaves the key marked when the worker stops before the flush, and the self-heal drains it', async () => {
     await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
     stubAuroraApi({ pages: [fullSyncPage(ASCENT_CLIMB)] });
-    // The page commits; the recompute batch after it never runs.
-    const { runBatch } = statsProbeRunner(ASCENT_CLIMB, 2);
+    // Stop only after the tick and its pending marker have actually committed.
+    const { runBatch, checkpointsAtCommit } = statsProbeRunner(ASCENT_CLIMB, { stopAfterPendingCommit: true });
 
     await expect(
       syncUserData(database, FIXTURE_BOARD, 'token', AURORA_USER_ID, ASCENT_USER, {
@@ -282,6 +300,8 @@ describe('Aurora page transactions and the stats recompute', () => {
     // but its key survived the crash.
     expect(await countRows('climb_stats_recompute_pending', ASCENT_CLIMB)).toBe(1);
     expect(await countRows('board_climb_stats', ASCENT_CLIMB)).toBe(0);
+    expect(checkpointsAtCommit.length).toBeGreaterThan(0);
+    expect(checkpointsAtCommit.every((count) => count === 0)).toBe(true);
 
     // A fresh mark belongs to a live flush: the self-heal leaves it for two minutes.
     await climbStatsSelfHealFamily.execute(selfHealContext(), {});
@@ -326,15 +346,20 @@ describe('Aurora page transactions and the stats recompute', () => {
   it('keeps the daemon behaviour: the recompute stays inside the page transaction', async () => {
     await insertLinkedTensionAccount(database, ASCENT_USER, ASCENT_CLIMB);
     stubAuroraApi({ pages: [fullSyncPage(ASCENT_CLIMB)] });
-    const { runBatch, statsRowsAtCommit } = statsProbeRunner(ASCENT_CLIMB);
+    const { runBatch, statsRowsAtCommit, pendingAtCommit, checkpointsAtCommit } = statsProbeRunner(ASCENT_CLIMB);
+    const daemonDatabase = new Proxy(database, {
+      get(target, property, receiver) {
+        return property === 'transaction' ? runBatch : Reflect.get(target, property, receiver);
+      },
+    });
 
-    await syncUserData(database, FIXTURE_BOARD, 'token', AURORA_USER_ID, ASCENT_USER, {
-      transaction: runBatch,
-      deferStatsRecompute: false,
+    await syncUserData(daemonDatabase, FIXTURE_BOARD, 'token', AURORA_USER_ID, ASCENT_USER, {
       log: () => {},
     });
 
     expect(statsRowsAtCommit).toEqual([1]);
+    expect(pendingAtCommit).toEqual([0]);
+    expect(checkpointsAtCommit).toEqual([1]);
   });
 });
 
@@ -642,7 +667,7 @@ describe('Kilter flush transactions and the stats recompute', () => {
     await insertLinkedKilterAccount(database, KILTER_USER, KILTER_CLIMB);
     stubKilterPowerSync(KILTER_CLIMB);
     // The logs flush commits; the recompute batch after it never runs.
-    const { runBatch } = statsProbeRunner(KILTER_CLIMB, 2);
+    const { runBatch } = statsProbeRunner(KILTER_CLIMB, { failOnBatch: 2 });
 
     await expect(
       syncKilterUserData({ db: database, userId: KILTER_USER, accessToken: 'kilter-access', transaction: runBatch }),
