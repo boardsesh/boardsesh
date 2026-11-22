@@ -4,7 +4,7 @@
 // raster cache, and the two placeholders: boards for an unknown config, camera
 // for a spray wall until its photo is on disk.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { sprayBackgroundKey } from '../../../lib/spray/spray-photo-keys';
 
@@ -16,6 +16,8 @@ const ctrl = vi.hoisted(() => ({
   resolveDownload: null as ((path: string | null) => void) | null,
   downloads: 0,
   privacyGeneration: 1,
+  preview: null as { uri: string; aspectRatio: number } | null,
+  thumbnailRequests: [] as { wallUuid: string; layoutId: number; draftVersionId: string | null }[],
 }));
 
 vi.mock('react-native', async () => {
@@ -25,6 +27,8 @@ vi.mock('react-native', async () => {
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     StyleSheet: { create: <T,>(styles: T): T => styles, hairlineWidth: 0.5, absoluteFill: { position: 'absolute' } },
+    Image: ({ source, onLoad, onError }: { source: { uri: string }; onLoad: () => void; onError: () => void }) =>
+      createElement('img', { 'data-testid': 'spray-photo', src: source.uri, onLoad, onError }),
     View: ({
       children,
       style,
@@ -74,6 +78,12 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../lib/board-details', () => ({ getBoardRenderData: () => ctrl.renderData }));
 vi.mock('../../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
+vi.mock('../../../lib/spray/use-spray-wall-thumbnail', () => ({
+  useSprayWallThumbnail: (request: { wallUuid: string; layoutId: number; draftVersionId: string | null }) => {
+    ctrl.thumbnailRequests.push(request);
+    return ctrl.preview;
+  },
+}));
 vi.mock('../../../lib/spray/spray-privacy-generation', () => ({
   sprayPrivacyGeneration: () => `generation-${ctrl.privacyGeneration}`,
 }));
@@ -88,6 +98,7 @@ vi.mock('../../../lib/spray/spray-photo-cache', () => ({
 }));
 
 import { BoardThumbnail } from '../BoardThumbnail';
+import { DiscoveryBoardArt } from '../../board-discovery/DiscoveryBoardArt';
 
 const KILTER = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
 const SPRAY = { boardType: 'spray', layoutId: 9001, sizeId: 9001, setIds: '1' };
@@ -107,6 +118,8 @@ beforeEach(() => {
   ctrl.resolveDownload = null;
   ctrl.downloads = 0;
   ctrl.privacyGeneration = 1;
+  ctrl.preview = null;
+  ctrl.thumbnailRequests = [];
 });
 afterEach(cleanup);
 
@@ -235,5 +248,59 @@ describe('BoardThumbnail', () => {
     cleanup();
     render(<BoardThumbnail board={KILTER} size="regular" accessibilityHidden={false} />);
     expect(screen.getByRole('img', { name: 'Kilter' })).toBeTruthy();
+  });
+
+  it('loads saved spray previews by UUID without requiring published render geometry', () => {
+    ctrl.renderData = null;
+    ctrl.preview = { uri: 'file:///cache/spray.jpg', aspectRatio: 0.75 };
+    render(<BoardThumbnail board={{ ...SPRAY, uuid: 'shared-wall' }} size="regular" />);
+    expect(ctrl.thumbnailRequests).toEqual([{ wallUuid: 'shared-wall', layoutId: 9001, draftVersionId: null }]);
+    expect(screen.getByTestId('spray-photo').getAttribute('src')).toBe('file:///cache/spray.jpg');
+    expect(screen.queryByTestId('board-art')).toBeNull();
+    expect(ctrl.downloads).toBe(0);
+  });
+
+  it('passes the picker wall UUID and unfinished version to the photo preview', () => {
+    render(
+      <DiscoveryBoardArt
+        item={{
+          key: 'unfinished-wall',
+          boardName: 'spray',
+          layoutId: 9001,
+          sizeId: 9001,
+          setIds: '1',
+          title: 'Garage',
+          sprayImport: {
+            wallUuid: 'unfinished-wall',
+            versionId: '42',
+            stage: 'ready',
+            detectionId: null,
+            queuePosition: null,
+            retryAt: null,
+            resetOfWallUuid: null,
+          },
+        }}
+        size="regular"
+      />,
+    );
+    expect(ctrl.thumbnailRequests).toEqual([{ wallUuid: 'unfinished-wall', layoutId: 9001, draftVersionId: '42' }]);
+    expect(screen.queryByTestId('spray-photo')).toBeNull();
+  });
+
+  it('replaces the saved wall camera when its photo arrives and reports image readiness', () => {
+    const onArtReadinessChange = vi.fn();
+    const board = { ...SPRAY, uuid: 'shared-wall' };
+    const { container, rerender } = render(
+      <BoardThumbnail board={board} size="regular" onArtReadinessChange={onArtReadinessChange} />,
+    );
+    expect(container.querySelector('[data-icon="camera"]')).not.toBeNull();
+    ctrl.preview = { uri: 'https://example.invalid/photo.jpg', aspectRatio: 0.75 };
+    rerender(<BoardThumbnail board={{ ...board }} size="regular" onArtReadinessChange={onArtReadinessChange} />);
+    fireEvent.load(screen.getByTestId('spray-photo'));
+    expect(onArtReadinessChange).toHaveBeenCalledWith('ready');
+    expect(container.querySelector('[data-icon="camera"]')).toBeNull();
+    fireEvent.error(screen.getByTestId('spray-photo'));
+    expect(onArtReadinessChange).toHaveBeenCalledWith('failed');
+    expect(container.querySelector('[data-icon="camera"]')).not.toBeNull();
   });
 });

@@ -173,6 +173,48 @@ export const GET_SPRAY_WALL_BY_LAYOUT = gql`
   }
 `;
 
+/** Board-picker photos, without loading or registering a wall's hold geometry. */
+export const GET_SPRAY_WALL_THUMBNAIL = gql`
+  query GetSprayWallThumbnail($uuid: ID!, $includeDrafts: Boolean!) {
+    sprayWall(uuid: $uuid) {
+      uuid
+      layoutId
+      currentVersion {
+        id
+        photo {
+          url
+          width
+          height
+          expiresAt
+        }
+      }
+      versions @include(if: $includeDrafts) {
+        id
+        photo {
+          url
+          width
+          height
+          expiresAt
+        }
+      }
+    }
+  }
+`;
+
+export type SprayWallThumbnailVersion = {
+  id: string;
+  photo: Pick<SprayWallPhoto, 'url' | 'width' | 'height' | 'expiresAt'> | null;
+};
+
+export type GetSprayWallThumbnailQueryResponse = {
+  sprayWall: {
+    uuid: string;
+    layoutId: number;
+    currentVersion: SprayWallThumbnailVersion | null;
+    versions?: SprayWallThumbnailVersion[];
+  } | null;
+};
+
 export const GET_SPRAY_WALL_RENDER_DATA = gql`
   query GetSprayWallRenderData($uuid: ID!, $version: Int) {
     sprayWallRenderData(uuid: $uuid, version: $version) {

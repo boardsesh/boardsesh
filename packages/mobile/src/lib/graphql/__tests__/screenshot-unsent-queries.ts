@@ -85,6 +85,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSprayWallHoldUsage',
   'GetSprayWallLedSetup',
   'GetSprayWallReports',
+  // Recorded picker/summary boards are catalogue boards. Feed spray thumbnails use the climb renderer.
+  'GetSprayWallThumbnail',
   'GetSprayWallTrainingConsent',
   'GetSprayWallWithVersions',
   'GetUserAscentCaptionMatches',

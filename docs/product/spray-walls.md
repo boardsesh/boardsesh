@@ -3124,6 +3124,20 @@ The device still mirrors `missing_hold_count`, `revision_number`,
 
 ## Photo privacy
 
+### Board picker previews
+
+The native and browser board pickers request a saved wall's photo by its known
+UUID. A layout-only lookup cannot open another climber's unlisted wall, even
+when the picker already has the share capability. `GetSprayWallThumbnail` reads
+the published photo, or the exact unfinished version named by `sprayImport`.
+It does not register draft holds in the published render registry.
+
+Native previews use the owned spray-photo cache; browser previews use its signed
+URL counterpart. Query and download state follow the wall's privacy and viewer
+generations, and withdrawal removes the thumbnail query alongside render data.
+Signatures refresh within ten minutes, and a renewed source retries a failed
+photo download. Missing or unreadable photos retain the camera placeholder.
+
 ### Device cleanup
 
 Sign-out withdraws every registered wall and clears renderer photographs in

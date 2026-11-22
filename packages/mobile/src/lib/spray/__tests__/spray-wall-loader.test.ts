@@ -194,6 +194,7 @@ describe('withdrawal erases React Query payloads', () => {
       ['sprayWallRenderData', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 3, 'old'],
       ['sprayWallWithVersions', WALL_UUID],
+      ['sprayWallThumbnail', WALL_UUID, LAYOUT_ID, 'old'],
     ];
     for (const key of erasedKeys)
       queryClient.setQueryData(
@@ -203,6 +204,7 @@ describe('withdrawal erases React Query payloads', () => {
     const preservedKeys = [
       ['sprayWallByLayout', 4300, 'old'],
       ['sprayWallRenderData', 'wall-b', 'old'],
+      ['sprayWallThumbnail', 'wall-b', 4300, 'old'],
       ['catalogue', 'kilter'],
     ];
     for (const key of preservedKeys) queryClient.setQueryData(key, { secret: 'other payload' });
@@ -220,6 +222,9 @@ describe('withdrawal erases React Query payloads', () => {
     const teardown = installSprayWallLoader(queryClient);
     queryClient.setQueryData(['sprayWallWithVersions', WALL_UUID], { uuid: WALL_UUID, layoutId: LAYOUT_ID });
     queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
+    queryClient.setQueryData(['sprayWallThumbnail', WALL_UUID, LAYOUT_ID, 'old'], {
+      sprayWall: { uuid: WALL_UUID, layoutId: LAYOUT_ID },
+    });
     unregisterSprayWall(LAYOUT_ID);
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
     teardown();
@@ -229,7 +234,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('global withdrawal erases spray families and retains catalogue queries', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    for (const family of ['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions']) {
+    for (const family of ['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions', 'sprayWallThumbnail']) {
       queryClient.setQueryData([family, 'unknown'], { secret: 'private' });
     }
     queryClient.setQueryData(['catalogue'], { board: 'kilter' });

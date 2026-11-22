@@ -68,8 +68,15 @@ export type DiscoveryBoardArtProps = { item: DiscoveryBoardItem; size: BoardThum
  */
 export const DiscoveryBoardArt = memo(function DiscoveryBoardArt({ item, size }: DiscoveryBoardArtProps) {
   const board = useMemo(
-    () => ({ boardType: item.boardName, layoutId: item.layoutId, sizeId: item.sizeId, setIds: item.setIds }),
-    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+    () => ({
+      uuid: item.key,
+      boardType: item.boardName,
+      layoutId: item.layoutId,
+      sizeId: item.sizeId,
+      setIds: item.setIds,
+      sprayImport: item.sprayImport,
+    }),
+    [item.key, item.boardName, item.layoutId, item.sizeId, item.setIds, item.sprayImport],
   );
   return <BoardThumbnail board={board} size={size} />;
 });
