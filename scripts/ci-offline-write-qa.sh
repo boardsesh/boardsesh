@@ -14,6 +14,7 @@ export TMPDIR="$PWD/.boardsesh/tmp/offline-write-qa"
 export BOARDSESH_METRO_PORT="${BOARDSESH_METRO_PORT:-8095}"
 export CI=1
 export EXPO_PUBLIC_OFFLINE_WRITE_QA=1
+export EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT="${EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT:-8096}"
 # The isolated route must use native SQLite, never capture/replay shortcuts.
 unset EXPO_PUBLIC_SCREENSHOT_MODE EXPO_PUBLIC_STORY_MODE
 

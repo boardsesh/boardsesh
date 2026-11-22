@@ -27,6 +27,7 @@ export type QaOptions = {
   appPath: string;
   outputDir: string;
   metroPort: number;
+  controlPort: number;
   timeoutMs: number;
   rows: number;
 };
@@ -37,7 +38,16 @@ export function parseQaOptions(args: readonly string[]): QaOptions {
     const flag = args[index];
     const argument = args[index + 1];
     if (
-      !['--platform', '--device', '--app-path', '--output-dir', '--metro-port', '--timeout-ms', '--rows'].includes(flag)
+      ![
+        '--platform',
+        '--device',
+        '--app-path',
+        '--output-dir',
+        '--metro-port',
+        '--control-port',
+        '--timeout-ms',
+        '--rows',
+      ].includes(flag)
     ) {
       throw new Error(`Unknown argument: ${flag}`);
     }
@@ -52,9 +62,14 @@ export function parseQaOptions(args: readonly string[]): QaOptions {
   }
   if (!options['--app-path'] || !options['--output-dir']) throw new Error('--app-path and --output-dir are required');
   const metroPort = Number(options['--metro-port'] ?? process.env.BOARDSESH_METRO_PORT ?? '8095');
+  const controlPort = Number(
+    options['--control-port'] ?? process.env.EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT ?? '8096',
+  );
   const timeoutMs = Number(options['--timeout-ms'] ?? '600000');
   const rows = Number(options['--rows'] ?? '369000');
   if (!Number.isInteger(metroPort) || metroPort < 1024 || metroPort > 65535) throw new Error('Invalid Metro port');
+  if (!Number.isInteger(controlPort) || controlPort < 1024 || controlPort > 65535 || controlPort === metroPort)
+    throw new Error('Invalid control port');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1800000) throw new Error('Invalid timeout');
   if (!Number.isSafeInteger(rows) || rows < 1000 || rows > 500000) throw new Error('Invalid fixture row count');
   return {
@@ -63,6 +78,7 @@ export function parseQaOptions(args: readonly string[]): QaOptions {
     appPath: resolve(options['--app-path']),
     outputDir: resolve(options['--output-dir']),
     metroPort,
+    controlPort,
     timeoutMs,
     rows,
   };
@@ -124,9 +140,8 @@ export async function waitForQaReceipt(
     if (failure) throw new Error(`Harness failed: ${JSON.stringify(failure)}`);
     const receipt = receipts.find((candidate) => candidate.phase === phase && candidate.status === status);
     if (!receipt && reopen && Date.now() >= nextReopenAt) {
-      // Inspector registration can precede JS linking listeners, and Android
-      // may retain the original dev-client URL across a reload. Re-deliver the
-      // command until acknowledged; the per-runtime cache prevents duplicates.
+      // A runtime can start polling after this phase is selected. Keep the
+      // command available until acknowledged; per-runtime caching prevents duplicates.
       reopen();
       nextReopenAt = Date.now() + 2000;
     }
@@ -189,12 +204,23 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     appPath: options.appPath,
     evidenceKind: 'development-client',
     requestedFixtureRows: options.rows,
+    controlPort: options.controlPort,
     receivingReleaseQualified: false,
     receipts,
     status: 'failed',
   };
   const receiptPath = join(options.outputDir, `${runId}-receipts.jsonl`);
+  let activePhase: Phase | undefined;
   const server = createServer(async (request, response) => {
+    if (request.method === 'GET' && request.url === '/command') {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      response.end(
+        JSON.stringify(
+          activePhase ? { runId, phase: activePhase, rows: options.rows, receiptPort: options.controlPort } : null,
+        ),
+      );
+      return;
+    }
     if (request.method !== 'POST' || request.url !== '/receipt') {
       response.writeHead(404).end();
       return;
@@ -231,12 +257,12 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     return processLine?.trim().split(/\s+/)[0] ?? '';
   };
   const phaseReceipt = (phase: Phase, status: QaReceipt['status']) =>
-    waitForQaReceipt(receipts, phase, status, options.timeoutMs, () => openPhase(phase));
-  const openPhase = (phase: Phase) =>
-    openUrl(
-      `com.boardsesh.app://dev/integration/offline-writes?runId=${runId}&phase=${phase}&receiptPort=${receiptPort}&rows=${options.rows}`,
-    );
+    waitForQaReceipt(receipts, phase, status, options.timeoutMs, () => {
+      summary.stage = phase;
+      activePhase = phase;
+    });
   try {
+    summary.stage = 'installing';
     if (!existsSync(options.appPath)) throw new Error(`Missing dev-client artifact: ${options.appPath}`);
     if (options.platform === 'android') {
       const toolsDir = join(resolveAndroidHome(), 'build-tools');
@@ -274,11 +300,18 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
       summary.binarySha256 = createHash('sha256')
         .update(readFileSync(join(options.appPath, executable)))
         .digest('hex');
+      const simulatorInventory = JSON.parse(simCommand(['list', 'devices', '--json'])) as {
+        devices: Record<string, { udid: string }[]>;
+      };
+      summary.osVersion =
+        Object.entries(simulatorInventory.devices).find(([, devices]) =>
+          devices.some((device) => device.udid === options.device),
+        )?.[0] ?? null;
       simCommand(['install', options.device, options.appPath]);
     }
     await new Promise<void>((done, reject) => {
       server.once('error', reject);
-      server.listen(0, '127.0.0.1', done);
+      server.listen(options.controlPort, '127.0.0.1', done);
     });
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('No receipt listener address');
@@ -291,9 +324,16 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     });
     if (!(await metroResponse.text()).includes('packager-status:running'))
       throw new Error('Start dev:mobile with the offline-write QA environment first');
-    openUrl(
-      `exp+boardsesh://expo-development-client/?url=${encodeURIComponent(`http://localhost:${options.metroPort}`)}`,
-    );
+    summary.stage = 'starting-runtime';
+    if (options.platform === 'ios') {
+      // Expo consumes the native initial URL without an OS scheme-confirmation
+      // dialog or the default launcher's React-host reset (same as screenshots).
+      simCommand(['launch', options.device, bundleId, '--initialUrl', `http://localhost:${options.metroPort}`]);
+    } else {
+      openUrl(
+        `exp+boardsesh://expo-development-client/?url=${encodeURIComponent(`http://localhost:${options.metroPort}`)}`,
+      );
+    }
     await waitFor(async () => {
       const response = await fetch(`http://127.0.0.1:${options.metroPort}/json/list`, {
         signal: AbortSignal.timeout(5000),
@@ -309,7 +349,19 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     if (options.platform === 'android') adbCommand(['shell', 'input', 'keyevent', 'KEYCODE_HOME']);
     else simCommand(['launch', options.device, 'com.apple.Preferences']);
     await delay(1500);
-    openPhase('prepare-reload');
+    if (options.platform === 'ios') simCommand(['launch', options.device, bundleId]);
+    else
+      adbCommand([
+        'shell',
+        'am',
+        'start',
+        '-a',
+        'android.intent.action.MAIN',
+        '-c',
+        'android.intent.category.LAUNCHER',
+        '-p',
+        bundleId,
+      ]);
     await delay(500);
     summary.backgroundedWithOpenWriter = true;
     await reloadMetroRuntime(options.metroPort);

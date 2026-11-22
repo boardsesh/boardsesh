@@ -54,10 +54,19 @@ scratch folder and retain review evidence in `.boardsesh/offline-write-qa/`.
 Use a matching dev-client native tree; an old cached SDK57 APK cannot verify SDK58.
 
 The CI wrapper writes QA notes before starting Metro, confirms the notes marker,
-and starts Metro on port 8095 with `EXPO_PUBLIC_OFFLINE_WRITE_QA=1`. That flag makes
+and starts Metro on port 8095 with `EXPO_PUBLIC_OFFLINE_WRITE_QA=1` and
+`EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT=8096`. The QA flag makes
 the development root idle in isolation before the first phase deep link. It keeps
 normal auth, sync and telemetry providers out of the experiment. Production builds
 cannot activate the development root.
+
+Automated commands and receipts share one loopback HTTP listener on port 8096.
+The isolated screen polls validated commands, including after runtime replacement;
+the host keeps each phase available until its receipt arrives. iOS starts with
+Expo's native `--initialUrl` argument and resumes the existing process directly.
+This avoids custom-scheme confirmation dialogs during the automated test. A port
+collision fails the run before native startup. Use matching control ports in the
+Metro environment and the driver's `--control-port` option when overriding 8096.
 
 Android requires a booted, dedicated emulator and a fresh-checked dev APK:
 
@@ -145,3 +154,10 @@ Local Linux startup attempts with emulator 36.6.11 crashed before the developmen
 client could run, including an API 35 ATD image after API 36 attempts. These are
 host/emulator failures, not SQLite reproduction outcomes. The native CI receipts
 must establish whether the tested SDK58 runtime passes or fails.
+
+The [first native CI attempt](https://github.com/boardsesh/boardsesh/actions/runs/45052713461)
+also produced no SQLite outcome: Android received its one-shot command before
+JavaScript startup and returned no receipts; iOS logged no bundle request before
+its runtime-readiness wait timed out. The current driver uses the explicit native
+iOS launch and durable loopback commands described above. Retain those setup
+failures separately from the corrected harness's database results.

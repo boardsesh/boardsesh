@@ -26,6 +26,7 @@ describe('native offline write QA delivery contract', () => {
     expect(workflow.jobs.ios['runs-on']).toBe('xcode-27');
     for (const job of Object.values(workflow.jobs)) expect(job.environment).toBeUndefined();
     expect(wrapper).toContain('export EXPO_PUBLIC_OFFLINE_WRITE_QA=1');
+    expect(wrapper).toContain('export EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT=');
     expect(wrapper).toContain('unset EXPO_PUBLIC_SCREENSHOT_MODE EXPO_PUBLIC_STORY_MODE');
   });
 

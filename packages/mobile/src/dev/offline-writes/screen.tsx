@@ -11,7 +11,8 @@ import {
   favoriteAddKey,
   writeAuthorFollowLocal,
 } from '../../hooks/use-offline-mutations';
-import { parseQaRequest, runQaPhase, type QaReceipt } from './cases';
+import { parseQaRequest, runQaPhase, type QaReceipt, type QaRequest } from './cases';
+import { startQaCommandPolling } from './control';
 
 const runtimeId = randomUUID();
 const runs = new Map<string, Promise<void>>();
@@ -20,7 +21,13 @@ const runs = new Map<string, Promise<void>>();
 export default function OfflineWriteScreen() {
   const params = useLocalSearchParams<{ runId?: string; phase?: string; rows?: string; receiptPort?: string }>();
   const [result, setResult] = useState('Waiting for an offline-write QA command');
-  const { runId, phase, rows, receiptPort } = params;
+  const [hostCommand, setHostCommand] = useState<QaRequest>();
+  useEffect(() => {
+    const port = process.env.EXPO_PUBLIC_OFFLINE_WRITE_QA_CONTROL_PORT;
+    if (port === undefined) return;
+    return startQaCommandPolling(Number(port), setHostCommand);
+  }, []);
+  const { runId, phase, rows, receiptPort } = hostCommand ?? params;
   useEffect(() => {
     if (runId === undefined && phase === undefined) return;
     const emit = async (receipt: QaReceipt) => {

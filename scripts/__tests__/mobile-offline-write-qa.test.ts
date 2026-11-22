@@ -118,6 +118,9 @@ describe('offline write QA evidence', () => {
     expect(parseQaOptions(args)).toMatchObject({ platform: 'android', device: 'emulator-5554', timeoutMs: 600000 });
     expect(() => parseQaOptions([...args, '--timeout-ms', '0'])).toThrow('Invalid timeout');
     expect(() => parseQaOptions([...args, '--metro-port', '70000'])).toThrow('Invalid Metro port');
+    expect(parseQaOptions([...args, '--control-port', '8100']).controlPort).toBe(8100);
+    expect(() => parseQaOptions([...args, '--control-port', '8095'])).toThrow('Invalid control port');
+    expect(() => parseQaOptions([...args, '--control-port', '70000'])).toThrow('Invalid control port');
     expect(() =>
       parseQaOptions(args.map((argument) => (argument === 'emulator-5554' ? 'physical-phone' : argument))),
     ).toThrow('explicit');
