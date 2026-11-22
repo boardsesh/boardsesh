@@ -459,13 +459,15 @@ describe('board-snapshot export ↔ live pull parity', () => {
       });
 
       // The uncommitted DELETE is invisible to the RR snapshot, so the row is
-      // present in the artifact. Its old transaction timestamp must therefore
-      // be the replay boundary that catches the tombstone after commit.
+      // present in the artifact. The replay boundary must reach back to its
+      // transaction start to catch the tombstone after commit. An older visible
+      // peer transaction can safely move that boundary further back.
       expect(readArtifactRows(filePath, 'board_climbs', ['uuid'])).toEqual([{ uuid: 'open-delete' }]);
       const rawReplayBoundary = readArtifactMeta(filePath, 'sync_deletions')?.watermark_updated_at;
       replayBoundary = typeof rawReplayBoundary === 'string' ? rawReplayBoundary : null;
-      expect(replayBoundary).toBe(deleteStartedAt);
-      expect(result.deletionsReplayFrom).toBe(deleteStartedAt);
+      expect(replayBoundary).not.toBeNull();
+      expect(Date.parse(replayBoundary ?? '')).toBeLessThanOrEqual(Date.parse(deleteStartedAt));
+      expect(result.deletionsReplayFrom).toBe(replayBoundary);
       expect(result.deletionsReplayFallbackReason).toBeNull();
     } finally {
       releaseDeleteTransaction();
