@@ -1090,6 +1090,16 @@ describe('native release workflow boundaries', () => {
   });
   it('checks backend readiness before the Android tester upload and preserves provenance artifacts', () => {
     const steps = android.jobs['build-and-release'].steps;
+    const schemaCheck = steps.find(
+      (step: { name?: string }) => step.name === 'Require the live backend schema before tester upload',
+    );
+    expect(schemaCheck?.env?.TRUSTED_WORKFLOW_SHA).toBe('${{ github.workflow_sha }}');
+    expect(schemaCheck?.run).toContain(
+      'git show "$TRUSTED_WORKFLOW_SHA:scripts/mobile-ota-schema-ready.mjs" > scripts/mobile-ota-schema-ready.mjs',
+    );
+    expect(schemaCheck?.run).toContain(
+      'GITHUB_SHA="$NATIVE_SOURCE_SHA" node scripts/mobile-ota-schema-ready.mjs --allow-compatible-schema',
+    );
     expect(
       steps.findIndex(
         (step: { name?: string }) => step.name === 'Require the live backend schema before tester upload',

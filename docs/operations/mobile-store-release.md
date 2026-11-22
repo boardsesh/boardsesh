@@ -192,6 +192,14 @@ store submission remains manual.
   the live backend to serve the source schema. Main OTAs still follow backend
   deployment and promotion checks.
 
+Android recovery checks the older binary's committed GraphQL schema against the
+live backend's committed schema before uploading to testers. New backend fields,
+optional inputs, enum values, and documentation do not block an older compatible
+binary. Removed fields, changed types, and new required inputs still stop the
+upload. The readiness guard comes from the trusted workflow commit; the APK/AAB
+remain built from the exact selected native source. Other promotion paths retain
+their exact-schema gate.
+
 ### Automatic TestFlight access for Discord testers
 
 After a successful iOS native build, **Distribute iOS TestFlight to Discord Users**
@@ -307,11 +315,24 @@ runtime. It independently reads both Play tester tracks; beta must confirm revie
 approval awaiting publication, or publication. It never creates a Play edit.
 
 Recovery publishes only missing immutable build/fingerprint tags, refusing any
-different existing target. It verifies the retained APK's SHA-256 after downloading
+different existing build target. An existing fingerprint gate remains at its original
+commit, matching normal native publication when two binaries share a runtime.
+It verifies the retained APK's SHA-256 after downloading
 its GitHub prerelease asset and retains a native-source receipt in the recovery
 run. Select that recovery run when a downstream workflow requests a source run ID;
 the original failed run remains an accurate record. Sources pinned to a different
 commit than the original workflow's head SHA are deliberately unsupported.
+
+If the upload response failed after Play accepted the binary, select
+`allow_unconfirmed_upload=true` in the same recovery workflow. The default still
+requires a successful upload. The explicit audit requires all original build,
+signature, alignment, artifact and backend-schema steps to succeed before the
+failed upload step. It downloads the original AAB and a Play-generated APK for
+the exact versionCode using GET requests, then requires matching embedded Expo
+manifests, package, versionCode, marketing version and full runtime. Missing or
+different evidence stops before publication. It never creates a Play edit or
+uploads a binary. Google documents these reads in the
+[generated APK API](https://developers.google.com/android-publisher/api-ref/rest/v3/generatedapks/list).
 
 Native tag publication tokens request both Contents write and Workflows write.
 The latter uses the App's existing permission and allows tags for native sources

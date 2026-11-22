@@ -1433,6 +1433,34 @@ runtime wildcard for unrecorded session requests.
 
 ## Additive smoke recordings
 
+### Record the Home projects attempts page
+
+The manual **Record mobile smoke projects fixture** workflow records only the
+current `GetUserAscentsFeed` query for the pinned screenshot account, with
+`statusMode: attempt`, `limit: 50`, and `offset: 0`. It authenticates through the
+existing recorder and makes no application mutation. Protected `main`, its exact
+checkout, the archived shared snapshot, any existing overlay, and the authenticated
+account must all match before it can export a candidate.
+
+After the workflow lands on `main`:
+
+1. Dispatch `gh workflow run mobile-smoke-projects-fixtures.yml --ref main`.
+2. Download `mobile-smoke-projects-candidate` from the successful run.
+3. Inspect `proof.json`; copy its hash-named archive into
+   `app-stores/screenshot-fixture-overlays/`, and install `shared.reference.json`
+   as `app-stores/screenshot-fixtures.json` in the same change.
+4. Remove `GetUserAscentsFeed` from `QUERIES_NO_CAPTURE_SENDS` and add the exact
+   attempts request to the native smoke coverage table.
+5. Run the drift tests and both native smokes against the new pin.
+
+The exported archive retains every previous recorded response and static asset
+verbatim. Its manifest advances `frozenNow` using the real response timestamp.
+The helper rejects existing request keys, malformed pages, undeclared response
+fields, unsafe data, and a replay miss. The artifact contains only the sanitized
+overlay, its proposed shared reference, and a hash-based proof; no pin or hosted
+asset is published automatically. Original response and pin hashes stay unchanged
+until that candidate is explicitly installed.
+
 `app-stores/screenshot-fixtures.json` can pin a small committed `overlay` in
 `app-stores/screenshot-fixture-overlays`. This is an append-only set of genuine,
 pseudonymized recordings bound to the archived baseline SHA and its own SHA/byte

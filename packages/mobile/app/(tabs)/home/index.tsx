@@ -11,6 +11,7 @@ import { type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list'
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppMenuAction } from '../../../src/components/AppMenu';
 import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
@@ -382,7 +383,7 @@ export default function HomeTab() {
   // FlashList to re-render regardless of `extraData` (perf playbook rule 3).
   const renderItem = useCallback(
     ({ item, target }: ListRenderItemInfo<CrewFeedItem>) => (
-      <>
+      <View testID={target === 'Cell' ? 'home-feed-item' : undefined} collapsable={false}>
         {STARTUP_PROFILING_ENABLED && target === 'Cell' ? <HomeStartupCommit outcome="content" /> : null}
         {item.__typename === 'CrewClimbItem' || item.__typename === 'CrewClimbGroupItem' ? (
           <NewClimbFeedCard item={item} />
@@ -398,7 +399,7 @@ export default function HomeTab() {
             workoutHeadline={workoutHeadlinesRef.current.get(item.session.sessionId)}
           />
         )}
-      </>
+      </View>
     ),
     [handleOpenComments, handleSessionPress, handleOpenClimb],
   );

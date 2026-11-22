@@ -1,0 +1,43 @@
+name: Record mobile smoke projects fixture
+
+# One fixed authenticated read; publishes no fixture pin or application changes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record-projects:
+    if: ${{ github.ref == 'refs/heads/main' && github.ref_protected }}
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify protected main checkout before exposing credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REF_PROTECTED" = true
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Record the pinned account's genuine Home projects page
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: vp exec node --import tsx scripts/record-mobile-smoke-projects.ts
+      - name: Upload verified append-only candidate for native replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-smoke-projects-candidate
+          path: ${{ runner.temp }}/mobile-smoke-projects-candidate/export/
+          if-no-files-found: error
+          retention-days: 14

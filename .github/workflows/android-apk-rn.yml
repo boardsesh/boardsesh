@@ -726,9 +726,15 @@ jobs:
       # Fastlane owns tester tracks, localized notes, and strict review behavior.
       # One edit assigns both tracks; candidate tags follow only after commit.
       - name: Require the live backend schema before tester upload
+        env:
+          TRUSTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
+          set -euo pipefail
           git fetch --no-tags origin main
-          GITHUB_SHA="$NATIVE_SOURCE_SHA" node scripts/mobile-ota-schema-ready.mjs
+          # Recovering an older stamp must use today's readiness guard while
+          # preserving the exact source and bytes of the APK/AAB already built.
+          git show "$TRUSTED_WORKFLOW_SHA:scripts/mobile-ota-schema-ready.mjs" > scripts/mobile-ota-schema-ready.mjs
+          GITHUB_SHA="$NATIVE_SOURCE_SHA" node scripts/mobile-ota-schema-ready.mjs --allow-compatible-schema
 
       # An older stamped source predates this manual recovery option. Restore only
       # trusted upload tooling after building; the binary remains at its exact stamp.

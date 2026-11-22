@@ -33,10 +33,11 @@ The play drawer is last because it overlays the app once it opens.
 
 Each screen is judged twice over:
 
-- **Android asserts testIDs** (`home-screen`, `session-feed-card`,
+- **Android asserts testIDs** (`home-screen`, `home-feed-item`,
   `progress-tab-loaded`, `profile-board-overview`, `climbs-screen`, `climb-row`,
   `play-drawer-board-overlay`). Never text, so neither the locale nor the
-  recorded data can move an assertion.
+  recorded data can move an assertion. Home scrolls past its summary sections to
+  a real feed cell; either a session or a new-climb card qualifies.
 - **Both platforms read the app's own pings.** iOS Maestro on this build cannot
   match the app's elements, so each smoke-visited view mounts a generic `ContentRenderMarker` inside its
   content. The dev integration root observes that marker and tells the

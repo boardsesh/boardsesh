@@ -191,6 +191,7 @@ const REPLAY_SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSIVE_SCREENSHOT_SUBSCRIPTIONS = new Set([
   'ClimbStatsUpdated',
   'NotificationReceived',
+  'AppBugReportChanged',
   'CommentUpdates',
   'OnNewClimbCreated',
   'BoardNowPlaying',

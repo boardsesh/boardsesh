@@ -3,12 +3,13 @@
 /** Publish metadata for an Android binary already accepted by Play. Never uploads a binary to Play. */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAuditAccessToken, readProductionReleaseSummaries } from './mobile-store-android-audit';
 import { trackSummaries } from './lib/google-play-tracks';
 import { formatBuildTag } from './lib/release-tags';
+import { readGeneratedPlayApk } from './lib/android-recovery-store-apk';
 
 const PACKAGE = 'com.boardsesh.app';
 const APK_NAME = 'boardsesh-android-beta-arm64-v8a.apk';
@@ -47,6 +48,7 @@ export function validateRecoveryRun(
   repository: string,
   runId: string,
   sourceSha: string,
+  allowUnconfirmedUpload = false,
 ) {
   const run = record(input);
   if (
@@ -65,24 +67,54 @@ export function validateRecoveryRun(
   )
     throw new Error('Recovery requires the exact completed Android main run and its source SHA.');
   if (!Array.isArray(jobs)) throw new Error('Missing Android upload jobs.');
-  const uploads = jobs.map(record).filter((job) => job.name === 'build-and-release' && job.conclusion === 'success');
-  if (
-    !uploads.some(
-      (job) =>
-        Array.isArray(job.steps) &&
-        job.steps
-          .map(record)
-          .some(
-            (step) => step.name === 'Upload AAB to Play internal and open beta tracks' && step.conclusion === 'success',
-          ),
-    )
-  )
+  const uploadJobs = jobs.map(record).filter((job) => job.name === 'build-and-release');
+  // Never combine evidence from different attempts of the same native run.
+  const uploadConfirmed = uploadJobs.some(
+    (job) =>
+      job.conclusion === 'success' &&
+      Array.isArray(job.steps) &&
+      job.steps
+        .map(record)
+        .some(
+          (step) => step.name === 'Upload AAB to Play internal and open beta tracks' && step.conclusion === 'success',
+        ),
+  );
+  const unconfirmedUpload =
+    allowUnconfirmedUpload &&
+    uploadJobs.some((job) => {
+      if (job.conclusion !== 'failure' || !Array.isArray(job.steps)) return false;
+      const steps = job.steps.map(record);
+      const uploads = steps.filter((step) => step.name === 'Upload AAB to Play internal and open beta tracks');
+      if (uploads.length !== 1 || uploads[0]!.conclusion !== 'failure') return false;
+      const uploadIndex = steps.indexOf(uploads[0]!);
+      let previousIndex = -1;
+      return [
+        'Build signed arm64 release APK',
+        'Check embedded commitTime',
+        'Check Android obfuscation (R8 mapping)',
+        'Verify APK signature',
+        'Upload APK as artifact',
+        'Build signed release AAB',
+        'Verify 16 KB native-library alignment (APK + AAB)',
+        'Verify the AAB carries the same R8 mapping',
+        'Upload AAB as artifact',
+        'Require the live backend schema before tester upload',
+      ].every((name) => {
+        const matches = steps.filter((step) => step.name === name);
+        const index = matches.length === 1 ? steps.indexOf(matches[0]!) : -1;
+        const succeeded = index > previousIndex && index < uploadIndex && matches[0]?.conclusion === 'success';
+        previousIndex = index;
+        return succeeded;
+      });
+    });
+  if (!uploadConfirmed && !unconfirmedUpload)
     throw new Error('The original Android build and Play upload must have succeeded.');
   return {
     sourceRunId: runId,
     sourceSha,
     runNumber: String(run.run_number),
     artifactName: `boardsesh-rn-android-${String(run.run_number)}`,
+    uploadConfirmed,
   };
 }
 
@@ -103,6 +135,23 @@ export function validateApkIdentity(
   )
     throw new Error('The retained APK package, versionCode, marketing version or full runtime is invalid.');
   return identity;
+}
+
+export function validateStoreApkEvidence(
+  originalManifest: string,
+  storeManifest: string,
+  originalIdentity: ReturnType<typeof validateApkIdentity>,
+  storeIdentity: ReturnType<typeof validateApkIdentity>,
+): void {
+  if (
+    !originalManifest ||
+    originalManifest !== storeManifest ||
+    Object.keys(originalIdentity).some(
+      (key) =>
+        originalIdentity[key as keyof typeof originalIdentity] !== storeIdentity[key as keyof typeof storeIdentity],
+    )
+  )
+    throw new Error('Generated Play APK does not match the original AAB and native runtime.');
 }
 
 export function validateRecoveryGateLog(log: string, sourceSha: string): string {
@@ -134,9 +183,15 @@ export function requireReviewedPlayBuild(input: unknown, track: 'internal' | 'be
     throw new Error(`Play ${track} does not confirm this exact submitted build.`);
 }
 
-export function missingRecoveryTags(tags: Readonly<Record<string, string | null>>, sourceSha: string): string[] {
-  for (const target of Object.values(tags))
-    if (target !== null && target !== sourceSha)
+export function missingRecoveryTags(
+  tags: Readonly<Record<string, string | null>>,
+  sourceSha: string,
+  fingerprintTag?: string,
+): string[] {
+  if (fingerprintTag !== undefined && !/^fingerprint-android-[0-9a-f]{40}$/.test(fingerprintTag))
+    throw new Error('Invalid immutable fingerprint tag.');
+  for (const [tag, target] of Object.entries(tags))
+    if (target !== null && (!FULL_SHA.test(target) || (tag !== fingerprintTag && target !== sourceSha)))
       throw new Error('An existing immutable recovery tag points to another source; refusing overwrite.');
   return Object.keys(tags).filter((tag) => tags[tag] === null);
 }
@@ -346,6 +401,7 @@ async function main(): Promise<void> {
       repository,
       runId,
       sourceSha,
+      process.env.ALLOW_UNCONFIRMED_UPLOAD === 'true',
     );
     const gate = pages
       .flatMap((page) => page.jobs)
@@ -359,7 +415,7 @@ async function main(): Promise<void> {
     execute('git', ['fetch', '--quiet', '--no-tags', 'origin', 'main:refs/remotes/origin/main']);
     execute('git', ['merge-base', '--is-ancestor', sourceSha, 'refs/remotes/origin/main']);
     save(receiptPath, { ...source, expectedRuntime });
-    output({ artifact_name: source.artifactName });
+    output({ artifact_name: source.artifactName, aab_artifact_name: `boardsesh-rn-android-aab-${source.runNumber}` });
     return;
   }
   const source = record(json(receiptPath));
@@ -402,6 +458,39 @@ async function main(): Promise<void> {
       requireReviewedPlayBuild(evidence, track, identity.versionCode);
       states[track] = trackSummaries(evidence, track);
     }
+    let storeApkSha256: string | undefined;
+    if (source.uploadConfirmed === false) {
+      const aabDirectory = join(required('RUNNER_TEMP'), 'android-recovery-aab');
+      const bundles = readdirSync(aabDirectory).filter((name) => name.endsWith('.aab'));
+      if (bundles.length !== 1) throw new Error('Recovery requires one retained original AAB.');
+      const aab = join(aabDirectory, bundles[0]!);
+      const storeApk = join(required('RUNNER_TEMP'), 'android-recovery-play.apk');
+      const downloaded = await readGeneratedPlayApk(token, identity.versionCode);
+      writeFileSync(storeApk, downloaded);
+      const storeIdentity = validateApkIdentity(
+        {
+          ...parseApkBadging(execute(required('AAPT2_PATH'), ['dump', 'badging', storeApk])),
+          runtime: execute(analyzer, [
+            'resources',
+            'value',
+            '--config',
+            'default',
+            '--name',
+            'expo_runtime_version',
+            '--type',
+            'string',
+            '--package',
+            PACKAGE,
+            storeApk,
+          ]),
+        },
+        identity.versionCode,
+      );
+      const originalManifest = execute('unzip', ['-p', aab, 'base/assets/app.manifest']);
+      const storeManifest = execute('unzip', ['-p', storeApk, 'assets/app.manifest']);
+      validateStoreApkEvidence(originalManifest, storeManifest, identity, storeIdentity);
+      storeApkSha256 = createHash('sha256').update(downloaded).digest('hex');
+    }
     const apkSha256 = createHash('sha256').update(readFileSync(apk)).digest('hex');
     const buildTag = formatBuildTag(
       'android',
@@ -416,6 +505,7 @@ async function main(): Promise<void> {
       buildTag,
       checkedAt: new Date().toISOString(),
       play: states,
+      ...(storeApkSha256 ? { storeApkSha256 } : {}),
     });
     output({
       version_code: identity.versionCode,
@@ -428,6 +518,12 @@ async function main(): Promise<void> {
   if (phase !== 'publish') throw new Error('Recovery phase must be resolve, verify or publish.');
   const { sourceSha, buildTag, runtime, apkSha256, version, versionCode } = source;
   if (
+    typeof source.uploadConfirmed !== 'boolean' ||
+    (source.uploadConfirmed === false &&
+      (typeof source.storeApkSha256 !== 'string' ||
+        createHash('sha256')
+          .update(readFileSync(join(required('RUNNER_TEMP'), 'android-recovery-play.apk')))
+          .digest('hex') !== source.storeApkSha256)) ||
     typeof sourceSha !== 'string' ||
     !FULL_SHA.test(sourceSha) ||
     typeof runtime !== 'string' ||
@@ -448,7 +544,8 @@ async function main(): Promise<void> {
         return [tag, target ? target.split(/\s/)[0]! : null];
       }),
     );
-  const missing = missingRecoveryTags(readTags(), sourceSha);
+  const fingerprintTag = `fingerprint-android-${runtime}`;
+  const missing = missingRecoveryTags(readTags(), sourceSha, fingerprintTag);
   if (missing.length) {
     for (const tag of missing) execute('git', ['tag', tag, sourceSha]);
     const environment = {
@@ -462,11 +559,12 @@ async function main(): Promise<void> {
     try {
       execute('git', ['push', '--atomic', remote, ...missing.map((tag) => `refs/tags/${tag}`)], environment);
     } catch {
-      if (missingRecoveryTags(readTags(), sourceSha).length)
+      if (missingRecoveryTags(readTags(), sourceSha, fingerprintTag).length)
         throw new Error('Recovery tags were not published; no store upload was attempted.');
     }
   }
-  if (missingRecoveryTags(readTags(), sourceSha).length) throw new Error('Recovery tag readback failed.');
+  if (missingRecoveryTags(readTags(), sourceSha, fingerprintTag).length)
+    throw new Error('Recovery tag readback failed.');
   const releaseEnvironment = { ...process.env, GH_TOKEN: required('GH_APP_TOKEN') };
   let release: { isDraft: boolean; assets: Array<{ name: string }> } | null = null;
   try {
