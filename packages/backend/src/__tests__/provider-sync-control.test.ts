@@ -40,7 +40,10 @@ const control = async () =>
       .where(and(eq(providerSyncControls.userId, USER_ID), eq(providerSyncControls.boardType, 'tension')))
   )[0];
 
-async function insertRun(status: BackgroundJobStatus): Promise<string> {
+async function insertRun(
+  status: BackgroundJobStatus,
+  overrides: Partial<typeof backgroundJobRuns.$inferInsert> = {},
+): Promise<string> {
   const id = randomUUID();
   await database.insert(backgroundJobRuns).values({
     id,
@@ -49,6 +52,7 @@ async function insertRun(status: BackgroundJobStatus): Promise<string> {
     family: 'aurora-user-sync',
     status,
     deadlineAt: new Date(Date.now() + 3_600_000),
+    ...overrides,
   });
   return id;
 }
@@ -292,6 +296,35 @@ describe('interactive run coalescing', () => {
 });
 
 describe('reconciler step', () => {
+  const credential = async () =>
+    (
+      await database
+        .select()
+        .from(auroraCredentials)
+        .where(and(eq(auroraCredentials.userId, USER_ID), eq(auroraCredentials.boardType, 'tension')))
+    )[0];
+  const incompleteMessage = 'Your board import did not finish. Try Sync now again.';
+
+  async function interruptedImport(
+    overrides: Partial<typeof backgroundJobRuns.$inferInsert> = {},
+    credentialOverrides: Partial<typeof auroraCredentials.$inferInsert> = {},
+  ) {
+    await insertCredential(USER_ID, { syncStatus: 'pending', ...credentialOverrides });
+    const { linkGeneration } = await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    const runId = await insertRun('failed', {
+      errorCode: 'RETRIES_EXHAUSTED',
+      payload: { ...key, linkGeneration, requestedBy: 'link' },
+      createdAt: new Date(Date.now() - 60_000),
+      finishedAt: new Date(),
+      ...overrides,
+    });
+    await database
+      .update(providerSyncControls)
+      .set({ pendingRunId: runId, activeRunId: runId, activeLeaseUntil: new Date(Date.now() + 60_000) })
+      .where(eq(providerSyncControls.userId, USER_ID));
+    return { runId, linkGeneration };
+  }
+
   it('clears pending runs and leases whose run finished or vanished, and keeps live ones', async () => {
     await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
     await database.transaction((tx) =>
@@ -316,6 +349,177 @@ describe('reconciler step', () => {
       .from(providerSyncControls)
       .where(eq(providerSyncControls.userId, OTHER_USER_ID));
     expect(other).toMatchObject({ pendingRunId: live, activeRunId: live });
+  });
+
+  it('explains an exhausted first import, clears its pointers, and keeps the account retryable', async () => {
+    await interruptedImport();
+
+    expect(await clearFinishedProviderSyncRuns(database)).toBe(1);
+    expect(await control()).toMatchObject({ pendingRunId: null, activeRunId: null, activeLeaseUntil: null });
+    expect(await credential()).toMatchObject({
+      syncStatus: 'error',
+      syncError: incompleteMessage,
+      lastSyncError: incompleteMessage,
+      lastSyncAt: null,
+      consecutiveFailures: 0,
+      credentialFailureCount: 0,
+    });
+    expect(
+      await claimCredentialForRun(database, { ...key, candidateFilter: eq(auroraCredentials.syncStatus, 'error') }),
+    ).not.toBeNull();
+    expect(await clearFinishedProviderSyncRuns(database)).toBe(0);
+  });
+
+  it.each(['QUEUE_EXPIRED', 'JOB_MISSING', 'RESULT_MISSING', 'ATTEMPT_FAILED'])(
+    'explains a terminal %s import without changing its authentication state',
+    async (errorCode) => {
+      await interruptedImport({ errorCode });
+      await clearFinishedProviderSyncRuns(database);
+      expect(await credential()).toMatchObject({ syncError: incompleteMessage, credentialFailureCount: 0 });
+    },
+  );
+
+  it('can explain a failed run left only in the active lease', async () => {
+    await interruptedImport();
+    await database
+      .update(providerSyncControls)
+      .set({ pendingRunId: null })
+      .where(eq(providerSyncControls.userId, USER_ID));
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject({ syncStatus: 'error', syncError: incompleteMessage });
+    expect((await control()).activeRunId).toBeNull();
+  });
+
+  it.each(['queued', 'running', 'retrying'] as const)(
+    'leaves a replacement %s import alone while clearing the old failed lease',
+    async (status) => {
+      await interruptedImport();
+      const replacement = await insertRun(status);
+      await database.transaction((tx) => setPendingProviderSyncRun(tx, { ...key, runId: replacement }));
+
+      await clearFinishedProviderSyncRuns(database);
+      expect(await control()).toMatchObject({ pendingRunId: replacement, activeRunId: null });
+      expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+    },
+  );
+
+  it('preserves a successful import completed after the failed run was requested', async () => {
+    const lastSyncAt = new Date();
+    await interruptedImport({}, { syncStatus: 'active', lastSyncAt });
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject({ syncStatus: 'active', syncError: null, lastSyncAt });
+    expect((await control()).pendingRunId).toBeNull();
+  });
+
+  it('reports a new failed import after an older successful sync', async () => {
+    const lastSyncAt = new Date(Date.now() - 3_600_000);
+    await interruptedImport({}, { syncStatus: 'active', lastSyncAt });
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject({ syncStatus: 'error', syncError: incompleteMessage, lastSyncAt });
+  });
+
+  it.each([
+    { syncStatus: 'error', syncError: 'Existing provider failure' },
+    { syncStatus: 'active', syncError: 'duplicate-board-account-link:circuits:foreign' },
+    { syncStatus: 'expired', syncError: null },
+  ])('preserves existing credential status $syncStatus / $syncError', async (existing) => {
+    await interruptedImport({}, existing);
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject(existing);
+  });
+
+  it.each([
+    { status: 'succeeded' as const, errorCode: null },
+    { status: 'cancelled' as const, errorCode: 'JOB_CANCELLED' },
+    { status: 'failed' as const, errorCode: 'STALE_LINK_GENERATION' },
+    { status: 'failed' as const, errorCode: 'CREDENTIAL_UNAVAILABLE' },
+  ])('does not turn $status / $errorCode into a credential failure', async (outcome) => {
+    await interruptedImport(outcome);
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+  });
+
+  it.each(['userId', 'boardType', 'linkGeneration'] as const)(
+    'ignores a failed import whose payload has a different %s',
+    async (field) => {
+      const { runId, linkGeneration } = await interruptedImport();
+      await database
+        .update(backgroundJobRuns)
+        .set({ payload: { ...key, linkGeneration, requestedBy: 'link', [field]: randomUUID() } })
+        .where(eq(backgroundJobRuns.id, runId));
+
+      await clearFinishedProviderSyncRuns(database);
+      expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+    },
+  );
+
+  it('preserves the fresh link after an old failed import', async () => {
+    const { linkGeneration } = await interruptedImport();
+    const relinked = await database.transaction((tx) => rotateLinkGeneration(tx, { ...key, linked: true }));
+    expect(relinked.linkGeneration).not.toBe(linkGeneration);
+
+    expect(await clearFinishedProviderSyncRuns(database)).toBe(0);
+    expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+  });
+
+  it.each(['relink', 'replacement run'] as const)(
+    'rechecks an observed failed run after waiting for a concurrent %s',
+    async (change) => {
+      await interruptedImport();
+      const replacement = await insertRun('queued');
+      let finishChange!: () => void;
+      const changeAllowed = new Promise<void>((resolve) => (finishChange = resolve));
+      let locked!: (pid: number) => void;
+      const lockHeld = new Promise<number>((resolve) => (locked = resolve));
+      const concurrentChange = database.transaction(async (transaction) => {
+        await transaction
+          .select()
+          .from(providerSyncControls)
+          .where(eq(providerSyncControls.userId, USER_ID))
+          .for('update');
+        const [backend] = await transaction.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+        locked(backend.pid);
+        await changeAllowed;
+        if (change === 'relink') await rotateLinkGeneration(transaction, { ...key, linked: true });
+        await setPendingProviderSyncRun(transaction, { ...key, runId: replacement });
+      });
+      const blockingPid = await lockHeld;
+      const reconciliation = clearFinishedProviderSyncRuns(database);
+      try {
+        // Observe the actual lock wait, rather than assuming a timer means the
+        // reconciler already read the old generation/run pointers.
+        await expect
+          .poll(async () => {
+            const [waiting] = await owner<{ count: number }[]>`
+              SELECT count(*)::int AS count FROM pg_stat_activity
+              WHERE ${blockingPid} = ANY(pg_blocking_pids(pid))
+            `;
+            return waiting.count;
+          })
+          .toBeGreaterThan(0);
+      } finally {
+        finishChange();
+        await concurrentChange;
+      }
+
+      expect(await reconciliation).toBe(0);
+      expect((await control()).pendingRunId).toBe(replacement);
+      expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+    },
+  );
+
+  it('clears stale pointers without reporting errors on an unlinked account', async () => {
+    await interruptedImport();
+    await database.update(providerSyncControls).set({ linked: false }).where(eq(providerSyncControls.userId, USER_ID));
+
+    await clearFinishedProviderSyncRuns(database);
+    expect(await credential()).toMatchObject({ syncStatus: 'pending', syncError: null });
+    expect((await control()).pendingRunId).toBeNull();
   });
 });
 
