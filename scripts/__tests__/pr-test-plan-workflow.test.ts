@@ -159,6 +159,31 @@ describe('pr-test-plan backend label', () => {
   });
 });
 
+describe('policy checkout isolation', () => {
+  it('keeps sparse policy files outside the later dependency-install checkout', () => {
+    const workflow = parse(WORKFLOW) as {
+      jobs: {
+        check: {
+          steps: Array<{
+            name?: string;
+            uses?: string;
+            with?: { path?: string; script?: string };
+          }>;
+        };
+      };
+    };
+    const steps = workflow.jobs.check.steps;
+    const policyIndex = steps.findIndex((step) => step.name === 'Check out app input policy');
+    expect(policyIndex).toBeGreaterThanOrEqual(0);
+    expect(steps[policyIndex].with?.path).toBe('app-input-policy');
+    const fullCheckout = steps.slice(policyIndex + 1).find((step) => step.uses?.startsWith('actions/checkout@'));
+    expect(fullCheckout).toBeDefined();
+    expect(fullCheckout?.with?.path).toBeUndefined();
+    const label = steps.find((step) => step.name === 'Label PRs that also need a backend deploy');
+    expect(label?.with?.script).toContain('/app-input-policy/scripts/lib/app-build-inputs.mjs');
+  });
+});
+
 describe('shared app input policy across workflows', () => {
   it.each(['mobile-ota-preview.yml', 'mobile-ota-preview-prompt.yml', 'pr-test-plan.yml'])(
     '%s imports the common policy before deciding eligibility',

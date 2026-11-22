@@ -112,6 +112,8 @@ jobs:
       - name: Check out app input policy
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # Keep the later full checkout/install free of sparse-checkout state.
+          path: app-input-policy
           ref: ${{ github.workflow_sha }}
           sparse-checkout: scripts/lib/app-build-inputs.mjs
           sparse-checkout-cone-mode: false
@@ -134,7 +136,7 @@ jobs:
 
             // The label uses the same app inputs as preview publication.
             const { isNativeAppAffecting: affectsMobilePreview } =
-              await import(`${process.env.GITHUB_WORKSPACE}/scripts/lib/app-build-inputs.mjs`);
+              await import(`${process.env.GITHUB_WORKSPACE}/app-input-policy/scripts/lib/app-build-inputs.mjs`);
 
             const pr = context.payload.pull_request;
             let wanted;
