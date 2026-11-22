@@ -30,6 +30,8 @@
  * screen, in every state. Erring high is cheap but it is not free.
  */
 export const ABOVE_FOLD_CHROME = 290;
+/** Initial compact action bar budget; live layout replaces it for translated or larger text. */
+export const CREATE_ACTION_BAR_HEIGHT = 158;
 
 /**
  * The route transport card, which carries the whole route control set: marginTop
@@ -69,6 +71,8 @@ export type BoardBudget = {
   showRouteTransport: boolean;
   /** Measured Add holds / missing-hold rows, including translated text. */
   extraControlsHeight?: number;
+  /** Measured brush, tool and status rows; large text can grow all three. */
+  actionBarHeight?: number;
 };
 
 /** Height budget left for the board once the drawer's fixed chrome is reserved. */
@@ -80,6 +84,7 @@ export function computeBoardMaxHeight(budget: BoardBudget): number {
       budget.insetTop -
       budget.insetBottom -
       ABOVE_FOLD_CHROME -
+      ((budget.actionBarHeight ?? CREATE_ACTION_BAR_HEIGHT) - CREATE_ACTION_BAR_HEIGHT) -
       routeSlotReserve -
       (budget.extraControlsHeight ?? 0),
   );

@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View, type TextStyle } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
-import { borderRadius, spacing } from '../../theme/tokens';
+import { cardCorners, spacing } from '../../theme/tokens';
 import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { InsetGroupedList } from '../InsetGroupedList';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { offersNoKickboardRule } from './spray-climb-rules';
@@ -34,10 +35,8 @@ export type CreateDrawerFormViewProps = {
 };
 
 /**
- * The below-the-fold create form: the description text area and the climb-rule /
- * editor toggles (no-match, save-as-draft). Board (BLE) connect
- * lives in the header lightbulb. Expects an spacing[4]-horizontally-padded
- * parent (the switches bleed to the drawer edges).
+ * The below-the-fold metadata: description, climb rules, and publication setting.
+ * Expects a spacing[4]-horizontally-padded parent; grouped rows own their gutters.
  */
 export function CreateDrawerFormView({
   partnerAppsEnabled,
@@ -68,8 +67,8 @@ export function CreateDrawerFormView({
     () => ({
       backgroundColor: systemColors.fill,
       color: systemColors.label,
-      borderRadius: borderRadius.md,
-      paddingHorizontal: spacing[3],
+      ...cardCorners,
+      paddingHorizontal: spacing[4],
       paddingVertical: spacing[3],
       ...textStyles.callout,
     }),
@@ -78,23 +77,27 @@ export function CreateDrawerFormView({
 
   return (
     <View style={styles.body}>
-      <Text tone="secondary" variant="footnote">
-        {t('createClimbForm.fields.description')}
-      </Text>
-      <TextInput
-        value={description}
-        onChangeText={onChangeDescription}
-        placeholder={t('createClimbForm.descriptionPlaceholder')}
-        placeholderTextColor={systemColors.tertiaryLabel}
-        maxLength={DESCRIPTION_MAX}
-        multiline
-        style={[inputStyle, styles.multiline]}
-      />
+      <View style={styles.description}>
+        <Text tone="secondary" variant="footnote">
+          {t('createClimbForm.fields.description')}
+        </Text>
+        <TextInput
+          accessibilityLabel={t('createClimbForm.fields.description')}
+          value={description}
+          onChangeText={onChangeDescription}
+          placeholder={t('createClimbForm.descriptionPlaceholder')}
+          placeholderTextColor={systemColors.secondaryLabel}
+          maxLength={DESCRIPTION_MAX}
+          multiline
+          style={[inputStyle, styles.multiline]}
+        />
+      </View>
 
-      <View style={styles.switches}>
+      <InsetGroupedList separatorInset="gutter" testID="create-climb-rules">
         <SwitchRow
           label={t('mobile.create.settings.noMatchLabel')}
           description={t('mobile.create.settings.noMatchDescription')}
+          wrapDescription
           value={noMatch}
           onValueChange={onChangeNoMatch}
         />
@@ -103,6 +106,7 @@ export function CreateDrawerFormView({
           <SwitchRow
             label={t('mobile.create.settings.noKickboardLabel')}
             description={t('mobile.create.settings.noKickboardDescription')}
+            wrapDescription
             value={noKickboard}
             onValueChange={onChangeNoKickboard}
           />
@@ -114,6 +118,7 @@ export function CreateDrawerFormView({
           <SwitchRow
             label={t('mobile.create.settings.anyFeetLabel')}
             description={t('mobile.create.settings.anyFeetDescription')}
+            wrapDescription
             value={anyFeet}
             onValueChange={onChangeAnyFeet}
           />
@@ -121,16 +126,20 @@ export function CreateDrawerFormView({
         <SwitchRow
           label={t('mobile.create.settings.campusLabel')}
           description={t('mobile.create.settings.campusDescription')}
+          wrapDescription
           value={campus}
           onValueChange={onChangeCampus}
         />
+      </InsetGroupedList>
+      <InsetGroupedList separatorInset="gutter" testID="create-climb-publication">
         <SwitchRow
           label={t('mobile.create.settings.draftLabel')}
           description={draftDescription(boardName, partnerAppsEnabled, sprayWallPublic, t)}
+          wrapDescription
           value={isDraft}
           onValueChange={onChangeIsDraft}
         />
-      </View>
+      </InsetGroupedList>
     </View>
   );
 }
@@ -157,14 +166,13 @@ function draftDescription(
 
 const styles = StyleSheet.create({
   body: {
+    gap: spacing[6],
+  },
+  description: {
     gap: spacing[2],
   },
   multiline: {
     minHeight: 88,
     textAlignVertical: 'top',
-  },
-  switches: {
-    marginTop: spacing[2],
-    marginHorizontal: -spacing[4],
   },
 });

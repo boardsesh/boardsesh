@@ -1,4 +1,28 @@
 // @vitest-environment jsdom
+vi.mock('../CreateAddHoldsRow', () => ({
+  CreateAddHoldsRow: ({
+    onPress,
+    disabled,
+    opening,
+    failed,
+  }: {
+    onPress: () => void;
+    disabled?: boolean;
+    opening?: boolean;
+    failed?: boolean;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement(
+        'button',
+        { onClick: onPress, disabled: disabled || opening },
+        opening ? 'mobile.create.holds.opening' : 'mobile.create.holds.add',
+      ),
+      createElement('span', null, 'mobile.create.holds.hint'),
+      failed ? createElement('span', null, 'mobile.create.holds.openFailed') : null,
+    ),
+}));
 vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
@@ -189,6 +213,18 @@ describe('CreateDrawer with a remix that lost holds', () => {
 });
 
 describe('visible hold-maintenance controls', () => {
+  it('restores ordinary status when edit access hides the failed handoff entry', () => {
+    const saved = { text: 'saved', tone: 'muted' as const, announce: false, savedReassurance: true };
+    const element = drawerWith(undefined);
+    const props = { ...element.props, controller: { ...controller, draftStatus: saved }, holdEditorOpenFailed: true };
+    const view = render(createElement(CreateDrawer, { ...props, onAddHolds: async () => undefined }));
+    expect(captured.actionBar?.draftStatus).toBeNull();
+    expect(view.getByText('mobile.create.holds.openFailed')).toBeTruthy();
+    view.rerender(createElement(CreateDrawer, props));
+    expect(captured.actionBar?.draftStatus).toBe(saved);
+    expect(view.queryByText('mobile.create.holds.openFailed')).toBeNull();
+  });
+
   it('labels the entry and calls it directly from beneath the board', () => {
     const onAddHolds = vi.fn(async () => {});
     const element = drawerWith(undefined);

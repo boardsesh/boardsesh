@@ -139,7 +139,8 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
             value={name}
             onChangeText={onChangeName}
             placeholder={t('mobile.create.header.newClimb')}
-            placeholderTextColor={systemColors.tertiaryLabel}
+            placeholderTextColor={systemColors.label}
+            accessibilityLabel={t('mobile.filter.section.name')}
             maxLength={NAME_MAX}
             returnKeyType="done"
             style={[styles.nameInput, { color: systemColors.label }]}
@@ -178,8 +179,7 @@ const createStyles = (textStyles: TypographyScale) =>
       justifyContent: 'center',
     },
     nameInput: {
-      fontWeight: '700',
-      fontSize: textStyles.body.fontSize,
+      ...textStyles.headline,
       textAlign: 'center',
       paddingVertical: 0,
       alignSelf: 'stretch',

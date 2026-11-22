@@ -68,8 +68,6 @@ export const CreateDraftStatusRow = memo(function CreateDraftStatusRow({
         <Text
           variant="caption1"
           color={color}
-          numberOfLines={1}
-          ellipsizeMode="tail"
           // Explicitly NOT a live region: the state behind this line flips on a
           // 500ms autosave debounce, so `polite` would re-announce on every
           // keystroke and every hold tap. The effect above narrates transitions.

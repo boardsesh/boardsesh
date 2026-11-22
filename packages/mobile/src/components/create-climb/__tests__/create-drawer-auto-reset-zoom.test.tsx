@@ -1,4 +1,28 @@
 // @vitest-environment jsdom
+vi.mock('../CreateAddHoldsRow', () => ({
+  CreateAddHoldsRow: ({
+    onPress,
+    disabled,
+    opening,
+    failed,
+  }: {
+    onPress: () => void;
+    disabled?: boolean;
+    opening?: boolean;
+    failed?: boolean;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement(
+        'button',
+        { onClick: onPress, disabled: disabled || opening },
+        opening ? 'mobile.create.holds.opening' : 'mobile.create.holds.add',
+      ),
+      createElement('span', null, 'mobile.create.holds.hint'),
+      failed ? createElement('span', null, 'mobile.create.holds.openFailed') : null,
+    ),
+}));
 vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
