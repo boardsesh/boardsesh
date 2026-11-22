@@ -1189,6 +1189,17 @@
       "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
       "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
       "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
+    },
+    "draft": {
+      "loading": "Chargement des modifications enregistrées…",
+      "saving": "Enregistrement des modifications…",
+      "saved": "Modifications enregistrées sur cet appareil",
+      "failed": "Impossible d’enregistrer les modifications sur cet appareil. Réessaie avant de partir.",
+      "retry": "Réessayer",
+      "changed": "Ces modifications enregistrées appartiennent à une version précédente de ce brouillon. Ta copie locale est conservée.",
+      "addLater": "Tu peux ajouter les prises manquantes plus tard, pendant l’ouverture d’un bloc.",
+      "useSaved": "Utiliser les prises enregistrées",
+      "discardBody": "Tes modifications récupérées seront abandonnées. Les prises déjà enregistrées sur ce Spraywall resteront disponibles."
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "Ce Spraywall a une nouvelle photo inachevée, laissée par une ancienne version de l'app. Abandonne-la pour modifier les prises.",
     "discardLeftover": "Abandonner la photo inachevée",
-    "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie."
+    "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie.",
+    "publishAndReturn": "Publier et revenir"
   },
   "sprayHoldUsage": {
     "title": "Retirer une prise utilisée par des blocs ?",

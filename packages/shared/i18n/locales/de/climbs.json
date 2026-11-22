@@ -829,6 +829,15 @@
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
         "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
+      },
+      "holds": {
+        "add": "Griffe hinzufügen",
+        "hint": "Fehlt ein Griff? Füge ihn hinzu und kehre zu diesem Boulder zurück.",
+        "opening": "Griffeditor wird geöffnet…",
+        "openFailed": "Dein Boulder konnte auf diesem Gerät nicht gespeichert werden. Versuch es erneut, bevor du Griffe hinzufügst.",
+        "missing_one": "{{count}} ausgewählter Griff ist nicht mehr an dieser Spraywall. Dein Boulder bleibt erhalten.",
+        "missing_other": "{{count}} ausgewählte Griffe sind nicht mehr an dieser Spraywall. Dein Boulder bleibt erhalten.",
+        "removeMissing": "Fehlende Griffe entfernen"
       }
     },
     "holdFilter": {

@@ -74,6 +74,39 @@ beforeEach(() => {
 });
 
 describe('useSaveSprayHolds', () => {
+  it('awaits the durable removal checkpoint before sending upserts', async () => {
+    let finishCheckpoint: (() => void) | undefined;
+    const onRemoved = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCheckpoint = resolve;
+        }),
+    );
+    requestMock.mockImplementation((document: unknown) =>
+      document === REMOVE_SPRAY_WALL_HOLDS
+        ? Promise.resolve({ removeSprayWallHolds: 2 })
+        : Promise.reject(new Error('upsert failed')),
+    );
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    let saving: Promise<unknown> | undefined;
+    act(() => {
+      saving = result.current.mutateAsync({
+        wallUuid: 'wall-1',
+        versionNumber: 3,
+        versionId: '77',
+        plan: PLAN,
+        onRemoved,
+      });
+    });
+    await waitFor(() => expect(onRemoved).toHaveBeenCalled());
+    expect(sentDocuments()).toEqual(['remove']);
+    await act(async () => {
+      finishCheckpoint?.();
+      await expect(saving).rejects.toThrow('upsert failed');
+    });
+    expect(sentDocuments()).toEqual(['remove', 'upsert']);
+  });
+
   it('fires onRemoved after the remove resolves and before the upsert is sent', async () => {
     // Recorded at the moment `onRemoved` runs: if the hook fired it after both
     // calls (or never), this snapshot would not be `['remove']`.

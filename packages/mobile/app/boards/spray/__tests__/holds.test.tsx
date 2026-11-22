@@ -7,6 +7,7 @@ const route = vi.hoisted(() => ({
   params: {} as {
     wallUuid?: string | string[];
     boardUuid?: string | string[];
+    entry?: string | string[];
     versionId?: string | string[];
     returnTo?: string;
     resetOf?: string | string[];
@@ -18,8 +19,8 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => createElement('div', { 'data-testid': 'redirect' }, href),
 }));
 vi.mock('../../../../src/components/spray-wall/SprayWallHoldsScreen', () => ({
-  SprayWallHoldsScreen: ({ wallUuid }: { wallUuid: string }) =>
-    createElement('div', { 'data-testid': 'holds-screen' }, wallUuid),
+  SprayWallHoldsScreen: ({ wallUuid, entry }: { wallUuid: string; entry?: string }) =>
+    createElement('div', { 'data-testid': 'holds-screen', 'data-entry': entry }, wallUuid),
 }));
 vi.mock('../../../../src/components/spray-wall/SprayWallWizardScreen', () => ({
   SprayWallWizardScreen: (props: {
@@ -69,6 +70,18 @@ describe('/boards/spray/holds', () => {
   it('mounts the standalone editor host for the requested wall', () => {
     render(createElement(EditSprayWallHolds));
     expect(screen.getByTestId('holds-screen').textContent).toBe('wall-1');
+  });
+
+  it('opens the Add flow for an exact climb editor entry', () => {
+    route.params = { wallUuid: 'wall-1', entry: 'climb-editor' };
+    render(createElement(EditSprayWallHolds));
+    expect(screen.getByTestId('holds-screen').getAttribute('data-entry')).toBe('climb-editor');
+  });
+
+  it.each(['unknown', ['climb-editor']])('ignores unsupported entry context %j', (entry) => {
+    route.params = { wallUuid: 'wall-1', entry };
+    render(createElement(EditSprayWallHolds));
+    expect(screen.getByTestId('holds-screen').hasAttribute('data-entry')).toBe(false);
   });
 
   it('accepts the legacy boardUuid link parameter', () => {

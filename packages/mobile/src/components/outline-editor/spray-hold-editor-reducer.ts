@@ -114,12 +114,16 @@ export type SprayEditorPresent = {
 };
 
 export type SprayEditorState = SprayEditorPresent & {
+  /** A cold recovery still holds decisions even though its undo history is empty. */
+  recovered?: boolean;
   past: readonly SprayEditorPresent[];
   /** What Redo brings back, the next one LAST. Emptied by every new edit. */
   future: readonly SprayEditorPresent[];
 };
 
 export type SprayEditorAction =
+  /** Restore a validated local working copy without re-minting its local ids or removals. */
+  | { type: 'RESTORE'; present: SprayEditorPresent }
   /** Replace everything and start a fresh undo baseline (the wall's holds landed). */
   | { type: 'LOAD'; holds: readonly SprayEditorHold[] }
   /** Go back to a seed, as one undoable step ("Start over"). */
@@ -291,8 +295,10 @@ function switchOff(state: SprayEditorState, hold: SprayEditorHold): SprayEditorS
 
 export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorAction): SprayEditorState {
   switch (action.type) {
+    case 'RESTORE':
+      return { ...action.present, past: [], future: [], recovered: true };
     case 'LOAD': {
-      return { ...state, ...presentFromHolds(action.holds), past: [], future: [] };
+      return { ...state, ...presentFromHolds(action.holds), past: [], future: [], recovered: false };
     }
 
     case 'START_OVER': {
@@ -461,14 +467,14 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
     case 'MARK_SAVED': {
       const written = new Set(action.writtenIds);
       const holds: Record<number, SprayEditorHold> = {};
-      let changed = state.removedIds.length > 0;
+      let changed = state.removedIds.length > 0 || state.recovered === true;
       for (const hold of Object.values(state.holds)) {
         const clears = hold.dirty && written.has(hold.id);
         holds[hold.id] = clears ? { ...hold, dirty: false } : hold;
         if (clears) changed = true;
       }
       if (!changed) return state;
-      return { ...state, holds, removedIds: [], past: [], future: [] };
+      return { ...state, holds, removedIds: [], past: [], future: [], recovered: false };
     }
 
     case 'UNDO': {
@@ -613,5 +619,11 @@ export function editorCounts(state: SprayEditorState): SprayEditorCounts {
  * and unsaved, and nothing re-detects them when the draft is resumed.
  */
 export function editorIsDirty(state: SprayEditorState, counts: SprayEditorCounts): boolean {
-  return state.past.length > 0 || counts.unsavedWrites > 0 || counts.unsavedFinds > 0 || counts.unsavedRemovals > 0;
+  return (
+    state.recovered === true ||
+    state.past.length > 0 ||
+    counts.unsavedWrites > 0 ||
+    counts.unsavedFinds > 0 ||
+    counts.unsavedRemovals > 0
+  );
 }

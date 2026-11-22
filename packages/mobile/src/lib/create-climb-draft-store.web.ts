@@ -1,7 +1,7 @@
 import { getPreference, removePreference, removePreferencesMatching, setPreference } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
-import { userScopedStorageKey } from './user-storage-owner.web';
-import { sprayIdentityToken } from './spray/spray-wall-registry';
+import { getCurrentUserStorageOwner, userScopedStorageKey } from './user-storage-owner.web';
+import { sprayAuthoringToken, sprayIdentityToken } from './spray/spray-wall-registry';
 
 /** Which authoring mode wrote this slot. Diagnostic only — the key decides. */
 export type CreateClimbDraftOrigin = 'new' | 'edit' | 'fork';
@@ -38,6 +38,8 @@ export type CreateClimbDraft = {
 };
 
 const KEY_PREFIX = 'boardsesh_create_climb_draft:';
+// Only aliases for the currently authorized wall/version are eligible to migrate.
+const legacyDraftKeys = new Map<string, string>();
 
 export function createClimbDraftKey(config: {
   boardName: string;
@@ -46,16 +48,21 @@ export function createClimbDraftKey(config: {
   setIds: string;
   angle: number;
 }): string {
-  const spray = sprayIdentityToken(config.boardName, config.layoutId);
-  return `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
+  const spray = sprayAuthoringToken(config.boardName, config.layoutId);
+  const boardKey = `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
+  if (config.boardName === 'spray' && spray !== '-sw0') {
+    const legacyToken = sprayIdentityToken(config.boardName, config.layoutId);
+    legacyDraftKeys.set(
+      boardKey,
+      `${config.boardName}:${config.layoutId}:${config.sizeId}${legacyToken}:${config.setIds}:${config.angle}`,
+    );
+  }
+  return boardKey;
 }
 
 /** See the native fork. */
-export function clearSupersededSprayDrafts(layoutId: number, currentVersionToken: string): Promise<void> {
-  const wallPrefix = `${KEY_PREFIX}spray:${layoutId}:${layoutId}`;
-  return removePreferencesMatching(
-    (key) => key.startsWith(wallPrefix) && !key.startsWith(`${wallPrefix}${currentVersionToken}:`),
-  );
+export function clearSupersededSprayDrafts(_layoutId: number, _currentVersionToken: string): Promise<void> {
+  return Promise.resolve();
 }
 
 /** See the native fork — one deterministic slot per authoring mode. */
@@ -64,7 +71,10 @@ export function createClimbEditDraftKey(boardType: string, uuid: string): string
 }
 
 export function createClimbForkDraftKey(boardKey: string): string {
-  return `fork:${boardKey}`;
+  const forkKey = `fork:${boardKey}`;
+  const legacyKey = legacyDraftKeys.get(boardKey);
+  if (legacyKey) legacyDraftKeys.set(forkKey, `fork:${legacyKey}`);
+  return forkKey;
 }
 
 /**
@@ -92,10 +102,23 @@ function isCreateClimbDraft(value: unknown): value is CreateClimbDraft {
 }
 
 export async function loadDraft(boardKey: string, owner?: UserStorageOwner | null): Promise<CreateClimbDraft | null> {
-  const scopedKey = userScopedStorageKey(storageKey(boardKey), owner);
+  const capturedOwner = owner === undefined ? getCurrentUserStorageOwner() : owner;
+  const scopedKey = userScopedStorageKey(storageKey(boardKey), capturedOwner);
+  const legacyKey = legacyDraftKeys.get(boardKey);
   if (!scopedKey) return null;
   const stored = await getPreference<unknown>(scopedKey);
-  return isCreateClimbDraft(stored) ? stored : null;
+  if (isCreateClimbDraft(stored)) return stored;
+  const scopedLegacyKey = legacyKey ? userScopedStorageKey(storageKey(legacyKey), capturedOwner) : null;
+  if (!scopedLegacyKey) return null;
+  const legacyDraft = await getPreference<unknown>(scopedLegacyKey);
+  if (!isCreateClimbDraft(legacyDraft)) return null;
+  try {
+    await setPreference(scopedKey, legacyDraft);
+  } catch {
+    // The legacy copy is already durable. Restore it even if migration cannot
+    // write yet, so the creator never treats a recovered editor as empty.
+  }
+  return legacyDraft;
 }
 
 export function saveDraft(boardKey: string, draft: CreateClimbDraft, owner?: UserStorageOwner | null): Promise<void> {
@@ -103,9 +126,14 @@ export function saveDraft(boardKey: string, draft: CreateClimbDraft, owner?: Use
   return scopedKey ? setPreference(scopedKey, draft) : Promise.resolve();
 }
 
-export function clearDraft(boardKey: string, owner?: UserStorageOwner | null): Promise<void> {
-  const scopedKey = userScopedStorageKey(storageKey(boardKey), owner);
-  return scopedKey ? removePreference(scopedKey) : Promise.resolve();
+export async function clearDraft(boardKey: string, owner?: UserStorageOwner | null): Promise<void> {
+  const capturedOwner = owner === undefined ? getCurrentUserStorageOwner() : owner;
+  const scopedKey = userScopedStorageKey(storageKey(boardKey), capturedOwner);
+  if (!scopedKey) return;
+  const legacyKey = legacyDraftKeys.get(boardKey);
+  await removePreference(scopedKey);
+  const scopedLegacyKey = legacyKey ? userScopedStorageKey(storageKey(legacyKey), capturedOwner) : null;
+  if (scopedLegacyKey) await removePreference(scopedLegacyKey);
 }
 
 /** Drops every create-climb draft owned by one authenticated browser session. */

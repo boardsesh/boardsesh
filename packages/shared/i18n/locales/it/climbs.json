@@ -829,6 +829,15 @@
         "makeRoute": "Rendilo una via",
         "makeBoulder": "Rendilo un blocco",
         "makeBoulderBlocked": "Rendilo un blocco: elimina prima i frame"
+      },
+      "holds": {
+        "add": "Aggiungi prese",
+        "hint": "Manca una presa? Aggiungila, poi torna a questo blocco.",
+        "opening": "Apertura dell’editor delle prese…",
+        "openFailed": "Non è stato possibile salvare il tuo blocco su questo dispositivo. Riprova prima di aggiungere prese.",
+        "missing_one": "{{count}} presa selezionata non è più su questa Spraywall. Il tuo blocco è conservato.",
+        "missing_other": "{{count}} prese selezionate non sono più su questa Spraywall. Il tuo blocco è conservato.",
+        "removeMissing": "Rimuovi le prese mancanti"
       }
     },
     "holdFilter": {

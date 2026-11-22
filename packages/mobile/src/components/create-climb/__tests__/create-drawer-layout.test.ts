@@ -66,3 +66,11 @@ describe('create drawer board budget', () => {
     expect(withInsets).toBe(874 - 59 - 34 - ABOVE_FOLD_CHROME);
   });
 });
+
+describe('hold maintenance controls', () => {
+  it('reserves their measured height so painting tools stay visible', () => {
+    const budget = { windowHeight: 900, insetTop: 24, insetBottom: 34, showRouteTransport: false };
+    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 92 })).toBe(computeBoardMaxHeight(budget) - 92);
+    expect(computeBoardMaxHeight({ ...budget, extraControlsHeight: 180 })).toBe(computeBoardMaxHeight(budget) - 180);
+  });
+});

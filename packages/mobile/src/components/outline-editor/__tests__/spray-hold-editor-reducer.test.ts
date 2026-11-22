@@ -564,3 +564,52 @@ describe('actionChangesWall', () => {
     expect(actionChangesWall(deleted, { type: 'DELETE', id: 2 })).toBe(true);
   });
 });
+
+describe('local recovery', () => {
+  it('restores removals and the next local id without rebuilding from visible holds', () => {
+    const edited = run(
+      loaded([storedHold(42)]),
+      { type: 'SWITCH_OFF', id: 42 },
+      { type: 'DELETE', id: 42 },
+      { type: 'ADD_HOLD', geometry: { cx: 15, cy: 28, r: 10, outline: null } },
+    );
+    const { holds, removedIds, selectedId, nextLocalId } = edited;
+    const restored = sprayEditorReducer(initialSprayEditorState(), {
+      type: 'RESTORE',
+      present: { holds, removedIds, selectedId, nextLocalId },
+    });
+    expect(restored.removedIds).toEqual([42]);
+    const continued = sprayEditorReducer(restored, {
+      type: 'ADD_HOLD',
+      geometry: { cx: 32, cy: 42, r: 8, outline: null },
+    });
+    expect(Object.keys(continued.holds)).toEqual(['-1', '-2']);
+    expect(restored.past).toEqual([]);
+  });
+});
+
+it.each(['SWITCH_OFF', 'DELETE'] as const)(
+  'keeps a detector %s decision through repeated cold recovery',
+  (decision) => {
+    const seed = loaded([candidate(-1, UNSURE)]);
+    const edited = run(
+      seed,
+      { type: 'SWITCH_OFF', id: -1 },
+      ...(decision === 'DELETE' ? [{ type: 'DELETE' as const, id: -1 }] : []),
+    );
+    const recover = (current: SprayEditorState) => {
+      const { holds, removedIds, selectedId, nextLocalId } = current;
+      return sprayEditorReducer(initialSprayEditorState(), {
+        type: 'RESTORE',
+        present: { holds, removedIds, selectedId, nextLocalId },
+      });
+    };
+    const restored = recover(edited);
+    expect(isDirty(restored)).toBe(true);
+    expect(restored.past).toEqual([]);
+    const restoredAgain = recover(restored);
+    expect(isDirty(restoredAgain)).toBe(true);
+    expect(restoredAgain.holds[-1]?.review).toBe(decision === 'DELETE' ? undefined : 'rejected');
+    expect(isDirty(sprayEditorReducer(restoredAgain, { type: 'MARK_SAVED', writtenIds: [] }))).toBe(false);
+  },
+);

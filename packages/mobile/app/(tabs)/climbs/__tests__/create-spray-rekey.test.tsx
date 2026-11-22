@@ -126,14 +126,14 @@ describe('create route — spray wall re-key', () => {
     expect(mounts.count).toBe(1);
   });
 
-  it('remounts again when a reset publishes a new version', () => {
+  it('keeps the climb mounted when hold maintenance publishes a new version', () => {
     registerWall(1);
     render(createElement(CreateClimbRoute));
     expect(mounts.count).toBe(1);
 
     act(() => registerWall(2));
 
-    expect(mounts.count).toBe(2);
+    expect(mounts.count).toBe(1);
   });
 
   it('leaves a catalogue board mounted once', () => {

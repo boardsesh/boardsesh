@@ -41,7 +41,6 @@ import {
   setSprayWallArchiveState,
   setSprayWallLoader,
   setSprayWallLook,
-  sprayVersionToken,
   sprayWallViewerGeneration,
   unregisterSprayWall,
   sprayWallRemovalGeneration,
@@ -52,7 +51,6 @@ import {
   unsetSprayWallLoader,
   subscribeToSprayWallWithdrawals,
 } from './spray-wall-registry';
-import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
 import { rememberSprayWallArchive } from '../../settings/offline-boards';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
@@ -372,13 +370,8 @@ export function registerRenderData(
   )
     keepSprayWallArchiveOffline(renderData.wall.uuid, archive);
 
-  // The create-climb draft slot is keyed on the version, so a new version moves
-  // it and leaves the old one holding holds that may be gone. Nothing else
-  // would ever read or remove it. Fire-and-forget: losing this costs a few
-  // kilobytes, and it must not sit in front of the first paint.
-  void clearSupersededSprayDrafts(layoutId, sprayVersionToken('spray', layoutId)).catch(() => {
-    // AsyncStorage unavailable. The orphan survives until the next version.
-  });
+  // Authoring drafts belong to the wall, not its rendered version. Keep legacy
+  // slots available for write-first migration when that editor next opens.
   return true;
 }
 

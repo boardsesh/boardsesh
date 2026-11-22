@@ -829,6 +829,15 @@
         "makeRoute": "Convertir en voie",
         "makeBoulder": "Convertir en bloc",
         "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images"
+      },
+      "holds": {
+        "add": "Ajouter des prises",
+        "hint": "Il manque une prise ? Ajoute-la, puis reviens à ce bloc.",
+        "opening": "Ouverture de l’éditeur de prises…",
+        "openFailed": "Ton bloc n’a pas pu être enregistré sur cet appareil. Réessaie avant d’ajouter des prises.",
+        "missing_one": "{{count}} prise sélectionnée n’est plus sur ce Spraywall. Ton bloc est conservé.",
+        "missing_other": "{{count}} prises sélectionnées ne sont plus sur ce Spraywall. Ton bloc est conservé.",
+        "removeMissing": "Retirer les prises manquantes"
       }
     },
     "holdFilter": {

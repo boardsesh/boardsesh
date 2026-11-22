@@ -332,6 +332,67 @@ describe('useCreateClimbScreen autosave flush', () => {
     });
   });
 
+  it('refuses the hold-editor handoff while a climb Save owns the session', async () => {
+    let resolveSave: ((saved: unknown) => void) | undefined;
+    boardActions.saveClimb.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    act(() => result.current.setName('Saving project'));
+    let pendingSave: Promise<void> | undefined;
+    act(() => {
+      pendingSave = result.current.handleSave();
+    });
+    const writesBeforeHandoff = draftStore.saveDraft.mock.calls.length;
+
+    await expect(result.current.persistWorkingDraft()).rejects.toThrow('already in progress');
+    expect(draftStore.saveDraft).toHaveBeenCalledTimes(writesBeforeHandoff);
+
+    await act(async () => {
+      resolveSave?.({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+      await pendingSave;
+    });
+  });
+
+  it('refuses the handoff when Save starts during its awaited local write', async () => {
+    let resolveLocalWrite: (() => void) | undefined;
+    let resolveSave: ((saved: unknown) => void) | undefined;
+    boardActions.saveClimb.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    act(() => result.current.setName('Project before hold editing'));
+    draftStore.saveDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLocalWrite = resolve;
+        }),
+    );
+    const handoff = result.current.persistWorkingDraft();
+    const handoffFailure = expect(handoff).rejects.toThrow('started while preserving');
+    let pendingSave: Promise<void> | undefined;
+    act(() => {
+      pendingSave = result.current.handleSave();
+    });
+
+    await act(async () => {
+      resolveLocalWrite?.();
+      await handoffFailure;
+    });
+    await act(async () => {
+      resolveSave?.({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+      await pendingSave;
+    });
+  });
+
   it('does not clear the slot on a publish when the payload moved mid-flight', async () => {
     // Compare-and-clear: the local write and the server round trip are
     // independent, so anything typed while the mutation was in flight would

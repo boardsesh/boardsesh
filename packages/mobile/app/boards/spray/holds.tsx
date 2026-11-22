@@ -6,8 +6,11 @@ export default function EditSprayWallHolds() {
   const params = useLocalSearchParams<{
     wallUuid?: string | string[];
     boardUuid?: string | string[];
+    entry?: string | string[];
   }>();
   const wallUuid = readSprayWallUuid(params);
   if (!wallUuid) return <Redirect href="/boards" />;
-  return <SprayWallHoldsScreen wallUuid={wallUuid} />;
+  return (
+    <SprayWallHoldsScreen wallUuid={wallUuid} entry={params.entry === 'climb-editor' ? 'climb-editor' : undefined} />
+  );
 }

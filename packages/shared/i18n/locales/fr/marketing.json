@@ -828,11 +828,12 @@
       "edit": {
         "title": "Modifier les prises plus tard",
         "lead": "Tu peux ajouter ou corriger des prises à tout moment. Ajouter des prises ne change pas les blocs existants.",
-        "p1": "Dans Boards, touche ton Spraywall pour l'activer. Touche l'onglet Blocs avec la loupe, puis le nom du Spraywall en haut. Touche Modifier les prises, et termine avec Publier les prises.",
+        "p1": "Pendant l’ouverture d’un bloc, touche Ajouter des prises sous le Spraywall. Ajoute les prises manquantes, puis touche Publier et revenir. Le nom, la description et les prises sélectionnées du bloc sont conservés. Tu peux aussi ouvrir Modifier les prises depuis le nom du Spraywall en haut de l’onglet Blocs.",
         "p2": "Si tes modifications retirent une prise qu'utilisent des blocs publiés, Boardsesh te demande de confirmer. Garder les prises annule. Retirer quand même publie.",
         "p3": "Ces blocs restent, avec un avertissement de prise manquante, et leurs croix enregistrées aussi. Déplacer, redimensionner, remodeler ou réunir une prise fait pareil.",
         "p4": "Touche Remixer sur un bloc touché pour ouvrir une copie à jour. Cela ne répare pas l'original.",
-        "p5": "Si les prises ont changé sur tout le Spraywall, touche Réinitialiser ce Spraywall dans la même feuille et repars d'une nouvelle photo. La publication archive l'ancien Spraywall avec ses blocs."
+        "p5": "Si les prises ont changé sur tout le Spraywall, touche Réinitialiser ce Spraywall dans la même feuille et repars d'une nouvelle photo. La publication archive l'ancien Spraywall avec ses blocs.",
+        "p6": "Les modifications de prises non publiées sont enregistrées sur cet appareil. Tu peux partir, verrouiller l’écran ou redémarrer l’app et continuer plus tard. Publier les prises rend ces modifications disponibles sur le Spraywall."
       },
       "pencil": {
         "title": "Apple Pencil sur iPad",

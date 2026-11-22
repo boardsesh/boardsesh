@@ -20,9 +20,9 @@ const { createClimbDraftKey } = await import('../create-climb-draft-store.web');
 const LAYOUT_ID = 5100;
 const board = { boardName: 'spray' as BoardName, layoutId: LAYOUT_ID, sizeId: LAYOUT_ID, setIds: String(LAYOUT_ID) };
 
-function registerWall(versionId: number, withArt: boolean) {
-  registry.registerSprayWall(LAYOUT_ID, {
-    wallUuid: 'wall',
+function registerWall(versionId: number, withArt: boolean, wallUuid = 'wall', layoutId = LAYOUT_ID) {
+  registry.registerSprayWall(layoutId, {
+    wallUuid,
     angle: 30,
     version: versionId,
     versionId,
@@ -49,9 +49,9 @@ function registerWall(versionId: number, withArt: boolean) {
   });
 }
 
-const keys = () => ({
-  screen: createClimbScreenKey('new', board),
-  draft: createClimbDraftKey({ ...board, angle: 30 }),
+const keys = (config = board) => ({
+  screen: createClimbScreenKey('new', config),
+  draft: createClimbDraftKey({ ...config, angle: 30 }),
 });
 
 beforeEach(() => registry.clearSprayWallRegistry());
@@ -70,11 +70,27 @@ describe('keys for what a climber is editing ignore the drawn picture', () => {
     expect(keys()).toEqual(before);
   });
 
-  it('still move with a reset', () => {
+  it('keep the authoring session when more holds are published', () => {
     registerWall(21, false);
     const before = keys();
+    const drawnBefore = registry.sprayCacheToken('spray', LAYOUT_ID);
     registerWall(22, false);
-    expect(keys().screen).not.toBe(before.screen);
-    expect(keys().draft).not.toBe(before.draft);
+    expect(keys()).toEqual(before);
+    expect(registry.sprayCacheToken('spray', LAYOUT_ID)).not.toBe(drawnBefore);
+  });
+
+  it('move to a separate session when reset creates a replacement wall', () => {
+    registerWall(21, false);
+    const before = keys();
+    const replacementLayout = LAYOUT_ID + 1;
+    registerWall(22, false, 'replacement-wall', replacementLayout);
+    const replacement = keys({
+      ...board,
+      layoutId: replacementLayout,
+      sizeId: replacementLayout,
+      setIds: String(replacementLayout),
+    });
+    expect(replacement.screen).not.toBe(before.screen);
+    expect(replacement.draft).not.toBe(before.draft);
   });
 });

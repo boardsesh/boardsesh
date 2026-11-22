@@ -324,29 +324,13 @@ export function useCreateClimbScreen({
     [],
   );
 
-  /**
-   * The holds that are on the board right now — spray walls only.
-   *
-   * A catalogue board gets `undefined`, which means "every hold in the seed is
-   * real": Kilter's holds are bolted on at the factory. A wall's are not. Holds
-   * come off a live wall, and a remix or a draft of a climb set before that
-   * still names them. Without this the editor
-   * opens with those holds painted: invisible (no placement, so no ring),
-   * untappable (no target), and still counted by `startingCount` /
-   * `finishCount` / `isValid`, so Save would publish a climb born broken.
-   *
-   * Read once, with the frames, from the SW-07 registry: re-reading it later
-   * would silently erase a hold the climber had just painted.
-   *
-   * eslint-disable-next-line react-hooks/exhaustive-deps — deliberately seeded
-   * once, exactly like `initialFrames` above.
-   */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Maintenance publishes new hold targets without replacing this authoring
+  // session. Missing painted ids are retained until the setter acknowledges them.
   const availableHoldIds = useMemo(() => {
     if (board.boardName !== SPRAY_BOARD_NAME) return undefined;
     const wall = getSprayWall(board.layoutId);
     return wall ? new Set(wall.holds.map((hold) => hold.id)) : undefined;
-  }, []);
+  }, [board.boardName, board.layoutId, sprayWallToken]);
 
   const {
     litUpHoldsMap,
@@ -361,6 +345,8 @@ export function useCreateClimbScreen({
     isValid,
     canSave,
     canPublish,
+    missingHoldCount,
+    removeMissingHolds,
     resetHolds,
     loadFrames,
     duplicateFrame,
@@ -593,9 +579,8 @@ export function useCreateClimbScreen({
     });
   }, [board.boardName]);
 
-  // `sprayWallToken` is in the deps, not just along for the ride: the key folds
-  // the wall version in, and on a cold spray entry the wall lands AFTER the first
-  // render. See `UseCreateClimbScreenArgs.sprayWallToken`.
+  // A cold entry gains its wall UUID after the registry loads. Maintenance
+  // changes the render token but deliberately keeps the same authoring slot.
   const draftKey = useMemo(() => createClimbDraftKey(board), [board, sprayWallToken]);
 
   // ---- One deterministic autosave slot per authoring mode. ----
@@ -1922,6 +1907,20 @@ export function useCreateClimbScreen({
     showToast(t('mobile.create.autosave.keptToast'), 'info');
   }, [showToast, t]);
 
+  const persistWorkingDraft = useCallback(async () => {
+    if (saveInFlightRef.current || startNewInFlightRef.current) {
+      throw new Error('Climb save or reset is already in progress');
+    }
+    if (!restoredRef.current || !isDraftStorageAvailable()) {
+      throw new Error('Climb draft storage is not ready');
+    }
+    playbackPause();
+    await persistAutosaveSlot(autosaveDraftRef.current);
+    if (saveInFlightRef.current || startNewInFlightRef.current) {
+      throw new Error('Climb save or reset started while preserving the draft');
+    }
+  }, [persistAutosaveSlot, playbackPause]);
+
   return {
     // editor state
     litUpHoldsMap,
@@ -1936,8 +1935,10 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
-    /** The wall's live hold ids, read once at mount; undefined off spray. */
+    /** The wall's current hold ids; undefined off spray. */
     availableHoldIds,
+    missingHoldCount,
+    removeMissingHolds,
     /**
      * The remixed parent's frames, still naming any hold it lost, for the grey
      * rings (`useLostHoldGhosts`). Null for a new climb and for an edit in place.
@@ -2012,6 +2013,7 @@ export function useCreateClimbScreen({
     nameMissingTick,
     // persistence
     draftStatus,
+    persistWorkingDraft,
     notifyDraftKeptOnDismiss,
     // ble
     bleAvailable: !!bluetooth,

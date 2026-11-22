@@ -828,11 +828,12 @@
       "edit": {
         "title": "Edita las presas más tarde",
         "lead": "Puedes añadir o corregir presas cuando quieras. Añadir presas no cambia los bloques existentes.",
-        "p1": "En Plafones, toca tu Spraywall para activarlo. Toca la pestaña Bloques de la lupa y luego el nombre del Spraywall de arriba. Toca Editar presas y termina con Publicar presas.",
+        "p1": "Mientras montas un bloque, toca Añadir presas debajo del Spraywall. Añade las presas que faltan y toca Publicar y volver. El nombre, la descripción y las presas seleccionadas del bloque se conservan. También puedes abrir Editar presas desde el nombre del Spraywall en la parte superior de la pestaña Bloques.",
         "p2": "Si tus cambios quitan una presa que usan bloques publicados, Boardsesh te pide confirmar. Mantener las presas cancela. Quitar igualmente publica.",
         "p3": "Esos bloques se quedan, con un aviso de presa que falta, y sus encadenes registrados también. Mover, cambiar el tamaño, remodelar o unir una presa hace lo mismo.",
         "p4": "Toca Remezclar en un bloque afectado para montar una copia actualizada. No repara el original.",
-        "p5": "Si las presas cambiaron por todo el Spraywall, toca Resetear este Spraywall en la misma hoja y empieza con una foto nueva. Publicar archiva el Spraywall viejo con sus bloques."
+        "p5": "Si las presas cambiaron por todo el Spraywall, toca Resetear este Spraywall en la misma hoja y empieza con una foto nueva. Publicar archiva el Spraywall viejo con sus bloques.",
+        "p6": "Los cambios de presas sin publicar se guardan en este dispositivo. Puedes salir, bloquear la pantalla o reiniciar la app y seguir más tarde. Publicar presas hace que esos cambios estén disponibles en el Spraywall."
       },
       "pencil": {
         "title": "Apple Pencil en iPad",

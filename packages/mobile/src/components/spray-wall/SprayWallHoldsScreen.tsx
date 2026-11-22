@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { CREATE_SPRAY_WALL_VERSION, PUBLISH_SPRAY_WALL_VERSION } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
+import type { SprayHoldPersistence } from '../outline-editor/use-spray-hold-autosave';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -97,7 +98,7 @@ function isFinalRefusal(failure: unknown): boolean {
  * so a deep link or a sheet that rendered before the archive cannot reach the
  * editor.
  */
-export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
+export function SprayWallHoldsScreen({ wallUuid, entry }: { wallUuid: string; entry?: 'climb-editor' }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const queryClient = useQueryClient();
@@ -115,6 +116,10 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
   const editorDirtyRef = useRef(false);
+  const editorPersistenceRef = useRef<SprayHoldPersistence | null>(null);
+  const onPersistenceReady = useCallback((persistence: SprayHoldPersistence | null) => {
+    editorPersistenceRef.current = persistence;
+  }, []);
   const editorHandingOverRef = useRef(false);
 
   const returnToBoards = useCallback(() => {
@@ -280,6 +285,19 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   useSprayWizardLeaveGuard(
     (continueLeaving) => {
       if (busyRef.current || editorHandingOverRef.current) return;
+      if (editorPersistenceRef.current) {
+        if (editorPersistenceRef.current.recoveryPending) {
+          continueLeaving();
+          return;
+        }
+        void editorPersistenceRef.current
+          .flush()
+          .then(() => {
+            if (!busyRef.current && !editorHandingOverRef.current) continueLeaving();
+          })
+          .catch(() => undefined);
+        return;
+      }
       confirmDiscardSprayEdits(
         editorDirtyRef.current,
         () => {
@@ -312,7 +330,9 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     return (
       <SprayHoldEditorScreen
         {...draft}
-        primaryLabel={t('sprayMaintenance.publish')}
+        primaryLabel={entry === 'climb-editor' ? t('sprayMaintenance.publishAndReturn') : t('sprayMaintenance.publish')}
+        initialMode={entry === 'climb-editor' ? 'add' : undefined}
+        onPersistenceReady={onPersistenceReady}
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}

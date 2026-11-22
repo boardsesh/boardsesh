@@ -1189,6 +1189,17 @@
       "dropped_one": "已保留主体，移除了 {{count}} 处零散区域。",
       "dropped_other": "已保留主体，移除了 {{count}} 处零散区域。",
       "atLimit": "此岩点已无法继续扩大，使用描边可以将它重新画大。"
+    },
+    "draft": {
+      "loading": "正在加载已保存的修改…",
+      "saving": "正在保存修改…",
+      "saved": "修改已保存在此设备上",
+      "failed": "无法在此设备上保存修改。离开前请重试。",
+      "retry": "重试",
+      "changed": "这些已保存的修改属于此草稿的较早版本。本地副本仍然保留。",
+      "addLater": "你可以稍后在线路定线时添加缺失岩点。",
+      "useSaved": "使用已保存的岩点",
+      "discardBody": "恢复的修改将被丢弃。已保存到这面喷点墙的岩点仍然可用。"
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "此喷点墙有一张旧版应用留下的未完成新照片，请将其丢弃后再编辑岩点。",
     "discardLeftover": "丢弃未完成的照片",
-    "discardLeftoverFailed": "无法清除该照片，请重试。"
+    "discardLeftoverFailed": "无法清除该照片，请重试。",
+    "publishAndReturn": "发布并返回"
   },
   "sprayHoldUsage": {
     "title": "移除线路正在使用的岩点？",

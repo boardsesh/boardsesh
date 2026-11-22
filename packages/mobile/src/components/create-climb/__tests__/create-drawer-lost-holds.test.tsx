@@ -14,7 +14,7 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 
 // A remix of a climb that lost holds: the drawer hands the board the grey rings
@@ -145,7 +145,7 @@ const controller = {
   isDraft: false,
 } as unknown as Controller;
 
-function drawerWith(lostHolds: LostHoldGhostsState | undefined) {
+function drawerWith(lostHolds: Omit<LostHoldGhostsState, 'dismissMissingGhosts'> | undefined) {
   return createElement(CreateDrawer, {
     board,
     controller,
@@ -154,7 +154,7 @@ function drawerWith(lostHolds: LostHoldGhostsState | undefined) {
     onLoadDraft: vi.fn(),
     onClose: vi.fn(),
     onViewDuplicate: vi.fn(),
-    lostHolds,
+    lostHolds: lostHolds ? { ...lostHolds, dismissMissingGhosts: vi.fn() } : undefined,
   });
 }
 
@@ -185,5 +185,31 @@ describe('CreateDrawer with a remix that lost holds', () => {
     expect(captured.header?.climbReady).toBe(true);
     expect(captured.actionBar?.saveBlockedLine).toBeNull();
     expect(captured.board?.ghostTargets).toBeUndefined();
+  });
+});
+
+describe('visible hold-maintenance controls', () => {
+  it('labels the entry and calls it directly from beneath the board', () => {
+    const onAddHolds = vi.fn(async () => {});
+    const element = drawerWith(undefined);
+    const view = render(createElement(CreateDrawer, { ...element.props, onAddHolds }));
+    fireEvent.click(view.getByRole('button', { name: 'mobile.create.holds.add' }));
+    expect(onAddHolds).toHaveBeenCalledOnce();
+    expect(view.getByText('mobile.create.holds.hint')).toBeTruthy();
+  });
+
+  it('explains removed selections and offers one acknowledgement', () => {
+    const removeMissingHolds = vi.fn();
+    const element = drawerWith(undefined);
+    const view = render(
+      createElement(CreateDrawer, {
+        ...element.props,
+        controller: { ...controller, missingHoldCount: 1, removeMissingHolds },
+      }),
+    );
+    expect(captured.header?.climbReady).toBe(false);
+    expect(view.getByText('mobile.create.holds.missing')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'mobile.create.holds.removeMissing' }));
+    expect(removeMissingHolds).toHaveBeenCalledOnce();
   });
 });

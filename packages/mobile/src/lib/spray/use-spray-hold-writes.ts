@@ -36,7 +36,7 @@ export type SaveSprayHoldsVariables = {
    * still be holding ids the server has already stamped off, and every retry for
    * the rest of the session would be refused with "Hold N is not on this wall".
    */
-  onRemoved?: (removedIds: readonly number[]) => void;
+  onRemoved?: (removedIds: readonly number[]) => void | Promise<void>;
 };
 
 export type SaveSprayHoldsResult = {
@@ -73,7 +73,7 @@ export function useSaveSprayHolds() {
           input: { wallUuid, versionId, holdIds: [...plan.removeIds] },
         });
         removed = response.removeSprayWallHolds;
-        onRemoved?.(plan.removeIds);
+        await onRemoved?.(plan.removeIds);
       }
 
       let written = 0;

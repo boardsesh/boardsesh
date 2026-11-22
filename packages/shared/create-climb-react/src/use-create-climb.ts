@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer, useState } from 'react';
+import { useCallback, useMemo, useReducer, useRef } from 'react';
 import {
   STATE_TO_PRIMARY_CODE,
   accumulatedMapsToFrameStrings,
@@ -30,9 +30,8 @@ type UseCreateClimbOptions = {
    * Applies to `loadFrames` as well as to `initialFrames`. Editing a published
    * climb seeds through `loadFrames` once the row arrives, and the server refuses
    * any save of a spray climb that still names a removed hold — so an edit that
-   * kept the lost holds could never be saved (#6024). Read once at mount, like the
-   * seed: a hold change landing on another device mid-session must not erase a
-   * hold the climber has just painted.
+   * kept the lost holds could never be saved (#6024). Later changes never erase
+   * painted holds automatically: missing ids block Save until explicitly removed.
    */
   availableHoldIds?: ReadonlySet<number>;
 };
@@ -119,6 +118,8 @@ type FramesAction =
   // (draft load / edit seed / fork / autosave restore). You can't undo across
   // a load into the pre-load state. `frames` must be non-empty.
   | { type: 'LOAD_FRAMES'; frames: LitUpHoldsMap[] }
+  // Explicitly retire unavailable hold ids from current work and its history.
+  | { type: 'REMOVE_MISSING_HOLDS'; available: ReadonlySet<number> }
   // Clear every frame back to a single empty one — undoable.
   | { type: 'RESET' }
   // Insert a copy of the active frame right after it and move there.
@@ -164,6 +165,17 @@ export function framesReducer(state: FramesHistory, action: FramesAction): Frame
     case 'LOAD_FRAMES': {
       if (action.frames === state.present) return state;
       return { past: [], present: action.frames, future: [], currentFrameIndex: 0 };
+    }
+    case 'REMOVE_MISSING_HOLDS': {
+      const scrub = (snapshot: FramesSnapshot): FramesSnapshot => ({
+        ...snapshot,
+        present: snapshot.present.map((frame) => filterHoldsOnBoard(action.available, frame)),
+      });
+      return {
+        ...scrub(snapshotOf(state)),
+        past: state.past.map(scrub),
+        future: state.future.map(scrub),
+      };
     }
     case 'RESET': {
       if (state.present.length === 1 && isEmptyFrame(state.present[0])) return state;
@@ -253,7 +265,11 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // The editor mounts once per board route today, so this initial sanitizer only
   // needs the mount-time board. If a future caller swaps boardName mid-mount,
   // remount this hook or re-sanitize the present frames on board change.
-  const [availableHoldIds] = useState(() => options?.availableHoldIds);
+  const availableHoldIds = options?.availableHoldIds;
+  // A fresh wall must affect future loads without changing loadFrames' identity:
+  // callers use that callback in their once-per-editor restore effect.
+  const availableHoldIdsRef = useRef(availableHoldIds);
+  availableHoldIdsRef.current = availableHoldIds;
   const [history, dispatch] = useReducer(framesReducer, options?.initialFrames, (initial) =>
     initHistory(boardName, initial, availableHoldIds),
   );
@@ -285,8 +301,14 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // Scan the frames themselves rather than the flattened union. A hold can
   // legitimately change from STARTING in one frame to FINISH in a later frame;
   // the union keeps only its last state and would incorrectly reject that route.
-  const canSave = totalHolds > 0;
+  const missingHoldCount = useMemo(
+    () =>
+      availableHoldIds ? Object.keys(unionHolds).filter((holdId) => !availableHoldIds.has(Number(holdId))).length : 0,
+    [unionHolds, availableHoldIds],
+  );
+  const canSave = totalHolds > 0 && missingHoldCount === 0;
   const canPublish = useMemo(() => {
+    if (missingHoldCount > 0) return false;
     let hasStartingHold = false;
     let hasFinishHold = false;
     for (const frame of history.present) {
@@ -297,7 +319,7 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
       }
     }
     return false;
-  }, [history.present]);
+  }, [history.present, missingHoldCount]);
 
   /** Alias of `canSave`, kept for existing callers. Prefer `canSave` / `canPublish`. */
   const isValid = canSave;
@@ -334,8 +356,8 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // unsupported holds, and holds no longer on the wall, from every frame.
   const loadFrames = useCallback(
     (frames: LitUpHoldsMap[]) =>
-      dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames, availableHoldIds) }),
-    [boardName, availableHoldIds],
+      dispatch({ type: 'LOAD_FRAMES', frames: filterSupportedFrames(boardName, frames, availableHoldIdsRef.current) }),
+    [boardName],
   );
 
   // Convenience single-frame form of `loadFrames`.
@@ -352,6 +374,11 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     () => dispatch({ type: 'SET_FRAME_INDEX', index: currentFrameIndex - 1 }),
     [currentFrameIndex],
   );
+
+  const removeMissingHolds = useCallback(() => {
+    const available = availableHoldIdsRef.current;
+    if (available) dispatch({ type: 'REMOVE_MISSING_HOLDS', available });
+  }, []);
 
   const undo = useCallback(() => dispatch({ type: 'UNDO' }), []);
   const redo = useCallback(() => dispatch({ type: 'REDO' }), []);
@@ -370,6 +397,8 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     isValid,
     canSave,
     canPublish,
+    missingHoldCount,
+    removeMissingHolds,
     resetHolds,
     loadHolds,
     loadFrames,

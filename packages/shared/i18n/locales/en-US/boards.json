@@ -1189,6 +1189,17 @@
       "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
       "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
       "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."
+    },
+    "draft": {
+      "loading": "Loading saved edits…",
+      "saving": "Saving edits…",
+      "saved": "Edits saved on this device",
+      "failed": "Couldn’t save edits on this device. Try again before leaving.",
+      "retry": "Try again",
+      "changed": "These saved edits belong to an earlier version of this draft. Your local copy is kept.",
+      "addLater": "You can add missing holds later while setting a climb.",
+      "useSaved": "Use saved holds",
+      "discardBody": "Your recovered edits will be discarded. The holds already saved to this Spraywall stay available."
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "This Spraywall has an unfinished new photo from an older version of the app. Discard it to edit the holds.",
     "discardLeftover": "Discard the unfinished photo",
-    "discardLeftoverFailed": "That photo wouldn't clear. Try again."
+    "discardLeftoverFailed": "That photo wouldn't clear. Try again.",
+    "publishAndReturn": "Publish and return"
   },
   "sprayHoldUsage": {
     "title": "Remove a hold that climbs use?",

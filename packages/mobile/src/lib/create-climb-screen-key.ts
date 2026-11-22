@@ -1,5 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { sprayIdentityToken } from './spray/spray-wall-registry';
+import { sprayAuthoringIdentityToken } from './spray/spray-wall-registry';
 
 type CreateClimbKeyBoard = {
   boardName: BoardName;
@@ -22,12 +22,9 @@ type CreateClimbKeyBoard = {
  * board's angle, and an angle-only remount would wipe an in-progress paint.
  * Angle does not affect which holds are valid.
  *
- * The spray wall VERSION is INCLUDED, for the same reason the rest of the tuple
- * is: a reset changes which holds exist under an unchanged layout and size, so a
- * create screen left open across one has to remount and drop the holds that came
- * off the wall. `sprayIdentityToken` is empty for every catalogue board, and
- * leaves out the drawn picture: a generated look landing mid-paint must not
- * remount the screen and drop its undo history.
+ * Ordinary spray hold maintenance keeps the same wall and layout, so it must
+ * preserve the editing session. A reset clones the wall/layout; a privacy
+ * withdrawal changes the in-memory generation. Both still reset this key.
  */
 export function createClimbScreenKey(
   editClimbUuid: string | undefined,
@@ -36,6 +33,6 @@ export function createClimbScreenKey(
 ): string {
   const authoringIdentity =
     editClimbUuid && editClimbUuid !== 'new' ? `edit:${editClimbUuid}` : forkFrames ? 'fork' : 'new';
-  const spray = sprayIdentityToken(board.boardName, board.layoutId);
+  const spray = sprayAuthoringIdentityToken(board.boardName, board.layoutId);
   return `${authoringIdentity}:${board.boardName}:${board.layoutId}:${board.sizeId}${spray}:${board.setIds}`;
 }

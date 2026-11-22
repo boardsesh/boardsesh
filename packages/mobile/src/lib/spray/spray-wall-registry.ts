@@ -1008,10 +1008,9 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
 
 /**
  * `sprayCacheToken` without the picture: the version and the privacy
- * generation only. For keys that name what a climber is EDITING rather than
- * what is drawn — the create screen's React key, the web draft slot — which
- * must not move when a generated look lands mid-paint (that would remount the
- * editor and lose its undo history). `''` for every catalogue board.
+ * generation only. Render-derived identities exclude generated looks while
+ * continuing to track the published hold set. Authoring uses the stable wall
+ * tokens below instead. `''` for every catalogue board.
  */
 export function sprayIdentityToken(boardName: string, layoutId: number): string {
   if (boardName !== SPRAY_BOARD_NAME) return '';
@@ -1024,6 +1023,22 @@ export function sprayIdentityToken(boardName: string, layoutId: number): string 
  */
 export function sprayVersionToken(boardName: string, layoutId: number): string {
   return boardName === SPRAY_BOARD_NAME ? `-svid${walls.get(layoutId)?.versionId ?? 0}` : '';
+}
+
+/**
+ * A wall's authoring identity survives ordinary hold maintenance. Resets clone
+ * the wall and its layout, so a published version changes the picture cache,
+ * never the climb the setter is working on. No session generation is persisted.
+ */
+export function sprayAuthoringToken(boardName: string, layoutId: number): string {
+  if (boardName !== SPRAY_BOARD_NAME) return '';
+  return `-sw${encodeURIComponent(walls.get(layoutId)?.wallUuid ?? '0')}`;
+}
+
+/** Mounted editors still reset immediately when access to their wall is withdrawn. */
+export function sprayAuthoringIdentityToken(boardName: string, layoutId: number): string {
+  if (boardName !== SPRAY_BOARD_NAME) return '';
+  return `${sprayAuthoringToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}`;
 }
 
 /** Sign-out: withdraw every wall, disown loads in flight and erase private caches. */

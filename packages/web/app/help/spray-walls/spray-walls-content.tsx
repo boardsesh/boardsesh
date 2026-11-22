@@ -166,6 +166,7 @@ export default function SprayWallsContent() {
 
       <HelpBand id="edit-later" title={t('help.spray.edit.title')} lead={t('help.spray.edit.lead')}>
         <Prose>{t('help.spray.edit.p1')}</Prose>
+        <Prose>{t('help.spray.edit.p6')}</Prose>
         <Prose>{t('help.spray.edit.p2')}</Prose>
         <Prose>{t('help.spray.edit.p3')}</Prose>
         <Prose>{t('help.spray.edit.p4')}</Prose>

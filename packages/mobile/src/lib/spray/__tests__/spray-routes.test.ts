@@ -11,6 +11,15 @@ describe('spray maintenance routes', () => {
     expect(readSprayWallUuid(Object.fromEntries(destination.searchParams))).toBe(wallUuid);
   });
 
+  it('carries the climb editor entry without changing the wall capability', () => {
+    const destination = new URL(sprayHoldEditorHref('wall&uuid', 'climb-editor'), 'https://app.boardsesh.com');
+    expect(destination.searchParams.get('wallUuid')).toBe('wall&uuid');
+    expect(destination.searchParams.get('entry')).toBe('climb-editor');
+    expect(new URL(sprayHoldEditorHref('wall&uuid'), 'https://app.boardsesh.com').searchParams.has('entry')).toBe(
+      false,
+    );
+  });
+
   it('opens a reset in the add-a-wall wizard, naming the wall being replaced', () => {
     const wallUuid = 'wall&with=special characters';
     const destination = new URL(sprayResetWizardHref(wallUuid), 'https://app.boardsesh.com');

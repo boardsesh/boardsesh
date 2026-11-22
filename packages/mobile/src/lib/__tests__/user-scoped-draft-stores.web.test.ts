@@ -74,6 +74,42 @@ describe('browser user-scoped draft stores', () => {
     await expect(getStoredQueueSnapshot()).resolves.toMatchObject({ queue: [] });
   });
 
+  it('migrates browser spray drafts within their captured login and survives maintenance', async () => {
+    const { registerSprayWall, sprayIdentityToken } = await import('../spray/spray-wall-registry');
+    const { createClimbDraftKey, loadDraft, saveDraft } = await import('../create-climb-draft-store.web');
+    const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
+    const config = { boardName: 'spray', layoutId: 7957, sizeId: 7957, setIds: '1', angle: 40 };
+    const wall = {
+      wallUuid: 'browser-recovery-wall',
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://example.com/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+    };
+    registerSprayWall(config.layoutId, wall);
+    setCurrentUserStorageOwner(userASessionOne);
+    const legacyKey = `spray:7957:7957${sprayIdentityToken('spray', 7957)}:1:40`;
+    const draft = { holdsJson: '{}', name: 'Browser project', description: '', isDraft: true };
+    await saveDraft(legacyKey, draft);
+    const stableKey = createClimbDraftKey(config);
+    const storage = (await import('@react-native-async-storage/async-storage')).default;
+    vi.spyOn(storage, 'setItem').mockRejectedValueOnce(new Error('browser storage full'));
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    // The browser restores durable content even when the migration copy fails.
+    await expect(loadDraft(legacyKey)).resolves.toEqual(draft);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    registerSprayWall(config.layoutId, { ...wall, version: 2, versionId: 2 });
+    expect(createClimbDraftKey(config)).toBe(stableKey);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    setCurrentUserStorageOwner(userBSession);
+    await expect(loadDraft(stableKey)).resolves.toBeNull();
+  });
+
   it('does not expose user A create-climb draft to user B on the same board', async () => {
     const { saveDraft, loadDraft } = await import('../create-climb-draft-store.web');
     const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
