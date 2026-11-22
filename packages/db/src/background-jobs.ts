@@ -58,6 +58,7 @@ export const BACKGROUND_JOB_FAMILIES = [
   'kilter-catalog-sync',
   'moonboard-locations-sync',
   'climb-stats-self-heal',
+  'refresh-climb-plays',
   'user-data-export',
   'spray-wall-art',
   'spray-wall-health',
