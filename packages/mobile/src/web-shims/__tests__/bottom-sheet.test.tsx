@@ -126,12 +126,19 @@ vi.mock('react-native', async () => {
       testID,
       style,
       nativeID,
+      onClick,
     }: {
       children?: ReactNode;
       testID?: string;
       style?: unknown;
       nativeID?: string;
-    }) => createElement('div', { id: nativeID, 'data-testid': testID, 'data-style': JSON.stringify(style) }, children),
+      onClick?: () => void;
+    }) =>
+      createElement(
+        'div',
+        { id: nativeID, onClick, 'data-testid': testID, 'data-style': JSON.stringify(style) },
+        children,
+      ),
     Pressable: ({ onPress, testID }: { onPress?: () => void; testID?: string }) =>
       createElement('button', { onClick: onPress, 'data-testid': testID }),
     Modal: (props: {

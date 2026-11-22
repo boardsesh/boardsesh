@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Modal, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Portal } from 'react-native-paper';
 import GorhomBottomSheet, { type BottomSheetProps as GorhomBottomSheetProps } from '@gorhom/bottom-sheet';
@@ -115,11 +115,11 @@ export function SheetDialog({
       onDismissed={onDismissed}
       animate
     >
-      <Pressable
-        accessible={false}
-        focusable={false}
+      {/* A Pressable remains programmatically focusable in RNW’s focus trap,
+          even at tabIndex -1. Keep the scrim out of keyboard traversal. */}
+      <View
         testID="sheet-dialog-backdrop"
-        onPress={onRequestClose}
+        {...{ onClick: onRequestClose }}
         style={[styles.backdrop, { opacity: sheet.scrimOpacity ?? material.sheet.scrimOpacity }]}
       />
       <View
