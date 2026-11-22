@@ -4,6 +4,26 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-22
+
+### New
+
+- Clean up your gym's board list with Delete in Manage gym on the website. ([#8007](https://github.com/boardsesh/boardsesh/pull/8007))
+
+### Improved
+
+- See your Spraywall photos in the board picker on web and mobile, including walls ready for review. ([#8014](https://github.com/boardsesh/boardsesh/pull/8014))
+- Draw holds back to back and keep progress during longer editing sessions. ([#8009](https://github.com/boardsesh/boardsesh/pull/8009))
+- Keep Add holds below your painting tools without shrinking the wall. ([#8006](https://github.com/boardsesh/boardsesh/pull/8006))
+- Keep your climb and hold edits safe through restarts, account changes and interrupted saves. ([#8005](https://github.com/boardsesh/boardsesh/pull/8005))
+- Add missing Spraywall holds while setting without losing your climb. ([#8002](https://github.com/boardsesh/boardsesh/pull/8002))
+  Pick up unfinished hold edits after locking or restarting your device.
+
+### Fixed
+
+- Large Tension logbook imports can finish without restarting from scratch. If a board import stops, Connected apps shows an error so you can retry. ([#8016](https://github.com/boardsesh/boardsesh/pull/8016))
+- Reply to your bug reports without reloading your whole report history. ([#8004](https://github.com/boardsesh/boardsesh/pull/8004))
+
 ## 2026-11-21
 
 ### New
@@ -12,6 +32,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Board downloads recover more reliably after interrupted connections. ([#7992](https://github.com/boardsesh/boardsesh/pull/7992))
 - Bug reports from Sign in with Apple accounts no longer trigger undeliverable acknowledgement emails. ([#7990](https://github.com/boardsesh/boardsesh/pull/7990))
 - Keep your queue within reach from the desktop mini-player while browsing any tab. ([#7978](https://github.com/boardsesh/boardsesh/pull/7978))
 - Follow a climb to its setter with links you can tap. Buttons stay readable when hovered. ([#7939](https://github.com/boardsesh/boardsesh/pull/7939))

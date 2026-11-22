@@ -1,6 +1,70 @@
 {
-  "generatedAt": "2026-11-21T17:03:18.954Z",
+  "generatedAt": "2026-11-22T22:37:58.908Z",
   "entries": [
+    {
+      "prNumber": 8016,
+      "category": "fixed",
+      "title": "Large Tension logbook imports can finish without restarting from scratch. If a board import stops, Connected apps shows an error so you can retry.",
+      "mergedAt": "2026-11-22T21:36:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8016"
+    },
+    {
+      "prNumber": 8014,
+      "category": "improved",
+      "title": "See your Spraywall photos in the board picker on web and mobile, including walls ready for review.",
+      "mergedAt": "2026-11-22T21:03:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8014"
+    },
+    {
+      "prNumber": 8004,
+      "category": "fixed",
+      "title": "Reply to your bug reports without reloading your whole report history.",
+      "mergedAt": "2026-11-22T18:36:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8004"
+    },
+    {
+      "prNumber": 8009,
+      "category": "improved",
+      "title": "Draw holds back to back and keep progress during longer editing sessions.",
+      "mergedAt": "2026-11-22T18:35:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8009"
+    },
+    {
+      "prNumber": 8007,
+      "category": "new",
+      "title": "Clean up your gym's board list with Delete in Manage gym on the website.",
+      "mergedAt": "2026-11-22T17:39:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8007"
+    },
+    {
+      "prNumber": 8006,
+      "category": "improved",
+      "title": "Keep Add holds below your painting tools without shrinking the wall.",
+      "mergedAt": "2026-11-22T14:12:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8006"
+    },
+    {
+      "prNumber": 8005,
+      "category": "improved",
+      "title": "Keep your climb and hold edits safe through restarts, account changes and interrupted saves.",
+      "mergedAt": "2026-11-22T14:12:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8005"
+    },
+    {
+      "prNumber": 8002,
+      "category": "improved",
+      "title": "Add missing Spraywall holds while setting without losing your climb.",
+      "mergedAt": "2026-11-22T12:03:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8002",
+      "body": "Pick up unfinished hold edits after locking or restarting your device."
+    },
+    {
+      "prNumber": 7992,
+      "category": "fixed",
+      "title": "Board downloads recover more reliably after interrupted connections.",
+      "mergedAt": "2026-11-21T17:25:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7992"
+    },
     {
       "prNumber": 7991,
       "category": "new",
