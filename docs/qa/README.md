@@ -30,6 +30,7 @@ a production rollout or a physical-device result.
 | [Testing Live Activity Push Notifications Locally](live-activity-push-testing.md) | `live-activity-push-testing.md` |
 | [Local board hardware QA](local-board-qa.md) | `local-board-qa.md` |
 | [Mobile E2E gate](mobile-e2e-gate.md) | `mobile-e2e-gate.md` |
+| [Native offline write recovery checks](offline-write-recovery.md) | `offline-write-recovery.md` |
 | [Recorded fixtures for mobile integration captures](mobile-screenshot-fixtures.md) | `mobile-screenshot-fixtures.md` |
 | [Production differential-update proof, 2026-10-08](ota-differential-proof-2026-10-08.md) | `ota-differential-proof-2026-10-08.md` |
 | [Production QA gym](prod-qa-gym.md) | `prod-qa-gym.md` |

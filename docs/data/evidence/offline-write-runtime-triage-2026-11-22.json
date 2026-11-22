@@ -27,11 +27,7 @@
         "type": "event",
         "key": "$os",
         "operator": "exact",
-        "value": [
-          "iOS",
-          "iPadOS",
-          "Android"
-        ]
+        "value": ["iOS", "iPadOS", "Android"]
       },
       {
         "type": "hogql",

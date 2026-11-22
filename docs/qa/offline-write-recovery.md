@@ -99,7 +99,7 @@ vp exec tsx scripts/mobile-offline-write-qa.ts --platform android --device emula
 
 ## CI evidence and remaining gates
 
-[Offline native write recovery](../.github/workflows/mobile-offline-write-qa.yml)
+[Offline native write recovery](../../.github/workflows/mobile-offline-write-qa.yml)
 runs on relevant pull requests and manual dispatch. Android uses a KVM emulator;
 iOS uses one dedicated simulator on the `xcode-27` runner. Simulator apps use the
 existing native-input and Xcode cache identity checks. Android APK selection
@@ -124,13 +124,13 @@ Android session-long locks remain owned by #6689; SDK58 Android lifecycle
 verification remains shared with #6707. The old cached-list alias defect is fixed
 upstream in expo-sqlite 58.0.18; do not reapply its SDK57 patch.
 
-The [runtime attribution snapshot](evidence/offline-write-runtime-triage-2026-11-21.json)
+The [runtime attribution snapshot](../data/evidence/offline-write-runtime-triage-2026-11-21.json)
 retains exact queries, filters and aggregate results. All 59 exhausted events in
 that window belong to older native runtimes. The observed SDK58 cohorts have
 zero retry events but only nine download starts in the complete seven-day
 window; this is limited coverage, not proof of reliability.
 
-The [next completed-day check](evidence/offline-write-runtime-triage-2026-11-22.json)
+The [next completed-day check](../data/evidence/offline-write-runtime-triage-2026-11-22.json)
 for 21 November UTC returned four retry events: three recovered and one exhausted
 tick on Android 2.7.0, runtime `1e5c2708a94683a437bc4fecf3a601cd58479914`.
 It does not demonstrate a cause on the SDK58 receiving line or establish tick loss.
