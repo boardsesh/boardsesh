@@ -39,6 +39,7 @@ import { applyBusyTimeout } from './pragmas';
 import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
 import { ensureMutationQueueDependencies } from '../mutation-queue/schema';
 import type { OfflineDatabase, SqlExecutor } from '../database';
+import { ensureOfflineWriteDeliveryJournal } from '../mutation-queue/delivery-journal';
 
 export type Migration = {
   version: number;
@@ -263,6 +264,12 @@ export const MIGRATIONS: Migration[] = [
     version: 14,
     statements: [],
     run: ensureMutationQueueDependencies,
+  },
+  {
+    // Device-only delivery evidence. Nullable queue columns preserve old payloads.
+    version: 15,
+    statements: [],
+    run: ensureOfflineWriteDeliveryJournal,
   },
 ];
 

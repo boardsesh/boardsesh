@@ -1,7 +1,11 @@
 import type { PendingMutation } from './queue';
 import { graphqlErrorRejectsUnknownInputField } from './error-classification';
 
-export type GraphQLFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
+export type GraphQLFetch = <T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  options?: { offlineWriteDeliveryId?: string },
+) => Promise<T>;
 
 const MUTATIONS: Record<string, string> = {
   SaveClimb: `mutation SaveClimb($input: SaveClimbInput!) { saveClimb(input: $input) { uuid } }`,
@@ -303,14 +307,17 @@ export async function processMutation(mutation: PendingMutation, graphqlFetch: G
   if (!query) {
     throw new Error(`No GraphQL mutation defined for "${mutationName}"`);
   }
+  const requestOptions = mutation.delivery_id ? { offlineWriteDeliveryId: mutation.delivery_id } : undefined;
   try {
-    await graphqlFetch(query, variables);
+    if (requestOptions) await graphqlFetch(query, variables, requestOptions);
+    else await graphqlFetch(query, variables);
   } catch (error) {
     // One retry, without the optional field the server said it does not know.
     // Any other failure, and a failure of the retry, is thrown as it came so
     // the drainer classifies it the way it always has.
     const trimmedVariables = withoutRejectedInputFields(mutationName, variables, error);
     if (!trimmedVariables) throw error;
-    await graphqlFetch(query, trimmedVariables);
+    if (requestOptions) await graphqlFetch(query, trimmedVariables, requestOptions);
+    else await graphqlFetch(query, trimmedVariables);
   }
 }

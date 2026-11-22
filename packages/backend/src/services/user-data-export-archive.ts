@@ -13,6 +13,7 @@ import {
   userBoards,
   userFavorites,
   users,
+  offlineWriteDeliveries,
 } from '@boardsesh/db/schema';
 import type { AuroraBoardName, BoardName } from '@boardsesh/shared-schema';
 import { buildAuroraJsonExport, type ExportCircuitRow } from './user-data-export-format';
@@ -114,6 +115,17 @@ export type BoardseshUserDataArchive = {
   climbs: ArchiveClimb[];
   /** Spray exports only: the walls the climber owns. */
   sprayWalls?: ArchiveSprayWall[];
+  /** Private operational evidence belongs in the owner's archive, never in aggregate analytics. */
+  offlineWriteDelivery?: {
+    deliveryId: string;
+    tableName: string;
+    operation: string;
+    queuedAt: string | null;
+    clientState: string | null;
+    serverAcceptedAt: string | null;
+    serverRejectedAt: string | null;
+    reconciledReportedAt: string | null;
+  }[];
 };
 
 // Query and upload limits are deliberately all-or-nothing: an oversized history
@@ -457,6 +469,21 @@ export async function buildUserDataArchive(
       });
     }
   }
+  const deliveryRows = await database
+    .select({
+      deliveryId: offlineWriteDeliveries.deliveryId,
+      tableName: offlineWriteDeliveries.tableName,
+      operation: offlineWriteDeliveries.operation,
+      queuedAt: offlineWriteDeliveries.queuedAt,
+      clientState: offlineWriteDeliveries.clientState,
+      serverAcceptedAt: offlineWriteDeliveries.serverAcceptedAt,
+      serverRejectedAt: offlineWriteDeliveries.serverRejectedAt,
+      reconciledReportedAt: offlineWriteDeliveries.reconciledReportedAt,
+    })
+    .from(offlineWriteDeliveries)
+    .where(eq(offlineWriteDeliveries.userId, userId))
+    .limit(MAX_USER_DATA_EXPORT_ROWS + 1);
+  checkedRowCount(loadedRows, deliveryRows);
   return {
     schemaVersion: 1,
     boardType,
@@ -476,6 +503,13 @@ export async function buildUserDataArchive(
     })),
     playlists: [...archivedPlaylists.values()],
     climbs: climbs.map((climb) => ({ ...climb, updatedAt: timestamp(climb.updatedAt) })),
+    offlineWriteDelivery: deliveryRows.map((delivery) => ({
+      ...delivery,
+      queuedAt: delivery.queuedAt?.toISOString() ?? null,
+      serverAcceptedAt: delivery.serverAcceptedAt?.toISOString() ?? null,
+      serverRejectedAt: delivery.serverRejectedAt?.toISOString() ?? null,
+      reconciledReportedAt: delivery.reconciledReportedAt?.toISOString() ?? null,
+    })),
     ...(boardType === 'spray'
       ? {
           sprayWalls: ownedSprayWalls.map((wall) => ({

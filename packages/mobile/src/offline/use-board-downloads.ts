@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from './offline-write-transport';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +16,6 @@ import {
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
-import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue, hasUsableInternetConnection } from './offline-sync-adapter';
 import { isUserStartedTrigger } from './download-keep-awake';
@@ -72,10 +72,7 @@ export function useBoardDownloads() {
   // it has no tables yet and a snapshot import would land in a half-set-up file.
   const schemaReady = useOfflineSchemaReady();
 
-  const graphqlFetch = useMemo<GraphQLFetch>(
-    () => (query, variables) => getOfflineSyncHttpClient().request(query, variables),
-    [],
-  );
+  const graphqlFetch = useMemo<GraphQLFetch>(() => offlineWriteFetch, []);
   const drainQueue = useCallback(
     () => drainMutationQueue(db, queryClient, graphqlFetch),
     [db, queryClient, graphqlFetch],

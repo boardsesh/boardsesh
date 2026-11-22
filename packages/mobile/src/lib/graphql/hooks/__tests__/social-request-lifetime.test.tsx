@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+// Delivery metadata is covered by offline-write-context.test.ts; keep these unit tests native-free.
+vi.mock('../../../../offline/offline-write-context', () => ({
+  readOfflineWriteRelease: () => ({
+    platform: 'ios',
+    appVersion: null,
+    runtimeVersion: null,
+    updateId: null,
+    isEmbedded: null,
+    branch: null,
+  }),
+  enqueueMeasuredMutation: async (...args: Parameters<typeof import('@boardsesh/offline-sync').enqueue>) =>
+    (await import('@boardsesh/offline-sync')).enqueue(...args),
+}));
+
 /**
  * Social reads and writes outlive their screen on phones (#7596 A4, the
  * reverts of #7549 and #7554).

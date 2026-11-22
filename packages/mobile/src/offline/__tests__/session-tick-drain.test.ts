@@ -1,3 +1,17 @@
+// Delivery metadata is covered by offline-write-context.test.ts; keep these unit tests native-free.
+vi.mock('../offline-write-context', () => ({
+  readOfflineWriteRelease: () => ({
+    platform: 'ios',
+    appVersion: null,
+    runtimeVersion: null,
+    updateId: null,
+    isEmbedded: null,
+    branch: null,
+  }),
+  enqueueMeasuredMutation: async (...args: Parameters<typeof import('@boardsesh/offline-sync').enqueue>) =>
+    (await import('@boardsesh/offline-sync')).enqueue(...args),
+}));
+
 // The pre-END_SESSION wait for a session's queued ticks (#6903): it polls the
 // outbox (a drain promise proves nothing while another drain holds the latch),
 // returns early when nothing is queued, skips the wait offline, and gives up at

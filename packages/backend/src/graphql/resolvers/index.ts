@@ -1,4 +1,5 @@
 import { adminBoardQueries, adminBoardMutations } from './social/admin-boards';
+import { offlineWriteDeliveryMutations } from './sync/offline-write-delivery';
 import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
 import {
   privacyQueries,
@@ -197,6 +198,7 @@ export const resolvers = {
   },
 
   Mutation: {
+    ...offlineWriteDeliveryMutations,
     ...privacyMutations,
     ...boardShareLinkMutations,
     ...sessionMutations,

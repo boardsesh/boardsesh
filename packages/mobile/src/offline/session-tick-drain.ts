@@ -1,7 +1,7 @@
+import { offlineWriteFetch } from './offline-write-transport';
 import type { QueryClient } from '@tanstack/react-query';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
-import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery } from './offline-sync-adapter';
 import { sessionSummaryQueryKey, sessionWorkoutsQueryKey } from '../lib/graphql/query-keys';
 import { hasQueuedTicksForSession } from './pending-tick';
@@ -48,7 +48,7 @@ export async function waitForSessionTicksToSync(
     // A first read that only came back after the cap must not start a drain
     // for a caller that has already moved on.
     if (settled) return 'timedOut';
-    const graphqlFetch: GraphQLFetch = (query, variables) => getOfflineSyncHttpClient().request(query, variables);
+    const graphqlFetch: GraphQLFetch = offlineWriteFetch;
     // Fire and forget: the poll below is what decides when we are done.
     drainMutationQueue(db, queryClient, graphqlFetch).catch(() => undefined);
     while (!settled) {

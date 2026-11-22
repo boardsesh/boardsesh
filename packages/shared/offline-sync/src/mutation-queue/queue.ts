@@ -1,5 +1,6 @@
 import type { SqlExecutor } from '../database';
 import type { OfflineBoardScope } from '../offline-board-key';
+import { offlineWriteReconciliationTarget, type OfflineWriteEnqueueContext } from './delivery-journal';
 
 export type PendingMutation = {
   id: number;
@@ -14,6 +15,7 @@ export type PendingMutation = {
   status: string;
   entity_key?: string | null;
   depends_on_key?: string | null;
+  delivery_id?: string | null;
 };
 
 /**
@@ -39,6 +41,8 @@ export type EnqueueResult = {
 };
 
 export type EnqueueOptions = {
+  /** Frozen enqueue evidence, durably committed with this queue entry. */
+  delivery?: OfflineWriteEnqueueContext;
   /**
    * When a DEAD-LETTERED row already owns this idempotency key, reset it to
    * `pending` and overwrite it with this write instead of dropping the write.
@@ -86,11 +90,30 @@ export async function enqueue(
   const dependencyParams = referenceEntityKey
     ? [options.dependsOnKey ?? null, referenceEntityKey]
     : [options.dependsOnKey ?? null];
-  const result = await db.runAsync(
-    `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key, entity_key, depends_on_key)
-     VALUES (?, ?, ?, ?, ?, ${dependencySql})`,
-    [tableName, operation, serializedPayload, idempotencyKey, options.entityKey ?? null, ...dependencyParams],
-  );
+  const delivery = options.delivery;
+  const result = delivery
+    ? await db.runAsync(
+        `INSERT OR IGNORE INTO pending_mutations
+         (table_name, operation, payload, idempotency_key, entity_key, depends_on_key,
+          delivery_id, delivery_context, delivery_target)
+         VALUES (?, ?, ?, ?, ?, ${dependencySql}, ?, ?, ?)`,
+        [
+          tableName,
+          operation,
+          serializedPayload,
+          idempotencyKey,
+          options.entityKey ?? null,
+          ...dependencyParams,
+          delivery.deliveryId,
+          JSON.stringify(delivery),
+          JSON.stringify(offlineWriteReconciliationTarget(tableName, operation, payload, idempotencyKey)),
+        ],
+      )
+    : await db.runAsync(
+        `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key, entity_key, depends_on_key)
+         VALUES (?, ?, ?, ?, ?, ${dependencySql})`,
+        [tableName, operation, serializedPayload, idempotencyKey, options.entityKey ?? null, ...dependencyParams],
+      );
   // Anything other than an explicit `changes: 0` counts as inserted. A driver
   // (or test double) that doesn't report `changes` degrades to losing the
   // suppression signal rather than inventing a data-loss report for every write.
@@ -306,6 +329,15 @@ export async function supersedePendingSessionWorkouts(
   sessionId: string,
   revision: number,
 ): Promise<{ newerPending: boolean }> {
+  await db.runAsync(
+    `UPDATE offline_write_delivery_journal SET state = 'superseded', revision = revision + 1,
+       observed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE mutation_id IN (SELECT id FROM pending_mutations
+       WHERE table_name = 'session_workouts' AND status IN ('pending', 'dead_letter')
+         AND json_extract(payload, '$.sessionId') = ?
+         AND CAST(json_extract(payload, '$.revision') AS INTEGER) < ?)`,
+    [sessionId, revision],
+  );
   await db.runAsync(
     `DELETE FROM pending_mutations
      WHERE table_name = 'session_workouts' AND status IN ('pending', 'dead_letter')

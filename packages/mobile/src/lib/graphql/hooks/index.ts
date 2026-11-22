@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 import { useQuery, useMutation, useQueryClient, keepPreviousData, onlineManager } from '@tanstack/react-query';
 import type {
   BoardName,
@@ -252,7 +253,7 @@ function setFavoriteStatusCache(
 }
 
 function graphqlFetchFromClient(): GraphQLFetch {
-  return (query, variables) => getHttpClient().request(query, variables);
+  return offlineWriteFetch;
 }
 
 function scheduleDrain(

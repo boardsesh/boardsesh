@@ -12,6 +12,11 @@ const feedbackConversationSchema = readFileSync(
   .split('--> statement-breakpoint')
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
+const offlineWriteDeliverySchema = readFileSync(
+  new URL('../../../db/drizzle/0332_offline_write_delivery.sql', import.meta.url),
+  'utf8',
+);
+
 const partnerSessionHintPrivacySchema = readFileSync(
   new URL('../../../db/drizzle/0330_session_hint_privacy.sql', import.meta.url),
   'utf8',
@@ -299,6 +304,7 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
   DROP TABLE IF EXISTS logbook_session_changes;
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
+  DROP TABLE IF EXISTS "offline_write_deliveries" CASCADE;
   DROP TABLE IF EXISTS "spray_wall_led_setups" CASCADE;
   DROP TABLE IF EXISTS "user_deleted_upstream_playlists" CASCADE;
   DROP TYPE IF EXISTS "upstream_playlist_source";
@@ -2599,4 +2605,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerSessionSyncSchema};
   ${partnerSessionTriggersSchema};
   ${partnerSessionHintPrivacySchema};
+  ${offlineWriteDeliverySchema};
 `;

@@ -1,3 +1,5 @@
+import { offlineWriteFetch } from './offline-write-transport';
+import { enqueueMeasuredMutation as enqueue } from './offline-write-context';
 // Sends the phone's workout to the server (#6903) through the offline outbox:
 // at Start, at "Add a block", and once more just before END_SESSION with the
 // tick map from the run's tick log. docs/product/workout-stages.md, "Workouts on the
@@ -18,7 +20,6 @@ import {
   OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
   beginImmediateWrite,
-  enqueue,
   processMutation,
   getLocalUserId,
   isMutationPending,
@@ -28,7 +29,6 @@ import {
   type PendingMutation,
 } from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
-import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { addErrorBreadcrumb, reportHandledError } from '../lib/error-reporting';
 import { nowMs } from '../lib/clock';
 import {
@@ -87,7 +87,7 @@ function noteSkippedWrite(reason: 'no-plan' | 'no-owner', path: 'live' | 'ended'
   });
 }
 
-const offlineSyncFetch: GraphQLFetch = (query, variables) => getOfflineSyncHttpClient().request(query, variables);
+const offlineSyncFetch: GraphQLFetch = offlineWriteFetch;
 
 /**
  * Screenshot captures replay recorded responses, and a write nobody recorded

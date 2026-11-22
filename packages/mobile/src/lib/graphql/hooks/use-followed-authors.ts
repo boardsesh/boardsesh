@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 import { useEffect, useMemo, useRef } from 'react';
 import { onlineManager, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
@@ -176,7 +177,7 @@ export function useToggleAuthorFollow() {
         const removedUserIds = await writeAuthorFollowLocal(db, userId, kind, identifier, follow);
         const snapshot = await readAuthorSnapshot(db, userId);
         if (snapshot) queryClient.setQueryData(['followedAuthors', userId], snapshot.authors);
-        const graphqlFetch: GraphQLFetch = (document, variables) => getHttpClient().request(document, variables);
+        const graphqlFetch: GraphQLFetch = offlineWriteFetch;
         const { drainMutationQueue } = await import('../../../offline/offline-sync-adapter');
         void drainMutationQueue(db, queryClient, graphqlFetch).catch(() => undefined);
         return { queued: true, viewerId: userId, removedUserIds };

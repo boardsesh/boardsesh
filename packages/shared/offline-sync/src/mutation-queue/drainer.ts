@@ -1,6 +1,11 @@
 import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
+import {
+  observeOfflineWriteAttemptFailure,
+  observeOfflineWriteLocalRecovery,
+  observeOfflineWriteServerResponse,
+} from './delivery-journal';
 import { peekPending, markCompleted, recordFailure, markDeadLetter, type PendingMutation } from './queue';
 import {
   isGraphQLEmptyResponseError,
@@ -597,6 +602,17 @@ export async function drainMutationQueue(
             networkStop = true; // reuse the "end cycle now" path
             break;
           }
+          if (mutation.delivery_id) {
+            try {
+              await observeOfflineWriteServerResponse(db, mutation.id);
+            } catch {
+              // Evidence gaps remain unknown; they never become server rejections.
+            }
+          }
+          if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
+            networkStop = true;
+            break;
+          }
           await options.beforeMutationAcknowledged?.(mutation, graphqlFetch);
           if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
             networkStop = true;
@@ -615,7 +631,25 @@ export async function drainMutationQueue(
           // is no read-then-upgrade inside a deferred transaction for SQLite to
           // skip the busy handler on. So the ladder below is a second chance
           // after a real wait, not the only one.
-          await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
+          let localFinalizationRecovered = false;
+          await runLocalWriteWithRetry(() => markCompleted(db, mutation.id), {
+            onSettled: (outcome) => {
+              localFinalizationRecovered = outcome.recovered;
+            },
+          });
+          if (
+            mutation.delivery_id &&
+            localFinalizationRecovered &&
+            !_isSigningOut &&
+            _globalWipeEpoch === startEpoch &&
+            !_isBackgrounded
+          ) {
+            try {
+              await observeOfflineWriteLocalRecovery(db, mutation.id);
+            } catch {
+              // The saved write stays saved if its recovery evidence cannot be recorded.
+            }
+          }
           queueInvalidationForTable(invalidations, mutation.table_name);
           notifyMutationStatus(options, {
             tableName: mutation.table_name,
@@ -626,6 +660,19 @@ export async function drainMutationQueue(
           });
         } catch (error: unknown) {
           const errorMessage = formatError(error);
+          if (
+            mutation.delivery_id &&
+            !_isSigningOut &&
+            _globalWipeEpoch === startEpoch &&
+            !_isBackgrounded &&
+            !isDatabaseLockedError(error)
+          ) {
+            try {
+              await observeOfflineWriteAttemptFailure(db, mutation.id);
+            } catch {
+              // Publication/retry diagnostics cannot change mutation classification.
+            }
+          }
 
           if (isGraphQLEmptyResponseError(error)) {
             // A 2xx response with no usable GraphQL body is ambiguous: the

@@ -38,6 +38,7 @@ a production rollout or a physical-device result.
 | [Offline mode fleet health and default decision](offline-mode-health-2026-11-21.md) | `offline-mode-health-2026-11-21.md` |
 | [Offline download request outcomes](offline-download-outcomes-2026-11-21.md) | `offline-download-outcomes-2026-11-21.md` |
 | [Offline reads: where a screen's data comes from](offline-reads.md) | `offline-reads.md` |
+| [Offline write delivery evidence](offline-write-delivery.md) | `offline-write-delivery.md` |
 | [Offline sync architecture](offline-sync.md) | `offline-sync.md` |
 | [Playlist grade summaries](playlist-grade-summaries.md) | `playlist-grade-summaries.md` |
 | [Similar climbs: the materialised neighbour index](similar-climbs.md) | `similar-climbs.md` |

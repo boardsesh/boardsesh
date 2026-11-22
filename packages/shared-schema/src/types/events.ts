@@ -184,6 +184,10 @@ export type ConnectionContext = {
   // which is fragile to id-format changes. Optional for test contexts that
   // don't care which transport they emulate; production paths always set it.
   transport?: 'http' | 'ws';
+  /** Optional private per-request identity used only by offline replay evidence. */
+  offlineWriteDeliveryId?: string;
+  /** Running bundle declared on the actual replay request, distinct from later reporting. */
+  offlineWriteRelease?: import('../offline-write-delivery').OfflineWriteRelease;
   sessionId?: string;
   participantId?: string;
   userId?: string;
