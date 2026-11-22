@@ -7,7 +7,7 @@ import { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { DbInstance } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
-import { backgroundJobRuns, users } from '@boardsesh/db/schema';
+import { backgroundJobRuns, offlineWriteDeliveries, users } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { ensureBackgroundJobSchema } from '../workers/families/__tests__/provider-sync-fixtures';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
@@ -145,6 +145,17 @@ describe('durable export producers and restricted workers', () => {
   }, 30000);
 
   it('generates both formats under exactly the maintenance worker grants', async () => {
+    const deliveryId = randomUUID();
+    await db.insert(offlineWriteDeliveries).values({
+      userId,
+      deliveryId,
+      tableName: 'boardsesh_ticks',
+      operation: 'create',
+      queuedAt: new Date(),
+      clientState: 'reconciled',
+      serverAcceptedAt: new Date(),
+      reconciledReportedAt: new Date(),
+    });
     const requested = await requestUserDataExport(userId, 'kilter');
     expect(requested.status).toBe('generating');
     await assertWorkerPrivileges(workerBoss.getDb());
@@ -166,6 +177,21 @@ describe('durable export producers and restricted workers', () => {
     expect(status.status).toBe('ready');
     expect(status.files.map((file) => file.format)).toEqual(['boardsesh', 'aurora']);
     expect(objects.size).toBe(2);
+    const archiveObject = objects.get(`user-data-exports/${userId}/kilter/${requested.period}.boardsesh.json`);
+    expect(archiveObject).toBeDefined();
+    const archive = JSON.parse(archiveObject!.body.toString('utf8')) as {
+      offlineWriteDelivery: { deliveryId: string; clientState: string }[];
+    };
+    expect(archive.offlineWriteDelivery).toEqual([expect.objectContaining({ deliveryId, clientState: 'reconciled' })]);
+    await expect(restricted`SELECT binding_hash FROM offline_write_deliveries LIMIT 1`).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(
+      restricted`UPDATE offline_write_deliveries SET client_state = client_state WHERE false`,
+    ).rejects.toThrow('permission denied');
+    await expect(restricted`DELETE FROM offline_write_deliveries WHERE false`).rejects.toThrow('permission denied');
+    await expect(restricted`INSERT INTO offline_write_deliveries (user_id, delivery_id, table_name, operation)
+      SELECT ${userId}, ${randomUUID()}, 'boardsesh_ticks', 'create' WHERE false`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT id FROM aurora_credentials LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT public_photo_key FROM spray_walls LIMIT 1`).rejects.toThrow('permission denied');
     await expect(restricted`SELECT latitude FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');

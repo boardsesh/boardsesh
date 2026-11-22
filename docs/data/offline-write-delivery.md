@@ -54,7 +54,7 @@ Never-reconnected phones cannot export their local denominator. Lost storage, un
 
 ## Release and acceptance
 
-Deploy the generated Postgres migration and backend receipt support before the instrumented mobile OTA. Old clients do not send the optional header or call the new API. An instrumented client talking to a temporarily older backend keeps publication pending and continues normal business replay; publication failure does not burn mutation retries.
+Deploy the generated Postgres migration and backend receipt support before the instrumented mobile OTA. Backend initialization also applies the maintenance worker's column-level receipt reads for account exports. Old clients do not send the optional header or call the new API. An instrumented client talking to a temporarily older backend keeps publication pending and continues normal business replay; publication failure does not burn mutation retries.
 
 The SQLite change is device-only migration 15: nullable queue metadata, a new journal table and triggers, with no rewrite of old payloads or catalogue artifacts. Artifact schema compatibility remains at version 12. The previous code can ignore the additive columns and table at the SQL level, but the repository's [schema downgrade guard](offline-sync.md#older-js-on-a-newer-database-the-downgrade-rule) deliberately refuses any database whose version is newer than the running bundle. An OTA rollback can therefore pause local storage and leave queued writes intact until a compatible bundle returns. Never reset the database, reduce its version or bypass that guard to make a rollback appear compatible. The PR's offline-migration compatibility notes must name this behavior and the recovery order.
 

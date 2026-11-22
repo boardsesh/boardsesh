@@ -340,9 +340,24 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
   ...RECOMPUTE_VOTE_GRADE_GRANTS,
 ];
 
-/** Personal archives: selected climbing fields only, with no credentials or catalogue writes. */
+/** Personal archives: selected climbing and delivery fields, with no credentials or catalogue writes. */
 const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name', 'email', 'created_at'] },
+  {
+    table: 'offline_write_deliveries',
+    privileges: ['SELECT'],
+    columns: [
+      'user_id',
+      'delivery_id',
+      'table_name',
+      'operation',
+      'queued_at',
+      'client_state',
+      'server_accepted_at',
+      'server_rejected_at',
+      'reconciled_reported_at',
+    ],
+  },
   // The shared spray visibility predicate reads only access-control fields.
   { table: 'spray_walls', privileges: ['SELECT'], columns: ['board_uuid', 'layout_id', 'deleted_at', 'hidden_at'] },
   {
