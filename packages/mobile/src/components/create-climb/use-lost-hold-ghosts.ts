@@ -20,6 +20,8 @@ export type LostHoldGhostsState = {
   ghostTargets: readonly BoardHoldTarget[];
   /** The climber tapped a ring: it leaves the board. */
   dismissGhost: (lostHoldId: number) => void;
+  /** Acknowledge missing IDs even before their geometry has loaded. */
+  dismissMissingGhosts: () => void;
 };
 
 type UseLostHoldGhostsArgs = {
@@ -144,5 +146,15 @@ export function useLostHoldGhosts({
     setDismissedIds((previous) => (previous.has(lostHoldId) ? previous : new Set(previous).add(lostHoldId)));
   }, []);
 
-  return useMemo(() => ({ ghosts, ghostTargets, dismissGhost }), [ghosts, ghostTargets, dismissGhost]);
+  const dismissMissingGhosts = useCallback(() => {
+    setDismissedIds((previous) => {
+      if (lostHoldIds.every((holdId) => previous.has(holdId))) return previous;
+      return new Set([...previous, ...lostHoldIds]);
+    });
+  }, [lostHoldIds]);
+
+  return useMemo(
+    () => ({ ghosts, ghostTargets, dismissGhost, dismissMissingGhosts }),
+    [ghosts, ghostTargets, dismissGhost, dismissMissingGhosts],
+  );
 }

@@ -67,6 +67,8 @@ export type BoardBudget = {
   insetBottom: number;
   /** Whether the route transport is on screen — a boulder pays nothing for it. */
   showRouteTransport: boolean;
+  /** Measured Add holds / missing-hold rows, including translated text. */
+  extraControlsHeight?: number;
 };
 
 /** Height budget left for the board once the drawer's fixed chrome is reserved. */
@@ -74,6 +76,11 @@ export function computeBoardMaxHeight(budget: BoardBudget): number {
   const routeSlotReserve = budget.showRouteTransport ? PLAYBACK_TRANSPORT_RESERVE : 0;
   return Math.max(
     MIN_BOARD_HEIGHT,
-    budget.windowHeight - budget.insetTop - budget.insetBottom - ABOVE_FOLD_CHROME - routeSlotReserve,
+    budget.windowHeight -
+      budget.insetTop -
+      budget.insetBottom -
+      ABOVE_FOLD_CHROME -
+      routeSlotReserve -
+      (budget.extraControlsHeight ?? 0),
   );
 }

@@ -221,15 +221,26 @@ describe('the wall version is in every spray cache key', () => {
     registerWall(1);
     const atVersion1 = createClimbDraftKey(draftConfig);
     registerWall(2);
-    expect(createClimbDraftKey(draftConfig)).not.toBe(atVersion1);
+    expect(createClimbDraftKey(draftConfig)).toBe(atVersion1);
   });
 
-  it('create-climb screen key', () => {
+  it('create-climb screen key survives same-wall hold maintenance', () => {
     const board = { boardName: 'spray' as const, layoutId: LAYOUT_ID, sizeId: SIZE_ID, setIds: '1' };
     registerWall(1);
     const atVersion1 = createClimbScreenKey('new', board);
     registerWall(2);
-    expect(createClimbScreenKey('new', board)).not.toBe(atVersion1);
+    expect(createClimbScreenKey('new', board)).toBe(atVersion1);
+  });
+
+  it('resets the mounted editor on privacy withdrawal without moving its persisted slot', async () => {
+    const { revokeSprayPrivacy } = await import('../spray-privacy-generation');
+    const config = { boardName: 'spray' as const, layoutId: LAYOUT_ID, sizeId: SIZE_ID, setIds: '1', angle: 40 };
+    registerWall(1);
+    const screenKey = createClimbScreenKey('new', config);
+    const draftKey = createClimbDraftKey(config);
+    revokeSprayPrivacy(LAYOUT_ID);
+    expect(createClimbScreenKey('new', config)).not.toBe(screenKey);
+    expect(createClimbDraftKey(config)).toBe(draftKey);
   });
 
   it('leaves a catalogue board\u2019s keys byte-identical', () => {
@@ -367,7 +378,7 @@ describe('planSprayPhotoSweep', () => {
 });
 
 describe('clearSupersededSprayDrafts', () => {
-  it('drops the wall\u2019s older slots and nothing else', async () => {
+  it('retains legacy drafts for recovery instead of deleting older slots', async () => {
     const removed: string[] = [];
     const keys = [
       'boardsesh_create_climb_draft:spray:4200:4200-svid1:1:40',
@@ -382,7 +393,7 @@ describe('clearSupersededSprayDrafts', () => {
 
     await clearSupersededSprayDrafts(LAYOUT_ID, '-svid2');
 
-    expect(removed).toEqual(['boardsesh_create_climb_draft:spray:4200:4200-svid1:1:40']);
+    expect(removed).toEqual([]);
   });
 });
 

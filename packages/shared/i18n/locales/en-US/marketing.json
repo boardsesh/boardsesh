@@ -828,11 +828,12 @@
       "edit": {
         "title": "Edit holds later",
         "lead": "You can add or fix holds any time. Adding holds leaves existing climbs unchanged.",
-        "p1": "On Boards, tap your spray wall to make it active. Tap the magnifying-glass Climbs tab, then the spray wall name at the top. Tap Edit holds, and finish with Publish holds.",
+        "p1": "While setting a climb, tap Add holds below the spray wall. Add the missing holds, then tap Publish and return. Your climb’s name, description and selected holds stay put. You can also open Edit holds from the spray wall name at the top of the Climbs tab.",
         "p2": "If your edits remove a hold that published climbs use, Boardsesh asks you to confirm. Keep holds cancels. Remove anyway publishes.",
         "p3": "Those climbs stay, with a missing-hold warning, and so do their logged ascents. Moving, resizing, reshaping or joining a hold does the same.",
         "p4": "Tap Remix on an affected climb to set an updated copy. It does not repair the original.",
-        "p5": "If the holds changed across the spray wall, tap Reset this spray wall in the same sheet and start from a new photo. Publishing archives the old spray wall with its climbs."
+        "p5": "If the holds changed across the spray wall, tap Reset this spray wall in the same sheet and start from a new photo. Publishing archives the old spray wall with its climbs.",
+        "p6": "Unfinished hold edits are saved on this device. You can leave, lock the screen or restart the app and continue later. Publish holds makes those changes available on the wall."
       },
       "pencil": {
         "title": "Apple Pencil on iPad",

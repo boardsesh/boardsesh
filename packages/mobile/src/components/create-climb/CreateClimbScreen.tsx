@@ -1,5 +1,5 @@
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BackHandler, View, StyleSheet, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
@@ -14,7 +14,9 @@ import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { useSprayWall } from '../../lib/spray/use-spray-wall';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
-import { isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
+import { subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
+import { sprayHoldEditorHref } from '../../lib/spray/spray-routes';
+import { editableSprayWallUuidFor, isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { HoldRoleSheet } from './HoldRoleSheet';
@@ -117,6 +119,13 @@ export function CreateClimbScreen({
     availableHoldIds: controller.availableHoldIds,
     sprayWallToken,
   });
+
+  const handleRemoveMissingHolds = useCallback(() => {
+    // A remix can show a ghost for the same selection maintenance just removed.
+    // One acknowledgement should clear both representations of that missing hold.
+    lostHolds.dismissMissingGhosts();
+    controller.removeMissingHolds();
+  }, [lostHolds, controller.removeMissingHolds]);
 
   // The hold heatmap over the whole board (the create board has no list filters
   // to follow), counting the role the active brush paints: the downloaded board
@@ -223,6 +232,55 @@ export function CreateClimbScreen({
   // kept. Focus-gated: BackHandler runs the newest listener first, so an
   // unfocused editor would otherwise eat back presses on a screen above it.
   const isFocused = useIsFocused();
+  const focusedRef = useRef(isFocused);
+  focusedRef.current = isFocused;
+  const editableWallUuid = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => editableSprayWallUuidFor(board.boardName, board.layoutId), [board.boardName, board.layoutId]),
+    () => undefined,
+  );
+  const [openingHoldEditor, setOpeningHoldEditor] = useState(false);
+  const [holdEditorOpenFailed, setHoldEditorOpenFailed] = useState(false);
+  const openingHoldEditorRef = useRef(false);
+  const editorMountedRef = useRef(true);
+  useEffect(() => {
+    editorMountedRef.current = true;
+    return () => {
+      editorMountedRef.current = false;
+    };
+  }, []);
+  const { persistWorkingDraft } = controller;
+  const handleAddHolds = useCallback(async () => {
+    if (
+      !editableWallUuid ||
+      openingHoldEditorRef.current ||
+      controller.saveState === 'saving' ||
+      controller.pendingNewClimb
+    )
+      return;
+    openingHoldEditorRef.current = true;
+    setOpeningHoldEditor(true);
+    setHoldEditorOpenFailed(false);
+    try {
+      await persistWorkingDraft();
+      if (!editorMountedRef.current || !focusedRef.current) return;
+      if (editableSprayWallUuidFor(board.boardName, board.layoutId) !== editableWallUuid) return;
+      router.push(sprayHoldEditorHref(editableWallUuid, 'climb-editor'));
+    } catch {
+      if (editorMountedRef.current) setHoldEditorOpenFailed(true);
+    } finally {
+      openingHoldEditorRef.current = false;
+      if (editorMountedRef.current) setOpeningHoldEditor(false);
+    }
+  }, [
+    editableWallUuid,
+    persistWorkingDraft,
+    controller.saveState,
+    controller.pendingNewClimb,
+    board.boardName,
+    board.layoutId,
+    router,
+  ]);
   useEffect(() => {
     if (!isFocused) return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -337,6 +395,10 @@ export function CreateClimbScreen({
         onViewDuplicate={handleViewDuplicate}
         heatmap={heatmap}
         lostHolds={lostHolds}
+        onAddHolds={editableWallUuid ? handleAddHolds : undefined}
+        openingHoldEditor={openingHoldEditor}
+        holdEditorOpenFailed={holdEditorOpenFailed}
+        onRemoveMissingHolds={handleRemoveMissingHolds}
       />
 
       <HoldRoleSheet

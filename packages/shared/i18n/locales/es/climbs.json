@@ -829,6 +829,15 @@
         "makeRoute": "Convertir en vía",
         "makeBoulder": "Convertir en bloque",
         "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas"
+      },
+      "holds": {
+        "add": "Añadir presas",
+        "hint": "¿Falta una presa? Añádela y vuelve a este bloque.",
+        "opening": "Abriendo el editor de presas…",
+        "openFailed": "No se pudo guardar tu bloque en este dispositivo. Vuelve a intentarlo antes de añadir presas.",
+        "missing_one": "{{count}} presa seleccionada ya no está en este Spraywall. Tu bloque se conserva.",
+        "missing_other": "{{count}} presas seleccionadas ya no están en este Spraywall. Tu bloque se conserva.",
+        "removeMissing": "Quitar las presas que faltan"
       }
     },
     "holdFilter": {

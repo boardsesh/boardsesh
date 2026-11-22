@@ -30,6 +30,14 @@
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 
+/** A published, live wall this account may maintain, or no entry point. */
+export function editableSprayWallUuidFor(boardName: string, layoutId: number): string | undefined {
+  if (boardName !== SPRAY_BOARD_NAME) return undefined;
+  const wall = getSprayWall(layoutId);
+  if (!wall || wall.draft || !wall.viewerCanEdit || wall.archive.archivedAt != null) return undefined;
+  return wall.wallUuid;
+}
+
 /** True for the one board type these rules apply to. */
 export function isSprayBoard(boardName: string): boolean {
   return boardName === SPRAY_BOARD_NAME;

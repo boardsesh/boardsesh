@@ -1189,6 +1189,17 @@
       "dropped_one": "Mantenuta la parte principale. {{count}} frammento isolato è stato scartato.",
       "dropped_other": "Mantenuta la parte principale. {{count}} frammenti isolati sono stati scartati.",
       "atLimit": "Più di così questa presa non può crescere. Con Contorna la ridisegni più grande."
+    },
+    "draft": {
+      "loading": "Caricamento delle modifiche salvate…",
+      "saving": "Salvataggio delle modifiche…",
+      "saved": "Modifiche salvate su questo dispositivo",
+      "failed": "Impossibile salvare le modifiche su questo dispositivo. Riprova prima di uscire.",
+      "retry": "Riprova",
+      "changed": "Queste modifiche salvate appartengono a una versione precedente della bozza. La tua copia locale è conservata.",
+      "addLater": "Puoi aggiungere le prese mancanti più tardi, mentre tracci un blocco.",
+      "useSaved": "Usa le prese salvate",
+      "discardBody": "Le modifiche recuperate verranno scartate. Le prese già salvate su questa Spraywall resteranno disponibili."
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "Questa Spraywall ha una nuova foto non finita, rimasta da una versione precedente dell'app. Scartala per modificare le prese.",
     "discardLeftover": "Scarta la foto non finita",
-    "discardLeftoverFailed": "Impossibile rimuovere quella foto. Riprova."
+    "discardLeftoverFailed": "Impossibile rimuovere quella foto. Riprova.",
+    "publishAndReturn": "Pubblica e torna"
   },
   "sprayHoldUsage": {
     "title": "Rimuovere una presa usata da dei blocchi?",

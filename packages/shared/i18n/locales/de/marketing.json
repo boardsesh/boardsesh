@@ -828,11 +828,12 @@
       "edit": {
         "title": "Griffe später bearbeiten",
         "lead": "Du kannst Griffe jederzeit hinzufügen oder korrigieren. Neue Griffe lassen bestehende Boulder unverändert.",
-        "p1": "Tipp unter Boards auf deine Spraywall, um sie zu aktivieren. Tipp auf den Tab Boulder mit der Lupe, dann oben auf den Namen der Spraywall. Tipp auf Griffe bearbeiten und schließ mit Griffe veröffentlichen ab.",
+        "p1": "Tipp beim Setzen eines Boulders unter der Spraywall auf Griffe hinzufügen. Ergänze die fehlenden Griffe und tipp auf Veröffentlichen und zurück. Name, Beschreibung und ausgewählte Griffe deines Boulders bleiben erhalten. Du kannst Griffe bearbeiten auch über den Namen der Spraywall oben im Tab Boulder öffnen.",
         "p2": "Entfernen deine Änderungen einen Griff, den veröffentlichte Boulder nutzen, bittet Boardsesh dich um Bestätigung. Griffe behalten bricht ab. Trotzdem entfernen veröffentlicht.",
         "p3": "Diese Boulder bleiben mit einer Warnung über einen fehlenden Griff erhalten, ebenso ihre eingetragenen Begehungen. Verschieben, Skalieren, Umformen oder Verbinden eines Griffs hat denselben Effekt.",
         "p4": "Tipp bei einem betroffenen Boulder auf Remixen, um eine aktualisierte Kopie zu setzen. Das repariert das Original nicht.",
-        "p5": "Haben sich die Griffe über die ganze Spraywall geändert, tipp im selben Sheet auf Spraywall zurücksetzen und fang mit einem neuen Foto an. Das Veröffentlichen archiviert die alte Spraywall mit ihren Bouldern."
+        "p5": "Haben sich die Griffe über die ganze Spraywall geändert, tipp im selben Sheet auf Spraywall zurücksetzen und fang mit einem neuen Foto an. Das Veröffentlichen archiviert die alte Spraywall mit ihren Bouldern.",
+        "p6": "Unveröffentlichte Griffänderungen werden auf diesem Gerät gespeichert. Du kannst die Ansicht verlassen, den Bildschirm sperren oder die App neu starten und später weitermachen. Griffe veröffentlichen macht die Änderungen auf der Spraywall verfügbar."
       },
       "pencil": {
         "title": "Apple Pencil auf dem iPad",

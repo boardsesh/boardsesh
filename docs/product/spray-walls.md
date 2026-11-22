@@ -4773,6 +4773,35 @@ refreshes leave the token unchanged, as does the editor's separate identity toke
 so a geometry refresh does not remount the editor or clear its undo history. Account and wall-removal generations also
 withdraw local draft payloads; a delayed response cannot restore them.
 
+### Hold editing while setting and local recovery (#7957)
+
+The climb creator shows **Add holds** below an editable, live Spraywall. It
+persists the climb's working copy before opening the existing hold editor in
+Add mode. **Publish and return** publishes the holds and returns to the same
+climb. New holds start unselected. Same-wall hold maintenance preserves the
+climb's text, rules, frames, active frame and in-memory undo history; rendering
+caches still follow the published version. A wall reset has its own layout and
+therefore a separate authoring session.
+
+If maintenance removes a selected hold, the creator keeps the climb and explains
+which selection is missing. Save waits for **Remove missing holds**, which clears
+those IDs from the frames and their undo history while retaining other work.
+
+The hold editor locally autosaves completed changes, including additions,
+removals and refined outlines, during initial setup and later maintenance.
+These recovery copies belong to the authenticated account, wall UUID and exact
+draft-version ID. App backgrounding and browser visibility changes flush them;
+normal Back waits for a durable copy. The status beside the controls reports
+whether the latest edits really reached storage. Local recovery never publishes
+holds or syncs unfinished edits to another device.
+
+Restoration waits for an authorized draft read and verifies its server baseline.
+A changed or replaced draft cannot receive an automatic replay of older local
+edits. The recovery copy remains available until the climber explicitly confirms
+using the server's saved holds. Successful writes retire only acknowledged work;
+failed saving or publishing keeps recoverable edits. Cold recovery restores the
+current work, while undo history remains scoped to the mounted editing session.
+
 ### Hold maintenance and photo reset draft ownership
 
 The hold editor adopts only initial setup or a draft reusing the exact published

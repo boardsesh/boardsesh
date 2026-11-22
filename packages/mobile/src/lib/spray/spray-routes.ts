@@ -19,8 +19,9 @@ export function sprayLedSetupHref(wallUuid: string): string {
 }
 
 /** `/boards/spray/holds?wallUuid=<uuid>`. */
-export function sprayHoldEditorHref(wallUuid: string): string {
-  return `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
+export function sprayHoldEditorHref(wallUuid: string, entry?: 'climb-editor'): string {
+  const href = `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=${encodeURIComponent(wallUuid)}`;
+  return entry === 'climb-editor' ? `${href}&entry=climb-editor` : href;
 }
 
 /** `/boards/spray/new?resetOf=<uuid>`: reset a wall by building its replacement in the wizard. */

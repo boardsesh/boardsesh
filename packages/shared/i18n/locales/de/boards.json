@@ -1189,6 +1189,17 @@
       "dropped_one": "Der Hauptteil bleibt. {{count}} loses Stück wurde entfernt.",
       "dropped_other": "Der Hauptteil bleibt. {{count}} lose Stücke wurden entfernt.",
       "atLimit": "Weiter kann dieser Griff nicht wachsen. Mit Umranden zeichnest du ihn größer neu."
+    },
+    "draft": {
+      "loading": "Gespeicherte Änderungen werden geladen…",
+      "saving": "Änderungen werden gespeichert…",
+      "saved": "Änderungen auf diesem Gerät gespeichert",
+      "failed": "Änderungen konnten auf diesem Gerät nicht gespeichert werden. Versuch es vor dem Verlassen erneut.",
+      "retry": "Erneut versuchen",
+      "changed": "Diese gespeicherten Änderungen gehören zu einer früheren Version dieses Entwurfs. Deine lokale Kopie bleibt erhalten.",
+      "addLater": "Du kannst fehlende Griffe später beim Setzen eines Boulders hinzufügen.",
+      "useSaved": "Gespeicherte Griffe verwenden",
+      "discardBody": "Deine wiederhergestellten Änderungen werden verworfen. Die bereits auf dieser Spraywall gespeicherten Griffe bleiben verfügbar."
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "An dieser Spraywall liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
     "discardLeftover": "Unfertiges Foto verwerfen",
-    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
+    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal.",
+    "publishAndReturn": "Veröffentlichen und zurück"
   },
   "sprayHoldUsage": {
     "title": "Einen Griff entfernen, den Boulder nutzen?",

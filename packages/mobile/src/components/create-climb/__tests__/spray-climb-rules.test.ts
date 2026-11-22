@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
-import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
+import {
+  clearSprayWallRegistry,
+  registerSprayWall,
+  sprayWallViewerGeneration,
+} from '../../../lib/spray/spray-wall-registry';
 import { getDifficultyIdForGradeName } from '../../../lib/grade-label';
 import { getPaintRoles, computeRoleCapacity } from '../brush-roles';
 import {
   authoringAngle,
   defaultAnyFeet,
   defaultIsDraft,
+  editableSprayWallUuidFor,
   hasFootHolds,
   isSprayBoard,
   nextAnyFeetForFeetChange,
@@ -236,5 +241,41 @@ describe('the creator lightbulb', () => {
     for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
       expect(offersBoardLightbulb(boardName)).toBe(true);
     }
+  });
+});
+
+describe('hold maintenance entry from the climb editor', () => {
+  function registerEditableWall({ canEdit = true, archived = false, draft = false } = {}) {
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'editable-wall',
+      angle: 40,
+      version: 1,
+      versionId: 101,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://example.com/wall',
+      photoThumbUrl: null,
+      photoExpiresAt: '2026-11-22T12:00:00Z',
+      holds: [],
+      draft,
+      viewerAccess: { canEdit, generation: sprayWallViewerGeneration() },
+      archive: { archivedAt: archived ? '2026-11-22T00:00:00Z' : null, replacedByWallUuid: null },
+    });
+  }
+
+  it('offers a published live wall to an authorized editor', () => {
+    registerEditableWall();
+    expect(editableSprayWallUuidFor('spray', LAYOUT_ID)).toBe('editable-wall');
+  });
+
+  it.each([{ canEdit: false }, { archived: true }, { draft: true }])('withholds entry for %j', (options) => {
+    registerEditableWall(options);
+    expect(editableSprayWallUuidFor('spray', LAYOUT_ID)).toBeUndefined();
+  });
+
+  it('withholds entry for an unresolved wall or a catalogue board', () => {
+    expect(editableSprayWallUuidFor('spray', LAYOUT_ID)).toBeUndefined();
+    registerEditableWall();
+    expect(editableSprayWallUuidFor('kilter', LAYOUT_ID)).toBeUndefined();
   });
 });

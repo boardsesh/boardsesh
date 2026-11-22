@@ -47,6 +47,7 @@ import { HeatmapOverlay, useHeatLayer } from '../board/HeatmapOverlay';
 import { formatHeatmapClimbCount, HeatmapLegend } from '../board/HeatmapLegend';
 import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
+import { PressableSurface } from '../PressableSurface';
 import type { CreateHeatmap } from './create-heatmap';
 import { offersBoardLightbulb } from './spray-climb-rules';
 import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
@@ -73,6 +74,10 @@ type CreateDrawerProps = {
   heatmap?: CreateHeatmap;
   /** Grey rings where a remixed climb's lost holds were. Save waits until they are gone. */
   lostHolds?: LostHoldGhostsState;
+  onAddHolds?: () => Promise<void>;
+  openingHoldEditor?: boolean;
+  holdEditorOpenFailed?: boolean;
+  onRemoveMissingHolds?: () => void;
 };
 
 const NO_STATS: ReadonlyMap<number, HoldStat> = new Map<number, HoldStat>();
@@ -94,9 +99,18 @@ export function CreateDrawer({
   onViewDuplicate,
   heatmap,
   lostHolds,
+  onAddHolds,
+  openingHoldEditor = false,
+  holdEditorOpenFailed = false,
+  onRemoveMissingHolds,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const [holdListVisible, setHoldListVisible] = useState(false);
+  const [holdEntryHeight, setHoldEntryHeight] = useState(0);
+  const measureHoldEntry = useCallback((event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    setHoldEntryHeight((previous) => (previous === height ? previous : height));
+  }, []);
   const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
   // `t('a.b.c')` resolves against the FIRST namespace only, so the wall-state
@@ -221,6 +235,7 @@ export function CreateDrawer({
     insetTop: insets.top,
     insetBottom: windowInsetBottom,
     showRouteTransport: controller.showRouteTransport,
+    extraControlsHeight: onAddHolds || controller.missingHoldCount > 0 ? holdEntryHeight : 0,
   });
 
   // Fit the board to the measured editing card. Window dimensions seed the
@@ -294,7 +309,10 @@ export function CreateDrawer({
   // Save in the header is live only once the holds can be stored: any hold for
   // a draft, a start and a finish for a publish, and no lost-hold rings up.
   // handleSave refuses the same cases, so this only makes the refusal visible.
-  const climbReady = (controller.isDraft ? controller.canSave : controller.canPublish) && !ghostsPending;
+  const climbReady =
+    (controller.isDraft ? controller.canSave : controller.canPublish) &&
+    !ghostsPending &&
+    !(controller.missingHoldCount > 0);
   const { handleSave, bleConnected, bleConnecting, handleToggleBle } = controller;
   const sprayLedsEnabled = useSprayWallLedsEnabled(board.boardName, board.layoutId);
   const showLightbulb = offersBoardLightbulb(board.boardName, sprayLedsEnabled);
@@ -445,6 +463,52 @@ export function CreateDrawer({
                 />
               </View>
 
+              <View onLayout={measureHoldEntry}>
+                {onAddHolds ? (
+                  <View style={styles.holdEntry}>
+                    <PressableSurface
+                      onPress={() => void onAddHolds()}
+                      disabled={openingHoldEditor || controller.saveState === 'saving' || controller.pendingNewClimb}
+                      accessibilityRole="button"
+                      accessibilityHint={t('mobile.create.holds.hint')}
+                      accessibilityState={{
+                        disabled: openingHoldEditor || controller.saveState === 'saving' || controller.pendingNewClimb,
+                        busy: openingHoldEditor,
+                      }}
+                      style={styles.holdEntryButton}
+                    >
+                      <Text variant="headline" color={systemColors.accent}>
+                        {openingHoldEditor ? t('mobile.create.holds.opening') : t('mobile.create.holds.add')}
+                      </Text>
+                    </PressableSurface>
+                    <Text variant="caption1" color={systemColors.secondaryLabel}>
+                      {t('mobile.create.holds.hint')}
+                    </Text>
+                    {holdEditorOpenFailed ? (
+                      <Text variant="caption1" color={systemColors.error} accessibilityLiveRegion="polite">
+                        {t('mobile.create.holds.openFailed')}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+                {controller.missingHoldCount > 0 ? (
+                  <View style={styles.holdEntry}>
+                    <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
+                      {t('mobile.create.holds.missing', { count: controller.missingHoldCount })}
+                    </Text>
+                    <PressableSurface
+                      onPress={onRemoveMissingHolds ?? controller.removeMissingHolds}
+                      accessibilityRole="button"
+                      style={styles.holdEntryButton}
+                    >
+                      <Text variant="headline" color={systemColors.accent}>
+                        {t('mobile.create.holds.removeMissing')}
+                      </Text>
+                    </PressableSurface>
+                  </View>
+                ) : null}
+              </View>
+
               <CreateRoutePlaybackSlot
                 showRouteTransport={controller.showRouteTransport}
                 frameCount={controller.frameCount}
@@ -516,6 +580,16 @@ const styles = StyleSheet.create({
   },
   boardSection: {
     marginTop: spacing[2],
+  },
+  holdEntry: {
+    paddingHorizontal: spacing[4],
+    gap: spacing[1],
+  },
+  holdEntryButton: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    paddingEnd: spacing[3],
   },
   belowFold: {
     paddingHorizontal: spacing[4],

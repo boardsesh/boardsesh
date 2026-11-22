@@ -124,6 +124,7 @@ import { SprayDetectionStep } from './SprayDetectionStep';
 import { SprayScanPhoto } from './SprayScanPhoto';
 import { SprayWallDetailsStep } from './SprayWallDetailsStep';
 import { SprayWallLookStep, type SprayLookChoice } from './SprayWallLookStep';
+import type { SprayHoldPersistence } from '../outline-editor/use-spray-hold-autosave';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { exitSprayWizard } from './exit-spray-wizard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
@@ -1290,6 +1291,10 @@ export function SprayWallWizardScreen({
    * them, and every way out reads them at the moment it is taken.
    */
   const editorDirtyRef = useRef(false);
+  const editorPersistenceRef = useRef<SprayHoldPersistence | null>(null);
+  const onEditorPersistenceReady = useCallback((persistence: SprayHoldPersistence | null) => {
+    editorPersistenceRef.current = persistence;
+  }, []);
   const editorHandingOverRef = useRef(false);
   const onEditorDirtyChange = useCallback((dirty: boolean) => {
     editorDirtyRef.current = dirty;
@@ -1312,6 +1317,21 @@ export function SprayWallWizardScreen({
    */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
+      if (state.step === 'review' && editorPersistenceRef.current) {
+        if (editorHandingOverRef.current || consentSavingNow()) return;
+        if (editorPersistenceRef.current.recoveryPending) {
+          onConfirm();
+          return;
+        }
+        const checkpoint = leaveCheckpoint(state);
+        void editorPersistenceRef.current
+          .flush()
+          .then(() => {
+            if (leaveStillApplies(checkpoint, stateRef.current, readEditorLeaveState())) onConfirm();
+          })
+          .catch(() => undefined);
+        return;
+      }
       const decision = leaveDecision(state, readEditorLeaveState(), consentSavingNow());
       if (decision === 'block') return;
       if (decision === 'leave') {
@@ -1576,6 +1596,8 @@ export function SprayWallWizardScreen({
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
         onDirtyChange={onEditorDirtyChange}
+        onPersistenceReady={onEditorPersistenceReady}
+        showAddLaterHint
         onHandoverChange={onEditorHandoverChange}
       />
     );

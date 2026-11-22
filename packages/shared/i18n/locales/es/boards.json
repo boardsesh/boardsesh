@@ -1189,6 +1189,17 @@
       "dropped_one": "Se conservó la parte principal. Se descartó {{count}} trozo suelto.",
       "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos.",
       "atLimit": "La presa no puede crecer más por ahí. Con Trazar puedes redibujarla más grande."
+    },
+    "draft": {
+      "loading": "Cargando los cambios guardados…",
+      "saving": "Guardando los cambios…",
+      "saved": "Cambios guardados en este dispositivo",
+      "failed": "No se pudieron guardar los cambios en este dispositivo. Vuelve a intentarlo antes de salir.",
+      "retry": "Volver a intentarlo",
+      "changed": "Estos cambios guardados pertenecen a una versión anterior de este borrador. Tu copia local se conserva.",
+      "addLater": "Puedes añadir las presas que faltan más tarde, mientras montas un bloque.",
+      "useSaved": "Usar las presas guardadas",
+      "discardBody": "Se descartarán tus cambios recuperados. Las presas ya guardadas en este Spraywall seguirán disponibles."
     }
   },
   "sprayWizard": {
@@ -1403,7 +1414,8 @@
     },
     "leftoverPhoto": "Este Spraywall tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
     "discardLeftover": "Descartar la foto sin terminar",
-    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
+    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez.",
+    "publishAndReturn": "Publicar y volver"
   },
   "sprayHoldUsage": {
     "title": "¿Quitar una presa que usan bloques?",

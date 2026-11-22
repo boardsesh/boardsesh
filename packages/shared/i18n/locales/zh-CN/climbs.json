@@ -829,6 +829,15 @@
         "makeRoute": "改为连续线路",
         "makeBoulder": "改为抱石线路",
         "makeBoulderBlocked": "改为抱石线路，请先删除多余帧"
+      },
+      "holds": {
+        "add": "添加岩点",
+        "hint": "缺少岩点？添加后可返回继续编辑这条线路。",
+        "opening": "正在打开岩点编辑器…",
+        "openFailed": "无法在此设备上保存线路。添加岩点前请重试。",
+        "missing_one": "{{count}} 个已选岩点已不在这面喷点墙上。你的线路仍然保留。",
+        "missing_other": "{{count}} 个已选岩点已不在这面喷点墙上。你的线路仍然保留。",
+        "removeMissing": "移除缺失岩点"
       }
     },
     "holdFilter": {

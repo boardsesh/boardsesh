@@ -88,6 +88,18 @@ describe('useLostHoldGhosts', () => {
     expect(lostHoldsQuery.variables.at(-1)).toEqual(expect.objectContaining({ climbUuid: 'climb-1', layoutId: 7 }));
   });
 
+  it('remembers acknowledgement before the missing-hold geometry arrives', () => {
+    const ready = lostHoldsQuery.state;
+    lostHoldsQuery.state = { status: 'loading' };
+    const { result, rerender } = setup();
+    expect(result.current.ghosts).toEqual([]);
+    act(() => result.current.dismissMissingGhosts());
+    lostHoldsQuery.state = ready;
+    rerender();
+    expect(result.current.ghosts).toEqual([]);
+    expect(result.current.ghostTargets).toEqual([]);
+  });
+
   it('takes a ring away on a tap, and only that one', () => {
     const { result } = setup();
     act(() => result.current.dismissGhost(2));

@@ -829,6 +829,15 @@
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
         "makeBoulderBlocked": "Make it a boulder — delete frames first"
+      },
+      "holds": {
+        "add": "Add holds",
+        "hint": "Missing a hold? Add it, then return to this climb.",
+        "opening": "Opening hold editor…",
+        "openFailed": "Your climb couldn’t be kept on this device. Try again before adding holds.",
+        "missing_one": "{{count}} selected hold is no longer on this wall. Your climb is kept.",
+        "missing_other": "{{count}} selected holds are no longer on this wall. Your climb is kept.",
+        "removeMissing": "Remove missing holds"
       }
     },
     "holdFilter": {

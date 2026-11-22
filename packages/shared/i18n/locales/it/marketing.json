@@ -828,11 +828,12 @@
       "edit": {
         "title": "Modifica le prese più tardi",
         "lead": "Puoi aggiungere o correggere prese quando vuoi. Aggiungere prese non cambia i blocchi esistenti.",
-        "p1": "In Pannelli, tocca la tua Spraywall per renderla attiva. Tocca la scheda Blocchi con la lente, poi il nome della Spraywall in alto. Tocca Modifica le prese e finisci con Pubblica le prese.",
+        "p1": "Mentre tracci un blocco, tocca Aggiungi prese sotto la Spraywall. Aggiungi le prese mancanti, poi tocca Pubblica e torna. Nome, descrizione e prese selezionate del blocco restano al loro posto. Puoi anche aprire Modifica le prese dal nome della Spraywall in cima alla scheda Blocchi.",
         "p2": "Se le tue modifiche tolgono una presa usata da blocchi pubblicati, Boardsesh ti chiede conferma. Tieni le prese annulla. Rimuovi comunque pubblica.",
         "p3": "Quei blocchi restano, con un avviso di presa mancante, e restano anche le salite registrate. Spostare, ridimensionare, rimodellare o unire una presa fa lo stesso.",
         "p4": "Tocca Remix su un blocco interessato per tracciarne una copia aggiornata. Non ripara l'originale.",
-        "p5": "Se le prese sono cambiate su tutta la Spraywall, tocca Reimposta questa Spraywall nello stesso foglio e ricomincia da una nuova foto. Pubblicare archivia la vecchia Spraywall con i suoi blocchi."
+        "p5": "Se le prese sono cambiate su tutta la Spraywall, tocca Reimposta questa Spraywall nello stesso foglio e ricomincia da una nuova foto. Pubblicare archivia la vecchia Spraywall con i suoi blocchi.",
+        "p6": "Le modifiche alle prese non ancora pubblicate vengono salvate su questo dispositivo. Puoi uscire, bloccare lo schermo o riavviare l’app e continuare più tardi. Pubblica le prese rende le modifiche disponibili sulla Spraywall."
       },
       "pencil": {
         "title": "Apple Pencil su iPad",

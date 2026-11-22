@@ -36,6 +36,9 @@ type EditorProps = {
   onDirtyChange: (dirty: boolean) => void;
   onHandoverChange: (handingOver: boolean) => void;
   confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
+  onPersistenceReady: (persistence: { flush: () => Promise<void>; recoveryPending?: boolean } | null) => void;
+  initialMode?: 'add';
+  primaryLabel: string;
 };
 const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
 
@@ -145,6 +148,62 @@ beforeEach(() => {
 });
 
 describe('SprayWallHoldsScreen', () => {
+  it('opens Add mode from the climb editor and labels the return action', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', entry: 'climb-editor' }));
+    await screen.findByTestId('editor');
+    expect(editorProps().initialMode).toBe('add');
+    expect(editorProps().primaryLabel).toBe('sprayMaintenance.publishAndReturn');
+  });
+
+  it('waits for the local checkpoint before leaving, without a discard prompt', async () => {
+    let finishWrite: (() => void) | undefined;
+    const flush = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => {
+      editorProps().onPersistenceReady({ flush });
+      editorProps().onDirtyChange(true);
+    });
+    act(() => tryRemove());
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(guard.ask).not.toHaveBeenCalled();
+    await act(async () => finishWrite?.());
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows leaving a blocked recovery while keeping its original record untouched', async () => {
+    const flush = vi.fn().mockRejectedValue(new Error('recovery not loaded'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => {
+      editorProps().onPersistenceReady({ flush, recoveryPending: true });
+      editorProps().onDirtyChange(true);
+    });
+    await act(async () => tryRemove());
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+    expect(flush).not.toHaveBeenCalled();
+    expect(guard.ask).not.toHaveBeenCalled();
+  });
+
+  it('keeps editing if the local checkpoint fails', async () => {
+    const flush = vi.fn().mockRejectedValue(new Error('storage full'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => {
+      editorProps().onPersistenceReady({ flush });
+      editorProps().onDirtyChange(true);
+    });
+    await act(async () => tryRemove());
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(guard.ask).not.toHaveBeenCalled();
+  });
+
   it('preserves coded backend guidance for a wall version limit', async () => {
     const guidance = 'This wall has reached its version limit.';
     requests.prepare.mockRejectedValueOnce({

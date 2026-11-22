@@ -130,3 +130,67 @@ describe('createClimbDraftKey', () => {
     expect(isDraftStorageAvailable(null)).toBe(true);
   });
 });
+
+describe('spray authoring draft migration', () => {
+  const config = { boardName: 'spray', layoutId: 7957, sizeId: 7957, setIds: '1', angle: 40 };
+  const draft = { holdsJson: '{}', name: 'Recovered project', description: '', isDraft: true };
+  async function registerWall(versionId: number, wallUuid = 'recovery-wall'): Promise<void> {
+    const { registerSprayWall } = await import('../spray/spray-wall-registry');
+    registerSprayWall(config.layoutId, {
+      wallUuid,
+      angle: 40,
+      version: versionId,
+      versionId,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://example.com/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+    });
+  }
+
+  it('migrates a legacy version slot before maintenance and keeps its backup', async () => {
+    const { loadDraft, saveDraft } = await import('../create-climb-draft-store');
+    await registerWall(10);
+    const legacyKey = 'spray:7957:7957-svid10:1:40';
+    await saveDraft(legacyKey, draft);
+    const stableKey = createClimbDraftKey(config);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    await expect(loadDraft(legacyKey)).resolves.toEqual(draft);
+    await registerWall(11);
+    expect(createClimbDraftKey(config)).toBe(stableKey);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+  });
+
+  it('restores the legacy copy even if the destination write fails', async () => {
+    const { loadDraft, saveDraft } = await import('../create-climb-draft-store');
+    const storage = (await import('@react-native-async-storage/async-storage')).default;
+    await registerWall(20);
+    const legacyKey = 'spray:7957:7957-svid20:1:40';
+    await saveDraft(legacyKey, draft);
+    const stableKey = createClimbDraftKey(config);
+    vi.spyOn(storage, 'setItem').mockRejectedValueOnce(new Error('storage full'));
+    // Returning recovered content keeps the controller out of its empty-editor
+    // clear path even when the write-first migration cannot finish yet.
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    await expect(storage.getItem(`boardsesh_create_climb_draft:${stableKey}`)).resolves.toBeNull();
+    await expect(loadDraft(legacyKey)).resolves.toEqual(draft);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+  });
+
+  it('does not restore another wall and deliberate clear cannot resurrect the migrated slot', async () => {
+    const { loadDraft, saveDraft, clearDraft } = await import('../create-climb-draft-store');
+    await registerWall(30);
+    const legacyKey = 'spray:7957:7957-svid30:1:40';
+    await saveDraft(legacyKey, draft);
+    const stableKey = createClimbDraftKey(config);
+    await expect(loadDraft(stableKey)).resolves.toEqual(draft);
+    await clearDraft(stableKey);
+    await expect(loadDraft(stableKey)).resolves.toBeNull();
+    await saveDraft(stableKey, draft);
+    await registerWall(31, 'other-wall');
+    expect(createClimbDraftKey(config)).not.toBe(stableKey);
+    await expect(loadDraft(createClimbDraftKey(config))).resolves.toBeNull();
+  });
+});
