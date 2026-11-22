@@ -24,7 +24,7 @@
  * because step 2 serializes every fenced batch for a user: two batches never
  * hold the share lock at once and race to upgrade it.
  */
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { BackgroundJobStatus } from '../../background-jobs';
 import { backgroundJobRuns } from '../../schema/app/background-job-runs';
@@ -248,6 +248,18 @@ export async function markProviderSyncRequesterWaiting(
 
 const NON_TERMINAL_RUN_STATUSES: BackgroundJobStatus[] = ['queued', 'running', 'retrying'];
 
+// These are job/infrastructure failures, not rejected board credentials. The
+// runner cannot record them after losing its attempt fence; reconciliation is
+// the remaining owner that can explain why the import stopped (#8001).
+const INCOMPLETE_IMPORT_ERRORS = new Set([
+  'RETRIES_EXHAUSTED',
+  'QUEUE_EXPIRED',
+  'JOB_MISSING',
+  'RESULT_MISSING',
+  'ATTEMPT_FAILED',
+]);
+const INCOMPLETE_IMPORT_MESSAGE = 'Your board import did not finish. Try Sync now again.';
+
 /**
  * The interactive run a new request should join instead of queueing its own:
  * the control row's pending run while it is still queued, running or retrying.
@@ -274,7 +286,8 @@ export async function coalesceInteractiveRun(
  * at a run which finished or no longer exists. A worker that dies mid-run leaves
  * both behind; without this a "Sync now" would coalesce onto a dead run forever
  * and the lease would block every other run until its TTL. A run the ledger
- * still shows as queued, running or retrying keeps both.
+ * still shows as queued, running or retrying keeps both. Surface an exhausted
+ * interactive import on its unchanged link before dropping its last pointer.
  */
 export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, limit = 100): Promise<number> {
   const runIsFinished = (column: typeof providerSyncControls.pendingRunId | typeof providerSyncControls.activeRunId) =>
@@ -289,6 +302,7 @@ export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, li
       boardType: providerSyncControls.boardType,
       pendingRunId: providerSyncControls.pendingRunId,
       activeRunId: providerSyncControls.activeRunId,
+      linkGeneration: providerSyncControls.linkGeneration,
     })
     .from(providerSyncControls)
     .where(
@@ -300,27 +314,82 @@ export async function clearFinishedProviderSyncRuns(database: ProviderSyncDb, li
     .limit(limit);
   let cleared = 0;
   for (const candidate of candidates) {
-    // Compare-and-set on the run IDs just read. A producer that re-pointed the
-    // row meanwhile (a new pending run, a new lease) commits a row this WHERE no
-    // longer matches, so the recheck skips it instead of judging the new run
-    // with this statement's older snapshot, in which it does not exist yet.
-    const updated = await database
-      .update(providerSyncControls)
-      .set({
-        pendingRunId: sql`CASE WHEN ${runIsFinished(providerSyncControls.pendingRunId)} THEN NULL ELSE ${providerSyncControls.pendingRunId} END`,
-        activeRunId: sql`CASE WHEN ${runIsFinished(providerSyncControls.activeRunId)} THEN NULL ELSE ${providerSyncControls.activeRunId} END`,
-        activeLeaseUntil: sql`CASE WHEN ${runIsFinished(providerSyncControls.activeRunId)} THEN NULL ELSE ${providerSyncControls.activeLeaseUntil} END`,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
-          keyMatches(candidate),
-          sql`${providerSyncControls.pendingRunId} IS NOT DISTINCT FROM ${candidate.pendingRunId}::uuid`,
-          sql`${providerSyncControls.activeRunId} IS NOT DISTINCT FROM ${candidate.activeRunId}::uuid`,
-        ),
-      )
-      .returning({ userId: providerSyncControls.userId });
-    cleared += updated.length;
+    const updated = await database.transaction(async (transaction) => {
+      // Control before credential, like link and Sync now. Compare the whole
+      // observed generation/run state after taking the lock: a new link or
+      // replacement run must not inherit the old run's failure.
+      const [current] = await transaction
+        .select()
+        .from(providerSyncControls)
+        .where(
+          and(
+            keyMatches(candidate),
+            eq(providerSyncControls.linkGeneration, candidate.linkGeneration),
+            sql`${providerSyncControls.pendingRunId} IS NOT DISTINCT FROM ${candidate.pendingRunId}::uuid`,
+            sql`${providerSyncControls.activeRunId} IS NOT DISTINCT FROM ${candidate.activeRunId}::uuid`,
+          ),
+        )
+        .for('update');
+      if (!current) return false;
+
+      const runIds = [current.pendingRunId, current.activeRunId].filter((runId): runId is string => runId !== null);
+      // Do not lock the ledger after the control row: workers lock those in
+      // the opposite order. Terminal runs never return to a live state; a
+      // replay creates a new run. A live read can safely wait until next pass.
+      const runs = await transaction
+        .select()
+        .from(backgroundJobRuns)
+        .where(inArray(backgroundJobRuns.id, runIds))
+        .orderBy(desc(backgroundJobRuns.createdAt));
+      const liveRunIds = new Set(
+        runs.filter((run) => NON_TERMINAL_RUN_STATUSES.includes(run.status)).map((run) => run.id),
+      );
+      const failedImport = runs.find(
+        (run) =>
+          run.status === 'failed' &&
+          (run.family === 'aurora-user-sync' || run.family === 'kilter-user-sync') &&
+          INCOMPLETE_IMPORT_ERRORS.has(run.errorCode ?? '') &&
+          run.payload.userId === current.userId &&
+          run.payload.boardType === current.boardType &&
+          run.payload.linkGeneration === current.linkGeneration,
+      );
+      if (current.linked && liveRunIds.size === 0 && failedImport) {
+        await transaction
+          .update(auroraCredentials)
+          .set({
+            syncStatus: 'error',
+            syncError: INCOMPLETE_IMPORT_MESSAGE,
+            lastSyncError: sql`COALESCE(${auroraCredentials.lastSyncError}, ${INCOMPLETE_IMPORT_MESSAGE})`,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(auroraCredentials.userId, current.userId),
+              eq(auroraCredentials.boardType, current.boardType),
+              inArray(auroraCredentials.syncStatus, ['pending', 'active', 'error']),
+              isNull(auroraCredentials.syncError),
+              // A worker can finish its import before losing the final job
+              // settlement. Do not replace that success (or a later run's).
+              or(isNull(auroraCredentials.lastSyncAt), lt(auroraCredentials.lastSyncAt, failedImport.createdAt)),
+            ),
+          );
+      }
+
+      const pendingFinished = current.pendingRunId !== null && !liveRunIds.has(current.pendingRunId);
+      const activeFinished = current.activeRunId !== null && !liveRunIds.has(current.activeRunId);
+      if (!pendingFinished && !activeFinished) return false;
+      await transaction
+        .update(providerSyncControls)
+        .set({
+          pendingRunId: pendingFinished ? null : current.pendingRunId,
+          activeRunId: activeFinished ? null : current.activeRunId,
+          activeLeaseUntil: activeFinished ? null : current.activeLeaseUntil,
+          updatedAt: sql`now()`,
+        })
+        .where(keyMatches(candidate));
+      return true;
+    });
+    if (updated) cleared++;
   }
   return cleared;
 }

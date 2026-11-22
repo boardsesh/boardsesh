@@ -7,8 +7,12 @@ import { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
-import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
-import { acquireCredentialSyncLease, rotateLinkGeneration } from '@boardsesh/db/queries';
+import { auroraCredentials, backgroundJobRuns, boardseshTicks, providerSyncControls } from '@boardsesh/db/schema';
+import {
+  acquireCredentialSyncLease,
+  drainPendingClimbStatsRecomputes,
+  rotateLinkGeneration,
+} from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import {
   AURORA_USER_ID,
@@ -48,10 +52,41 @@ async function enqueueSync(linkGeneration: string, requestedBy: 'link' | 'manual
   return runId;
 }
 
-async function executeNext(signal = new AbortController().signal) {
+async function executeNext(signal = new AbortController().signal, afterTransaction?: () => Promise<void>) {
   const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
   expect(job).toBeDefined();
-  return executeBackgroundJob(database, boss, job, handlerForRole(role), signal);
+  const handler = handlerForRole(role);
+  return executeBackgroundJob(
+    database,
+    boss,
+    job,
+    {
+      ...handler,
+      resolveFamily(name) {
+        const family = handler.resolveFamily(name);
+        if (!family || !afterTransaction) return family;
+        return {
+          ...family,
+          async execute(context, payload) {
+            return family.execute(
+              {
+                ...context,
+                async transaction(callback) {
+                  const result = await context.transaction(callback);
+                  // Observe only committed state. No second pool read occurs
+                  // inside the write transaction or holds up its commit.
+                  await afterTransaction();
+                  return result;
+                },
+              },
+              payload,
+            );
+          },
+        };
+      },
+    },
+    signal,
+  );
 }
 
 const runRow = async (runId: string) =>
@@ -96,6 +131,237 @@ afterAll(async () => {
 });
 
 describe('aurora-user-sync', () => {
+  it('keeps the heartbeat alive while importing one large Aurora page', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    const checkpoint = '2026-05-03 00:00:00.000000';
+    const ascents = Array.from({ length: 1000 }, (_, index) =>
+      ascentRow(
+        `psync-large-${index.toString().padStart(4, '0')}`,
+        CLIMB_UUID,
+        new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
+      ),
+    );
+    stubAuroraApi({
+      pages: [
+        {
+          users: [{ id: AURORA_USER_ID, username: 'climber', created_at: '2024-01-01 00:00:00' }],
+          ascents,
+          user_syncs: [{ table_name: 'ascents', last_synchronized_at: checkpoint, user_id: AURORA_USER_ID }],
+          _complete: true,
+        },
+      ],
+    });
+    const runId = await enqueueSync(linkGeneration);
+    // Ten seconds is pg-boss's smallest supported heartbeat window. The test
+    // slows only its fixture inserts: one whole page takes at least 15 s,
+    // whereas bounded batches let the real heartbeat timer renew between them.
+    await owner`UPDATE pgboss.job SET heartbeat_seconds = 10 WHERE name = ${queue} AND id = ${runId}`;
+    await owner.unsafe(`
+      CREATE FUNCTION psync_slow_import_tick() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.user_id = 'psync-aurora-user' AND NEW.aurora_id LIKE 'psync-large-%' THEN
+          PERFORM pg_sleep(0.015);
+        END IF;
+        RETURN NEW;
+      END
+      $$;
+      CREATE TRIGGER psync_slow_import_tick BEFORE INSERT ON boardsesh_ticks
+      FOR EACH ROW EXECUTE FUNCTION psync_slow_import_tick();
+    `);
+    try {
+      expect(await executeNext()).toBe('succeeded');
+      expect(await tickAuroraIds()).toEqual(ascents.map((ascent) => ascent.uuid));
+      const [cursor] = await owner`SELECT last_synchronized_at FROM board_user_syncs
+        WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID} AND table_name = 'ascents'`;
+      expect(cursor.last_synchronized_at).toBe(checkpoint);
+      expect(await credentialRow()).toMatchObject({ syncStatus: 'active', syncError: null });
+      const completed = await runRow(runId);
+      expect(completed.status).toBe('succeeded');
+      expect(completed.heartbeatAt!.getTime()).toBeGreaterThan(completed.startedAt!.getTime() + 3000);
+    } finally {
+      await owner.unsafe(
+        'DROP TRIGGER psync_slow_import_tick ON boardsesh_ticks; DROP FUNCTION psync_slow_import_tick()',
+      );
+    }
+  }, 45_000);
+
+  it('replays an interrupted page without duplicate sends or losing pending stats', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    const shutdown = new AbortController();
+    const checkpoint = '2026-05-03 00:00:00.000000';
+    const ascents = Array.from({ length: 201 }, (_, index) =>
+      ascentRow(
+        `psync-replay-${index.toString().padStart(4, '0')}`,
+        CLIMB_UUID,
+        new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
+      ),
+    );
+    stubAuroraApi({
+      pages: [
+        {
+          users: [{ id: AURORA_USER_ID, username: 'climber', created_at: '2024-01-01 00:00:00' }],
+          ascents,
+          user_syncs: [{ table_name: 'ascents', last_synchronized_at: checkpoint, user_id: AURORA_USER_ID }],
+          _complete: true,
+        },
+      ],
+    });
+    const runId = await enqueueSync(linkGeneration);
+    let interrupted = false;
+    expect(
+      await executeNext(shutdown.signal, async () => {
+        const ticks = await tickAuroraIds();
+        if (!interrupted && ticks.length > 0 && ticks.length < ascents.length) {
+          interrupted = true;
+          shutdown.abort();
+        }
+      }),
+    ).toBe('failed');
+    expect(interrupted).toBe(true);
+    expect(await tickAuroraIds()).toHaveLength(100);
+    expect(
+      await owner`SELECT 1 FROM board_user_syncs
+      WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID}`,
+    ).toHaveLength(0);
+    expect(
+      await owner`SELECT 1 FROM climb_stats_recompute_pending
+      WHERE board_type = ${FIXTURE_BOARD} AND climb_uuid = ${CLIMB_UUID}`,
+    ).toHaveLength(1);
+    // A new process can recover committed stats without the interrupted
+    // collector's in-memory keys, even before the import retry finishes.
+    expect(
+      await drainPendingClimbStatsRecomputes((callback) => database.transaction(callback), { olderThanMs: 0 }),
+    ).toBe(1);
+    await owner`UPDATE pgboss.job SET start_after = now() WHERE name = ${queue} AND id = ${runId}`;
+    expect(await executeNext()).toBe('succeeded');
+    expect(await tickAuroraIds()).toEqual(ascents.map((ascent) => ascent.uuid));
+    const [cursor] = await owner`SELECT last_synchronized_at FROM board_user_syncs
+      WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID} AND table_name = 'ascents'`;
+    expect(cursor.last_synchronized_at).toBe(checkpoint);
+    expect((await runRow(runId)).attemptNumber).toBe(1);
+  });
+
+  it('refuses old-link chunks and their checkpoint after a relink mid-page', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    const ascents = Array.from({ length: 201 }, (_, index) =>
+      ascentRow(
+        `psync-relink-${index.toString().padStart(4, '0')}`,
+        CLIMB_UUID,
+        new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
+      ),
+    );
+    stubAuroraApi({
+      pages: [
+        {
+          users: [{ id: AURORA_USER_ID, username: 'climber', created_at: '2024-01-01 00:00:00' }],
+          ascents,
+          user_syncs: [
+            { table_name: 'ascents', last_synchronized_at: '2026-05-03 00:00:00.000000', user_id: AURORA_USER_ID },
+          ],
+          _complete: true,
+        },
+      ],
+    });
+    const runId = await enqueueSync(linkGeneration);
+    let relinked = false;
+    expect(
+      await executeNext(undefined, async () => {
+        const ticks = await tickAuroraIds();
+        if (!relinked && ticks.length > 0 && ticks.length < ascents.length) {
+          relinked = true;
+          await database.transaction((transaction) =>
+            rotateLinkGeneration(transaction, {
+              userId: USER_ID,
+              boardType: FIXTURE_BOARD,
+              linked: true,
+            }),
+          );
+        }
+      }),
+    ).toBe('failed');
+    expect(relinked).toBe(true);
+    expect(await tickAuroraIds()).toHaveLength(100);
+    expect(
+      await owner`SELECT 1 FROM board_user_syncs
+      WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID}`,
+    ).toHaveLength(0);
+    expect(await runRow(runId)).toMatchObject({ status: 'failed', errorCode: 'STALE_LINK_GENERATION' });
+    expect((await credentialRow()).lastSyncAt).toBeNull();
+  });
+
+  it('keeps the last valid duplicate log when its malformed copy crosses a write boundary', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    const ascents = Array.from({ length: 101 }, (_, index) =>
+      ascentRow(
+        `psync-duplicate-${index.toString().padStart(4, '0')}`,
+        CLIMB_UUID,
+        new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
+      ),
+    );
+    stubAuroraApi({
+      pages: [
+        {
+          ascents: [
+            ...ascents,
+            { ...ascents[0], comment: 'last valid upstream copy' },
+            { ...ascents[0], climbed_at: 'not-a-timestamp', comment: 'malformed final copy' },
+          ],
+          _complete: true,
+        },
+      ],
+    });
+    await enqueueSync(linkGeneration);
+    expect(await executeNext()).toBe('succeeded');
+    expect(await tickAuroraIds()).toEqual(ascents.map((ascent) => ascent.uuid));
+    const [kept] = await database
+      .select({ comment: boardseshTicks.comment })
+      .from(boardseshTicks)
+      .where(eq(boardseshTicks.auroraId, ascents[0]!.uuid));
+    expect(kept.comment).toBe('last valid upstream copy');
+  });
+
+  it('releases a tombstoned native tick before a live claim from an earlier wire batch', async () => {
+    const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
+    const nativeUuid = 'psync-native-to-reclaim';
+    await database.insert(boardseshTicks).values({
+      uuid: nativeUuid,
+      userId: USER_ID,
+      boardType: FIXTURE_BOARD,
+      climbUuid: CLIMB_UUID,
+      angle: 40,
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-05-01T22:00:00.000Z',
+      auroraType: 'ascents',
+      auroraId: 'psync-previous-claim',
+      auroraSyncedAt: '2026-05-02T00:00:00.000Z',
+    });
+    const replacement = ascentRow('psync-new-claim', CLIMB_UUID, '2026-05-01 22:00:00');
+    const otherAscents = Array.from({ length: 100 }, (_, index) =>
+      ascentRow(
+        `psync-other-${index.toString().padStart(4, '0')}`,
+        CLIMB_UUID,
+        new Date(Date.UTC(2026, 4, 5, 0, 0, index)).toISOString(),
+      ),
+    );
+    stubAuroraApi({
+      pages: [
+        {
+          ascents: [replacement, ...otherAscents, { uuid: 'psync-previous-claim', is_listed: false }],
+          _complete: true,
+        },
+      ],
+    });
+    await enqueueSync(linkGeneration);
+    expect(await executeNext()).toBe('succeeded');
+    expect(await tickAuroraIds()).toHaveLength(101);
+    const [claimed] = await database
+      .select({ uuid: boardseshTicks.uuid, origin: boardseshTicks.origin })
+      .from(boardseshTicks)
+      .where(eq(boardseshTicks.auroraId, replacement.uuid));
+    expect(claimed).toEqual({ uuid: nativeUuid, origin: 'native' });
+  });
+
   it('queues its own follow-up for when Aurora said on a 429, and ends without a pg-boss retry', async () => {
     const { linkGeneration } = await insertLinkedTensionAccount(database, USER_ID, CLIMB_UUID);
     vi.stubGlobal(

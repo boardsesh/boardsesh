@@ -56,6 +56,20 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
   - `bids` → `kilter_bids` + `boardsesh_ticks`
   - `circuits` → `kilter_circuits` + `playlists` + `playlist_climbs`
 
+Background workers commit each Aurora page in small transactions: up to 100
+distinct log IDs or ordinary rows, or one circuit including its full playlist.
+This releases the job locks between writes so its heartbeat can renew (#8001).
+The standalone daemon retains one transaction per page. Workers save the page
+checkpoint only after every write unit and stats flush succeeds; an interrupted
+page replays from the old checkpoint without inserting duplicate sends. Stats
+repair markers commit with their ticks and survive interruption.
+
+All ascent tombstones run before the page's live ascents. Duplicate log IDs stay
+together, and circuit UUIDs are normalized across the whole page before slicing,
+preserving last-row-wins behavior and ownership checks. An individual circuit
+still replaces its playlist atomically; an exceptionally large circuit remains a
+possible heartbeat limit rather than being partially published.
+
 Circuit playlist writes are arbitrated per `(board_type, circuit_uuid)` with a
 transaction-scoped PostgreSQL advisory lock. After taking the lock, the daemon
 reads the current owner edges and either refuses a foreign/ambiguous claim or
