@@ -35,6 +35,7 @@ a production rollout or a physical-device result.
 | [Kilter Sync](kilter-sync.md) | `kilter-sync.md` |
 | [MoonBoard catalog import](moonboard-catalog-import.md) | `moonboard-catalog-import.md` |
 | [MoonBoard Sync](moonboard-sync.md) | `moonboard-sync.md` |
+| [Automatic offline downloads: release validation](offline-bulk-validation.md) | `offline-bulk-validation.md` |
 | [Offline mode fleet health and default decision](offline-mode-health-2026-11-21.md) | `offline-mode-health-2026-11-21.md` |
 | [Offline download request outcomes](offline-download-outcomes-2026-11-21.md) | `offline-download-outcomes-2026-11-21.md` |
 | [Offline reads: where a screen's data comes from](offline-reads.md) | `offline-reads.md` |

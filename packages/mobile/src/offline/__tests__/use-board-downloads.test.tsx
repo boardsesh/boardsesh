@@ -24,9 +24,11 @@ const spies = vi.hoisted(() => ({
   markUserStartedDownload: vi.fn(),
   rememberOfflineBoards: vi.fn(),
   rememberDownloadTrigger: vi.fn(),
+  recordDownloadRequests: vi.fn(),
   restoreBootstrapRetryBudget: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
   track: vi.fn(),
+  getSetting: vi.fn((): string[] => []),
   triggerSync: vi.fn(),
 }));
 
@@ -49,7 +51,7 @@ vi.mock('../../lib/graphql/client', () => ({
   getOfflineSyncHttpClient: () => ({ request: spies.graphqlRequest }),
 }));
 vi.mock('../../settings', () => ({
-  getSetting: () => ['kilter:1:10', 'tension:2:11'],
+  getSetting: spies.getSetting,
   offlineBoardKeyForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   offlineBoardScopeForBoard: (board: UserBoard) => `${board.boardType}:${board.layoutId}:${board.sizeId}`,
   rememberOfflineBoards: spies.rememberOfflineBoards,
@@ -57,6 +59,7 @@ vi.mock('../../settings', () => ({
   setOfflineBoardEnabled: spies.setOfflineBoardEnabled,
 }));
 vi.mock('../../lib/analytics', () => ({ track: spies.track }));
+vi.mock('../download-request-telemetry', () => ({ recordDownloadRequests: spies.recordDownloadRequests }));
 vi.mock('../../lib/offline-engine', () => ({ isOfflineEngineEnabled: () => true }));
 vi.mock('../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => fixtures.connectivity,
@@ -90,6 +93,7 @@ beforeEach(() => {
   // before any screen renders. The contended launch has its own case below.
   setSchemaReady(true);
   spies.hasUsableInternetConnection.mockResolvedValue(false);
+  spies.getSetting.mockReturnValue(['kilter:1:10', 'tension:2:11']);
 });
 
 afterEach(() => {
@@ -165,6 +169,7 @@ describe('useBoardDownloads', () => {
   // aim people straight at this button.
   it('holds a download kicked before the schema is ready, then fires it once readiness lands', () => {
     setSchemaReady(false);
+    spies.getSetting.mockReturnValue([]);
     const board = makeBoard('garage', 'kilter', 1, 10);
     const { result } = renderHook(() => useBoardDownloads());
 
@@ -175,6 +180,11 @@ describe('useBoardDownloads', () => {
     expect(spies.setOfflineBoardEnabled).toHaveBeenCalledTimes(1);
     expect(spies.rememberOfflineBoards).toHaveBeenCalledWith([board]);
     expect(spies.triggerSync).not.toHaveBeenCalled();
+    expect(spies.recordDownloadRequests).toHaveBeenCalledWith(['kilter:1:10'], {
+      trigger: 'unknown',
+      source: 'manage',
+      replaceDisabled: true,
+    });
 
     act(() => setSchemaReady(true));
 
@@ -183,7 +193,7 @@ describe('useBoardDownloads', () => {
     // a board on and off again while the schema is unready gets a cycle that finds
     // nothing to do, not the download they cancelled.
     const enabledBoardsReader = spies.triggerSync.mock.calls[0]?.[3] as () => string[];
-    expect(enabledBoardsReader()).toEqual(['kilter:1:10', 'tension:2:11']);
+    expect(enabledBoardsReader()).toEqual([]);
   });
 
   it('does not kick a download on a readiness flip nobody asked for', () => {

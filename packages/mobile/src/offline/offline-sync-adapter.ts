@@ -79,6 +79,13 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { userIdFromJwt } from '../lib/jwt-user-id';
 import { takeDownloadTrigger } from '../settings';
+import {
+  downloadFunnelProperties,
+  getDownloadRequestContext,
+  observeDownloadScope,
+  recordDownloadCompleted,
+  recordDownloadStarted,
+} from './download-request-telemetry';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
 import { getDownloadActivityGeneration } from '../sync/download-activity-store';
@@ -303,6 +310,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   reason,
   aborted,
   transferCompleted,
+  downloadRequest,
 }) => {
   if (!isDownloadContextCurrent(downloadContext)) return;
   // The funnel's Failed leg (issue #4316). Sentry alone could never answer "what
@@ -324,6 +332,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   const downloadAbandoned = ABANDONED_REASONS.includes(reason);
   track(SHARED_EVENTS.OfflineBoardDownloadFailed, {
     ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
+    ...downloadFunnelProperties(scopeKey, downloadRequest),
     scopeKey,
     stage,
     attempt,
@@ -483,10 +492,13 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   downloadMs,
   importMs,
   phases,
+  downloadRequest,
 }) => {
   if (!isDownloadContextCurrent(downloadContext)) return;
+  recordDownloadCompleted(scopeKey, downloadRequest);
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
     ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
+    ...downloadFunnelProperties(scopeKey, downloadRequest),
     scopeKey,
     method,
     durationMs,
@@ -531,13 +543,16 @@ const reportScopeDownloadStart: ScopeDownloadStartReporter = ({
   pathIntent,
   artifactBytes,
   downloadContext,
+  downloadRequest,
 }) => {
   if (!isDownloadContextCurrent(downloadContext)) return;
   // Disable/re-enable does not purge the cached catalogue. An old queued pull
   // must not consume the replacement request's persisted attribution.
   if (downloadContext && getDownloadRequest(scopeKey)?.requestId !== downloadContext.requestId) return;
+  recordDownloadStarted(scopeKey, downloadRequest);
   track(SHARED_EVENTS.OfflineBoardDownloadStarted, {
     ...(downloadContext ? { requestId: downloadContext.requestId, attemptId: downloadContext.attemptId } : {}),
+    ...downloadFunnelProperties(scopeKey, downloadRequest),
     scopeKey,
     pathIntent,
     artifactBytes,
@@ -1072,6 +1087,8 @@ export function startSyncScheduler(
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: reportScopeDownloadStart,
+    getDownloadRequestContext,
+    onScopeDownloadObserved: observeDownloadScope,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
@@ -1111,6 +1128,8 @@ export function triggerSync(
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: reportScopeDownloadStart,
+    getDownloadRequestContext,
+    onScopeDownloadObserved: observeDownloadScope,
     onCoverageReset: reportCoverageReset,
     onCoverageEvaluated: reportCoverageEvaluated,
     onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
@@ -1146,6 +1165,8 @@ export async function pullSync(
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
     onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
     onScopeDownloadStart: options?.onScopeDownloadStart ?? reportScopeDownloadStart,
+    getDownloadRequestContext: options?.getDownloadRequestContext ?? getDownloadRequestContext,
+    onScopeDownloadObserved: options?.onScopeDownloadObserved ?? observeDownloadScope,
     onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
     onCoverageEvaluated: options?.onCoverageEvaluated ?? reportCoverageEvaluated,
     onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled ?? reportBootstrapRetryScheduled,

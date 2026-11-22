@@ -982,6 +982,76 @@ describe('bootstrapScopeFromSnapshot', () => {
 // ---------------------------------------------------------------------------
 
 describe('pullSync snapshot bootstrap', () => {
+  it('correlates a failed physical transfer and its failure with the first scope request', async () => {
+    const firstRequest = { requestId: 'first-request', batchId: 'first-batch' };
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), downloadThrows: true });
+    const onSnapshotBootstrapError = vi.fn();
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5', 'kilter:1:6'],
+      getDownloadRequestContext: (scopeKey) =>
+        scopeKey === 'kilter:1:5' ? firstRequest : { requestId: 'second-request', batchId: 'second-batch' },
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+    expect(source.downloadArtifact).toHaveBeenCalledOnce();
+    expect(source.downloadArtifact).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        downloadRequest: firstRequest,
+      }),
+    );
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:5',
+        downloadRequest: firstRequest,
+      }),
+    );
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopeKey: 'kilter:1:6',
+        downloadRequest: { requestId: 'second-request', batchId: 'second-batch' },
+      }),
+    );
+  });
+
+  it('correlates a separately downloaded grades artifact without duplicating the layout transfer', async () => {
+    const request = { requestId: 'grades-request', batchId: 'grades-batch' };
+    const grades: SnapshotGradesArtifact = {
+      key: 'grades',
+      url: 'https://example.test/grades.db',
+      bytes: 1024,
+      contentEncoding: 'identity',
+      builtAt: '2026-06-01T00:00:00.000Z',
+      schemaVersion: LATEST_SCHEMA_VERSION,
+      tables: {
+        board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 0 },
+      },
+    };
+    const filePath = join(workDir, 'correlated-layout.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5, 6] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = {
+      ...makeSnapshotSource({ manifest: makeManifest([makeEntry({ grades })]), fileForEntry: () => filePath }),
+      downloadGradesArtifact: vi.fn(async () => null),
+    };
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: ['kilter:1:5', 'kilter:1:6'],
+      getDownloadRequestContext: () => request,
+      snapshotSource: source,
+    });
+    expect(source.downloadGradesArtifact).toHaveBeenCalledOnce();
+    expect(source.downloadGradesArtifact).toHaveBeenCalledWith(
+      grades,
+      expect.objectContaining({ downloadRequest: request }),
+    );
+    expect(source.downloadArtifact).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['cleared cursors', null, true],
     ['cleared cursors and a retained lock cooldown', BASE_NOW + 60_000, true],

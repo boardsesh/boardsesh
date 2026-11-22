@@ -139,6 +139,8 @@ export type {
   ScopeDownloadCompleteReporter,
   ScopeDownloadStartInfo,
   ScopeDownloadStartReporter,
+  ScopeDownloadObservedInfo,
+  ScopeDownloadObservedReporter,
   ScopeDownloadPhaseBreakdown,
   CoverageResetInfo,
   CoverageResetReporter,
@@ -218,6 +220,7 @@ export type {
   SnapshotSource,
   SnapshotArtifactHandle,
   SnapshotDownloadOptions,
+  DownloadRequestCorrelation,
   SnapshotDownloadProgress,
   SnapshotBootstrapResult,
   SnapshotImportBatchProgress,
@@ -406,6 +409,16 @@ export type { SqliteHandleFailure } from './db/handle-errors';
 // runtime deps and never imports an analytics client — mobile binds it in
 // packages/mobile/src/offline/offline-usage-signal.ts.
 export { createOfflineUsageSignal } from './telemetry/offline-usage-signal';
+export { createDownloadRequestTracker } from './telemetry/download-request-tracker';
+export type {
+  DownloadRequestContext,
+  DownloadRequestEvent,
+  DownloadRequestLedger,
+  DownloadRequestOutcome,
+  DownloadRequestState,
+  DownloadRequestTracker,
+  DownloadRequestTrackerOptions,
+} from './telemetry/download-request-tracker';
 export type {
   OfflineConnectivityReason,
   OfflineReadLane,

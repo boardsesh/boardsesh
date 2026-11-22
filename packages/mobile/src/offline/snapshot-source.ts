@@ -27,6 +27,7 @@
 // failure landed as a Sentry `error`).
 
 import { Platform } from 'react-native';
+import { randomUUID } from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import {
   isBackgrounded,
@@ -496,6 +497,7 @@ async function downloadSnapshotFile(
   // Latched for this transfer, so a flag resolving mid-download cannot mislabel
   // the measurement it produces.
   const strategy = activeStrategy;
+  const transferId = randomUUID();
   const startedAt = Date.now();
   let firstByteMs: number | undefined;
   let backgroundedDuringTransfer = isBackgrounded();
@@ -512,6 +514,8 @@ async function downloadSnapshotFile(
   ): void => {
     reportArtifactTransfer({
       strategy,
+      transferId,
+      ...(options?.downloadRequest ? { downloadRequest: options.downloadRequest } : {}),
       artifact: artifact.kind,
       ...(artifact.boardType !== undefined ? { boardType: artifact.boardType } : {}),
       ...(artifact.layoutId !== undefined ? { layoutId: artifact.layoutId } : {}),

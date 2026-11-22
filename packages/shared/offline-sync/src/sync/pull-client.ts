@@ -51,6 +51,7 @@ import {
   type SnapshotArtifactHandle,
   type SnapshotBootstrapErrorReport,
   type SnapshotBootstrapErrorReporter,
+  type DownloadRequestCorrelation,
 } from './snapshot-bootstrap';
 import { classifySnapshotBootstrapFailure, type SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
 import { classifySnapshotTransferFailure } from './snapshot-transfer-failure';
@@ -368,6 +369,7 @@ export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
 export type ScopeDownloadCompleteInfo = {
   downloadContext?: ScopeDownloadContext;
   scopeKey: string;
+  downloadRequest?: DownloadRequestCorrelation;
   method: 'snapshot' | 'paged';
   /**
    * NOTE for path comparisons: a scope that was HEALED (an artifact imported
@@ -422,10 +424,19 @@ export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) =>
 export type ScopeDownloadStartInfo = {
   downloadContext?: ScopeDownloadContext;
   scopeKey: string;
+  downloadRequest?: DownloadRequestCorrelation;
   pathIntent: 'snapshot' | 'paged';
   artifactBytes: number | null;
 };
 export type ScopeDownloadStartReporter = (info: ScopeDownloadStartInfo) => void;
+
+/** Read-only observation of the durable completion marker, including cached scopes. */
+export type ScopeDownloadObservedInfo = {
+  scopeKey: string;
+  complete: boolean;
+  downloadRequest?: DownloadRequestCorrelation;
+};
+export type ScopeDownloadObservedReporter = (info: ScopeDownloadObservedInfo) => void;
 
 /**
  * Fired after one bootstrap scope reaches a coherent persisted decision (or is
@@ -648,6 +659,10 @@ export type SyncOptions = {
   /** Telemetry for comparing the snapshot vs paged download paths. See ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   onScopeDownloadStart?: ScopeDownloadStartReporter;
+  /** Captured synchronously before this request waits behind an earlier pull. */
+  getDownloadRequestContext?: (scopeKey: string) => DownloadRequestCorrelation | undefined;
+  /** Observational only: never adds a read or changes download marker semantics. */
+  onScopeDownloadObserved?: ScopeDownloadObservedReporter;
   /** Telemetry for a forced deletions-coverage resync. See CoverageResetInfo. */
   onCoverageReset?: CoverageResetReporter;
   /**
@@ -2074,6 +2089,7 @@ async function runBootstrapPhase(params: {
       .then(() =>
         source.downloadGradesArtifact!(artifact, {
           signal: record.controller.signal,
+          downloadRequest: options?.getDownloadRequestContext?.(scope.scopeKey),
           onProgress: ({ bytesWritten, totalBytes }) => {
             if (record.aborted) return;
             if (!isBackgrounded()) record.suspensionWindowOpen = false;
@@ -2766,6 +2782,7 @@ async function runBootstrapPhase(params: {
             cachedDownload.file =
               (await source.downloadArtifact(entry, {
                 signal: abortController.signal,
+                downloadRequest: options?.getDownloadRequestContext?.(scope.scopeKey),
                 onProgress: ({ bytesWritten, totalBytes }) => {
                   // A byte arrived while nothing is tearing us down: this
                   // transfer demonstrably survived the pocket, so a later
@@ -3508,6 +3525,47 @@ async function enforceDeletionsCoverage(
 // Keep each caller's cycle: joining an older pull could miss its newer publication.
 const pullTails = new WeakMap<OfflineDatabase, Promise<void>>();
 
+/**
+ * Correlation must belong to the enqueued request, not whichever account or enable
+ * is current after a FIFO wait. Clone scalar IDs before the first await. A broken
+ * telemetry probe/reporter is never allowed to change a valid pull's outcome.
+ */
+function captureDownloadRequestOptions(options: SyncOptions): SyncOptions {
+  const enabledBoards = options.enabledBoards?.slice();
+  const contexts = new Map<string, DownloadRequestCorrelation>();
+  for (const scopeKey of new Set(enabledBoards ?? [])) {
+    try {
+      const context = options.getDownloadRequestContext?.(scopeKey);
+      if (context) contexts.set(scopeKey, { requestId: context.requestId, batchId: context.batchId });
+    } catch {
+      // This request remains uncorrelated; do not borrow a later request's IDs.
+    }
+  }
+  const correlate = <Info extends { scopeKey: string }>(reporter: ((info: Info) => void) | undefined) =>
+    reporter
+      ? (info: Info): void => {
+          const downloadRequest = contexts.get(info.scopeKey);
+          try {
+            reporter(downloadRequest ? { ...info, downloadRequest: { ...downloadRequest } } : info);
+          } catch {
+            // Analytics and observations cannot turn a successful pull into a retry.
+          }
+        }
+      : undefined;
+  return {
+    ...options,
+    enabledBoards,
+    getDownloadRequestContext: (scopeKey) => {
+      const context = contexts.get(scopeKey);
+      return context ? { ...context } : undefined;
+    },
+    onScopeDownloadStart: correlate(options.onScopeDownloadStart),
+    onScopeDownloadComplete: correlate(options.onScopeDownloadComplete),
+    onSnapshotBootstrapError: correlate(options.onSnapshotBootstrapError),
+    onScopeDownloadObserved: correlate(options.onScopeDownloadObserved),
+  };
+}
+
 export function pullSync(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
@@ -3518,7 +3576,7 @@ export function pullSync(
   // adopt a later sign-in or re-download a scope removed during that wait.
   const purgeToken = capturePurgeToken();
   const signingOutAtEnqueue = isSigningOut();
-  const capturedOptions = options ? { ...options, enabledBoards: options.enabledBoards?.slice() } : undefined;
+  const capturedOptions = options ? captureDownloadRequestOptions(options) : undefined;
   const contexts = new Map<string, ScopeDownloadContext>();
   for (const scopeKey of options?.enabledBoards ?? []) {
     try {
@@ -3714,7 +3772,13 @@ async function performPullSync(
     const pendingDownloads = new Set<string>();
     const snapshotDownloads = new Set<string>();
     for (const scope of boardScopes) {
-      if (!(await isScopeDownloadComplete(db, scope.scopeKey))) {
+      const complete = await isScopeDownloadComplete(db, scope.scopeKey);
+      // A purge/account boundary may land while the marker read awaits SQLite.
+      // Guard the observation without changing the loop's existing work decisions.
+      if (complete && !isSigningOut() && !hasPurgeLanded(purgeToken) && !scopePurged(scope)) {
+        options?.onScopeDownloadObserved?.({ scopeKey: scope.scopeKey, complete });
+      }
+      if (!complete) {
         pendingDownloads.add(scope.scopeKey);
         if (await isBootstrapDone(db, scope.scopeKey)) snapshotDownloads.add(scope.scopeKey);
       } else {
@@ -3809,7 +3873,13 @@ async function performPullSync(
       // Refused: the board is being torn down, and the caller's own purge check
       // after this await takes it from here. A value an earlier, rolled-back
       // attempt captured is ignored with it.
-      if (stamped && stamp.startedAt !== undefined) scopeStartedAt.set(scopeKey, stamp.startedAt);
+      if (stamped && stamp.startedAt !== undefined) {
+        scopeStartedAt.set(scopeKey, stamp.startedAt);
+        // A re-enable after interrupted cancellation can retain the legacy
+        // once-ever Started marker. Observe this request when work actually
+        // touches its scope, independently of that older funnel marker.
+        if (scopeWritable(scopeKey)) options?.onScopeDownloadObserved?.({ scopeKey, complete: false });
+      }
     };
 
     // Per-scope phase breakdown for ScopeDownloadCompleteInfo.phases, accumulated

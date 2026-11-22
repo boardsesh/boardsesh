@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   syncEnabledBoards: [],
   offlineBoardsV1: [],
   offlineDownloadTriggers: {},
+  offlineDownloadRequestsV1: {},
   offlineDownloadAllTapPending: false,
   offlineUserStartedDownloads: [],
   offlineDownloadIndicatorHidden: false,

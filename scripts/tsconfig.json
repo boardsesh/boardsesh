@@ -23,6 +23,8 @@
     "lib/expo-web-preview-cloudflare.d.mts",
     "lib/expo-web-preview-controller.d.cts",
     "__tests__/expo-web-preview*.test.ts",
+    "offline-bulk-validation.ts",
+    "__tests__/offline-bulk-validation.test.ts",
     "check-homepage-budget.ts",
     "check-homepage-budget.test.ts",
     "duo-startup-diagnostics.ts",

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "synthetic",
+  "studyId": "7989-example-not-production-evidence",
+  "preregisteredAt": "2026-11-21T00:00:00Z",
+  "enrollmentStart": "2026-11-22T00:00:00Z",
+  "enrollmentEnd": "2026-11-29T00:00:00Z",
+  "observedThrough": "2026-11-21T00:00:00Z",
+  "releases": [],
+  "sourceFiltersVerified": false,
+  "consentDeliveryCoverageDocumented": false,
+  "queryEvidence": [],
+  "requests": [],
+  "devices": [],
+  "dependencies": [
+    { "issue": 7985, "disposition": "unresolved", "evidence": [] },
+    { "issue": 7986, "disposition": "unresolved", "evidence": [] },
+    { "issue": 7987, "disposition": "unresolved", "evidence": [] },
+    { "issue": 7988, "disposition": "unresolved", "evidence": [] },
+    { "issue": 6689, "disposition": "unresolved", "evidence": [] },
+    { "issue": 6707, "disposition": "unresolved", "evidence": [] },
+    { "issue": 4310, "disposition": "unresolved", "evidence": [] },
+    { "issue": 4394, "disposition": "unresolved", "evidence": [] }
+  ]
+}
