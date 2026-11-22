@@ -53,8 +53,12 @@ describe('canDeleteGymBoard', () => {
     expect(canDeleteGymBoard(board, { ...gym, myRole: 'admin' }, null)).toBe(false);
   });
 
-  it('denies gym management access to unlinked boards and boards at another gym', () => {
-    expect(canDeleteGymBoard({ ...board, gymUuid: null }, gym, OWNER)).toBe(false);
+  it('allows gym management when a listed board location redacts its gym link', () => {
+    expect(canDeleteGymBoard({ ...board, gymUuid: null }, gym, OWNER)).toBe(true);
+    expect(canDeleteGymBoard({ ...board, gymUuid: null }, { ...gym, myRole: 'admin' }, 'gym-admin')).toBe(true);
+  });
+
+  it('denies gym management access when a board is explicitly linked elsewhere', () => {
     expect(canDeleteGymBoard({ ...board, gymUuid: 'another-gym' }, gym, OWNER)).toBe(false);
   });
 });

@@ -18,14 +18,21 @@ export function canUnlinkBoard(board: Pick<UserBoard, 'ownerId'>, viewerUserId: 
   return !!viewerUserId && board.ownerId === viewerUserId;
 }
 
-/** Only call for boards the viewer may read, as returned by gymBoards. */
+/**
+ * Only call for readable boards returned by gymBoards, which scopes them to
+ * this gym. Location privacy may redact gymUuid even for its administrators;
+ * the backend checks the current, unprojected association before deletion.
+ */
 export function canDeleteGymBoard(
   board: Pick<UserBoard, 'ownerId' | 'gymUuid'>,
   gym: Pick<Gym, 'uuid' | 'ownerId' | 'myRole'>,
   viewerUserId: string | null,
 ): boolean {
   if (!viewerUserId) return false;
-  return board.ownerId === viewerUserId || (board.gymUuid === gym.uuid && canManageGymBoards(gym, viewerUserId));
+  return (
+    board.ownerId === viewerUserId ||
+    ((board.gymUuid == null || board.gymUuid === gym.uuid) && canManageGymBoards(gym, viewerUserId))
+  );
 }
 
 /**

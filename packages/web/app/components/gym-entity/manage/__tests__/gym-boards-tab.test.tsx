@@ -264,6 +264,23 @@ describe('GymBoardsTab — delete board', () => {
     expect(await screen.findByRole('button', { name: /^delete$/i })).toBeTruthy();
   });
 
+  it('offers Delete to gym admins when location privacy redacts a listed board gym link', async () => {
+    mockSessionUserId.current = 'gym-admin';
+    stubRequests({
+      gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', gymUuid: null, hideLocation: true }],
+      myBoards: [],
+    });
+    render(<GymBoardsTab gym={{ ...gym, isPublic: false }} onGymChange={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
+    mockExecute.mockResolvedValueOnce({ deleteBoard: true });
+    stubRequests({ gymBoards: [], myBoards: [] });
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+
+    await waitFor(() => expect(screen.queryByText('Garage Board')).toBeNull());
+    expect(mockExecute).toHaveBeenCalledExactlyOnceWith({ boardUuid: linkedBoard.uuid });
+  });
+
   it.each(['editor', null] as const)('hides Delete when gym role %s only grants editing', async (role) => {
     mockSessionUserId.current = 'gym-editor';
     stubRequests({ gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', canEdit: true }], myBoards: [] });

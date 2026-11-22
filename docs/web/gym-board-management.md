@@ -5,6 +5,8 @@ owner and the owner or admin of its current linked gym. Gym editors and
 community moderators do not gain deletion permission from those roles alone.
 Gym management never overrides a board's privacy: a non-owner must already
 have access to the board. The initial gym setup screen does not offer deletion.
+Location privacy may hide a readable board's gym link; gym admins can still
+delete it through the scoped board list. The backend checks the stored gym link.
 
 **Unlink** remains a separate, board-owner-only action. It removes the gym
 association while keeping the board available elsewhere. **Delete** names the

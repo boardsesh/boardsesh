@@ -5,7 +5,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { socialBoardMutations, socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
 import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
@@ -127,6 +127,25 @@ describe('deleteBoard authority', () => {
     await db.update(schema.userBoards).set({ gymId: null, isPublic: false }).where(eq(schema.userBoards.id, board.id));
     expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(BOARD_OWNER))).toBe(true);
     expect(previewTombstone).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin delete a visible gym board whose private location hides its gym UUID', async () => {
+    const [privateGym] = await db
+      .update(schema.gyms)
+      .set({ isPublic: false })
+      .where(eq(schema.gyms.id, gymId))
+      .returning({ uuid: schema.gyms.uuid });
+    await db.update(schema.userBoards).set({ hideLocation: true }).where(eq(schema.userBoards.id, board.id));
+
+    const gymBoards = await socialBoardQueries.gymBoards(null, { gymUuid: privateGym.uuid }, context(GYM_ADMIN));
+    expect(gymBoards.find((gymBoard) => gymBoard.uuid === board.uuid)).toMatchObject({
+      uuid: board.uuid,
+      isPublic: true,
+      gymUuid: null,
+    });
+
+    expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN))).toBe(true);
+    expect((await currentBoard()).deletedAt).toBeInstanceOf(Date);
   });
 
   it.each([GYM_OWNER, GYM_ADMIN])('denies %s after the linked gym is deleted', async (userId) => {
