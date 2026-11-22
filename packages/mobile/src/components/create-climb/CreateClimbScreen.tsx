@@ -123,9 +123,9 @@ export function CreateClimbScreen({
   const handleRemoveMissingHolds = useCallback(() => {
     // A remix can show a ghost for the same selection maintenance just removed.
     // One acknowledgement should clear both representations of that missing hold.
-    lostHolds.dismissMissingGhosts();
+    lostHolds.dismissMissingGhosts(controller.missingHoldIds);
     controller.removeMissingHolds();
-  }, [lostHolds, controller.removeMissingHolds]);
+  }, [lostHolds, controller.missingHoldIds, controller.removeMissingHolds]);
 
   // The hold heatmap over the whole board (the create board has no list filters
   // to follow), counting the role the active brush paints: the downloaded board

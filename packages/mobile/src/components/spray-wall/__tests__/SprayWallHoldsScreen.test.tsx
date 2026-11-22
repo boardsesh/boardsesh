@@ -36,8 +36,15 @@ type EditorProps = {
   onDirtyChange: (dirty: boolean) => void;
   onHandoverChange: (handingOver: boolean) => void;
   confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
-  onPersistenceReady: (persistence: { flush: () => Promise<void>; recoveryPending?: boolean } | null) => void;
+  onPersistenceReady: (
+    persistence: {
+      flush: () => Promise<void>;
+      recoveryPending?: boolean;
+      runCommit?: <Result>(operation: () => Promise<Result>) => Promise<Result>;
+    } | null,
+  ) => void;
   initialMode?: 'add';
+  hostPaused?: boolean;
   primaryLabel: string;
 };
 const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
@@ -191,7 +198,7 @@ describe('SprayWallHoldsScreen', () => {
     expect(guard.ask).not.toHaveBeenCalled();
   });
 
-  it('keeps editing if the local checkpoint fails', async () => {
+  it('offers confirmed leaving if the local checkpoint fails', async () => {
     const flush = vi.fn().mockRejectedValue(new Error('storage full'));
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
     await screen.findByTestId('editor');
@@ -201,7 +208,36 @@ describe('SprayWallHoldsScreen', () => {
     });
     await act(async () => tryRemove());
     expect(navigation.dispatch).not.toHaveBeenCalled();
-    expect(guard.ask).not.toHaveBeenCalled();
+    expect(guard.ask).toHaveBeenCalledTimes(1);
+    act(() => editorProps().onHandoverChange(true));
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    act(() => editorProps().onHandoverChange(false));
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('awaits the durable clear when Undo has made the editor clean', async () => {
+    let finishClear: (() => void) | undefined;
+    const flush = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        }),
+    );
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => {
+      editorProps().onPersistenceReady({ flush });
+      editorProps().onDirtyChange(true);
+    });
+    act(() => editorProps().onDirtyChange(false));
+    expect(guard.enabled).toBe(true);
+    act(tryRemove);
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    await act(async () => finishClear?.());
+    expect(navigation.dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('preserves coded backend guidance for a wall version limit', async () => {
@@ -250,6 +286,36 @@ describe('SprayWallHoldsScreen', () => {
     await screen.findByTestId('editor');
     await expect(editorProps().confirmHoldRemoval?.([4, 7])).resolves.toBe(false);
     expect(requests.askUsage).toHaveBeenCalledExactlyOnceWith('wall-1', [4, 7], expect.any(Function));
+  });
+
+  it('tracks host publication and its retry while keeping the same paused editor mounted', async () => {
+    let finishPublish: (() => void) | undefined;
+    requests.publish.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPublish = resolve;
+        }),
+    );
+    const commits = vi.fn();
+    const runCommit = async <Result,>(operation: () => Promise<Result>) => {
+      commits();
+      return operation();
+    };
+    const rendered = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    const original = screen.getByTestId('editor');
+    act(() => editorProps().onPersistenceReady({ flush: async () => undefined, runCommit }));
+    fireEvent.click(original);
+    await screen.findByText('sprayMaintenance.publishFailed');
+    expect(screen.getByTestId('editor')).toBe(original);
+    expect(editorProps().hostPaused).toBe(true);
+    fireEvent.click(screen.getByText('sprayMaintenance.retry'));
+    await waitFor(() => expect(requests.publish).toHaveBeenCalledTimes(2));
+    expect(commits).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('editor')).toBe(original);
+    rendered.unmount();
+    await act(async () => finishPublish?.());
+    expect(router.back).not.toHaveBeenCalled();
   });
 
   it('publishes after save, awaits a renderable published wall, then returns', async () => {
@@ -305,7 +371,7 @@ describe('SprayWallHoldsScreen', () => {
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
     fireEvent.click(await screen.findByTestId('editor'));
     await screen.findByText('sprayMaintenance.publishFailed');
-    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(editorProps().hostPaused).toBe(true);
     fireEvent.click(screen.getByText('sprayMaintenance.retry'));
     await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
     expect(requests.publish).toHaveBeenCalledTimes(2);

@@ -14,6 +14,10 @@ import type { SprayEditorPresent } from './spray-hold-editor-reducer';
 export type SprayHoldDraftStatus = 'loading' | 'idle' | 'saving' | 'saved' | 'failed' | 'changed';
 export type SprayHoldPersistence = {
   flush: () => Promise<void>;
+  /** Internal session teardown: drain once, then refuse late writes. */
+  retire?: () => Promise<void>;
+  /** Retain ownership while the host publishes the saved draft. */
+  runCommit?: <Result>(operation: () => Promise<Result>) => Promise<Result>;
   /** Editing is disabled; leaving can keep the untouched recovery record as-is. */
   recoveryPending?: boolean;
 };
@@ -28,14 +32,28 @@ type Args = {
   onRestore: (present: SprayEditorPresent) => void;
 };
 
+function samePresent(first: SprayEditorPresent | null, second: SprayEditorPresent): boolean {
+  return (
+    first === second ||
+    (first !== null &&
+      first.holds === second.holds &&
+      first.removedIds === second.removedIds &&
+      first.selectedId === second.selectedId &&
+      first.nextLocalId === second.nextLocalId)
+  );
+}
+
 /** Local recovery never writes the server; the explicit Publish/Next remains its only writer. */
 export function useSprayHoldAutosave({ identity, baseline, present, dirty, paused, onRestore }: Args) {
   const key = identity ? sprayHoldDraftKey(identity) : null;
   const [status, setStatus] = useState<SprayHoldDraftStatus>(identity ? 'loading' : 'idle');
+  const [commitActive, setCommitActive] = useState(false);
   const [ready, setReady] = useState(!identity);
   const [retryEpoch, setRetryEpoch] = useState(0);
   const [restoreEpoch, setRestoreEpoch] = useState(0);
   const mountedRef = useRef(true);
+  const retiredRef = useRef(false);
+  const retiringRef = useRef(false);
   const loadedKeyRef = useRef<string | null>(null);
   const baselineRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,6 +63,8 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   const acknowledgedRef = useRef(false);
   const savedPresentRef = useRef<SprayEditorPresent | null>(null);
   const hasRecoveryRef = useRef(false);
+  const commitRef = useRef<Promise<void> | null>(null);
+  const retiringCommitRef = useRef(false);
 
   const publishStatus = useCallback((next: SprayHoldDraftStatus) => {
     if (mountedRef.current) setStatus(next);
@@ -107,8 +127,13 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   const flushOnce = useCallback(
     async function persistLatest() {
       cancelTimer();
+      if (commitRef.current || retiringCommitRef.current) {
+        await commitRef.current;
+        await operationsRef.current;
+        return;
+      }
       const current = latestRef.current;
-      if (!current.identity) return;
+      if (!current.identity || retiredRef.current) return;
       const currentKey = sprayHoldDraftKey(current.identity);
       if (loadedKeyRef.current !== currentKey || baselineRef.current === null) {
         throw new Error('Hold recovery has not loaded');
@@ -120,7 +145,7 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
           savedPresentRef.current = null;
           publishStatus('idle');
           if (
-            latestRef.current.present !== current.present &&
+            !samePresent(latestRef.current.present, current.present) &&
             latestRef.current.identity &&
             sprayHoldDraftKey(latestRef.current.identity) === currentKey
           )
@@ -131,10 +156,16 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
         }
         return;
       }
-      if (acknowledgedRef.current || current.paused || !current.dirty || savedPresentRef.current === current.present) {
+      if (
+        acknowledgedRef.current ||
+        current.paused ||
+        !current.dirty ||
+        samePresent(savedPresentRef.current, current.present)
+      ) {
         await operationsRef.current;
+        if (!current.paused) publishStatus(samePresent(savedPresentRef.current, current.present) ? 'saved' : 'idle');
         if (
-          latestRef.current.present !== current.present &&
+          !samePresent(latestRef.current.present, current.present) &&
           latestRef.current.identity &&
           sprayHoldDraftKey(latestRef.current.identity) === currentKey
         )
@@ -152,9 +183,9 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
       try {
         await enqueue(() => saveSprayHoldDraft(snapshot));
         savedPresentRef.current = snapshot.present;
-        publishStatus(latestRef.current.present === snapshot.present ? 'saved' : 'saving');
+        publishStatus(samePresent(latestRef.current.present, snapshot.present) ? 'saved' : 'saving');
         if (
-          latestRef.current.present !== snapshot.present &&
+          !samePresent(latestRef.current.present, snapshot.present) &&
           latestRef.current.identity &&
           sprayHoldDraftKey(latestRef.current.identity) === currentKey
         )
@@ -179,8 +210,53 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
     return operation;
   }, [flushOnce]);
 
+  const runCommit = useCallback(<Result>(operation: () => Promise<Result>): Promise<Result> => {
+    if (retiringRef.current) return Promise.reject(new Error('Hold editor session is closing'));
+    if (commitRef.current) return Promise.reject(new Error('A hold commit is already running'));
+    if (mountedRef.current) setCommitActive(true);
+    const result = Promise.resolve().then(operation);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    commitRef.current = settled;
+    void settled.then(() => {
+      if (commitRef.current === settled) {
+        commitRef.current = null;
+        if (mountedRef.current) setCommitActive(false);
+      }
+    });
+    return result;
+  }, []);
+
+  const retirementRef = useRef<Promise<void> | null>(null);
+  const retire = useCallback(() => {
+    if (retirementRef.current) return retirementRef.current;
+    retiringRef.current = true;
+    retiringCommitRef.current = commitRef.current !== null;
+    const retirement = (async () => {
+      try {
+        const commit = commitRef.current;
+        if (commit) await commit;
+        // Publish flushed before starting its request. On unmount React cannot
+        // reflect an acknowledged removal into latestRef; keep its checkpoint.
+        else await flush();
+      } finally {
+        try {
+          await operationsRef.current;
+        } finally {
+          retiredRef.current = true;
+          cancelTimer();
+        }
+      }
+    })();
+    retirementRef.current = retirement;
+    return retirement;
+  }, [flush, cancelTimer]);
+
   useEffect(() => {
     if (!ready || !identity || paused || (!dirty && !hasRecoveryRef.current) || acknowledgedRef.current) return;
+    if (dirty && samePresent(savedPresentRef.current, present)) return;
     publishStatus('saving');
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
@@ -211,6 +287,7 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   const checkpointRemoved = useCallback(
     async (removedIds: readonly number[]) => {
       cancelTimer();
+      if (retiringRef.current && !commitRef.current) throw new Error('Hold editor session is closing');
       const current = latestRef.current;
       if (!current.identity || baselineRef.current === null) return;
       const removed = new Set(removedIds);
@@ -245,6 +322,7 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   );
 
   const acknowledge = useCallback(async () => {
+    if (retiringRef.current && !commitRef.current) return;
     cancelTimer();
     const current = latestRef.current;
     if (!current.identity) return;
@@ -262,6 +340,7 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   }, [cancelTimer, enqueue, publishStatus]);
 
   const discardRecovery = useCallback(async () => {
+    if (retiringRef.current) throw new Error('Hold editor session is closing');
     cancelTimer();
     const current = latestRef.current;
     if (!current.identity) return;
@@ -275,9 +354,8 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   useEffect(() => {
     if (!dirty) {
       acknowledgedRef.current = false;
-      if (baseline !== null) baselineRef.current = baseline;
     }
-  }, [dirty, baseline]);
+  }, [dirty]);
 
   const retry = useCallback(() => {
     if (loadedKeyRef.current !== key) setRetryEpoch((epoch) => epoch + 1);
@@ -287,7 +365,10 @@ export function useSprayHoldAutosave({ identity, baseline, present, dirty, pause
   return {
     ready: !identity || (ready && loadedKeyRef.current === key),
     status,
+    committing: commitActive,
     flush,
+    retire,
+    runCommit,
     acknowledge,
     checkpointRemoved,
     discardRecovery,

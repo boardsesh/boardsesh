@@ -242,7 +242,7 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     // Nothing is at risk: the row is in Open drafts. Only the new-climb slot goes,
     // never an `edit:` slot.
     expect(result.current.pendingNewClimb).toBe(false);
-    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key', null);
     expect(result.current.name).toBe('');
   });
 
@@ -314,7 +314,7 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     expect(result.current.pendingNewClimb).toBe(false);
     expect(result.current.name).toBe('');
     expect(createClimb.resetHolds).toHaveBeenCalledTimes(1);
-    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key', null);
   });
 
   it('waits for the slot to be retired before resetting the editor', async () => {

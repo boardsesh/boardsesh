@@ -1199,7 +1199,12 @@
       "changed": "Queste modifiche salvate appartengono a una versione precedente della bozza. La tua copia locale è conservata.",
       "addLater": "Puoi aggiungere le prese mancanti più tardi, mentre tracci un blocco.",
       "useSaved": "Usa le prese salvate",
-      "discardBody": "Le modifiche recuperate verranno scartate. Le prese già salvate su questa Spraywall resteranno disponibili."
+      "discardBody": "Le modifiche recuperate verranno scartate. Le prese già salvate su questa Spraywall resteranno disponibili.",
+      "openElsewhere": "Questa bozza è aperta in un altro editor. Chiudila lì per continuare qui.",
+      "lockUnavailable": "Questo browser non può salvare le modifiche alle prese in modo sicuro. Prova un altro browser.",
+      "leaveTitle": "Uscire prima di salvare?",
+      "leaveBody": "Le ultime modifiche alle prese potrebbero non essere salvate. L’ultima bozza salvata resterà su questo dispositivo.",
+      "leaveAnyway": "Esci comunque"
     }
   },
   "sprayWizard": {

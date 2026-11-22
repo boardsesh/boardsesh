@@ -109,6 +109,65 @@ afterEach(() => {
 });
 
 describe('draft render ownership', () => {
+  it('requires fresh same-version holds before trusting a primed cache on reentry', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    await prefetchSprayWallDraft(client, LAYOUT_ID, 'wall-1', 3, '30');
+    let finishRead: ((response: { sprayWallRenderData: ReturnType<typeof payload> }) => void) | undefined;
+    requestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30', { requireFreshEntry: true }), {
+      wrapper,
+    });
+    expect(result.current.wall).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+    const fresh = payload();
+    fresh.holds.push({ id: 8, cx: 40, cy: 50, r: 6 });
+    await act(async () => finishRead?.({ sprayWallRenderData: fresh }));
+    await waitFor(() => expect(result.current.wall?.holds).toHaveLength(2));
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a failed fresh-entry read blocked even when cached geometry is available', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    await prefetchSprayWallDraft(client, LAYOUT_ID, 'wall-1', 3, '30');
+    requestMock.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30', { requireFreshEntry: true }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.isStalled).toBe(true));
+    expect(result.current.wall).toBeNull();
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+  });
+
+  it('keeps verified geometry during a later photo-refresh failure', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30', { requireFreshEntry: true }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    requestMock.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => result.current.refreshPhotoUrls());
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    expect(result.current.wall?.versionId).toBe(30);
+    expect(result.current.isStalled).toBe(false);
+  });
+
+  it('retains cached look previews without requiring a hold-recovery read', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
+    await prefetchSprayWallDraft(client, LAYOUT_ID, 'wall-1', 3, '30');
+    requestMock.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    expect(result.current.wall?.versionId).toBe(30);
+    expect(result.current.isLoading).toBe(false);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
   it('maps a reset locally without replacing published photo or holds', async () => {
     registerPublished();
     const published = getSprayWall(LAYOUT_ID);

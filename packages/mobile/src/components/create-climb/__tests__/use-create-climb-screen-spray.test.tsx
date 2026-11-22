@@ -44,6 +44,7 @@ const createClimb = vi.hoisted(() => ({
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
   loadFrames: vi.fn(),
+  restoreWorkingFrames: vi.fn(),
   duplicateFrame: vi.fn(),
   deleteFrame: vi.fn(),
   goToFrame: vi.fn(),
@@ -493,6 +494,7 @@ describe('the wall owns the angle and the identity', () => {
     expect(draftStore.saveDraft).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ pendingClimbUuid }),
+      null,
     );
     expect(draftStore.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
       boardActions.saveClimb.mock.invocationCallOrder[0],

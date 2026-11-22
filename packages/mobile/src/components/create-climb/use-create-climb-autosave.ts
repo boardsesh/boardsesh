@@ -15,8 +15,16 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { clearDraft, saveDraft, type CreateClimbDraft } from '../../lib/create-climb-draft-store';
+import { getCurrentUserStorageOwner, type UserStorageOwner } from '../../lib/user-storage-owner';
 
 export const AUTOSAVE_DEBOUNCE_MS = 500;
+
+function assertCurrentDraftOwner(owner: UserStorageOwner | null) {
+  const current = getCurrentUserStorageOwner();
+  if (current?.userId !== owner?.userId || current?.authSessionId !== owner?.authSessionId) {
+    throw new Error('The climb draft login changed');
+  }
+}
 
 type PendingAutosaveOperation = { type: 'none' } | { type: 'save'; key: string } | { type: 'clear'; key: string };
 
@@ -71,29 +79,40 @@ export function useCreateClimbAutosave({
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  const enqueueStorageOperation = useCallback((operation: () => Promise<void>): Promise<void> => {
-    const previousOperation = storageOperationRef.current;
-    const nextOperation = previousOperation ? previousOperation.catch(() => undefined).then(operation) : operation();
-    storageOperationRef.current = nextOperation;
-    void nextOperation.then(
-      () => {
-        if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
-      },
-      () => {
-        if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
-      },
-    );
-    return nextOperation;
-  }, []);
+  // Capture the login with the editor callback. A queued save can run after a
+  // sign-out, and a handoff can call persist again after another edit.
+  const expectedOwner = getCurrentUserStorageOwner();
+  const enqueueStorageOperation = useCallback(
+    (operation: (owner: UserStorageOwner | null) => Promise<void>): Promise<void> => {
+      const run = async () => {
+        assertCurrentDraftOwner(expectedOwner);
+        await operation(expectedOwner);
+        assertCurrentDraftOwner(expectedOwner);
+      };
+      const previousOperation = storageOperationRef.current;
+      const nextOperation = previousOperation ? previousOperation.catch(() => undefined).then(run) : run();
+      storageOperationRef.current = nextOperation;
+      void nextOperation.then(
+        () => {
+          if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
+        },
+        () => {
+          if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
+        },
+      );
+      return nextOperation;
+    },
+    [expectedOwner],
+  );
 
   const executePendingOperation = useCallback(() => {
     const pendingOperation = pendingOperationRef.current;
     pendingOperationRef.current = { type: 'none' };
     if (pendingOperation.type === 'save') {
       const pendingDraft = draftRef.current;
-      void enqueueStorageOperation(() => saveDraft(pendingOperation.key, pendingDraft));
+      void enqueueStorageOperation((owner) => saveDraft(pendingOperation.key, pendingDraft, owner));
     } else if (pendingOperation.type === 'clear') {
-      void enqueueStorageOperation(() => clearDraft(pendingOperation.key));
+      void enqueueStorageOperation((owner) => clearDraft(pendingOperation.key, owner));
     }
   }, [enqueueStorageOperation]);
 
@@ -135,29 +154,31 @@ export function useCreateClimbAutosave({
   // empty. Clear immediately and retire the pending operation before the caller
   // navigates/unmounts, so the cleanup flush cannot recreate the slot from the
   // last non-empty render.
-  const discard = useCallback(() => {
+  const discard = useCallback(async () => {
+    assertCurrentDraftOwner(expectedOwner);
     cancelPending();
-    const clearOperation = enqueueStorageOperation(() => clearDraft(slotKey));
+    const clearOperation = enqueueStorageOperation((owner) => clearDraft(slotKey, owner));
     return clearOperation.catch(async (error: unknown) => {
       // A failed deliberate clear must not turn off the durability guarantee.
       // Re-persist the latest working copy before reporting failure so cancelling
       // the confirmation and then dismissing cannot lose a never-written edit.
       if (hasContent) {
-        await enqueueStorageOperation(() => saveDraft(slotKey, draftRef.current));
+        await enqueueStorageOperation((owner) => saveDraft(slotKey, draftRef.current, owner));
       }
       throw error;
     });
-  }, [cancelPending, enqueueStorageOperation, hasContent, slotKey]);
+  }, [cancelPending, enqueueStorageOperation, expectedOwner, hasContent, slotKey]);
 
   // Explicit Save must be ordered after any autosave already writing, then win
   // with the server-row link and saved payload baseline. Cancelling a timer alone
   // cannot stop a storage write that has already started.
   const persist = useCallback(
-    (nextDraft: CreateClimbDraft) => {
+    async (nextDraft: CreateClimbDraft) => {
+      assertCurrentDraftOwner(expectedOwner);
       cancelPending();
-      return enqueueStorageOperation(() => saveDraft(slotKey, nextDraft));
+      return enqueueStorageOperation((owner) => saveDraft(slotKey, nextDraft, owner));
     },
-    [cancelPending, enqueueStorageOperation, slotKey],
+    [cancelPending, enqueueStorageOperation, expectedOwner, slotKey],
   );
 
   useEffect(() => {
