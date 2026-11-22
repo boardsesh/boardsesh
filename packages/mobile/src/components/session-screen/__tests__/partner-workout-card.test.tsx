@@ -30,6 +30,7 @@ const state = vi.hoisted(() => ({
   pendingStart: false,
   arm: vi.fn((_sessionId: string, _run: WorkoutRun, _nowMs: number) => true),
   preview: null as PartnerWorkoutPreview | null,
+  previewQueryKey: [] as unknown[],
 }));
 vi.mock('expo-crypto', () => {
   let counter = 0;
@@ -41,9 +42,10 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12, 4: 16 } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({}),
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data: queryKey[0] === 'partnerWorkoutWinningPlan' ? state.active : (state.preview ?? EMPTY_PREVIEW),
-  }),
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+    if (queryKey[0] === 'partnerWorkoutPreview') state.previewQueryKey = queryKey;
+    return { data: queryKey[0] === 'partnerWorkoutWinningPlan' ? state.active : (state.preview ?? EMPTY_PREVIEW) };
+  },
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useAppWorkoutsFlag: () => true }));
 vi.mock('../../../providers/queue-provider', () => ({
@@ -81,7 +83,7 @@ vi.mock('../../../lib/workout-run-store', () => ({
 vi.mock('../../../lib/pending-workout-store', () => ({
   usePendingWorkout: () => (state.active ? null : (state.pending ?? workout)),
   useActivePartnerWorkout: () => state.active,
-  getPendingWorkout: () => workout,
+  getPendingWorkout: () => state.pending ?? workout,
   activatePartnerWorkout: state.activate,
   clearPendingWorkout: vi.fn(),
   setPendingWorkout: state.setPending,
@@ -98,6 +100,26 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: onPress, disabled }, title),
+}));
+vi.mock('../../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    value,
+    onValueChange,
+    disabled,
+  }: {
+    label: string;
+    value: boolean;
+    onValueChange: (next: boolean) => void;
+    disabled?: boolean;
+  }) =>
+    createElement('input', {
+      type: 'checkbox',
+      'aria-label': label,
+      checked: value,
+      disabled,
+      onChange: () => onValueChange(!value),
+    }),
 }));
 
 import { PartnerWorkoutCard } from '../PartnerWorkoutCard';
@@ -138,6 +160,10 @@ beforeEach(() => {
   state.queue = [];
   state.pendingStart = false;
   state.preview = null;
+  state.previewQueryKey = [];
+  state.setPending.mockImplementation((pending: AppWorkout) => {
+    state.pending = pending;
+  });
   state.request.mockImplementation(async () => ({}));
   state.hydrate.mockResolvedValue('clean');
 });
@@ -408,7 +434,7 @@ describe('adding a partner workout to a running session', () => {
 });
 
 describe('partner block rest line', () => {
-  it("shows no rest for a block whose rest of 0 runs on the climber's own settings", () => {
+  it('shows zero rests and offers the advance setting only for paced native blocks', () => {
     state.pending = {
       ...workout,
       spec: {
@@ -422,7 +448,95 @@ describe('partner block rest line', () => {
       },
     };
     const view = render(createElement(PartnerWorkoutCard));
-    // The grade focus block's 90 s, and the freeform limit block's own words; no line for the volume block.
-    expect(view.getAllByText('partnerWorkouts.rest')).toHaveLength(2);
+    expect(view.getAllByText('partnerWorkouts.rest')).toHaveLength(3);
+    expect(view.getAllByRole('checkbox')).toHaveLength(2);
+  });
+});
+
+describe('partner advance preference', () => {
+  beforeEach(() => {
+    state.pending = {
+      ...workout,
+      spec: {
+        ...workout.spec,
+        blocks: [
+          { type: 'volume', climbCount: 1, restSeconds: 60, targetGrade: { scale: 'font', value: '6B' } },
+          {
+            type: 'gradeFocus',
+            climbCount: 1,
+            restSeconds: 60,
+            advanceOn: 'send',
+            targetGrade: { scale: 'font', value: '6B' },
+          },
+        ],
+      },
+    };
+  });
+
+  it('defaults to advancing after falls, respects partner settings and updates only the chosen block', () => {
+    const view = render(createElement(PartnerWorkoutCard));
+    const previousKey = state.previewQueryKey;
+    const [first, second] = view.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(first.checked).toBe(true);
+    expect(second.checked).toBe(false);
+    fireEvent.click(first);
+    expect(state.pending?.spec.blocks).toEqual([
+      expect.objectContaining({ type: 'volume', advanceOn: 'send' }),
+      expect.objectContaining({ type: 'gradeFocus', advanceOn: 'send' }),
+    ]);
+    view.rerender(createElement(PartnerWorkoutCard));
+    expect(state.previewQueryKey).not.toEqual(previousKey);
+    expect((view.getAllByRole('checkbox')[0] as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(view.getAllByRole('checkbox')[1]);
+    expect(state.pending?.spec.blocks[1]).toMatchObject({ advanceOn: 'tick' });
+  });
+
+  it.each([false, true])(
+    'persists the selected pacing when adding to an existing session: %s',
+    async (existingSession) => {
+      const view = render(createElement(PartnerWorkoutCard, { startConfig: { isPublic: false } }));
+      fireEvent.click(view.getAllByRole('checkbox')[0]);
+      const selected = state.pending!;
+      state.preview = await buildPartnerWorkoutPreview({
+        spec: selected.spec,
+        partnerPlan: buildPartnerWorkoutPlan(selected.spec, getGradesForBoard('kilter'), selected.id),
+        grades: getGradesForBoard('kilter'),
+        ctx: { board: { boardType: 'kilter' } as UserBoard, isAuthenticated: true },
+        fetchPool: async () => ({
+          climbs: ['one', 'two', 'three'].map((uuid) => ({ uuid, name: uuid, angle: 40 }) as Climb),
+          topUpTiers: new Map(),
+          exhausted: true,
+        }),
+      });
+      state.sessionId = existingSession ? 'existing-session' : null;
+      view.rerender(createElement(PartnerWorkoutCard, { startConfig: { isPublic: false } }));
+      fireEvent.click(view.getByText(existingSession ? 'partnerWorkouts.add' : 'partnerWorkouts.start'));
+      await waitFor(() => expect(state.activate).toHaveBeenCalled());
+      const stage = expect.objectContaining({
+        pacing: expect.objectContaining({ advanceOn: 'send', restSeconds: 60 }),
+      });
+      if (existingSession)
+        expect(state.setRun).toHaveBeenCalledWith(
+          'existing-session',
+          expect.objectContaining({ stages: [stage, stage] }),
+          expect.anything(),
+        );
+      else
+        expect(state.start).toHaveBeenCalledWith(
+          expect.objectContaining({
+            appWorkoutSeed: expect.objectContaining({
+              sessionPlan: expect.objectContaining({ stages: [stage, stage] }),
+            }),
+          }),
+        );
+    },
+  );
+
+  it('does not offer changes once the workout has started', () => {
+    state.active = { ...state.pending!, status: 'started', sessionId: 'existing-session' };
+    state.pending = null;
+    state.sessionId = 'existing-session';
+    const view = render(createElement(PartnerWorkoutCard));
+    expect(view.queryByRole('checkbox')).toBeNull();
   });
 });

@@ -279,17 +279,20 @@ V0 to V3 warm-up of four reads V0, V1, V2, V3. A Font target is one grade. A tar
 clamps to the nearest grade and the card says so.
 
 A partner `restSeconds` on `volume`, `pyramid`, `ladder` or `gradeFocus` paces
-that block's stage (`partnerBlockPacing` in `lib/partner-workout-preview.ts`):
-`{ mode: 'afterTick', restSeconds, advanceOn: 'send' }`, the rule the app's own
-limit bouldering runs on. Every tick starts the rest; `restAdvanceAllowed`
-moves the wall only when the tick on the current climb was a flash or a send,
-so a fall rests and keeps the climb up. A rest of 0 (or none) gives the stage
-no pacing, so the climber's own rest-timer settings apply rather than the 10 s
-changeover after every tick an `afterTick` stage would run. The crew clock
-needs nothing extra: the phone publishes `advanceOn: 'send'` and the server's
-`hasQualifyingTick` already holds a fall (workoutbash1 D4). A run stored by an
-older bundle keeps the `tick` rule it was started with. The card shows no rest
-line for a paced block's 0.
+that block's stage (`lib/partner-workout-preview.ts`). Its optional
+`advanceOn: 'tick' | 'send'` chooses whether a fall moves on after the rest or
+keeps the current climb. Omission preserves `tick`, so existing partner plans
+continue advancing after any logged climb. Every tick starts the rest;
+`restAdvanceAllowed` gates only advancing. A rest of 0 is an immediate rest,
+and an omitted rest leaves the stage unpaced with the climber's own settings.
+The partner card offers this choice per block before Start or Add to this
+session. The chosen rule is captured in the run and committed session plan;
+the original partner request remains the backend's workout specification.
+Saved runs retain their rule after restart, including runs started by older
+bundles. The crew clock already supports both rules through the phone's
+published `advanceOn` and the server's `hasQualifyingTick`. Older app versions
+ignore the new input field and still build `tick` stages. Freeform
+`limitBouldering` and repeated-round `fourByFour` pacing stay unchanged.
 
 The card fills the blocks through the app's own preview pipeline
 (`buildPreview` in `workout-preview-pool.ts`, called from

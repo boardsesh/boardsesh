@@ -967,7 +967,18 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. The block's advanceOn setting controls when the next climb comes up after the rest. 0 means no rest; omitted means the climber's own rest-timer settings apply.",
+                "example": 120
+              },
+              "advanceOn": {
+                "type": "string",
+                "enum": [
+                  "tick",
+                  "send"
+                ],
+                "description": "When restSeconds is provided, tick advances after any logged climb, including a fall; send advances only after a flash or send. Omitted means tick. The climber can change this setting before starting the workout. Older app versions ignore this field and advance after any logged climb.",
+                "example": "send"
               }
             },
             "required": [
@@ -1113,7 +1124,18 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. The block's advanceOn setting controls when the next climb comes up after the rest. 0 means no rest; omitted means the climber's own rest-timer settings apply.",
+                "example": 120
+              },
+              "advanceOn": {
+                "type": "string",
+                "enum": [
+                  "tick",
+                  "send"
+                ],
+                "description": "When restSeconds is provided, tick advances after any logged climb, including a fall; send advances only after a flash or send. Omitted means tick. The climber can change this setting before starting the workout. Older app versions ignore this field and advance after any logged climb.",
+                "example": "send"
               }
             },
             "required": [
@@ -1259,7 +1281,18 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. The block's advanceOn setting controls when the next climb comes up after the rest. 0 means no rest; omitted means the climber's own rest-timer settings apply.",
+                "example": 120
+              },
+              "advanceOn": {
+                "type": "string",
+                "enum": [
+                  "tick",
+                  "send"
+                ],
+                "description": "When restSeconds is provided, tick advances after any logged climb, including a fall; send advances only after a flash or send. Omitted means tick. The climber can change this setting before starting the workout. Older app versions ignore this field and advance after any logged climb.",
+                "example": "send"
               }
             },
             "required": [
@@ -1368,7 +1401,18 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. The block's advanceOn setting controls when the next climb comes up after the rest. 0 means no rest; omitted means the climber's own rest-timer settings apply.",
+                "example": 120
+              },
+              "advanceOn": {
+                "type": "string",
+                "enum": [
+                  "tick",
+                  "send"
+                ],
+                "description": "When restSeconds is provided, tick advances after any logged climb, including a fall; send advances only after a flash or send. Omitted means tick. The climber can change this setting before starting the workout. Older app versions ignore this field and advance after any logged climb.",
+                "example": "send"
               }
             },
             "required": [

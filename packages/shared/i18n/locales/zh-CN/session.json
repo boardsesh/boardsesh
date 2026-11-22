@@ -1213,6 +1213,8 @@
     "climbCount": "计划线路：{{count}}",
     "rounds": "轮数：{{count}} · 线路间休息：{{climbRest}} 秒 · 轮间休息：{{roundRest}} 秒",
     "rest": "每条线路后休息：{{seconds}} 秒",
+    "advanceAfterFalls": "脱落后切换下一条线路",
+    "advanceAfterFallsHint": "开启：每次记录尝试后切换下一条线路。关闭：完攀后才切换。",
     "queueFull": "队列已满，请腾出空间后再添加此训练。",
     "syncError": "训练已开始，但计划未能保存。请保持 Boardsesh 打开，重新尝试同步。",
     "targetGrade": "目标难度：{{grade}}",

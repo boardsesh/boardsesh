@@ -758,15 +758,23 @@ unknown fields are ignored, and a block the app cannot run yet is still shown
 | `restBetweenRoundsSeconds` | int, 0 to 3600             | `fourByFour`                                   |
 | `intervalSeconds`          | int, 15 to 3600            | `onTheMinute` (default 60)                     |
 | `restSeconds`              | int, 0 to 3600             | `limitBouldering`, `volume`, `pyramid`, `ladder`, `gradeFocus` (rest after each climb, see below) |
+| `advanceOn`                | `tick` or `send`           | `volume`, `pyramid`, `ladder`, `gradeFocus`; optional, defaults to `tick` when `restSeconds` is provided |
 | `durationSeconds`          | int, 1 to 86400            | `freeClimbing`, display only                   |
 
 `restSeconds` on `volume`, `pyramid`, `ladder` and `gradeFocus` paces the
-climber's rest timer for that block. Every logged climb starts the rest. A
-fall keeps the climb on the wall; once the rest after a flash or a send runs
-out, the next climb comes up on its own. `0`, or leaving the field out, means
-the block has no rest of its own and the climber's own rest-timer settings
-apply. Until 2026-11-18 any logged climb, a fall included, moved the wall on,
-and `0` moved it on 10 seconds after every logged climb.
+climber's rest timer for that block. Every logged climb starts the rest.
+`advanceOn: "tick"` advances after any logged climb, including a fall, once
+the rest ends. `advanceOn: "send"` keeps the climb up after a fall and advances
+only after the rest following a flash or send. Leaving `advanceOn` out keeps
+the existing `tick` behavior. The climber can change this choice on each block
+before starting or adding the workout to a session.
+
+`restSeconds: 0` means no rest: a qualifying logged climb can advance
+immediately. Leaving `restSeconds` out leaves the block unpaced, so the
+climber's own rest-timer settings apply and `advanceOn` has no effect.
+Started runs keep their saved pacing, including after a restart. Older app
+versions ignore `advanceOn` and continue advancing after any logged climb;
+integrators must not assume a send-only rule on those versions.
 
 Block types, and how Boardsesh runs each one today:
 

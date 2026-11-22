@@ -70,7 +70,11 @@ function partnerRunFor(
       };
     }
     if (block && 'restSeconds' in block && block.restSeconds !== undefined) {
-      stage.pacing = { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'tick' };
+      stage.pacing = {
+        mode: 'afterTick',
+        restSeconds: block.restSeconds,
+        advanceOn: ('advanceOn' in block ? block.advanceOn : undefined) ?? 'tick',
+      };
     }
   }
   return run;
