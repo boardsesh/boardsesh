@@ -49,23 +49,20 @@ export function isSprayHoldEditorDraft(candidate: unknown): candidate is SprayHo
   const holds = Object.values(present.holds);
   if (present.selectedId !== null && present.holds[present.selectedId] === undefined) return false;
   if (holds.some((hold) => hold && hold.id < 0 && present.nextLocalId >= hold.id)) return false;
-  return (
-    holds.length <= MAX_HOLDS_PER_WALL &&
-    holds.every(
-      (hold) =>
-        hold &&
-        Number.isSafeInteger(hold.id) &&
-        present.holds[hold.id] === hold &&
-        hold.id !== 0 &&
-        isFiniteNumber(hold.cx) &&
-        isFiniteNumber(hold.cy) &&
-        isFiniteNumber(hold.r) &&
-        hold.r > 0 &&
-        typeof hold.dirty === 'boolean' &&
-        (hold.source === 'MANUAL' || hold.source === 'AUTO') &&
-        ['accepted', 'rejected', 'pending'].includes(hold.review) &&
-        (hold.outline == null || (Array.isArray(hold.outline) && hold.outline.every(isFiniteNumber))),
-    )
+  return holds.every(
+    (hold) =>
+      hold &&
+      Number.isSafeInteger(hold.id) &&
+      present.holds[hold.id] === hold &&
+      hold.id !== 0 &&
+      isFiniteNumber(hold.cx) &&
+      isFiniteNumber(hold.cy) &&
+      isFiniteNumber(hold.r) &&
+      hold.r > 0 &&
+      typeof hold.dirty === 'boolean' &&
+      (hold.source === 'MANUAL' || hold.source === 'AUTO') &&
+      ['accepted', 'rejected', 'pending'].includes(hold.review) &&
+      (hold.outline == null || (Array.isArray(hold.outline) && hold.outline.every(isFiniteNumber))),
   );
 }
 

@@ -46,6 +46,25 @@ describe('account-scoped hold recovery records', () => {
     await saveSprayHoldDraft(draft);
     expect(await loadSprayHoldDraft(identity)).toEqual(draft);
   });
+  it('keeps a full wall plus switched-off holds without treating recovery as a publish', async () => {
+    const holds: SprayEditorPresent['holds'] = Object.fromEntries(
+      Array.from({ length: 1500 }, (_, index) => {
+        const holdId = index + 1;
+        return [holdId, { ...present.holds[-1], id: holdId, review: 'accepted', dirty: false }];
+      }),
+    );
+    const recoveryWithGhost = {
+      ...draft,
+      present: {
+        ...present,
+        holds: { ...holds, 1: { ...holds[1], review: 'rejected' as const, dirty: true }, [-1]: present.holds[-1] },
+        removedIds: [1],
+      },
+    };
+    await saveSprayHoldDraft(recoveryWithGhost);
+    expect(await loadSprayHoldDraft(identity)).toEqual(recoveryWithGhost);
+  });
+
   it('isolates accounts, walls and immutable version ids', async () => {
     await saveSprayHoldDraft(draft);
     expect(await loadSprayHoldDraft({ ...identity, userId: 'another-setter' })).toBeNull();
