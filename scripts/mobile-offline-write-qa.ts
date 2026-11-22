@@ -350,18 +350,13 @@ export async function runOfflineWriteQa(options: QaOptions): Promise<void> {
     else simCommand(['launch', options.device, 'com.apple.Preferences']);
     await delay(1500);
     if (options.platform === 'ios') simCommand(['launch', options.device, bundleId]);
-    else
-      adbCommand([
-        'shell',
-        'am',
-        'start',
-        '-a',
-        'android.intent.action.MAIN',
-        '-c',
-        'android.intent.category.LAUNCHER',
-        '-p',
-        bundleId,
-      ]);
+    else {
+      // This dev client accepts VIEW links but has no resolvable MAIN/LAUNCHER
+      // intent. Repeat the held phase; its per-runtime cache preserves the writer.
+      openUrl(
+        `com.boardsesh.app://dev/integration/offline-writes?runId=${runId}&phase=prepare-reload&receiptPort=${receiptPort}&rows=${options.rows}`,
+      );
+    }
     await delay(500);
     summary.backgroundedWithOpenWriter = true;
     await reloadMetroRuntime(options.metroPort);

@@ -161,3 +161,10 @@ JavaScript startup and returned no receipts; iOS logged no bundle request before
 its runtime-readiness wait timed out. The current driver uses the explicit native
 iOS launch and durable loopback commands described above. Retain those setup
 failures separately from the corrected harness's database results.
+
+The [first Android contention receipt](../data/evidence/offline-write-native-qa-2026-11-22.json)
+passed on development build 2.8.0/1678 with 369,000 climb and stats rows: fresh
+import completed in 3,441 ms and partial recovery in 5,733 ms, retaining all six
+local/outbox pairs in each database. The deliberate prolonged lock failed within
+the existing budget, then a new write succeeded. A host foreground-intent error
+stopped that run before Metro reload; it supplies no runtime-reload verdict.
