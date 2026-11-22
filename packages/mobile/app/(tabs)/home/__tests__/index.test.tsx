@@ -14,6 +14,8 @@ const recorded = vi.hoisted(() => ({
   chrome: [] as Array<{ showScopeMenu: boolean; scopeTitle: string; scopeActions: unknown[] }>,
   customizeSheet: [] as boolean[],
   selectScopeIndex: null as ((index: number) => void) | null,
+  crewFeedItems: [] as Array<{ id: string; __typename: 'CrewClimbItem' }>,
+  renderTarget: 'Cell' as 'Cell' | 'Measurement',
 }));
 const focus = vi.hoisted(() => ({ hasBeenFocused: true }));
 const homeBoardState = vi.hoisted(() => ({
@@ -66,12 +68,24 @@ vi.mock('@shopify/flash-list', () => ({
     ListHeaderComponent,
     ListEmptyComponent,
     refreshControl,
+    renderItem,
   }: {
     data: unknown[];
     ListHeaderComponent?: ReactNode;
     ListEmptyComponent?: ReactNode;
     refreshControl?: ReactNode;
-  }) => createElement('div', null, refreshControl, ListHeaderComponent, data.length === 0 ? ListEmptyComponent : null),
+    renderItem: (entry: { item: unknown; target: 'Cell' | 'Measurement' }) => ReactNode;
+  }) =>
+    createElement(
+      'div',
+      null,
+      refreshControl,
+      ListHeaderComponent,
+      data.length === 0 ? ListEmptyComponent : null,
+      ...data.map((item, index) =>
+        createElement('div', { key: index }, renderItem({ item, target: recorded.renderTarget })),
+      ),
+    ),
 }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -179,7 +193,7 @@ function feedQuery() {
 vi.mock('../../../../src/lib/graphql/hooks/use-crew-feed', () => ({
   useCrewFeed: (enabled: boolean) => {
     recorded.crewFeedEnabled.push(enabled);
-    return feedQuery();
+    return { ...feedQuery(), data: { pages: [{ crewFeed: { items: recorded.crewFeedItems } }] } };
   },
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
@@ -246,6 +260,8 @@ beforeEach(() => {
   recorded.chrome = [];
   recorded.customizeSheet = [];
   recorded.selectScopeIndex = null;
+  recorded.crewFeedItems = [];
+  recorded.renderTarget = 'Cell';
   refresh.onRefresh = null;
   refresh.refreshing = false;
   refresh.invalidateQueries.mockClear();
@@ -257,6 +273,23 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
+  it('exposes a rendered new-climb card to the smoke without requiring a session', () => {
+    recorded.crewFeedItems = [{ id: 'new-climb', __typename: 'CrewClimbItem' }];
+    render(createElement(HomeTab));
+    expect(screen.getByTestId('home-feed-item')).toBeTruthy();
+    expect(screen.queryByTestId('session-feed-card')).toBeNull();
+  });
+
+  it('does not pass the feed smoke while empty or only measuring a row', () => {
+    const { unmount } = render(createElement(HomeTab));
+    expect(screen.queryByTestId('home-feed-item')).toBeNull();
+    unmount();
+    recorded.crewFeedItems = [{ id: 'measured-climb', __typename: 'CrewClimbItem' }];
+    recorded.renderTarget = 'Measurement';
+    render(createElement(HomeTab));
+    expect(screen.queryByTestId('home-feed-item')).toBeNull();
+  });
+
   it('draws This week, Session, Climbing now, Back to your projects, At your level, then the feed by default', () => {
     render(createElement(HomeTab));
     expect(sectionOrder()).toEqual([

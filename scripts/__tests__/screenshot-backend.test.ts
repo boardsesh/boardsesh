@@ -1387,7 +1387,7 @@ describe('screenshot backend', () => {
       expect(backend?.stats().processInstanceId).not.toBe(originalIdentity);
     });
 
-    it.each(['ClimbStatsUpdated'])(
+    it.each(['ClimbStatsUpdated', 'AppBugReportChanged'])(
       'acks a graphql-ws handshake, pongs a ping, and stays silent on %s',
       async (operationName) => {
         const subscriptionQuery = `subscription ${operationName} { ok }`;
@@ -1590,20 +1590,23 @@ describe('screenshot backend', () => {
         await client.close();
       });
 
-      it('does not hide a required subscription behind a passive operation name', async () => {
-        const client = await openGraphqlSocket();
-        const frames = await client.exchange({
-          id: 'mismatch',
-          type: 'subscribe',
-          payload: { ...queueRequest, operationName: 'ClimbStatsUpdated' },
-        });
-        expect(frames[0]).toMatchObject({
-          type: 'next',
-          payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
-        });
-        expect(backend?.stats().misses).toBe(1);
-        await client.close();
-      });
+      it.each(['ClimbStatsUpdated', 'AppBugReportChanged'])(
+        'does not hide a required subscription behind the passive %s name',
+        async (operationName) => {
+          const client = await openGraphqlSocket();
+          const frames = await client.exchange({
+            id: 'mismatch',
+            type: 'subscribe',
+            payload: { ...queueRequest, operationName },
+          });
+          expect(frames[0]).toMatchObject({
+            type: 'next',
+            payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+          });
+          expect(backend?.stats().misses).toBe(1);
+          await client.close();
+        },
+      );
 
       const privacyRequest = { query: 'subscription PrivacyChanged { privacyChanged }', variables: {} };
 

@@ -10,6 +10,7 @@ import {
   recoveryCommandFailure,
   readOriginalNativeGateLog,
   parseApkBadging,
+  validateStoreApkEvidence,
 } from '../mobile-recover-android-candidate';
 
 const SOURCE = 'd'.repeat(40);
@@ -262,6 +263,7 @@ describe('uploaded Android candidate recovery', () => {
       sourceSha: SOURCE,
       runNumber: '42',
       artifactName: 'boardsesh-rn-android-42',
+      uploadConfirmed: true,
     });
     expect(() => validateRecoveryRun(run, [], repository, '123', SOURCE)).toThrow(/must have succeeded/);
     expect(() =>
@@ -276,6 +278,109 @@ describe('uploaded Android candidate recovery', () => {
         SOURCE,
       ),
     ).toThrow();
+  });
+
+  const unconfirmedJob = {
+    name: 'build-and-release',
+    conclusion: 'failure',
+    steps: [
+      'Build signed arm64 release APK',
+      'Check embedded commitTime',
+      'Check Android obfuscation (R8 mapping)',
+      'Verify APK signature',
+      'Upload APK as artifact',
+      'Build signed release AAB',
+      'Verify 16 KB native-library alignment (APK + AAB)',
+      'Verify the AAB carries the same R8 mapping',
+      'Upload AAB as artifact',
+      'Require the live backend schema before tester upload',
+      'Upload AAB to Play internal and open beta tracks',
+    ].map((name, index) => ({ name, conclusion: index === 10 ? 'failure' : 'success' })),
+  };
+
+  it('requires explicit opt-in to audit an unconfirmed upload against Play bytes', () => {
+    expect(() => validateRecoveryRun(run, [unconfirmedJob], repository, '123', SOURCE)).toThrow();
+    expect(validateRecoveryRun(run, [unconfirmedJob], repository, '123', SOURCE, true)).toMatchObject({
+      uploadConfirmed: false,
+    });
+    for (const conclusion of ['success', 'cancelled', 'skipped', null])
+      expect(() =>
+        validateRecoveryRun(run, [{ ...unconfirmedJob, conclusion }], repository, '123', SOURCE, true),
+      ).toThrow();
+    for (const conclusion of ['cancelled', 'skipped', null])
+      expect(() =>
+        validateRecoveryRun(
+          run,
+          [
+            {
+              ...unconfirmedJob,
+              steps: unconfirmedJob.steps.map((step) =>
+                step.conclusion === 'failure' ? { ...step, conclusion } : step,
+              ),
+            },
+          ],
+          repository,
+          '123',
+          SOURCE,
+          true,
+        ),
+      ).toThrow();
+  });
+
+  it('rejects missing, failed, repeated and reordered prerequisites for unconfirmed uploads', () => {
+    for (const prerequisite of unconfirmedJob.steps.slice(0, -1)) {
+      for (const steps of [
+        unconfirmedJob.steps.filter((step) => step !== prerequisite),
+        unconfirmedJob.steps.map((step) => (step === prerequisite ? { ...step, conclusion: 'failure' } : step)),
+        [prerequisite, ...unconfirmedJob.steps],
+        [...unconfirmedJob.steps.filter((step) => step !== prerequisite), prerequisite],
+      ])
+        expect(() =>
+          validateRecoveryRun(run, [{ ...unconfirmedJob, steps }], repository, '123', SOURCE, true),
+        ).toThrow();
+    }
+    expect(() =>
+      validateRecoveryRun(
+        run,
+        [{ ...unconfirmedJob, steps: [...unconfirmedJob.steps, unconfirmedJob.steps.at(-1)] }],
+        repository,
+        '123',
+        SOURCE,
+        true,
+      ),
+    ).toThrow();
+    const reordered = [...unconfirmedJob.steps];
+    [reordered[0], reordered[1]] = [reordered[1]!, reordered[0]!];
+    expect(() =>
+      validateRecoveryRun(run, [{ ...unconfirmedJob, steps: reordered }], repository, '123', SOURCE, true),
+    ).toThrow();
+    expect(() =>
+      validateRecoveryRun(
+        run,
+        [
+          { ...unconfirmedJob, steps: unconfirmedJob.steps.slice(0, 5) },
+          { ...unconfirmedJob, steps: unconfirmedJob.steps.slice(5) },
+        ],
+        repository,
+        '123',
+        SOURCE,
+        true,
+      ),
+    ).toThrow();
+  });
+
+  it('requires the store APK to match the original AAB manifest and binary identity', () => {
+    const manifest = JSON.stringify({ id: 'original-update', runtimeVersion: RUNTIME });
+    expect(() => validateStoreApkEvidence(manifest, manifest, apk, apk)).not.toThrow();
+    expect(() => validateStoreApkEvidence('', '', apk, apk)).toThrow();
+    expect(() => validateStoreApkEvidence(manifest, manifest.replace('original-update', 'other'), apk, apk)).toThrow();
+    for (const mismatch of [
+      { runtime: 'a'.repeat(40) },
+      { versionCode: '2001683' },
+      { version: '2.7.2' },
+      { applicationId: 'other.app' },
+    ])
+      expect(() => validateStoreApkEvidence(manifest, manifest, apk, { ...apk, ...mismatch })).toThrow();
   });
 
   it.each([
@@ -330,6 +435,15 @@ describe('uploaded Android candidate recovery', () => {
     );
   });
 
+  it('preserves an existing runtime gate while binding the build tag to its exact source', () => {
+    const fingerprintTag = `fingerprint-android-${RUNTIME}`;
+    const tags = { build: null, [fingerprintTag]: 'a'.repeat(40) };
+    expect(missingRecoveryTags(tags, SOURCE, fingerprintTag)).toEqual(['build']);
+    expect(() => missingRecoveryTags({ ...tags, build: 'b'.repeat(40) }, SOURCE, fingerprintTag)).toThrow();
+    expect(() => missingRecoveryTags(tags, SOURCE, 'build')).toThrow();
+    expect(() => missingRecoveryTags({ ...tags, [fingerprintTag]: 'invalid' }, SOURCE, fingerprintTag)).toThrow();
+  });
+
   it('keeps recovery on trusted main and reads Play before minting a publication token', () => {
     const workflow = parse(readFileSync('.github/workflows/android-recover-candidate.yml', 'utf8'));
     const recover = workflow.jobs.recover;
@@ -364,5 +478,12 @@ describe('uploaded Android candidate recovery', () => {
     );
     const download = steps.find((step) => step.name === 'Download the original signed APK');
     expect(download?.with?.['run-id']).toBe('${{ inputs.source_run_id }}');
+    expect(workflow.on.workflow_dispatch.inputs.allow_unconfirmed_upload.default).toBe(false);
+    expect(recover.env.ALLOW_UNCONFIRMED_UPLOAD).toBe('${{ inputs.allow_unconfirmed_upload }}');
+    const aabDownload = steps.find((step) => step.name === 'Download the original AAB for an unconfirmed upload');
+    expect(aabDownload).toMatchObject({
+      if: 'inputs.allow_unconfirmed_upload',
+      with: { name: '${{ steps.source.outputs.aab_artifact_name }}', 'run-id': '${{ inputs.source_run_id }}' },
+    });
   });
 });

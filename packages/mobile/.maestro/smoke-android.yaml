@@ -24,14 +24,16 @@ name: e2e gate smoke android
 # The orchestrator checks a second, independent signal after this flow: each
 # screen pings it with a content count (src/components/ContentRenderObserver.tsx).
 
-# Home: the signed-in feed, with at least one real session card.
+# Home: the signed-in feed, with at least one real session or new-climb card.
 - extendedWaitUntil:
     visible:
       id: 'home-screen'
     timeout: 90000
-- extendedWaitUntil:
-    visible:
-      id: 'session-feed-card'
+# Home sections can fill the first viewport before the feed starts.
+- scrollUntilVisible:
+    element:
+      id: 'home-feed-item'
+    direction: DOWN
     timeout: 90000
 
 # Profile: the progress tab past its loading spinner, with the board overview.

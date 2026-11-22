@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: 'Completed Android run whose Play upload succeeded'
+        description: 'Completed Android run that built the submitted binary'
         required: true
         type: string
       source_sha:
@@ -16,6 +16,11 @@ on:
         description: 'Exact versionCode already submitted to Play'
         required: true
         type: string
+      allow_unconfirmed_upload:
+        description: 'Audit a failed upload response against the retained AAB and Play-generated APK'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -36,6 +41,7 @@ jobs:
       SOURCE_RUN_ID: ${{ inputs.source_run_id }}
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
       EXPECTED_VERSION_CODE: ${{ inputs.version_code }}
+      ALLOW_UNCONFIRMED_UPLOAD: ${{ inputs.allow_unconfirmed_upload }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout trusted recovery tooling
@@ -58,6 +64,14 @@ jobs:
         with:
           name: ${{ steps.source.outputs.artifact_name }}
           path: ${{ runner.temp }}/android-recovery-apk
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - name: Download the original AAB for an unconfirmed upload
+        if: inputs.allow_unconfirmed_upload
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.source.outputs.aab_artifact_name }}
+          path: ${{ runner.temp }}/android-recovery-aab
           run-id: ${{ inputs.source_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/setup-java@v4
