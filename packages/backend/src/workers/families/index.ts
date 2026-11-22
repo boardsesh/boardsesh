@@ -20,6 +20,7 @@ import { providerRoutineCycleFamily } from './provider-routine-cycle';
 import { auroraSharedSyncFamily } from './aurora-shared-sync';
 import { kilterCatalogSyncFamily } from './kilter-catalog-sync';
 import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
+import { refreshClimbPlaysFamily } from './refresh-climb-plays';
 import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 import { userDataExportFamily } from './user-data-export';
 import { sprayWallArtFamily } from './spray-wall-art';
@@ -50,6 +51,7 @@ const FAMILY_MODULES = {
   'kilter-catalog-sync': kilterCatalogSyncFamily,
   'moonboard-locations-sync': moonBoardLocationsSyncFamily,
   'climb-stats-self-heal': climbStatsSelfHealFamily,
+  'refresh-climb-plays': refreshClimbPlaysFamily,
   'user-data-export': userDataExportFamily,
   'spray-wall-art': sprayWallArtFamily,
   'spray-wall-health': sprayWallHealthFamily,
