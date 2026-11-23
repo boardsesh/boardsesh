@@ -28,6 +28,7 @@ a production rollout or a physical-device result.
 | [Board connection holder — "who's connected / writing to the wall"](board-connection-holder.md) | `board-connection-holder.md` |
 | [Board identity repair](board-identity-repair.md) | `board-identity-repair.md` |
 | [Board merge tombstones and serial-board dedupe](board-merge-tombstones.md) | `board-merge-tombstones.md` |
+| [Duplicate board review](board-merge-review.md) | `board-merge-review.md` |
 | [Embedded Architecture](embedded-architecture.md) | `embedded-architecture.md` |
 | [Spray wall LED setup (MVP)](spray-wall-led.md) | `spray-wall-led.md` |
 | [Wall devices: lighting Boardsesh climbs from your own hardware](wall-devices.md) | `wall-devices.md` |
