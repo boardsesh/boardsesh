@@ -45,11 +45,10 @@
 .eyebrow {
   display: block;
   margin-bottom: var(--spacing-2);
-  color: var(--color-primary);
+  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .breadcrumb {
@@ -172,7 +171,7 @@
 }
 
 .toneBrand {
-  color: var(--color-primary);
+  color: var(--neutral-500);
 }
 
 .toneAccent {

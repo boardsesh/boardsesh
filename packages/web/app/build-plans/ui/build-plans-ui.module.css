@@ -251,9 +251,9 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--separator);
   border-radius: var(--border-radius-full);
-  color: var(--color-primary);
+  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;

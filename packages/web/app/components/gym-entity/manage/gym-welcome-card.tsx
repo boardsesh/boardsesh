@@ -154,7 +154,7 @@ export default function GymWelcomeCard({ gym }: { gym: Gym }) {
       variant="outlined"
       sx={{
         mb: 3,
-        borderColor: themeTokens.colors.primary,
+        borderColor: 'divider',
         borderRadius: themeTokens.borderRadius.lg,
         overflow: 'hidden',
       }}
@@ -162,7 +162,7 @@ export default function GymWelcomeCard({ gym }: { gym: Gym }) {
       <CardContent sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <CelebrationOutlined sx={{ color: themeTokens.colors.primary }} />
+            <CelebrationOutlined sx={{ color: 'var(--neutral-500)' }} />
             <Box>
               <Typography variant="h6" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, lineHeight: 1.2 }}>
                 {allDone ? t('manage.welcome.allDoneTitle') : t('manage.welcome.title')}
@@ -217,7 +217,7 @@ export default function GymWelcomeCard({ gym }: { gym: Gym }) {
                   {stepBody(t, step.key)}
                 </Typography>
               </Box>
-              {!step.done && <ArrowForwardOutlined fontSize="small" sx={{ color: themeTokens.colors.primary }} />}
+              {!step.done && <ArrowForwardOutlined fontSize="small" sx={{ color: 'var(--neutral-500)' }} />}
             </MuiLink>
           ))}
         </Stack>

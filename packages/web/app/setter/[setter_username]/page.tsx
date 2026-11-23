@@ -64,7 +64,7 @@ const avatarSx = {
   boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
   display: 'grid',
   placeItems: 'center',
-  color: 'var(--color-primary)',
+  color: 'var(--neutral-900)',
   fontFamily: 'var(--font-display), sans-serif',
   fontSize: { xs: 30, md: 46 },
   fontWeight: themeTokens.typography.fontWeight.bold,

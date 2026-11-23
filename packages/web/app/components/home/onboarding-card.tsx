@@ -55,7 +55,7 @@ function resolveAccentIconColor(accent: OnboardingCardAccent): string {
       return 'inherit';
     case 'brand':
     default:
-      return 'var(--color-primary)';
+      return 'var(--neutral-500)';
   }
 }
 

@@ -93,7 +93,7 @@ export function PartnerOAuthTitle({ children, focusOnMount = false }: PartnerOAu
 export type PartnerOAuthTone = 'info' | 'problem' | 'done';
 
 const TONE_ICONS = {
-  info: { Icon: InfoOutlined, color: themeTokens.colors.primary },
+  info: { Icon: InfoOutlined, color: 'var(--neutral-500)' },
   problem: { Icon: ErrorOutlineOutlined, color: themeTokens.colors.warning },
   done: { Icon: CheckCircleOutlined, color: themeTokens.colors.success },
 } as const;
