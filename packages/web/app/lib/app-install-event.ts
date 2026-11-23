@@ -34,18 +34,18 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `help`: the store pair on /help and on its seven sub-pages. It sent no
  *    placement before #6027.
  *  - `climb-view`: a climb page, in both route trees (`ClimbFrontDoor`): the
- *    phone's "Get the free app" button.
+ *    phone's store badge (`MobileStorePrimary`).
  *  - `climb-qr-card`: the store pair in the QR card a climb page shows from md
  *    (`PhoneQrCard`), so a laptop's store click reads apart from a phone's.
  *  - `climb-list`: a board's climb list (`StaticListFrontDoor`): the phone's
- *    "Get the free app" button.
+ *    store badge.
  *  - `climb-list-qr-card`: the store pair in the QR card a board list shows
- *    from md, apart from the phone's button like `climb-qr-card`.
+ *    from md, apart from the phone's badge like `climb-qr-card`.
  *  - `setter`: a setter's page: the store pair under the header, phones only
  *    since the QR card took its place from md.
  *  - `setter-qr-card`: the store pair in the QR card a setter's page shows
  *    from md.
- *  - `playlist`: a playlist's page: the phone's "Get the free app" button.
+ *  - `playlist`: a playlist's page: the phone's store badge.
  *  - `playlist-qr-card`: the store pair in the QR card a public playlist shows
  *    from md.
  *  - `home-qr-card`: the store badges in the QR card the home hero shows from

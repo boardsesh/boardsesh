@@ -60,6 +60,30 @@ export type UserBoard = {
   /** Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym). */
   canEdit?: boolean;
   /**
+   * Whether the viewer may delete this board: its owner, the owner/admin of its
+   * linked gym on a synced (system-owned) board, or a global admin. Optional here
+   * (though `Boolean!` on the wire) for the same reason as `canEdit`: an offline
+   * snapshot written before the field existed never carries it. Every document
+   * that selects BOARD_FIELDS or GYM_BOARD_FIELDS asks for it.
+   */
+  canDelete?: boolean;
+  /**
+   * Whether the viewer may take this board off its gym's listing: its owner
+   * (`linkBoardToGym` with no gym) or anyone with edit access to that gym
+   * (`detachBoardFromGym`). A synced (system-owned) board is deleted instead,
+   * so only a global admin may remove one. Optional for the same reason as
+   * `canEdit`.
+   */
+  canRemoveFromGym?: boolean;
+  /**
+   * Waiting directory reports the viewer can act on (creator, the gym staff a
+   * report went to, global admins); null for anyone else. Optional for the same
+   * reason as `canEdit`. See docs/product/directory-reports.md.
+   */
+  openReportCount?: number | null;
+  /** Whether the viewer is a reporter on a waiting report about this board; null signed out. */
+  viewerHasOpenReport?: boolean | null;
+  /**
    * Whether the viewer pinned this board to the front of their board list.
    * Optional here (though `Boolean!` on the wire) for the same reason as
    * `canEdit`: clients build partial UserBoards from offline snapshots and board

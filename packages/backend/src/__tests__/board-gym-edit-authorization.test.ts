@@ -802,11 +802,21 @@ describe('community moderators cannot delete boards/gyms or link boards', () => 
     return row?.deleted_at != null;
   };
 
-  it('rejects a moderator deleting a board they do not own (delete stays owner-only)', async () => {
+  it.each([GLOBAL_LEADER, KILTER_LEADER])(
+    'rejects community leader %s deleting a board they do not own',
+    async (leader) => {
+      await expect(
+        socialBoardMutations.deleteBoard(null, { boardUuid: kilterBoardUuid }, authCtx(leader)),
+      ).rejects.toThrow('Not authorized to delete this board');
+      expect(await boardIsDeleted(kilterBoardUuid)).toBe(false);
+    },
+  );
+
+  it('lets a global admin delete a board they do not own (docs/product/gym-board-governance.md)', async () => {
     await expect(
       socialBoardMutations.deleteBoard(null, { boardUuid: kilterBoardUuid }, authCtx(GLOBAL_ADMIN)),
-    ).rejects.toThrow();
-    expect(await boardIsDeleted(kilterBoardUuid)).toBe(false);
+    ).resolves.toBe(true);
+    expect(await boardIsDeleted(kilterBoardUuid)).toBe(true);
   });
 
   it('rejects a moderator deleting a gym they do not own', async () => {

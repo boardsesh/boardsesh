@@ -69,7 +69,7 @@ const BOARDS: DiscoveryBoardItem[] = Array.from({ length: 9 }, (_unused, index) 
   title: `Board ${index + 1}`,
   isActive: index === 7,
 }));
-const CAPABILITIES = { canPin: true, canDownload: true, canOpenDetails: true, canManage: true };
+const CAPABILITIES = { canPin: true, canDownload: true, canOpenDetails: true, canManage: true, canReport: false };
 
 function shownTitles(): string[] {
   return screen

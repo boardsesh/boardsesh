@@ -33,6 +33,9 @@ export function getGradeLabel(difficultyId: number | null, boardName?: string | 
   // hands numerics back as strings ("16"). Map keys don't coerce the way the
   // old object lookup did, so normalise before the lookup.
   const numericId = Number(difficultyId);
+  // Older Aurora stats can retain these missing-grade sentinels until their
+  // next sync. They mean ungraded, like NULL, rather than an unknown grade.
+  if (numericId === 0 || numericId === 1) return '';
   const label = GRADE_MAP_BY_TABLE.get(getBoulderGradesForBoard(boardName))?.get(numericId);
   if (label === undefined && !warnedIds.has(numericId)) {
     warnedIds.add(numericId);

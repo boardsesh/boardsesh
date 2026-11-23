@@ -27,6 +27,18 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'comment_on_playlist',
   'comment_on_board',
   'comment_on_gym',
+  // Directory reports and staff actions on boards (docs/product/directory-reports.md).
+  // Sent only while the backend's `directory-reports` flag is on.
+  'board_report_opened',
+  'board_report_resolved',
+  'board_removed_from_gym',
+  'board_deleted_by_staff',
+  'board_edited_by_staff',
+  'gym_report_opened',
+  'gym_report_resolved',
+  // Claim notices; the claim guardrails PR sends them.
+  'gym_claimed_with_your_board',
+  'gym_claim_denied',
 ]);
 
 export const notifications = pgTable(
@@ -85,4 +97,13 @@ export type NotificationType =
   | 'comment_on_session'
   | 'comment_on_playlist'
   | 'comment_on_board'
-  | 'comment_on_gym';
+  | 'comment_on_gym'
+  | 'board_report_opened'
+  | 'board_report_resolved'
+  | 'board_removed_from_gym'
+  | 'board_deleted_by_staff'
+  | 'board_edited_by_staff'
+  | 'gym_report_opened'
+  | 'gym_report_resolved'
+  | 'gym_claimed_with_your_board'
+  | 'gym_claim_denied';

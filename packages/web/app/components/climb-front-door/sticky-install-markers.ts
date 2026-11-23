@@ -1,5 +1,5 @@
 /**
- * The attribute a server page puts on its own store buttons so the sticky
+ * The attribute a server page puts on its own store badges so the sticky
  * install bar (`sticky-install-bar.tsx`) stays down while they are on screen,
  * and only appears once the reader has scrolled past one.
  *

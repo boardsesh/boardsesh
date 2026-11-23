@@ -29,9 +29,12 @@ export const GYM_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
+/** Who runs a gym listing: not claimed yet, added by a climber, or run by the gym (approved claim or admin handover). */
+export type GymListingState = 'UNCLAIMED' | 'CLIMBER_LISTED' | 'RUN_BY_GYM';
+
 export type GymClaimMethod = 'domain' | 'admin';
 
-export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired';
+export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'revoked';
 
 export type GymClaimRequestStatus = 'email_sent' | 'admin_review' | 'approved';
 
@@ -64,7 +67,7 @@ export type Gym = {
   ownerAvatarUrl?: string | null;
   name: string;
   description?: string | null;
-  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  /** Opening hours as free text the gym maintains itself, line breaks kept (no structured per-day model). */
   hours?: string | null;
   /** ISO timestamp of the last time someone with edit access confirmed `hours` — shown publicly so a stale schedule reads as stale. */
   hoursUpdatedAt?: string | null;
@@ -115,19 +118,17 @@ export type Gym = {
    * document typed `Gym` genuinely returns it.
    */
   isClaimed: boolean;
+  /** Who runs this listing. Viewer-independent. GYM_FIELDS selects it. */
+  listingState: GymListingState;
   /**
    * Whether this gym's website can drive the self-service email claim: a real
    * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
    * the two refusals in requestGymClaim, so a claim UI can open the form that
    * can succeed. Viewer-independent — it describes the listing, not the viewer.
    *
-   * Required rather than optional even though NO document selects it yet:
-   * enrichGym always returns it, and requiring it is what forces every `Gym`
-   * fixture — and the client PR that follows — to acknowledge the field instead
-   * of silently reading `undefined` and routing a claimable gym to admin
-   * review. GYM_FIELDS starts selecting it one PR later, on purpose: a field
-   * the deployed backend cannot answer fails validation for the WHOLE document
-   * (same hazard as `myPendingClaim` below).
+   * GYM_FIELDS selects it, and both claim UIs (web ClaimGymDialog, mobile
+   * ClaimGymSheet) pick their form from it rather than re-deriving it from the
+   * website, which can't see who put the website there.
    */
   canClaimByDomain: boolean;
   /**
@@ -300,6 +301,14 @@ export type GymClaim = {
   claimEmail?: string | null;
   message?: string | null;
   createdAt: string;
+  /** Admin queue only: days since the claimant's account was created. */
+  claimantAccountAgeDays?: number | null;
+  /** Admin queue only: climbs the claimant has logged. */
+  claimantTickCount?: number | null;
+  /** Admin queue only: other live gyms the claimant owns or admins. */
+  claimantGymsHeld?: number | null;
+  /** Auto-approved list only: when the claim took the gym. */
+  approvedAt?: string | null;
 };
 
 export type GymClaimConnection = {
@@ -313,9 +322,28 @@ export type ReviewGymClaimInput = {
   decision: GymClaimDecision;
 };
 
+export type RevertGymClaimInput = {
+  claimId: string;
+  reason?: string | null;
+};
+
+export type RevertGymClaimResult = {
+  claimId: string;
+  gymUuid: string;
+  gymName: string;
+  removedMemberCount: number;
+};
+
 export type PendingGymClaimsInput = {
   limit?: number;
   offset?: number;
+};
+
+export type AutoApprovedGymClaimsInput = {
+  limit?: number;
+  offset?: number;
+  /** Only this claim: the daily digest's revert link. */
+  claimId?: string | null;
 };
 
 export type AddGymMemberInput = {

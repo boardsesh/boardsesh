@@ -90,15 +90,19 @@
     "home": "Back to Boardsesh"
   },
   "card": {
-    "claimed": "Run by this gym",
-    "unclaimed": "Unclaimed",
+    "claimed": "Run by the gym",
+    "climberListed": "Added by a climber",
+    "unclaimed": "Not claimed yet",
+    "claimCta": "Claim this gym",
+    "claimCtaAria": "Claim {{gym}}",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km away"
   },
   "claim": {
-    "body": "Is this your gym? Claim it and you set the boards, hours and links climbers see here.",
+    "body": "Run one of these gyms? Claim it to fix its boards, hours and links.",
     "action": "Find your gym",
-    "topAction": "Run one of these walls? Find and claim your listing, free."
+    "topAction": "Run one of these gyms? Find it and claim it. It's free.",
+    "modeHint": "Search for your gym, then claim it from its card."
   },
   "nearMe": {
     "cta": "Use my location",

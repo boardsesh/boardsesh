@@ -80,8 +80,32 @@ export type GymClaimViewerState = 'signed-in' | 'signed-out';
  *                      NOT in #4374's list; added because the call site is real
  *                      and folding it into the directory would mix "browsing
  *                      the directory" with "about to create a duplicate".
+ *  - `gym-page-header` — "Run this gym? Claim it" in the run-by line under the
+ *                      gym page's H1 (packages/web/app/gym/[gym_slug]/gym-run-by-line.tsx).
+ *                      Its own value, not `gym-page`: the call-out and the line
+ *                      sit on the same page, and the point of the line is to
+ *                      learn whether a claim offer in the first screen is found.
+ *  - `directory-result` — the Claim this gym button a result card carries in
+ *                      the directory's claim mode (`/gyms?claim=1`). Per gym,
+ *                      so `gymUuid` is set. Not the retired `directory-card`,
+ *                      which counted a prompt on every row of every visit.
+ *  - `manage-lock`   — Claim this gym on the manage page's "you can't edit this
+ *                      gym" state (packages/web/app/gym/[gym_slug]/manage/manage-no-access-actions.tsx).
+ *  - `app-gym-list`  — Claim this gym on an expanded row of the app's gym map list.
+ *  - `app-gym-page`  — the claim card and "Run this gym? Claim it" on the app's gym page.
+ *
+ * The two `app-` values are the only ones the app fires; every other one is www.
  */
-export type GymClaimPlacement = 'gym-page' | 'preview-sheet' | 'directory-footer' | 'similar-gyms';
+export type GymClaimPlacement =
+  | 'gym-page'
+  | 'preview-sheet'
+  | 'directory-footer'
+  | 'similar-gyms'
+  | 'gym-page-header'
+  | 'directory-result'
+  | 'manage-lock'
+  | 'app-gym-list'
+  | 'app-gym-page';
 
 /**
  * Which proof path the claimant submitted. Mirrors the `GymClaimMethod` GraphQL
@@ -163,12 +187,16 @@ export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
  *  - `report-listing` — belongs to #4385 and is out of scope for this epic tier.
  *    Report-a-DUPLICATE is a different, existing CTA and is kept.
  *
+ * `report-problem` is Report a problem (the gym's own button or a board row's
+ * flag), which replaces Report a duplicate while the `directory-reports` flag is
+ * on. `report-duplicate` keeps its call site for as long as the flag can be off.
+ *
  * `manage` (GymPageManageButton, editors only) is also a real gym-page button
  * but is intentionally not a member: it is not part of #4374's vocabulary, and
  * it is an owner action rather than a step in the discovery funnel. Add it here
  * with its own comment if a later PR needs it measured.
  */
-export type GymPageCta = 'follow' | 'kiosk' | 'website' | 'report-duplicate';
+export type GymPageCta = 'follow' | 'kiosk' | 'website' | 'report-duplicate' | 'report-problem';
 
 /**
  * Tabs of the gym management console.

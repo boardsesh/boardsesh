@@ -50,14 +50,11 @@ packages/web/app/components/auth/__tests__/auth-modal-callback-url.test.tsx
 packages/web/app/components/auth/__tests__/auth-modal-server-errors.test.tsx
 packages/web/app/components/board-entity/__tests__/board-import-prompt.test.tsx
 packages/web/app/components/board-entity/__tests__/edit-board-form.test.tsx
-packages/web/app/components/board-entity/board-detail.tsx
 packages/web/app/components/board-entity/edit-board-form.tsx
 packages/web/app/components/climb-card/__tests__/ascent-status.test.tsx
 packages/web/app/components/consent/__tests__/consent-banner-region.test.tsx
 packages/web/app/components/consent/__tests__/consent-provider.test.tsx
 packages/web/app/components/consent/consent-provider.tsx
-packages/web/app/components/gym-entity/__tests__/gym-detail.test.tsx
-packages/web/app/components/gym-entity/gym-detail.tsx
 packages/web/app/components/gym-entity/manage/__tests__/gym-boards-tab.test.tsx
 packages/web/app/components/gym-entity/manage/__tests__/insights-tab.test.tsx
 packages/web/app/components/gym-entity/manage/__tests__/overview-tab.test.tsx

@@ -24,6 +24,10 @@ import { NOTIFICATION_DELIVERY_LOCK_SEED } from './notification-locks';
 import { requireBoardEditAccess } from '../graphql/resolvers/social/boards';
 import { pubsub } from '../pubsub';
 import { feedbackReplyCopy, feedbackReplyTarget } from './feedback-notifications';
+import {
+  directoryReportPushCopy,
+  directoryReportPushTarget,
+} from '../graphql/resolvers/social/directory-reports/notices';
 import { NOTIFICATION_PUSH_QUEUE, NOTIFICATION_PUSH_RETRIES as RETRIES } from './notification-push-options';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
 import spanish from '@boardsesh/i18n/locales/es/notifications.json';
@@ -188,7 +192,8 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .where(eq(notificationDeliveries.id, deliveryId))
       .limit(1);
     if (!delivery || delivery.status === 'done' || delivery.status === 'skipped') return;
-    // Shared delivery driver for spray completion and private support replies.
+    // Shared delivery driver for spray completion, private support replies and
+    // directory report notices.
     // Recheck the target in its own short transaction. The wall lock orders this
     // read after any wall write in flight (revoke, hide, discard) and is released
     // before the Expo call below, so a slow push never stalls wall edits. Only
@@ -222,6 +227,22 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
                 type: 'app_feedback_reply',
                 notificationUuid: delivery.notificationUuid,
                 reportId: support.reportId,
+              },
+            }
+          : null;
+      }
+      if (notice?.type === 'board_report_opened') {
+        // A report push is rechecked on every attempt: the flag, the report
+        // still waiting, the recipient still able to read the board.
+        const report = await directoryReportPushTarget(delivery.notificationUuid, validation);
+        return report?.recipientId === delivery.recipientId
+          ? {
+              copy: directoryReportPushCopy(delivery.locale, report),
+              data: {
+                type: 'board_report_opened',
+                notificationUuid: delivery.notificationUuid,
+                boardUuid: report.boardUuid,
+                reportUuid: report.reportUuid,
               },
             }
           : null;

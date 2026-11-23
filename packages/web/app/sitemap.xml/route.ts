@@ -2,6 +2,7 @@ import { after } from 'next/server';
 import { climbSitemapsEnabled } from '@/app/lib/seo/sitemap/climb-sitemaps-enabled';
 import { refreshClimbStoreIfStale } from '@/app/lib/seo/sitemap/climb-store';
 import { warmPlaylistSitemapCache } from '@/app/lib/seo/sitemap/playlist-query';
+import { refreshSetterSummaryIfStale } from '@/app/lib/seo/sitemap/setter-summary-refresh';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
 /**
@@ -53,6 +54,7 @@ export async function GET(): Promise<Response> {
   // `withExecuteRevalidates`, where the write is actually executed, which is what
   // turns "heals on some later request" into "heals on this one".
   after(warmPlaylistSitemapCache);
+  after(refreshSetterSummaryIfStale);
 
   return response;
 }

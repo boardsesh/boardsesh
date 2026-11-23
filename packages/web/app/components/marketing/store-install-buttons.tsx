@@ -13,8 +13,8 @@ import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { type AppInstallPlacement } from '@/app/lib/app-install-event';
 import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import type { QrLandingKind } from '@/app/lib/qr-landing';
-import { DEFAULT_LOCALE, type Locale, isSupportedLocale } from '@/app/lib/i18n/config';
-import { storeBadgeImage } from '@/app/lib/store-badges';
+import type { Locale } from '@/app/lib/i18n/config';
+import StoreBadgeLink, { LONE_BADGE_HEIGHT, PAIRED_BADGE_HEIGHT } from './store-badge-link';
 
 /**
  * The three things a store link can say, already translated by whoever
@@ -83,31 +83,6 @@ type StoreInstallButtonsProps = {
 /** What a shared page says before the browser has been asked: both stores, App Store first. */
 const SHARED_HTML_INSTALL: HeroInstall = { mode: 'install', stores: ['ios', 'android'] };
 
-/**
- * Badge heights. A lone badge is the phone's one install action, so it is a
- * size up; a pair stays at 44 so two of them fit a 280px column (the QR card's
- * text column) side by side. Both clear the 44px target and Apple's 40px floor.
- */
-const LONE_BADGE_HEIGHT = 48;
-const PAIRED_BADGE_HEIGHT = 44;
-
-/**
- * The anchor around a badge. The badge already draws its own edge, so the
- * anchor adds nothing but a focus ring shaped to its corners. Hover changes
- * nothing: the stores ask that their artwork not be altered.
- */
-const BADGE_LINK_SX = {
-  display: 'inline-flex',
-  flexShrink: 0,
-  lineHeight: 0,
-  borderRadius: '8px',
-  '&:focus-visible': {
-    outline: '2px solid var(--color-primary)',
-    outlineOffset: '2px',
-  },
-  '& > img': { display: 'block' },
-} as const;
-
 // Both halves of the brand pair come off the SAME size step, which is the whole
 // reason they match.
 const BRAND_PRIMARY_SX = brandCtaSx({ size: 'large' });
@@ -165,8 +140,6 @@ export default function StoreInstallButtons({
   // browser's touch points say iPad. Without this the App Store badge would
   // turn white and grow as Google Play disappears.
   const [firstRenderWasLone] = useState(stores.length === 1);
-  // A caller that lost the locale (a test double, say) gets English artwork, never a broken image.
-  const locale: Locale = isSupportedLocale(labels.locale) ? labels.locale : DEFAULT_LOCALE;
   const justifyContent = align === 'center' ? 'center' : 'flex-start';
 
   const trackClick = (store: 'ios' | 'android') => {
@@ -192,39 +165,17 @@ export default function StoreInstallButtons({
     return (
       // 12px between badges is more than the quarter-height clear space both stores ask for.
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent }}>
-        {stores.map((store) => {
-          const badge = storeBadgeImage(store, locale, badgeHeight, isLoneBadge ? 'white' : 'black');
-          return (
-            <Box
-              key={store}
-              component="a"
-              href={buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium })}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-store-badge={store}
-              sx={BADGE_LINK_SX}
-              onClick={() => trackClick(store)}
-            >
-              {/* A plain <img>, not MUI's Box: Box reads `width` and `height` as
-                  style props and drops them from the HTML, and the attributes
-                  are what reserve the badge's box before the SVG loads.
-                  Lazy, because most badges sit far down a page, and because an
-                  eager <img> makes React's server render add a
-                  <link rel="preload"> for it: two per page, competing with the
-                  page's own hero image and using up React's first ten image
-                  preloads. A lazy image already on screen still starts loading
-                  at first layout, so the phone hero's badge is not held back. */}
-              <img
-                src={badge.src}
-                alt={labels[store]}
-                width={badge.width}
-                height={badge.height}
-                loading="lazy"
-                decoding="async"
-              />
-            </Box>
-          );
-        })}
+        {stores.map((store) => (
+          <StoreBadgeLink
+            key={store}
+            store={store}
+            href={buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium })}
+            labels={labels}
+            height={badgeHeight}
+            tone={isLoneBadge ? 'white' : 'black'}
+            onClick={() => trackClick(store)}
+          />
+        ))}
       </Box>
     );
   }

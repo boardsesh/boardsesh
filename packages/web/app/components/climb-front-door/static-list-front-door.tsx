@@ -52,6 +52,13 @@ type StaticListFrontDoorProps = {
    * resolve by propagating the noindex onto the public page.
    */
   noindex?: boolean;
+  /**
+   * "Something wrong with this board? Report a problem", at the end of the
+   * details. Only the `/b/{slug}` list passes it: it is about one board, and the
+   * config-tuple list is about every board of a layout. The island renders the
+   * same markup for every reader, so the cached HTML stays the same.
+   */
+  reportProblem?: React.ReactNode;
 };
 
 const CAPTION_CLIMB_SLOT = 'climb';
@@ -173,6 +180,7 @@ export default async function StaticListFrontDoor({
   basePath,
   tree,
   noindex = false,
+  reportProblem,
 }: StaticListFrontDoorProps) {
   const [{ t, locale }, storeButtonLabels] = await Promise.all([
     getServerTranslation('climbs'),
@@ -276,14 +284,6 @@ export default async function StaticListFrontDoor({
             qrUrl={listQrUrl(basePath, locale)}
             storeLabels={storeButtonLabels}
             labels={{
-              store: {
-                install: t('frontDoor.cta.getApp'),
-                update: storeButtonLabels.update,
-                installAria: {
-                  ios: t('frontDoor.cta.getAppAriaIos'),
-                  android: t('frontDoor.cta.getAppAriaAndroid'),
-                },
-              },
               storeHelper: t('list.frontDoor.cta.getAppHelper', { board: boardLabel }),
               // The list's own words: the climb page's "open it" names a climb,
               // which reads wrong in the languages where a list is feminine.
@@ -377,6 +377,8 @@ export default async function StaticListFrontDoor({
               )}
             </Box>
           </Box>
+
+          {reportProblem}
         </Box>
       </Box>
     </Box>

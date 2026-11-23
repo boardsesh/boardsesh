@@ -39,6 +39,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
 import { gymIsIndexableVenue } from '@/app/lib/seo/gym-index-eligibility';
 import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
@@ -54,11 +55,15 @@ import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
+import GymClaimCalloutMirror from './gym-claim-callout';
 import GymClaimParamCleanup from './gym-claim-param-cleanup';
 import GymClaimPendingNotice from './gym-claim-pending-notice';
-import { CLAIM_PARAM, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
+import GymRunByLine from './gym-run-by-line';
+import { CLAIM_PARAM, gymListingStateOf, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
+import { GymReportProblemHost, ReportBoardButton, ReportGymButton, type GymReportBoard } from './gym-report-problem';
+import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
 import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymInstallCta from './gym-install-cta';
@@ -329,12 +334,18 @@ export default async function GymPage(props: GymRouteProps) {
     );
   }
 
-  const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
+  // Plain awaits rather than one Promise.all: the translations resolve from the
+  // same cached request instance, and this shape is what the orphaned-key check
+  // can read, so the boards keys used below count as used.
+  const { t } = await getServerTranslation('kiosk');
+  const { t: tBoards } = await getServerTranslation('boards');
+  const storeLabels = await getStoreButtonLabels();
+  const [kiosk, allBoards, gymSprayWalls, discoveryBoards, reportsEnabled] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
     fetchGymSprayWalls(gym.uuid, token),
     getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
+    isDirectoryReportsEnabled(),
   ]);
   const sprayWalls = gymSprayWalls ?? [];
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
@@ -363,6 +374,12 @@ export default async function GymPage(props: GymRouteProps) {
   // (wall, size, layout, angle), scoped to this one gym: the heading above
   // already says which gym this is, so the rows lead with the wall instead.
   const boardSubtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+  const boardRowSubtitle = (boardIndex: number): string => {
+    const board = boards[boardIndex];
+    return boardSubtitles[boardIndex].includes(`${board.angle}°`)
+      ? boardSubtitles[boardIndex]
+      : t('gymPage.boardAngle', { configuration: boardSubtitles[boardIndex], angle: board.angle });
+  };
 
   // Stored logo/photo paths are backend-relative; resolve for the browser (also
   // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
@@ -386,15 +403,16 @@ export default async function GymPage(props: GymRouteProps) {
   // hand-edited param, a crawler-mangled URL — parses to null and mounts nothing.
   const qrLanding = parseGymQrLanding(searchParams);
 
-  // Which arm of the claim call-out to render — `hidden` for a signed-in viewer
-  // who already covers this gym (owner, admin/editor, community leader), the
-  // anonymous arm for everyone with no session.
-  // One derivation, on the server: the island is handed the answer as
-  // `viewerState` and never recomputes it.
+  // Which arm of the claim call-out to render — `hidden` on a gym its staff
+  // run and for a signed-in viewer who already covers this gym (owner,
+  // admin/editor, community leader), the anonymous arm for everyone with no
+  // session. One derivation, on the server: the islands are handed the answer
+  // as `viewerState` and never recompute it.
+  const listingState = gymListingStateOf(gym);
   const claimCtaVariant = resolveClaimCtaVariant({
     serverCanClaim: gym.canClaim,
     serverHasSession: Boolean(token),
-    gymIsClaimed: gym.isClaimed,
+    listingState,
   });
   const claimParam = searchParams[CLAIM_PARAM];
   // A viewer with a claim already in flight gets the review notice instead of
@@ -406,6 +424,26 @@ export default async function GymPage(props: GymRouteProps) {
     variant: claimCtaVariant,
     gymIsPublic: gym.isPublic,
     hasPendingClaim: pendingClaim !== null,
+  });
+  const runByLabel =
+    listingState === 'RUN_BY_GYM'
+      ? tBoards('runBy.pillRunByGym')
+      : listingState === 'CLIMBER_LISTED'
+        ? tBoards('runBy.pillClimberListed')
+        : tBoards('runBy.pillUnclaimed');
+
+  // Report a problem (docs/product/directory-reports.md): only while the server
+  // takes reports, and not for staff, who fix things from Manage gym instead.
+  // Every visitor who gets it gets the same markup; sign-in is settled on tap.
+  const showReportProblem = reportsEnabled && !gym.canEdit;
+  const reportBoards: GymReportBoard[] = boards.map((board, boardIndex) => {
+    const name = stripGymNamePrefix(board.name, gym.name);
+    return {
+      uuid: board.uuid,
+      name,
+      label: `${name} · ${boardRowSubtitle(boardIndex)}`,
+      ownerId: board.ownerId ?? null,
+    };
   });
 
   // Prefer the real photo for search-result thumbnails; fall back to the logo.
@@ -433,6 +471,22 @@ export default async function GymPage(props: GymRouteProps) {
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'settings']}>
       {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
+      {/* One dialog for the gym and every board row; the buttons below open it. */}
+      {showReportProblem && (
+        <GymReportProblemHost
+          gym={{
+            uuid: gym.uuid,
+            name: gym.name,
+            slug: gym.slug ?? null,
+            listingState: gym.listingState ?? null,
+            // The nudge lands on this page's claim call-out, so offer it only when that is what renders.
+            canClaim: gym.canClaim && claimSurface.kind === 'cta',
+            latitude: gym.latitude,
+            longitude: gym.longitude,
+          }}
+          boards={reportBoards}
+        />
+      )}
       {/* PageShell owns the fixed-header clearance and the page measure, so the
           hand-rolled Container and its header offset are gone. The h1 is the
           shell's title now, which puts it above the wall shot rather than
@@ -441,6 +495,13 @@ export default async function GymPage(props: GymRouteProps) {
       <PageShell
         width="wide"
         title={gym.name}
+        headerActions={
+          <GymRunByLine
+            listingState={listingState}
+            label={runByLabel}
+            claim={claimSurface.kind === 'cta' ? { gymUuid: gym.uuid, label: tBoards('runBy.claimInline') } : null}
+          />
+        }
         breadcrumb={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <MuiLink component={LocaleLink} href="/" underline="hover" sx={quietLinkSx}>
@@ -554,6 +615,17 @@ export default async function GymPage(props: GymRouteProps) {
               {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
             </Box>
 
+            {/* The call-out's phone copy: above the boards below 960px, where the
+                details column would put it under the boards and the install
+                block. Its button asks the details copy to start the claim. */}
+            {claimSurface.kind === 'cta' && (
+              <GymClaimCalloutMirror
+                gymUuid={gym.uuid}
+                viewerState={claimSurface.viewerState}
+                className={styles.claimPhone}
+              />
+            )}
+
             <Box component="section" className={styles.boards} sx={{ mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                 <FitnessCenterOutlined sx={{ fontSize: 20, color: themeTokens.neutral[400] }} />
@@ -587,7 +659,11 @@ export default async function GymPage(props: GymRouteProps) {
                   sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
                 >
                   {boards.map((board, boardIndex) => (
-                    <Box component="li" key={board.uuid}>
+                    <Box
+                      component="li"
+                      key={board.uuid}
+                      sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
+                    >
                       <MuiLink
                         component={LocaleLink}
                         href={`/b/${board.slug}`}
@@ -598,12 +674,7 @@ export default async function GymPage(props: GymRouteProps) {
                           {stripGymNamePrefix(board.name, gym.name)}
                         </Typography>
                         <Typography component="span" variant="body2" color="text.secondary">
-                          {boardSubtitles[boardIndex].includes(`${board.angle}°`)
-                            ? boardSubtitles[boardIndex]
-                            : t('gymPage.boardAngle', {
-                                configuration: boardSubtitles[boardIndex],
-                                angle: board.angle,
-                              })}
+                          {boardRowSubtitle(boardIndex)}
                         </Typography>
                       </MuiLink>
                       <MuiLink
@@ -613,6 +684,15 @@ export default async function GymPage(props: GymRouteProps) {
                       >
                         {t('gymPage.seeClimbs')}
                       </MuiLink>
+                      {showReportProblem && (
+                        <Box sx={{ ml: 'auto' }}>
+                          <ReportBoardButton
+                            gymUuid={gym.uuid}
+                            boardUuid={board.uuid}
+                            boardName={stripGymNamePrefix(board.name, gym.name)}
+                          />
+                        </Box>
+                      )}
                     </Box>
                   ))}
                 </Box>
@@ -646,12 +726,7 @@ export default async function GymPage(props: GymRouteProps) {
               <Typography variant="body2" sx={{ mb: 1.5, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
                 {t('gymPage.install.body', { gymName: gym.name })}
               </Typography>
-              <GymInstallCta
-                gymSlug={gym.slug || gym_slug}
-                qrMedium={qrLanding?.medium ?? null}
-                googlePlayLabel={t('gymPage.install.googlePlay')}
-                appStoreLabel={t('gymPage.install.appStore')}
-              />
+              <GymInstallCta gymSlug={gym.slug || gym_slug} qrMedium={qrLanding?.medium ?? null} labels={storeLabels} />
             </Box>
           </Box>
           {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
@@ -808,8 +883,10 @@ export default async function GymPage(props: GymRouteProps) {
                 gymName={gym.name}
                 gymSlug={gym_slug}
                 website={gym.website}
+                canClaimByDomain={gym.canClaimByDomain}
                 viewerState={claimSurface.viewerState}
                 claimParam={claimParam}
+                className={styles.claimDesktop}
               />
             ) : (
               /* No call-out to clear the return-from-auth param, so clear it here:
@@ -826,12 +903,19 @@ export default async function GymPage(props: GymRouteProps) {
               </>
             )}
 
-            <GymReportDuplicateCta
-              gymUuid={gym.uuid}
-              gymName={gym.name}
-              latitude={gym.latitude}
-              longitude={gym.longitude}
-            />
+            {/* Report a problem replaces Report a duplicate ("Listed twice" is one
+                of its reasons). The old island stays for as long as the flag can
+                be off, so signed-in climbers keep a duplicate report either way. */}
+            {showReportProblem ? (
+              <ReportGymButton gymUuid={gym.uuid} />
+            ) : reportsEnabled ? null : (
+              <GymReportDuplicateCta
+                gymUuid={gym.uuid}
+                gymName={gym.name}
+                latitude={gym.latitude}
+                longitude={gym.longitude}
+              />
+            )}
           </Box>
         </Box>
 

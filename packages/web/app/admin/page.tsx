@@ -106,6 +106,14 @@ export default function AdminPage() {
         >
           {t('nav.gymClaims')}
         </MuiLink>
+        <MuiLink
+          component={LocaleLink}
+          href="/admin/board-reports"
+          underline="hover"
+          sx={{ color: themeTokens.colors.primary }}
+        >
+          {t('nav.boardReports')}
+        </MuiLink>
         <MuiLink component={LocaleLink} href="/admin/feedback" underline="hover" sx={{ color: 'var(--color-primary)' }}>
           {t('nav.feedback')}
         </MuiLink>

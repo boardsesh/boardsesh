@@ -91,14 +91,18 @@
   },
   "card": {
     "claimed": "Gestita dalla palestra",
-    "unclaimed": "Non rivendicata",
+    "climberListed": "Aggiunta da un climber",
+    "unclaimed": "Non ancora rivendicata",
+    "claimCta": "Rivendica questa palestra",
+    "claimCtaAria": "Rivendica {{gym}}",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km"
   },
   "claim": {
-    "body": "È la tua palestra? Rivendicala e decidi tu i pannelli, gli orari e i link che i climber vedono qui.",
+    "body": "Gestisci una di queste palestre? Rivendicala per sistemare pannelli, orari e link.",
     "action": "Trova la tua palestra",
-    "topAction": "Gestisci una di queste pareti? Trova e rivendica la tua scheda gratis."
+    "topAction": "Gestisci una di queste palestre? Trovala e rivendicala. È gratis.",
+    "modeHint": "Cerca la tua palestra, poi rivendicala dalla sua scheda."
   },
   "nearMe": {
     "cta": "Usa la mia posizione",

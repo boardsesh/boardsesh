@@ -387,7 +387,7 @@ last, so the walkthrough needs re-recording.
 
 Four front doors open it, all in the board picker (`Board Picker Add Selected
 {kind: 'spraywall'}` names which): Add a Spraywall in the + menu of the picker's
-top bar (and of Manage boards), the same button under "No boards yet", and My
+top bar (and of Your boards), the same button under "No boards yet", and My
 Spraywall in the "Where do you climb?" block (#5654, `First Board Path Chosen
 {path: 'spray_wall'}`). That block offers it on both of its showings, the launch
 gate's and Climbs' Find my board. The route carries the picker's `source`

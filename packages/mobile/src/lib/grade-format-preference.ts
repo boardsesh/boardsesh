@@ -19,7 +19,7 @@ type GradeFormatSnapshot = { gradeFormat: GradeDisplayFormat; loaded: boolean };
 // by `useSyncExternalStore` to avoid an infinite render loop. A SINGLE
 // subscription per consumer keeps per-row overhead to one listener.
 // `chosen` is the climber's explicit pick (null until they make one);
-// `localeDefault` follows the app language (Font for Spanish and French), so a
+// `localeDefault` follows the app language (Font for Spanish, French, German and Italian), so a
 // climber who never opened the setting sees the scale their language reads.
 let chosen: GradeDisplayFormat | null = null;
 let localeDefault: GradeDisplayFormat = DEFAULT_GRADE_DISPLAY_FORMAT;

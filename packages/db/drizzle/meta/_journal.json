@@ -2336,22 +2336,50 @@
     {
       "idx": 333,
       "version": "7",
-      "when": 1795444076076,
-      "tag": "0333_gym_reporting_foundation",
+      "when": 1795428172077,
+      "tag": "0333_board_moderation_events",
       "breakpoints": true
     },
     {
       "idx": 334,
       "version": "7",
-      "when": 1795445742298,
-      "tag": "0334_gym_reporting_tick_time_binding",
+      "when": 1795432928470,
+      "tag": "0334_directory_reports",
       "breakpoints": true
     },
     {
       "idx": 335,
       "version": "7",
-      "when": 1795445745845,
-      "tag": "0335_gym_reporting_alias_venue_guard",
+      "when": 1795439791727,
+      "tag": "0335_gym_claim_revoked",
+      "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1795443893672,
+      "tag": "0336_gym_claim_decision_previous_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1795475967150,
+      "tag": "0337_gym_reporting_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 338,
+      "version": "7",
+      "when": 1795475967151,
+      "tag": "0338_gym_reporting_tick_time_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 339,
+      "version": "7",
+      "when": 1795475967152,
+      "tag": "0339_gym_reporting_alias_venue_guard",
       "breakpoints": true
     }
   ]

@@ -52,10 +52,12 @@ export default async function GymClaimSuccessPage({ searchParams }: { searchPara
           <Typography variant="body1" color="text.secondary">
             {t('claimLanding.success.body')}
           </Typography>
+          {/* Boards are why most claimants show up, so the claim lands them on
+              the Boards tab rather than the overview. */}
           {gymRef && (
             <Button
               component={LocaleLink}
-              href={`/gym/${gymRef}/manage`}
+              href={`/gym/${gymRef}/manage?tab=boards`}
               variant="contained"
               size="large"
               startIcon={<SettingsOutlined />}

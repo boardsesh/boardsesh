@@ -52,7 +52,29 @@
   display: none;
 }
 
+/* The claim call-out has two copies: above the boards on a phone, in the
+   details column from 960px up. Only one shows at a time. */
+.claimDesktop {
+  display: none;
+}
+
+@media (max-width: 959.98px) {
+  /* With the call-out moved up, a details column holding nothing else would be
+     a bare divider. */
+  .details:not(:has(> :not(.claimDesktop))) {
+    display: none;
+  }
+}
+
 @media (min-width: 960px) {
+  .claimPhone {
+    display: none;
+  }
+
+  .claimDesktop {
+    display: block;
+  }
+
   .identity:has(.photo) {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
     gap: var(--spacing-10);

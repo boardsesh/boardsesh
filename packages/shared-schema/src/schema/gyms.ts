@@ -34,7 +34,10 @@ export const gymsTypeDefs = /* GraphQL */ `
     pending
     approved
     denied
+    "An admin-review claim nobody decided within 30 days, or a domain link that went unused."
     expired
+    "An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again."
+    revoked
   }
 
   "Outcome of a requestGymClaim call, so clients can show the right next step."
@@ -73,6 +76,18 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Who runs a gym listing. The same for every viewer.
+  """
+  enum GymListingState {
+    "Synced from an upstream board provider; nobody has claimed it yet."
+    UNCLAIMED
+    "Owned by a climber who did not claim it, usually by naming the gym while setting up a board."
+    CLIMBER_LISTED
+    "Owned through an approved claim or an admin handover: the gym runs it."
+    RUN_BY_GYM
+  }
+
+  """
   A physical gym location that can contain multiple boards.
   """
   type Gym {
@@ -90,7 +105,7 @@ export const gymsTypeDefs = /* GraphQL */ `
     name: String!
     "Optional description"
     description: String
-    "Opening hours as one free-text line the gym maintains itself (no structured per-day model)."
+    "Opening hours as free text the gym maintains itself, line breaks kept (no structured per-day model)."
     hours: String
     "ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale."
     hoursUpdatedAt: String
@@ -148,6 +163,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     canClaim: Boolean!
     "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
     isClaimed: Boolean!
+    "Who runs this listing: not claimed yet, added by a climber, or run by the gym. Viewer-independent."
+    listingState: GymListingState!
     """
     Whether this gym's website can drive the self-service email claim: a real
     (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
@@ -573,6 +590,14 @@ export const gymsTypeDefs = /* GraphQL */ `
     message: String
     "When the claim was created"
     createdAt: String!
+    "Admin queue only: days since the claimant's account was created."
+    claimantAccountAgeDays: Int
+    "Admin queue only: how many climbs the claimant has logged."
+    claimantTickCount: Int
+    "Admin queue only: how many other live gyms the claimant owns or is an admin of."
+    claimantGymsHeld: Int
+    "Auto-approved list only: when the claim took the gym."
+    approvedAt: String
   }
 
   """
@@ -606,6 +631,30 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Input for taking back an approved gym claim (global admin only).
+  """
+  input RevertGymClaimInput {
+    "The approved claim to take back (the id the admin queue and the daily digest use)"
+    claimId: ID!
+    "Why, for the ownership audit trail. Optional."
+    reason: String
+  }
+
+  """
+  What revertGymClaim did.
+  """
+  type RevertGymClaimResult {
+    "The reverted claim"
+    claimId: ID!
+    "The gym, now unclaimed"
+    gymUuid: ID!
+    "The gym's name"
+    gymName: String!
+    "Gym members and editors removed: the claimant's own row and everyone added since the claim"
+    removedMemberCount: Int!
+  }
+
+  """
   Input for listing pending gym claims (admin only).
   """
   input PendingGymClaimsInput {
@@ -613,6 +662,18 @@ export const gymsTypeDefs = /* GraphQL */ `
     limit: Int
     "Offset for pagination"
     offset: Int
+  }
+
+  """
+  Input for listing claims that approved themselves (admin only).
+  """
+  input AutoApprovedGymClaimsInput {
+    "Max claims to return"
+    limit: Int
+    "Offset for pagination"
+    offset: Int
+    "Only this claim, for the daily digest's revert link. A claim that didn't approve itself comes back as an empty list."
+    claimId: ID
   }
 
   # ============================================

@@ -59,6 +59,12 @@ export function userBoardToItem(
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
     isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
+    canEdit: board.canEdit,
+    canDelete: board.canDelete,
+    canRemoveFromGym: board.canRemoveFromGym,
+    openReportCount: board.openReportCount,
+    viewerHasOpenReport: board.viewerHasOpenReport,
+    gymName: board.gymName,
     isPinned: isPinnedOverride ?? board.isPinnedByMe ?? false,
     offlineState: board.sprayImport ? undefined : offlineState,
     sprayImport: board.sprayImport,
@@ -162,7 +168,19 @@ export function pickerTopBoardsToItems(
     if (!topBoard) return [];
     const placed = { ...item, title: topBoard.title, isActive: topBoard.selected };
     if (climbersBoardKeys === undefined || climbersBoardKeys.has(item.key)) return [placed];
-    return [{ ...placed, isViewerOwner: undefined, isPinned: false, offlineState: undefined }];
+    return [
+      {
+        ...placed,
+        isViewerOwner: undefined,
+        isPinned: false,
+        offlineState: undefined,
+        canEdit: undefined,
+        canDelete: undefined,
+        canRemoveFromGym: undefined,
+        openReportCount: undefined,
+        viewerHasOpenReport: undefined,
+      },
+    ];
   });
 }
 

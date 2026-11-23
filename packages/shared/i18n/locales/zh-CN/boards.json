@@ -184,7 +184,6 @@
       "updateError": "无法保存更改，请重试。",
       "updateSuccess": "岩馆已更新",
       "notFound": "找不到这家岩馆",
-      "noAccess": "你没有权限编辑这家岩馆",
       "back": "返回",
       "name": "名称",
       "namePlaceholder": "岩馆名称",
@@ -204,24 +203,25 @@
       "publicHint": "在地图上显示，方便攀岩者找到",
       "website": "网站",
       "websitePlaceholder": "https://yourgym.com",
-      "websiteHint": "有人认领岩馆时，我们会用此网站验证所有权"
+      "websiteHint": "有人认领岩馆时，我们会用此网站验证所有权",
+      "hours": "营业时间",
+      "hoursPlaceholder": "周一至周五 10:00-22:00，周末 9:00-20:00"
     },
     "manage": {
-      "ownedHeader": "你的训练板",
+      "ownedHeader": "你添加的",
       "followingHeader": "已关注",
-      "deleteTitle": "删除训练板？",
-      "deleteMessage": "要从你的训练板中移除“{{name}}”吗？此操作无法撤销。",
       "deleteConfirm": "删除",
       "cancel": "取消",
       "deleteError": "无法删除这块训练板，请重试。",
-      "unfollowError": "无法取消关注这块训练板，请重试。",
+      "unfollowError": "无法从你的训练板中移除这块训练板，请重试。",
       "deleteAria": "删除 {{name}}",
-      "unfollowTitle": "取消关注？",
-      "unfollowMessage": "“{{name}}”是你当前使用的训练板。取消关注会将其从你的训练板列表中移除，并清除当前选择。",
-      "unfollowConfirm": "取消关注",
+      "unfollowTitle": "要从你的训练板中移除吗？",
+      "unfollowMessage": "“{{name}}”是你当前使用的训练板。移除后会清除当前选择，其他攀岩者仍能看到它。",
+      "unfollowConfirm": "移除",
       "deleteWallTitle": "删除喷点墙？",
       "deleteWallMessage": "要删除“{{name}}”吗？它的照片和线路将无法再访问。此操作无法撤销。",
-      "deleteSuccess": "已删除“{{name}}”"
+      "deleteSuccess": "已删除“{{name}}”",
+      "unfollowRow": "从你的训练板中移除"
     },
     "emptyTitle": "还没有训练板",
     "emptySubtitle": "搜索训练板，开始攀爬",
@@ -304,7 +304,7 @@
       "nearbyMap": "地图",
       "allowLocation": "允许定位",
       "locationBanner": "定位已关闭，开启后可查看附近的训练板。",
-      "manage": "管理",
+      "manage": "查看全部",
       "nearbyAllAbove": "20 公里内没有其他训练板",
       "yourBoardsAllAbove": "你的所有训练板都已列在上方"
     },
@@ -400,7 +400,7 @@
       "aria": "添加训练板",
       "setUp": "设置训练板",
       "sprayWall": "添加喷点墙",
-      "findGym": "寻找岩馆训练板"
+      "findGym": "寻找岩馆"
     },
     "boardDetail": {
       "setActive": "设为当前训练板",
@@ -435,7 +435,9 @@
         "publicHint": "任何人都可以打开此训练板。",
         "unlistedHint": "仅限你发送链接的攀岩者。",
         "inviteHint": "打开链接的人可以点击“加入”获取访问权限。"
-      }
+      },
+      "about": "关于这块训练板",
+      "atGym": "位于 {{gym}}"
     },
     "disambiguation": {
       "title": "你正在使用哪块训练板？",
@@ -476,11 +478,54 @@
       "shareAriaLabel": "分享 {{name}}",
       "shareText": "用 Boardsesh 在 {{name}} 攀爬",
       "linkCopied": "链接已复制",
-      "shareFailed": "无法分享链接"
+      "shareFailed": "无法分享链接",
+      "seeGym": "查看岩馆",
+      "seeGymAria": "查看 {{gym}}"
+    },
+    "gymPage": {
+      "addressHint": "在地图中打开",
+      "boardsTitle": "训练板",
+      "emptyBoardsTitle": "这里还没有训练板",
+      "emptyBoardsBody": "在这里攀岩？设置训练板，让你的伙伴也能找到它。",
+      "emptyBoardsAction": "设置训练板",
+      "boardsError": "无法加载这家岩馆的训练板。",
+      "boardsRetry": "重试",
+      "yoursPill": "你的",
+      "infoTitle": "信息",
+      "hours": "营业时间",
+      "hoursUpdated": "{{when}}更新",
+      "website": "网站",
+      "phone": "电话",
+      "email": "邮箱",
+      "follow": "关注岩馆",
+      "unfollow": "取消关注岩馆",
+      "followError": "无法更新，请重试。",
+      "actionsAria": "{{gym}} 的更多操作",
+      "startTitle": "从这里开始",
+      "startBoards": "检查训练板",
+      "startHours": "添加营业时间",
+      "startTv": "把岩壁投到电视上",
+      "staffTitle": "运营你的岩馆",
+      "editDetails": "编辑岩馆信息",
+      "nearbyBoards": "岩馆附近的训练板",
+      "kiosks": "展示屏和电视",
+      "insights": "数据洞察",
+      "opensWebsite": "在网站中打开",
+      "openError": "无法打开，请在浏览器中尝试。",
+      "claimTitle": "你运营这家岩馆？",
+      "claimBody": "认领后即可修正训练板、添加营业时间，并把岩壁投到电视上。完全免费。",
+      "claimCta": "认领这家岩馆",
+      "claimCtaSignedOut": "登录并认领",
+      "claimPending": "你的认领正在审核中。无论结果如何，我们都会发邮件告诉你，通常在几天内。",
+      "claimDenied": "你对 {{gym}} 的认领没有通过。如果我们弄错了，请回复我们的邮件，或者再试一次。",
+      "claimDeniedClosed": "你对 {{gym}} 的认领没有通过。如果我们弄错了，请回复我们的邮件。",
+      "claimRetry": "再试一次",
+      "notFound": "找不到这家岩馆",
+      "report": "报告问题"
     },
     "myGyms": {
-      "moreRowTitle": "我的岩馆",
-      "screenTitle": "我的岩馆",
+      "moreRowTitle": "你运营的岩馆",
+      "screenTitle": "你运营的岩馆",
       "loadError": "无法加载你的岩馆，请重试。",
       "retry": "重试",
       "emptyTitle": "还没有岩馆",
@@ -529,10 +574,9 @@
     "gymClaim": {
       "title": "认领 {{gym}}",
       "done": "完成",
-      "sectionTitle": "这家岩馆归你所有？",
-      "sectionDescription": "认领后，可维护岩馆信息和训练板。",
       "claimAction": "认领这家岩馆",
       "errorGeneric": "出了点问题，请重试。",
+      "errorRunByStaff": "这家岩馆由其工作人员运营。如果有误，请报告问题，我们的团队会查看。",
       "switchToAdmin": "没有工作邮箱？请团队人工审核",
       "switchToDomain": "改用工作邮箱验证",
       "domain": {
@@ -541,7 +585,8 @@
         "emailPlaceholder": "you@{{domain}}",
         "submit": "发送验证邮件",
         "submitShort": "发送",
-        "sent": "请查看 {{email}} 的收件箱，点击链接完成验证。"
+        "sent": "请查看 {{email}} 的收件箱，点击链接完成验证。",
+        "mismatch": "此邮箱不属于 {{domain}}。请使用岩馆网站域名的邮箱，或改为申请人工审核。"
       },
       "admin": {
         "description": "告诉我们你在经营 {{gym}}，团队会审核你的认领申请。",
@@ -553,8 +598,7 @@
       },
       "approved": {
         "sent": "你现在可以管理 {{gym}}。",
-        "manageCta": "设置你的岩馆",
-        "manageError": "无法打开岩馆设置，请尝试使用浏览器。"
+        "manageCta": "查看你的训练板"
       },
       "protections": {
         "syncFreeze": "认领后，你的修改会被保留。位置同步绝不会覆盖所有者设置的内容。",
@@ -649,7 +693,7 @@
       "noGymHintOffMap": "未公开时不会显示在地图上。",
       "addNew": "列表里没有我的岩馆",
       "empty": "附近没有岩馆",
-      "sharedEditHint": "这家岩馆的工作人员将可以编辑此训练板的详情。",
+      "sharedEditHint": "岩馆工作人员可以编辑这块训练板的详情，也可以把它从岩馆记录中移除。训练板仍归你所有。",
       "linkError": "无法关联该岩馆，它可能离训练板太远。其他更改已保存。"
     },
     "sprayShare": {
@@ -704,44 +748,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "未找到训练板",
-    "chips": {
-      "unlisted": "不公开列出",
-      "locationHidden": "位置已隐藏"
-    },
-    "tabs": {
-      "leaderboard": "排行榜",
-      "comments": "评论"
-    },
     "actions": {
-      "addToGym": "添加到岩馆",
       "edit": "编辑",
-      "delete": "删除"
-    },
-    "stats": {
-      "ascents": "次完攀",
-      "climbers": "位攀岩者",
-      "followers": "位关注者",
-      "comments": "条评论"
-    },
-    "delete": {
-      "title": "删除训练板",
-      "confirm": "要删除“{{name}}”吗？此操作无法撤销。",
-      "cancel": "取消",
       "delete": "删除"
     },
     "snackbar": {
       "deleted": "训练板已删除",
-      "deleteFailed": "删除训练板失败",
-      "linkedToGym": "训练板已关联岩馆",
-      "unlinkedFromGym": "训练板已取消关联岩馆",
-      "linkFailed": "训练板关联岩馆失败"
-    },
-    "comments": {
-      "title": "训练板讨论"
-    },
-    "follow": {
-      "entityLabel": "训练板"
+      "deleteFailed": "删除训练板失败"
     }
   },
   "boardForm": {
@@ -834,21 +847,6 @@
     "myLocation": "我的位置",
     "helpText": "点击地图设置训练板位置，或拖动标记调整"
   },
-  "boardLeaderboard": {
-    "empty": "这个时间段还没有活动。",
-    "period": {
-      "week": "周",
-      "month": "月",
-      "year": "年",
-      "all": "全部时间"
-    },
-    "columns": {
-      "climber": "攀岩者",
-      "sends": "完攀",
-      "flashes": "一次完攀",
-      "hardest": "最高难度"
-    }
-  },
   "boardPill": {
     "switchHint": "打开训练板切换器"
   },
@@ -893,12 +891,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "正在加载岩馆…",
-    "linkToGym": "关联岩馆",
-    "noGym": "无岩馆",
-    "createNew": "新建"
-  },
   "similarGyms": {
     "heading": "你的岩馆可能已经在这里了",
     "subtitle": "认领自己的岩馆进行管理，或在下方添加新的。",
@@ -910,16 +902,6 @@
     "createAnyway": "都不是？使用下方按钮添加你的岩馆。"
   },
   "gymEntity": {
-    "notFound": "未找到岩馆",
-    "tabs": {
-      "members": "成员",
-      "comments": "评论"
-    },
-    "actions": {
-      "edit": "编辑",
-      "delete": "删除",
-      "claim": "认领"
-    },
     "stats": {
       "boards": "块训练板",
       "members": "位成员",
@@ -933,16 +915,6 @@
       "followers_other": "位关注者",
       "comments_one": "条评论",
       "comments_other": "条评论"
-    },
-    "delete": {
-      "title": "删除岩馆",
-      "confirm": "要删除“{{name}}”吗？此操作无法撤销。",
-      "cancel": "取消",
-      "delete": "删除"
-    },
-    "snackbar": {
-      "deleted": "岩馆已删除",
-      "deleteFailed": "删除岩馆失败"
     },
     "comments": {
       "title": "岩馆讨论"
@@ -1002,6 +974,7 @@
     "switchToDomain": "改用工作邮箱验证",
     "errors": {
       "generic": "出了点问题，请重试。",
+      "runByStaff": "这家岩馆由其工作人员运营。如果有误，请报告问题，我们的团队会查看。",
       "tokenUnavailable": "无法确认你的登录状态，请刷新页面后重试。"
     },
     "domain": {
@@ -1021,7 +994,7 @@
     },
     "approved": {
       "body": "{{gym}} 已归你管理，准备好后就可以开始设置。",
-      "manageCta": "设置你的岩馆"
+      "manageCta": "查看你的训练板"
     },
     "protections": {
       "syncFreeze": "认领后，你的修改会被保留。位置同步绝不会覆盖所有者设置的内容。",
@@ -1033,7 +1006,7 @@
     "success": {
       "title": "岩馆归你管理了",
       "body": "你现在是所有者了。维护岩馆信息和训练板，也可以邀请伙伴来帮忙。",
-      "setupCta": "设置你的岩馆"
+      "setupCta": "查看你的训练板"
     },
     "error": {
       "title": "该链接无效",
@@ -1043,7 +1016,8 @@
         "used": "此链接已被使用。",
         "superseded": "这家岩馆现已有其他所有者，此链接无法转移所有权。请从岩馆页面重新发起认领。",
         "serverError": "我们的服务出了点问题，请稍后重试。"
-      }
+      },
+      "backToGym": "返回 {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1730,5 +1704,185 @@
     "lightingUnavailable": "请启用 LED 并保存 WLED 地址。",
     "lightingRangeError": "布线使用了超出 WLED 配置范围的 LED 编号，请检查布线路径和跳过的 LED。",
     "lightingChasing": "逐行测试进行中…"
+  },
+  "gymBoards": {
+    "remove": "从岩馆移除",
+    "removeFromNamed": "从 {{gym}} 移除",
+    "removeTitle": "要把 {{board}} 从 {{gym}} 移除吗？",
+    "removeBodyOwn": "它会从 {{gym}} 的页面和展示终端上消失，但仍保留在你的训练板中。",
+    "removeBodyOther": "它会从{{gym}}的页面和展示终端上消失。{{name}} 仍会保留这块训练板。",
+    "removeBodyOtherHidden": "它会从{{gym}}的页面和展示终端上消失。添加它的攀岩者仍会保留这块训练板。",
+    "removeBodySynced": "它会从 {{gym}} 的页面和展示终端上消失。",
+    "removeConfirm": "移除",
+    "removed": "已从 {{gym}} 移除。",
+    "removeFailed": "无法移除这块训练板，请重试。",
+    "removeSyncedError": "这块训练板来自公开的训练板数据，无法移除。请改为删除。",
+    "removedByGymError": "这家岩馆的工作人员已将这块训练板从岩馆记录中移除。请联系他们重新添加。",
+    "deleteTitle": "要为所有人删除 {{board}} 吗？",
+    "deleteBodyOwn": "它会从你和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodyOther": "这块训练板由 {{name}} 添加。它会从对方和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodyOtherHidden": "这块训练板由一位攀岩者添加。它会从对方和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodySynced": "它会从所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteConfirm": "删除训练板",
+    "cancel": "取消"
+  },
+  "boardOrigin": {
+    "addedBy": "由 {{name}} 添加",
+    "addedByYou": "由你添加",
+    "addedByHidden": "由一位攀岩者添加",
+    "synced": "来自公开的训练板数据"
+  },
+  "report": {
+    "action": "举报问题",
+    "actionAria": "举报 {{name}} 的问题",
+    "reported": "已举报",
+    "title": "举报问题",
+    "boardAtGym": "{{gym}}的{{board}}",
+    "question": "哪里不对？",
+    "boardReasons": {
+      "wrongSetup": "设置有误",
+      "wrongSetupHint": "布局、尺寸、岩点或角度与岩壁不符",
+      "duplicate": "重复收录",
+      "duplicateHint": "这里的另一块训练板是同一面墙",
+      "gone": "已不在岩壁上",
+      "goneHint": "已拆除、已更换，或岩馆已关闭",
+      "wrongPlace": "岩馆或地点不对",
+      "wrongPlaceHint": "它在别处，或者是某人的家庭岩壁",
+      "other": "其他",
+      "relistRequest": "重新加回岩馆"
+    },
+    "gymReasons": {
+      "duplicate": "重复收录",
+      "duplicateHint": "另一条记录是同一家岩馆",
+      "closed": "已永久关闭",
+      "closedHint": "不再营业",
+      "details": "地址或信息有误",
+      "detailsHint": "地址、营业时间、网站或电话不对",
+      "home": "这是私人住宅",
+      "homeHint": "私人岩壁不该出现在地图上",
+      "other": "其他"
+    },
+    "duplicateBoardPick": "哪块训练板是同一面墙？",
+    "notSure": "不确定",
+    "noteLabel": "还有别的吗？（选填）",
+    "notePlaceholder": "岩壁上有什么，比如 12x14、40°",
+    "noteRequiredLabel": "哪里不对？",
+    "noteRequiredPlaceholder": "告诉他们哪里不对（至少 10 个字）",
+    "noteRemaining_one": "还差 {{count}} 个字",
+    "noteRemaining_other": "还差 {{count}} 个字",
+    "send": "发送",
+    "routeCreator": "添加这块训练板的 {{name}} 会看到这条举报。",
+    "routeCreatorHidden": "添加这块训练板的攀岩者会看到这条举报。",
+    "routeCreatorAndStaff": "添加这块训练板的 {{name}} 和 {{gym}} 的工作人员会看到这条举报。",
+    "routeCreatorHiddenAndStaff": "添加这块训练板的攀岩者和 {{gym}} 的工作人员会看到这条举报。",
+    "routeCreatorAndTeam": "添加这块训练板的 {{name}} 和我们的团队会看到这条举报。",
+    "routeCreatorHiddenAndTeam": "添加这块训练板的攀岩者和我们的团队会看到这条举报。",
+    "routeCreatorStaffAndTeam": "添加这块训练板的 {{name}}、{{gym}} 的工作人员和我们的团队会看到这条举报。",
+    "routeCreatorHiddenStaffAndTeam": "添加这块训练板的攀岩者、{{gym}} 的工作人员和我们的团队会看到这条举报。",
+    "routeStaff": "{{gym}} 的工作人员会看到这条举报。",
+    "routeGymAndStaff": "{{gym}} 的工作人员和我们的团队会看到这条举报。",
+    "routeTeam": "Boardsesh 上还没人经营 {{gym}}，所以我们的团队会看到这条举报。",
+    "routeGym": "我们的团队会看到这条举报。",
+    "claimNudge": "你经营 {{gym}} 吗？认领后就能自己修改。",
+    "sent": "已发送。处理好后我们会通知你。",
+    "joined_one": "另有 {{count}} 位攀岩者也举报了这个问题，你的举报已加入。",
+    "joined_other": "另有 {{count}} 位攀岩者也举报了这个问题，你的举报已加入。",
+    "alreadyReported": "你已经举报过了。处理好后我们会通知你。",
+    "offline": "请联网后提交举报。",
+    "error": "举报未能提交，请重试。",
+    "relistAsk": "请 {{gym}} 重新收录",
+    "relistAskHint": "他们的工作人员把它从岩馆移除了。我们会请他们重新添加。",
+    "relistSent": "已发出请求。{{gym}} 工作人员做出决定后，我们会告诉你。",
+    "relistAlready": "你已经请求过了。{{gym}} 工作人员做出决定后，我们会告诉你。",
+    "duplicateGymSearch": "查找另一条岩馆记录",
+    "gymSearchPlaceholder": "岩馆名称",
+    "noMatches": "还没有匹配结果，请换个名称试试。",
+    "cancel": "取消",
+    "done": "完成",
+    "retry": "重试",
+    "loading": "正在加载",
+    "loadError": "无法加载这块训练板，请重试。",
+    "signInTitle": "登录后报告问题",
+    "signInBody": "登录后我们会直接带你回到这里。",
+    "boardListLink": "这块训练板有问题？",
+    "web": {
+      "noteRequiredLabel": "说明哪里不对（至少 10 个字符）"
+    }
+  },
+  "reportReview": {
+    "title": "攀岩者举报了这块训练板",
+    "reasonCount_one": "{{reason}} · {{count}} 位攀岩者",
+    "reasonCount_other": "{{reason}} · {{count}} 位攀岩者",
+    "relistRequest": "已请求重新收录",
+    "notesHeading": "他们的说明",
+    "teamDate": "如果到 {{date}} 还没处理，我们的团队会去看看。",
+    "teamLooking": "我们的团队正在处理这一条，他们关闭后才会结束。",
+    "nothingOpen": "这块训练板上已没有待处理的举报。",
+    "loadError": "无法加载举报，请重试。",
+    "fix": "修正设置",
+    "fixHint": "修改布局、尺寸、岩点或角度",
+    "remove": "从 {{gym}} 移除",
+    "removeHintOwn": "仍保留在你的训练板中",
+    "removeHintOther": "仍保留在 {{name}} 的训练板中",
+    "removeHintOtherHidden": "仍保留在添加它的攀岩者那里",
+    "delete": "删除训练板",
+    "deleteHint": "对所有人删除。已记录的完攀会保留。",
+    "keep": "现在没问题",
+    "keepHint": "关闭举报并告诉他们原因",
+    "keepTitle": "现在没问题",
+    "keepReplyLabel": "告诉他们原因（选填）",
+    "keepReplyPlaceholder": "上周我们重新设置过了，现在应用和岩壁一致。",
+    "keepSend": "发送",
+    "fixedToast": "已保存。我们会通知举报的攀岩者。",
+    "savedToast": "已保存。",
+    "keptToast": "举报已关闭。我们会转达你的说明。",
+    "keepError": "未能提交，请重试。",
+    "keepPartial_one": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
+    "keepPartial_other": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
+    "statusPill": "已举报",
+    "open": "查看举报",
+    "review": "查看",
+    "duplicateOf": "与 {{board}} 是同一块",
+    "inTeamQueue": "我们的团队正在处理，处理完后会关闭此报告。",
+    "removeHint": "它会从岩馆的页面和展示终端上消失",
+    "keepFailed": "无法关闭报告，请重试。",
+    "empty": "这块训练板已没有待处理的报告。",
+    "back": "返回",
+    "close": "关闭",
+    "web": {
+      "keepPartial": "已关闭 {{total}} 条报告中的 {{closed}} 条，请重试以关闭其余报告。"
+    }
+  },
+  "whoCanEdit": {
+    "boardTitle": "你不能编辑这块训练板",
+    "boardCreator": "这块训练板由 {{name}} 添加，所以由对方来修改。",
+    "boardCreatorHidden": "添加它的攀岩者可以修改。",
+    "boardStaff": "{{gym}} 的工作人员也可以修改。",
+    "boardSynced": "它来自公开的训练板数据。有人认领 {{gym}} 后，其工作人员就能修改。",
+    "boardSyncedNoGym": "它来自公开的训练板数据。",
+    "gymTitle": "你不能编辑这家岩馆",
+    "gymStaff": "{{gym}} 的工作人员负责这条记录。",
+    "gymClimber": "这家岩馆由 {{name}} 添加，所以由对方来修改。",
+    "gymClimberHidden": "这家岩馆由一位攀岩者添加，所以由对方来修改。",
+    "gymUnclaimed": "Boardsesh 上还没人经营这家岩馆。",
+    "claimHint": "如果你在这里工作，认领后这条记录就由你管理。",
+    "claimGym": "认领 {{gym}}",
+    "claimThisGym": "认领这家岩馆",
+    "goBack": "返回",
+    "rule": "谁添加的谁就能修改。岩馆被认领后，岩馆工作人员也能修改。其他人可以报告问题。",
+    "backToGym": "返回 {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "由岩馆运营",
+    "pillClimberListed": "由攀岩者添加",
+    "pillUnclaimed": "尚未认领",
+    "pillYouOwner": "你运营这家岩馆",
+    "pillYouAdmin": "你是这里的管理员",
+    "pillYouEditor": "你是这里的编辑",
+    "lineStaff": "{{gym}} 的工作人员负责更新此页面。",
+    "lineClimber": "{{name}} 添加了这家岩馆。岩馆工作人员可以认领它。",
+    "lineClimberHidden": "一位攀岩者添加了这家岩馆。岩馆工作人员可以认领它。",
+    "lineUnclaimed": "来自公开的训练板数据。目前还没有人在 Boardsesh 上运营它。",
+    "claimInline": "你运营这家岩馆？认领它"
   }
 }

@@ -1076,9 +1076,6 @@
       "allAtAngle": "Tutti i blocchi {{board}} a {{angle}}°"
     },
     "cta": {
-      "getApp": "Scarica l’app gratis",
-      "getAppAriaIos": "Scarica l’app gratis dall’App Store",
-      "getAppAriaAndroid": "Scarica l’app gratis da Google Play",
       "getAppHelper": "Illumina questo blocco sul tuo pannello {{board}} e registra la ripetizione.",
       "openInBrowser": "Apri nel browser",
       "openInBrowserMobile": "Oppure aprilo nel browser"

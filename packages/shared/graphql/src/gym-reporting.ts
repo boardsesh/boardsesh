@@ -44,7 +44,11 @@ export class GymReportingViewerChangedError extends Error {
 // receipt expires after five minutes and needs a fresh authorized response.
 export const GYM_REPORTING_RECEIPT_MS = 5 * 60_000;
 
-type ReportFilters = { queryKey: readonly unknown[]; exact?: boolean };
+type ReportFilters = {
+  queryKey: readonly unknown[];
+  exact?: boolean;
+  predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+};
 type ReportCache = {
   cancelQueries(filters: ReportFilters): Promise<void>;
   getQueryCache(): {
@@ -70,6 +74,14 @@ export async function retireGymReportingReceipt(cache: ReportCache, filters: Rep
   await cancelled;
   purge();
   await cache.invalidateQueries(filters);
+}
+
+/** A committed detach invalidates reports for the old gym across cached viewers. */
+export function retireGymReportingReceiptsForGym(cache: ReportCache, gymUuid: string) {
+  return retireGymReportingReceipt(cache, {
+    queryKey: [GYM_REPORTING_QUERY_ROOT],
+    predicate: ({ queryKey }) => queryKey[2] === gymUuid,
+  });
 }
 
 export function scheduleGymReportingReceiptExpiry(

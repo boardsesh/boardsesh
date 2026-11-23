@@ -195,6 +195,7 @@ export default defineConfig({
       './packages/shared/community-roles/vite.config.ts',
       './packages/shared/consent/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
+      './packages/shared/directory-moderation/vite.config.ts',
       './packages/shared/public-api/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
       './packages/shared/i18n/vite.config.ts',
@@ -1081,6 +1082,9 @@ export default defineConfig({
       'typecheck:community-roles': {
         command: 'pnpm --filter @boardsesh/community-roles run typecheck',
       },
+      'typecheck:directory-moderation': {
+        command: 'pnpm --filter @boardsesh/directory-moderation run typecheck',
+      },
       'typecheck:consent': {
         command: 'pnpm --filter @boardsesh/consent run typecheck',
       },
@@ -1209,6 +1213,7 @@ export default defineConfig({
           'typecheck:climb-filters',
           'typecheck:gym-filters',
           'typecheck:community-roles',
+          'typecheck:directory-moderation',
           'typecheck:consent',
           'typecheck:kiosk',
           'typecheck:i18n',

@@ -29,7 +29,8 @@
     "sprayWalls": "Données d'entraînement des Spraywalls",
     "boards": "Boards enregistrées",
     "buildPlans": "Commandes de packs de construction",
-    "partnerApps": "Applications partenaires"
+    "partnerApps": "Applications partenaires",
+    "boardReports": "Signalements de boards"
   },
   "buildPlans": {
     "title": "Commandes de packs de construction",
@@ -304,6 +305,13 @@
       "disabled": "Approbation automatique désactivée.",
       "saveFailed": "Enregistrement impossible. Réessayez.",
       "loadFailed": "Impossible de charger les paramètres des salles."
+    },
+    "dailyCap": {
+      "label": "Limite quotidienne",
+      "description": "Combien de revendications peuvent s'approuver automatiquement en 24 heures, tous comptes confondus. Au-delà, elles attendent une vérification. Avec 0, toutes passent en vérification.",
+      "save": "Enregistrer la limite",
+      "invalid": "Saisissez un nombre entier entre 0 et 1000.",
+      "saved": "Limite quotidienne enregistrée."
     }
   },
   "gymClaims": {
@@ -315,6 +323,7 @@
     "retry": "Réessayer",
     "approve": "Approuver",
     "deny": "Refuser",
+    "claimantHistory": "Compte : {{days}} jours · Carnet : {{ticks}} · Salles gérées : {{gyms}}",
     "method": {
       "domain": "Domaine",
       "admin": "Vérification"
@@ -333,7 +342,36 @@
       "date": "Date",
       "actions": "Actions"
     },
-    "loadMore": "Charger plus"
+    "loadMore": "Charger plus",
+    "autoApproved": {
+      "heading": "Revendications approuvées automatiquement",
+      "intro": "Chacune a pris une salle non revendiquée sans vérification. Annuler rend la salle aux données publiques des boards.",
+      "empty": "Aucune revendication ne s'est encore approuvée automatiquement.",
+      "error": "Impossible de charger ces revendications. Réessayez.",
+      "approvedOn": "Approuvée le {{date}}",
+      "reverted": "Annulée",
+      "revert": "Annuler",
+      "revertAria": "Annuler la revendication de {{claimant}} sur {{gym}}"
+    },
+    "revert": {
+      "title": "Annuler la revendication de {{claimant}} sur {{gym}} ?",
+      "body": "{{gym}} redevient non revendiquée. {{claimant}} et les personnes ajoutées comme membres ou éditeurs depuis la revendication perdent l'accès, la synchronisation des lieux reprend la fiche, et nous prévenons {{claimant}} par e-mail.",
+      "notUndone": "Les modifications des boards, les bornes et la description, les horaires et la photo de la salle restent tels quels. Corrigez-les à la main.",
+      "reasonLabel": "Motif (facultatif)",
+      "confirm": "Annuler la revendication",
+      "cancel": "Fermer",
+      "done": "{{gym}} est de nouveau non revendiquée.",
+      "missing": "La revendication {{claimId}} ne s'est pas approuvée automatiquement, ou elle n'existe plus. Pour rendre une salle, utilisez Changer le propriétaire d’une salle plus bas.",
+      "alreadyReverted": "La revendication {{claimId}} a déjà été annulée.",
+      "errors": {
+        "notFound": "Cette revendication ou sa salle n'existe plus.",
+        "notApproved": "Cette revendication n'est plus approuvée, il n'y a donc rien à annuler.",
+        "notTransferred": "Cette revendication n'a jamais transféré la salle, il n'y a donc rien à annuler. Utilisez Changer le propriétaire d’une salle plus bas.",
+        "ownerChanged": "La salle a changé de mains après cette revendication. Utilisez Changer le propriétaire d’une salle plus bas.",
+        "priorOwner": "Cette revendication a pris la salle à une personne, pas aux données publiques des boards. Utilisez Changer le propriétaire d’une salle plus bas pour la lui rendre.",
+        "failed": "Impossible d'annuler la revendication. Réessayez."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Changer le propriétaire d’une salle",
@@ -631,5 +669,81 @@
     "next": "Page suivante",
     "active": "Active",
     "suspended": "Suspendue"
+  },
+  "boardReports": {
+    "title": "Signalements de boards et de salles",
+    "backToAdmin": "Retour à l’administration",
+    "description": "Les signalements que personne d'autre ne peut traiter, et tous ceux encore ouverts après 14 jours. Ceux qui nous arrivent directement d'abord, puis les plus anciens.",
+    "filters": {
+      "status": "Statut",
+      "kind": "Afficher",
+      "kindAll": "Boards et salles",
+      "kindBoard": "Boards",
+      "kindGym": "Salles"
+    },
+    "status": {
+      "escalated": "Chez notre équipe",
+      "open": "Chez la personne qui l'a ajoutée ou l'équipe de la salle",
+      "fixed": "Corrigé",
+      "removed": "Retiré",
+      "deleted": "Supprimé",
+      "kept": "Gardé tel quel",
+      "merged": "Fusionné"
+    },
+    "kind": {
+      "board": "Board",
+      "gym": "Salle"
+    },
+    "chips": {
+      "sentToTeam": "Arrivé directement chez nous",
+      "waited": "Ouvert depuis 14 jours"
+    },
+    "meta_one": "{{count}} personne · ouvert {{age}}",
+    "meta_other": "{{count}} personnes · ouvert {{age}}",
+    "ageToday": "aujourd'hui",
+    "ageDays_one": "il y a {{count}} jour",
+    "ageDays_other": "il y a {{count}} jours",
+    "routedToLine": "Envoyé à : {{recipients}}",
+    "routedTo": {
+      "creator": "la personne qui l'a ajoutée",
+      "gymStaff": "l'équipe de la salle",
+      "admin": "notre équipe"
+    },
+    "duplicateOf": "Identique à {{name}}",
+    "note": "{{name}} : {{note}}",
+    "reporterUnknown": "Compte supprimé",
+    "closedOn": "Fermé le {{date}} : {{outcome}}",
+    "actions": {
+      "deleteBoard": "Supprimer la board",
+      "removeFromGym": "Retirer de la salle",
+      "hideGym": "Masquer la salle de la recherche",
+      "keep": "Garder tel quel",
+      "mergeGyms": "Fusionner dans Salles en double",
+      "openGym": "Ouvrir Gérer la salle"
+    },
+    "confirm": {
+      "deleteTitle": "Supprimer {{board}} pour tout le monde ?",
+      "deleteBody": "Elle disparaît pour chaque personne qui l'a enregistrée. Les croix déjà faites restent dans les carnets. Le signalement est fermé comme supprimé.",
+      "removeTitle": "Retirer {{board}} de {{gym}} ?",
+      "removeBody": "Elle disparaît de la page, des bornes et de la carte de la salle. La personne qui l'a ajoutée la garde. Le signalement est fermé comme retiré.",
+      "hideTitle": "Masquer {{gym}} de la recherche ?",
+      "hideBody": "Elle n'apparaît plus dans l'annuaire des salles ni dans la recherche. Sa page reste accessible avec le lien. Le signalement est fermé comme retiré.",
+      "keepTitle": "Garder tel quel ?",
+      "keepBody": "Le signalement est fermé et les personnes qui l'ont envoyé apprennent qu'il a été gardé tel quel.",
+      "keepNoteLabel": "Un mot pour elles (facultatif)",
+      "cancel": "Annuler"
+    },
+    "snackbar": {
+      "deleted": "Board supprimée. Le signalement est fermé.",
+      "removed": "Retirée de la salle. Le signalement est fermé.",
+      "hidden": "Salle masquée de la recherche. Le signalement est fermé.",
+      "hiddenStillOpen": "Salle masquée de la recherche, mais le signalement est toujours ouvert. Réessaie.",
+      "kept": "Signalement fermé.",
+      "failed": "Ça n'a pas marché. Réessaie."
+    },
+    "empty": "Rien ici.",
+    "error": "Impossible de charger les signalements. Réessaie.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus"
   }
 }

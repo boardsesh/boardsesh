@@ -1,4 +1,5 @@
 import type { GymClaimViewerState } from '@boardsesh/analytics';
+import type { GymListingState } from '@boardsesh/shared-schema';
 
 /**
  * Which arm of the claim call-out the server should render, if any.
@@ -25,61 +26,52 @@ type ClaimCtaInputs = {
   /** Whether the request carried an auth cookie (`getServerAuthToken()`). */
   serverHasSession: boolean;
   /**
-   * `gym.isClaimed` — viewer-independent, `ownerId !== SYSTEM_BOARD_OWNER_ID`
-   * on the backend. Gates the anonymous arm only: "Is this your gym?" under the
-   * displayed name of the person who already runs it reads as a mistake.
+   * Who runs the listing (`gym.listingState`), the same for every viewer
+   * (docs/product/gym-board-governance.md, decision 4).
    */
-  gymIsClaimed: boolean;
+  listingState: GymListingState;
 };
 
 /**
- * The session cookie — not `canClaim` — decides which arm can run at all: a
- * request with no session has no signed-in viewer to gate on, and a request
- * with one has already had `canClaim` computed against the real user (owner,
- * gym admin/editor and covering community leader all come back false).
+ * Who runs the listing decides whether a claim is on offer at all; the session
+ * cookie, not `canClaim`, then decides which arm.
  *
- * `gymIsClaimed` only ever narrows the anonymous arm. A signed-in non-member
- * asking for a gym someone else already owns is a deliberate, long-standing
- * path — the backend routes it to admin review — so the signed-in arm ignores
- * it entirely.
+ * - **Run by the gym** (an approved claim or an admin handover): hidden for
+ *   everyone. Its staff are named on the page, and an ownership dispute goes
+ *   through Report a problem, which reaches our team.
+ * - **Added by a climber** or **not claimed yet**: open. Signed in, `canClaim`
+ *   is the whole answer (owner, gym admin/editor and covering community leader
+ *   all come back false). Signed out, the anonymous arm shows: the gym's staff
+ *   who just googled their gym have never signed in, and a gym a climber minted
+ *   while setting up their board is exactly the listing they need to take over.
+ *   Before `listingState`, a climber-listed gym counted as claimed and hid the
+ *   anonymous arm.
  *
- * Switched on a joined key rather than nested ifs so the eight input states are
- * enumerated in one place. There is deliberately no `default` arm: the declared
- * return type makes an unhandled combination a "lacks ending return statement"
- * compile error instead of a silent `undefined`.
+ * Switched on the listing state with no `default`, so a fourth state is a
+ * compile error here instead of a silent `undefined`.
  */
 export function resolveClaimCtaVariant({
   serverCanClaim,
   serverHasSession,
-  gymIsClaimed,
+  listingState,
 }: ClaimCtaInputs): GymClaimCtaVariant {
-  const inputs = `${serverCanClaim}:${serverHasSession}:${gymIsClaimed}` as `${boolean}:${boolean}:${boolean}`;
-  switch (inputs) {
-    // Signed in: `canClaim` is the whole answer, claimed or not.
-    case 'true:true:true':
-    case 'true:true:false':
-      // A signed-in viewer the backend says may claim this gym.
-      return 'signed-in';
-    case 'false:true:true':
-    case 'false:true:false':
-      // Signed in and already covered — owner, admin/editor, community leader.
+  switch (listingState) {
+    case 'RUN_BY_GYM':
       return 'hidden';
-
-    // Anonymous: the arm exists for gyms nobody has claimed yet.
-    case 'true:false:false':
-    // Unreachable: `canClaim` needs an authenticated user. Grouped with the
-    // real anonymous case anyway, because with no session there is no
-    // signed-in viewer whose dialog we could open.
-    case 'false:false:false':
-      // The case this whole flow exists for: a gym owner who just googled their
-      // own gym and has never signed in.
+    case 'CLIMBER_LISTED':
+    case 'UNCLAIMED':
+      if (serverHasSession) return serverCanClaim ? 'signed-in' : 'hidden';
       return 'signed-out';
-    case 'true:false:true':
-    case 'false:false:true':
-      // Someone already runs this gym, and their name is on the page directly
-      // above where the call-out would sit.
-      return 'hidden';
   }
+}
+
+/**
+ * The listing state, read defensively: a gym from a backend that doesn't answer
+ * `listingState` falls back to the old two-state reading, where any real owner
+ * reads as running it (the conservative side: no claim offered to strangers).
+ */
+export function gymListingStateOf(gym: { listingState?: GymListingState | null; isClaimed: boolean }): GymListingState {
+  return gym.listingState ?? (gym.isClaimed ? 'RUN_BY_GYM' : 'UNCLAIMED');
 }
 
 /**

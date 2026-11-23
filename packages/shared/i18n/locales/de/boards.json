@@ -184,7 +184,6 @@
       "updateError": "Deine Änderungen ließen sich nicht speichern. Versuch es nochmal.",
       "updateSuccess": "Halle aktualisiert",
       "notFound": "Diese Halle haben wir nicht gefunden",
-      "noAccess": "Du darfst diese Halle nicht bearbeiten",
       "back": "Zurück",
       "name": "Name",
       "namePlaceholder": "Hallenname",
@@ -204,24 +203,25 @@
       "publicHint": "Zeig sie auf der Karte, damit Kletterer*innen sie finden",
       "website": "Website",
       "websitePlaceholder": "https://deinehalle.de",
-      "websiteHint": "Damit prüfen wir die Inhaberschaft, wenn jemand die Halle beansprucht"
+      "websiteHint": "Damit prüfen wir die Inhaberschaft, wenn jemand die Halle beansprucht",
+      "hours": "Öffnungszeiten",
+      "hoursPlaceholder": "Mo-Fr 10-22, Sa-So 9-20"
     },
     "manage": {
-      "ownedHeader": "Deine Boards",
+      "ownedHeader": "Von dir hinzugefügt",
       "followingHeader": "Du folgst",
-      "deleteTitle": "Board löschen?",
-      "deleteMessage": "„{{name}}“ aus deinen Boards entfernen? Das lässt sich nicht rückgängig machen.",
       "deleteConfirm": "Löschen",
       "cancel": "Abbrechen",
       "deleteError": "Dieses Board ließ sich nicht löschen. Versuch es nochmal.",
-      "unfollowError": "Das Folgen ließ sich nicht beenden. Versuch es nochmal.",
+      "unfollowError": "Das Board ließ sich nicht aus deinen Boards entfernen. Versuch es nochmal.",
       "deleteAria": "{{name}} löschen",
-      "unfollowTitle": "Nicht mehr folgen?",
-      "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
-      "unfollowConfirm": "Nicht mehr folgen",
+      "unfollowTitle": "Aus deinen Boards entfernen?",
+      "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du es entfernst, wird die Auswahl gelöscht. Für alle anderen bleibt es sichtbar.",
+      "unfollowConfirm": "Entfernen",
       "deleteWallTitle": "Spraywall löschen?",
       "deleteWallMessage": "„{{name}}“ löschen? Die Fotos und Boulder sind danach nicht mehr verfügbar. Das lässt sich nicht rückgängig machen.",
-      "deleteSuccess": "„{{name}}“ gelöscht"
+      "deleteSuccess": "„{{name}}“ gelöscht",
+      "unfollowRow": "Aus deinen Boards entfernen"
     },
     "emptyTitle": "Noch keine Boards",
     "emptySubtitle": "Such ein Board und leg los",
@@ -304,7 +304,7 @@
       "nearbyMap": "Karte",
       "allowLocation": "Standort erlauben",
       "locationBanner": "Standort ist aus. Schalte ihn ein, um Boards in deiner Nähe zu sehen.",
-      "manage": "Verwalten",
+      "manage": "Alle ansehen",
       "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km",
       "yourBoardsAllAbove": "Alle deine Boards stehen weiter oben"
     },
@@ -400,7 +400,7 @@
       "aria": "Board hinzufügen",
       "setUp": "Board einrichten",
       "sprayWall": "Spraywall hinzufügen",
-      "findGym": "Board in einer Halle finden"
+      "findGym": "Halle finden"
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",
@@ -435,7 +435,9 @@
         "publicHint": "Jede*r kann dieses Board öffnen.",
         "unlistedHint": "Nur die Leute, denen du den Link schickst.",
         "inviteHint": "Wer ihn öffnet, kann auf Beitreten tippen und Zugang erhalten."
-      }
+      },
+      "about": "Über dieses Board",
+      "atGym": "In {{gym}}"
     },
     "disambiguation": {
       "title": "An welchem Board bist du?",
@@ -476,11 +478,54 @@
       "shareAriaLabel": "{{name}} teilen",
       "shareText": "Klettere bei {{name}} mit Boardsesh",
       "linkCopied": "Link kopiert",
-      "shareFailed": "Der Link konnte nicht geteilt werden"
+      "shareFailed": "Der Link konnte nicht geteilt werden",
+      "seeGym": "Halle ansehen",
+      "seeGymAria": "{{gym}} ansehen"
+    },
+    "gymPage": {
+      "addressHint": "Öffnet sich in Karten",
+      "boardsTitle": "Boards",
+      "emptyBoardsTitle": "Hier noch keine Boards",
+      "emptyBoardsBody": "Du kletterst hier? Richte das Board ein, damit deine Crew es findet.",
+      "emptyBoardsAction": "Board einrichten",
+      "boardsError": "Die Boards dieser Halle ließen sich nicht laden.",
+      "boardsRetry": "Nochmal versuchen",
+      "yoursPill": "Deins",
+      "infoTitle": "Infos",
+      "hours": "Öffnungszeiten",
+      "hoursUpdated": "Aktualisiert {{when}}",
+      "website": "Website",
+      "phone": "Telefon",
+      "email": "E-Mail",
+      "follow": "Halle folgen",
+      "unfollow": "Halle entfolgen",
+      "followError": "Das ließ sich nicht ändern. Versuch es nochmal.",
+      "actionsAria": "Mehr zu {{gym}}",
+      "startTitle": "Hier anfangen",
+      "startBoards": "Boards prüfen",
+      "startHours": "Öffnungszeiten eintragen",
+      "startTv": "Die Wand auf einen TV bringen",
+      "staffTitle": "Deine Halle betreuen",
+      "editDetails": "Hallendetails bearbeiten",
+      "nearbyBoards": "Boards in der Nähe deiner Halle",
+      "kiosks": "Kioske und TVs",
+      "insights": "Statistiken",
+      "opensWebsite": "Öffnet die Website",
+      "openError": "Das ließ sich nicht öffnen. Probier es im Browser.",
+      "claimTitle": "Du betreust diese Halle?",
+      "claimBody": "Beanspruch sie, um Boards zu korrigieren, Öffnungszeiten einzutragen und die Wand auf einen TV zu bringen. Kostenlos.",
+      "claimCta": "Diese Halle beanspruchen",
+      "claimCtaSignedOut": "Anmelden und beanspruchen",
+      "claimPending": "Dein Anspruch wird geprüft. Wir schreiben dir so oder so per E-Mail, meist innerhalb weniger Tage.",
+      "claimDenied": "Dein Anspruch auf {{gym}} ist nicht durchgegangen. Antworte auf unsere E-Mail, falls wir uns geirrt haben, oder versuch es noch einmal.",
+      "claimDeniedClosed": "Dein Anspruch auf {{gym}} ist nicht durchgegangen. Antworte auf unsere E-Mail, falls wir uns geirrt haben.",
+      "claimRetry": "Noch einmal versuchen",
+      "notFound": "Diese Halle haben wir nicht gefunden",
+      "report": "Problem melden"
     },
     "myGyms": {
-      "moreRowTitle": "Meine Hallen",
-      "screenTitle": "Meine Hallen",
+      "moreRowTitle": "Hallen, die du betreust",
+      "screenTitle": "Hallen, die du betreust",
       "loadError": "Deine Hallen ließen sich nicht laden. Versuch es nochmal.",
       "retry": "Nochmal versuchen",
       "emptyTitle": "Noch keine Hallen",
@@ -529,10 +574,9 @@
     "gymClaim": {
       "title": "{{gym}} beanspruchen",
       "done": "Fertig",
-      "sectionTitle": "Gehört dir diese Halle?",
-      "sectionDescription": "Beanspruche sie, damit Eintrag und Boards stimmen.",
       "claimAction": "Diese Halle beanspruchen",
       "errorGeneric": "Da ging etwas schief. Versuch es nochmal.",
+      "errorRunByStaff": "Diese Halle wird von ihrem Team betreut. Falls das nicht stimmt, melde ein Problem und unser Team schaut es sich an.",
       "switchToAdmin": "Keine Arbeits-E-Mail? Lass unser Team prüfen",
       "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
       "domain": {
@@ -541,7 +585,8 @@
         "emailPlaceholder": "du@{{domain}}",
         "submit": "Bestätigungs-E-Mail senden",
         "submitShort": "Senden",
-        "sent": "Schau in dein Postfach bei {{email}} und tipp auf den Link, um fertig zu werden."
+        "sent": "Schau in dein Postfach bei {{email}} und tipp auf den Link, um fertig zu werden.",
+        "mismatch": "Diese E-Mail liegt nicht bei {{domain}}. Nutz eine Adresse auf der Website-Domain der Halle oder frag stattdessen eine Prüfung an."
       },
       "admin": {
         "description": "Sag uns, dass du {{gym}} leitest, und unser Team prüft deinen Anspruch.",
@@ -553,8 +598,7 @@
       },
       "approved": {
         "sent": "{{gym}} gehört jetzt dir.",
-        "manageCta": "Halle einrichten",
-        "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
+        "manageCta": "Boards prüfen"
       },
       "protections": {
         "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
@@ -649,7 +693,7 @@
       "noGymHintOffMap": "Erscheint nicht auf der Karte, solange es nicht öffentlich ist.",
       "addNew": "Meine Halle fehlt in der Liste",
       "empty": "Keine Hallen in der Nähe",
-      "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
+      "sharedEditHint": "Das Team der Halle kann die Details dieses Boards bearbeiten und es aus seinem Eintrag nehmen. Es bleibt deins.",
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
     },
     "sprayShare": {
@@ -704,44 +748,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Board nicht gefunden",
-    "chips": {
-      "unlisted": "Nicht gelistet",
-      "locationHidden": "Standort verborgen"
-    },
-    "tabs": {
-      "leaderboard": "Rangliste",
-      "comments": "Kommentare"
-    },
     "actions": {
-      "addToGym": "Zur Halle hinzufügen",
       "edit": "Bearbeiten",
-      "delete": "Löschen"
-    },
-    "stats": {
-      "ascents": "Begehungen",
-      "climbers": "Kletterer*innen",
-      "followers": "Follower",
-      "comments": "Kommentare"
-    },
-    "delete": {
-      "title": "Board löschen",
-      "confirm": "„{{name}}“ löschen? Das lässt sich nicht rückgängig machen.",
-      "cancel": "Abbrechen",
       "delete": "Löschen"
     },
     "snackbar": {
       "deleted": "Board gelöscht",
-      "deleteFailed": "Board konnte nicht gelöscht werden",
-      "linkedToGym": "Board mit Halle verknüpft",
-      "unlinkedFromGym": "Board von Halle getrennt",
-      "linkFailed": "Board konnte nicht mit der Halle verknüpft werden"
-    },
-    "comments": {
-      "title": "Board-Diskussion"
-    },
-    "follow": {
-      "entityLabel": "Board"
+      "deleteFailed": "Board konnte nicht gelöscht werden"
     }
   },
   "boardForm": {
@@ -834,21 +847,6 @@
     "myLocation": "Mein Standort",
     "helpText": "Klick auf die Karte, um den Standort deines Boards zu setzen, oder zieh den Marker zurecht"
   },
-  "boardLeaderboard": {
-    "empty": "Für diesen Zeitraum noch keine Aktivität.",
-    "period": {
-      "week": "Woche",
-      "month": "Monat",
-      "year": "Jahr",
-      "all": "Gesamt"
-    },
-    "columns": {
-      "climber": "Kletterer*in",
-      "sends": "Begehungen",
-      "flashes": "Flashes",
-      "hardest": "Schwerste"
-    }
-  },
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
   },
@@ -893,12 +891,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Hallen werden geladen...",
-    "linkToGym": "Mit einer Halle verknüpfen",
-    "noGym": "Keine Halle",
-    "createNew": "Neu anlegen"
-  },
   "similarGyms": {
     "heading": "Sieht aus, als wäre deine Halle schon hier",
     "subtitle": "Beanspruche deine, um sie zu verwalten, oder leg unten eine neue an.",
@@ -910,16 +902,6 @@
     "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an."
   },
   "gymEntity": {
-    "notFound": "Halle nicht gefunden",
-    "tabs": {
-      "members": "Mitglieder",
-      "comments": "Kommentare"
-    },
-    "actions": {
-      "edit": "Bearbeiten",
-      "delete": "Löschen",
-      "claim": "Beanspruchen"
-    },
     "stats": {
       "boards": "Boards",
       "members": "Mitglieder",
@@ -933,16 +915,6 @@
       "followers_other": "Follower",
       "comments_one": "Kommentar",
       "comments_other": "Kommentare"
-    },
-    "delete": {
-      "title": "Halle löschen",
-      "confirm": "„{{name}}“ löschen? Das lässt sich nicht rückgängig machen.",
-      "cancel": "Abbrechen",
-      "delete": "Löschen"
-    },
-    "snackbar": {
-      "deleted": "Halle gelöscht",
-      "deleteFailed": "Halle konnte nicht gelöscht werden"
     },
     "comments": {
       "title": "Hallen-Diskussion"
@@ -1002,6 +974,7 @@
     "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
     "errors": {
       "generic": "Da ging etwas schief. Versuch es nochmal.",
+      "runByStaff": "Diese Halle wird von ihrem Team betreut. Falls das nicht stimmt, melde ein Problem und unser Team schaut es sich an.",
       "tokenUnavailable": "Wir konnten deine Anmeldung nicht bestätigen. Lade die Seite neu und versuch es nochmal."
     },
     "domain": {
@@ -1021,7 +994,7 @@
     },
     "approved": {
       "body": "{{gym}} gehört jetzt dir. Richte sie ein, wann du willst.",
-      "manageCta": "Halle einrichten"
+      "manageCta": "Boards prüfen"
     },
     "protections": {
       "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
@@ -1033,7 +1006,7 @@
     "success": {
       "title": "Die Halle gehört dir",
       "body": "Du bist jetzt Inhaber*in. Halt Eintrag und Boards aktuell und hol deine Crew dazu, damit sie mit anpackt.",
-      "setupCta": "Halle einrichten"
+      "setupCta": "Boards prüfen"
     },
     "error": {
       "title": "Der Link hat nicht funktioniert",
@@ -1043,7 +1016,8 @@
         "used": "Dieser Link wurde schon benutzt.",
         "superseded": "Diese Halle hat jetzt einen anderen Besitzer, dieser Link kann sie also nicht übertragen. Starte den Anspruch nochmal von der Halle aus.",
         "serverError": "Bei uns ging etwas schief. Versuch es gleich nochmal."
-      }
+      },
+      "backToGym": "Zurück zu {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1730,5 +1704,185 @@
     "lightingUnavailable": "Aktiviere LEDs und speichere eine WLED-Adresse.",
     "lightingRangeError": "Die Verkabelung verwendet LED-Nummern außerhalb des in WLED eingerichteten Bereichs. Prüfe den Kabelverlauf und die übersprungenen LEDs.",
     "lightingChasing": "Lauflicht läuft…"
+  },
+  "gymBoards": {
+    "remove": "Aus der Halle entfernen",
+    "removeFromNamed": "Aus {{gym}} entfernen",
+    "removeTitle": "{{board}} aus {{gym}} entfernen?",
+    "removeBodyOwn": "Es verschwindet von der Seite und den Kiosken von {{gym}}. In deinen Boards bleibt es.",
+    "removeBodyOther": "Es verschwindet von der Seite und den Kiosken von {{gym}}. {{name}} behält es in den eigenen Boards.",
+    "removeBodyOtherHidden": "Es verschwindet von der Seite und den Kiosken von {{gym}}. Wer es angelegt hat, behält es in den eigenen Boards.",
+    "removeBodySynced": "Es verschwindet von der Seite und den Kiosken von {{gym}}.",
+    "removeConfirm": "Entfernen",
+    "removed": "Aus {{gym}} entfernt.",
+    "removeFailed": "Das Board ließ sich nicht entfernen. Versuch es nochmal.",
+    "removeSyncedError": "Dieses Board stammt aus öffentlichen Board-Daten und lässt sich nicht entfernen. Lösch es stattdessen.",
+    "removedByGymError": "Das Team dieser Halle hat das Board aus seinem Eintrag genommen. Bitte das Team, es wieder einzutragen.",
+    "deleteTitle": "{{board}} für alle löschen?",
+    "deleteBodyOwn": "Es verschwindet für dich und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodyOther": "{{name}} hat dieses Board angelegt. Es verschwindet für diese Person und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodyOtherHidden": "Jemand anderes hat dieses Board angelegt. Es verschwindet für diese Person und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodySynced": "Es verschwindet für alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteConfirm": "Board löschen",
+    "cancel": "Abbrechen"
+  },
+  "boardOrigin": {
+    "addedBy": "Angelegt von {{name}}",
+    "addedByYou": "Von dir angelegt",
+    "addedByHidden": "Von einer anderen Person angelegt",
+    "synced": "Aus öffentlichen Board-Daten"
+  },
+  "report": {
+    "action": "Problem melden",
+    "actionAria": "Problem mit {{name}} melden",
+    "reported": "Gemeldet",
+    "title": "Problem melden",
+    "boardAtGym": "{{board}} in {{gym}}",
+    "question": "Was ist falsch?",
+    "boardReasons": {
+      "wrongSetup": "Falsch eingerichtet",
+      "wrongSetupHint": "Layout, Größe, Griffe oder Winkel passen nicht zur Wand",
+      "duplicate": "Doppelt eingetragen",
+      "duplicateHint": "Ein anderes Board hier ist dieselbe Wand",
+      "gone": "Hängt nicht mehr an der Wand",
+      "goneHint": "Abgebaut, ersetzt oder die Halle ist zu",
+      "wrongPlace": "Falsche Halle oder falscher Ort",
+      "wrongPlaceHint": "Es ist woanders, oder es ist eine Heimwand",
+      "other": "Etwas anderes",
+      "relistRequest": "Wieder in die Halle aufnehmen"
+    },
+    "gymReasons": {
+      "duplicate": "Doppelt eingetragen",
+      "duplicateHint": "Ein anderer Eintrag ist dieselbe Halle",
+      "closed": "Für immer geschlossen",
+      "closedHint": "Sie macht nicht mehr auf",
+      "details": "Falsche Adresse oder Angaben",
+      "detailsHint": "Adresse, Öffnungszeiten, Website oder Telefon stimmen nicht",
+      "home": "Das ist ein Zuhause",
+      "homeHint": "Eine private Wand gehört nicht auf die Karte",
+      "other": "Etwas anderes"
+    },
+    "duplicateBoardPick": "Welches Board ist dieselbe Wand?",
+    "notSure": "Nicht sicher",
+    "noteLabel": "Noch etwas? (optional)",
+    "notePlaceholder": "Was an der Wand hängt, z. B. 12x14 bei 40°",
+    "noteRequiredLabel": "Was ist falsch?",
+    "noteRequiredPlaceholder": "Sag ihnen, was falsch ist (mindestens 10 Zeichen)",
+    "noteRemaining_one": "Noch {{count}} Zeichen",
+    "noteRemaining_other": "Noch {{count}} Zeichen",
+    "send": "Senden",
+    "routeCreator": "{{name}}, wer dieses Board angelegt hat, sieht die Meldung.",
+    "routeCreatorHidden": "Wer dieses Board angelegt hat, sieht die Meldung.",
+    "routeCreatorAndStaff": "{{name}}, wer dieses Board angelegt hat, und das Team von {{gym}} sehen die Meldung.",
+    "routeCreatorHiddenAndStaff": "Wer dieses Board angelegt hat, und das Team von {{gym}} sehen die Meldung.",
+    "routeCreatorAndTeam": "{{name}}, wer dieses Board angelegt hat, und unser Team sehen die Meldung.",
+    "routeCreatorHiddenAndTeam": "Wer dieses Board angelegt hat, und unser Team sehen die Meldung.",
+    "routeCreatorStaffAndTeam": "{{name}}, wer dieses Board angelegt hat, das Team von {{gym}} und unser Team sehen die Meldung.",
+    "routeCreatorHiddenStaffAndTeam": "Wer dieses Board angelegt hat, das Team von {{gym}} und unser Team sehen die Meldung.",
+    "routeStaff": "Das Team von {{gym}} sieht die Meldung.",
+    "routeGymAndStaff": "Das Team von {{gym}} und unser Team sehen die Meldung.",
+    "routeTeam": "Noch leitet niemand {{gym}} auf Boardsesh, deshalb sieht unser Team die Meldung.",
+    "routeGym": "Unser Team sieht die Meldung.",
+    "claimNudge": "Du leitest {{gym}}? Beanspruche sie und korrigiere es selbst.",
+    "sent": "Gesendet. Wir sagen dir Bescheid, sobald es erledigt ist.",
+    "joined_one": "{{count}} weitere*r Kletterer*in hat das auch gemeldet. Deine Meldung ist dabei.",
+    "joined_other": "{{count}} weitere Kletterer*innen haben das auch gemeldet. Deine Meldung ist dabei.",
+    "alreadyReported": "Das hast du schon gemeldet. Wir sagen dir Bescheid, sobald es erledigt ist.",
+    "offline": "Verbinde dich mit dem Internet, um die Meldung zu senden.",
+    "error": "Deine Meldung ist nicht angekommen. Versuch es erneut.",
+    "relistAsk": "{{gym}} bitten, es wieder einzutragen",
+    "relistAskHint": "Das Team hat es aus der Halle genommen. Wir bitten es, das Board wieder einzutragen.",
+    "relistSent": "Anfrage geschickt. Wir sagen dir, was das Team von {{gym}} entscheidet.",
+    "relistAlready": "Du hast schon gefragt. Wir sagen dir, was das Team von {{gym}} entscheidet.",
+    "duplicateGymSearch": "Anderen Eintrag finden",
+    "gymSearchPlaceholder": "Hallenname",
+    "noMatches": "Noch keine Treffer. Probier einen anderen Namen.",
+    "cancel": "Abbrechen",
+    "done": "Fertig",
+    "retry": "Erneut versuchen",
+    "loading": "Wird geladen",
+    "loadError": "Das Board konnte nicht geladen werden. Versuch es erneut.",
+    "signInTitle": "Melde dich an, um ein Problem zu melden",
+    "signInBody": "Melde dich an und wir bringen dich direkt hierher zurück.",
+    "boardListLink": "Stimmt etwas mit diesem Board nicht?",
+    "web": {
+      "noteRequiredLabel": "Beschreib, was nicht stimmt (mindestens 10 Zeichen)"
+    }
+  },
+  "reportReview": {
+    "title": "Kletterer*innen haben dieses Board gemeldet",
+    "reasonCount_one": "{{reason}} · {{count}} Kletterer*in",
+    "reasonCount_other": "{{reason}} · {{count}} Kletterer*innen",
+    "relistRequest": "Bittet darum, wieder eingetragen zu werden",
+    "notesHeading": "Das haben sie geschrieben",
+    "teamDate": "Ist es am {{date}} noch offen, schaut unser Team es sich an.",
+    "teamLooking": "Unser Team schaut sich das an. Es schließt sich, wenn das Team es schließt.",
+    "nothingOpen": "An diesem Board ist nichts mehr offen.",
+    "loadError": "Die Meldungen ließen sich nicht laden. Versuch es erneut.",
+    "fix": "Einrichtung korrigieren",
+    "fixHint": "Layout, Größe, Griffe oder Winkel ändern",
+    "remove": "Aus {{gym}} entfernen",
+    "removeHintOwn": "Es bleibt in deinen Boards",
+    "removeHintOther": "Es bleibt in den Boards von {{name}}",
+    "removeHintOtherHidden": "Es bleibt bei der Person, die es angelegt hat",
+    "delete": "Board löschen",
+    "deleteHint": "Für alle weg. Geloggte Begehungen bleiben.",
+    "keep": "Passt so",
+    "keepHint": "Meldung schließen und sagen, warum",
+    "keepTitle": "Passt so",
+    "keepReplyLabel": "Sag ihnen, warum (optional)",
+    "keepReplyPlaceholder": "Wir haben es letzte Woche neu geschraubt. Die App passt jetzt zur Wand.",
+    "keepSend": "Senden",
+    "fixedToast": "Gespeichert. Wir sagen den Kletterer*innen Bescheid, die es gemeldet haben.",
+    "savedToast": "Gespeichert.",
+    "keptToast": "Meldung geschlossen. Wir geben deine Notiz weiter.",
+    "keepError": "Das hat nicht geklappt. Versuch es erneut.",
+    "keepPartial_one": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
+    "keepPartial_other": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
+    "statusPill": "Gemeldet",
+    "open": "Meldungen ansehen",
+    "review": "Ansehen",
+    "duplicateOf": "Dasselbe Board wie {{board}}",
+    "inTeamQueue": "Unser Team kümmert sich darum. Die Meldung wird geschlossen, wenn es entschieden hat.",
+    "removeHint": "Es verschwindet von der Seite und den Kiosken der Halle",
+    "keepFailed": "Die Meldung konnte nicht geschlossen werden. Versuch es erneut.",
+    "empty": "Zu diesem Board ist nichts mehr offen.",
+    "back": "Zurück",
+    "close": "Schließen",
+    "web": {
+      "keepPartial": "{{closed}} von {{total}} Meldungen geschlossen. Versuch es für den Rest erneut."
+    }
+  },
+  "whoCanEdit": {
+    "boardTitle": "Du kannst dieses Board nicht bearbeiten",
+    "boardCreator": "{{name}} hat dieses Board angelegt und kann es ändern.",
+    "boardCreatorHidden": "Wer es angelegt hat, kann es ändern.",
+    "boardStaff": "Das Team von {{gym}} kann es auch ändern.",
+    "boardSynced": "Es stammt aus öffentlichen Board-Daten. Sobald jemand {{gym}} beansprucht, kann das Team es ändern.",
+    "boardSyncedNoGym": "Es stammt aus öffentlichen Board-Daten.",
+    "gymTitle": "Du kannst diese Halle nicht bearbeiten",
+    "gymStaff": "Das Team von {{gym}} betreut diesen Eintrag.",
+    "gymClimber": "{{name}} hat diese Halle angelegt und kann sie ändern.",
+    "gymClimberHidden": "Eine Person hat diese Halle angelegt und kann sie ändern.",
+    "gymUnclaimed": "Noch leitet niemand diese Halle auf Boardsesh.",
+    "claimHint": "Wenn du hier arbeitest, beanspruche sie, dann gehört der Eintrag dir.",
+    "claimGym": "{{gym}} beanspruchen",
+    "claimThisGym": "Diese Halle beanspruchen",
+    "goBack": "Zurück",
+    "rule": "Wer etwas angelegt hat, kann es ändern. Sobald eine Halle übernommen ist, kann das auch ihr Team. Alle anderen können ein Problem melden.",
+    "backToGym": "Zurück zu {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Von der Halle betreut",
+    "pillClimberListed": "Von der Community eingetragen",
+    "pillUnclaimed": "Noch nicht beansprucht",
+    "pillYouOwner": "Du betreust diese Halle",
+    "pillYouAdmin": "Du bist hier Admin",
+    "pillYouEditor": "Du bist hier Editor*in",
+    "lineStaff": "Das Team von {{gym}} hält diese Seite aktuell.",
+    "lineClimber": "{{name}} hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
+    "lineClimberHidden": "Jemand aus der Community hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
+    "lineUnclaimed": "Aus öffentlichen Board-Daten. Noch betreut niemand sie auf Boardsesh.",
+    "claimInline": "Du betreust diese Halle? Beanspruch sie"
   }
 }

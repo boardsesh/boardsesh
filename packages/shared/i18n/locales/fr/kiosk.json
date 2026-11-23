@@ -87,15 +87,13 @@
     "visitWebsite": "Visiter le site web",
     "install": {
       "heading": "Prends l'appli pour ce mur",
-      "body": "Allume les boards de {{gymName}} depuis ton téléphone et fais la croix sur chaque bloc.",
-      "googlePlay": "Disponible sur Google Play",
-      "appStore": "Télécharger dans l'App Store"
+      "body": "Allume les boards de {{gymName}} depuis ton téléphone et fais la croix sur chaque bloc."
     },
     "noBoardsYet": "Aucune board ici pour l'instant.",
     "explorePlaylists": "Découvre les playlists des grimpeurs",
     "startDiscussion": "Lancer la discussion",
-    "claimTitle": "C'est ta salle ?",
-    "claimBody": "Revendique-la pour gérer les boards, l'identité visuelle et ce qui s'affiche sur le mur.",
+    "claimTitle": "Tu gères cette salle ?",
+    "claimBody": "Revendique-la pour corriger les boards, ajouter tes horaires et afficher le mur sur une TV. C'est gratuit.",
     "claimCta": "Revendiquer cette salle",
     "claimCtaSignedOut": "Connecte-toi et revendique-la",
     "claimPendingTitle": "Ta demande est en cours d'examen",
@@ -202,8 +200,8 @@
           "body": "Ajoute ton logo et tes couleurs"
         },
         "boards": {
-          "title": "Relie tes boards",
-          "body": "Connecte les murs de ta salle"
+          "title": "Vérifie tes boards",
+          "body": "Corrige ou retire celles qui ne sont pas sur tes murs"
         },
         "members": {
           "title": "Invite ton crew",
@@ -213,7 +211,6 @@
     },
     "title": "Gérer {{gymName}}",
     "backToGym": "Retour à la page de la salle",
-    "accessDenied": "Tu n'as pas la permission de gérer cette salle.",
     "tabs": {
       "kiosks": "Bornes",
       "branding": "Identité",
@@ -291,21 +288,15 @@
     },
     "boards": {
       "heading": "Boards de cette salle",
-      "description": "Relie les boards que tu possèdes pour qu'elles apparaissent sur la page de ta salle et sur les bornes.",
+      "description": "Ces boards ont été ajoutées par des grimpeurs et grimpeuses ou par des données publiques. Corrige celles qui sont fausses et retire celles qui ne sont pas sur tes murs.",
       "addBoard": "Ajouter une board",
       "empty": "Aucune board reliée pour l'instant. Ajoutes-en une pour commencer.",
       "loadError": "Impossible de charger les boards de cette salle.",
-      "unlink": "Détacher",
-      "onlyOwnerCanUnlink": "Seul le propriétaire de la board peut la détacher",
-      "readOnlyHint": "Seul le propriétaire de la salle ou un admin peut relier des boards.",
-      "unlinkTitle": "Détacher cette board ?",
-      "unlinkBody": "« {{name}} » n'apparaîtra plus sur la page ni sur les bornes de cette salle. Tu peux la relier à tout moment.",
-      "unlinkConfirm": "Détacher",
+      "readOnlyHint": "Le propriétaire et les admins ajoutent leurs propres boards et suppriment ceux qui sont synchronisés. Tu peux retirer les boards ajoutées par des grimpeurs et ajouter celles qui sont près de ta salle.",
+      "askAdminToDelete": "Demande à un propriétaire ou à un admin de supprimer celle-ci.",
       "cancel": "Annuler",
       "linked": "Board reliée.",
       "linkFailed": "Impossible de relier la board.",
-      "unlinked": "Board détachée.",
-      "unlinkFailed": "Impossible de détacher la board.",
       "visibility": {
         "public": "Publique",
         "unlisted": "Non répertoriée",
@@ -321,8 +312,8 @@
         "close": "Fermer"
       },
       "strays": {
-        "heading": "Des boards qui sont peut-être les tiennes",
-        "description": "Elles sont dans ta salle ou sont restées sur une fiche fusionnée. Ajoute celles qui t'appartiennent.",
+        "heading": "Boards près de ta salle",
+        "description": "Elles sont à moins de 150 m de ta salle, ou viennent d'une fiche fusionnée. Ajoute celles qui sont sur tes murs.",
         "reasonMerged": "Était sur une fiche fusionnée",
         "reasonNearby": "à {{meters}} m",
         "reasonNearbyGeneric": "Juste à côté",
@@ -425,8 +416,8 @@
           "body": "Ajoute ton logo et tes couleurs"
         },
         "boards": {
-          "title": "Relie tes boards",
-          "body": "Connecte les murs de ta salle"
+          "title": "Vérifie tes boards",
+          "body": "Corrige ou retire celles qui ne sont pas sur tes murs"
         },
         "members": {
           "title": "Invite ton crew",

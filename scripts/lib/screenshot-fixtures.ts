@@ -204,6 +204,30 @@ const TICK_CHARACTERISTICS_SELECTION = 'isNoMatch characteristics';
 const BOARD_WALL_DEVICE_OPERATIONS = new Set(['GetBoard', 'GetMyBoards', 'GetGymBoardsForSwitcher']);
 const BOARD_WALL_DEVICE_SELECTION = 'hasLeds litByWallDevice';
 
+/**
+ * The same three operations predate each board's `canDelete` and
+ * `canRemoveFromGym` (#8043), which every board object now selects as a pair
+ * (after `isPinnedByMe` in BOARD_FIELDS, after `canEdit` in GYM_BOARD_FIELDS).
+ * Both are non-null and say what the viewer may do, which the recording cannot
+ * tell us, so they replay as `false`: the conservative answer, under which a
+ * screen offers no staff action the recording never showed. No capture opens a
+ * board card's menu, so no shot changes. A recording that already holds either
+ * field is not this case.
+ */
+const BOARD_STAFF_ACTION_SELECTION = ' canDelete canRemoveFromGym';
+
+/**
+ * The same three operations also predate each board's `openReportCount` and
+ * `viewerHasOpenReport` (#8043, report a problem), selected as a pair straight
+ * after `canRemoveFromGym` (in BOARD_FIELDS, and after GYM_BOARD_FIELDS in
+ * GetGymBoardsForSwitcher). Both are nullable and the server
+ * answers null for a viewer they don't concern, which is what the recording's
+ * viewer would have read for boards nobody had reported (reports did not exist
+ * when the sets were recorded). So they replay as null: no "Reported" pill, no
+ * review row. A recording that already holds either field is not this case.
+ */
+const BOARD_REPORT_FLAG_SELECTION = ' openReportCount viewerHasOpenReport';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -239,6 +263,13 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
  *   `litByWallDevice`, as `false` (`replayBoardsWithoutWallDevice`). It
  *   composes with the `sprayImport` adapter above.
+ * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
+ *   `canDelete` and `canRemoveFromGym`, as `false`
+ *   (`replayBoardsWithoutStaffActions`). It composes with both adapters above.
+ * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's nullable
+ *   `openReportCount` and `viewerHasOpenReport`, as null
+ *   (`replayBoardsWithoutReportFlags`). It composes with every board adapter
+ *   above.
  * - GetSessionWorkoutHeadlines: each headline's `mainTargetBoardType`.
  */
 export function replayCompatibleFixtureResponse(
@@ -250,6 +281,12 @@ export function replayCompatibleFixtureResponse(
   if (operationName !== fixture.operationName) return null;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
+    // The newest board fields first: each adapter strips its own selection and
+    // hands the rest back here, so a recording that predates both still lands.
+    const withoutReportFlags = replayBoardsWithoutReportFlags(requestQuery, fixture, evidence);
+    if (withoutReportFlags) return withoutReportFlags;
+    const withoutStaffActions = replayBoardsWithoutStaffActions(requestQuery, fixture, evidence);
+    if (withoutStaffActions) return withoutStaffActions;
     const adapted = replayBoardsWithoutWallDevice(requestQuery, fixture, evidence);
     if (adapted) return adapted;
   }
@@ -499,6 +536,98 @@ function replayBoardsWithoutWallDevice(
       : replayCompatibleFixtureResponse(withoutWallDevice, fixture, evidence);
   if (!base || !isRecord(base.response)) return null;
   return { response: { ...base.response, data: withWallDeviceOff(base.response.data) } };
+}
+
+/**
+ * A board document recorded before `canDelete` and `canRemoveFromGym`: the
+ * request is the recorded one with the pair added to every board object, plus
+ * any change another adapter accepts. Every board in the response (each object
+ * that answers `canEdit`, which every board selection carries) gets both as
+ * `false`.
+ */
+function replayBoardsWithoutStaffActions(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(BOARD_STAFF_ACTION_SELECTION);
+  // Always the pair, in that order: a lone copy of either means some other change.
+  if (pieces.length < 2) return null;
+  if (normalized.split('canDelete').length !== pieces.length) return null;
+  if (normalized.split('canRemoveFromGym').length !== pieces.length) return null;
+  if (!isRecord(fixture.response) || fixture.response.data === undefined) return null;
+  if (containsKey(fixture.response.data, 'canDelete') || containsKey(fixture.response.data, 'canRemoveFromGym')) {
+    return null;
+  }
+  const withoutStaffActions = pieces.join('');
+  // The request minus the pair has neither field left, so this cannot come back
+  // here: it is the recorded document, or another adapter's change.
+  const base =
+    withoutStaffActions === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutStaffActions, fixture, evidence);
+  if (!base || !isRecord(base.response)) return null;
+  return { response: { ...base.response, data: withStaffActionsOff(base.response.data) } };
+}
+
+/**
+ * A board document recorded before `openReportCount` and `viewerHasOpenReport`:
+ * the request is the recorded one with the pair added to every board object,
+ * plus any change another adapter accepts. Every board in the response (each
+ * object that answers `canEdit`) gets both as null.
+ */
+function replayBoardsWithoutReportFlags(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(BOARD_REPORT_FLAG_SELECTION);
+  // Always the pair, in that order: a lone copy of either means some other change.
+  if (pieces.length < 2) return null;
+  if (normalized.split('openReportCount').length !== pieces.length) return null;
+  if (normalized.split('viewerHasOpenReport').length !== pieces.length) return null;
+  if (!isRecord(fixture.response) || fixture.response.data === undefined) return null;
+  if (
+    containsKey(fixture.response.data, 'openReportCount') ||
+    containsKey(fixture.response.data, 'viewerHasOpenReport')
+  ) {
+    return null;
+  }
+  const withoutReportFlags = pieces.join('');
+  // The request minus the pair has neither field left, so this cannot come back
+  // here: it is the recorded document, or another adapter's change.
+  const base =
+    withoutReportFlags === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutReportFlags, fixture, evidence);
+  if (!base || !isRecord(base.response)) return null;
+  return { response: { ...base.response, data: withReportFlagsUnknown(base.response.data) } };
+}
+
+function withReportFlagsUnknown(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withReportFlagsUnknown);
+  if (!isRecord(value)) return value;
+  const adapted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) adapted[key] = withReportFlagsUnknown(child);
+  if ('canEdit' in value) {
+    adapted.openReportCount = null;
+    adapted.viewerHasOpenReport = null;
+  }
+  return adapted;
+}
+
+function withStaffActionsOff(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withStaffActionsOff);
+  if (!isRecord(value)) return value;
+  const adapted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) adapted[key] = withStaffActionsOff(child);
+  if ('canEdit' in value) {
+    adapted.canDelete = false;
+    adapted.canRemoveFromGym = false;
+  }
+  return adapted;
 }
 
 function withWallDeviceOff(value: unknown): unknown {

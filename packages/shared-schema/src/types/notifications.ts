@@ -2,6 +2,7 @@
 
 import type { SocialEntityType } from './comments';
 import type { ProposalType } from './proposals';
+import type { DirectoryNotice } from './directory-reports';
 
 export type NotificationType =
   | 'app_feedback_reply'
@@ -25,7 +26,16 @@ export type NotificationType =
   | 'comment_on_session'
   | 'comment_on_playlist'
   | 'comment_on_board'
-  | 'comment_on_gym';
+  | 'comment_on_gym'
+  | 'board_report_opened'
+  | 'board_report_resolved'
+  | 'board_removed_from_gym'
+  | 'board_deleted_by_staff'
+  | 'board_edited_by_staff'
+  | 'gym_report_opened'
+  | 'gym_report_resolved'
+  | 'gym_claimed_with_your_board'
+  | 'gym_claim_denied';
 
 export type Notification = {
   uuid: string;
@@ -53,6 +63,8 @@ export type Notification = {
   sprayWallUuid?: string | null;
   sprayVersionId?: string | null;
   sprayResetOfWallUuid?: string | null;
+  /** What a directory notification (reports, staff actions on boards) is about. */
+  directoryNotice?: DirectoryNotice | null;
   isRead: boolean;
   createdAt: string;
 };
@@ -114,6 +126,8 @@ export type GroupedNotification = {
   sprayWallUuid?: string | null;
   sprayVersionId?: string | null;
   sprayResetOfWallUuid?: string | null;
+  /** What a directory notification (reports, staff actions on boards) is about. */
+  directoryNotice?: DirectoryNotice | null;
   isRead: boolean;
   createdAt: string;
 };

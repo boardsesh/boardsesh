@@ -26,7 +26,7 @@ type MyGymRowProps = {
   noAddressLabel: string;
   analyticsLabel: string;
   analyticsAccessibilityLabel: string;
-  /** Open the gym editor (only wired when `gym.canEdit`). */
+  /** Open the gym's page (only wired when `gym.canEdit`). */
   onOpenGym: (gym: Gym) => void;
   /** Hand off to the web kiosk/TV manage console (only wired when `gym.canEdit`). */
   onManageKiosks: (gym: Gym) => void;
@@ -74,8 +74,7 @@ function MyGymRowComponent({
   const handleAnalytics = useCallback(() => onOpenAnalytics(gym), [onOpenAnalytics, gym]);
   const handleManage = useCallback(() => onManageKiosks(gym), [onManageKiosks, gym]);
 
-  // The name / address / badge block. It's the edit tap target when the viewer can
-  // edit; otherwise it's a plain detail block (no-op tap).
+  // Staff can open the gym page by tapping the name, address, or badge.
   const summary = (
     <View style={styles.summary}>
       <View style={styles.summaryText}>

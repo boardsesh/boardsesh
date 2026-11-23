@@ -184,7 +184,6 @@
       "updateError": "Impossible d'enregistrer les modifications. Réessaie.",
       "updateSuccess": "Salle mise à jour",
       "notFound": "Salle introuvable",
-      "noAccess": "Vous n'avez pas la permission de modifier cette salle",
       "back": "Retour",
       "name": "Nom",
       "namePlaceholder": "Nom de la salle",
@@ -204,24 +203,25 @@
       "publicHint": "Affiche-la sur la carte pour que les grimpeurs la trouvent",
       "website": "Site web",
       "websitePlaceholder": "https://tasalle.com",
-      "websiteHint": "Sert à vérifier la propriété lorsque quelqu'un revendique la salle"
+      "websiteHint": "Sert à vérifier la propriété lorsque quelqu'un revendique la salle",
+      "hours": "Horaires",
+      "hoursPlaceholder": "Lun-Ven 10h-22h, Sam-Dim 9h-20h"
     },
     "manage": {
-      "ownedHeader": "Tes boards",
+      "ownedHeader": "Ajoutées par toi",
       "followingHeader": "Abonnements",
-      "deleteTitle": "Supprimer la board ?",
-      "deleteMessage": "Retirer \"{{name}}\" de tes boards ? C'est définitif.",
       "deleteConfirm": "Supprimer",
       "cancel": "Annuler",
       "deleteError": "Impossible de supprimer cette board. Réessaie.",
-      "unfollowError": "Impossible de te désabonner de cette board. Réessaie.",
+      "unfollowError": "Impossible de retirer cette board de tes boards. Réessaie.",
       "deleteAria": "Supprimer {{name}}",
-      "unfollowTitle": "Se désabonner ?",
-      "unfollowMessage": "« {{name}} » est ta board active. Te désabonner la retire de tes boards et efface la sélection.",
-      "unfollowConfirm": "Se désabonner",
+      "unfollowTitle": "Retirer de tes boards ?",
+      "unfollowMessage": "« {{name}} » est ta board active. La retirer efface la sélection. Les autres la voient toujours.",
+      "unfollowConfirm": "Retirer",
       "deleteWallTitle": "Supprimer le Spraywall ?",
       "deleteWallMessage": "Supprimer « {{name}} » ? Ses photos et ses blocs ne seront plus accessibles. C’est définitif.",
-      "deleteSuccess": "« {{name}} » supprimé"
+      "deleteSuccess": "« {{name}} » supprimé",
+      "unfollowRow": "Retirer de tes boards"
     },
     "emptyTitle": "Aucune board pour le moment",
     "emptySubtitle": "Cherche une board pour commencer",
@@ -304,7 +304,7 @@
       "nearbyMap": "Carte",
       "allowLocation": "Autoriser la localisation",
       "locationBanner": "La localisation est désactivée. Active-la pour voir les boards près de toi.",
-      "manage": "Gérer",
+      "manage": "Tout voir",
       "nearbyAllAbove": "Aucune autre board à moins de 20 km",
       "yourBoardsAllAbove": "Toutes tes boards sont plus haut"
     },
@@ -400,7 +400,7 @@
       "aria": "Ajouter une board",
       "setUp": "Configurer une board",
       "sprayWall": "Ajouter un Spraywall",
-      "findGym": "Trouver la board d'une salle"
+      "findGym": "Trouver une salle"
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",
@@ -435,7 +435,9 @@
         "publicHint": "N'importe qui peut ouvrir cette board.",
         "unlistedHint": "Seulement les grimpeurs à qui tu l'envoies.",
         "inviteHint": "Qui l'ouvre peut choisir Rejoindre pour accéder à ta board."
-      }
+      },
+      "about": "À propos de cette board",
+      "atGym": "À {{gym}}"
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
@@ -476,11 +478,54 @@
       "shareAriaLabel": "Partager {{name}}",
       "shareText": "Grimpe à {{name}} avec Boardsesh",
       "linkCopied": "Lien copié",
-      "shareFailed": "Impossible de partager le lien"
+      "shareFailed": "Impossible de partager le lien",
+      "seeGym": "Voir la salle",
+      "seeGymAria": "Voir {{gym}}"
+    },
+    "gymPage": {
+      "addressHint": "S'ouvre dans Plans",
+      "boardsTitle": "Boards",
+      "emptyBoardsTitle": "Aucune board ici pour l'instant",
+      "emptyBoardsBody": "Tu grimpes ici ? Configure la board pour que ta crew la trouve.",
+      "emptyBoardsAction": "Configurer une board",
+      "boardsError": "Impossible de charger les boards de cette salle.",
+      "boardsRetry": "Réessayer",
+      "yoursPill": "À toi",
+      "infoTitle": "Infos",
+      "hours": "Horaires",
+      "hoursUpdated": "Mis à jour {{when}}",
+      "website": "Site web",
+      "phone": "Téléphone",
+      "email": "E-mail",
+      "follow": "Suivre la salle",
+      "unfollow": "Ne plus suivre la salle",
+      "followError": "Impossible de mettre à jour. Réessaie.",
+      "actionsAria": "Plus d'options pour {{gym}}",
+      "startTitle": "Commence ici",
+      "startBoards": "Vérifie les boards",
+      "startHours": "Ajoute les horaires",
+      "startTv": "Affiche le mur sur une TV",
+      "staffTitle": "Gère ta salle",
+      "editDetails": "Modifier les infos de la salle",
+      "nearbyBoards": "Boards près de ta salle",
+      "kiosks": "Bornes et TV",
+      "insights": "Statistiques",
+      "opensWebsite": "S'ouvre sur le site web",
+      "openError": "Impossible de l'ouvrir. Essaie dans un navigateur.",
+      "claimTitle": "Tu gères cette salle ?",
+      "claimBody": "Revendique-la pour corriger les boards, ajouter tes horaires et afficher le mur sur une TV. C'est gratuit.",
+      "claimCta": "Revendiquer cette salle",
+      "claimCtaSignedOut": "Connecte-toi pour la revendiquer",
+      "claimPending": "Ta demande est en cours d'examen. On t'écrit par e-mail dans tous les cas, en général sous quelques jours.",
+      "claimDenied": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés, ou réessaie.",
+      "claimDeniedClosed": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés.",
+      "claimRetry": "Réessayer",
+      "notFound": "Salle introuvable",
+      "report": "Signaler un problème"
     },
     "myGyms": {
-      "moreRowTitle": "Mes salles",
-      "screenTitle": "Mes salles",
+      "moreRowTitle": "Salles que tu gères",
+      "screenTitle": "Salles que tu gères",
       "loadError": "Impossible de charger tes salles. Réessaie.",
       "retry": "Réessayer",
       "emptyTitle": "Pas encore de salle",
@@ -529,10 +574,9 @@
     "gymClaim": {
       "title": "Revendiquer {{gym}}",
       "done": "Terminé",
-      "sectionTitle": "Cette salle est à toi ?",
-      "sectionDescription": "Revendique-la pour garder ses informations à jour.",
       "claimAction": "Revendiquer cette salle",
       "errorGeneric": "Une erreur est survenue. Réessaie.",
+      "errorRunByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "switchToAdmin": "Pas d'e-mail professionnel ? Demande une vérification",
       "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
       "domain": {
@@ -541,7 +585,8 @@
         "emailPlaceholder": "toi@{{domain}}",
         "submit": "Envoyer l'e-mail de vérification",
         "submitShort": "Envoyer",
-        "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer."
+        "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer.",
+        "mismatch": "Cet e-mail n’est pas chez {{domain}}. Utilisez une adresse du domaine du site de la salle, ou demandez une vérification."
       },
       "admin": {
         "description": "Dis-nous que tu gères {{gym}} et notre équipe examinera ta demande.",
@@ -553,8 +598,7 @@
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
-        "manageCta": "Configurer ta salle",
-        "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
+        "manageCta": "Vérifie tes boards"
       },
       "protections": {
         "syncFreeze": "Une fois la salle à toi, tes modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
@@ -649,7 +693,7 @@
       "noGymHintOffMap": "Elle reste hors de la carte tant qu'elle n'est pas publique.",
       "addNew": "Ma salle n'est pas listée",
       "empty": "Aucune salle à proximité",
-      "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
+      "sharedEditHint": "L'équipe de la salle peut modifier les infos de cette board et la retirer de sa fiche. Elle reste à toi.",
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
     },
     "sprayShare": {
@@ -704,44 +748,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Board introuvable",
-    "chips": {
-      "unlisted": "Non répertorié",
-      "locationHidden": "Emplacement masqué"
-    },
-    "tabs": {
-      "leaderboard": "Classement",
-      "comments": "Commentaires"
-    },
     "actions": {
-      "addToGym": "Ajouter à la salle",
       "edit": "Modifier",
-      "delete": "Supprimer"
-    },
-    "stats": {
-      "ascents": "ascensions",
-      "climbers": "grimpeurs",
-      "followers": "abonnés",
-      "comments": "commentaires"
-    },
-    "delete": {
-      "title": "Supprimer la board",
-      "confirm": "Supprimer « {{name}} » ? Cette action est irréversible.",
-      "cancel": "Annuler",
       "delete": "Supprimer"
     },
     "snackbar": {
       "deleted": "Board supprimée",
-      "deleteFailed": "Échec de la suppression de la board",
-      "linkedToGym": "Board liée à la salle",
-      "unlinkedFromGym": "Board dissociée de la salle",
-      "linkFailed": "Échec de l'association de la board à la salle"
-    },
-    "comments": {
-      "title": "Discussion sur la board"
-    },
-    "follow": {
-      "entityLabel": "board"
+      "deleteFailed": "Échec de la suppression de la board"
     }
   },
   "boardForm": {
@@ -834,21 +847,6 @@
     "myLocation": "Ma position",
     "helpText": "Cliquez sur la carte pour placer votre board, ou déplacez le repère pour ajuster"
   },
-  "boardLeaderboard": {
-    "empty": "Pas encore d'activité pour cette période.",
-    "period": {
-      "week": "Semaine",
-      "month": "Mois",
-      "year": "Année",
-      "all": "Depuis toujours"
-    },
-    "columns": {
-      "climber": "Grimpeur",
-      "sends": "Croix",
-      "flashes": "Flashs",
-      "hardest": "Plus dur"
-    }
-  },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
   },
@@ -893,12 +891,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Chargement des salles...",
-    "linkToGym": "Associer à une salle",
-    "noGym": "Aucune salle",
-    "createNew": "Créer"
-  },
   "similarGyms": {
     "heading": "On dirait que votre salle est déjà là",
     "subtitle": "Revendiquez la vôtre pour la gérer, ou ajoutez-en une nouvelle ci-dessous.",
@@ -910,16 +902,6 @@
     "createAnyway": "Aucune ne correspond ? Ajoutez votre salle avec le bouton ci-dessous."
   },
   "gymEntity": {
-    "notFound": "Salle introuvable",
-    "tabs": {
-      "members": "Membres",
-      "comments": "Commentaires"
-    },
-    "actions": {
-      "edit": "Modifier",
-      "delete": "Supprimer",
-      "claim": "Revendiquer"
-    },
     "stats": {
       "boards": "boards",
       "members": "membres",
@@ -933,16 +915,6 @@
       "followers_other": "abonnés",
       "comments_one": "commentaire",
       "comments_other": "commentaires"
-    },
-    "delete": {
-      "title": "Supprimer la salle",
-      "confirm": "Supprimer « {{name}} » ? Cette action est irréversible.",
-      "cancel": "Annuler",
-      "delete": "Supprimer"
-    },
-    "snackbar": {
-      "deleted": "Salle supprimée",
-      "deleteFailed": "Échec de la suppression de la salle"
     },
     "comments": {
       "title": "Discussion sur la salle"
@@ -1002,6 +974,7 @@
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
       "generic": "Une erreur est survenue. Réessayez.",
+      "runByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {
@@ -1021,7 +994,7 @@
     },
     "approved": {
       "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
-      "manageCta": "Configurer votre salle"
+      "manageCta": "Vérifie tes boards"
     },
     "protections": {
       "syncFreeze": "Une fois la salle à vous, vos modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
@@ -1033,7 +1006,7 @@
     "success": {
       "title": "La salle est à vous",
       "body": "Vous en êtes maintenant le propriétaire. Gardez la fiche et les plafonds à jour, et invitez votre équipe à participer.",
-      "setupCta": "Configurez votre salle"
+      "setupCta": "Vérifie tes boards"
     },
     "error": {
       "title": "Ce lien n’a pas fonctionné",
@@ -1043,7 +1016,8 @@
         "used": "Ce lien a déjà été utilisé.",
         "superseded": "Cette salle a désormais un autre propriétaire, ce lien ne peut donc pas la transférer. Relancez la revendication depuis la salle.",
         "serverError": "Une erreur est survenue de notre côté. Réessayez dans un instant."
-      }
+      },
+      "backToGym": "Retour à {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1730,5 +1704,185 @@
     "lightingUnavailable": "Active les LED et enregistre une adresse WLED.",
     "lightingRangeError": "Le câble utilise des numéros de LED hors de la plage configurée dans WLED. Vérifie le trajet du câble et les LED sautées.",
     "lightingChasing": "Test par rangée en cours…"
+  },
+  "gymBoards": {
+    "remove": "Retirer de la salle",
+    "removeFromNamed": "Retirer de {{gym}}",
+    "removeTitle": "Retirer {{board}} de {{gym}} ?",
+    "removeBodyOwn": "Elle disparaît de la page et des bornes de {{gym}}. Elle reste dans tes boards.",
+    "removeBodyOther": "Elle disparaît de la page et des bornes de {{gym}}. {{name}} la garde dans ses boards.",
+    "removeBodyOtherHidden": "Elle disparaît de la page et des bornes de {{gym}}. La personne qui l'a ajoutée la garde dans ses boards.",
+    "removeBodySynced": "Elle disparaît de la page et des bornes de {{gym}}.",
+    "removeConfirm": "Retirer",
+    "removed": "Retirée de {{gym}}.",
+    "removeFailed": "Impossible de retirer cette board. Réessaie.",
+    "removeSyncedError": "Cette board vient de données publiques, elle ne peut donc pas être retirée. Supprime-la plutôt.",
+    "removedByGymError": "L'équipe de cette salle a retiré cette board de sa fiche. Demande-lui de la remettre.",
+    "deleteTitle": "Supprimer {{board}} pour tout le monde ?",
+    "deleteBodyOwn": "Elle disparaît pour toi et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodyOther": "{{name}} a ajouté cette board. Elle disparaît pour cette personne et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodyOtherHidden": "Quelqu'un d'autre a ajouté cette board. Elle disparaît pour cette personne et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodySynced": "Elle disparaît pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteConfirm": "Supprimer la board",
+    "cancel": "Annuler"
+  },
+  "boardOrigin": {
+    "addedBy": "Ajoutée par {{name}}",
+    "addedByYou": "Ajoutée par toi",
+    "addedByHidden": "Ajoutée par quelqu'un d'autre",
+    "synced": "Issue de données publiques"
+  },
+  "report": {
+    "action": "Signaler un problème",
+    "actionAria": "Signaler un problème avec {{name}}",
+    "reported": "Signalée",
+    "title": "Signaler un problème",
+    "boardAtGym": "{{board}} à {{gym}}",
+    "question": "Qu'est-ce qui ne va pas ?",
+    "boardReasons": {
+      "wrongSetup": "Mal configurée",
+      "wrongSetupHint": "La disposition, la taille, les prises ou l'angle ne correspondent pas au mur",
+      "duplicate": "Listée deux fois",
+      "duplicateHint": "Une autre board ici est le même mur",
+      "gone": "Plus sur le mur",
+      "goneHint": "Démontée, remplacée, ou la salle a fermé",
+      "wrongPlace": "Mauvaise salle ou mauvais lieu",
+      "wrongPlaceHint": "Elle est ailleurs, ou c'est le mur de quelqu'un chez lui",
+      "other": "Autre chose",
+      "relistRequest": "La remettre dans la salle"
+    },
+    "gymReasons": {
+      "duplicate": "Listée deux fois",
+      "duplicateHint": "Une autre fiche est la même salle",
+      "closed": "Fermée pour de bon",
+      "closedHint": "Elle n'ouvre plus",
+      "details": "Mauvaise adresse ou infos",
+      "detailsHint": "L'adresse, les horaires, le site ou le téléphone sont faux",
+      "home": "C'est chez quelqu'un",
+      "homeHint": "Un mur privé n'a pas sa place sur la carte",
+      "other": "Autre chose"
+    },
+    "duplicateBoardPick": "Quelle board est le même mur ?",
+    "notSure": "Pas sûr",
+    "noteLabel": "Autre chose ? (facultatif)",
+    "notePlaceholder": "Ce qu'il y a sur le mur, par ex. 12x14 à 40°",
+    "noteRequiredLabel": "Qu'est-ce qui ne va pas ?",
+    "noteRequiredPlaceholder": "Dis-leur ce qui ne va pas (10 caractères minimum)",
+    "noteRemaining_one": "{{count}} caractère de plus",
+    "noteRemaining_other": "{{count}} caractères de plus",
+    "send": "Envoyer",
+    "routeCreator": "{{name}}, qui a ajouté cette board, verra ce signalement.",
+    "routeCreatorHidden": "La personne qui a ajouté cette board verra ce signalement.",
+    "routeCreatorAndStaff": "{{name}}, qui a ajouté cette board, et l'équipe de {{gym}} verront ce signalement.",
+    "routeCreatorHiddenAndStaff": "La personne qui a ajouté cette board et l'équipe de {{gym}} verront ce signalement.",
+    "routeCreatorAndTeam": "{{name}}, qui a ajouté cette board, et notre équipe verront ce signalement.",
+    "routeCreatorHiddenAndTeam": "La personne qui a ajouté cette board et notre équipe verront ce signalement.",
+    "routeCreatorStaffAndTeam": "{{name}}, qui a ajouté cette board, l'équipe de {{gym}} et notre équipe verront ce signalement.",
+    "routeCreatorHiddenStaffAndTeam": "La personne qui a ajouté cette board, l'équipe de {{gym}} et notre équipe verront ce signalement.",
+    "routeStaff": "L'équipe de {{gym}} verra ce signalement.",
+    "routeGymAndStaff": "L'équipe de {{gym}} et notre équipe verront ce signalement.",
+    "routeTeam": "Personne ne gère encore {{gym}} sur Boardsesh, donc notre équipe verra ce signalement.",
+    "routeGym": "Notre équipe verra ce signalement.",
+    "claimNudge": "Tu gères {{gym}} ? Revendique-la et corrige-la toi-même.",
+    "sent": "Envoyé. On te prévient dès que c'est réglé.",
+    "joined_one": "{{count}} autre grimpeur l'a aussi signalé. Le tien est ajouté.",
+    "joined_other": "{{count}} autres grimpeurs l'ont aussi signalé. Le tien est ajouté.",
+    "alreadyReported": "Tu l'as déjà signalé. On te prévient dès que c'est réglé.",
+    "offline": "Connecte-toi à internet pour envoyer ton signalement.",
+    "error": "Ton signalement n'est pas parti. Réessaie.",
+    "relistAsk": "Demander à {{gym}} de la remettre",
+    "relistAskHint": "Leur équipe l'a retirée de la salle. On leur demandera de la remettre.",
+    "relistSent": "Demande envoyée. On te dira ce que l'équipe de {{gym}} décide.",
+    "relistAlready": "Tu l'as déjà demandé. On te dira ce que l'équipe de {{gym}} décide.",
+    "duplicateGymSearch": "Trouver l'autre fiche",
+    "gymSearchPlaceholder": "Nom de la salle",
+    "noMatches": "Aucune correspondance pour l'instant. Essaie un autre nom.",
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "retry": "Réessayer",
+    "loading": "Chargement",
+    "loadError": "Impossible de charger cette board. Réessaie.",
+    "signInTitle": "Connecte-toi pour signaler un problème",
+    "signInBody": "Connecte-toi et on te ramène directement ici.",
+    "boardListLink": "Un souci avec cette board ?",
+    "web": {
+      "noteRequiredLabel": "Explique ce qui ne va pas (10 caractères minimum)"
+    }
+  },
+  "reportReview": {
+    "title": "Des grimpeurs ont signalé cette board",
+    "reasonCount_one": "{{reason}} · {{count}} grimpeur",
+    "reasonCount_other": "{{reason}} · {{count}} grimpeurs",
+    "relistRequest": "A demandé à être listée de nouveau",
+    "notesHeading": "Ce qu'ils ont dit",
+    "teamDate": "Si c'est encore ouvert le {{date}}, notre équipe y jettera un œil.",
+    "teamLooking": "Notre équipe regarde celui-ci. Il se ferme quand elle le ferme.",
+    "nothingOpen": "Plus rien n'est ouvert sur cette board.",
+    "loadError": "Impossible de charger les signalements. Réessaie.",
+    "fix": "Corriger la configuration",
+    "fixHint": "Change la disposition, la taille, les prises ou l'angle",
+    "remove": "Retirer de {{gym}}",
+    "removeHintOwn": "Elle reste dans tes boards",
+    "removeHintOther": "Elle reste dans les boards de {{name}}",
+    "removeHintOtherHidden": "Elle reste chez la personne qui l'a ajoutée",
+    "delete": "Supprimer la board",
+    "deleteHint": "Disparue pour tout le monde. Les croix enregistrées restent.",
+    "keep": "Elle est bonne telle quelle",
+    "keepHint": "Ferme le signalement et dis-leur pourquoi",
+    "keepTitle": "Elle est bonne telle quelle",
+    "keepReplyLabel": "Dis-leur pourquoi (facultatif)",
+    "keepReplyPlaceholder": "On l'a refaite la semaine dernière. L'appli correspond au mur maintenant.",
+    "keepSend": "Envoyer",
+    "fixedToast": "Enregistré. On prévient les grimpeurs qui l'ont signalée.",
+    "savedToast": "Enregistré.",
+    "keptToast": "Signalement fermé. On transmet ta note.",
+    "keepError": "Ça n'est pas passé. Réessaie.",
+    "keepPartial_one": "{{count}} signalement sur {{total}} a été fermé. Les autres ne sont pas passés. Réessaie.",
+    "keepPartial_other": "{{count}} signalements sur {{total}} ont été fermés. Les autres ne sont pas passés. Réessaie.",
+    "statusPill": "Signalée",
+    "open": "Voir les signalements",
+    "review": "Examiner",
+    "duplicateOf": "Même board que {{board}}",
+    "inTeamQueue": "Notre équipe s'en occupe. Le signalement se ferme quand elle a tranché.",
+    "removeHint": "Elle disparaît de la page et des bornes de la salle",
+    "keepFailed": "Impossible de fermer le signalement. Réessaie.",
+    "empty": "Plus rien d'ouvert sur cette board.",
+    "back": "Retour",
+    "close": "Fermer",
+    "web": {
+      "keepPartial": "{{closed}} signalements fermés sur {{total}}. Réessaie pour le reste."
+    }
+  },
+  "whoCanEdit": {
+    "boardTitle": "Tu ne peux pas modifier cette board",
+    "boardCreator": "{{name}} a ajouté cette board, donc elle peut la modifier.",
+    "boardCreatorHidden": "La personne qui l'a ajoutée peut la modifier.",
+    "boardStaff": "L'équipe de {{gym}} peut aussi la modifier.",
+    "boardSynced": "Elle vient de données publiques. Dès que quelqu'un revendique {{gym}}, son équipe pourra la modifier.",
+    "boardSyncedNoGym": "Elle vient de données publiques.",
+    "gymTitle": "Tu ne peux pas modifier cette salle",
+    "gymStaff": "L'équipe de {{gym}} gère cette fiche.",
+    "gymClimber": "{{name}} a ajouté cette salle, donc cette personne peut la modifier.",
+    "gymClimberHidden": "Un grimpeur a ajouté cette salle, donc il peut la modifier.",
+    "gymUnclaimed": "Personne ne gère encore cette salle sur Boardsesh.",
+    "claimHint": "Si tu travailles ici, revendique-la et la fiche est à toi.",
+    "claimGym": "Revendiquer {{gym}}",
+    "claimThisGym": "Revendiquer cette salle",
+    "goBack": "Retour",
+    "rule": "Qui l'a ajoutée peut la modifier. Une fois la salle revendiquée, son équipe aussi. Tout le monde peut signaler un problème.",
+    "backToGym": "Retour à {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Gérée par la salle",
+    "pillClimberListed": "Ajoutée par un grimpeur",
+    "pillUnclaimed": "Pas encore revendiquée",
+    "pillYouOwner": "Tu gères cette salle",
+    "pillYouAdmin": "Tu es admin ici",
+    "pillYouEditor": "Tu es éditeur ici",
+    "lineStaff": "L'équipe de {{gym}} tient cette page à jour.",
+    "lineClimber": "{{name}} a ajouté cette salle. Son équipe peut la revendiquer.",
+    "lineClimberHidden": "Un grimpeur a ajouté cette salle. Son équipe peut la revendiquer.",
+    "lineUnclaimed": "Issue de données publiques. Personne ne la gère encore sur Boardsesh.",
+    "claimInline": "Tu gères cette salle ? Revendique-la"
   }
 }

@@ -1,6 +1,6 @@
 {
-  "id": "f245374d-8b2f-4910-a65e-b94787908339",
-  "prevId": "5447fc5b-5679-4024-b34f-fcc2afdb0161",
+  "id": "35aafdda-b029-44a2-9afe-517d0dcea044",
+  "prevId": "72f780ba-ef17-4ff3-ae63-c6e7fa2225a6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10193,12 +10193,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "reporting_time_zone": {
-          "name": "reporting_time_zone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "hours": {
           "name": "hours",
           "type": "text",
@@ -11190,172 +11184,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.gym_reporting_board_aliases": {
-      "name": "gym_reporting_board_aliases",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "gym_id": {
-          "name": "gym_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "board_id": {
-          "name": "board_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "root_board_id": {
-          "name": "root_board_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "verified_by": {
-          "name": "verified_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "gym_reporting_alias_active_board_idx": {
-          "name": "gym_reporting_alias_active_board_idx",
-          "columns": [
-            {
-              "expression": "board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"gym_reporting_board_aliases\".\"revoked_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "gym_reporting_alias_active_root_idx": {
-          "name": "gym_reporting_alias_active_root_idx",
-          "columns": [
-            {
-              "expression": "root_board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"gym_reporting_board_aliases\".\"revoked_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "gym_reporting_board_aliases_gym_id_gyms_id_fk": {
-          "name": "gym_reporting_board_aliases_gym_id_gyms_id_fk",
-          "tableFrom": "gym_reporting_board_aliases",
-          "tableTo": "gyms",
-          "columnsFrom": [
-            "gym_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "gym_reporting_board_aliases_board_id_user_boards_id_fk": {
-          "name": "gym_reporting_board_aliases_board_id_user_boards_id_fk",
-          "tableFrom": "gym_reporting_board_aliases",
-          "tableTo": "user_boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "gym_reporting_board_aliases_root_board_id_user_boards_id_fk": {
-          "name": "gym_reporting_board_aliases_root_board_id_user_boards_id_fk",
-          "tableFrom": "gym_reporting_board_aliases",
-          "tableTo": "user_boards",
-          "columnsFrom": [
-            "root_board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "gym_reporting_board_aliases_verified_by_users_id_fk": {
-          "name": "gym_reporting_board_aliases_verified_by_users_id_fk",
-          "tableFrom": "gym_reporting_board_aliases",
-          "tableTo": "users",
-          "columnsFrom": [
-            "verified_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "gym_reporting_board_aliases_revoked_by_users_id_fk": {
-          "name": "gym_reporting_board_aliases_revoked_by_users_id_fk",
-          "tableFrom": "gym_reporting_board_aliases",
-          "tableTo": "users",
-          "columnsFrom": [
-            "revoked_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "gym_reporting_alias_different_boards": {
-          "name": "gym_reporting_alias_different_boards",
-          "value": "\"gym_reporting_board_aliases\".\"board_id\" <> \"gym_reporting_board_aliases\".\"root_board_id\""
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.user_board_activity": {
       "name": "user_board_activity",
       "schema": "",
@@ -11909,22 +11737,6 @@
           "method": "btree",
           "with": {}
         },
-        "user_boards_merged_board_idx": {
-          "name": "user_boards_merged_board_idx",
-          "columns": [
-            {
-              "expression": "merged_into_board_uuid",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"user_boards\".\"merged_into_board_uuid\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "user_boards_merged_slug_idx": {
           "name": "user_boards_merged_slug_idx",
           "columns": [
@@ -11980,6 +11792,144 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.board_moderation_events": {
+      "name": "board_moderation_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "board_moderation_actor_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "board_moderation_action",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "board_moderation_events_board_gym_created_idx": {
+          "name": "board_moderation_events_board_gym_created_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "gym_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "board_moderation_events_board_id_user_boards_id_fk": {
+          "name": "board_moderation_events_board_id_user_boards_id_fk",
+          "tableFrom": "board_moderation_events",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "board_moderation_events_gym_id_gyms_id_fk": {
+          "name": "board_moderation_events_gym_id_gyms_id_fk",
+          "tableFrom": "board_moderation_events",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "board_moderation_events_actor_user_id_users_id_fk": {
+          "name": "board_moderation_events_actor_user_id_users_id_fk",
+          "tableFrom": "board_moderation_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -13106,48 +13056,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "reporting_board_id": {
-          "name": "reporting_board_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_gym_id": {
-          "name": "reporting_gym_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_attribution": {
-          "name": "reporting_attribution",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_time_precision": {
-          "name": "reporting_time_precision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_climbed_at": {
-          "name": "reporting_climbed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_date": {
-          "name": "reporting_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_date_time_zone": {
-          "name": "reporting_date_time_zone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "aurora_type": {
           "name": "aurora_type",
           "type": "aurora_table_type",
@@ -13713,24 +13621,6 @@
         "setter": {
           "name": "setter",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_board_id": {
-          "name": "reporting_board_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_gym_id": {
-          "name": "reporting_gym_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_mirrored": {
-          "name": "reporting_mirrored",
-          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },
@@ -25880,6 +25770,671 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.admin_daily_digests": {
+      "name": "admin_daily_digests",
+      "schema": "",
+      "columns": {
+        "digest_date": {
+          "name": "digest_date",
+          "type": "date",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "window_start": {
+          "name": "window_start",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_end": {
+          "name": "window_end",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "counts": {
+          "name": "counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "admin_daily_digests_status_check": {
+          "name": "admin_daily_digests_status_check",
+          "value": "\"admin_daily_digests\".\"status\" IN ('sending', 'sent', 'empty')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.directory_notification_context": {
+      "name": "directory_notification_context",
+      "schema": "",
+      "columns": {
+        "notification_uuid": {
+          "name": "notification_uuid",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_reminder": {
+          "name": "is_reminder",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "board_moderation_actor_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "directory_notification_context_report_idx": {
+          "name": "directory_notification_context_report_idx",
+          "columns": [
+            {
+              "expression": "report_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "directory_notification_context_notification_uuid_notifications_uuid_fk": {
+          "name": "directory_notification_context_notification_uuid_notifications_uuid_fk",
+          "tableFrom": "directory_notification_context",
+          "tableTo": "notifications",
+          "columnsFrom": [
+            "notification_uuid"
+          ],
+          "columnsTo": [
+            "uuid"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_notification_context_report_id_directory_reports_id_fk": {
+          "name": "directory_notification_context_report_id_directory_reports_id_fk",
+          "tableFrom": "directory_notification_context",
+          "tableTo": "directory_reports",
+          "columnsFrom": [
+            "report_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_notification_context_board_id_user_boards_id_fk": {
+          "name": "directory_notification_context_board_id_user_boards_id_fk",
+          "tableFrom": "directory_notification_context",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_notification_context_gym_id_gyms_id_fk": {
+          "name": "directory_notification_context_gym_id_gyms_id_fk",
+          "tableFrom": "directory_notification_context",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.directory_report_reporters": {
+      "name": "directory_report_reporters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reporter_id": {
+          "name": "reporter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "directory_report_reporters_report_reporter_idx": {
+          "name": "directory_report_reporters_report_reporter_idx",
+          "columns": [
+            {
+              "expression": "report_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reporter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"directory_report_reporters\".\"reporter_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_report_reporters_reporter_idx": {
+          "name": "directory_report_reporters_reporter_idx",
+          "columns": [
+            {
+              "expression": "reporter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "directory_report_reporters_report_id_directory_reports_id_fk": {
+          "name": "directory_report_reporters_report_id_directory_reports_id_fk",
+          "tableFrom": "directory_report_reporters",
+          "tableTo": "directory_reports",
+          "columnsFrom": [
+            "report_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_report_reporters_reporter_id_users_id_fk": {
+          "name": "directory_report_reporters_reporter_id_users_id_fk",
+          "tableFrom": "directory_report_reporters",
+          "tableTo": "users",
+          "columnsFrom": [
+            "reporter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.directory_reports": {
+      "name": "directory_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "uuid": {
+          "name": "uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_kind": {
+          "name": "target_kind",
+          "type": "directory_report_target_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gym_id_at_report": {
+          "name": "gym_id_at_report",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "directory_report_reason",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duplicate_of_board_id": {
+          "name": "duplicate_of_board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duplicate_of_gym_id": {
+          "name": "duplicate_of_gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "directory_report_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "routed_to": {
+          "name": "routed_to",
+          "type": "directory_report_recipient[]",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reminded_at": {
+          "name": "reminded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "escalated_at": {
+          "name": "escalated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by_role": {
+          "name": "resolved_by_role",
+          "type": "directory_report_resolver_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_note": {
+          "name": "resolution_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "directory_reports_open_board_reason_idx": {
+          "name": "directory_reports_open_board_reason_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"directory_reports\".\"board_id\" IS NOT NULL AND \"directory_reports\".\"status\" IN ('open', 'escalated')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_open_gym_reason_idx": {
+          "name": "directory_reports_open_gym_reason_idx",
+          "columns": [
+            {
+              "expression": "gym_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"directory_reports\".\"gym_id\" IS NOT NULL AND \"directory_reports\".\"status\" IN ('open', 'escalated')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_board_created_idx": {
+          "name": "directory_reports_board_created_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"directory_reports\".\"board_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_gym_created_idx": {
+          "name": "directory_reports_gym_created_idx",
+          "columns": [
+            {
+              "expression": "gym_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"directory_reports\".\"gym_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_gym_at_report_idx": {
+          "name": "directory_reports_gym_at_report_idx",
+          "columns": [
+            {
+              "expression": "gym_id_at_report",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"directory_reports\".\"gym_id_at_report\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_waiting_created_idx": {
+          "name": "directory_reports_waiting_created_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"directory_reports\".\"status\" IN ('open', 'escalated')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "directory_reports_escalated_at_idx": {
+          "name": "directory_reports_escalated_at_idx",
+          "columns": [
+            {
+              "expression": "escalated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"directory_reports\".\"escalated_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "directory_reports_board_id_user_boards_id_fk": {
+          "name": "directory_reports_board_id_user_boards_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_reports_gym_id_gyms_id_fk": {
+          "name": "directory_reports_gym_id_gyms_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "directory_reports_gym_id_at_report_gyms_id_fk": {
+          "name": "directory_reports_gym_id_at_report_gyms_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id_at_report"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "directory_reports_duplicate_of_board_id_user_boards_id_fk": {
+          "name": "directory_reports_duplicate_of_board_id_user_boards_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "duplicate_of_board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "directory_reports_duplicate_of_gym_id_gyms_id_fk": {
+          "name": "directory_reports_duplicate_of_gym_id_gyms_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "duplicate_of_gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "directory_reports_resolved_by_users_id_fk": {
+          "name": "directory_reports_resolved_by_users_id_fk",
+          "tableFrom": "directory_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "directory_reports_uuid_unique": {
+          "name": "directory_reports_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "uuid"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "directory_reports_target_check": {
+          "name": "directory_reports_target_check",
+          "value": "(\"directory_reports\".\"target_kind\" = 'board' AND \"directory_reports\".\"board_id\" IS NOT NULL AND \"directory_reports\".\"gym_id\" IS NULL)\n        OR (\"directory_reports\".\"target_kind\" = 'gym' AND \"directory_reports\".\"gym_id\" IS NOT NULL AND \"directory_reports\".\"board_id\" IS NULL AND \"directory_reports\".\"gym_id_at_report\" IS NULL)"
+        },
+        "directory_reports_resolution_check": {
+          "name": "directory_reports_resolution_check",
+          "value": "(\"directory_reports\".\"status\" IN ('open', 'escalated')) = (\"directory_reports\".\"resolved_at\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -25916,6 +26471,29 @@
       "values": [
         "merged",
         "dismissed"
+      ]
+    },
+    "public.board_moderation_action": {
+      "name": "board_moderation_action",
+      "schema": "public",
+      "values": [
+        "removed_from_gym",
+        "deleted",
+        "edited_by_staff",
+        "relinked"
+      ]
+    },
+    "public.board_moderation_actor_role": {
+      "name": "board_moderation_actor_role",
+      "schema": "public",
+      "values": [
+        "board_owner",
+        "gym_owner",
+        "gym_admin",
+        "gym_editor",
+        "community_leader",
+        "community_admin",
+        "global_admin"
       ]
     },
     "public.session_origin": {
@@ -26020,7 +26598,16 @@
         "comment_on_session",
         "comment_on_playlist",
         "comment_on_board",
-        "comment_on_gym"
+        "comment_on_gym",
+        "board_report_opened",
+        "board_report_resolved",
+        "board_removed_from_gym",
+        "board_deleted_by_staff",
+        "board_edited_by_staff",
+        "gym_report_opened",
+        "gym_report_resolved",
+        "gym_claimed_with_your_board",
+        "gym_claim_denied"
       ]
     },
     "public.feed_item_type": {
@@ -26206,6 +26793,61 @@
         "preview_generating",
         "preview_ready",
         "preview_failed"
+      ]
+    },
+    "public.directory_report_reason": {
+      "name": "directory_report_reason",
+      "schema": "public",
+      "values": [
+        "wrong_setup",
+        "duplicate",
+        "gone",
+        "wrong_place",
+        "other",
+        "relist_request",
+        "closed",
+        "wrong_details",
+        "not_a_gym"
+      ]
+    },
+    "public.directory_report_recipient": {
+      "name": "directory_report_recipient",
+      "schema": "public",
+      "values": [
+        "creator",
+        "gym_staff",
+        "admin"
+      ]
+    },
+    "public.directory_report_resolver_role": {
+      "name": "directory_report_resolver_role",
+      "schema": "public",
+      "values": [
+        "creator",
+        "gym_staff",
+        "admin",
+        "auto"
+      ]
+    },
+    "public.directory_report_status": {
+      "name": "directory_report_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "escalated",
+        "fixed",
+        "removed",
+        "deleted",
+        "kept",
+        "merged"
+      ]
+    },
+    "public.directory_report_target_kind": {
+      "name": "directory_report_target_kind",
+      "schema": "public",
+      "values": [
+        "board",
+        "gym"
       ]
     }
   },

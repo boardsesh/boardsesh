@@ -11,11 +11,14 @@ import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { parseCoordinate, LATITUDE_RANGE, LONGITUDE_RANGE } from './gym-coordinate';
+import { GYM_HOURS_MAX_LENGTH } from '@boardsesh/shared-schema';
 
 /** The gym's current values, used to seed the form once on mount. */
 export type GymFormSeed = {
   name: string;
   description: string;
+  /** Free-text opening hours; line breaks are kept and shown as typed. */
+  hours: string;
   address: string;
   website: string;
   contactEmail: string;
@@ -30,6 +33,7 @@ export type GymFormSeed = {
 export type GymFormSubmitValues = {
   name: string;
   description: string | null;
+  hours: string | null;
   address: string | null;
   website: string | null;
   contactEmail: string | null;
@@ -54,7 +58,7 @@ function coordToText(value: number | null): string {
 }
 
 /**
- * The gym editor form — name, description, address, contact email/phone,
+ * The gym editor form — name, description, opening hours, address, contact email/phone,
  * coordinates, and a public toggle; the submit sits in the native header. The native
  * (StyleSheet + theme) counterpart of the web gym form; the gym-edit screen owns
  * the mutation, success toast, and navigation. Seeds its fields once via the
@@ -70,6 +74,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
 
   const [name, setName] = useState(seed.name);
   const [description, setDescription] = useState(seed.description);
+  const [hours, setHours] = useState(seed.hours);
   const [address, setAddress] = useState(seed.address);
   const [website, setWebsite] = useState(seed.website);
   const [contactEmail, setContactEmail] = useState(seed.contactEmail);
@@ -90,6 +95,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
     onSubmit({
       name: trimmedName,
       description: description.trim() || null,
+      hours: hours.trim() || null,
       address: address.trim() || null,
       website: website.trim() || null,
       contactEmail: contactEmail.trim() || null,
@@ -103,6 +109,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
     submitting,
     onSubmit,
     description,
+    hours,
     address,
     website,
     contactEmail,
@@ -157,6 +164,17 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
           placeholder={t('mobile.gymEdit.descriptionPlaceholder')}
           accessibilityLabel={t('mobile.gymEdit.description')}
           maxLength={500}
+          multiline
+          style={styles.multiline}
+        />
+
+        <SectionLabel>{t('mobile.gymEdit.hours')}</SectionLabel>
+        <GymTextInput
+          value={hours}
+          onChangeText={setHours}
+          placeholder={t('mobile.gymEdit.hoursPlaceholder')}
+          accessibilityLabel={t('mobile.gymEdit.hours')}
+          maxLength={GYM_HOURS_MAX_LENGTH}
           multiline
           style={styles.multiline}
         />

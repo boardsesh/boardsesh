@@ -1,16 +1,21 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
 import { useMarkGroupAsRead } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
+import { useClimbModerationEnabled, useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import { sprayImportRoute } from '../../lib/spray/spray-import-progress';
+import { gymPageHref } from '../gym-page/gym-page-route';
 import { notificationClimbRender } from './notification-climb-render';
 import { notificationToClimb } from './notification-to-climb';
+import { directoryNoticeRoute, isDirectoryNoticeType } from './directory-notice-route';
+import { explainDirectoryNotice } from './explain-directory-notice';
+import { aboutBoardHref, reviewBoardReportsHref } from '../../lib/boards/about-board-href';
 
 /** Opens the comment thread for an entity. Supplied by the screen, which hosts the sheet. */
 export type OpenCommentThread = (entityType: SocialEntityType, entityId: string) => void;
@@ -46,7 +51,13 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * - `comment_*` and `vote_*` open the thread the row is about, via the
  *   `threadEntityType`/`threadEntityId` pair the resolver fills for exactly
  *   these types.
- * - `gym_claim_approved` opens the gym's edit screen.
+ * - `gym_claim_approved` opens the gym's page, where the new staff start.
+ * - The directory notices (Report a problem, staff actions on boards) open the
+ *   board picker on the board's review or detail sheet, the gym's edit screen,
+ *   the gym's page on a denied claim (with the claim offered again), or, with
+ *   nothing left to open, a short explanation (`directoryNoticeRoute`).
+ *   With the `directory-reports` flag off they still open the board, on its
+ *   plain detail sheet: no review sheet and no "Ask {{gym}} to list it again".
  * - everything climb-bearing opens the climb.
  *
  * Two rows are deliberately coarser than they look:
@@ -74,6 +85,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   const moderationEnabled = useClimbModerationEnabled();
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
   // The scalars this callback actually reads, rather than the board object, so
   // an unrelated field moving (name, followers, gym) can't churn the callback.
   const { data: activeBoard } = useActiveBoard();
@@ -86,6 +98,13 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
   // state flip (idle → pending → success), which would churn this callback,
   // then the screen's `renderItem`, then every memoized row, on each tap.
   const { mutate: markGroupAsRead } = useMarkGroupAsRead();
+  // Read at tap time through a ref, so a new `t` never churns the callback (and
+  // with it the screen's `renderItem` and every memoized row).
+  const { t } = useTranslation('notifications');
+  const translateRef = useRef(t);
+  useEffect(() => {
+    translateRef.current = t;
+  }, [t]);
 
   return useCallback(
     (notification: GroupedNotification) => {
@@ -148,9 +167,36 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
         // a climb opens that instead of doing nothing.
       }
 
+      if (isDirectoryNoticeType(notification.type)) {
+        const route = directoryNoticeRoute(notification);
+        if (!route) return;
+        switch (route.kind) {
+          case 'review':
+            router.push(
+              directoryReportsEnabled ? reviewBoardReportsHref(route.boardUuid) : aboutBoardHref(route.boardUuid),
+            );
+            return;
+          case 'board':
+            router.push(
+              aboutBoardHref(route.boardUuid, { relistGym: directoryReportsEnabled ? route.relistGym : null }),
+            );
+            return;
+          case 'gym_edit':
+            router.push({ pathname: '/gyms/edit', params: { gymUuid: route.gymUuid } });
+            return;
+          case 'gym_claim_denied':
+            router.push(gymPageHref(route.gymUuid, 'root', undefined, { claimDenied: true }));
+            return;
+          case 'explain':
+            explainDirectoryNotice(route, translateRef.current);
+            return;
+        }
+      }
+
       if (notification.type === 'gym_claim_approved' && notification.entityId) {
-        // entityId is the gym uuid; the edit route resolves the gym by uuid.
-        router.push({ pathname: '/gyms/edit', params: { gymUuid: notification.entityId } });
+        // entityId is the gym uuid. The gym page opens in staff mode: Start
+        // here, the boards with their staff actions, and the staff tools.
+        router.push(gymPageHref(notification.entityId));
         return;
       }
 
@@ -255,6 +301,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       activeBoardSizeId,
       activeBoardSetIds,
       moderationEnabled,
+      directoryReportsEnabled,
       markGroupAsRead,
       openCommentThread,
       openPlayDrawer,

@@ -129,6 +129,7 @@ describe('Spanish gym terminology', () => {
     const byPath = new Map(spanishStrings.map((entry) => [`${entry.file}:${entry.keyPath}`, entry.value]));
 
     expect(byPath.get('boards.json:gymEntity.follow.entityLabel')).toBe('rocódromo');
-    expect(byPath.get('kiosk.json:gymPage.claimTitle')).toBe('¿Es tuyo este rocódromo?');
+    // "Run this gym?" since the claim prompts became one question (#8043).
+    expect(byPath.get('kiosk.json:gymPage.claimTitle')).toBe('¿Gestionas este rocódromo?');
   });
 });

@@ -480,7 +480,7 @@ Dark only, with the foreground/fill violet split never collapsed: [web-velvet-se
 
 ## English website words
 
-The website uses “Get the free app” on phones and “App Store” / “Google Play” for the desktop store pair. “Open it in your browser” opens the browser app; the desktop header keeps “Start climbing”. A climb handoff says “Open climb in the app”: opening it does not itself light a connected wall. “Chip in” opens Support; “Give once” and “Give monthly” appear only for configured giving routes. “Bring your logbook” opens import guidance.
+The website's store links are the official App Store and Google Play badges, whose alt text is the badge's own words; the phone's sticky install bar keeps its “Get the app” button. “Open it in your browser” opens the browser app; the desktop header keeps “Start climbing”. A climb handoff says “Open climb in the app”: opening it does not itself light a connected wall. “Chip in” opens Support; “Give once” and “Give monthly” appear only for configured giving routes. “Bring your logbook” opens import guidance.
 
 A board is the physical product, a wall is the climbing surface and a gym is the place. A completed climb is a send; use “log” for recording it and “logbook entry” when sends and attempts are both included. The crew is the people, a session is their shared climbing time and the queue is the ordered list within it. The logbook is history; a profile is the public page.
 

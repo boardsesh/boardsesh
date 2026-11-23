@@ -339,8 +339,8 @@ caught (#5200, #5206, #5207):
   records profile *creation* and the clock never moves for the exact edit it
   exists to catch.
 - **`board_username` needs its own index.** The lateral runs once per eligible
-  setter (~31k per refresh) inside the summary scan already closest to
-  `SHARD_DEADLINE_MS`. `user_board_mappings`' other indexes all lead with
+  setter (~31k per refresh) inside the expensive catalogue scan.
+  `user_board_mappings`' other indexes all lead with
   `user_id` or `board_type`, so before `board_user_mapping_username_idx` this
   was a sequential scan each time.
 - **`linked_at` is aggregated per user, not read off a row.** It has to be in
@@ -355,6 +355,42 @@ caught (#5200, #5206, #5207):
 
 The page resolves the same identity in `fetchSetterIdentity`, with the same
 `ORDER BY`, so the clock describes what a reader actually sees.
+
+### Persisted setter summary and cold starts
+
+The index reads `sitemap_shard_refreshes` on the primary, keyed by `setters`.
+It no longer computes the full setter list on a cold Next Data Cache miss:
+that scan averaged 13.4 seconds and peaked at 33.7 seconds, exceeding the
+index's three-second budget. Configuration grouping, setter selection, identity
+clocks, routable angles and row validation now live in
+`@boardsesh/db/queries/sitemap`, shared by the web page builders and backend.
+
+The backend's HTTP cron-only `refreshSetterSitemapSummary(force: Boolean = false)`
+computes and validates the complete list before atomically replacing the count
+and newest content timestamp. A primary transaction holds an advisory lock,
+uses a serial plan and bounds SQL statements at 45 seconds. Empty lists,
+unencodable usernames, invalid dates and query failures retain the previous row.
+Concurrent refreshes return a benign `locked` result. `force` bypasses the
+six-hour freshness check only; validation and locking always apply.
+
+The scheduler calls the mutation with `force: true` at `10 */6 * * *` UTC,
+offset from the climb refresh. Forced scheduling avoids skipping the next tick
+because the previous scan finished several seconds after its scheduled minute.
+Stale summaries remain readable. Missing or corrupt summaries degrade the index
+under its existing 60-second cache policy without running a foreground scan.
+The index schedules backend recovery with `after()`, using a single in-flight
+call per web process, a 60-second retry floor and a 90-second HTTP timeout.
+
+Deploy the backend and scheduler first, invoke the authenticated mutation once
+and confirm a positive count, then deploy web. Restarting web should retain
+setter pages in `/sitemap.xml` without `X-Sitemap-Degraded: setters`. The direct
+setter pages keep their six-hour item cache, primary privacy rechecks,
+`private, no-store` responses and fail-closed handling of summary/page mismatch.
+If the summary row is lost later, the next index crawl triggers recovery.
+
+Build-plans remains intentionally absent while its pages are `noindex`,
+including when access is enabled. Its registry entry opts out of empty-result
+warnings; unexpected failures still log and degrade normally.
 
 ## Degrade at the index, fail closed at the shard
 

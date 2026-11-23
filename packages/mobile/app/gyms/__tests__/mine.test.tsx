@@ -74,8 +74,10 @@ vi.mock('react-i18next', () => ({
         'mobile.myGyms.manageUnavailable': 'This gym is not set up for kiosks yet',
         'mobile.myGyms.noAddress': 'No address yet',
         'mobile.myGyms.roleOwner': 'Owner',
+        'gymReporting.title': 'Gym analytics',
       };
       if (key === 'mobile.myGyms.manageKiosksFor') return `Manage ${opts?.gym ?? ''}`;
+      if (key === 'gymReporting.openForGym') return `Open analytics for ${opts?.gym ?? ''}`;
       return map[key] ?? key;
     },
   }),
@@ -129,6 +131,9 @@ vi.mock('../../../src/theme/tokens', () => ({
 }));
 vi.mock('../../../src/theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8e8e93' } }));
 
+vi.mock('../../../src/components/StatusPill', () => ({
+  StatusPill: ({ label }: { label: string }) => createElement('span', null, label),
+}));
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
@@ -144,45 +149,6 @@ vi.mock('../../../src/components/PressableSurface', () => ({
 }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
-}));
-
-// Stub the row so the route test stays a pure orchestration test — the row's own
-// badge/press logic is covered by my-gym-row.test.tsx.
-vi.mock('../../../src/components/gym-directory/MyGymRow', () => ({
-  MyGymRow: ({
-    gym,
-    onOpenGym,
-    onManageKiosks,
-    onOpenAnalytics,
-  }: {
-    gym: Gym;
-    onOpenGym: (gym: Gym) => void;
-    onManageKiosks: (gym: Gym) => void;
-    onOpenAnalytics: (gym: Gym) => void;
-  }) =>
-    createElement('div', { 'data-gym': gym.uuid }, [
-      createElement(
-        'button',
-        { key: 'open', 'aria-label': gym.name, onClick: () => onOpenGym(gym), type: 'button' },
-        gym.name,
-      ),
-      gym.canEdit
-        ? createElement(
-            'button',
-            {
-              key: 'analytics',
-              'aria-label': `analytics-${gym.uuid}`,
-              onClick: () => onOpenAnalytics(gym),
-            },
-            'analytics',
-          )
-        : null,
-      createElement(
-        'button',
-        { key: 'manage', 'aria-label': `manage-${gym.uuid}`, onClick: () => onManageKiosks(gym), type: 'button' },
-        'manage',
-      ),
-    ]),
 }));
 
 import MyGymsScreen from '../mine';
@@ -237,27 +203,35 @@ describe('MyGymsScreen', () => {
     expect(routerMock.push).toHaveBeenCalledWith('/gyms');
   });
 
-  it('lists gyms and opens the editor when a row is tapped', () => {
+  it("lists gyms and opens the gym's page when a row is tapped", () => {
     state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
     fireEvent.click(getByRole('button', { name: 'Movement' }));
-    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'g1' } });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'g1' } });
   });
 
   it('opens the pushed analytics route and loads another page on request', () => {
     state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
     state.hasNextPage = true;
     const { getByRole } = render(<MyGymsScreen />);
-    fireEvent.click(getByRole('button', { name: 'analytics-g1' }));
+    fireEvent.click(getByRole('button', { name: 'Open analytics for Movement' }));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/analytics', params: { gymUuid: 'g1' } });
     fireEvent.click(getByRole('button', { name: 'gymReporting.moreGyms' }));
     expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
+  it('withholds the Analytics and kiosk actions from a non-editor', () => {
+    state.myGyms = { data: { gyms: [makeGym({ canEdit: false })] }, isLoading: false, isError: false };
+    const { getByText, queryByRole } = render(<MyGymsScreen />);
+    expect(getByText('Movement')).toBeTruthy();
+    expect(queryByRole('button', { name: 'Open analytics for Movement' })).toBeNull();
+    expect(queryByRole('button', { name: 'Manage Movement' })).toBeNull();
+  });
+
   it('hands off to the web manage console and dismisses the kiosk hint', () => {
     state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
-    fireEvent.click(getByRole('button', { name: 'manage-g1' }));
+    fireEvent.click(getByRole('button', { name: 'Manage Movement' }));
     expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
       'https://www.boardsesh.com/gym/movement/manage',
       expect.any(Function),
@@ -268,7 +242,7 @@ describe('MyGymsScreen', () => {
   it('falls back to the gym uuid when the slug is null', () => {
     state.myGyms = { data: { gyms: [makeGym({ slug: null })] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
-    fireEvent.click(getByRole('button', { name: 'manage-g1' }));
+    fireEvent.click(getByRole('button', { name: 'Manage Movement' }));
     // The web manage route resolves a uuid too, so a slugless gym still opens.
     expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
       'https://www.boardsesh.com/gym/g1/manage',
@@ -279,9 +253,7 @@ describe('MyGymsScreen', () => {
   it('toasts a "not set up yet" message when a gym has neither slug nor uuid', () => {
     state.myGyms = { data: { gyms: [makeGym({ slug: null, uuid: '' })] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
-    // The stub keys its manage button off the uuid, so target an empty-uuid gym
-    // by the "manage-" prefix.
-    fireEvent.click(getByRole('button', { name: 'manage-' }));
+    fireEvent.click(getByRole('button', { name: 'Manage Movement' }));
     expect(openUrl.openValidatedUrl).not.toHaveBeenCalled();
     expect(toastMock.showToast).toHaveBeenCalledWith('This gym is not set up for kiosks yet', 'error');
   });
@@ -290,7 +262,7 @@ describe('MyGymsScreen', () => {
     openUrl.openValidatedUrl.mockResolvedValue(false);
     state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
-    fireEvent.click(getByRole('button', { name: 'manage-g1' }));
+    fireEvent.click(getByRole('button', { name: 'Manage Movement' }));
     await waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('Could not open the manage console', 'error'));
   });
 

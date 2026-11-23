@@ -32,7 +32,7 @@ export function I18nProvider({ children, initialLocale, persistPreferences = tru
 
   useEffect(() => {
     syncDocumentLanguage(resolvedLanguage);
-    // Spanish and French climbers default to Font grades until they pick one.
+    // Spanish, French, German and Italian climbers default to Font grades until they pick one.
     setGradeFormatLocale(resolvedLanguage);
   }, [resolvedLanguage]);
 

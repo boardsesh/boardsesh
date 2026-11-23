@@ -6,6 +6,7 @@ const deferred = vi.hoisted(() => ({
   callbacks: [] as Array<() => void | Promise<void>>,
   climbRefreshCalls: 0,
   playlistWarmCalls: 0,
+  setterRefreshCalls: 0,
 }));
 
 vi.mock('next/server', () => ({
@@ -30,12 +31,19 @@ vi.mock('@/app/lib/seo/sitemap/shard-registry', () => ({
   sitemapIndexRouteHandler: async () => new Response('<sitemapindex/>', { status: 200 }),
 }));
 
+vi.mock('@/app/lib/seo/sitemap/setter-summary-refresh', () => ({
+  refreshSetterSummaryIfStale: async () => {
+    deferred.setterRefreshCalls += 1;
+  },
+}));
+
 const routeModule = await import('../route');
 
 beforeEach(() => {
   deferred.callbacks = [];
   deferred.climbRefreshCalls = 0;
   deferred.playlistWarmCalls = 0;
+  deferred.setterRefreshCalls = 0;
 });
 
 afterEach(() => {
@@ -49,20 +57,23 @@ describe('GET /sitemap.xml deferred refreshes', () => {
     const response = await routeModule.GET();
 
     expect(response.status).toBe(200);
-    expect(deferred.callbacks).toHaveLength(1);
-    await deferred.callbacks[0]();
+    expect(deferred.setterRefreshCalls).toBe(0);
+    expect(deferred.callbacks).toHaveLength(2);
+    await Promise.all(deferred.callbacks.map((callback) => Promise.resolve(callback())));
     expect(deferred.climbRefreshCalls).toBe(0);
     expect(deferred.playlistWarmCalls).toBe(1);
+    expect(deferred.setterRefreshCalls).toBe(1);
   });
 
-  it('keeps both deferred refreshes when the switch is exactly true', async () => {
+  it('keeps all deferred refreshes when the switch is exactly true', async () => {
     vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
 
     await routeModule.GET();
 
-    expect(deferred.callbacks).toHaveLength(2);
+    expect(deferred.callbacks).toHaveLength(3);
     await Promise.all(deferred.callbacks.map((callback) => Promise.resolve(callback())));
     expect(deferred.climbRefreshCalls).toBe(1);
     expect(deferred.playlistWarmCalls).toBe(1);
+    expect(deferred.setterRefreshCalls).toBe(1);
   });
 });

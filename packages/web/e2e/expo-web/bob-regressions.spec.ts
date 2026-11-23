@@ -38,6 +38,7 @@ const GYM: Gym = {
   canClaim: false,
   isClaimed: true,
   canClaimByDomain: false,
+  listingState: 'RUN_BY_GYM',
 };
 const BOARD: UserBoard = {
   uuid: '527c60ae-fd5a-4de4-8449-e2e6cecb08ef',

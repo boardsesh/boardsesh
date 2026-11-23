@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import type { GymListingState } from '@boardsesh/shared-schema';
 import { resolveClaimCtaVariant } from '../gym-claim-cta-logic';
 
 vi.mock('react-i18next', () => ({
@@ -32,6 +33,8 @@ vi.mock('next/navigation', () => ({
 
 const GymClaimCta = (await import('../gym-claim-cta')).default;
 const GymClaimParamCleanup = (await import('../gym-claim-param-cleanup')).default;
+const GymClaimCalloutMirror = (await import('../gym-claim-callout')).default;
+const GymRunByClaimLink = (await import('../gym-run-by-claim-link')).default;
 
 type AuthModalConfig = {
   title?: string;
@@ -49,6 +52,7 @@ const renderCta = (props: Partial<React.ComponentProps<typeof GymClaimCta>> = {}
       gymName="Boulderwelt"
       gymSlug="boulderwelt"
       website={null}
+      canClaimByDomain={false}
       viewerState="signed-in"
       {...props}
     />,
@@ -90,8 +94,10 @@ describe('GymClaimCta — signed-out arm', () => {
   it('renders the same call-out copy so anonymous visitors get it server-rendered', () => {
     renderCta({ viewerState: 'signed-out' });
 
-    expect(screen.getByText('Is this your gym?')).toBeTruthy();
-    expect(screen.getByText('Claim it to run the boards, the branding, and what shows up on the wall.')).toBeTruthy();
+    expect(screen.getByText('Run this gym?')).toBeTruthy();
+    expect(
+      screen.getByText("Claim it to fix boards, add your hours and put the wall on a TV. It's free."),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Log in and claim it' })).toBeTruthy();
   });
 
@@ -259,21 +265,28 @@ function GatedClaimCta({
   isPublic,
   canClaim,
   hasSession,
-  isClaimed = false,
+  listingState = 'UNCLAIMED',
 }: {
   isPublic: boolean;
   canClaim: boolean;
   hasSession: boolean;
-  isClaimed?: boolean;
+  listingState?: GymListingState;
 }) {
   const variant = resolveClaimCtaVariant({
     serverCanClaim: canClaim,
     serverHasSession: hasSession,
-    gymIsClaimed: isClaimed,
+    listingState,
   });
   if (!isPublic || variant === 'hidden') return null;
   return (
-    <GymClaimCta gymUuid="gym-1" gymName="Boulderwelt" gymSlug="boulderwelt" website={null} viewerState={variant} />
+    <GymClaimCta
+      gymUuid="gym-1"
+      gymName="Boulderwelt"
+      gymSlug="boulderwelt"
+      website={null}
+      canClaimByDomain={false}
+      viewerState={variant}
+    />
   );
 }
 
@@ -296,22 +309,73 @@ describe('claim CTA visibility gating', () => {
     expect(screen.getByRole('button', { name: 'Log in and claim it' })).toBeTruthy();
   });
 
-  it('never renders the anonymous arm on a gym that already has an owner', () => {
-    // The owner's name is displayed directly above where the box would sit.
-    const { container } = render(<GatedClaimCta isPublic canClaim={false} hasSession={false} isClaimed />);
-
-    expect(container.innerHTML).toBe('');
-    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
+  it('renders the anonymous arm on a gym a climber added', () => {
+    render(<GatedClaimCta isPublic canClaim={false} hasSession={false} listingState="CLIMBER_LISTED" />);
+    expect(screen.getByRole('button', { name: 'Log in and claim it' })).toBeTruthy();
   });
 
-  it('still renders the signed-in arm on a claimed gym', () => {
-    // Asking for a gym someone else owns is an existing, deliberate path.
-    render(<GatedClaimCta isPublic canClaim hasSession isClaimed />);
-    expect(screen.getByRole('button', { name: 'Claim this gym' })).toBeTruthy();
+  it('renders nothing on a gym its staff run, signed in or not', () => {
+    const signedOut = render(<GatedClaimCta isPublic canClaim={false} hasSession={false} listingState="RUN_BY_GYM" />);
+    expect(signedOut.container.innerHTML).toBe('');
+    signedOut.unmount();
+
+    const signedIn = render(<GatedClaimCta isPublic canClaim hasSession listingState="RUN_BY_GYM" />);
+    expect(signedIn.container.innerHTML).toBe('');
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
   });
 
   it('never renders the anonymous arm on a private gym', () => {
     const { container } = render(<GatedClaimCta isPublic={false} canClaim={false} hasSession={false} />);
     expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('the other ways into the same claim', () => {
+  it('starts the claim from the run-by line under the H1, counted as gym-page-header', () => {
+    renderCta();
+    render(<GymRunByClaimLink gymUuid="gym-1" label="Run this gym? Claim it" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run this gym? Claim it' }));
+
+    expect(screen.getByTestId('claim-dialog')).toBeTruthy();
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym Claim CTA Clicked',
+      properties: { placement: 'gym-page-header', viewerState: 'signed-in', gymUuid: 'gym-1' },
+    });
+  });
+
+  it('sends a signed-out visitor through log-in from the run-by line, as from the call-out', () => {
+    renderCta({ viewerState: 'signed-out' });
+    render(<GymRunByClaimLink gymUuid="gym-1" label="Run this gym? Claim it" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run this gym? Claim it' }));
+
+    expect(openAuthModal).toHaveBeenCalledTimes(1);
+    expect(lastAuthModalConfig().callbackUrl).toBe('/gym/boulderwelt?claim=1');
+    expect(screen.queryByTestId('claim-dialog')).toBeNull();
+  });
+
+  it("opens the one dialog from the call-out's phone copy, counted as the call-out", () => {
+    renderCta();
+    render(<GymClaimCalloutMirror gymUuid="gym-1" viewerState="signed-in" />);
+
+    const [, phoneCopy] = screen.getAllByRole('button', { name: 'Claim this gym' });
+    fireEvent.click(phoneCopy);
+
+    expect(screen.getAllByTestId('claim-dialog')).toHaveLength(1);
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym Claim CTA Clicked',
+      properties: { placement: 'gym-page', viewerState: 'signed-in', gymUuid: 'gym-1' },
+    });
+  });
+
+  it("ignores a request for another gym's claim", () => {
+    renderCta();
+    render(<GymRunByClaimLink gymUuid="gym-2" label="Run this gym? Claim it" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run this gym? Claim it' }));
+
+    expect(screen.queryByTestId('claim-dialog')).toBeNull();
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
   });
 });

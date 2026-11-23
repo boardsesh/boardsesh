@@ -307,6 +307,15 @@ export const SHARED_EVENTS = {
   // gathering reports, mostly `already_reported` means the UI isn't telling
   // people their report already landed.
   ClimbReported: 'Climb Reported',
+  // A climber sent "Report a problem" on a board or gym listing from the app
+  // (docs/product/directory-reports.md). Props: { targetKind: 'board' | 'gym',
+  // reason, status: 'created' | 'added' | 'already_reported', platform }.
+  // Deliberately not the backend's `Board Report Submitted`: that one counts
+  // every filed report anonymously after its transaction commits and feeds the
+  // launch metric. This one is the climber's side, tied to their person, so a
+  // funnel from the menu row to a sent report can be read. Two names keep an
+  // insight on either from counting every report twice.
+  ReportProblemSent: 'Report Problem Sent',
   OpenInAuroraApp: 'Open in Aurora App',
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',
@@ -1207,6 +1216,15 @@ export const SHARED_EVENTS = {
   // makes has its own events (Board Created, the spray funnel, Board Picker
   // Selection Completed with gym_finder). Expected about 1 per 10 picker opens.
   BoardPickerAddSelected: 'Board Picker Add Selected',
+  // A gym's page opened, once per gym per visit, after the gym loaded and the
+  // viewer's identity resolved. Props: { surface: app (the app's gym page,
+  // from 2026-11) | web (reserved for www's /gym/{slug}), listingState:
+  // UNCLAIMED | CLIMBER_LISTED | RUN_BY_GYM, viewerRole: signed_out | climber
+  // | member | moderator (edits the gym without being its staff: a community
+  // leader or our team) | editor | admin | owner }. No gym id: the question is
+  // how often staff and climbers open the page, not which gym. Expected a few
+  // hundred a week.
+  GymPageViewed: 'Gym Page Viewed',
   // The launch follow heal (#5654): fired when the app follows the board it
   // launched on because the server says it is neither the climber's nor
   // followed. Repairs picks made before picks followed boards, and keeps

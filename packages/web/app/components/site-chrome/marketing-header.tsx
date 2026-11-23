@@ -2,9 +2,10 @@
 
 import { navLinkClicked, webAppOpened, type WebsiteNavTarget } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState, type RefObject } from 'react';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { useStoreBadgeOnScreen } from '@/app/hooks/use-store-badge-on-screen';
 import { resolveHeroInstall } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
@@ -143,6 +144,56 @@ function CenteredHeader({ left, title, right }: CenteredHeaderProps) {
   );
 }
 
+/**
+ * The phone's "Get the app" link in the header (shown below 600px only).
+ *
+ * It steps aside while one of the page's own store badges is on screen: most
+ * www pages show a badge right below the header, and the same link twice is one
+ * too many (a badge can't go up here instead: Apple allows one App Store badge
+ * per layout). It comes back once the badge has scrolled up under the header,
+ * and a page with no badge keeps it all along.
+ *
+ * `data-store-badge-on-screen` carries the answer (`yes`/`no`). Until the hook
+ * has one (the server HTML, hydration, the first observer report) the attribute
+ * is absent and the module CSS guesses with `:has()`: a badge anywhere in
+ * `<main>` hides the link. So the home page never shows the link and then takes
+ * it away; a page whose only badge is far down gets it a moment late, with a
+ * fade. Hidden is `visibility: hidden`, so the slot keeps its width and the link
+ * leaves the tab order and the accessibility tree.
+ */
+function HeaderPhoneInstall({ headerRef }: { headerRef: RefObject<HTMLElement | null> }) {
+  const { t } = useTranslation('common');
+  const { platform, nativeStore } = useInstallPlatform();
+  const inboundCampaign = useInboundCampaign();
+  const badgeOnScreen = useStoreBadgeOnScreen(headerRef);
+  const headerInstall = resolveHeroInstall(platform, nativeStore);
+  const headerStore = headerInstall.stores[0];
+  let badgeOnScreenAttribute: 'yes' | 'no' | undefined;
+  if (badgeOnScreen !== null) badgeOnScreenAttribute = badgeOnScreen ? 'yes' : 'no';
+
+  return (
+    <Button
+      className={styles.phoneInstall}
+      data-store-badge-on-screen={badgeOnScreenAttribute}
+      href={buildStoreUrl(headerStore, { placement: 'header', inbound: inboundCampaign })}
+      target="_blank"
+      rel="noopener noreferrer"
+      variant="outlined"
+      sx={HEADER_START_CLIMBING_SX}
+      onClick={() =>
+        trackAppInstallClick({
+          platform: headerStore,
+          source: headerStore === 'ios' ? 'app-store' : 'google-play',
+          placement: 'header',
+          mode: headerInstall.mode,
+        })
+      }
+    >
+      {t('header.getApp')}
+    </Button>
+  );
+}
+
 function getProfileHeaderConfig(pathname: string, t: (key: string) => string): ProfileHeaderConfig | null {
   const segments = pathname.split('/').filter(Boolean);
 
@@ -188,10 +239,7 @@ function getProfileHeaderConfig(pathname: string, t: (key: string) => string): P
  */
 export default function MarketingHeader() {
   const { t } = useTranslation('common');
-  const { platform, nativeStore } = useInstallPlatform();
-  const inboundCampaign = useInboundCampaign();
-  const headerInstall = resolveHeroInstall(platform, nativeStore);
-  const headerStore = headerInstall.stores[0];
+  const headerRef = useRef<HTMLElement>(null);
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
   const [navMenuAnchor, setNavMenuAnchor] = useState<HTMLElement | null>(null);
@@ -221,26 +269,7 @@ export default function MarketingHeader() {
     });
   }, [profileHeaderConfig, profileHeaderShare.displayName, profileHeaderShare.isActive, showMessage, t]);
 
-  const phoneInstallAction = (
-    <Button
-      className={styles.phoneInstall}
-      href={buildStoreUrl(headerStore, { placement: 'header', inbound: inboundCampaign })}
-      target="_blank"
-      rel="noopener noreferrer"
-      variant="outlined"
-      sx={HEADER_START_CLIMBING_SX}
-      onClick={() =>
-        trackAppInstallClick({
-          platform: headerStore,
-          source: headerStore === 'ios' ? 'app-store' : 'google-play',
-          placement: 'header',
-          mode: headerInstall.mode,
-        })
-      }
-    >
-      {t('header.getApp')}
-    </Button>
-  );
+  const phoneInstallAction = <HeaderPhoneInstall headerRef={headerRef} />;
 
   const brandLink = (
     <Button
@@ -442,7 +471,7 @@ export default function MarketingHeader() {
   // On /settings pages, brand link only — no settings cog, you're already here.
   if (pathname.startsWith('/settings')) {
     return (
-      <header className={styles.header} data-testid="marketing-header">
+      <header ref={headerRef} className={styles.header} data-testid="marketing-header">
         {brandLink}
         <Box sx={{ flex: 1 }} />
         {phoneInstallAction}
@@ -451,7 +480,7 @@ export default function MarketingHeader() {
   }
 
   return (
-    <header className={styles.header} data-testid="marketing-header">
+    <header ref={headerRef} className={styles.header} data-testid="marketing-header">
       {brandLink}
       {primaryNav}
       <Box sx={{ flex: 1 }} />

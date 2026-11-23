@@ -187,7 +187,7 @@ finder binds through the same `useActivateBoard` path, so its picks report this 
 forwarded `source=onboarding`). Pushed from the picker's "Find gym" (which adds
 `from=picker`), it reports no opening of its own, because the picker already
 did, and its picks carry the picker's `source`. Opened on its own from Home or
-My gyms, it reports its own opening, and both events say `source: gym_finder`,
+Gyms you run, it reports its own opening, and both events say `source: gym_finder`,
 so those picks never count against the picker's openings. Creation
 flows retain their existing creation/activation events. Screen-event deduplication
 is unchanged, so these events diagnose reselection without restoring a per-screen

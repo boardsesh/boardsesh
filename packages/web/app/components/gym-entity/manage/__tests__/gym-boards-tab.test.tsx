@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
+import { render as renderInDom, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { gymReportingQueryKey } from '@boardsesh/graphql';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
 import GymBoardsTab, { GymBoardAssociation, VisibilityChip } from '../gym-boards-tab';
+
+function render(ui: React.ReactElement, queryClient = new QueryClient()) {
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return renderInDom(ui, { wrapper });
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -201,19 +210,23 @@ describe('GymBoardsTab — add-board dialog', () => {
 });
 
 describe('GymBoardsTab — permission gating', () => {
-  it('hides Unlink and shows the owner-only note for boards the viewer does not own', async () => {
+  it('offers Remove from gym by the server flag, with no owner-only note', async () => {
     stubRequests({
-      gymBoards: [makeBoard({ uuid: 'board-foreign', name: 'Foreign Board', ownerId: 'someone-else' })],
+      gymBoards: [
+        makeBoard({ uuid: 'board-foreign', name: 'Foreign Board', ownerId: 'someone-else', canRemoveFromGym: true }),
+        makeBoard({ uuid: 'board-locked', name: 'Locked Board', ownerId: 'someone-else', canRemoveFromGym: false }),
+      ],
       myBoards: [],
     });
     render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
 
     await screen.findByText('Foreign Board');
+    expect(screen.getAllByRole('button', { name: /^remove from gym$/i })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /unlink/i })).toBeNull();
-    expect(screen.getByText(/only the board's owner can unlink it/i)).toBeTruthy();
+    expect(screen.queryByText(/only the board's owner/i)).toBeNull();
   });
 
-  it('hides the add-board affordance for gym editors and shows the read-only hint', async () => {
+  it('tells gym editors what they can do: remove and add nearby boards, not link their own or delete', async () => {
     mockSessionUserId.current = 'user-editor';
     const editorGym = { ...gym, ownerId: 'user-owner', myRole: 'editor' } as unknown as Gym;
     stubRequests({ gymBoards: [], myBoards: [] });
@@ -221,50 +234,148 @@ describe('GymBoardsTab — permission gating', () => {
 
     await screen.findByText(/no boards linked yet/i);
     expect(screen.queryByRole('button', { name: /add a board/i })).toBeNull();
-    expect(screen.getByText(/only the gym owner or an admin can link boards/i)).toBeTruthy();
+    expect(screen.getByText(/you can remove boards climbers added/i)).toBeTruthy();
+  });
+
+  it('tells an editor who can delete a synced board that has no action for them', async () => {
+    stubRequests({
+      gymBoards: [
+        makeBoard({
+          uuid: 'synced',
+          name: 'Synced',
+          ownerId: '00000000-0000-0000-0000-000000000000',
+          canRemoveFromGym: false,
+          canDelete: false,
+        }),
+      ],
+      myBoards: [],
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Synced');
+    expect(screen.getByText('Ask an owner or admin to delete this one.')).toBeTruthy();
+  });
+
+  it('says where each board came from', async () => {
+    stubRequests({
+      gymBoards: [
+        makeBoard({ uuid: 'mine', name: 'Mine', ownerId: 'user-owner' }),
+        makeBoard({ uuid: 'sams', name: 'Sams', ownerId: 'sam', ownerDisplayName: 'Sam' }),
+        makeBoard({ uuid: 'private', name: 'Private', ownerId: null, ownerDisplayName: undefined }),
+        makeBoard({ uuid: 'synced', name: 'Synced', ownerId: '00000000-0000-0000-0000-000000000000' }),
+      ],
+      myBoards: [],
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Mine');
+    expect(screen.getByText('Added by you')).toBeTruthy();
+    expect(screen.getByText('Added by Sam')).toBeTruthy();
+    expect(screen.getByText('Added by a climber')).toBeTruthy();
+    expect(screen.getByText('From public board data')).toBeTruthy();
+  });
+
+  it('reads the boards with the staff document that names who added them', async () => {
+    stubRequests({ gymBoards: [], myBoards: [] });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    await screen.findByText(/no boards linked yet/i);
+    expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('query GetGymBoardsForManage('), {
+      gymUuid: GYM_UUID,
+    });
+    expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('ownerDisplayName'), { gymUuid: GYM_UUID });
   });
 });
 
-describe('GymBoardAssociation — unlink cache refresh', () => {
+describe('GymBoardAssociation — Remove from gym', () => {
   it.each([true, false])(
-    'refreshes directory only after a successful unlink (success: %s)',
+    "unlinks the viewer's own board, refreshing only after success (success: %s)",
     async (mutationSucceeds) => {
       const onAssociated = vi.fn().mockResolvedValue(undefined);
-      stubRequests({ gymBoards: [makeBoard({ gymUuid: GYM_UUID })], myBoards: [] });
+      stubRequests({ gymBoards: [makeBoard({ gymUuid: GYM_UUID, canRemoveFromGym: true })], myBoards: [] });
       mockExecute.mockResolvedValueOnce(mutationSucceeds ? { linkBoardToGym: true } : null);
       render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />);
 
-      fireEvent.click(await screen.findByRole('button', { name: /^unlink$/i }));
+      fireEvent.click(await screen.findByRole('button', { name: /^remove from gym$/i }));
       const confirmation = await screen.findByRole('dialog');
-      fireEvent.click(within(confirmation).getByRole('button', { name: /unlink/i }));
+      expect(within(confirmation).getByText('Remove Garage Board from Test Gym?')).toBeTruthy();
+      expect(
+        within(confirmation).getByText("It comes off Test Gym's page and kiosks. It stays in your boards."),
+      ).toBeTruthy();
+      fireEvent.click(within(confirmation).getByRole('button', { name: /^remove$/i }));
 
       await waitFor(() => expect(mockExecute).toHaveBeenCalledWith({ input: { boardUuid: 'board-1', gymUuid: null } }));
       if (mutationSucceeds) {
         await waitFor(() => expect(onAssociated).toHaveBeenCalledTimes(1));
+        expect(mockRefresh).toHaveBeenCalled();
       } else {
         expect(onAssociated).not.toHaveBeenCalled();
         expect(screen.getByText('Garage Board')).toBeTruthy();
       }
     },
   );
+
+  it("takes a climber's board off the gym with the staff mutation and says they keep it", async () => {
+    const onAssociated = vi.fn().mockResolvedValue(undefined);
+    stubRequests({
+      gymBoards: [makeBoard({ ownerId: 'sam', ownerDisplayName: 'Sam', gymUuid: GYM_UUID, canRemoveFromGym: true })],
+      myBoards: [],
+    });
+    mockExecute.mockResolvedValueOnce({ detachBoardFromGym: true });
+    const queryClient = new QueryClient();
+    const report = gymReportingQueryKey('user-owner', GYM_UUID, 'board-1', 'week');
+    const otherReport = gymReportingQueryKey('user-owner', 'other-gym', null, 'week');
+    queryClient.setQueryData(report, { boards: ['board-1'] });
+    queryClient.setQueryData(otherReport, { boards: [] });
+    render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />, queryClient);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^remove from gym$/i }));
+    const confirmation = await screen.findByRole('dialog');
+    expect(
+      within(confirmation).getByText("It comes off Test Gym's page and kiosks. Sam keeps it in their boards."),
+    ).toBeTruthy();
+    stubRequests({ gymBoards: [], myBoards: [] });
+    fireEvent.click(within(confirmation).getByRole('button', { name: /^remove$/i }));
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledExactlyOnceWith({ input: { gymUuid: GYM_UUID, boardUuid: 'board-1' } }),
+    );
+    await waitFor(() => expect(screen.queryByText('Garage Board')).toBeNull());
+    expect(onAssociated).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(report)).toBeUndefined();
+    expect(queryClient.getQueryData(otherReport)).toEqual({ boards: [] });
+  });
+
+  it('runs nothing when the confirm is cancelled', async () => {
+    stubRequests({ gymBoards: [makeBoard({ canRemoveFromGym: true })], myBoards: [] });
+    render(<GymBoardAssociation gym={gym} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^remove from gym$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^cancel$/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
 });
 
 describe('GymBoardsTab — delete board', () => {
-  const linkedBoard = makeBoard({ gymUuid: GYM_UUID });
+  const linkedBoard = makeBoard({ gymUuid: GYM_UUID, canDelete: true });
 
+  // The server decides: a gym admin deletes synced boards, never a climber's.
   it.each([
-    { viewer: 'user-owner', boardOwner: 'user-owner', role: 'editor' as const, gymOwner: 'gym-owner' },
-    { viewer: 'user-owner', boardOwner: 'board-owner', role: null, gymOwner: 'user-owner' },
-    { viewer: 'gym-admin', boardOwner: 'board-owner', role: 'admin' as const, gymOwner: 'gym-owner' },
-  ])('offers Delete for $viewer with gym role $role', async ({ viewer, boardOwner, role, gymOwner }) => {
+    { viewer: 'user-owner', canDelete: true, offered: true },
+    { viewer: 'gym-admin', canDelete: true, offered: true },
+    { viewer: 'gym-admin', canDelete: false, offered: false },
+    { viewer: 'gym-admin', canDelete: undefined, offered: false },
+  ])('offers Delete to $viewer only when canDelete is $canDelete', async ({ viewer, canDelete, offered }) => {
     mockSessionUserId.current = viewer;
-    stubRequests({ gymBoards: [{ ...linkedBoard, ownerId: boardOwner }], myBoards: [] });
-    render(<GymBoardsTab gym={{ ...gym, ownerId: gymOwner, myRole: role }} onGymChange={vi.fn()} />);
+    stubRequests({ gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', canDelete }], myBoards: [] });
+    render(<GymBoardsTab gym={{ ...gym, myRole: 'admin' }} onGymChange={vi.fn()} />);
 
-    expect(await screen.findByRole('button', { name: /^delete$/i })).toBeTruthy();
+    await screen.findByText('Garage Board');
+    expect(screen.queryByRole('button', { name: /^delete$/i }) !== null).toBe(offered);
   });
 
-  it('offers Delete to gym admins when location privacy redacts a listed board gym link', async () => {
+  it('offers Delete when location privacy redacts a listed board gym link and the server allows it', async () => {
     mockSessionUserId.current = 'gym-admin';
     stubRequests({
       gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', gymUuid: null, hideLocation: true }],
@@ -275,7 +386,7 @@ describe('GymBoardsTab — delete board', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
     mockExecute.mockResolvedValueOnce({ deleteBoard: true });
     stubRequests({ gymBoards: [], myBoards: [] });
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
 
     await waitFor(() => expect(screen.queryByText('Garage Board')).toBeNull());
     expect(mockExecute).toHaveBeenCalledExactlyOnceWith({ boardUuid: linkedBoard.uuid });
@@ -283,7 +394,10 @@ describe('GymBoardsTab — delete board', () => {
 
   it.each(['editor', null] as const)('hides Delete when gym role %s only grants editing', async (role) => {
     mockSessionUserId.current = 'gym-editor';
-    stubRequests({ gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', canEdit: true }], myBoards: [] });
+    stubRequests({
+      gymBoards: [{ ...linkedBoard, ownerId: 'board-owner', canEdit: true, canDelete: false }],
+      myBoards: [],
+    });
     render(<GymBoardsTab gym={{ ...gym, myRole: role }} onGymChange={vi.fn()} />);
 
     await screen.findByText('Garage Board');
@@ -304,7 +418,12 @@ describe('GymBoardsTab — delete board', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
 
     const confirmation = await screen.findByRole('dialog');
-    expect(within(confirmation).getByText('Delete "Garage Board"? This can\'t be undone.')).toBeTruthy();
+    expect(within(confirmation).getByText('Delete Garage Board for everyone?')).toBeTruthy();
+    expect(
+      within(confirmation).getByText(
+        'It disappears for you and every climber who saved it. Logged sends stay in their logbooks.',
+      ),
+    ).toBeTruthy();
     const cancelButton = within(confirmation).getByRole('button', { name: /^cancel$/i });
     expect(document.activeElement).toBe(cancelButton);
     expect(mockExecute).not.toHaveBeenCalled();
@@ -316,7 +435,7 @@ describe('GymBoardsTab — delete board', () => {
   });
 
   it('deletes only the confirmed board and refreshes the list and gym counts', async () => {
-    const otherBoard = makeBoard({ uuid: 'board-2', name: 'Second Wall', gymUuid: GYM_UUID });
+    const otherBoard = makeBoard({ uuid: 'board-2', name: 'Second Wall', gymUuid: GYM_UUID, canDelete: true });
     const refreshedGym = { ...gym, boardCount: 1 };
     const onGymChange = vi.fn();
     stubRequests({ gymBoards: [linkedBoard, otherBoard], myBoards: [] });
@@ -326,7 +445,7 @@ describe('GymBoardsTab — delete board', () => {
     stubRequests({ gymBoards: [otherBoard], myBoards: [], gymDetails: refreshedGym });
     mockExecute.mockResolvedValueOnce({ deleteBoard: true });
     const confirmation = await screen.findByRole('dialog');
-    fireEvent.click(within(confirmation).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(confirmation).getByRole('button', { name: /^delete board$/i }));
 
     await waitFor(() => expect(onGymChange).toHaveBeenCalledWith(refreshedGym));
     expect(mockExecute).toHaveBeenCalledExactlyOnceWith({ boardUuid: linkedBoard.uuid });
@@ -337,24 +456,31 @@ describe('GymBoardsTab — delete board', () => {
     expect(mockRequest.mock.calls.filter(([operation]) => operation.includes('gymBoards'))).toHaveLength(2);
   });
 
-  it('disables board edits, unlinks and deletes while deletion is pending', async () => {
+  it('disables board edits, removals and deletes while deletion is pending', async () => {
     let resolveDelete!: (response: { deleteBoard: boolean }) => void;
     mockExecute.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveDelete = resolve;
       }),
     );
-    const otherBoard = makeBoard({ uuid: 'board-2', name: 'Second Wall', gymUuid: GYM_UUID, canEdit: true });
-    stubRequests({ gymBoards: [{ ...linkedBoard, canEdit: true }, otherBoard], myBoards: [] });
+    const otherBoard = makeBoard({
+      uuid: 'board-2',
+      name: 'Second Wall',
+      gymUuid: GYM_UUID,
+      canEdit: true,
+      canDelete: true,
+      canRemoveFromGym: true,
+    });
+    stubRequests({ gymBoards: [{ ...linkedBoard, canEdit: true, canRemoveFromGym: true }, otherBoard], myBoards: [] });
     render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
     fireEvent.click((await screen.findAllByRole('button', { name: /^delete$/i }))[0]);
     const confirmation = await screen.findByRole('dialog');
-    const confirmButton = within(confirmation).getByRole('button', { name: /^delete$/i });
+    const confirmButton = within(confirmation).getByRole('button', { name: /^delete board$/i });
     fireEvent.click(confirmButton);
     fireEvent.click(confirmButton);
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    for (const button of screen.getAllByRole('button', { name: /^(delete|edit|unlink)$/i })) {
+    for (const button of screen.getAllByRole('button', { name: /^(delete|edit|remove from gym)$/i })) {
       expect(button.hasAttribute('disabled')).toBe(true);
     }
     expect(screen.getByRole('progressbar')).toBeTruthy();
@@ -371,7 +497,7 @@ describe('GymBoardsTab — delete board', () => {
     stubRequests({ gymBoards: [linkedBoard], myBoards: [] });
     render(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByText('Garage Board')).toBeTruthy();
@@ -382,7 +508,7 @@ describe('GymBoardsTab — delete board', () => {
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
     stubRequests({ gymBoards: [], myBoards: [] });
     mockExecute.mockResolvedValueOnce({ deleteBoard: true });
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
     await waitFor(() => expect(screen.queryByText('Garage Board')).toBeNull());
     expect(mockExecute).toHaveBeenCalledTimes(2);
   });
@@ -412,7 +538,7 @@ describe('GymBoardsTab — delete board', () => {
     const onGymChange = vi.fn();
     const { rerender } = render(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
     await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
 
     mockSessionUserId.current = 'another-account';
@@ -439,7 +565,7 @@ describe('GymBoardsTab — delete board', () => {
         });
       return { gymBoards: [] };
     });
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
     await waitFor(() =>
       expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('query GetGym('), { gymUuid: GYM_UUID }),
     );
@@ -474,7 +600,7 @@ describe('GymBoardsTab — delete board', () => {
 
     mockExecute.mockResolvedValueOnce({ deleteBoard: true });
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete board$/i }));
     await waitFor(() => expect(onGymChange).toHaveBeenCalled());
     await act(async () => resolveStaleBoards({ gymBoards: [linkedBoard] }));
 
@@ -513,7 +639,7 @@ describe('GymBoardsTab — stray boards', () => {
     });
     render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
 
-    expect(await screen.findByText(/boards that might be yours/i)).toBeTruthy();
+    expect(await screen.findByText(/boards near your gym/i)).toBeTruthy();
     expect(screen.getByText('Old Kilter')).toBeTruthy();
     expect(screen.getByText(/was on a merged listing/i)).toBeTruthy();
     expect(screen.getByText('Nearby Tension')).toBeTruthy();
@@ -698,7 +824,7 @@ describe('GymBoardsTab — stray boards', () => {
     render(<GymBoardsTab gym={noEditGym} onGymChange={vi.fn()} />);
 
     await screen.findByText(/no boards linked yet/i);
-    expect(screen.queryByText(/boards that might be yours/i)).toBeNull();
+    expect(screen.queryByText(/boards near your gym/i)).toBeNull();
   });
 });
 
@@ -863,5 +989,103 @@ describe('VisibilityChip', () => {
     render(<VisibilityChip board={{ isPublic: true, isUnlisted: true }} />);
     expect(screen.getByText('Unlisted')).toBeTruthy();
     expect(screen.queryByText('Public')).toBeNull();
+  });
+});
+
+describe('GymBoardsTab — reported boards', () => {
+  const quiet = makeBoard({ uuid: 'quiet', name: 'Quiet Board', gymUuid: GYM_UUID, openReportCount: 0 });
+  const flagged = makeBoard({
+    uuid: 'flagged',
+    name: 'Flagged Board',
+    ownerId: 'sam',
+    ownerDisplayName: 'Sam',
+    gymUuid: GYM_UUID,
+    canRemoveFromGym: true,
+    openReportCount: 1,
+  });
+  const waitingReport = {
+    uuid: 'report-1',
+    targetKind: 'board',
+    reason: 'wrong_setup',
+    status: 'open',
+    routedTo: ['creator', 'gym_staff'],
+    boardUuid: 'flagged',
+    boardName: 'Flagged Board',
+    gymUuid: GYM_UUID,
+    gymName: 'Test Gym',
+    reporterCount: 2,
+    notes: [
+      {
+        note: 'The holds are the 2020 set',
+        createdAt: '2026-11-01T10:00:00.000Z',
+        reporter: { userId: 'reporter-1', displayName: 'Ana' },
+      },
+    ],
+    createdAt: '2026-11-01T10:00:00.000Z',
+    escalatesAt: '2026-11-15T10:00:00.000Z',
+    viewerRole: 'gym_staff',
+    viewerIsReporter: false,
+    viewerCanResolve: true,
+  };
+
+  function stubReported() {
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('strayBoardsForGym')) return { strayBoardsForGym: [] };
+      if (document.includes('resolveDirectoryReport'))
+        return { resolveDirectoryReport: { ...waitingReport, status: 'kept' } };
+      if (document.includes('boardReports')) return { boardReports: [waitingReport] };
+      if (document.includes('gymBoards')) return { gymBoards: [quiet, flagged] };
+      if (document.includes('query GetGym(')) return { gym };
+      return { myBoards: { boards: [], totalCount: 0, hasMore: false } };
+    });
+  }
+
+  it('lists reported boards first, with a Reported chip', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    await screen.findByText('Flagged Board');
+    const rows = screen.getAllByRole('listitem').map((row) => row.textContent ?? '');
+    expect(rows[0]).toContain('Flagged Board');
+    expect(rows[0]).toContain('Reported');
+    expect(rows[1]).toContain('Quiet Board');
+    expect(rows[1]).not.toContain('Reported');
+  });
+
+  it('reviews the reasons and notes without names, and keeps the board with a note', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^review$/i }));
+
+    const review = await screen.findByRole('dialog');
+    await within(review).findByText('Set up wrong · 2 climbers');
+    expect(within(review).getByText('The holds are the 2020 set')).toBeTruthy();
+    expect(within(review).queryByText(/Ana/)).toBeNull();
+    expect(within(review).getByText('Remove from Test Gym')).toBeTruthy();
+
+    fireEvent.click(within(review).getByText("It's right as it is"));
+    fireEvent.change(within(review).getByLabelText('Tell them why (optional)'), {
+      target: { value: '  We reset it last week  ' },
+    });
+    fireEvent.click(within(review).getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('resolveDirectoryReport'), {
+        input: { reportUuid: 'report-1', outcome: 'kept', note: 'We reset it last week' },
+      }),
+    );
+    await waitFor(() =>
+      expect(mockShowMessage).toHaveBeenCalledWith("Report closed. We'll pass your note on.", 'success'),
+    );
+  });
+
+  it('hands Remove from gym to the tab’s own confirm', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^review$/i }));
+    const review = await screen.findByRole('dialog');
+    fireEvent.click(await within(review).findByText('Remove from Test Gym'));
+
+    const confirmation = await screen.findByRole('dialog');
+    expect(within(confirmation).getByText('Remove Flagged Board from Test Gym?')).toBeTruthy();
   });
 });

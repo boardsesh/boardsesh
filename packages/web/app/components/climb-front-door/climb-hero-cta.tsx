@@ -21,9 +21,9 @@ type ClimbHeroCtaProps = {
 /**
  * The climb page's call to action: `FrontDoorHeroCta` with the climb's words.
  *
- * Below md the store ("Get the free app") is the one filled button: a phone
- * with Boardsesh opens climb links straight in the app, so a phone reading this
- * page almost never has it. From md the hand-off is the filled button, and a QR
+ * Below md the store badge is the primary action: a phone with Boardsesh opens
+ * climb links straight in the app, so a phone reading this page almost never
+ * has it. From md the hand-off is the filled button, and a QR
  * code beside it carries the climb to a phone. `FrontDoorHeroCta` holds the
  * layout and why it is CSS only.
  */
@@ -57,14 +57,6 @@ export default async function ClimbHeroCta({
       qrUrl={climbQrUrl(handoffPath, locale)}
       storeLabels={storeLabels}
       labels={{
-        store: {
-          install: t('frontDoor.cta.getApp'),
-          update: storeLabels.update,
-          installAria: {
-            ios: t('frontDoor.cta.getAppAriaIos'),
-            android: t('frontDoor.cta.getAppAriaAndroid'),
-          },
-        },
         storeHelper: t('frontDoor.cta.getAppHelper', { board: climbBoardForSearch(boardName, layoutName) }),
         handoffMobile: t('frontDoor.cta.openInBrowserMobile'),
         handoffDesktop: t('frontDoor.cta.openInBrowser'),

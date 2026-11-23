@@ -29,7 +29,8 @@
     "sprayWalls": "Spraywall training data",
     "boards": "Registered boards",
     "buildPlans": "Build-pack orders",
-    "partnerApps": "Partner apps"
+    "partnerApps": "Partner apps",
+    "boardReports": "Board reports"
   },
   "buildPlans": {
     "title": "Build-pack orders",
@@ -304,6 +305,13 @@
       "disabled": "Auto-approval is off.",
       "saveFailed": "Couldn't save that. Try again.",
       "loadFailed": "Couldn't load gym settings."
+    },
+    "dailyCap": {
+      "label": "Daily limit",
+      "description": "How many claims can approve themselves in 24 hours, across every account. Past it, claims wait for review. 0 sends every claim to review.",
+      "save": "Save limit",
+      "invalid": "Enter a whole number from 0 to 1000.",
+      "saved": "Daily limit saved."
     }
   },
   "gymClaims": {
@@ -315,6 +323,7 @@
     "retry": "Retry",
     "approve": "Approve",
     "deny": "Deny",
+    "claimantHistory": "Account: {{days}} days · Logbook: {{ticks}} · Gyms run: {{gyms}}",
     "method": {
       "domain": "Domain",
       "admin": "Review"
@@ -333,7 +342,36 @@
       "date": "Date",
       "actions": "Actions"
     },
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "autoApproved": {
+      "heading": "Claims that approved themselves",
+      "intro": "Each took an unclaimed gym without a review. Revert hands the gym back to public board data.",
+      "empty": "No claims have approved themselves yet.",
+      "error": "Couldn't load these claims. Try again.",
+      "approvedOn": "Approved {{date}}",
+      "reverted": "Reverted",
+      "revert": "Revert",
+      "revertAria": "Revert {{claimant}}'s claim on {{gym}}"
+    },
+    "revert": {
+      "title": "Revert {{claimant}}'s claim on {{gym}}?",
+      "body": "{{gym}} goes back to unclaimed. {{claimant}} and anyone added as a member or editor since the claim lose access, the location sync looks after the listing again, and we email {{claimant}} to say so.",
+      "notUndone": "Board changes, kiosks and the gym's description, hours and photo stay as they are. Fix those by hand.",
+      "reasonLabel": "Reason (optional)",
+      "confirm": "Revert claim",
+      "cancel": "Cancel",
+      "done": "{{gym}} is unclaimed again.",
+      "missing": "Claim {{claimId}} isn't one that approved itself, or it's gone. To hand a gym back, use Move gym ownership below.",
+      "alreadyReverted": "Claim {{claimId}} was already reverted.",
+      "errors": {
+        "notFound": "That claim or its gym is gone.",
+        "notApproved": "This claim isn't approved any more, so there's nothing to revert.",
+        "notTransferred": "This claim never moved the gym, so revert has nothing to undo. Use Move gym ownership below.",
+        "ownerChanged": "The gym changed hands after this claim. Use Move gym ownership below.",
+        "priorOwner": "This claim took the gym from a person, not from public board data. Use Move gym ownership below to give it back.",
+        "failed": "Couldn't revert the claim. Try again."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Move gym ownership",
@@ -631,5 +669,81 @@
     "next": "Next page",
     "active": "Active",
     "suspended": "Suspended"
+  },
+  "boardReports": {
+    "title": "Board and gym reports",
+    "backToAdmin": "Back to admin",
+    "description": "Reports nobody else can act on, and any report still open after 14 days. Reports sent straight to us come first, then the oldest.",
+    "filters": {
+      "status": "Status",
+      "kind": "Showing",
+      "kindAll": "Boards and gyms",
+      "kindBoard": "Boards",
+      "kindGym": "Gyms"
+    },
+    "status": {
+      "escalated": "With our team",
+      "open": "With the creator or gym staff",
+      "fixed": "Fixed",
+      "removed": "Removed",
+      "deleted": "Deleted",
+      "kept": "Kept as it is",
+      "merged": "Merged"
+    },
+    "kind": {
+      "board": "Board",
+      "gym": "Gym"
+    },
+    "chips": {
+      "sentToTeam": "Sent straight to us",
+      "waited": "Open 14 days"
+    },
+    "meta_one": "{{count}} climber · opened {{age}}",
+    "meta_other": "{{count}} climbers · opened {{age}}",
+    "ageToday": "today",
+    "ageDays_one": "{{count}} day ago",
+    "ageDays_other": "{{count}} days ago",
+    "routedToLine": "Sent to: {{recipients}}",
+    "routedTo": {
+      "creator": "the creator",
+      "gymStaff": "gym staff",
+      "admin": "our team"
+    },
+    "duplicateOf": "Same as {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Deleted account",
+    "closedOn": "Closed {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Delete board",
+      "removeFromGym": "Remove from gym",
+      "hideGym": "Hide gym from search",
+      "keep": "Keep as it is",
+      "mergeGyms": "Merge in Duplicate gyms",
+      "openGym": "Open Manage gym"
+    },
+    "confirm": {
+      "deleteTitle": "Delete {{board}} for everyone?",
+      "deleteBody": "It disappears for every climber who saved it. Logged sends stay in their logbooks. The report closes as deleted.",
+      "removeTitle": "Remove {{board}} from {{gym}}?",
+      "removeBody": "It comes off the gym's page, kiosks and the map there. Whoever added it keeps it. The report closes as removed.",
+      "hideTitle": "Hide {{gym}} from search?",
+      "hideBody": "It stops showing in the gym directory and search. Its page stays up for anyone with the link. The report closes as removed.",
+      "keepTitle": "Keep it as it is?",
+      "keepBody": "The report closes and the climbers who sent it hear that it was kept.",
+      "keepNoteLabel": "A note for them (optional)",
+      "cancel": "Cancel"
+    },
+    "snackbar": {
+      "deleted": "Board deleted. The report is closed.",
+      "removed": "Removed from the gym. The report is closed.",
+      "hidden": "Gym hidden from search. The report is closed.",
+      "hiddenStillOpen": "Gym hidden from search, but the report is still open. Try again.",
+      "kept": "Report closed.",
+      "failed": "That didn't go through. Try again."
+    },
+    "empty": "Nothing here.",
+    "error": "Couldn't load reports. Try again.",
+    "retry": "Retry",
+    "loadMore": "Load more"
   }
 }

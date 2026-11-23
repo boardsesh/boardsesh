@@ -20,3 +20,4 @@ export * from './client-identity';
 export * from './apple-ads-attribution';
 export * from './cnc-config';
 export * from './offline-write-delivery';
+export * from './board-origin';

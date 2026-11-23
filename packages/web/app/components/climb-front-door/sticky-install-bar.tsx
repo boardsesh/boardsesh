@@ -139,7 +139,7 @@ const endMarkerSx = { height: 0 };
  *    the bottom of the screen, and the reader's answer comes first. A browser
  *    that never gets the card (outside the prompt regions, Global Privacy
  *    Control included) gets the bar once the lookup has answered;
- *  - any of the page's store buttons (`data-sticky-install-hide`) is on screen,
+ *  - any of the page's store badges (`data-sticky-install-hide`) is on screen,
  *    or none has been scrolled past yet. A block that streams in after mount
  *    (the climb page's app module, inside `<Suspense>`) counts too;
  *  - the end of `<main>` has reached the bar. Below md `<main>` carries a bottom

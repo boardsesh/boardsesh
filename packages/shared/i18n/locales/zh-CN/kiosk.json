@@ -87,15 +87,13 @@
     "visitWebsite": "访问网站",
     "install": {
       "heading": "下载应用，攀这面墙",
-      "body": "用手机点亮 {{gymName}} 的训练板，记录每次完攀。",
-      "googlePlay": "从 Google Play 下载",
-      "appStore": "从 App Store 下载"
+      "body": "用手机点亮 {{gymName}} 的训练板，记录每次完攀。"
     },
     "noBoardsYet": "这里尚未收录训练板。",
     "explorePlaylists": "看看大家在建什么线路集",
     "startDiscussion": "发起讨论",
-    "claimTitle": "这是你的岩馆吗？",
-    "claimBody": "认领后即可管理训练板、品牌形象以及岩墙屏幕展示内容。",
+    "claimTitle": "你运营这家岩馆？",
+    "claimBody": "认领后即可修正训练板、添加营业时间，并把岩壁投到电视上。完全免费。",
     "claimCta": "认领此岩馆",
     "claimCtaSignedOut": "登录并认领",
     "claimPendingTitle": "你的认领正在审核",
@@ -202,8 +200,8 @@
           "body": "添加标志和配色"
         },
         "boards": {
-          "title": "关联你的训练板",
-          "body": "连接岩馆内的岩墙"
+          "title": "查看你的训练板",
+          "body": "修正或移除不在你岩墙上的训练板"
         },
         "members": {
           "title": "邀请伙伴",
@@ -213,7 +211,6 @@
     },
     "title": "管理 {{gymName}}",
     "backToGym": "返回岩馆页面",
-    "accessDenied": "你没有管理此岩馆的权限。",
     "tabs": {
       "kiosks": "展示终端",
       "branding": "品牌形象",
@@ -291,21 +288,15 @@
     },
     "boards": {
       "heading": "此岩馆的训练板",
-      "description": "关联你拥有的训练板，让它们显示在岩馆页面和展示终端上。",
+      "description": "这些训练板由攀岩者或公开的训练板数据添加。请修正有误的训练板，并移除不在你岩墙上的训练板。",
       "addBoard": "添加训练板",
       "empty": "尚未关联训练板。添加一块开始吧。",
       "loadError": "无法加载此岩馆的训练板。",
-      "unlink": "取消关联",
-      "onlyOwnerCanUnlink": "只有训练板所有者才能取消关联",
-      "readOnlyHint": "只有岩馆所有者或管理员才能关联训练板。",
-      "unlinkTitle": "取消关联此训练板？",
-      "unlinkBody": "“{{name}}”将不再显示在此岩馆页面和展示终端上。你可以随时重新关联。",
-      "unlinkConfirm": "取消关联",
+      "readOnlyHint": "所有者和管理员可以添加自己的训练板，也可以删除同步来的训练板。你可以移除攀岩者添加的训练板，并添加岩馆附近的训练板。",
+      "askAdminToDelete": "请让所有者或管理员删除这块训练板。",
       "cancel": "取消",
       "linked": "训练板已关联。",
       "linkFailed": "无法关联训练板。",
-      "unlinked": "已取消关联训练板。",
-      "unlinkFailed": "无法取消关联训练板。",
       "visibility": {
         "public": "公开",
         "unlisted": "不公开列出",
@@ -321,8 +312,8 @@
         "close": "关闭"
       },
       "strays": {
-        "heading": "可能属于你的训练板",
-        "description": "这些训练板位于你的岩馆，或原本属于一条已合并的岩馆记录。请添加确实属于这里的训练板。",
+        "heading": "你岩馆附近的训练板",
+        "description": "这些训练板距离你的岩馆不到 150 米，或来自已合并的岩馆记录。请添加在你岩墙上的训练板。",
         "reasonMerged": "原属一条已合并的岩馆记录",
         "reasonNearby": "距离 {{meters}} 米",
         "reasonNearbyGeneric": "就在附近",
@@ -425,8 +416,8 @@
           "body": "添加标志和品牌颜色"
         },
         "boards": {
-          "title": "关联你的训练板",
-          "body": "连接岩馆内的岩墙"
+          "title": "查看你的训练板",
+          "body": "修正或移除不在你岩墙上的训练板"
         },
         "members": {
           "title": "邀请伙伴",

@@ -73,6 +73,7 @@ import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
 import { placeQueries } from './social/places';
 import { gymActivityStatsMutations } from './social/gym-activity-stats';
+import { setterSitemapMutations } from './social/setter-sitemap';
 import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
@@ -82,7 +83,9 @@ import { socialGymClaimQueries, socialGymClaimMutations, gymClaimFieldResolvers 
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
 import { socialGymOwnerReassignQueries, socialGymOwnerReassignMutations } from './social/gym-owner-reassign';
+import { socialGymClaimRevertMutations } from './social/gym-claim-revert';
 import { socialGymReportMutations } from './social/gym-reports';
+import { directoryReportQueries, directoryReportMutations } from './social/directory-reports';
 import {
   socialNotificationQueries,
   socialNotificationMutations,
@@ -176,6 +179,7 @@ export const resolvers = {
     ...followedAuthorQueries,
     ...crewFeedQueries,
     ...socialNotificationQueries,
+    ...directoryReportQueries,
     ...socialProposalQueries,
     ...proposalReportReleaseContextQueries,
     ...socialRoleQueries,
@@ -231,13 +235,16 @@ export const resolvers = {
     ...socialGymMutations,
     ...gymReportingSettingsMutations,
     ...gymActivityStatsMutations,
+    ...setterSitemapMutations,
     ...socialGymStrayBoardMutations,
     ...socialGymKioskMutations,
     ...socialGymClaimMutations,
     ...socialGymDuplicateMutations,
     ...socialLocationSyncFreezeMutations,
     ...socialGymOwnerReassignMutations,
+    ...socialGymClaimRevertMutations,
     ...socialGymReportMutations,
+    ...directoryReportMutations,
     ...socialNotificationMutations,
     ...notificationDeviceMutations,
     ...socialProposalMutations,

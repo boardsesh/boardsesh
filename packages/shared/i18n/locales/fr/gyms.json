@@ -113,15 +113,19 @@
     "home": "Retour à Boardsesh"
   },
   "card": {
-    "claimed": "Géré par la salle",
-    "unclaimed": "Non revendiquée",
+    "claimed": "Gérée par la salle",
+    "climberListed": "Ajoutée par un grimpeur",
+    "unclaimed": "Pas encore revendiquée",
+    "claimCta": "Revendiquer cette salle",
+    "claimCtaAria": "Revendiquer {{gym}}",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "à {{distance}} km"
   },
   "claim": {
-    "body": "C'est ta salle ? Revendique-la et c'est toi qui choisis les boards, les horaires et les liens affichés ici.",
+    "body": "Tu gères une de ces salles ? Revendique-la pour corriger ses boards, ses horaires et ses liens.",
     "action": "Trouve ta salle",
-    "topAction": "Tu gères un de ces murs ? Trouve et revendique sa fiche gratuitement."
+    "topAction": "Tu gères une de ces salles ? Trouve-la et revendique-la. C'est gratuit.",
+    "modeHint": "Cherche ta salle, puis revendique-la depuis sa fiche."
   },
   "nearMe": {
     "cta": "Utiliser ma position",

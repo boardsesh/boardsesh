@@ -539,7 +539,10 @@ export const mutationsTypeDefs = /* GraphQL */ `
     adminUpdateBoard(input: UpdateBoardInput!): AdminBoard!
 
     """
-    Soft-delete a board as its owner or an owner/admin of its linked gym.
+    Soft-delete a board. Allowed for its owner; for the owner or an admin of its
+    linked gym on a synced (system-owned) board only; and for a global admin. A
+    non-owner must also be able to read the board. Gym staff take a climber's
+    board off their listing with detachBoardFromGym instead. See UserBoard.canDelete.
     """
     deleteBoard(boardUuid: ID!): Boolean!
 
@@ -624,7 +627,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Link or unlink a board you own to/from a gym. Unlinking is always yours to
     do. Linking needs either owner/admin rights on the gym, or — so a climber can
     list their board at the gym they actually climb at — a public gym within
-    150 m of the board's coordinates, subject to a per-caller cap.
+    150 m of the board's coordinates, subject to a per-caller cap. A board the
+    gym's staff took off their listing can't be self-linked back to that gym
+    (error code BOARD_REMOVED_BY_GYM) until the gym's staff put it back.
     """
     linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
@@ -632,14 +637,19 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Attach a stray board (surfaced by strayBoardsForGym) to a gym in one tap.
     Re-points the board's gym_id to this gym. The caller need not own the board;
     the gate is edit access to the target gym, and the board must be a genuine
-    stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one).
+    stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one),
+    or a still-unlinked board this gym's staff removed, which this puts back.
     """
     attachBoardToGym(input: AttachBoardToGymInput!): Boolean!
 
     """
     Remove a board from this gym's listing. Gated on edit access to the gym, and
-    the board must currently be listed at it. Lets gym staff undo an unwanted
-    self-link; clears gym_id only, leaving the board with its owner.
+    the board must currently be listed at it. Gym staff's tool for a climber's
+    board: clears gym_id and freezes the board against the location sync,
+    leaving the board with its owner. A removal by staff stops the owner
+    self-linking it back to this gym. A synced (system-owned) board is refused
+    with SYSTEM_BOARD_DELETE_INSTEAD unless the caller is a global admin: the
+    gym's owner or admin deletes it instead. See UserBoard.canRemoveFromGym.
     """
     detachBoardFromGym(input: DetachBoardFromGymInput!): Boolean!
 
@@ -669,6 +679,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     ownership to the claimant.
     """
     reviewGymClaim(input: ReviewGymClaimInput!): Boolean!
+
+    """
+    Take back an approved gym claim (global admin only): the gym goes back to
+    the SYSTEM account, every approved claim on it becomes \`revoked\`, the sync
+    freeze set at approval is cleared so the location sync curates the listing
+    again, and the claimant plus every gym member or editor added since the
+    claim lose their membership. Only for a claim that took the gym from the
+    SYSTEM account when nobody has moved it since; anything else is refused, and
+    reassignGymOwner is the tool for it.
+    """
+    revertGymClaim(input: RevertGymClaimInput!): RevertGymClaimResult!
 
     """
     Fold one or more duplicate gyms into a canonical survivor (admin only). Every
@@ -832,7 +853,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     Soft-delete a wall. The catalogue rows and every climb ever set on it stay
     behind — a deleted wall stops being reachable, it does not un-set the climbs.
-    Owner only.
+    The same gate as deleteBoard: the wall's owner, the owner or an admin of its
+    gym on a system-owned wall, or a global admin, who must be able to read it.
     """
     deleteSprayWall(uuid: ID!): Boolean!
 

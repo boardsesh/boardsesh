@@ -15,6 +15,7 @@ import { gymReportingSettingsMutations } from '../graphql/resolvers/social/gym-r
 import { tickReportingTime } from '../services/reporting-time';
 import { reserveAndPersistBoardClimbEvent } from '../graphql/resolvers/board-presence/mutations';
 import { socialGymMutations, socialGymQueries } from '../graphql/resolvers/social/gyms';
+import { socialGymStrayBoardMutations } from '../graphql/resolvers/social/gym-stray-boards';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 
 /**
@@ -284,6 +285,24 @@ describe('gymStats access guard', () => {
     ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
   });
 
+  it('denies fresh reports and settings after governance removes an editor', async () => {
+    expect((await readStats(EDITOR)).gymUuid).toBe(publicGym.uuid);
+    await socialGymMutations.revokeGymWriteAccess(
+      {},
+      { input: { gymUuid: publicGym.uuid, userId: EDITOR } },
+      authCtx(OWNER),
+    );
+    await expect(readStats(EDITOR)).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
+    await expect(
+      gymReportingSettingsMutations.setGymReportingTimeZone(
+        {},
+        { input: { gymUuid: publicGym.uuid, timeZone: 'America/Denver' } },
+        authCtx(EDITOR),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
+    expect((await readStats(ADMIN)).gymUuid).toBe(publicGym.uuid);
+  });
+
   it('rejects a plain member', async () => {
     await expect(
       socialGymInsightsQueries.gymStats({}, { input: { gymUuid: publicGym.uuid } }, authCtx(MEMBER)),
@@ -478,6 +497,46 @@ describe('qualified reporting scope and sources', () => {
       FROM gym_reporting_board_aliases WHERE board_id = ${boardB.id}
     `);
     expect(audit).toMatchObject({ active: 1, automatic: 2 });
+  });
+
+  it('retires verification when gym staff remove a climber’s board without reassigning its logged activity', async () => {
+    await verifyAlias();
+    expect((await readStats()).boards).toHaveLength(1);
+
+    expect(
+      await socialGymStrayBoardMutations.detachBoardFromGym(
+        {},
+        { input: { gymUuid: publicGym.uuid, boardUuid: boardB.uuid } },
+        authCtx(ADMIN),
+      ),
+    ).toBe(true);
+    const [board] = await db.execute<{
+      gym_id: number | null;
+      owner_id: string;
+      frozen: boolean;
+      deleted: boolean;
+    }>(sql`
+      SELECT gym_id, owner_id, sync_frozen_at IS NOT NULL AS frozen, deleted_at IS NOT NULL AS deleted
+      FROM user_boards WHERE id = ${boardB.id}
+    `);
+    expect(board).toEqual({ gym_id: null, owner_id: OWNER, frozen: true, deleted: false });
+    const [event] = await db.execute<{ action: string; actor_user_id: string }>(sql`
+      SELECT action, actor_user_id FROM board_moderation_events WHERE board_id = ${boardB.id}
+    `);
+    expect(event).toEqual({ action: 'removed_from_gym', actor_user_id: ADMIN });
+    const [alias] = await db.execute<{ revoked: boolean }>(sql`
+      SELECT revoked_at IS NOT NULL AS revoked FROM gym_reporting_board_aliases WHERE board_id = ${boardB.id}
+    `);
+    expect(alias?.revoked).toBe(true);
+    const [history] = await db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM boardsesh_ticks
+      WHERE board_id = ${boardB.id} AND reporting_board_id = ${boardB.id} AND reporting_gym_id = ${publicGym.id}
+    `);
+    expect(history?.count).toBe(1);
+    await expect(readStats(ADMIN, boardB.uuid)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    const report = await readStats();
+    expect(report.boards).toHaveLength(1);
+    expect(report.boards[0]?.configurations.map((board) => board.uuid)).toEqual([boardA.uuid]);
   });
 
   it('invalidates an alias when a board leaves and returns inside the same transaction', async () => {

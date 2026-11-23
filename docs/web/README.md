@@ -38,6 +38,7 @@ a production rollout or a physical-device result.
 | [Homepage HTML budget](www-refresh/homepage-budget.md) | `www-refresh/homepage-budget.md` |
 | [Public climb targets (#7862)](www-refresh/public-targets-7862.md) | `www-refresh/public-targets-7862.md` |
 | [Website review evidence](www-refresh/screenshots/README.md) | `www-refresh/screenshots/README.md` |
+| [Supported-board image gallery](../www-refresh/boards-readability.md) | `../www-refresh/boards-readability.md` |
 | [First-visit consent notice: current review evidence](www-refresh/consent-7845/README.md) | `www-refresh/consent-7845/README.md` |
 | [Usable gym directory search and map controls](www-refresh/directory-actions-7863.md) | `www-refresh/directory-actions-7863.md` |
 | [Supported-board image gallery](../www-refresh/boards-readability.md) | `../www-refresh/boards-readability.md` |

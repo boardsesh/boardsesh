@@ -4,6 +4,7 @@ import { isValidCronExpression, parseCronExpression } from '../cron/expression';
 import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
+import { refreshSitemapSetters } from '../jobs/refresh-sitemap-setters';
 import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
 import { purgeUserActivity, snapshotActiveUsers } from '../jobs/active-users';
 import { exportSprayTraining } from '../jobs/export-spray-training';
@@ -104,6 +105,16 @@ describe('job registry', () => {
     expect(findJob('refresh-gym-activity-stats')?.webPath).toBeUndefined();
   });
 
+  it('refreshes the setter summary ten minutes after each six-hourly climb tick', () => {
+    expect(findJob('refresh-sitemap-setters')).toMatchObject({
+      schedule: '10 */6 * * *',
+      timezone: 'UTC',
+      timeoutMs: 120_000,
+      run: refreshSitemapSetters,
+    });
+    expect(findJob('refresh-sitemap-setters')?.webPath).toBeUndefined();
+  });
+
   it('runs the spray wall photo purge directly against GraphQL at 07:00 UTC', () => {
     // Pinned as data, like every row above: the 30-day retention window is only
     // as real as the job that acts on it, and a purge silently dropped from the
@@ -169,7 +180,7 @@ describe('job registry', () => {
     // duration — `refresh-sitemap-climbs` included, whose route still exports
     // it. Dropping the scheduler timeout back to 300s would re-impose a limit
     // the platform no longer forces on us.
-    for (const job of JOBS.filter((candidate) => candidate.name !== 'cleanup')) {
+    for (const job of JOBS.filter((candidate) => !['cleanup', 'refresh-sitemap-setters'].includes(candidate.name))) {
       expect(job.timeoutMs, `${job.name} timeoutMs`).toBeGreaterThan(300_000);
     }
   });

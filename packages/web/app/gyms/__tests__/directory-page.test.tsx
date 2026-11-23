@@ -87,7 +87,9 @@ describe('claim search entry', () => {
       await renderGymDirectory('kilter', { searchParams: Promise.resolve({ claim: '1', q: 'Nine' }) }),
     );
     expect(tree).toContain('"focusSearch":true');
-    expect(tree).toContain('/gyms/kilter?q=Nine&claim=1#gym-directory-query');
+    // One anchor for every claim prompt: the search card, which clears the fixed header.
+    expect(tree).toContain('/gyms/kilter?q=Nine&claim=1#gym-directory-search');
+    expect(tree).not.toContain('#gym-directory-query');
   });
 });
 

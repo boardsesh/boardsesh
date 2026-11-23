@@ -15,6 +15,7 @@ import { boardEntitiesTypeDefs } from './board-entities';
 import { gymsTypeDefs } from './gyms';
 import { gymKiosksTypeDefs } from './gym-kiosks';
 import { gymActivityStatsTypeDefs } from './gym-activity-stats';
+import { setterSitemapTypeDefs } from './setter-sitemap';
 import { notificationsTypeDefs } from './notifications';
 import { proposalsTypeDefs } from './proposals';
 import { socialTypeDefs } from './social';
@@ -50,6 +51,7 @@ import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 import { cncPacksTypeDefs } from './cnc-packs';
 import { offlineWriteDeliveryTypeDefs } from './offline-write-delivery';
+import { directoryReportsTypeDefs } from './directory-reports';
 
 export const typeDefs = [
   offlineWriteDeliveryTypeDefs,
@@ -72,6 +74,7 @@ export const typeDefs = [
   gymsTypeDefs,
   gymKiosksTypeDefs,
   gymActivityStatsTypeDefs,
+  setterSitemapTypeDefs,
   notificationsTypeDefs,
   proposalsTypeDefs,
   socialTypeDefs,
@@ -106,4 +109,5 @@ export const typeDefs = [
   partnerWebhooksTypeDefs,
   appWorkoutsTypeDefs,
   connectedAppsTypeDefs,
+  directoryReportsTypeDefs,
 ];

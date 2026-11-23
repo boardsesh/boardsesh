@@ -18,7 +18,11 @@ export const gymMemberRoleEnum = pgEnum('gym_member_role', ['admin', 'editor', '
 
 export const gymClaimMethodEnum = pgEnum('gym_claim_method', ['domain', 'admin']);
 
-export const gymClaimStatusEnum = pgEnum('gym_claim_status', ['pending', 'approved', 'denied', 'expired']);
+// `revoked`: an approved claim a global admin took back (`revertGymClaim`). The
+// gym went back to the SYSTEM account and the location sync curates it again;
+// readers of "an approved claim exists" (listing state, the sync's
+// owner-curated test) stop seeing it, which is the point.
+export const gymClaimStatusEnum = pgEnum('gym_claim_status', ['pending', 'approved', 'denied', 'expired', 'revoked']);
 
 /**
  * Gyms table — represents a physical gym location that can contain multiple boards.
@@ -216,6 +220,12 @@ export const gymClaims = pgTable(
  * `gymUuid` is the gym identity at decision time, with no FK and no merge-time
  * rewrite. This keeps a transfer on a duplicate from becoming a transfer on the
  * canonical gym when claim rows are moved during a merge.
+ *
+ * `previousOwnerId` is who owned the gym just before the approval: the SYSTEM
+ * import user for an unclaimed listing. A claim admins may revert must have
+ * taken the gym from SYSTEM (docs/product/gym-claims.md, "Revert"). Null on rows
+ * written before it was recorded, which reads as unknown. Not a FK: an audit
+ * snapshot that outlives an account deletion, like `gym_owner_reassignments`.
  */
 export const gymClaimOwnershipDecisions = pgTable(
   'gym_claim_ownership_decisions',
@@ -226,6 +236,7 @@ export const gymClaimOwnershipDecisions = pgTable(
     gymUuid: text('gym_uuid').notNull(),
     didTransfer: boolean('did_transfer').notNull(),
     decidedAt: timestamp('decided_at').notNull(),
+    previousOwnerId: text('previous_owner_id'),
   },
   (table) => ({
     transferredHistoryIdx: index('gym_claim_ownership_decisions_transfer_history_idx')

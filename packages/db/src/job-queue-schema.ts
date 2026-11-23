@@ -151,6 +151,26 @@ const PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS = {
   retryDelay: 300,
 } as const;
 
+/**
+ * The backend's hourly directory-report sweep (docs/product/directory-reports.md):
+ * the seven-day reminder, the fourteen-day hand-off to the admin queue, and the
+ * admin's daily digest email. Lives here because the migrator creates the queue.
+ */
+export const DIRECTORY_REPORT_SWEEP_QUEUE = 'directory-report-sweep';
+
+/**
+ * `exclusive`: one run queued or running across every replica. A run touches a
+ * few rows and sends at most one email, well under this expiry. A failed run is
+ * retried once; the next hour's run covers anything it left, because every step
+ * reads what is due rather than what changed since the last run.
+ */
+const DIRECTORY_REPORT_SWEEP_QUEUE_OPTIONS = {
+  policy: 'exclusive',
+  expireInSeconds: 600,
+  retryLimit: 1,
+  retryDelay: 300,
+} as const;
+
 type TablePrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 
 /** One GRANT on a `public` table, optionally limited to some columns. */
@@ -978,6 +998,12 @@ export async function initializeJobQueueSchema(
     });
     const { policy: _partnerSweepPolicy, ...mutablePartnerSweepOptions } = PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS;
     await boss.updateQueue(PARTNER_OAUTH_SWEEP_QUEUE, mutablePartnerSweepOptions);
+    await boss.createQueue(DIRECTORY_REPORT_SWEEP_QUEUE, {
+      partition: false,
+      ...DIRECTORY_REPORT_SWEEP_QUEUE_OPTIONS,
+    });
+    const { policy: _directorySweepPolicy, ...mutableDirectorySweepOptions } = DIRECTORY_REPORT_SWEEP_QUEUE_OPTIONS;
+    await boss.updateQueue(DIRECTORY_REPORT_SWEEP_QUEUE, mutableDirectorySweepOptions);
     await boss.createQueue(PARTNER_CONNECTION_NOTICES_QUEUE, {
       partition: false,
       ...PARTNER_CONNECTION_NOTICES_OPTIONS,

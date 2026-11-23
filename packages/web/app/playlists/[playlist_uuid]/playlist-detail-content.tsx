@@ -58,6 +58,7 @@ import { isSessionSuperseded } from '@/app/lib/auth/session-guard';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import type { PlaylistGradeBandSummary } from '@/app/lib/playlist-grade-band';
 import BackButton from '@/app/components/back-button';
@@ -155,8 +156,7 @@ export default function PlaylistDetailContent({
   const router = useLocaleRouter();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('playlists');
-  const { t: tClimbs } = useTranslation('climbs');
-  const { t: tMarketing } = useTranslation('marketing');
+  const { t: tMarketing, i18n: marketingI18n } = useTranslation('marketing');
   const [playlist, setPlaylist] = useState<Playlist | null>(initialPlaylist ?? null);
   const [loading, setLoading] = useState(!initialPlaylist);
   const [error, setError] = useState<string | null>(null);
@@ -572,13 +572,12 @@ export default function PlaylistDetailContent({
                 isPublic={playlist.isPublic}
                 locale={locale}
                 labels={{
+                  // The badges' own words, and the language they are in, which picks the artwork.
                   store: {
-                    install: tClimbs('frontDoor.cta.getApp'),
+                    ios: tMarketing('home.hero.ctaInstallIos'),
+                    android: tMarketing('home.hero.ctaInstallAndroid'),
                     update: tMarketing('home.hero.ctaUpdate'),
-                    installAria: {
-                      ios: tClimbs('frontDoor.cta.getAppAriaIos'),
-                      android: tClimbs('frontDoor.cta.getAppAriaAndroid'),
-                    },
+                    locale: isSupportedLocale(marketingI18n.language) ? marketingI18n.language : DEFAULT_LOCALE,
                   },
                   storeHelper: t('detail.cta.getAppHelper'),
                   // The playlist's own words: the climb page's "open it" names

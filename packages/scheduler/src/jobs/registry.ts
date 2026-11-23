@@ -1,5 +1,6 @@
 import { triggerWebCron } from './trigger-web-cron';
 import { refreshGymActivityStats } from './refresh-gym-activity-stats';
+import { refreshSitemapSetters } from './refresh-sitemap-setters';
 import { purgeSprayWallPhotos } from './purge-spray-wall-photos';
 import { purgeUserActivity, snapshotActiveUsers } from './active-users';
 import { exportSprayTraining } from './export-spray-training';
@@ -157,6 +158,16 @@ export const JOBS: readonly JobDefinition[] = [
     // `/health/jobs`.
     sentryMonitor: true,
     run: triggerWebCron('/api/internal/refresh-sitemap-climbs'),
+  },
+
+  {
+    name: 'refresh-sitemap-setters',
+    // Keep the bounded setter scan off the climb refresh's six-hourly tick.
+    schedule: '10 */6 * * *',
+    timezone: 'UTC',
+    timeoutMs: 120_000,
+    // The backend's transaction-scoped advisory lock makes overlaps benign.
+    run: refreshSitemapSetters,
   },
 
   // Overlap-safe, which JobDefinition requires: the rebuild takes

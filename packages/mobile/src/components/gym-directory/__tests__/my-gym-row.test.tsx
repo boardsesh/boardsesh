@@ -116,7 +116,7 @@ describe('MyGymRow', () => {
     expect(getByText('No address yet')).toBeTruthy();
   });
 
-  it('opens the gym editor when the summary is tapped', () => {
+  it('opens the gym page when the summary is tapped', () => {
     const gym = makeGym({});
     const onOpenGym = vi.fn();
     const { getByRole } = renderRow(gym, 'owner-1', onOpenGym);

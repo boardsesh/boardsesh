@@ -14,6 +14,7 @@ import { ClearLocationSyncFreezeInputSchema, FrozenLocationSyncEntitiesInputSche
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireAdmin } from './roles';
+import { isLatestHoldEventStaffRemoval } from './board-moderation-events';
 
 const FROZEN_ENTITY_QUERY_LIMIT = 60;
 const CLEAR_FREEZE_MUTATION_LIMIT = 10;
@@ -291,6 +292,15 @@ export const socialLocationSyncFreezeMutations = {
         return alreadyUnfrozen('BOARD', target.uuid);
       }
       assertExpectedFreeze(target.syncFrozenAt, expectedSyncFrozenAt);
+      // Gym staff took this board off their listing, and the freeze is what
+      // keeps the sync from writing that link straight back. Staff can no longer
+      // remove a synced board (it is deleted instead), so this guards older rows.
+      if (await isLatestHoldEventStaffRemoval(target.id, tx)) {
+        throw new GraphQLError(
+          "Gym staff took this board off their gym's listing. Unfreezing it would let the location sync put it back. Delete the board or relink it instead.",
+          { extensions: { code: 'LOCATION_SYNC_BOARD_REMOVED_BY_GYM' } },
+        );
+      }
 
       const clearedRows = await tx
         .update(dbSchema.userBoards)
