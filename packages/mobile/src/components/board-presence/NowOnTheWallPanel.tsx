@@ -1201,6 +1201,8 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
       onPlayNext={onPlayNext ? handlePlayNext : undefined}
       onOpenPlaylist={onOpenPlaylist ? handleOpenPlaylist : undefined}
       onOpenActions={onOpenActions ? handleOpenActions : undefined}
+      // Match the stat tiles; the native menu trigger would paint over this card.
+      liftedMenu
       containerStyle={styles.heroInteractiveContainer}
       contentRowStyle={contentRowStyle}
       showSeparator={false}

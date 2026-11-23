@@ -29,6 +29,7 @@ a production rollout or a physical-device result.
 | [Public page design: climb pages and their siblings](public-page-design.md) | `public-page-design.md` |
 | [Share metadata and Open Graph images](og-smartlinks-roadmap.md) | `og-smartlinks-roadmap.md` |
 | [Sitemaps](sitemap.md) | `sitemap.md` |
+| [Supported-board image gallery](../www-refresh/boards-readability.md) | `../www-refresh/boards-readability.md` |
 | [The web app's canonical origin (and why a missing one logs everyone out)](web-canonical-origin.md) | `web-canonical-origin.md` |
 | [Web architecture: the SSR front door](web-reposition.md) | `web-reposition.md` |
 | [bugbash7844](www-refresh/bugbash7844.md) | `www-refresh/bugbash7844.md` |

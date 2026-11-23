@@ -262,6 +262,8 @@ export type ClimbListRowProps = {
   renderContent?: (args: ClimbListRowRenderContentArgs) => ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
   contentRowStyle?: StyleProp<ViewStyle>;
+  /** Use the lifted iOS menu without painting a native trigger background. */
+  liftedMenu?: boolean;
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
   /**
@@ -362,6 +364,7 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
   renderContent,
   containerStyle,
   contentRowStyle,
+  liftedMenu = false,
   separatorStyle,
   showSeparator = true,
   fillCell = false,
@@ -393,6 +396,7 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
   // recycle (climb.uuid) and exposes a ref so the render callbacks below can
   // read the live value without taking it as a dep (see useSwipeArm for why).
   const { armedRef: dragArmedRef, arm, disarm } = useSwipeArm(climb.uuid);
+  const usesLiftedMenu = showMoreButton || liftedMenu;
 
   // FlashList recycles rows (same instance, new climb). Snap any open swipe
   // shut so a recycled row never shows the previous climb's open panel.
@@ -542,7 +546,7 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
     return () => cancelAnimationFrame(frame);
   }, [menuReady, openMenuRequest, openLiftedMenu]);
   const longPressGesture = useLongPressGesture({
-    enabled: Platform.OS === 'ios' && showMoreButton && menu.rows.length > 0,
+    enabled: Platform.OS === 'ios' && usesLiftedMenu && menu.rows.length > 0,
     minDuration: 400,
     maxDistance: 15,
     onActivate: () => {
@@ -651,7 +655,7 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
             ref={rowMenuRef}
             onBeforeOpen={prepareLiftedMenu}
             onPresented={onMenuPresented}
-            enabled={showMoreButton}
+            enabled={usesLiftedMenu}
             rows={menu.rows}
             menuKey={menu.menuKey}
             title={climb.name}

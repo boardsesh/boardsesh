@@ -49,6 +49,8 @@ const historyPagination = vi.hoisted(() => ({
   capturedOnPageLoaded: null as ((info: { pageSize: number; returnedCount: number }) => void) | null,
 }));
 
+const cardSurface = vi.hoisted(() => ({ background: '#f2f2f7' }));
+
 type ViewMockProps = { children?: ReactNode; style?: unknown };
 type PressableMockProps = ViewMockProps & {
   onPress?: () => void;
@@ -77,6 +79,8 @@ type ClimbListRowMockProps = {
     setIds?: string;
     angle?: number;
   }) => ReactNode;
+  contentRowStyle?: unknown;
+  liftedMenu?: boolean;
   onPress?: () => void;
   onPlayNext?: () => void;
   onOpenPlaylist?: () => void;
@@ -130,7 +134,8 @@ vi.mock('react-native', () => {
       create: (styles: Record<string, unknown>) => styles,
       hairlineWidth: 1,
     },
-    View: ({ children }: ViewMockProps) => createElement('div', null, children),
+    View: ({ children, style }: ViewMockProps) =>
+      createElement('div', { 'data-background': flattenStyle(style).backgroundColor }, children),
     Pressable: ({ children, onPress, accessibilityLabel, style }: PressableMockProps) => {
       const flatStyle = flattenStyle(style);
       return createElement(
@@ -253,7 +258,11 @@ vi.mock('../../ClimbListRow', () => ({
     const climbUuid = props.climb?.uuid ?? 'unknown';
     return createElement(
       'div',
-      { 'data-climb-row': climbUuid },
+      {
+        'data-climb-row': climbUuid,
+        'data-background': Object.assign({}, ...[props.contentRowStyle].flat(10).filter(Boolean)).backgroundColor,
+        'data-lifted-menu': String(props.liftedMenu ?? false),
+      },
       createElement('button', { 'aria-label': `press ${climbUuid}`, onClick: props.onPress }, content),
       createElement('button', { 'aria-label': `queue ${climbUuid}`, onClick: props.onPlayNext }, 'queue'),
       createElement('button', { 'aria-label': `playlist ${climbUuid}`, onClick: props.onOpenPlaylist }, 'playlist'),
@@ -271,7 +280,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       label: '#000',
       secondaryLabel: '#666',
       tertiaryLabel: '#999',
-      secondaryBackground: '#f2f2f7',
+      secondaryBackground: cardSurface.background,
       separator: '#ccc',
     },
     brandColors: { warning: '#B45309', primary: '#6D28D9' },
@@ -385,6 +394,7 @@ function panelElement(overrides: Partial<NowOnTheWallPanelProps> = {}) {
 
 describe('NowOnTheWallPanel', () => {
   beforeEach(() => {
+    cardSurface.background = '#f2f2f7';
     presence.currentClimb = null;
     presence.holder = null;
     presence.history = [];
@@ -397,6 +407,28 @@ describe('NowOnTheWallPanel', () => {
     presence.refresh.mockClear();
     // mockReset, not mockClear: the tap-ordering test installs an implementation.
     analytics.track.mockReset();
+  });
+
+  it.each([
+    ['sheet', '#f2f2f7'],
+    ['sheet', '#2c2c2e'],
+    ['column', '#f2f2f7'],
+    ['column', '#2c2c2e'],
+  ] as const)('matches the %s current-climb card to the stat tiles on %s', (variant, background) => {
+    cardSurface.background = background;
+    presence.currentClimb = makeClimb('hero', 3);
+    presence.stats = { climbsSentCount: 7, distinctClimbersCount: 2 };
+    const { getByText, container, rerender } = render(panelElement({ variant }));
+    const tileBackground = () => getByText('7').closest('[data-background]')?.getAttribute('data-background');
+    expect(tileBackground()).toBe(background);
+    expect(getByText('Climb hero').closest('[data-background]')?.getAttribute('data-background')).toBe(
+      tileBackground(),
+    );
+
+    rerender(panelElement({ variant, onClimbPress: vi.fn() }));
+    const interactiveHero = container.querySelector('[data-climb-row="hero"]');
+    expect(interactiveHero?.getAttribute('data-background')).toBe(tileBackground());
+    expect(interactiveHero?.getAttribute('data-lifted-menu')).toBe('true');
   });
 
   const sprayWall: UserBoard = {

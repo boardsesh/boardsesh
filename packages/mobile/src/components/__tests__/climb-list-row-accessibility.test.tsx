@@ -382,6 +382,18 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
+  it('opens the lifted menu from a card without adding an ellipsis', () => {
+    const onPress = vi.fn();
+    const { queryByTestId } = render(
+      <ClimbListRow climb={climb} {...boardProps} liftedMenu onPress={onPress} onOpenActions={resolveClimbActions} />,
+    );
+    const hold = rowGestures.exclusive.find((gesture) => gesture.kind === 'longPress');
+    expect(hold?.enabled).toBe(true);
+    act(() => hold?.onStart?.());
+    expect(onPress).not.toHaveBeenCalled();
+    expect(queryByTestId('climb-row-more-button')).toBeNull();
+  });
+
   it('makes the main-list hold exclusive with opening the player, even when its ellipsis is hidden', () => {
     const onPress = vi.fn();
     setClimbRowField('quickActions', false);
