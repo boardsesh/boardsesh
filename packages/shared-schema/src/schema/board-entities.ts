@@ -416,6 +416,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     layoutIds: [Int!]
     "Filter by size id (OR)"
     sizeIds: [Int!]
+    "Filter by the board's recorded angle (OR), including adjustable boards"
+    angles: [Int!]
     "Latitude for proximity search"
     latitude: Float
     "Longitude for proximity search"

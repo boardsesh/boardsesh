@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { DirectoryQuery } from '../directory-facets';
+import { DirectoryPagination } from '@/app/components/directory/directory-pagination';
 
 const getServerTranslation = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/i18n/server', () => ({ getServerTranslation, loadServerResources: vi.fn() }));
@@ -31,6 +32,51 @@ async function renderPager() {
 }
 
 describe('GymDirectoryPagination', () => {
+  it('stops links at a directory crawl ceiling without changing the result count', () => {
+    const markup = JSON.stringify(
+      DirectoryPagination({
+        currentPage: 40,
+        totalCount: 2000,
+        pageSize: 24,
+        maxPages: 40,
+        hrefForPage: (page) => `/spraywalls/find?page=${page}`,
+        labels: {
+          region: 'Spray-wall pages',
+          previous: 'Previous',
+          next: 'Next',
+          page: (page) => `Page ${page}`,
+          current: (page) => `Page ${page}, current page`,
+        },
+      }),
+    );
+    expect(markup).toContain('/spraywalls/find?page=39');
+    expect(markup).not.toContain('/spraywalls/find?page=41');
+    expect(markup).not.toContain('"rel":"next"');
+  });
+
+  it('supports another directory with its own URLs and accessible labels', () => {
+    const markup = JSON.stringify(
+      DirectoryPagination({
+        currentPage: 2,
+        totalCount: 70,
+        pageSize: 24,
+        hrefForPage: (page) => `/spraywalls/find?angle=40&page=${page}`,
+        labels: {
+          region: 'Spray-wall pages',
+          previous: 'Previous',
+          next: 'Next',
+          page: (page) => `Page ${page}`,
+          current: (page) => `Page ${page}, current page`,
+        },
+      }),
+    );
+    expect(markup).toContain('/spraywalls/find?angle=40&page=1');
+    expect(markup).toContain('/spraywalls/find?angle=40&page=3');
+    expect(markup).toContain('"aria-label":"Spray-wall pages"');
+    expect(markup).toContain('"aria-current":"page"');
+    expect(markup).not.toContain('/gyms');
+  });
+
   it('shows the number and says the rest to a screen reader', async () => {
     const markup = await renderPager();
 

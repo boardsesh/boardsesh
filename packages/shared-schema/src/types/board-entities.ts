@@ -213,6 +213,7 @@ export type SearchBoardsInput = {
   query?: string;
   boardType?: string;
   boardTypes?: string[];
+  angles?: number[];
   latitude?: number;
   longitude?: number;
   radiusKm?: number;

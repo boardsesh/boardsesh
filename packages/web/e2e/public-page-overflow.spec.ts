@@ -27,6 +27,7 @@ const PUBLIC_PAGES = [
   '/',
   '/boards',
   '/spraywalls',
+  '/spraywalls/find',
   '/for-gyms',
   '/about',
   '/support',

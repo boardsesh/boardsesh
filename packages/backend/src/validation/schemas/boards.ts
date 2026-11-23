@@ -155,11 +155,20 @@ export const SearchBoardsInputSchema = z.object({
   boardTypes: z.array(BoardNameSchema).max(10).optional(),
   layoutIds: z.array(z.number().int().nonnegative()).max(50).optional(),
   sizeIds: z.array(z.number().int().nonnegative()).max(50).optional(),
+  angles: z.array(z.number().int().min(-90).max(90)).max(50).optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().min(0.1).max(500).optional().default(50),
   limit: z.number().int().min(1).max(50).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
+});
+
+/** The public directory always searches spray walls; catalogue selectors are ignored. */
+export const PublicSprayWallsInputSchema = SearchBoardsInputSchema.omit({
+  boardType: true,
+  boardTypes: true,
+  layoutIds: true,
+  sizeIds: true,
 });
 
 /**

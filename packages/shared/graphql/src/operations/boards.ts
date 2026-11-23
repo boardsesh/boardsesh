@@ -185,6 +185,27 @@ export const SEARCH_BOARDS = gql`
   }
 `;
 
+/** Public directory projection; the resolver fixes spray and anonymous visibility. */
+export const SEARCH_SPRAY_WALLS_DIRECTORY = gql`
+  query SearchSprayWallsDirectory($input: SearchBoardsInput!) {
+    searchBoards: publicSprayWalls(input: $input) {
+      boards {
+        uuid
+        slug
+        name
+        angle
+        locationName
+        latitude
+        longitude
+        distanceMeters
+        gymName
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
 export const GET_BOARD_LEADERBOARD = gql`
   query GetBoardLeaderboard($input: BoardLeaderboardInput!) {
     boardLeaderboard(input: $input) {
@@ -376,6 +397,28 @@ export type SearchBoardsQueryVariables = {
 
 export type SearchBoardsQueryResponse = {
   searchBoards: UserBoardConnection;
+};
+
+export type SprayWallDirectoryEntry = {
+  uuid: string;
+  slug: string;
+  name: string;
+  angle: number;
+  locationName: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  distanceMeters: number | null;
+  gymName: string | null;
+};
+
+export type SearchSprayWallsDirectoryQueryVariables = { input: SearchBoardsInput };
+
+export type SearchSprayWallsDirectoryQueryResponse = {
+  searchBoards: {
+    boards: SprayWallDirectoryEntry[];
+    totalCount: number;
+    hasMore: boolean;
+  };
 };
 
 export type GetBoardLeaderboardQueryVariables = {

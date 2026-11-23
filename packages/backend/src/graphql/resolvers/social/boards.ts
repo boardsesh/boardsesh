@@ -36,6 +36,7 @@ import {
   PinBoardInputSchema,
   RecordBoardOpenedInputSchema,
   SearchBoardsInputSchema,
+  PublicSprayWallsInputSchema,
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
   RecordBoardSerialInputSchema,
@@ -990,6 +991,174 @@ export async function readGymBoardsForStranger(gymUuid: string): Promise<{ board
     .limit(GYM_CARD_BOARD_VARIANTS_LIMIT);
 }
 
+/** Shared search predicates keep the public directory and app search in sync. */
+async function searchBoardPage(
+  validatedInput: z.infer<typeof SearchBoardsInputSchema>,
+  ctx: Pick<ConnectionContext, 'userId' | 'isAuthenticated'>,
+) {
+  const { query, boardType, boardTypes, layoutIds, sizeIds, angles, latitude, longitude, radiusKm } = validatedInput;
+  const limit = validatedInput.limit ?? 20;
+  const offset = validatedInput.offset ?? 0;
+  const useProximity = latitude !== undefined && longitude !== undefined;
+
+  if (useProximity) {
+    // PostGIS proximity search path using Drizzle query builder
+    const radiusMeters = (radiusKm ?? 1) * 1000;
+    const lon = Number(longitude);
+    const lat = Number(latitude);
+
+    const userPoint = sql`ST_MakePoint(${lon}, ${lat})::geography`;
+    // "location" is a PostGIS geography column added via raw migration, not in the Drizzle schema
+    const locationCol = sql`${dbSchema.userBoards}.location`;
+    const distanceMeters = sql<number>`ST_Distance(${locationCol}, ${userPoint})`.as('distance_meters');
+
+    // Build shared WHERE conditions
+    const conditions = [
+      eq(dbSchema.userBoards.isPublic, true),
+      boardGymListedCondition(dbSchema.userBoards.gymId),
+      resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
+      eq(dbSchema.userBoards.isUnlisted, false),
+      isNull(dbSchema.userBoards.deletedAt),
+      // A wall can carry `is_public` before it has a published photo — the flag
+      // and the first publish are two separate moments — and search must not
+      // offer a board with no holds on it (SW-14).
+      listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
+      sql`${locationCol} IS NOT NULL`,
+      sql`ST_DWithin(${locationCol}, ${userPoint}, ${radiusMeters})`,
+      resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
+    ];
+
+    if (boardType) {
+      conditions.push(eq(dbSchema.userBoards.boardType, boardType));
+    }
+    if (boardTypes && boardTypes.length > 0) {
+      conditions.push(inArray(dbSchema.userBoards.boardType, boardTypes));
+    }
+    if (layoutIds && layoutIds.length > 0) {
+      conditions.push(inArray(dbSchema.userBoards.layoutId, layoutIds));
+    }
+    if (sizeIds && sizeIds.length > 0) {
+      conditions.push(inArray(dbSchema.userBoards.sizeId, sizeIds));
+    }
+    if (angles && angles.length > 0) {
+      conditions.push(inArray(dbSchema.userBoards.angle, angles));
+    }
+    if (query) {
+      const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
+      conditions.push(
+        or(
+          ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
+          and(
+            resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
+            ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+          ),
+        )!,
+      );
+    }
+
+    const whereClause = and(...conditions);
+
+    const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
+
+    const totalCount = Number(countResult?.count || 0);
+
+    const boards = await db
+      .select({
+        board: dbSchema.userBoards,
+        distanceMeters,
+      })
+      .from(dbSchema.userBoards)
+      .where(whereClause)
+      // id: total order for OFFSET paging
+      .orderBy(sql`distance_meters ASC`, asc(dbSchema.userBoards.id))
+      .limit(limit)
+      .offset(offset);
+
+    const enrichedBoards = await enrichBoards(
+      boards.map(({ board, distanceMeters: dist }) => ({ board, distanceMeters: dist })),
+      ctx.isAuthenticated ? ctx.userId : undefined,
+    );
+
+    return {
+      boards: enrichedBoards,
+      totalCount,
+      hasMore: offset + enrichedBoards.length < totalCount,
+    };
+  }
+
+  // Text-only search path (no proximity)
+  const conditions = [
+    eq(dbSchema.userBoards.isPublic, true),
+    boardGymListedCondition(dbSchema.userBoards.gymId),
+    resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
+    eq(dbSchema.userBoards.isUnlisted, false),
+    isNull(dbSchema.userBoards.deletedAt),
+    // Same rule as the proximity path above: a public wall with nothing
+    // published is not a result (SW-14).
+    listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
+  ];
+
+  if (boardType) {
+    conditions.push(eq(dbSchema.userBoards.boardType, boardType));
+  }
+
+  if (boardTypes && boardTypes.length > 0) {
+    conditions.push(inArray(dbSchema.userBoards.boardType, boardTypes));
+  }
+
+  if (layoutIds && layoutIds.length > 0) {
+    conditions.push(inArray(dbSchema.userBoards.layoutId, layoutIds));
+  }
+
+  if (sizeIds && sizeIds.length > 0) {
+    conditions.push(inArray(dbSchema.userBoards.sizeId, sizeIds));
+  }
+
+  if (angles && angles.length > 0) {
+    conditions.push(inArray(dbSchema.userBoards.angle, angles));
+  }
+
+  if (query) {
+    // Escape SQL LIKE wildcards to prevent wildcard injection
+    const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
+    conditions.push(
+      or(
+        ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
+        and(
+          resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
+          ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+        ),
+      )!,
+    );
+  }
+
+  const whereClause = and(...conditions);
+
+  const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
+
+  const totalCount = Number(countResult?.count || 0);
+
+  const boards = await db
+    .select()
+    .from(dbSchema.userBoards)
+    .where(whereClause)
+    // id: total order for OFFSET paging
+    .orderBy(desc(dbSchema.userBoards.createdAt), asc(dbSchema.userBoards.id))
+    .limit(limit)
+    .offset(offset);
+
+  const enrichedBoards = await enrichBoards(
+    boards.map((b) => ({ board: b })),
+    ctx.isAuthenticated ? ctx.userId : undefined,
+  );
+
+  return {
+    boards: enrichedBoards,
+    totalCount,
+    hasMore: offset + boards.length < totalCount,
+  };
+}
+
 export const socialBoardQueries = {
   /**
    * Get a board by UUID.
@@ -1462,160 +1631,15 @@ export const socialBoardQueries = {
   searchBoards: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, 20, 'searchBoards');
     const validatedInput = validateInput(SearchBoardsInputSchema, input, 'input');
-    const { query, boardType, boardTypes, layoutIds, sizeIds, latitude, longitude, radiusKm } = validatedInput;
-    const limit = validatedInput.limit ?? 20;
-    const offset = validatedInput.offset ?? 0;
-    const useProximity = latitude !== undefined && longitude !== undefined;
+    return searchBoardPage(validatedInput, ctx);
+  },
 
-    if (useProximity) {
-      // PostGIS proximity search path using Drizzle query builder
-      const radiusMeters = (radiusKm ?? 1) * 1000;
-      const lon = Number(longitude);
-      const lat = Number(latitude);
-
-      const userPoint = sql`ST_MakePoint(${lon}, ${lat})::geography`;
-      // "location" is a PostGIS geography column added via raw migration, not in the Drizzle schema
-      const locationCol = sql`${dbSchema.userBoards}.location`;
-      const distanceMeters = sql<number>`ST_Distance(${locationCol}, ${userPoint})`.as('distance_meters');
-
-      // Build shared WHERE conditions
-      const conditions = [
-        eq(dbSchema.userBoards.isPublic, true),
-        boardGymListedCondition(dbSchema.userBoards.gymId),
-        resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
-        eq(dbSchema.userBoards.isUnlisted, false),
-        isNull(dbSchema.userBoards.deletedAt),
-        // A wall can carry `is_public` before it has a published photo — the flag
-        // and the first publish are two separate moments — and search must not
-        // offer a board with no holds on it (SW-14).
-        listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
-        sql`${locationCol} IS NOT NULL`,
-        sql`ST_DWithin(${locationCol}, ${userPoint}, ${radiusMeters})`,
-        resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
-      ];
-
-      if (boardType) {
-        conditions.push(eq(dbSchema.userBoards.boardType, boardType));
-      }
-      if (boardTypes && boardTypes.length > 0) {
-        conditions.push(inArray(dbSchema.userBoards.boardType, boardTypes));
-      }
-      if (layoutIds && layoutIds.length > 0) {
-        conditions.push(inArray(dbSchema.userBoards.layoutId, layoutIds));
-      }
-      if (sizeIds && sizeIds.length > 0) {
-        conditions.push(inArray(dbSchema.userBoards.sizeId, sizeIds));
-      }
-      if (query) {
-        const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
-        conditions.push(
-          or(
-            ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
-            and(
-              resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
-              ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
-            ),
-          )!,
-        );
-      }
-
-      const whereClause = and(...conditions);
-
-      const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
-
-      const totalCount = Number(countResult?.count || 0);
-
-      const boards = await db
-        .select({
-          board: dbSchema.userBoards,
-          distanceMeters,
-        })
-        .from(dbSchema.userBoards)
-        .where(whereClause)
-        // id: total order for OFFSET paging
-        .orderBy(sql`distance_meters ASC`, asc(dbSchema.userBoards.id))
-        .limit(limit)
-        .offset(offset);
-
-      const enrichedBoards = await enrichBoards(
-        boards.map(({ board, distanceMeters: dist }) => ({ board, distanceMeters: dist })),
-        ctx.isAuthenticated ? ctx.userId : undefined,
-      );
-
-      return {
-        boards: enrichedBoards,
-        totalCount,
-        hasMore: offset + enrichedBoards.length < totalCount,
-      };
-    }
-
-    // Text-only search path (no proximity)
-    const conditions = [
-      eq(dbSchema.userBoards.isPublic, true),
-      boardGymListedCondition(dbSchema.userBoards.gymId),
-      resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
-      eq(dbSchema.userBoards.isUnlisted, false),
-      isNull(dbSchema.userBoards.deletedAt),
-      // Same rule as the proximity path above: a public wall with nothing
-      // published is not a result (SW-14).
-      listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
-    ];
-
-    if (boardType) {
-      conditions.push(eq(dbSchema.userBoards.boardType, boardType));
-    }
-
-    if (boardTypes && boardTypes.length > 0) {
-      conditions.push(inArray(dbSchema.userBoards.boardType, boardTypes));
-    }
-
-    if (layoutIds && layoutIds.length > 0) {
-      conditions.push(inArray(dbSchema.userBoards.layoutId, layoutIds));
-    }
-
-    if (sizeIds && sizeIds.length > 0) {
-      conditions.push(inArray(dbSchema.userBoards.sizeId, sizeIds));
-    }
-
-    if (query) {
-      // Escape SQL LIKE wildcards to prevent wildcard injection
-      const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
-      conditions.push(
-        or(
-          ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
-          and(
-            resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
-            ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
-          ),
-        )!,
-      );
-    }
-
-    const whereClause = and(...conditions);
-
-    const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
-
-    const totalCount = Number(countResult?.count || 0);
-
-    const boards = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(whereClause)
-      // id: total order for OFFSET paging
-      .orderBy(desc(dbSchema.userBoards.createdAt), asc(dbSchema.userBoards.id))
-      .limit(limit)
-      .offset(offset);
-
-    const enrichedBoards = await enrichBoards(
-      boards.map((b) => ({ board: b })),
-      ctx.isAuthenticated ? ctx.userId : undefined,
-    );
-
-    return {
-      boards: enrichedBoards,
-      totalCount,
-      hasMore: offset + boards.length < totalCount,
-    };
+  /** Public website reads share the web server's IP, so use a bounded SSR allowance. */
+  publicSprayWalls: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    // Charge the real caller before stripping its authority from the read.
+    await applyRateLimit(ctx, 300, 'publicSprayWalls');
+    const validatedInput = validateInput(PublicSprayWallsInputSchema, input, 'input');
+    return searchBoardPage({ ...validatedInput, boardType: 'spray' }, { isAuthenticated: false });
   },
 
   /**

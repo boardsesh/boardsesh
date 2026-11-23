@@ -22,6 +22,13 @@ export default async function SprayWallsPage() {
     <PageShell title={t('sprayTitle')} lead={t('sprayLead')} width="wide">
       <StoreInstallButtons placement="spraywalls" labels={labels} align="start" />
       <Prose>{t('sprayNoLights')}</Prose>
+      <MuiLink
+        component={LocaleLink}
+        href="/spraywalls/find"
+        sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
+      >
+        {t('findSprayWall')}
+      </MuiLink>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2, my: 4 }}>
         <PageCard>
           <Typography component="h2" variant="h5">

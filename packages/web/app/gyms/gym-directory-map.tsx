@@ -16,6 +16,12 @@ import { attachDirectoryBasemap } from './gym-directory-basemap';
 
 const MAP_HEIGHT = 420;
 
+export type DirectoryMapLabels = {
+  region: string;
+  coverage: string;
+  cluster: (count: number) => string;
+};
+
 type GymDirectoryMapProps = {
   /** The gyms with a pin in the result set on screen. Memoized by the caller. */
   pins: MapPin[];
@@ -23,6 +29,7 @@ type GymDirectoryMapProps = {
   pinnedCount: number;
   shownCount: number;
   locale: Locale;
+  labels?: DirectoryMapLabels;
 };
 
 /** Leaflet popups take an HTML string, so every interpolated value is escaped. */
@@ -53,8 +60,9 @@ function escapeHtml(value: string): string {
  *  - **`attributionControl: true`.** The private board-location picker turns it
  *    off; a public page may not.
  */
-export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale }: GymDirectoryMapProps) {
+export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale, labels }: GymDirectoryMapProps) {
   const { t } = useTranslation('gyms');
+  const clusterLabel = labels?.cluster;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const leafletRef = useRef<typeof LeafletNamespace | null>(null);
@@ -145,7 +153,7 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
     layer.clearLayers();
 
     for (const cluster of clusters) {
-      layer.addLayer(buildMarker(leaflet, cluster, { locale, t }));
+      layer.addLayer(buildMarker(leaflet, cluster, { locale, t, clusterLabel }));
     }
 
     if (clusters.length > 0) {
@@ -154,14 +162,14 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
         { padding: [32, 32], maxZoom: 13 },
       );
     }
-  }, [clusters, ready, locale, t]);
+  }, [clusters, ready, locale, t, clusterLabel]);
 
   return (
     <Box sx={{ position: 'relative' }}>
       <Box
         ref={containerRef}
         role="region"
-        aria-label={t('map.regionLabel')}
+        aria-label={labels?.region ?? t('map.regionLabel')}
         data-testid="gym-directory-map"
         sx={{
           width: '100%',
@@ -206,7 +214,7 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
           attribution, zoom controls, or pins. */}
       <Chip
         size="small"
-        label={t('map.pinnedPill', { pinned: pinnedCount, total: shownCount, count: shownCount })}
+        label={labels?.coverage ?? t('map.pinnedPill', { pinned: pinnedCount, total: shownCount, count: shownCount })}
         sx={{
           mt: 1,
           maxWidth: '100%',
@@ -240,9 +248,9 @@ type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
 function buildMarker(
   leaflet: typeof LeafletNamespace,
   cluster: PinCluster,
-  context: { locale: Locale; t: TranslateFn },
+  context: { locale: Locale; t: TranslateFn; clusterLabel?: (count: number) => string },
 ) {
-  const { locale, t } = context;
+  const { locale, t, clusterLabel } = context;
 
   if (!cluster.pin) {
     const icon = leaflet.divIcon({
@@ -254,9 +262,11 @@ function buildMarker(
     return leaflet
       .marker([cluster.latitude, cluster.longitude], {
         icon,
-        title: t('map.clusterLabel', { count: cluster.count }),
+        title: clusterLabel?.(cluster.count) ?? t('map.clusterLabel', { count: cluster.count }),
       })
-      .bindPopup(`<strong>${escapeHtml(t('map.clusterLabel', { count: cluster.count }))}</strong>`);
+      .bindPopup(
+        `<strong>${escapeHtml(clusterLabel?.(cluster.count) ?? t('map.clusterLabel', { count: cluster.count }))}</strong>`,
+      );
   }
 
   const pin = cluster.pin;
@@ -272,7 +282,9 @@ function buildMarker(
   // Locale-prefixed by hand: Leaflet builds this anchor outside React, so
   // `LocaleLink` cannot, and a bare `/gym/x` would bounce a `/de/gyms` visitor
   // into English.
-  const href = escapeHtml(localeHref(`/gym/${pin.slug}`, locale));
+  const internalHref =
+    pin.href?.startsWith('/') && !pin.href.startsWith('//') && !/[\\\s]/.test(pin.href) ? pin.href : `/gym/${pin.slug}`;
+  const href = escapeHtml(localeHref(internalHref, locale));
   const chips = boardChips(pin.boardSummaries)
     .map((chip) =>
       chip.angle > 0
@@ -283,6 +295,7 @@ function buildMarker(
 
   const popup = [
     `<a href="${href}" style="font-weight:600;">${escapeHtml(pin.name)}</a>`,
+    pin.description ? `<div style="margin-top:4px;">${escapeHtml(pin.description)}</div>` : '',
     chips ? `<div style="margin-top:4px;">${escapeHtml(chips)}</div>` : '',
   ].join('');
 

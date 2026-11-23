@@ -4612,6 +4612,36 @@ climbs at `/b/{slug}`, which is the next section.
 
 ## The wall on the web (SW-16)
 
+### Finding a public spray wall
+
+`/spraywalls/find` is the public spray-wall directory, linked from `/boards`
+and `/spraywalls`. It follows the gym directory's compact rows, town search,
+map and optional nearby search. Results link to each wall's existing `/b/{slug}`
+page. Name and angle filters apply to both ordinary and proximity searches.
+The first 24 results are server-rendered, with numbered pagination; nearby
+search shows up to 50 results and offers 10, 25, 50 and 100 km radii.
+
+Both server and browser searches call `publicSprayWalls`, which fixes the
+board type to `spray` and reads anonymously even for a signed-in caller. It
+shares the board-search implementation but has a separate 300-request/minute
+budget because server-rendered visitors share the web server's IP; ordinary
+`searchBoards` retains its 20-request limit. Existing listing and location privacy rules apply:
+private, unlisted, unpublished, hidden, archived and deleted walls are excluded.
+Ordinary results can include a wall without a public location; nearby results
+and map pins require coordinates the anonymous viewer may read. Directory
+results are not stored in a shared page or data cache, so later requests check
+visibility again.
+
+The clean directory and its translated routes are indexable and in the static
+sitemap. Search, filter and pagination variants are `noindex, follow` and
+canonicalize to the clean directory. The `/spraywalls` setup page keeps its
+photo instructions; the `/boards` gallery instead says “Bring your own spray wall”
+and offers separate find and setup links.
+The [supported-board gallery guide](../www-refresh/boards-readability.md)
+documents its image layout and navigation.
+
+### Opening a shared wall
+
 A share link from the app opens on www, so two things are server-rendered: a
 wall's CLIMBS, one page each at `/b/{slug}/{angle}/view/{climb}`, and the WALL
 itself at `/b/{slug}/{angle}/list`, which is where `buildSprayWallShareUrl`
