@@ -49,8 +49,19 @@ async function event(
     VALUES (${boardId},'kilter',${climb},${angle},${user},${++sequence},timestamp '2026-01-01'+${seconds}::double precision * interval '1 second',${source})`);
 }
 async function stats(climb = 'a', angle = 40, plays = 0) {
-  await database.execute(sql`INSERT INTO board_climb_stats(board_type,climb_uuid,angle,ascensionist_count,display_difficulty,play_count)
-    VALUES ('kilter',${climb},${angle},99,20,${plays})`);
+  await database.execute(sql`INSERT INTO board_climb_stats(board_type,climb_uuid,angle,ascensionist_count,display_difficulty,play_count,updated_at)
+    VALUES ('kilter',${climb},${angle},99,20,${plays},timestamp '2000-01-01')`);
+}
+function readStats(connection: Pick<typeof database, 'execute'> = database) {
+  return connection.execute<{
+    climb_uuid: string;
+    ascensionist_count: number;
+    display_difficulty: number;
+    play_count: number;
+    updated_at: string;
+    sync_seq: string;
+  }>(sql`SELECT climb_uuid, ascensionist_count::int, display_difficulty, play_count::int,
+    updated_at::text, sync_seq::text FROM board_climb_stats ORDER BY climb_uuid`);
 }
 function context(overrides: Partial<BackgroundJobContext> = {}): BackgroundJobContext {
   return {
@@ -143,22 +154,30 @@ describe('per-angle Plays (real Postgres)', () => {
     ]);
   });
 
-  it('changes only Plays, clears stale totals, and a second refresh is a no-op', async () => {
+  it('publishes changed and cleared Plays through the stats cursor, and skips equal writes', async () => {
     const wall = await board();
     await stats();
     await stats('b', 40, 9);
     await event(wall, 'a', 0);
     await event(wall, 'b', 30);
-    const before = await database.execute(
-      sql`SELECT climb_uuid,ascensionist_count,display_difficulty,updated_at,sync_seq FROM board_climb_stats ORDER BY climb_uuid`,
-    );
+    const before = await readStats();
+    const firstPlan = await planClimbPlays(database);
     await refreshClimbPlaysFamily.execute(context(), { dryRun: false });
-    expect(
-      await database.execute(
-        sql`SELECT climb_uuid,ascensionist_count,display_difficulty,updated_at,sync_seq FROM board_climb_stats ORDER BY climb_uuid`,
-      ),
-    ).toEqual(before);
+    const after = await readStats();
+    expect(after).toEqual([
+      expect.objectContaining({ climb_uuid: 'a', ascensionist_count: 99, display_difficulty: 20, play_count: 1 }),
+      expect.objectContaining({ climb_uuid: 'b', ascensionist_count: 99, display_difficulty: 20, play_count: 0 }),
+    ]);
+    for (const [index, row] of after.entries()) {
+      expect(BigInt(row.sync_seq)).toBeGreaterThan(BigInt(before[index].sync_seq));
+      expect(row.updated_at).not.toBe(before[index].updated_at);
+    }
+
+    // A fresh plan skips equal counts. Even a stale plan must skip them at write time.
+    expect(await applyClimbPlaysBatch(database, firstPlan.changes)).toBe(0);
     expect((await planClimbPlays(database)).changes).toEqual([]);
+    await refreshClimbPlaysFamily.execute(context(), { dryRun: false });
+    expect(await readStats()).toEqual(after);
     await expect(database.execute(sql`UPDATE board_climb_stats SET play_count=-1`)).rejects.toThrow();
   });
 
@@ -227,7 +246,7 @@ describe('per-angle Plays (real Postgres)', () => {
     expect((await planClimbPlays(database)).changes).toEqual([]);
   });
 
-  it('the actual restricted batch role can read and update Plays but cannot update grades or insert stats', async () => {
+  it('publishes Plays as the restricted batch role and denies direct stats cursor, grade and insert writes', async () => {
     const role = `plays_${randomUUID().replaceAll('-', '')}`;
     const wall = await board();
     await stats();
@@ -253,11 +272,17 @@ describe('per-angle Plays (real Postgres)', () => {
       }
       await database.transaction(async (transaction) => {
         await transaction.execute(sql`SET LOCAL ROLE ${sql.identifier(role)}`);
+        const [before] = await readStats(transaction);
         const plan = await planClimbPlays(transaction);
         expect(await applyClimbPlaysBatch(transaction, plan.changes)).toBe(1);
+        const [after] = await readStats(transaction);
+        expect(after.play_count).toBe(1);
+        expect(BigInt(after.sync_seq)).toBeGreaterThan(BigInt(before.sync_seq));
       });
       for (const denied of [
         sql`UPDATE board_climb_stats SET display_difficulty=21`,
+        sql`UPDATE board_climb_stats SET updated_at=NOW()`,
+        sql`UPDATE board_climb_stats SET sync_seq=0`,
         sql`INSERT INTO board_climb_stats(board_type,climb_uuid,angle) VALUES ('kilter','forbidden',40)`,
       ]) {
         await expect(
@@ -265,7 +290,7 @@ describe('per-angle Plays (real Postgres)', () => {
             await transaction.execute(sql`SET LOCAL ROLE ${sql.identifier(role)}`);
             await transaction.execute(denied);
           }),
-        ).rejects.toThrow();
+        ).rejects.toMatchObject({ cause: { code: '42501' } });
       }
     } finally {
       await database.execute(sql`DROP OWNED BY ${sql.identifier(role)}`);

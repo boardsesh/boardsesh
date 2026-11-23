@@ -1361,16 +1361,14 @@ systemd at least 720. Other roles retain their existing shutdown behavior.
 See [CNC build packs](../product/cnc-packs.md) for producer, result, rollout and rollback
 contracts. Deploy schema/queues/grants before consumers and producers.
 
-
 ## Hourly climb Plays
 
 `refresh-climb-plays` runs on `batch` at `23 * * * *` UTC, with singleton key
 `all` for both the schedule and manual backfills. Its strict payload accepts
 `dryRun` (default false). It estimates per-angle Plays from native board history,
-then changes only `board_climb_stats.play_count` on existing rows in fenced
-batches of 500. The full read is one primary snapshot; retries recompute it.
-Unknown final durations are excluded, and shared configuration feeds are split
-by reporter. See [Plays](../data/plays.md) for the counting contract, limitations,
-preview/backfill commands, diagnostics, and deployment order. Deploy schema and
-batch column grants before the family image; API and offline delivery are not
-part of this rollout.
+then updates `board_climb_stats.play_count` on existing rows in fenced batches
+of 500. Changed counts advance the stats sync cursor through the database trigger.
+The full read is one primary snapshot, which retries recompute. Unknown final
+durations are excluded, and shared configuration feeds are split by reporter.
+Deploy the schema, API sync trigger and reconciled batch grants before the family
+image. See [Plays](../data/plays.md) for the counting contract and backfill sequence.

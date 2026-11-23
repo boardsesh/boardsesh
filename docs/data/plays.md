@@ -1,11 +1,11 @@
 # Plays
 
 `board_climb_stats.play_count` counts estimated meaningful selections at that row's
-`(board_type, climb_uuid, angle)`. It is server-only for now: API fields, offline
-sync and snapshots are tracked in [#8020](https://github.com/boardsesh/boardsesh/issues/8020),
-mobile/Expo web display in [#8021](https://github.com/boardsesh/boardsesh/issues/8021),
-and public web display in [#8022](https://github.com/boardsesh/boardsesh/issues/8022). The eventual label is
-**Plays**. A play is not proof of illumination, an attempt, or an ascent.
+`(board_type, climb_uuid, angle)`. The [Plays API](https://github.com/boardsesh/boardsesh/pull/8081)
+delivers these counts through read APIs, offline sync and snapshots. Display work is tracked
+in [#8021](https://github.com/boardsesh/boardsesh/issues/8021) for mobile and Expo web and
+[#8022](https://github.com/boardsesh/boardsesh/issues/8022) for public web. A play is not
+proof of illumination, an attempt, or an ascent.
 
 ## Counting
 
@@ -36,11 +36,12 @@ can miss a collaborator's change and can count the same physical wall twice.
 
 The job takes one primary-database statement snapshot of the history and stats,
 then updates only differences in fenced batches of at most 500 existing stats
-rows. It never inserts stats rows or changes grades, ascents, `updated_at`, or
-`sync_seq`. Previously positive keys absent from the new aggregate become zero.
-Missing stats keys and their play totals are reported; a later hourly pass fills
-them once normal catalog or tick writers create the row. No per-report hot-path
-work is added.
+rows. It writes `play_count`, preserving grades and ascents. The stats trigger
+advances `updated_at` and `sync_seq` for changed counts, including resets to zero.
+Equal counts leave both sync fields stable on retries and subsequent runs.
+Previously positive keys absent from the new aggregate become zero. Missing stats
+keys and their play totals are reported. A later hourly pass fills them once
+catalog or tick writers create the row.
 
 The schedule is `23 * * * *` in UTC. Scheduled work and manual backfills use the
 same `all` singleton key. Retry recomputes from a fresh snapshot, so an interrupted
@@ -49,27 +50,41 @@ snapshot appear on the next pass. Failed reads abort before writes. Run logs
 include measured time, qualifying plays, excluded records, unmatched keys/plays,
 planned and changed rows, zeroed rows, and duration.
 
-Deploy the schema and column grants before deploying the new family, as required
-by [worker deployment ordering](../backend/background-workers.md#a-new-worker-image-can-start-before-the-migrator-has-run).
-Using the existing batch-worker operator environment, first enqueue a read-only
-preview, review its totals against an independent read-only query, then enqueue
-the same family to backfill. Deploy the new backend with `refresh-climb-plays`
-included in `BATCH_FAMILIES_DISABLED` so the hourly schedule cannot write before
-this preview. Preserve any other disabled families. Manual operator runs remain
-available; after verifying the backfill, remove this family from the disabled
-list and redeploy the backend to enable hourly refreshes:
+## Rollout and backfill
 
-```sh
-vp exec tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-plays '{"dryRun":true}'
-vp exec tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-plays
-```
+1. Deploy the [Plays storage schema](https://github.com/boardsesh/boardsesh/pull/8023),
+   then deploy the Plays API and its stats sync trigger. Verify the migration and
+   grant reconciliation completed before merging the worker. The batch role
+   needs `UPDATE (play_count)` and `USAGE` on `board_climb_stats_sync_seq_seq`.
+   The [worker image can start before migrations finish](../backend/background-workers.md#a-new-worker-image-can-start-before-the-migrator-has-run).
+2. Deploy the backend revision that registers `refresh-climb-plays` with that
+   family in `BATCH_FAMILIES_DISABLED` and preserve any other disabled entries.
+   Apply this setting with the revision that knows the family. Older revisions
+   treat the unknown entry as an invalid configuration and clear all schedules.
+3. In the [batch-worker operator environment](../backend/background-workers.md#operator-commands-and-health),
+   enqueue a dry run. Wait for its run ID to succeed and review the logged totals
+   against an independent read-only sample of the native history. Review unmatched
+   keys, planned writes and run duration. Each dry run scans the eligible history.
 
-Verify the stored values at the sampled climbs' angles and confirm the next
-hourly run succeeds. The schema default is zero before the first backfill. The
-positive-count partial index makes stale-key enumeration avoid scanning every
-zero-count catalog row.
+   ```sh
+   vp exec tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-plays '{"dryRun":true}'
+   vp exec tsx packages/backend/src/workers/operator.ts status <dry-run-id>
+   ```
 
-Before shipping Plays to clients, coordinate the sync trigger's explicit payload
-allowlist with the API, SQLite, snapshot, and refresh-revision changes. Plays-only
-updates intentionally do not advance client cursors during this storage-only
-rollout.
+4. With the hourly schedule still disabled, enqueue the backfill and wait for it
+   to succeed. Compare `play_count` and `sync_seq` at the sampled climb angles
+   before and after the run. All changed rows become eligible for the next stats
+   sync pull, so the first backfill can increase sync traffic. The schema default
+   is zero before the first backfill. The positive-count partial index limits
+   the stale-key scan to rows holding a count above zero.
+
+   ```sh
+   vp exec tsx packages/backend/src/workers/operator.ts enqueue refresh-climb-plays
+   vp exec tsx packages/backend/src/workers/operator.ts status <backfill-run-id>
+   ```
+
+5. After verifying the backfill, remove only `refresh-climb-plays` from the
+   disabled list, redeploy the backend and confirm the next hourly run succeeds.
+   If verification fails, keep or restore the disabled entry and inspect the
+   affected run. Schedule changes prevent future ticks. Queued jobs can still
+   start, and running jobs can finish.
