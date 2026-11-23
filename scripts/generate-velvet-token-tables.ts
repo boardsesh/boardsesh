@@ -16,10 +16,11 @@
  *
  * Sources
  * -------
- * - `packages/shared/velvet-tokens/src/index.ts`: brand colours (light/dark) and the
- *   Graphite Material surfaces. Pure TypeScript, so it is imported directly.
- * - `packages/mobile/src/theme/colors.ts`: the iOS `PlatformColor` names, the Android
- *   fallback ladder and the Material container ladder.
+ * - `packages/shared/velvet-tokens/src/index.ts`: brand colours (light/dark), the
+ *   Graphite Material surfaces and the Material container ladder. Pure TypeScript, so
+ *   it is imported directly.
+ * - `packages/mobile/src/theme/colors.ts`: the iOS `PlatformColor` names and the
+ *   Android fallback ladder.
  * - `packages/mobile/src/theme/typography.ts`: the HIG and M3 type scales.
  * - `packages/mobile/src/theme/tokens.ts`: spacing, radii, opacity.
  *
@@ -34,7 +35,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
+import {
+  brandColors,
+  brandColorsDark,
+  materialSurfaceContainers,
+  materialSurfaces,
+} from '../packages/shared/velvet-tokens/src/index';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -263,7 +269,7 @@ export function buildTokenTables(repoRoot: string): TokenTables {
     ]),
   );
 
-  // Material "Graphite" surfaces (shared package) and container ladder (mobile).
+  // Material "Graphite" surfaces and container ladder (both from the shared package).
   tables['material-surfaces'] = markdownTable(
     ['Key', 'Dark', 'Light'],
     Object.keys(materialSurfaces.dark).map((key) => {
@@ -271,13 +277,16 @@ export function buildTokenTables(repoRoot: string): TokenTables {
       return [code(key), code(materialSurfaces.dark[surfaceKey]), code(materialSurfaces.light[surfaceKey])];
     }),
   );
-  const containers = readLiteral(repoRoot, COLORS_PATH, 'materialSurfaceContainers') as Record<
-    'light' | 'dark',
-    Record<string, string>
-  >;
   tables['material-containers'] = markdownTable(
     ['Container', 'Dark', 'Light'],
-    Object.keys(containers.dark).map((key) => [code(key), code(containers.dark[key]), code(containers.light[key])]),
+    Object.keys(materialSurfaceContainers.dark).map((key) => {
+      const containerKey = key as keyof typeof materialSurfaceContainers.dark;
+      return [
+        code(key),
+        code(materialSurfaceContainers.dark[containerKey]),
+        code(materialSurfaceContainers.light[containerKey]),
+      ];
+    }),
   );
 
   // Type scales.

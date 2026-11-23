@@ -6,7 +6,10 @@ import {
   brandColorsDark,
   currentBrandColor,
   marketingSurfaces,
+  materialOutline,
+  materialSurfaceContainers,
   materialSurfaces,
+  materialTonalContainers,
   withAlpha,
 } from '../index';
 
@@ -146,6 +149,48 @@ describe('brand palette anchors', () => {
     for (const scheme of ['light', 'dark'] as const) {
       for (const [role, color] of Object.entries(materialSurfaces[scheme])) {
         if (role === 'accent' || !color.startsWith('#')) continue;
+        const red = color.slice(1, 3);
+        expect({ role, green: color.slice(3, 5), blue: color.slice(5, 7) }).toEqual({ role, green: red, blue: red });
+      }
+    }
+  });
+
+  it('holds the Graphite container ladder the app reads, step for step', () => {
+    expect(materialSurfaceContainers).toEqual({
+      light: {
+        lowest: '#EEEEEE',
+        low: '#EAEAEA',
+        base: '#E4E4E4',
+        high: '#DFDFDF',
+        level4: '#DCDCDC',
+        highest: '#D9D9D9',
+      },
+      dark: {
+        lowest: '#121212',
+        low: '#161616',
+        base: '#1A1A1A',
+        high: '#262626',
+        level4: '#2A2A2A',
+        highest: '#2E2E2E',
+      },
+    });
+  });
+
+  it('holds the violet tonal containers and their ink', () => {
+    expect(materialTonalContainers).toEqual({
+      light: { primaryContainer: '#E1E0FF', secondaryContainer: '#DEDDFC', ink: '#21005D' },
+      dark: { primaryContainer: '#483A8E', secondaryContainer: '#34276B', ink: '#E1E0FF' },
+    });
+  });
+
+  it('holds the M3 outline grey', () => {
+    expect(materialOutline).toEqual({ light: '#7A7A7A', dark: '#8A8A8A' });
+  });
+
+  it('keeps every container step and the outline a pure grey', () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      const greys = { ...materialSurfaceContainers[scheme], outline: materialOutline[scheme] };
+      for (const [role, color] of Object.entries(greys)) {
         const red = color.slice(1, 3);
         expect({ role, green: color.slice(3, 5), blue: color.slice(5, 7) }).toEqual({ role, green: red, blue: red });
       }
