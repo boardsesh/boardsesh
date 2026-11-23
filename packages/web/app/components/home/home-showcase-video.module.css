@@ -1,4 +1,8 @@
-/* The hero video card, 9:16. Mobile-first: the phone layout is the default. */
+/* The hero video card, 9:16. Mobile-first: the phone layout is the default.
+   The footage was cut on the old violet stage (#110a20), so it sits in a card:
+   the 16px radius, the clip and the 1px capture frame make that stage read as
+   footage inside a frame rather than a patch of the wrong page colour. The card
+   ground (--semantic-surface) shows only until the poster paints. */
 .figure {
   position: relative;
   isolation: isolate;
@@ -6,7 +10,7 @@
   aspect-ratio: 9 / 16;
   margin: 0 auto;
   overflow: hidden;
-  border: 1px solid var(--separator);
+  border: 1px solid var(--capture-frame);
   border-radius: var(--border-radius-xl);
   background: var(--semantic-surface);
 }

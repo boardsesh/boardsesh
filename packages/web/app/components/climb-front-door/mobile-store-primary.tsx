@@ -34,7 +34,7 @@ type MobileStorePrimaryProps = {
 const STORES: readonly HeroInstallStore[] = ['ios', 'android'];
 
 const BUTTON_SX = {
-  ...brandCtaSx({ size: 'large', glow: true }),
+  ...brandCtaSx({ size: 'large' }),
   // Both anchors share the one cell, so swapping them cannot move anything.
   gridArea: '1 / 1',
   width: '100%',

@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import {
+  brandColors,
+  brandColorsDark,
+  materialOutline,
+  materialSurfaceContainers,
+  materialSurfaces,
+  materialTonalContainers,
+} from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../theme-config';
 import { darkTheme } from '../mui-theme';
 // Read the literal index.css text from disk. A bundler import (?raw / glob) gets
@@ -57,7 +64,13 @@ function extractVars(selector: string): Record<string, string> {
 
 const rootVars = extractVars(':root');
 
-const norm = (value: string) => value.toLowerCase().replace(/\s+/g, '');
+// Lowercase, drop whitespace and canonicalise decimals ("0.10" and "0.1" are one alpha:
+// the formatter writes the short form in CSS, velvet-tokens writes the long one).
+const norm = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/\d*\.\d+/g, (decimal) => String(parseFloat(decimal)));
 
 describe('index.css ↔ theme-config parity', () => {
   // [cssVar, theme-config value]
@@ -93,18 +106,24 @@ describe('index.css ↔ theme-config parity', () => {
     ['--semantic-fill-subtle', themeTokens.semantic.fillSubtle],
     ['--semantic-fill', themeTokens.semantic.fill],
     ['--semantic-fill-strong', themeTokens.semantic.fillStrong],
+    ['--semantic-surface-overlay', themeTokens.semantic.surfaceOverlay],
     ['--separator', themeTokens.semantic.separator],
+    ['--capture-frame', themeTokens.semantic.captureFrame],
     ['--control-border', themeTokens.semantic.controlBorder],
-    // These two lived only in index.css until now, so the parity test could not see them
-    // even though the file claims to mirror theme-config.
-    ['--shadow-accent-glow', themeTokens.shadows.accentGlow],
-    ['--shadow-accent-glow-hover', themeTokens.shadows.accentGlowHover],
-    // Input surface: the elevated violet field. Rest of the --input-* family (no
+    // Input surface: the raised Graphite field. Rest of the --input-* family (no
     // theme-config counterpart) is pinned in its own block below.
     ['--input-bg', themeTokens.semantic.inputSurface],
     ['--neutral-50', themeTokens.neutral[50]],
+    ['--neutral-100', themeTokens.neutral[100]],
+    ['--neutral-200', themeTokens.neutral[200]],
+    ['--neutral-300', themeTokens.neutral[300]],
+    ['--neutral-400', themeTokens.neutral[400]],
     ['--neutral-500', themeTokens.neutral[500]],
+    ['--neutral-600', themeTokens.neutral[600]],
+    ['--neutral-700', themeTokens.neutral[700]],
+    ['--neutral-800', themeTokens.neutral[800]],
     ['--neutral-900', themeTokens.neutral[900]],
+    ['--home-accent-info-surface', themeTokens.colors.infoTint],
     ['--bs-text-brand-primary', themeTokens.text.brandPrimary],
     ['--bs-text-brand-muted', themeTokens.text.brandMuted],
     ['--read-surface', themeTokens.read.surface],
@@ -124,6 +143,15 @@ describe('index.css ↔ theme-config parity', () => {
   it('no scheme block grows back in index.css', () => {
     expect(cssRules).not.toMatch(/html\[data-theme=/);
     expect(cssRules).not.toMatch(/@media\s*\(\s*prefers-color-scheme/);
+  });
+
+  it('the mint CTA glow is gone from both sources', () => {
+    // It belonged to the violet page. A glow that comes back in one file only would be
+    // invisible to the rows above.
+    expect(rootVars['--shadow-accent-glow']).toBeUndefined();
+    expect(rootVars['--shadow-accent-glow-hover']).toBeUndefined();
+    expect(Object.keys(themeTokens.shadows)).not.toContain('accentGlow');
+    expect(Object.keys(themeTokens.shadows)).not.toContain('accentGlowHover');
   });
 
   it(':root declares color-scheme: dark', () => {
@@ -152,8 +180,8 @@ function contrast(a: string, b: string): number {
 }
 
 // Composite a translucent `rgba()` colour over an opaque hex background → the opaque
-// colour the eye actually sees. Needed to contrast-check the semi-transparent input
-// border (rgba(195,188,211,0.x)) against the field it sits on.
+// colour the eye actually sees. Needed to contrast-check the translucent hairlines
+// (`separator`, `captureFrame`) against the surface they sit on.
 function blendOpaque(rgba: string, bgHex: string): string {
   const match = rgba.match(/rgba?\(([^)]+)\)/);
   if (!match) throw new Error(`not an rgba() colour: ${rgba}`);
@@ -186,6 +214,16 @@ describe('MUI theme wires the foreground/fill split correctly', () => {
     expect(themeTokens.colors.primary).not.toBe(themeTokens.colors.primaryFill);
     expect(contrast('#ffffff', themeTokens.colors.primary)).toBeLessThan(4.5);
     expect(contrast('#ffffff', themeTokens.colors.primaryFill)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('primary.dark is the foreground violet itself, with no separate active step', () => {
+    expect(darkTheme.palette.primary.dark.toLowerCase()).toBe(themeTokens.colors.primary.toLowerCase());
+    expect(Object.keys(themeTokens.colors)).not.toContain('primaryActive');
+  });
+
+  it('text.disabled is the label at 38% over the page', () => {
+    expect(darkTheme.palette.text.disabled.toLowerCase()).toBe('#636363');
+    expect(themeTokens.text.disabled).toBe(darkTheme.palette.text.disabled);
   });
 
   it('primary.contrastText is the DARK ink, because the foreground violet is lifted', () => {
@@ -281,22 +319,64 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(darkTheme.palette.accent.contrastText, darkTheme.palette.accent.main)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('the foreground violet on the page ≥ 4.5:1', () => {
-    expect(contrast(themeTokens.colors.primary, themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
-  });
+  it.each(['background', 'surface', 'surfaceElevated'] as const)(
+    'the foreground violet reads as text on %s (≥ 4.5:1)',
+    (ground) => {
+      // Links and text actions: 6.49:1 on the page, 5.60:1 on the card, 5.09:1 on the
+      // raised surface. The same numbers carry the 2px focus ring past its 3:1 floor.
+      expect(contrast(themeTokens.colors.primary, themeTokens.semantic[ground])).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
-  it('the dark focus ring (foreground violet #9784FF) clears the 3:1 UI floor on the field, card, and page', () => {
-    // Inputs are no longer white in dark mode, so the focus ring is the FOREGROUND violet
-    // everywhere (index.css dropped the fill-violet override). It must clear 3:1 on the
-    // elevated input field, the card, and the page.
-    expect(contrast(themeTokens.colors.primary, themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(3);
+  it('the focus ring (foreground violet #9784FF) clears the 3:1 UI floor on the field, card, and page', () => {
+    expect(contrast(themeTokens.colors.primary, themeTokens.semantic.inputSurface)).toBeGreaterThanOrEqual(3);
     expect(contrast(themeTokens.colors.primary, themeTokens.semantic.surface)).toBeGreaterThanOrEqual(3);
     expect(contrast(themeTokens.colors.primary, themeTokens.semantic.background)).toBeGreaterThanOrEqual(3);
   });
 
-  it('secondary text clears AA on its surface', () => {
-    expect(contrast(themeTokens.neutral[500], themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(themeTokens.neutral[500], themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+  it('the filled CTA keeps a 3:1 edge on the raised surface and loses it one step higher', () => {
+    // WCAG 1.4.11 for the filled pill: #7855FF is 3.27:1 on #262626 but 2.94:1 on
+    // #2E2E2E (neutral[200], containers.highest). That second number is why a filled CTA
+    // never sits above surfaceElevated; the assertion documents the line.
+    expect(contrast(themeTokens.colors.primaryFill, themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(3);
+    expect(contrast(themeTokens.colors.primaryFill, themeTokens.semantic.surface)).toBeGreaterThanOrEqual(3);
+    expect(contrast(themeTokens.colors.primaryFill, themeTokens.semantic.background)).toBeGreaterThanOrEqual(3);
+    expect(contrast(themeTokens.colors.primaryFill, themeTokens.neutral[200])).toBeLessThan(3);
+  });
+
+  it('the selected container carries its own ink, never the foreground violet', () => {
+    // Tonal #34276B with #E1E0FF: 9.89:1, and 8.05:1 on the hover step. The foreground
+    // violet on it is 4.28:1, under AA, so a selected item never uses it as its label.
+    const { selected, selectedHover, onSelected } = themeTokens.semantic;
+    expect(contrast(onSelected, selected)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(onSelected, selectedHover)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.colors.primary, selected)).toBeLessThan(4.5);
+  });
+
+  it('the current-angle ink reads on the card it sits on today', () => {
+    // list-angle-rail's current stop draws --semantic-on-selected on --semantic-surface
+    // until the recipe moves it onto the tonal container: 12.95:1.
+    expect(contrast(themeTokens.semantic.onSelected, themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('secondary text clears AA on every surface step, up to neutral[200]', () => {
+    // #B0B0B0: 8.90:1 on the page, 6.26:1 on containers.highest (the worst case).
+    for (const ground of [
+      themeTokens.semantic.background,
+      themeTokens.semantic.surface,
+      themeTokens.semantic.surfaceElevated,
+      themeTokens.neutral[200],
+    ]) {
+      expect(contrast(themeTokens.neutral[500], ground)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('the tertiary label (neutral[400]) clears AA up to the raised surface and not above it', () => {
+    // #8F8F8F: 5.15:1 on the card, 4.68:1 on #262626, 4.20:1 on #2E2E2E. It stays off
+    // neutral[200], the same placement rule the app holds.
+    expect(contrast(themeTokens.neutral[400], themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.neutral[400], themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(themeTokens.neutral[400], themeTokens.neutral[200])).toBeLessThan(4.5);
   });
 
   it.each(['surface', 'surfaceRaised'] as const)('every text colour on the help reading %s clears AA', (ground) => {
@@ -309,56 +389,67 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(themeTokens.semantic.controlBorder, backdrop)).toBeGreaterThanOrEqual(3);
   });
 
-  it('--control-border clears the 3:1 UI-component floor on page, card and elevated surface', () => {
+  it.each([
+    ['background', themeTokens.semantic.background],
+    ['surface', themeTokens.semantic.surface],
+    ['surfaceElevated', themeTokens.semantic.surfaceElevated],
+    ['neutral[50]', themeTokens.neutral[50]],
+    ['neutral[100]', themeTokens.neutral[100]],
+    ['neutral[200]', themeTokens.neutral[200]],
+  ])('--control-border clears the 3:1 UI-component floor on %s', (_name, ground) => {
     // WCAG 1.4.11. This is the fence that makes the control/decorative split self-enforcing:
-    // the token is opaque precisely so all three of these are checkable at once.
-    const { controlBorder, background, surface, surfaceElevated } = themeTokens.semantic;
-    expect(contrast(controlBorder, surfaceElevated)).toBeGreaterThanOrEqual(3);
-    expect(contrast(controlBorder, surface)).toBeGreaterThanOrEqual(3);
-    expect(contrast(controlBorder, background)).toBeGreaterThanOrEqual(3);
+    // the token is opaque precisely so every step is checkable at once. #8A8A8A runs from
+    // 5.59:1 on the page down to 3.93:1 on neutral[200].
+    expect(contrast(themeTokens.semantic.controlBorder, ground)).toBeGreaterThanOrEqual(3);
   });
 
   it('--separator stays BELOW 3:1, which is why it is decorative-only', () => {
     // Not a bug being tolerated — the reason the split exists. If someone "fixes" separator
     // to pass 3:1 it stops being a hairline, and this test says so before review does.
-    const { separator, surface, surfaceElevated } = themeTokens.semantic;
-    expect(contrast(blendOpaque(separator, surfaceElevated), surfaceElevated)).toBeLessThan(3);
-    expect(contrast(blendOpaque(separator, surface), surface)).toBeLessThan(3);
+    const { separator, captureFrame, background, surface, surfaceElevated } = themeTokens.semantic;
+    for (const ground of [background, surface, surfaceElevated]) {
+      expect(contrast(blendOpaque(separator, ground), ground)).toBeLessThan(3);
+      // The capture frame is a hairline too, a shade brighter.
+      expect(contrast(blendOpaque(captureFrame, ground), ground)).toBeLessThan(3);
+    }
   });
 });
 
 describe('Velvet dark input surface is defined, legible, and free of the elevation overlay', () => {
   // The rest of the --input-* family has no theme-config counterpart (only --input-bg
-  // maps to semantic.inputSurface, asserted in the parity block). Pin the literal values
-  // in both schemes so a silent drift in either scheme fails.
+  // maps to semantic.inputSurface, asserted in the parity block). Each row ties the var to
+  // the Graphite role it carries, so a silent drift on either side fails.
   const inputRows: Array<[string, string]> = [
     // Deliberately equal today: the field surface does not change on hover or focus —
     // the BORDER carries hover, the violet ring carries focus. Kept as three names so
     // the treatment can be retuned without touching ~150 .module.css call sites.
-    ['--input-bg-hover', '#2f234a'],
-    ['--input-bg-focused', '#2f234a'],
-    ['--input-text', '#e7e2f0'],
-    ['--input-placeholder', '#a9a2b6'],
-    ['--input-border', 'rgba(195,188,211,0.5)'],
-    ['--input-border-hover', 'rgba(195,188,211,0.7)'],
+    ['--input-bg-hover', themeTokens.semantic.inputSurface],
+    ['--input-bg-focused', themeTokens.semantic.inputSurface],
+    ['--input-text', materialSurfaces.dark.label],
+    ['--input-placeholder', materialSurfaces.dark.secondaryLabel],
+    // The resting edge is the control border: opaque, so its contrast is one fact.
+    ['--input-border', themeTokens.semantic.controlBorder],
+    ['--input-border-hover', materialSurfaces.dark.label],
   ];
   it.each(inputRows)('%s is set', (cssVar, value) => {
     expect(rootVars[cssVar], `${cssVar} missing from :root`).toBeDefined();
     expect(norm(rootVars[cssVar])).toBe(norm(value));
   });
 
-  it('dark input text (#E7E2F0) clears AA on the field (#2F234A)', () => {
-    expect(contrast(rootVars['--input-text'], themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(4.5);
+  it('input text clears AA on the field', () => {
+    expect(contrast(rootVars['--input-text'], themeTokens.semantic.inputSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('dark placeholder (#A9A2B6) clears AA on the field (#2F234A)', () => {
-    expect(contrast(rootVars['--input-placeholder'], themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(4.5);
+  it('the placeholder clears AA on the field', () => {
+    expect(contrast(rootVars['--input-placeholder'], themeTokens.semantic.inputSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('the dark resting border, composited over the field, clears 3:1 vs the field and vs the page', () => {
-    const composited = blendOpaque(rootVars['--input-border'], themeTokens.semantic.surfaceElevated);
-    expect(contrast(composited, themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(3);
-    expect(contrast(composited, themeTokens.semantic.background)).toBeGreaterThanOrEqual(3);
+  it('the resting and hover borders clear 3:1 vs the field and vs the page', () => {
+    // Both are opaque now, so no compositing: 4.38:1 and 5.59:1 at rest.
+    for (const border of [rootVars['--input-border'], rootVars['--input-border-hover']]) {
+      expect(contrast(border, themeTokens.semantic.inputSurface)).toBeGreaterThanOrEqual(3);
+      expect(contrast(border, themeTokens.semantic.background)).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('error text clears AA on the input field and the page', () => {
@@ -385,7 +476,7 @@ describe('Velvet dark input surface is defined, legible, and free of the elevati
     expect(contrast(rootVars['--input-text'], themeTokens.semantic.inputSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('primary text clears AA on the elevated popup paper (autocomplete/menu) in dark', () => {
+  it('primary text clears AA on the elevated popup paper (autocomplete/menu)', () => {
     expect(contrast(themeTokens.neutral[800], themeTokens.semantic.surfaceElevated)).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -403,26 +494,47 @@ describe('Velvet dark input surface is defined, legible, and free of the elevati
   });
 });
 
-describe('web surface ladder deliberately diverges from the shared velvet-tokens anchors', () => {
-  // Web shares only the BRAND colours with @boardsesh/velvet-tokens. The SURFACE ladder
-  // (page → card → elevated) is hand-tuned here to be richer/more violet than the shared
-  // Material anchors (materialSurfaces), so the velvet permeates cards and greys instead
-  // of reading as white + neutral grey. That divergence is INTENTIONAL. These assertions
-  // pin the current web values so silent drift — in theme-config OR in velvet-tokens —
-  // fails and forces a conscious design decision rather than an accidental resync.
-  it('the ladder is the hand-tuned web values, each step lighter than the last', () => {
-    expect(themeTokens.semantic.background).toBe('#110A20');
-    expect(themeTokens.semantic.surface).toBe('#251B3A');
-    expect(themeTokens.semantic.surfaceElevated).toBe('#2F234A');
-    // Depth reads as a lighter violet, not a shadow — so the order must hold.
+describe('the web surface ladder is the Graphite ladder the app uses', () => {
+  // www used to keep its own violet page → card → elevated ladder and this block pinned the
+  // divergence. It now reads the shared Material anchors, so the seam into the Expo
+  // browser app at /app is gone. These assertions keep it that way: a web-local literal or
+  // a retune on one side only fails here.
+  it('page, card and elevated surface ARE materialSurfaces.dark', () => {
+    expect(themeTokens.semantic.background).toBe(materialSurfaces.dark.background);
+    expect(themeTokens.semantic.surface).toBe(materialSurfaces.dark.secondaryBackground);
+    expect(themeTokens.semantic.surfaceElevated).toBe(materialSurfaces.dark.elevatedSurface);
+    expect(themeTokens.semantic.inputSurface).toBe(materialSurfaces.dark.elevatedSurface);
+  });
+
+  it('each step is lighter than the last', () => {
+    // Depth reads as a lighter grey, not a shadow — so the order must hold.
     expect(luminance(themeTokens.semantic.surface)).toBeGreaterThan(luminance(themeTokens.semantic.background));
     expect(luminance(themeTokens.semantic.surfaceElevated)).toBeGreaterThan(luminance(themeTokens.semantic.surface));
   });
 
-  it('the web page base is intentionally NOT the shared materialSurfaces anchor', () => {
-    expect(themeTokens.semantic.background.toLowerCase()).not.toBe(materialSurfaces.dark.background.toLowerCase());
-    expect(themeTokens.semantic.surface.toLowerCase()).not.toBe(
-      materialSurfaces.dark.secondaryBackground.toLowerCase(),
-    );
+  it('labels, hairline, outline and fill are the shared Graphite roles', () => {
+    expect(themeTokens.neutral[900]).toBe(materialSurfaces.dark.label);
+    expect(themeTokens.neutral[500]).toBe(materialSurfaces.dark.secondaryLabel);
+    expect(themeTokens.neutral[400]).toBe(materialSurfaces.dark.tertiaryLabel);
+    expect(themeTokens.semantic.separator).toBe(materialSurfaces.dark.separator);
+    expect(themeTokens.semantic.fill).toBe(materialSurfaces.dark.fill);
+    expect(themeTokens.semantic.controlBorder).toBe(materialOutline.dark);
+  });
+
+  it('the surface steps of the neutral ramp are the shared container ladder', () => {
+    expect(themeTokens.neutral[50]).toBe(materialSurfaceContainers.dark.base);
+    expect(themeTokens.neutral[100]).toBe(materialSurfaceContainers.dark.high);
+    expect(themeTokens.neutral[200]).toBe(materialSurfaceContainers.dark.highest);
+  });
+
+  it('the selected state is the opaque tonal container with its ink', () => {
+    expect(themeTokens.semantic.selected).toBe(materialTonalContainers.dark.secondaryContainer);
+    expect(themeTokens.semantic.onSelected).toBe(materialTonalContainers.dark.ink);
+  });
+
+  it('MUI action.selected stays a neutral fill, never violet', () => {
+    // MUI paints it under every default filled Chip, a selected PaginationItem and the
+    // highlighted Autocomplete option; a violet value would tint all of them.
+    expect(themeTokens.semantic.selectedRow).toBe(materialSurfaces.dark.fill);
   });
 });

@@ -187,10 +187,10 @@ const sharedComponents: Components<Theme> = {
       }),
     },
   },
-  // Input surface + borders ride the scheme-aware `--input-*` CSS vars (light: white field,
-  // #7B7591 border; dark: elevated violet #2F234A, translucent border). The focused outline
-  // uses the FOREGROUND violet `palette.primary.main` (#9784FF; www is dark only) at 2px;
-  // the field surface itself never changes on hover/focus — hover is carried by the border.
+  // Input surface + borders ride the `--input-*` CSS vars: the raised Graphite field
+  // #262626 with the opaque #8A8A8A outline. The focused outline uses the FOREGROUND
+  // violet `palette.primary.main` (#9784FF, 5.09:1 on the field) at 2px; the field
+  // surface itself never changes on hover/focus — hover is carried by the border.
   MuiOutlinedInput: {
     styleOverrides: {
       root: ({ theme }) => ({
@@ -207,7 +207,7 @@ const sharedComponents: Components<Theme> = {
           borderWidth: 2,
         },
         '&.Mui-disabled': {
-          // Field surface dimmed + the disabled text tier (#7B7591 light, #6F6882 dark),
+          // Field surface dimmed + the disabled text tier (text.disabled, #636363),
           // never a light-scale grey stranded on the dark field. The hover surface is the
           // opaque fallback for browsers without color-mix() (Safari < 16.2).
           backgroundColor: 'var(--input-bg-hover)',
@@ -501,11 +501,11 @@ const sharedOptions: Partial<ThemeOptions> = {
 
 // Two things a dark palette needs from MUI that the shared overrides don't cover:
 // (1) MUI v7 composites a white elevation overlay onto every Paper in dark mode via
-//     `backgroundImage`. Kill it, or dialog paper drifts to ~#49415B where secondary
-//     text fails AA.
+//     `backgroundImage`. Kill it, or dialog paper drifts lighter than the ladder and
+//     stops matching the app's surfaces.
 // (2) Pin the floating surfaces (dialog/drawer/menu/popover) to the elevated surface
-//     (#2F234A) with a hairline separator border, so they read as one deliberate
-//     Velvet layer instead of an elevation-tinted grey.
+//     (#262626) with a hairline separator border, so they read as one deliberate
+//     layer instead of an elevation-tinted grey.
 const elevatedPaper = {
   backgroundColor: themeTokens.semantic.surfaceElevated,
   border: '1px solid var(--separator)',
@@ -625,9 +625,11 @@ function buildTheme(): Theme {
       // augmented `primaryFill` channel below. contrastText is the INK on the lifted
       // foreground violet, and that ink is dark: white on #9784FF is 2.97:1. Set
       // explicitly so MUI's getContrastText never warns.
+      // `dark` is pinned to `main`: there is no darker foreground step, and MUI's
+      // auto-derived one would be a violet nothing else on the page uses.
       primary: {
         main: brand.primary,
-        dark: brand.primaryActive,
+        dark: brand.primary,
         contrastText: brand.onAccent,
       },
       secondary: {
@@ -656,7 +658,9 @@ function buildTheme(): Theme {
       text: {
         primary: neutral[800],
         secondary: neutral[500],
-        disabled: neutral[400],
+        // The label at 38% over the page (3.21:1). Disabled text is exempt from AA;
+        // neutral[400] is now the readable tertiary label, so it cannot double as this.
+        disabled: themeTokens.text.disabled,
       },
       divider: semantic.separator,
       action: {

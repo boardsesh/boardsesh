@@ -38,7 +38,7 @@ import BrandLockup from './brand-lockup';
 import styles from './marketing-header.module.css';
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
-// off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
+// off to the Expo-web app.
 const HEADER_START_CLIMBING_SX = brandCtaOutlinedSx({ size: 'small' });
 
 const BRAND_SX = {

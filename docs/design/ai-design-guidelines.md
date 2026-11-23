@@ -240,8 +240,10 @@ lowest, low, base, high (4.68:1). Light: page, card, lowest, low (4.63:1). Never
 
 **Compose, nav bar, www.** `ComposeHost` seeds Android Compose from `primaryFill` plus `composeSurfaceColorOverrides`,
 so menus and dialogs sit on the same greys. The Android phone nav bar overlays tab roots at `m3.surface` 94% dark /
-85% light so it can hide on scroll, with a 24dp fade above its top edge; dark needs the extra cover so the violet label stays 4.5:1 over white content. `theme.m3` exposes the MD3 role palette on Material only. www stays violet on
-purpose (`packages/web/app/theme/theme-config.ts`; video renders read the frozen `marketingSurfaces`).
+85% light so it can hide on scroll, with a 24dp fade above its top edge; dark needs the extra cover so the violet label stays 4.5:1 over white content. `theme.m3` exposes the MD3 role palette on Material only. www uses the same
+Graphite surfaces, labels, outline and tonal selected container, imported from `@boardsesh/velvet-tokens`
+(`packages/web/app/theme/theme-config.ts`, see [web-velvet-send.md](web-velvet-send.md)); video renders keep
+the frozen stage and `marketingSurfaces` the footage was cut on.
 
 ### Data ramp (`theme.heatRamp`)
 

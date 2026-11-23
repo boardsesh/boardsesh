@@ -1,26 +1,5 @@
 .hero {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
   padding: var(--spacing-12) 0;
-}
-
-.hero::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  top: 0;
-  left: 50%;
-  width: 100%;
-  height: 100%;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, var(--color-primary-fill) 34%, transparent),
-    color-mix(in srgb, var(--color-primary-fill) 14%, transparent) 38%,
-    transparent 70%
-  );
-  pointer-events: none;
 }
 
 .disclosure {

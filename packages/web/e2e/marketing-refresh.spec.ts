@@ -171,7 +171,7 @@ for (const width of [1440, 390]) {
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       expect(overflow, route).toBeLessThanOrEqual(1);
-      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 10, 32)');
+      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(14, 14, 14)');
       await expect(page.locator('h1')).toHaveCSS(
         'font-size',
         // /help pages carry the big showcase hero, the same scale as the homepage.
@@ -330,9 +330,9 @@ for (const width of [320, 390, 430]) {
     for (const feature of await features.all()) {
       // The feature cards are PageCards now. They used to hand-roll surface +
       // radius + padding and NO border, so their bottom edge barely read against
-      // the page (#251B3A on #110A20 is 1.19:1). Pin the edge, not the recipe.
+      // the page (#1E1E1E on #0E0E0E is 1.16:1). Pin the edge, not the recipe.
       await expect(feature).toHaveCSS('border-bottom-width', '1px');
-      await expect(feature).toHaveCSS('border-bottom-color', 'rgba(185, 170, 215, 0.2)');
+      await expect(feature).toHaveCSS('border-bottom-color', 'rgba(255, 255, 255, 0.12)');
       await expect(feature).toHaveCSS('border-radius', '16px');
       await expect(feature.locator('h3')).toHaveCSS('font-size', '24px');
       const paragraph = feature.locator('p');

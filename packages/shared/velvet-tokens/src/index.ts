@@ -159,12 +159,12 @@ export function currentBrandColor(color: string): string {
  * Light label #1A1A1A 12.3:1 or more; secondary #5A5A5A 4.89:1 or more; tertiary
  * #686868 4.98:1 on the #F2F2F2 page, so it stays on page, card, lowest and low.
  *
- * Web shares only the BRAND colours from this package (`brandColors`/`brandColorsDark`
- * — see `theme-config.ts`). The web SURFACE ladder is deliberately NOT these anchors:
- * www keeps its own hand-tuned violet page → card → elevated ladder in
- * `packages/web/app/theme/theme-config.ts` (dark #110A20 / #251B3A / #2F234A), so the
- * marketing site stays velvet while the app goes neutral. That divergence is guarded
- * by `velvet-tokens-parity.test.ts`; changing either side is a conscious decision.
+ * www reads the dark half too: `packages/web/app/theme/theme-config.ts` takes its page →
+ * card → elevated ladder, labels, separator, fill and the selected container from here
+ * (with `materialSurfaceContainers`, `materialTonalContainers` and `materialOutline`), so
+ * www and the Expo browser app at /app sit on one Graphite ground.
+ * `velvet-tokens-parity.test.ts` in the web app asserts the web ladder IS these anchors;
+ * a retune here moves both apps.
  */
 export const materialSurfaces = {
   light: {

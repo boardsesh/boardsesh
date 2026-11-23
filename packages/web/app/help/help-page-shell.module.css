@@ -138,9 +138,11 @@
   scroll-margin-top: calc(var(--global-header-height) + 76px);
 }
 
+/* The section being read: the tonal selected container with its own ink. The
+   foreground violet is 4.28:1 on that container, under AA, so it stays on the edge. */
 .jump .chip[aria-current='location'] {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--semantic-on-selected);
   background: var(--semantic-selected-light);
 }
 

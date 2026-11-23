@@ -69,11 +69,14 @@ describe('the outlined recipe reads the control-boundary token', () => {
     expect(brandCtaSx().backgroundColor).toBe('var(--color-primary-fill)');
   });
 
-  it('carries no glow, because the mint spark belongs to the filled button', () => {
-    const outlined = brandCtaOutlinedSx() as Record<string, unknown>;
-
-    expect(outlined).not.toHaveProperty('boxShadow');
-    expect(JSON.stringify(outlined)).not.toContain('accent-glow');
+  it('casts no glow on either button, at rest or on hover', () => {
+    // The mint CTA glow went with the violet page; the filled violet alone marks
+    // the page's primary action now.
+    for (const recipe of [brandCtaSx({ size: 'large' }), brandCtaOutlinedSx({ size: 'large' })]) {
+      expect(recipe).not.toHaveProperty('boxShadow');
+      expect(recipe['&:hover']).not.toHaveProperty('boxShadow');
+      expect(JSON.stringify(recipe)).not.toContain('accent-glow');
+    }
   });
 
   it('cancels the global hover lift the way the filled pill does', () => {
