@@ -85,9 +85,10 @@ export default function GymDirectoryFilters({
               clickable
               component={LocaleLink}
               href={buildBoardTypeToggleHref(facet, query, boardType)}
-              aria-pressed={selected}
-              // The check is the non-colour cue for the tonal ground;
-              // `aria-pressed` is what a screen reader hears.
+              // A link, so its state is aria-current rather than aria-pressed
+              // (which only a button may carry). The check is the non-colour cue
+              // for the tonal ground.
+              aria-current={selected ? 'true' : undefined}
               icon={selected ? <SelectedCheck /> : undefined}
               label={
                 facetCounts && (boardType === 'kilter' || boardType === 'moonboard' || boardType === 'tension')

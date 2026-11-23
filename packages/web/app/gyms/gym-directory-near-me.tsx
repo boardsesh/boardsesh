@@ -368,16 +368,20 @@ export default function GymDirectoryNearMe({
                 <ToggleButton
                   key={option}
                   value={option}
+                  // With a place picked the buttons are links, so the selected one
+                  // is aria-current and none carries ToggleButton's aria-pressed
+                  // (which only a button may carry).
                   {...(selectedArea
                     ? {
                         component: LocaleLink,
                         href: buildDirectoryHref(selectedArea.facet, { ...selectedArea.query, radiusKm: option }, 1),
+                        'aria-pressed': undefined,
+                        'aria-current': option === activeRadiusKm ? ('true' as const) : undefined,
                       }
                     : {})}
                   // The theme draws both states (grey edge at rest, the tonal
                   // container when selected); the check is the selected state's
-                  // non-colour cue, and ToggleButton's `aria-pressed` is what a
-                  // screen reader hears.
+                  // non-colour cue.
                   sx={{ minHeight: 44, fontSize: 14, gap: 0.5 }}
                 >
                   {option === activeRadiusKm && <SelectedCheck />}

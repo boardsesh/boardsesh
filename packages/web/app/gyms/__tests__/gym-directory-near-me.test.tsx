@@ -191,16 +191,31 @@ describe('browse mode', () => {
     expect(screen.getByRole('link', { name: '100 km' }).getAttribute('href')).toBe(
       '/gyms/kilter?place=Sydney&lat=-33.86&lng=151.2&radius=100',
     );
-    // The selected radius is announced as pressed and shows the check, the
-    // non-colour cue for its tonal ground; the others show neither.
+    // These are links, so the selected radius is aria-current (never aria-pressed,
+    // a button-only state) and shows the check, the non-colour cue for its tonal
+    // ground; the others show neither.
     const selectedRadius = screen.getByRole('link', { name: '50 km' });
-    expect(selectedRadius.getAttribute('aria-pressed')).toBe('true');
+    expect(selectedRadius.getAttribute('aria-current')).toBe('true');
+    expect(selectedRadius.hasAttribute('aria-pressed')).toBe(false);
     expect(selectedRadius.querySelector('[data-selected-check]')?.getAttribute('aria-hidden')).toBe('true');
-    expect(screen.getByRole('link', { name: '100 km' }).querySelector('[data-selected-check]')).toBeNull();
+    const otherRadius = screen.getByRole('link', { name: '100 km' });
+    expect(otherRadius.hasAttribute('aria-current')).toBe(false);
+    expect(otherRadius.hasAttribute('aria-pressed')).toBe(false);
+    expect(otherRadius.querySelector('[data-selected-check]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Use my location' })).toBeNull();
     expect(lastQueryOptions?.enabled).toBe(false);
     expect(geolocation.requestPermission).not.toHaveBeenCalled();
   });
+  it('keeps the radius as pressed toggle buttons, with the check on the default, before a place is picked', () => {
+    renderNearMe();
+    const selectedRadius = screen.getByRole('button', { name: '25 km' });
+    expect(selectedRadius.getAttribute('aria-pressed')).toBe('true');
+    expect(selectedRadius.querySelector('[data-selected-check]')).not.toBeNull();
+    const otherRadius = screen.getByRole('button', { name: '50 km' });
+    expect(otherRadius.getAttribute('aria-pressed')).toBe('false');
+    expect(otherRadius.querySelector('[data-selected-check]')).toBeNull();
+  });
+
   it('renders the server list untouched and no near-me notice', () => {
     renderNearMe();
 

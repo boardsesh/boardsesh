@@ -314,7 +314,6 @@ describe('the theme spends violet on actions and state only', () => {
 
   it.each([
     ['MuiToggleButton', '&.Mui-selected'],
-    ['MuiPaginationItem', '&.Mui-selected'],
     ['MuiMenuItem', '&.Mui-selected, &.Mui-selected.Mui-focusVisible'],
   ])('a selected %s is the tonal container with its own ink', (component, selector) => {
     expect(overrideSlot(component, 'root')[selector]).toMatchObject({
@@ -323,10 +322,12 @@ describe('the theme spends violet on actions and state only', () => {
     });
   });
 
-  it('a resting toggle is a grey control', () => {
+  it('a resting toggle is a grey control, with its hover wash on pointer devices only', () => {
     const toggle = overrideSlot('MuiToggleButton', 'root');
     expect(toggle.color).toBe('var(--neutral-900)');
     expect(toggle.borderColor).toBe('var(--control-border)');
+    expect(toggle['@media (hover: hover)']).toEqual({ '&:hover': { backgroundColor: 'var(--semantic-hover)' } });
+    expect(toggle).not.toHaveProperty('&:hover');
   });
 });
 

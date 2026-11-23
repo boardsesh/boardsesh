@@ -164,32 +164,17 @@ const sharedComponents: Components<Theme> = {
         textTransform: 'none' as const,
         color: 'var(--neutral-900)',
         borderColor: 'var(--control-border)',
-        '&:hover': {
-          backgroundColor: 'var(--semantic-hover)',
+        // Pointer devices only, like MUI's own: on touch a tap would leave the
+        // wash stuck on the button it landed on.
+        '@media (hover: hover)': {
+          '&:hover': {
+            backgroundColor: 'var(--semantic-hover)',
+          },
         },
         '&.Mui-selected': {
           color: 'var(--semantic-on-selected)',
           backgroundColor: 'var(--semantic-selected)',
           '&:hover': {
-            backgroundColor: 'var(--semantic-selected-hover)',
-          },
-        },
-      },
-    },
-  },
-  // Same two states for MUI's pager, should a page use it.
-  MuiPaginationItem: {
-    styleOverrides: {
-      root: {
-        color: 'var(--neutral-900)',
-        '&.MuiPaginationItem-outlined': {
-          borderColor: 'var(--control-border)',
-        },
-        '&.Mui-selected': {
-          color: 'var(--semantic-on-selected)',
-          backgroundColor: 'var(--semantic-selected)',
-          borderColor: 'var(--semantic-selected)',
-          '&:hover, &.Mui-focusVisible': {
             backgroundColor: 'var(--semantic-selected-hover)',
           },
         },

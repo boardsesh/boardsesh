@@ -74,11 +74,15 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
   - Filter chips: `filterChipSx`, 8px corners, 44px tall. Rest is transparent with the
     `--control-border` edge and `#EDEDED` ink at weight 500. Selected is `--semantic-selected` with
     `--semantic-on-selected` ink and a leading `SelectedCheck` (`components/ui/selected-check.tsx`);
-    no ring. The check is `aria-hidden`; the control announces the state (`aria-pressed`, a
-    checkbox's checked state).
-  - Toggles, segments, pagination and the current menu item: the theme gives `MuiToggleButton`,
-    `MuiPaginationItem` and `MuiMenuItem` the same tonal selected state; the gyms radius control and
-    the gym directory pager follow it, and the radius control adds the check.
+    no ring. The check is `aria-hidden`; the control announces the state, and which attribute
+    depends on what the element is: `aria-pressed` only on a real button (a toggle), `aria-current`
+    on a link (the board-type chips, the radius links once a place is picked, the current menu
+    locale), and a checkbox's own checked state on the narrower filter tiers.
+  - Toggles, segments, pagination and the current menu item: the theme gives `MuiToggleButton` and
+    `MuiMenuItem` the same tonal selected state, the gym directory pager draws it by hand, and the
+    public toggle groups (the gyms radius, the support cadence and currency, the iOS/Android preview
+    switch) and the language menu's current locale add the check. A toggle's hover wash is gated to
+    `(hover: hover)` so a tap on a phone does not leave it behind.
   - Nav, footer and breadcrumb links: `#B0B0B0`, lifting to `#EDEDED` with an underline on hover
     (`quietLinkSx` in `components/ui/quiet-link.ts` for breadcrumbs). The header's current page is
     `#EDEDED` with a 2px `#9784FF` underline, never a pill or bar.
