@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
@@ -19,13 +19,24 @@ import { BoardShareSheet } from './BoardShareSheet';
 import { HomeBoardShareSheet } from './HomeBoardShareSheet';
 import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
-import { useProfile } from '../../lib/graphql/hooks';
+import { useGym, useProfile } from '../../lib/graphql/hooks';
 import { useResourcePrivacy } from '../../lib/graphql/hooks/use-resource-privacy';
 import { homeBoardShareTarget, type HomeBoardShareTarget } from '../../lib/board-share/board-share-link';
 import { useReportProblem } from '../report-problem/use-report-problem';
 import { useReportBoard } from '../../lib/graphql/hooks/use-directory-reports';
 import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+
+/**
+ * The gym whose staff took a board off their listing, from the
+ * `board_removed_from_gym` notice: its uuid, and the name the notice carried
+ * for the moment before the gym itself loads.
+ */
+export type RelistGym = { uuid: string; name: string | null };
+
+/** The relist ask: not sent yet, in flight, or answered. */
+type RelistStatus = 'idle' | 'pending' | 'sent';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -39,9 +50,10 @@ type BoardDetailSheetProps = {
   onReviewReports?: (board: UserBoard) => void;
   /**
    * The gym whose staff took this board off their listing, when the sheet was
-   * opened from that notification: offers "Ask {{gym}} to list it again".
+   * opened from that notification: offers the board's creator "Ask {{gym}} to
+   * list it again".
    */
-  relistGymName?: string | null;
+  relistGym?: RelistGym | null;
 };
 
 export function BoardDetailSheet({
@@ -50,7 +62,7 @@ export function BoardDetailSheet({
   onClose,
   onSetActive,
   onReviewReports,
-  relistGymName,
+  relistGym,
 }: BoardDetailSheetProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
@@ -108,28 +120,60 @@ export function BoardDetailSheet({
   const showReview = !!board && !!onReviewReports && (board.openReportCount ?? 0) > 0;
 
   // "Ask {{gym}} to list it again", from the notification that the gym's staff
-  // took the creator's board off their listing.
+  // took the creator's board off their listing. Only the creator may ask (the
+  // server refuses anyone else), and only while the board is off every gym.
+  // The gym's name comes from the gym itself once it loads; the notice's copy
+  // only fills the moment before, and a gym that no longer resolves offers
+  // nothing to ask.
   const directoryReportsEnabled = useDirectoryReportsEnabled();
+  const viewerUserId = useViewerUserId();
+  const relistCandidate =
+    directoryReportsEnabled &&
+    !!relistGym &&
+    !!board &&
+    !board.gymUuid &&
+    viewerUserId !== null &&
+    board.ownerId === viewerUserId;
+  const { data: relistGymData } = useGym(relistCandidate && relistGym ? relistGym.uuid : null);
+  const relistGymName = relistGymData === null ? null : (relistGymData?.name ?? relistGym?.name ?? null);
   const { showToast } = useToast();
   const relist = useReportBoard();
   const relistMutate = relist.mutate;
+  // Per board: idle, in flight, or answered. A repeat tap while one is in
+  // flight or after it went through sends nothing.
+  const [relistState, setRelistState] = useState<{ boardUuid: string; status: RelistStatus } | null>(null);
+  const relistStatus: RelistStatus = board && relistState?.boardUuid === board.uuid ? relistState.status : 'idle';
+  const relistInFlight = useRef(false);
   const askToRelist = useCallback(() => {
-    if (!board || !relistGymName) return;
+    if (!board || !relistGymName || relistInFlight.current || relistStatus !== 'idle') return;
+    const boardUuid = board.uuid;
+    const gymName = relistGymName;
+    relistInFlight.current = true;
+    setRelistState({ boardUuid, status: 'pending' });
     relistMutate(
-      { boardUuid: board.uuid, reason: 'relist_request' },
+      { boardUuid, reason: 'relist_request' },
       {
-        onSuccess: (result) =>
+        onSuccess: (result) => {
+          setRelistState({ boardUuid, status: 'sent' });
           showToast(
             result.status === 'already_reported'
-              ? t('report.relistAlready', { gym: relistGymName })
-              : t('report.relistSent', { gym: relistGymName }),
+              ? t('report.relistAlready', { gym: gymName })
+              : t('report.relistSent', { gym: gymName }),
             'success',
-          ),
-        onError: () => showToast(t('report.error'), 'error'),
+          );
+        },
+        onError: () => {
+          setRelistState(null);
+          showToast(t('report.error'), 'error');
+        },
+        onSettled: () => {
+          relistInFlight.current = false;
+        },
       },
     );
-  }, [board, relistGymName, relistMutate, showToast, t]);
-  const showRelist = directoryReportsEnabled && !!relistGymName && !!board && !board.gymUuid;
+  }, [board, relistGymName, relistStatus, relistMutate, showToast, t]);
+  const relistRow =
+    relistCandidate && relistGymName ? { gymName: relistGymName, status: relistStatus, onPress: askToRelist } : null;
 
   const isActive = board ? isActiveBoard(board, activeBoard?.uuid) : false;
   const header = board ? (
@@ -173,7 +217,7 @@ export function BoardDetailSheet({
             canReport={canReport && isSprayWall}
             onOpenReport={openReport}
             reviewRow={showReview ? { onPress: openReview } : null}
-            relistRow={showRelist && relistGymName ? { gymName: relistGymName, onPress: askToRelist } : null}
+            relistRow={relistRow}
             boardReportRow={reportAction ? { onPress: reportAction.open } : null}
           />
         ) : null}
@@ -234,7 +278,7 @@ function BoardDetailBody({
   canReport: boolean;
   onOpenReport: () => void;
   reviewRow: { onPress: () => void } | null;
-  relistRow: { gymName: string; onPress: () => void } | null;
+  relistRow: { gymName: string; status: RelistStatus; onPress: () => void } | null;
   boardReportRow: { onPress: () => void } | null;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
@@ -341,15 +385,22 @@ function BoardDetailBody({
         </View>
       ) : null}
 
+      {/* Tappable once: while the ask is in flight and after it went through,
+          the row only says so. */}
       {relistRow ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           <WallRow
             icon="gym"
             label={t('report.relistAsk', { gym: relistRow.gymName })}
-            hint={t('report.relistAskHint')}
+            hint={
+              relistRow.status === 'sent'
+                ? t('report.relistSent', { gym: relistRow.gymName })
+                : t('report.relistAskHint')
+            }
             showSeparator={false}
             systemColors={systemColors}
-            onPress={relistRow.onPress}
+            onPress={relistRow.status === 'idle' ? relistRow.onPress : undefined}
+            testID="board-detail-relist"
           />
         </View>
       ) : null}

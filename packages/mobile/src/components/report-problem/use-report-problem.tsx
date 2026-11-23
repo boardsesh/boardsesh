@@ -24,6 +24,8 @@ export type ReportProblemHost = {
   openReport: (target: ReportProblemTarget) => void;
   /** Mount this in the route that offers the report. */
   sheet: ReactNode;
+  /** The report sheet or the claim sheet it handed over to is up. */
+  isOpen: boolean;
 };
 
 function targetKey(target: ReportProblemTarget): string {
@@ -34,6 +36,10 @@ function targetKey(target: ReportProblemTarget): string {
  * A report sheet host for a surface with many targets (the board picker's
  * cards). Doesn't decide whether a target may be reported: the caller gates
  * its row with `canReportBoard` / `canReportGym`.
+ *
+ * The open sheet's target is a snapshot held here, not the caller's prop, so a
+ * caller whose own target goes away mid-report (a detail sheet the report sheet
+ * displaced clears its board) does not tear the report sheet down with it.
  */
 export function useReportProblemHost(): ReportProblemHost {
   const { isAuthenticated } = useAuth();
@@ -53,7 +59,8 @@ export function useReportProblemHost(): ReportProblemHost {
     [isAuthenticated, router],
   );
   const closeReport = useCallback(() => setTarget(null), []);
-  // The two can't stack: the report sheet goes, then the claim sheet presents.
+  // The two can't stack. The report sheet has already dismissed itself and
+  // waited for it to settle (ReportDirectorySheet), so this only swaps them.
   const openClaim = useCallback((gym: Gym) => {
     setTarget(null);
     setClaimGym(gym);
@@ -77,7 +84,8 @@ export function useReportProblemHost(): ReportProblemHost {
     [target, claimGym, closeReport, openClaim, onClaimClosed],
   );
 
-  return useMemo(() => ({ openReport, sheet }), [openReport, sheet]);
+  const isOpen = target !== null || claimGym !== null;
+  return useMemo(() => ({ openReport, sheet, isOpen }), [openReport, sheet, isOpen]);
 }
 
 /** "Report a problem" for one board or gym: open it, and mount `sheet` beside the row. */
@@ -94,14 +102,18 @@ export type ReportProblemAction = {
  *
  * Signed out, `open` sends the climber to log in.
  *
+ * Stays non-null while a report or claim sheet it opened is still up, even if
+ * the target has gone in the meantime: the board detail sheet clears its board
+ * when the report sheet displaces it, and dropping `sheet` then would unmount
+ * the report sheet the climber is filling in.
+ *
  * The gym page (PR 8 of #8043) wires its row with
  * `useReportProblem({ target: gym ? { kind: 'gym', gym } : null })`.
  */
 export function useReportProblem({ target }: { target: ReportProblemTarget | null }): ReportProblemAction | null {
   const enabled = useDirectoryReportsEnabled();
   const viewerUserId = useViewerUserId();
-  const host = useReportProblemHost();
-  const { openReport, sheet } = host;
+  const { openReport, sheet, isOpen } = useReportProblemHost();
   const available =
     target !== null &&
     (target.kind === 'board'
@@ -110,5 +122,5 @@ export function useReportProblem({ target }: { target: ReportProblemTarget | nul
   const open = useCallback(() => {
     if (target) openReport(target);
   }, [target, openReport]);
-  return useMemo(() => (available ? { open, sheet } : null), [available, open, sheet]);
+  return useMemo(() => (available || isOpen ? { open, sheet } : null), [available, isOpen, open, sheet]);
 }

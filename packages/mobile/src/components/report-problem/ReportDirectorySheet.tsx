@@ -38,6 +38,7 @@ import { useReportBoard, useReportGym } from '../../lib/graphql/hooks/use-direct
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { track } from '../../lib/analytics';
+import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { spacing } from '../../theme/tokens';
 
 /** What a report is about. A gym page passes the gym; every board surface the board. */
@@ -118,7 +119,10 @@ export function ReportDirectorySheet({
 }: {
   target: ReportProblemTarget;
   onClose: () => void;
-  /** "Run {{gym}}? Claim it": closes this sheet and opens the claim. */
+  /**
+   * "Run {{gym}}? Claim it": called once this sheet has fully dismissed, so the
+   * host can present the claim sheet without overlapping the two.
+   */
   onClaim: (gym: Gym) => void;
 }) {
   const { t } = useTranslation('boards');
@@ -136,6 +140,24 @@ export function ReportDirectorySheet({
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [result, setResult] = useState<DirectoryReportSubmitResult | null>(null);
   const inFlight = useRef(false);
+
+  // Two native sheets can't overlap a present with a dismiss (the coordinator
+  // rule in docs/mobile/mobile-sheets-vs-routes.md): this sheet goes and
+  // settles first, then the host presents the claim. Same handoff as the
+  // review sheet's board actions.
+  const sheetRef = useRef<ManagedSheetHandle>(null);
+  const claiming = useRef(false);
+  const claim = useCallback(
+    async (claimTarget: Gym) => {
+      if (claiming.current) return;
+      claiming.current = true;
+      const dismissal = await dismissManagedSheetAndWait(sheetRef.current);
+      // The host went away mid-handoff: nothing left to present the claim from.
+      if (dismissal.status === 'aborted') return;
+      onClaim(claimTarget);
+    },
+    [onClaim],
+  );
 
   const reportBoard = useReportBoard();
   const reportGym = useReportGym();
@@ -302,7 +324,7 @@ export function ReportDirectorySheet({
         {gym && showClaimNudge(gym) ? (
           <TextAction
             label={t('report.claimNudge', { gym: gym.name })}
-            onPress={() => onClaim(gym)}
+            onPress={() => void claim(gym)}
             reach="up"
             testID="report-problem-claim"
           />
@@ -329,6 +351,7 @@ export function ReportDirectorySheet({
       errorMessage={mutation.isError ? t('report.error') : null}
       dirty={reason !== null || note.length > 0}
       onClose={onClose}
+      sheetRef={sheetRef}
       testID="report-problem"
     />
   );

@@ -7,8 +7,11 @@ import type { GroupedNotification } from '@boardsesh/shared-schema';
 export type DirectoryNoticeRoute =
   /** The board picker on the board's report review sheet. */
   | { kind: 'review'; boardUuid: string }
-  /** The board picker on the board's detail sheet; `relistGym` offers "Ask {{gym}} to list it again". */
-  | { kind: 'board'; boardUuid: string; relistGym: string | null }
+  /**
+   * The board picker on the board's detail sheet. `relistGym` (a gym's staff
+   * took the board off) offers its creator "Ask {{gym}} to list it again".
+   */
+  | { kind: 'board'; boardUuid: string; relistGym: { uuid: string; name: string | null } | null }
   /** The gym's edit route: staff fix the details a climber flagged. */
   | { kind: 'gym_edit'; gymUuid: string }
   /** Nothing to open: a short explanation instead. */
@@ -51,7 +54,16 @@ export function directoryNoticeRoute(
       if (notice?.outcome === 'deleted') return null;
       return boardUuid ? { kind: 'board', boardUuid, relistGym: null } : null;
     case 'board_removed_from_gym':
-      return boardUuid ? { kind: 'board', boardUuid, relistGym: gymName } : null;
+      if (!boardUuid) return null;
+      // A relist request goes to the staff of the gym that removed the board,
+      // so it is offered only when that gym's staff did it. A moderator's
+      // removal is not theirs to undo, and a notice without its gym has no
+      // one to ask.
+      return {
+        kind: 'board',
+        boardUuid,
+        relistGym: notice?.actorRole === 'gym_staff' && notice.gymUuid ? { uuid: notice.gymUuid, name: gymName } : null,
+      };
     case 'board_edited_by_staff':
     case 'gym_claimed_with_your_board':
       return boardUuid ? { kind: 'board', boardUuid, relistGym: null } : null;

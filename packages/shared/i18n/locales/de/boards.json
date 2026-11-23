@@ -1718,6 +1718,8 @@
     "fixedToast": "Gespeichert. Wir sagen den Kletterer*innen Bescheid, die es gemeldet haben.",
     "keptToast": "Meldung geschlossen. Wir geben deine Notiz weiter.",
     "keepError": "Das hat nicht geklappt. Versuch es erneut.",
+    "keepPartial_one": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
+    "keepPartial_other": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
     "statusPill": "Gemeldet",
     "open": "Meldungen ansehen"
   },

@@ -290,6 +290,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useDirectoryReportsEnabled: () => false,
+  useFeatureFlagsResolved: () => true,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => state.autoScanEnabled,
 }));

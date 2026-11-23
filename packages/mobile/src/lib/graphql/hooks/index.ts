@@ -331,12 +331,18 @@ export function useMyBoards(input?: MyBoardsInput, options?: { enabled?: boolean
   });
 }
 
-export function useBoard(boardUuid: string | null) {
+/**
+ * One board by uuid. `staleTime: 0` makes this read refetch on arrival even
+ * when the cache holds a fresh copy: a deep link must not act on a board a
+ * staff removal changed a minute ago.
+ */
+export function useBoard(boardUuid: string | null, options?: { staleTime?: number }) {
   return useQuery({
     queryKey: ['board', boardUuid],
     queryFn: () => getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid }),
     select: (data) => data.board,
     enabled: !!boardUuid,
+    ...(options?.staleTime !== undefined ? { staleTime: options.staleTime } : {}),
   });
 }
 

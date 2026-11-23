@@ -17,6 +17,11 @@ const boardMutate = vi.hoisted(() => vi.fn());
 const gymMutate = vi.hoisted(() => vi.fn());
 const track = vi.hoisted(() => vi.fn());
 const gymBoardsArgs = vi.hoisted(() => [] as (string | null)[]);
+// The report sheet's own dismissal, which the claim handoff waits for.
+const dismissal = vi.hoisted(() => ({
+  calls: 0,
+  resolve: null as ((result: { status: 'dismissed' | 'aborted' }) => void) | null,
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -100,6 +105,14 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     return { data: gymUuid ? state.gymBoards : undefined };
   },
 }));
+vi.mock('../../../providers/sheet-presentation-provider', () => ({
+  dismissManagedSheetAndWait: () => {
+    dismissal.calls += 1;
+    return new Promise((resolve) => {
+      dismissal.resolve = resolve;
+    });
+  },
+}));
 vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({
   useReportBoard: () => ({ mutate: boardMutate, isPending: state.boardPending, isError: state.boardError }),
   useReportGym: () => ({ mutate: gymMutate, isPending: false, isError: false }),
@@ -131,6 +144,8 @@ beforeEach(() => {
   gymMutate.mockReset();
   track.mockReset();
   gymBoardsArgs.length = 0;
+  dismissal.calls = 0;
+  dismissal.resolve = null;
 });
 
 describe('ReportDirectorySheet on a board', () => {
@@ -213,12 +228,31 @@ describe('ReportDirectorySheet on a board', () => {
     expect((screen.getByTestId('sheet-top-bar-trailing') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers the claim on a gym nobody runs yet, and hands the gym over', () => {
+  it('offers the claim on a gym nobody runs yet, and hands the gym over once this sheet is gone', async () => {
     state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: true };
     const onClaim = vi.fn();
     const screen = renderBoard(onClaim);
     fireEvent.click(screen.getByTestId('report-problem-claim'));
+    fireEvent.click(screen.getByTestId('report-problem-claim'));
+    // The claim sheet must not present while this one is still sliding away.
+    expect(dismissal.calls).toBe(1);
+    expect(onClaim).not.toHaveBeenCalled();
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(onClaim).toHaveBeenCalledTimes(1);
     expect(onClaim).toHaveBeenCalledWith(state.gym);
+  });
+
+  it('opens no claim when the host went away during the handoff', async () => {
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: true };
+    const onClaim = vi.fn();
+    const screen = renderBoard(onClaim);
+    fireEvent.click(screen.getByTestId('report-problem-claim'));
+    await act(async () => {
+      dismissal.resolve?.({ status: 'aborted' });
+    });
+    expect(onClaim).not.toHaveBeenCalled();
   });
 
   it('waits for a connection', () => {

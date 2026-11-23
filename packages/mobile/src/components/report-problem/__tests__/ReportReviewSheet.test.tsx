@@ -7,6 +7,7 @@ import { ReportReviewSheet } from '../ReportReviewSheet';
 
 const state = vi.hoisted(() => ({ reports: [] as DirectoryReport[] }));
 const resolveAsync = vi.hoisted(() => vi.fn());
+const refreshReads = vi.hoisted(() => vi.fn());
 const showToast = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
@@ -63,6 +64,7 @@ vi.mock('../../../hooks/use-unsaved-sheet-guard', () => ({
 vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({
   useBoardReports: () => ({ data: state.reports, isLoading: false, isError: false }),
   useResolveDirectoryReport: () => ({ mutateAsync: resolveAsync }),
+  useRefreshBoardReportReads: () => refreshReads,
 }));
 
 function report(overrides: Partial<DirectoryReport>): DirectoryReport {
@@ -98,6 +100,7 @@ beforeEach(() => {
   state.reports = [report({})];
   resolveAsync.mockReset();
   resolveAsync.mockResolvedValue({});
+  refreshReads.mockReset();
   showToast.mockReset();
 });
 
@@ -158,6 +161,47 @@ describe('ReportReviewSheet', () => {
     ]);
     expect(showToast).toHaveBeenCalledWith('reportReview.keptToast', 'success');
     expect(onClose).toHaveBeenCalled();
+    expect(refreshReads).toHaveBeenCalledWith('board-1');
+  });
+
+  it('says how many closed when only some did, stays open, and re-reads the reports', async () => {
+    state.reports = [
+      report({ uuid: 'r1' }),
+      report({ uuid: 'r2', reason: 'gone' }),
+      report({ uuid: 'r3', reason: 'duplicate' }),
+    ];
+    resolveAsync.mockImplementation(async ({ reportUuid }: { reportUuid: string }) => {
+      if (reportUuid === 'r2') throw new Error('closed elsewhere');
+      return {};
+    });
+    const onClose = vi.fn();
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('report-review-keep'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('sheet-top-bar-trailing'));
+    });
+    // Every report was tried: one failure stops none of the others.
+    expect(resolveAsync.mock.calls.map(([input]) => input.reportUuid)).toEqual(['r1', 'r2', 'r3']);
+    expect(screen.getByTestId('report-review-keep-error').textContent).toBe(
+      'reportReview.keepPartial{"count":2,"total":3}',
+    );
+    expect(showToast).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshReads).toHaveBeenCalledWith('board-1');
+  });
+
+  it('says it did not go through when none closed', async () => {
+    state.reports = [report({ uuid: 'r1' }), report({ uuid: 'r2', reason: 'gone' })];
+    resolveAsync.mockRejectedValue(new Error('offline'));
+    const onClose = vi.fn();
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('report-review-keep'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('sheet-top-bar-trailing'));
+    });
+    expect(screen.getByTestId('report-review-keep-error').textContent).toBe('reportReview.keepError');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(refreshReads).toHaveBeenCalledWith('board-1');
   });
 
   it('leaves a report with the team read-only, and says so', () => {

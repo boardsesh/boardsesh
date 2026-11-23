@@ -4,6 +4,7 @@
 // Its own module, like `use-gym-boards`, so the sheets that use it can be tested
 // without the hooks barrel, which Vitest cannot import.
 
+import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_BOARD_REPORTS,
@@ -51,6 +52,16 @@ function invalidateBoardReads(queryClient: ReturnType<typeof useQueryClient>, bo
   void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
   void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
   void queryClient.invalidateQueries({ queryKey: boardReportsQueryKey(boardUuid) });
+}
+
+/**
+ * Refreshes every read a board's reports show in: its reports, the board and
+ * the lists that carry its report flags. For a caller that closed several
+ * reports and must re-read whatever state they ended in, failures included.
+ */
+export function useRefreshBoardReportReads(): (boardUuid: string) => void {
+  const queryClient = useQueryClient();
+  return useCallback((boardUuid: string) => invalidateBoardReads(queryClient, boardUuid), [queryClient]);
 }
 
 export function useReportBoard() {

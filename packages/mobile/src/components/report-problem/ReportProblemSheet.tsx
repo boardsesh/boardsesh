@@ -9,7 +9,7 @@
 // the reasons while a send is in flight and swap the body for its done line
 // without the sheet knowing which mutation ran.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -19,6 +19,7 @@ import { Text } from '../Text';
 import { RadioGroup, type RadioOption } from '../RadioGroup';
 import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
+import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { spacing } from '../../theme/tokens';
 
 export type ReportProblemSheetProps<R extends string> = {
@@ -52,6 +53,11 @@ export type ReportProblemSheetProps<R extends string> = {
   /** Something the climber entered would be lost by a swipe down. */
   dirty: boolean;
   onClose: () => void;
+  /**
+   * The managed sheet, for a caller that must wait for it to finish sliding
+   * away before the next surface presents (`dismissManagedSheetAndWait`).
+   */
+  sheetRef?: Ref<ManagedSheetHandle>;
   testID?: string;
 };
 
@@ -74,6 +80,7 @@ export function ReportProblemSheet<R extends string>({
   errorMessage,
   dirty,
   onClose,
+  sheetRef,
   testID,
 }: ReportProblemSheetProps<R>) {
   const { t: tCommon } = useTranslation('common');
@@ -109,6 +116,7 @@ export function ReportProblemSheet<R extends string>({
 
   return (
     <ModalSheet
+      ref={sheetRef}
       visible
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       androidContentSized

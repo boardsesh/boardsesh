@@ -1718,6 +1718,8 @@
     "fixedToast": "Saved. We'll tell the climbers who flagged it.",
     "keptToast": "Report closed. We'll pass your note on.",
     "keepError": "That didn't go through. Try again.",
+    "keepPartial_one": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
+    "keepPartial_other": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
     "statusPill": "Reported",
     "open": "See reports"
   },

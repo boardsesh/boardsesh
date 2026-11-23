@@ -27,7 +27,11 @@ import { InsetGroupedList, insetGroupedRowStyles } from '../InsetGroupedList';
 import { PressableSurface } from '../PressableSurface';
 import { TickNoteField } from '../tick';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
-import { useBoardReports, useResolveDirectoryReport } from '../../lib/graphql/hooks/use-directory-reports';
+import {
+  useBoardReports,
+  useRefreshBoardReportReads,
+  useResolveDirectoryReport,
+} from '../../lib/graphql/hooks/use-directory-reports';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -90,8 +94,13 @@ export function ReportReviewSheet({
   const resolve = useResolveDirectoryReport();
   const [step, setStep] = useState<'list' | 'keep'>('list');
   const [reply, setReply] = useState('');
+  const refreshReportReads = useRefreshBoardReportReads();
   const [keeping, setKeeping] = useState(false);
-  const [keepFailed, setKeepFailed] = useState(false);
+  // How the last "It's right as it is" went when not every report closed:
+  // none of them, or some (how many of how many).
+  const [keepFailure, setKeepFailure] = useState<
+    { kind: 'none' } | { kind: 'some'; closed: number; total: number } | null
+  >(null);
 
   const waiting = useMemo(() => waitingReports(reports ?? []), [reports]);
   const keepable = useMemo(() => keepableReports(waiting), [waiting]);
@@ -130,24 +139,35 @@ export function ReportReviewSheet({
     [onClose, onAction, board],
   );
   const changeReply = useCallback((next: string) => setReply(next.slice(0, REPORT_NOTE_MAX_LENGTH)), []);
+  const resolveAsync = resolve.mutateAsync;
   const sendKeep = useCallback(async () => {
     if (keeping || keepable.length === 0) return;
     setKeeping(true);
-    setKeepFailed(false);
+    setKeepFailure(null);
     const note = normalizeReportNote(reply);
     try {
-      // One report per reason; the climber answers them all with one note.
-      for (const report of keepable) {
-        await resolve.mutateAsync({ reportUuid: report.uuid, outcome: 'kept', note });
+      // One report per reason; the climber answers them all with one note. Each
+      // closes on its own, so one that fails (closed elsewhere a moment ago, a
+      // dropped request) neither stops the others nor hides that they closed.
+      const outcomes = await Promise.allSettled(
+        keepable.map((report) => resolveAsync({ reportUuid: report.uuid, outcome: 'kept', note })),
+      );
+      const closed = outcomes.filter((outcome) => outcome.status === 'fulfilled').length;
+      if (closed === outcomes.length) {
+        showToast(t('reportReview.keptToast'), 'success');
+        onClose();
+      } else {
+        // Stay on the note: Send again tries only what is still open, once the
+        // refresh below has dropped the ones that closed.
+        setKeepFailure(closed === 0 ? { kind: 'none' } : { kind: 'some', closed, total: outcomes.length });
       }
-      showToast(t('reportReview.keptToast'), 'success');
-      onClose();
-    } catch {
-      setKeepFailed(true);
     } finally {
+      // Whatever closed, re-read the board's reports and its report flags, so
+      // the sheet and the lists show the state the server ended in.
+      refreshReportReads(board.uuid);
       setKeeping(false);
     }
-  }, [keeping, keepable, reply, resolve, showToast, t, onClose]);
+  }, [keeping, keepable, reply, resolveAsync, showToast, t, onClose, refreshReportReads, board.uuid]);
 
   const header =
     step === 'keep' ? (
@@ -201,9 +221,11 @@ export function ReportReviewSheet({
             placeholder={t('reportReview.keepReplyPlaceholder')}
             accessibilityLabel={t('reportReview.keepReplyLabel')}
           />
-          {keepFailed ? (
-            <Text accessibilityLiveRegion="polite" color={brandColors.error}>
-              {t('reportReview.keepError')}
+          {keepFailure ? (
+            <Text accessibilityLiveRegion="polite" color={brandColors.error} testID="report-review-keep-error">
+              {keepFailure.kind === 'some'
+                ? t('reportReview.keepPartial', { count: keepFailure.closed, total: keepFailure.total })
+                : t('reportReview.keepError')}
             </Text>
           ) : null}
         </>
