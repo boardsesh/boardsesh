@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 // Mobile's data hook for FavoritesProvider + PlaylistsProvider — the analog of
 // web's `useClimbActionsData`. Returns provider-shaped props the layout passes
 // straight in.
@@ -50,7 +51,7 @@ import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 const PLAYLISTS_QUERY_KEY = ['userPlaylists'] as const;
 
 function graphqlFetchFromClient(): GraphQLFetch {
-  return (query, variables) => getHttpClient().request(query, variables);
+  return offlineWriteFetch;
 }
 
 function scheduleDrain(db: NonNullable<ReturnType<typeof getDatabaseHandle>>, queryClient: QueryClient) {

@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '../database';
+import { ensureOfflineWriteDeliveryJournal } from './delivery-journal';
 
 export const MUTATION_QUEUE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS pending_mutations (
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS pending_mutations (
 export async function ensureMutationQueueTable(db: SqlExecutor): Promise<void> {
   await db.execAsync(MUTATION_QUEUE_SCHEMA);
   await ensureMutationQueueDependencies(db);
+  await ensureOfflineWriteDeliveryJournal(db);
 }
 
 /** Also used by the versioned migration, including databases created by older bundles. */

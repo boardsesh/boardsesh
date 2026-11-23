@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../offline/offline-write-transport';
 // Mobile-side wiring for `@boardsesh/board-react`. Reads platform-specific
 // state (auth, queue session id) and forwards GraphQL operations through
 // mobile's HTTP / WS clients. Mounted in `app/_layout.tsx` between
@@ -19,7 +20,7 @@ import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
-import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
+import { getHttpClient } from '../lib/graphql/client';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
@@ -131,8 +132,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             if (!db) return null;
             const saved = await saveClimbLocal(db, input);
             if (saved) {
-              const graphqlFetch: GraphQLFetch = (query, variables) =>
-                getOfflineSyncHttpClient().request(query, variables);
+              const graphqlFetch: GraphQLFetch = offlineWriteFetch;
               triggerSync(
                 db,
                 queryClient,
@@ -151,8 +151,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             if (!db) return null;
             const saved = await updateClimbLocal(db, input);
             if (saved) {
-              const graphqlFetch: GraphQLFetch = (query, variables) =>
-                getOfflineSyncHttpClient().request(query, variables);
+              const graphqlFetch: GraphQLFetch = offlineWriteFetch;
               triggerSync(
                 db,
                 queryClient,
@@ -202,8 +201,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             // row; the next cycle repairs it. snapshotSource is mandatory —
             // without it the pull paged-crawls an undownloaded scope and
             // disqualifies its snapshot path for good.
-            const syncFetch: GraphQLFetch = (query, syncVariables) =>
-              getOfflineSyncHttpClient().request(query, syncVariables);
+            const syncFetch: GraphQLFetch = offlineWriteFetch;
             const drainQueue = () => drainMutationQueue(db, queryClient, syncFetch);
             const startSyncCycle = () => {
               triggerSync(db, queryClient, syncFetch, () => getSetting('syncEnabledBoards'), drainQueue, {

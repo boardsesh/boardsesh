@@ -1513,6 +1513,15 @@ read apart from an online one, so that claim was unfalsifiable. This section is
 the source of truth for the signals that fix it. They are mobile-only today (the
 engine is shared, so a future web offline consumer would emit the same things).
 
+### Durable write delivery evidence (#7988)
+
+[Offline write delivery evidence](offline-write-delivery.md) defines the durable
+queue-entry denominator, independent backend acceptance receipts and committed
+local reconciliation proofs. These private first-party records survive restart,
+use one opaque identity across retries, and publish aggregate age-censored results
+without raw mutation or account IDs. They do not infer write success from
+`Tick Logged`, an empty outbox or absent dead-letter events.
+
 ### The `connectivity` super property
 
 `packages/mobile/src/lib/analytics-connectivity.ts` registers a PostHog super

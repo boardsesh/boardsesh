@@ -1,8 +1,8 @@
+import { enqueueMeasuredMutation as enqueue, cancelMeasuredMutations } from '../offline/offline-write-context';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   beginImmediateWrite,
-  enqueue,
   getLocalUserId,
   getLatestClimbMutationKey,
   runLocalWriteWithRetry,
@@ -46,9 +46,11 @@ export async function writeAuthorFollowLocal(
     } else {
       await txn.runAsync(`DELETE FROM ${table} WHERE ${column} = ?`, [identifier]);
     }
-    await txn.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'", [
-      `${follow ? 'del' : 'add'}:${table}:${identifier}`,
-    ]);
+    await cancelMeasuredMutations(
+      txn,
+      "DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'",
+      [`${follow ? 'del' : 'add'}:${table}:${identifier}`],
+    );
     enqueueOutcome.result = await enqueue(
       txn,
       table,
@@ -329,7 +331,7 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     // "Sync issues" badge lit for a remove this add has just superseded — and
     // poison the key when the user toggles back.
     const removePrefix = favoriteKeyPrefix('del', input);
-    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [removePrefix.length, removePrefix]);
+    await cancelMeasuredMutations(txn, CANCEL_OPPOSITE_FAVORITE_SQL, [removePrefix.length, removePrefix]);
     // A retry re-runs this and reassigns the holder — last attempt wins, which
     // is the outcome that matters. Re-running `enqueue` against a row a previous
     // attempt committed reports `pending`, and neither the revived nor the
@@ -393,7 +395,7 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
     // A dead-lettered add is cleared too (#4331) — it is not in flight, and it
     // would otherwise outlive the favorite the user just removed.
     const addPrefix = favoriteKeyPrefix('add', input);
-    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [addPrefix.length, addPrefix]);
+    await cancelMeasuredMutations(txn, CANCEL_OPPOSITE_FAVORITE_SQL, [addPrefix.length, addPrefix]);
     enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input), {
       reviveDeadLetter: true,
     });
@@ -423,7 +425,8 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
         // without this, offline follow→unfollow→follow leaves [add, del] in
         // the queue (the second add is INSERT OR IGNOREd away) and drains to
         // UNFOLLOWED — the opposite of the user's last action.
-        await txn.runAsync(
+        await cancelMeasuredMutations(
+          txn,
           `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
           [`del:user_follows:${followingId}`],
         );
@@ -458,7 +461,8 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
         // Cancel a not-yet-drained follow, but ALWAYS enqueue the unfollow —
         // same TOCTOU reasoning as removeFavoriteLocal: the canceled add may
         // already be in flight, and the server unfollow is an idempotent no-op.
-        await txn.runAsync(
+        await cancelMeasuredMutations(
+          txn,
           `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
           [`add:user_follows:${followingId}`],
         );

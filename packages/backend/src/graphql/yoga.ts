@@ -24,6 +24,8 @@ import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple
 import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
 import { getTrustedClientIp } from '../utils/client-ip';
 import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
+import { OFFLINE_WRITE_DELIVERY_HEADER, OFFLINE_WRITE_RELEASE_HEADER } from '@boardsesh/shared-schema';
+import { parseOfflineWriteDeliveryId, parseOfflineWriteRelease } from './offline-write-delivery';
 
 function sanitizeTokenLogArgument(argument: unknown): unknown {
   return sanitizeBoardShareLogArgument(sanitizeAppleAdsLogArgument(argument));
@@ -112,6 +114,8 @@ export async function buildHttpConnectionContext({
   return {
     connectionId: `http-${uuidv4()}`,
     transport: 'http' as const,
+    offlineWriteDeliveryId: parseOfflineWriteDeliveryId(request.headers.get(OFFLINE_WRITE_DELIVERY_HEADER)),
+    offlineWriteRelease: parseOfflineWriteRelease(request.headers.get(OFFLINE_WRITE_RELEASE_HEADER)),
     sessionId: undefined,
     userId: authResult?.userId,
     credentialExpiresAt: authResult?.credentialExpiresAt,

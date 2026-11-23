@@ -1,3 +1,17 @@
+// Delivery metadata is covered by offline-write-context.test.ts; keep these unit tests native-free.
+vi.mock('../offline-write-context', () => ({
+  readOfflineWriteRelease: () => ({
+    platform: 'ios',
+    appVersion: null,
+    runtimeVersion: null,
+    updateId: null,
+    isEmbedded: null,
+    branch: null,
+  }),
+  enqueueMeasuredMutation: async (...args: Parameters<typeof import('@boardsesh/offline-sync').enqueue>) =>
+    (await import('@boardsesh/offline-sync')).enqueue(...args),
+}));
+
 // The workout's trip to the server (#6903): queued through the real outbox
 // table at a fresh revision, after the ticks already queued, never for a
 // session id the server never minted.
@@ -207,6 +221,7 @@ describe('enqueueSessionWorkoutWrite', () => {
     expect(mocks.request).toHaveBeenCalledWith(
       expect.stringContaining('recordSessionWorkout(input: $input)'),
       expect.objectContaining({ input: expect.objectContaining({ sessionId: SESSION_ID, revision: 86_400 }) }),
+      undefined,
     );
   });
 

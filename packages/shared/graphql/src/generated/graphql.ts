@@ -5265,6 +5265,8 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /** Private account-scoped delivery evidence, independent of product analytics consent. */
+  recordOfflineWriteObservations: RecordOfflineWriteObservationsResult;
   /**
    * Store the caller's workout for a session. Written only when revision is
    * higher than the stored one; an equal or lower revision is a no-op that still
@@ -6186,6 +6188,11 @@ export type MutationRecordBoardSerialArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRecordOfflineWriteObservationsArgs = {
+  input: RecordOfflineWriteObservationsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRecordSessionWorkoutArgs = {
   input: RecordSessionWorkoutInput;
 };
@@ -7018,6 +7025,42 @@ export type ObservedBoardSerialMatch = {
   boardType: Scalars['String']['output'];
   candidates: Array<UserBoard>;
   observedSerialNumber: Scalars['String']['output'];
+};
+
+export type OfflineWriteDeliveryReceipt = {
+  __typename?: 'OfflineWriteDeliveryReceipt';
+  deliveryId: Scalars['ID']['output'];
+  revision: Scalars['Int']['output'];
+  serverAcceptedAt?: Maybe<Scalars['String']['output']>;
+  serverRejectedAt?: Maybe<Scalars['String']['output']>;
+};
+
+export type OfflineWriteObservationInput = {
+  connectivityReason: Scalars['String']['input'];
+  deliveryId: Scalars['ID']['input'];
+  firstDeadLetterAt?: InputMaybe<Scalars['String']['input']>;
+  lastDeadLetterAt?: InputMaybe<Scalars['String']['input']>;
+  observedAt: Scalars['String']['input'];
+  observedRelease?: InputMaybe<OfflineWriteReleaseInput>;
+  operation: Scalars['String']['input'];
+  originRelease: OfflineWriteReleaseInput;
+  queuedAt: Scalars['String']['input'];
+  reconciledAt?: InputMaybe<Scalars['String']['input']>;
+  recovered: Scalars['Boolean']['input'];
+  revision: Scalars['Int']['input'];
+  serverResponseAt?: InputMaybe<Scalars['String']['input']>;
+  state: Scalars['String']['input'];
+  tableName: Scalars['String']['input'];
+};
+
+export type OfflineWriteReleaseInput = {
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  applicationId?: InputMaybe<Scalars['String']['input']>;
+  branch?: InputMaybe<Scalars['String']['input']>;
+  isEmbedded?: InputMaybe<Scalars['Boolean']['input']>;
+  platform: Scalars['String']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list. */
@@ -9941,6 +9984,16 @@ export type RecordBoardSerialInput = {
   setIds: Scalars['String']['input'];
   /** Size ID at connect */
   sizeId: Scalars['Int']['input'];
+};
+
+export type RecordOfflineWriteObservationsInput = {
+  observations: Array<OfflineWriteObservationInput>;
+  ownerUserId: Scalars['ID']['input'];
+};
+
+export type RecordOfflineWriteObservationsResult = {
+  __typename?: 'RecordOfflineWriteObservationsResult';
+  receipts: Array<OfflineWriteDeliveryReceipt>;
 };
 
 export type RecordSessionWorkoutInput = {
@@ -15822,6 +15875,24 @@ export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation'; mark
 export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never }>;
 
 export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation'; markAllNotificationsRead: boolean };
+
+export type RecordOfflineWriteObservationsMutationVariables = Exact<{
+  input: RecordOfflineWriteObservationsInput;
+}>;
+
+export type RecordOfflineWriteObservationsMutation = {
+  __typename?: 'Mutation';
+  recordOfflineWriteObservations: {
+    __typename?: 'RecordOfflineWriteObservationsResult';
+    receipts: Array<{
+      __typename?: 'OfflineWriteDeliveryReceipt';
+      deliveryId: string;
+      revision: number;
+      serverAcceptedAt?: string | null;
+      serverRejectedAt?: string | null;
+    }>;
+  };
+};
 
 export type ResolvePartnerSessionHistoryQueryVariables = Exact<{
   exportId: Scalars['ID']['input'];
@@ -23669,6 +23740,60 @@ export const MarkAllNotificationsReadDocument = {
     },
   ],
 } as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
+export const RecordOfflineWriteObservationsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RecordOfflineWriteObservations' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'RecordOfflineWriteObservationsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'recordOfflineWriteObservations' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'receipts' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'deliveryId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'serverAcceptedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'serverRejectedAt' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RecordOfflineWriteObservationsMutation, RecordOfflineWriteObservationsMutationVariables>;
 export const ResolvePartnerSessionHistoryDocument = {
   kind: 'Document',
   definitions: [

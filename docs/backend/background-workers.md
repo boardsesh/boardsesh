@@ -207,8 +207,12 @@ these grants. A table the appliers start writing fails that test first.
 
 The export family adds SELECT on account email/creation date, tick notes and
 other archived climbing fields, authored climb frames/drafts, aliases, grade
-labels, favorites, and owned-playlist collections. It adds no credential access
-or application-table writes. The lists in `packages/db/src/job-queue-schema.ts`
+labels, favorites, and owned-playlist collections. Private offline delivery
+evidence adds SELECT only on its owner predicate and archived identity, queue
+state, acceptance/rejection and reconciliation timestamps. Operation binding
+hashes and the remaining receipt metadata stay unreadable; receipts remain
+unwritable by this worker. It adds no credential access or application-table
+writes. The lists in `packages/db/src/job-queue-schema.ts`
 are authoritative and a restricted-role export test proves them. Supply this
 worker with `PRIVATE_*` storage configuration before the backend deploys with
 `user-data-export` running (hold it in `BATCH_FAMILIES_DISABLED` until then). See [user-data-exports.md](../product/user-data-exports.md).

@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../offline/offline-write-transport';
 import { setPartnerWorkoutOwner } from '../lib/pending-workout-store';
 import { deactivateNotificationDevice } from '../notifications/device-registration';
 import { markStartup } from '../lib/profiling/startup-profile';
@@ -42,7 +43,7 @@ import { clearRelayReceipt } from '../lib/relay-receipt';
 import { forgetRememberedBoardsOnSignOut } from '../lib/ble/remembered-boards-sign-out';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
-import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
+import { resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
@@ -334,8 +335,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const { pendingCount, deadLetterCount } = await getOutboxSummary(localDb);
       if (pendingCount + deadLetterCount === 0) return;
 
-      const graphqlFetch = (query: string, variables?: Record<string, unknown>) =>
-        getHttpClient().request(query, variables);
+      const graphqlFetch = offlineWriteFetch;
       await Promise.race([
         drainMutationQueue(localDb, queryClient, graphqlFetch),
         new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_DRAIN_TIMEOUT_MS)),

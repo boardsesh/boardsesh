@@ -1,3 +1,4 @@
+vi.mock('../../offline/offline-write-publisher', () => ({ startOfflineWriteDeliveryPublisher: () => () => {} }));
 // @vitest-environment jsdom
 // Account A's queued offline writes must never be sent under account B's token,
 // and every account must still get its sync once it signs in (#6824).

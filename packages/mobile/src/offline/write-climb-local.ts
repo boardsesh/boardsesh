@@ -1,3 +1,4 @@
+import { enqueueMeasuredMutation as enqueue } from './offline-write-context';
 import { randomUUID } from 'expo-crypto';
 import type { SaveClimbInput, UpdateClimbInput } from '@boardsesh/shared-schema';
 import type { SaveClimbResponse, UpdateClimbResponse } from '@boardsesh/board-react';
@@ -5,7 +6,6 @@ import {
   beginImmediateWrite,
   capturePurgeToken,
   climbMutationEntityKey,
-  enqueue,
   getLatestClimbMutationKey,
   getLocalUserId,
   hasPurgeLanded,

@@ -5268,6 +5268,8 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /** Private account-scoped delivery evidence, independent of product analytics consent. */
+  recordOfflineWriteObservations: RecordOfflineWriteObservationsResult;
   /**
    * Store the caller's workout for a session. Written only when revision is
    * higher than the stored one; an equal or lower revision is a no-op that still
@@ -6189,6 +6191,11 @@ export type MutationRecordBoardSerialArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRecordOfflineWriteObservationsArgs = {
+  input: RecordOfflineWriteObservationsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRecordSessionWorkoutArgs = {
   input: RecordSessionWorkoutInput;
 };
@@ -7021,6 +7028,42 @@ export type ObservedBoardSerialMatch = {
   boardType: Scalars['String']['output'];
   candidates: Array<UserBoard>;
   observedSerialNumber: Scalars['String']['output'];
+};
+
+export type OfflineWriteDeliveryReceipt = {
+  __typename?: 'OfflineWriteDeliveryReceipt';
+  deliveryId: Scalars['ID']['output'];
+  revision: Scalars['Int']['output'];
+  serverAcceptedAt?: Maybe<Scalars['String']['output']>;
+  serverRejectedAt?: Maybe<Scalars['String']['output']>;
+};
+
+export type OfflineWriteObservationInput = {
+  connectivityReason: Scalars['String']['input'];
+  deliveryId: Scalars['ID']['input'];
+  firstDeadLetterAt?: InputMaybe<Scalars['String']['input']>;
+  lastDeadLetterAt?: InputMaybe<Scalars['String']['input']>;
+  observedAt: Scalars['String']['input'];
+  observedRelease?: InputMaybe<OfflineWriteReleaseInput>;
+  operation: Scalars['String']['input'];
+  originRelease: OfflineWriteReleaseInput;
+  queuedAt: Scalars['String']['input'];
+  reconciledAt?: InputMaybe<Scalars['String']['input']>;
+  recovered: Scalars['Boolean']['input'];
+  revision: Scalars['Int']['input'];
+  serverResponseAt?: InputMaybe<Scalars['String']['input']>;
+  state: Scalars['String']['input'];
+  tableName: Scalars['String']['input'];
+};
+
+export type OfflineWriteReleaseInput = {
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  applicationId?: InputMaybe<Scalars['String']['input']>;
+  branch?: InputMaybe<Scalars['String']['input']>;
+  isEmbedded?: InputMaybe<Scalars['Boolean']['input']>;
+  platform: Scalars['String']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list. */
@@ -9944,6 +9987,16 @@ export type RecordBoardSerialInput = {
   setIds: Scalars['String']['input'];
   /** Size ID at connect */
   sizeId: Scalars['Int']['input'];
+};
+
+export type RecordOfflineWriteObservationsInput = {
+  observations: Array<OfflineWriteObservationInput>;
+  ownerUserId: Scalars['ID']['input'];
+};
+
+export type RecordOfflineWriteObservationsResult = {
+  __typename?: 'RecordOfflineWriteObservationsResult';
+  receipts: Array<OfflineWriteDeliveryReceipt>;
 };
 
 export type RecordSessionWorkoutInput = {
@@ -14157,6 +14210,9 @@ export type ResolversTypes = ResolversObject<{
   OAuthClientCredentials: ResolverTypeWrapper<OAuthClientCredentials>;
   ObservedBoardSerialInput: ObservedBoardSerialInput;
   ObservedBoardSerialMatch: ResolverTypeWrapper<ObservedBoardSerialMatch>;
+  OfflineWriteDeliveryReceipt: ResolverTypeWrapper<OfflineWriteDeliveryReceipt>;
+  OfflineWriteObservationInput: OfflineWriteObservationInput;
+  OfflineWriteReleaseInput: OfflineWriteReleaseInput;
   OrphanGym: ResolverTypeWrapper<OrphanGym>;
   OrphanGymConnection: ResolverTypeWrapper<OrphanGymConnection>;
   OrphanGymsInput: OrphanGymsInput;
@@ -14227,6 +14283,8 @@ export type ResolversTypes = ResolversObject<{
   RecentBetaLink: ResolverTypeWrapper<RecentBetaLink>;
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
+  RecordOfflineWriteObservationsInput: RecordOfflineWriteObservationsInput;
+  RecordOfflineWriteObservationsResult: ResolverTypeWrapper<RecordOfflineWriteObservationsResult>;
   RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
@@ -14753,6 +14811,9 @@ export type ResolversParentTypes = ResolversObject<{
   OAuthClientCredentials: OAuthClientCredentials;
   ObservedBoardSerialInput: ObservedBoardSerialInput;
   ObservedBoardSerialMatch: ObservedBoardSerialMatch;
+  OfflineWriteDeliveryReceipt: OfflineWriteDeliveryReceipt;
+  OfflineWriteObservationInput: OfflineWriteObservationInput;
+  OfflineWriteReleaseInput: OfflineWriteReleaseInput;
   OrphanGym: OrphanGym;
   OrphanGymConnection: OrphanGymConnection;
   OrphanGymsInput: OrphanGymsInput;
@@ -14812,6 +14873,8 @@ export type ResolversParentTypes = ResolversObject<{
   RecentBetaLink: RecentBetaLink;
   RecordBoardOpenedInput: RecordBoardOpenedInput;
   RecordBoardSerialInput: RecordBoardSerialInput;
+  RecordOfflineWriteObservationsInput: RecordOfflineWriteObservationsInput;
+  RecordOfflineWriteObservationsResult: RecordOfflineWriteObservationsResult;
   RecordSessionWorkoutInput: RecordSessionWorkoutInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
@@ -18012,6 +18075,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRecordBoardSerialArgs, 'input'>
   >;
+  recordOfflineWriteObservations?: Resolver<
+    ResolversTypes['RecordOfflineWriteObservationsResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRecordOfflineWriteObservationsArgs, 'input'>
+  >;
   recordSessionWorkout?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -18794,6 +18863,18 @@ export type ObservedBoardSerialMatchResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   candidates?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   observedSerialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type OfflineWriteDeliveryReceiptResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['OfflineWriteDeliveryReceipt'] =
+    ResolversParentTypes['OfflineWriteDeliveryReceipt'],
+> = ResolversObject<{
+  deliveryId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  revision?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  serverAcceptedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  serverRejectedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -20433,6 +20514,15 @@ export type RecentBetaLinkResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type RecordOfflineWriteObservationsResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['RecordOfflineWriteObservationsResult'] =
+    ResolversParentTypes['RecordOfflineWriteObservationsResult'],
+> = ResolversObject<{
+  receipts?: Resolver<Array<ResolversTypes['OfflineWriteDeliveryReceipt']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -22314,6 +22404,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   OAuthClient?: OAuthClientResolvers<ContextType>;
   OAuthClientCredentials?: OAuthClientCredentialsResolvers<ContextType>;
   ObservedBoardSerialMatch?: ObservedBoardSerialMatchResolvers<ContextType>;
+  OfflineWriteDeliveryReceipt?: OfflineWriteDeliveryReceiptResolvers<ContextType>;
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
@@ -22358,6 +22449,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueState?: QueueStateResolvers<ContextType>;
   ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
+  RecordOfflineWriteObservationsResult?: RecordOfflineWriteObservationsResultResolvers<ContextType>;
   ReleaseContext?: ReleaseContextResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
   ReportClimbResult?: ReportClimbResultResolvers<ContextType>;

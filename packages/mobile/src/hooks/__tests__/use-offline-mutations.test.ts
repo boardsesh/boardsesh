@@ -38,6 +38,7 @@ vi.mock('@tanstack/react-query', () => ({
 // The drain now routes through the mobile adapter, which binds AppState/NetInfo
 // at module load — stub both so this suite keeps running in the node env.
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock('@react-native-community/netinfo', () => ({

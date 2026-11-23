@@ -429,3 +429,19 @@ export type { OfflineBoardScope, OfflineBoardLike } from './offline-board-key';
 
 export { mirrorSavedClimb } from './sync/saved-climb-mirror';
 export { removeDeletedClimbLocally } from './sync/deleted-climb-local';
+
+// --- Durable write-delivery evidence (private first-party receipts) ------------
+export {
+  ensureOfflineWriteDeliveryJournal,
+  readOfflineWriteObservations,
+  acknowledgeOfflineWriteObservations,
+  touchOfflineWriteObservations,
+  readOfflineWriteReconciliationCandidates,
+  reconcileOfflineWrite,
+  observeOfflineWriteServerResponse,
+  markOfflineWritesSuperseded,
+} from './mutation-queue/delivery-journal';
+export type {
+  OfflineWriteEnqueueContext,
+  OfflineWriteReconciliationCandidate,
+} from './mutation-queue/delivery-journal';

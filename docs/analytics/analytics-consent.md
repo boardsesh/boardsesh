@@ -10,6 +10,13 @@ This page covers the shared consent model, account synchronization, backend
 statistics, web banner and privacy policy. The app shares the model and account
 synchronizer.
 
+Offline-write delivery receipts stay in Boardsesh as private operational records,
+independently of product-analytics consent. They correlate a durable queued write,
+the backend verdict and committed local state without copying the tick payload.
+Account erasure removes the receipts; reports publish aggregate counts only.
+See [offline-write delivery evidence](../data/offline-write-delivery.md) for storage,
+account isolation and the limits of observed coverage.
+
 ## The record
 
 `@boardsesh/consent` (`packages/shared/consent/`) is the one definition web,

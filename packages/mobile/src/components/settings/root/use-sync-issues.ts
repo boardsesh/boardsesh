@@ -1,3 +1,4 @@
+import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 import { useCallback, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDeadLetterCount, getDeadLetters, retryDeadLetter, type GraphQLFetch } from '@boardsesh/offline-sync';
@@ -5,7 +6,6 @@ import { useOfflineDatabase } from '../../../db/use-offline-database';
 import { useOfflineSchemaReady } from '../../../db/use-offline-schema-ready';
 import { useConnectivity } from '../../../lib/connectivity/use-connectivity';
 import { reportError } from '../../../lib/error-reporting';
-import { getHttpClient } from '../../../lib/graphql/client';
 import { hapticLight } from '../../../lib/haptics';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 import { notifyOutboxChanged } from '../../../offline/outbox-store';
@@ -69,7 +69,7 @@ export function useSyncIssues(): SyncIssues | null {
           reportError(error);
         }
       }
-      const graphqlFetch: GraphQLFetch = (query, variables) => getHttpClient().request(query, variables);
+      const graphqlFetch: GraphQLFetch = offlineWriteFetch;
       await drainMutationQueue(db, queryClient, graphqlFetch);
       // The drain just changed what is in the outbox, and nothing else tells the
       // pending summary that; without this its footer keeps quoting the count

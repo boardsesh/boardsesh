@@ -74,6 +74,7 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'followed_author_snapshots',
   'playlist_follows',
   'pending_mutations',
+  'offline_write_delivery_journal',
   'spray_walls',
 ] as const;
 

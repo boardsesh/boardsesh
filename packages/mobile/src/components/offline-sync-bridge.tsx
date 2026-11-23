@@ -1,3 +1,5 @@
+import { startOfflineWriteDeliveryPublisher } from '../offline/offline-write-publisher';
+import { offlineWriteFetch } from '../offline/offline-write-transport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
 import { AppState } from 'react-native';
@@ -16,7 +18,6 @@ import { wipePreviousAccountLocalData } from '../offline/account-boundary';
 import { setDownloadLifecycleOwner, getDownloadRequests, transitionDownload } from '../offline/download-lifecycle';
 import { getSetting } from '../settings';
 import { useNotificationUpdates } from '../notifications/use-notification-updates';
-import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { registerOfflineEngineState } from '../lib/analytics-offline-engine-state';
 import { useAuth } from '../providers/auth-provider';
@@ -92,10 +93,7 @@ export function OfflineSyncBridge() {
   // getOfflineSyncHttpClient() carries auth, endpoint, and a hard request
   // deadline; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
-  const graphqlFetch = useMemo<GraphQLFetch>(
-    () => (query, variables) => getOfflineSyncHttpClient().request(query, variables),
-    [],
-  );
+  const graphqlFetch = useMemo<GraphQLFetch>(() => offlineWriteFetch, []);
 
   // Who the local user-data rows belong to. Written here rather than inside
   // pullSync because this is the layer that knows the signed-in climber, and
@@ -331,6 +329,13 @@ export function OfflineSyncBridge() {
   useEffect(() => {
     if (!isAuthenticated || !schemaReady || !launchWritesReady || !ownerClaimed) return;
     void recoverAndReportOutboxOnce(db);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady, ownerClaimed]);
+
+  // Receipt upload has its own lifecycle: a failed mutation must not prevent
+  // the denominator or a later local reconciliation from reaching the backend.
+  useEffect(() => {
+    if (!isAuthenticated || !schemaReady || !launchWritesReady || !ownerClaimed) return;
+    return startOfflineWriteDeliveryPublisher(db);
   }, [db, isAuthenticated, schemaReady, launchWritesReady, ownerClaimed]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own

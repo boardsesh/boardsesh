@@ -1,3 +1,4 @@
+vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureMutationQueueTable,

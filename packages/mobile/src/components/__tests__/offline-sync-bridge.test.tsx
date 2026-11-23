@@ -1,3 +1,4 @@
+vi.mock('../../offline/offline-write-publisher', () => ({ startOfflineWriteDeliveryPublisher: () => () => {} }));
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
