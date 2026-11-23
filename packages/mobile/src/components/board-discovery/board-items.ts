@@ -62,6 +62,8 @@ export function userBoardToItem(
     canEdit: board.canEdit,
     canDelete: board.canDelete,
     canRemoveFromGym: board.canRemoveFromGym,
+    openReportCount: board.openReportCount,
+    viewerHasOpenReport: board.viewerHasOpenReport,
     gymName: board.gymName,
     isPinned: isPinnedOverride ?? board.isPinnedByMe ?? false,
     offlineState: board.sprayImport ? undefined : offlineState,
@@ -175,6 +177,8 @@ export function pickerTopBoardsToItems(
         canEdit: undefined,
         canDelete: undefined,
         canRemoveFromGym: undefined,
+        openReportCount: undefined,
+        viewerHasOpenReport: undefined,
       },
     ];
   });

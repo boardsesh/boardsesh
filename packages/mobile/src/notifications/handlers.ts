@@ -37,6 +37,11 @@ export function resolveNotificationRoute(notification: Notifications.Notificatio
       });
       return { path: route.pathname, params: route.params };
     }
+    // A report on the climber's board (or at their gym) opened: the review sheet.
+    case 'board_report_opened':
+      return typeof payload.boardUuid === 'string' && UUID_PATTERN.test(payload.boardUuid)
+        ? { path: '/boards', params: { board: payload.boardUuid, review: '1' } }
+        : null;
     case 'session_invite':
       return typeof payload.sessionId === 'string'
         ? { path: '/(tabs)/queue', params: { sessionId: payload.sessionId } }

@@ -117,5 +117,12 @@
     "boardReportReminderBody": "Fix it or keep it before our team takes a look.",
     "boardRelistTitle": "Put {{board}} back on {{gym}}?",
     "boardRelistBody": "The climber who added it asked to be listed again."
+  },
+  "explain": {
+    "boardDeletedTitle": "{{board}} was deleted",
+    "boardDeletedBody": "It's gone for every climber who saved it. Your logged sends stay in your logbook.",
+    "claimDeniedTitle": "We couldn't confirm your claim",
+    "claimDeniedBody": "We couldn't confirm you run {{gym}}. Reply to our email if we got it wrong.",
+    "ok": "OK"
   }
 }

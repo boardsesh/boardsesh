@@ -86,6 +86,10 @@ vi.mock('../../AppMenu', () => ({
   },
 }));
 // ArtRow as its props: the target is a button, wrapped by `wrapTarget`; the accessory sits beside it.
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, tone }: { label: string; tone?: string }) =>
+    createElement('span', { 'data-testid': 'status-pill', 'data-tone': tone }, label),
+}));
 vi.mock('../../ArtRow', () => ({
   ArtRow: (props: {
     title: string;
@@ -100,6 +104,7 @@ vi.mock('../../ArtRow', () => ({
     onAccessibilityAction?: AccessibilityActionHandler;
     wrapTarget?: (target: ReactElement) => ReactElement;
     art: ReactNode;
+    status?: ReactNode;
   }) => {
     ctrl.onAccessibilityAction = props.onAccessibilityAction ?? null;
     const target = createElement(
@@ -116,6 +121,7 @@ vi.mock('../../ArtRow', () => ({
       props.art,
       createElement('span', { 'data-title-variant': props.titleVariant ?? 'headline' }, props.title),
       createElement('span', { 'data-testid': 'subtitle' }, props.subtitle),
+      props.status ?? null,
       props.accessory === 'checkmark' ? createElement('i', { 'data-icon': 'check.small' }) : null,
     );
     return createElement(
@@ -142,7 +148,7 @@ const GARAGE: DiscoveryBoardItem = {
   offlineState: 'downloaded',
 };
 const MENU: BoardCardMenu = {
-  capabilities: { canPin: true, canDownload: true, canOpenDetails: true, canManage: true },
+  capabilities: { canPin: true, canDownload: true, canOpenDetails: true, canManage: true, canReport: false },
   labels: {
     climbHere: 'Climb here',
     pin: 'Pin',
@@ -155,6 +161,9 @@ const MENU: BoardCardMenu = {
     removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
     unfollow: 'Remove from your boards',
     delete: 'Delete',
+    reviewReports: 'See reports',
+    report: 'Report a problem',
+    reported: 'Reported',
   },
   onAction: vi.fn(),
 };
@@ -206,6 +215,16 @@ describe('BoardRow', () => {
       sprayImport: { stage: 'ready' } as unknown as DiscoveryBoardItem['sprayImport'],
     });
     expect(subtitleParts()).toEqual(['Ready to review']);
+  });
+
+  it('shows a warning Reported pill beside the title while a report waits on the viewer', () => {
+    renderRow({ ...GARAGE, openReportCount: 2 });
+    const pill = screen.getByTestId('status-pill');
+    expect(pill.textContent).toBe('reportReview.statusPill');
+    expect(pill.getAttribute('data-tone')).toBe('warning');
+    cleanup();
+    renderRow({ ...GARAGE, openReportCount: null });
+    expect(screen.queryByTestId('status-pill')).toBeNull();
   });
 
   it('draws the art in the regular slot', () => {

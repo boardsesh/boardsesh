@@ -10,6 +10,7 @@ import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options'
 import { hapticSelection } from '../../src/lib/haptics';
 import { GymForm, type GymFormSeed, type GymFormSubmitValues } from '../../src/components/gym-directory/GymForm';
 import { GymWriteAccessSection } from '../../src/components/gym-directory/GymWriteAccessSection';
+import { WhoCanEditGym } from '../../src/components/report-problem/WhoCanEdit';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
@@ -65,22 +66,14 @@ export default function EditGym() {
   }
 
   // The edit affordance is only shown when the viewer can edit, but a direct
-  // deep-link can still land here. The server rejects the save regardless, so
-  // show a clear "no access" state instead of a form that can only fail.
+  // deep-link can still land here (a claim notification, a stale link). The
+  // server rejects the save regardless, so say who runs the listing and what
+  // the climber can do instead: claim it, report a problem, or go back.
   if (!gym.canEdit) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
         {header}
-        <Icon name="lock" size={40} color={systemColors.secondaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
-          {t('mobile.gymEdit.noAccess')}
-        </Text>
-        <Button
-          title={t('mobile.gymEdit.back')}
-          variant="outlined"
-          onPress={() => router.back()}
-          style={styles.stateButton}
-        />
+        <WhoCanEditGym gym={gym} onBack={() => router.back()} />
       </View>
     );
   }
