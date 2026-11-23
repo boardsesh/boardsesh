@@ -22,6 +22,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader } from './roles';
 import { createGymManageAccessNotification } from './gym-notifications';
+import { assertNoGymClaimProbation } from './gym-claim-guardrails';
 import {
   CreateGymInputSchema,
   UpdateGymInputSchema,
@@ -1461,6 +1462,9 @@ export const socialGymMutations = {
     if (gym.ownerId !== userId) {
       throw new Error('Not authorized to delete this gym');
     }
+    // Not in the 14 days after the gym's claim approved itself
+    // (docs/product/gym-claims.md, "Probation").
+    await assertNoGymClaimProbation(gym.id, userId);
 
     // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
     // listing the owner deliberately removed (the sync clears deletedAt).
@@ -1483,6 +1487,9 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+    // A new admin is held during probation: a second account would get round
+    // every other probation rule (docs/product/gym-claims.md).
+    if (validatedInput.role === 'admin') await assertNoGymClaimProbation(gym.id, userId);
 
     // Verify target user exists
     const [targetUser] = await db
@@ -1530,6 +1537,7 @@ export const socialGymMutations = {
     if (validatedInput.userId === gym.ownerId) {
       throw new Error('Cannot remove the gym owner');
     }
+    await assertNoGymClaimProbation(gym.id, userId);
 
     await db
       .delete(dbSchema.gymMembers)

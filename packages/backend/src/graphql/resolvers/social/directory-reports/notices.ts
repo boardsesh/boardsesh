@@ -38,6 +38,10 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //   the outcome.
 // - `board_removed_from_gym`, `board_deleted_by_staff`, `board_edited_by_staff`:
 //   to a board's creator when someone else acts on it.
+// - `gym_claimed_with_your_board`: to a creator whose board is listed at a gym
+//   that was just claimed, naming the board (gym-claims.ts).
+// - `gym_claim_denied`: to a claimant whose claim was denied, expired or
+//   reverted (gym-claims.ts, gym-claim-revert.ts).
 //
 // The rules every one of them follows:
 //
@@ -103,6 +107,8 @@ export type PendingDirectoryNotice = {
   reportId?: number | null;
   /** The gym the notice is about, when the target is a board. */
   gymId?: number | null;
+  /** The board the notice names, when the target is a gym (`gym_claimed_with_your_board`). */
+  boardId?: number | null;
   /** Staff action notices: the authority the actor used. */
   actorRole?: BoardModerationActorRole | null;
   isReminder?: boolean;
@@ -185,7 +191,7 @@ export async function sendDirectoryNotices(
     await executor.insert(dbSchema.directoryNotificationContext).values({
       notificationUuid: uuid,
       reportId: notice.reportId ?? null,
-      boardId: notice.target.kind === 'board' ? notice.target.boardId : null,
+      boardId: notice.target.kind === 'board' ? notice.target.boardId : (notice.boardId ?? null),
       gymId: notice.target.kind === 'gym' ? notice.target.gymId : (notice.gymId ?? null),
       isReminder: notice.isReminder ?? false,
       actorRole: notice.actorRole ?? null,
@@ -348,6 +354,7 @@ export async function settleDirectoryNoticePublishes(): Promise<void> {
 type DirectoryNoticeHolder = {
   uuid: string;
   type: string;
+  entityType?: string | null;
   gymName?: string | null;
   directoryNotice?: DirectoryNotice | null;
 };
@@ -437,7 +444,11 @@ export async function enrichDirectoryNotices(targets: DirectoryNoticeHolder[], r
     const resolved = report && isDirectoryReportOutcome(report.status) ? report.status : null;
     const isResolvedNotice = holder.type === 'board_report_resolved' || holder.type === 'gym_report_resolved';
     holder.directoryNotice = {
-      targetKind: report?.targetKind ?? (board ? 'board' : 'gym'),
+      // A gym notice can name a board too (a claim at the gym your board is
+      // listed at), so the notification's own entity decides when there is no report.
+      targetKind:
+        report?.targetKind ??
+        (holder.entityType === 'gym' || holder.entityType === 'board' ? holder.entityType : board ? 'board' : 'gym'),
       boardUuid: board?.uuid ?? null,
       boardName: board?.name ?? null,
       boardType: board?.boardType ?? null,

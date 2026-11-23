@@ -185,6 +185,19 @@ export const ReviewGymClaimInputSchema = z.object({
 });
 
 /**
+ * Take back an approved gym claim (global admin). A blank reason is no reason.
+ */
+export const RevertGymClaimInputSchema = z.object({
+  claimId: z.coerce.number().int().positive(),
+  reason: z
+    .string()
+    .trim()
+    .max(GYM_CLAIM_MESSAGE_MAX_LENGTH, 'Reason too long')
+    .nullish()
+    .transform((reason) => reason || null),
+});
+
+/**
  * Pending gym claims list input validation schema (admin)
  */
 export const PendingGymClaimsInputSchema = z.object({
