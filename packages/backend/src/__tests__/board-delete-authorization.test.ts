@@ -23,6 +23,7 @@ const OTHER_ADMIN = 'board-delete-other-admin';
 const COMMUNITY_ADMIN = 'board-delete-community-admin';
 const COMMUNITY_LEADER = 'board-delete-community-leader';
 const OUTSIDER = 'board-delete-outsider';
+const SCOPED_ADMIN = 'board-delete-scoped-admin';
 
 const context = (userId: string | undefined): ConnectionContext =>
   ({ connectionId: `conn-${userId}`, userId, isAuthenticated: !!userId }) as ConnectionContext;
@@ -43,6 +44,7 @@ beforeEach(async () => {
     COMMUNITY_ADMIN,
     COMMUNITY_LEADER,
     OUTSIDER,
+    SCOPED_ADMIN,
     SYSTEM_BOARD_OWNER_ID,
   ];
   await db
@@ -96,25 +98,94 @@ async function currentBoard() {
   return current;
 }
 
+/** Make the test board a synced (SYSTEM) board at the gym: the only kind gym staff may delete. */
+async function makeSystemBoard() {
+  await db.update(schema.userBoards).set({ ownerId: SYSTEM_BOARD_OWNER_ID }).where(eq(schema.userBoards.id, board.id));
+}
+
+async function moderationEvents() {
+  return db.select().from(schema.boardModerationEvents).where(eq(schema.boardModerationEvents.boardId, board.id));
+}
+
 describe('deleteBoard authority', () => {
-  it.each([BOARD_OWNER, GYM_OWNER, GYM_ADMIN])('allows %s and freezes the soft-deleted board', async (userId) => {
+  // COMMUNITY_ADMIN holds a global (boardType null) admin role.
+  it.each([BOARD_OWNER, COMMUNITY_ADMIN])(
+    "allows %s on a climber's board and freezes the soft-deleted board",
+    async (userId) => {
+      expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(userId))).toBe(true);
+      const deletedBoard = await currentBoard();
+      expect(deletedBoard.deletedAt).toBeInstanceOf(Date);
+      expect(deletedBoard.syncFrozenAt).toEqual(deletedBoard.deletedAt);
+      expect(previewTombstone).toHaveBeenCalledWith(board.id);
+    },
+  );
+
+  it.each([GYM_OWNER, GYM_ADMIN, COMMUNITY_ADMIN])('allows %s on a synced board at the gym', async (userId) => {
+    await makeSystemBoard();
     expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(userId))).toBe(true);
     const deletedBoard = await currentBoard();
     expect(deletedBoard.deletedAt).toBeInstanceOf(Date);
     expect(deletedBoard.syncFrozenAt).toEqual(deletedBoard.deletedAt);
-    expect(previewTombstone).toHaveBeenCalledWith(board.id);
   });
 
-  it.each([GYM_EDITOR, GYM_MEMBER, OTHER_ADMIN, COMMUNITY_ADMIN, COMMUNITY_LEADER, OUTSIDER])(
-    'denies %s without changing the board',
+  it.each([GYM_OWNER, GYM_ADMIN, GYM_EDITOR, GYM_MEMBER, OTHER_ADMIN, COMMUNITY_LEADER, OUTSIDER])(
+    "denies %s on a climber's board without changing it",
     async (userId) => {
       await expect(socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(userId))).rejects.toThrow(
         'Not authorized to delete this board',
       );
       expect((await currentBoard()).deletedAt).toBeNull();
       expect(previewTombstone).not.toHaveBeenCalled();
+      expect(await moderationEvents()).toEqual([]);
     },
   );
+
+  it.each([GYM_EDITOR, GYM_MEMBER, OTHER_ADMIN, COMMUNITY_LEADER, OUTSIDER])(
+    'denies %s on a synced board at the gym',
+    async (userId) => {
+      await makeSystemBoard();
+      await expect(socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(userId))).rejects.toThrow(
+        'Not authorized to delete this board',
+      );
+      expect((await currentBoard()).deletedAt).toBeNull();
+    },
+  );
+
+  it('records a staff delete with the role used, and nothing for the owner', async () => {
+    await makeSystemBoard();
+    await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN));
+    expect(await moderationEvents()).toEqual([
+      expect.objectContaining({
+        gymId,
+        actorUserId: GYM_ADMIN,
+        actorRole: 'gym_admin',
+        action: 'deleted',
+        details: { mutation: 'deleteBoard' },
+      }),
+    ]);
+  });
+
+  it('records a global admin delete of a climber board', async () => {
+    await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(COMMUNITY_ADMIN));
+    expect(await moderationEvents()).toEqual([
+      expect.objectContaining({ actorUserId: COMMUNITY_ADMIN, actorRole: 'global_admin', action: 'deleted' }),
+    ]);
+  });
+
+  it('records nothing when the owner deletes their own board', async () => {
+    await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(BOARD_OWNER));
+    expect(await moderationEvents()).toEqual([]);
+  });
+
+  it('does not let a community admin scoped to the board type delete', async () => {
+    await db
+      .insert(schema.communityRoles)
+      .values({ userId: SCOPED_ADMIN, role: 'admin', boardType: 'kilter' })
+      .onConflictDoNothing();
+    await expect(
+      socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(SCOPED_ADMIN)),
+    ).rejects.toThrow('Not authorized to delete this board');
+  });
 
   it('denies signed-out deletion', async () => {
     await expect(
@@ -129,7 +200,8 @@ describe('deleteBoard authority', () => {
     expect(previewTombstone).not.toHaveBeenCalled();
   });
 
-  it('lets an admin delete a visible gym board whose private location hides its gym UUID', async () => {
+  it('lets an admin delete a visible synced gym board whose private location hides its gym UUID', async () => {
+    await makeSystemBoard();
     const [privateGym] = await db
       .update(schema.gyms)
       .set({ isPublic: false })
@@ -149,6 +221,7 @@ describe('deleteBoard authority', () => {
   });
 
   it.each([GYM_OWNER, GYM_ADMIN])('denies %s after the linked gym is deleted', async (userId) => {
+    await makeSystemBoard();
     await db.update(schema.gyms).set({ deletedAt: new Date() }).where(eq(schema.gyms.id, gymId));
     await expect(socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(userId))).rejects.toThrow(
       'Not authorized',
@@ -157,6 +230,7 @@ describe('deleteBoard authority', () => {
   });
 
   it('denies an admin after membership revocation', async () => {
+    await makeSystemBoard();
     await db
       .delete(schema.gymMembers)
       .where(and(eq(schema.gymMembers.gymId, gymId), eq(schema.gymMembers.userId, GYM_ADMIN)));
@@ -166,13 +240,21 @@ describe('deleteBoard authority', () => {
     expect((await currentBoard()).deletedAt).toBeNull();
   });
 
-  it('does not let gym authority reveal or delete a private board by UUID', async () => {
+  it('does not let admin status reveal or delete a private board by UUID', async () => {
     await db.update(schema.userBoards).set({ isPublic: false }).where(eq(schema.userBoards.id, board.id));
-    await expect(socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN))).rejects.toThrow(
-      'Board not found',
-    );
+    await expect(
+      socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(COMMUNITY_ADMIN)),
+    ).rejects.toThrow('Board not found');
     expect((await currentBoard()).deletedAt).toBeNull();
     expect(previewTombstone).not.toHaveBeenCalled();
+  });
+
+  it("does not let gym authority delete a climber's private board", async () => {
+    await db.update(schema.userBoards).set({ isPublic: false }).where(eq(schema.userBoards.id, board.id));
+    await expect(socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN))).rejects.toThrow(
+      'Not authorized to delete this board',
+    );
+    expect((await currentBoard()).deletedAt).toBeNull();
   });
 
   it('honors an approved grant without publishing on the private preview channel', async () => {
@@ -185,10 +267,12 @@ describe('deleteBoard authority', () => {
     await db.insert(schema.resourceGrants).values({
       kind: 'board',
       resourceId: board.uuid,
-      userId: GYM_ADMIN,
+      userId: COMMUNITY_ADMIN,
       status: 'approved',
     });
-    expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN))).toBe(true);
+    expect(await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(COMMUNITY_ADMIN))).toBe(
+      true,
+    );
     expect(previewTombstone).not.toHaveBeenCalled();
   });
 
@@ -230,7 +314,7 @@ describe('deleteBoard authority', () => {
     });
     const priorTicks = await db.select().from(schema.boardseshTicks).where(eq(schema.boardseshTicks.boardId, board.id));
     const priorClimbs = await db.select().from(schema.boardClimbs).where(eq(schema.boardClimbs.uuid, climbUuid));
-    await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(GYM_ADMIN));
+    await socialBoardMutations.deleteBoard(null, { boardUuid: board.uuid }, context(COMMUNITY_ADMIN));
     expect(await db.select().from(schema.boardseshTicks).where(eq(schema.boardseshTicks.boardId, board.id))).toEqual(
       priorTicks,
     );
@@ -242,6 +326,8 @@ describe('deleteBoard authority', () => {
 
 describe('deleteBoard concurrent authorization changes', () => {
   it.each(['unlink', 'move', 'demote'] as const)('rejects stale gym authority after %s', async (change) => {
+    // A synced board: the only kind gym authority may delete.
+    await makeSystemBoard();
     const holdingPid = createValueBarrier<number>();
     const releaseWrite = createBarrier();
     const writer = db.transaction(async (tx) => {

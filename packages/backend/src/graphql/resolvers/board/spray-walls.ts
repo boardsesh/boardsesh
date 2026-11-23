@@ -45,7 +45,21 @@ import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { readViewerIdForBoard } from '../climbs/spray-read-access';
-import { canEditBoard, enrichBoards, generateUniqueSlug, requireBoardEditAccess } from '../social/boards';
+import {
+  canEditBoard,
+  enrichBoards,
+  generateUniqueSlug,
+  requireBoardDeleteAccess,
+  requireBoardEditAccess,
+} from '../social/boards';
+import {
+  boardHeldOffGymError,
+  isBoardHeldOffGym,
+  recordBoardModerationEvent,
+  recordStaffBoardEdit,
+  resolveBoardEditActorRole,
+  viewerGymManagerRole,
+} from '../social/board-moderation-events';
 import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/gyms';
 import { syncLocationGeography } from '../social/location-geography';
 import {
@@ -2975,7 +2989,7 @@ export const sprayWallMutations = {
     await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'setSprayWallRenderSettings');
 
     const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
-    const { wall } = await loadEditableWall(ctx, validated.uuid);
+    const { wall, board } = await loadEditableWall(ctx, validated.uuid);
 
     // An older client sends `{ mode, boardsesh }` with no `background` key.
     // That is "change the look", not "go back to the photo", so the stored
@@ -3006,10 +3020,13 @@ export const sprayWallMutations = {
       }
     }
 
-    await db
-      .update(dbSchema.sprayWalls)
-      .set({ renderSettings, updatedAt: new Date() })
-      .where(eq(dbSchema.sprayWalls.id, wall.id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(dbSchema.sprayWalls)
+        .set({ renderSettings, updatedAt: new Date() })
+        .where(eq(dbSchema.sprayWalls.id, wall.id));
+      await recordStaffBoardEdit(tx, { actorUserId: ctx.userId!, board, mutation: 'setSprayWallRenderSettings' });
+    });
 
     // Backfill: only for the PUBLISHED version of a live wall. A draft gets its
     // art when it is published; an archived wall gets no new art.
@@ -3372,7 +3389,9 @@ export const sprayWallMutations = {
       // `publishDraftUnderLock`, before anything is written. The reset decisions
       // (`kept`, `removed`, `added`, `fullReset`) are ignored: they only ever
       // described an in-place reset.
-      return publishDraftUnderLock(tx, wall, Number(version.id));
+      const publishedDraft = await publishDraftUnderLock(tx, wall, Number(version.id));
+      await recordStaffBoardEdit(tx, { actorUserId: ctx.userId!, board, mutation: 'commitSprayWallVersion' });
+      return publishedDraft;
     });
 
     logger.info('Spray wall version committed', {
@@ -3449,7 +3468,13 @@ export const sprayWallMutations = {
       // means — the retired reset, the supersede, the hold count,
       // the catalogue image and the integrity recompute are one sequence with one
       // owner.
-      return publishDraftUnderLock(tx, found.wall, found.version.id);
+      const published = await publishDraftUnderLock(tx, found.wall, found.version.id);
+      await recordStaffBoardEdit(tx, {
+        actorUserId: ctx.userId!,
+        board: found.board,
+        mutation: 'publishSprayWallVersion',
+      });
+      return published;
     });
     const published = publishedDraft.version;
 
@@ -3558,6 +3583,11 @@ export const sprayWallMutations = {
       // 3. …and the version itself. Its photo object is now unreferenced; SW-17
       //    (#5450) sweeps the bucket.
       await tx.delete(dbSchema.sprayWallVersions).where(eq(dbSchema.sprayWallVersions.id, version.id));
+      await recordStaffBoardEdit(tx, {
+        actorUserId: ctx.userId!,
+        board: found.board,
+        mutation: 'discardSprayWallVersion',
+      });
 
       // 4. If that was the wall's ONLY version and nothing was ever published, the
       //    wall has no frame any more — so the frame that version DEFINED has to go
@@ -3626,7 +3656,14 @@ export const sprayWallMutations = {
     await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'deleteSprayWall');
 
     const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
-    const { wall, board } = await loadEditableWall(ctx, validatedUuid);
+    const userId = ctx.userId!;
+    // The board deletion gate, read check included, not the edit gate: a wall is
+    // deleted by its creator, a global admin, or (on a SYSTEM wall) the owner or
+    // an admin of its gym. Rechecked under the locks below.
+    const loaded = await loadWall('uuid', validatedUuid);
+    if (!loaded) throw notFoundError();
+    const { wall, board } = loaded;
+    await requireBoardDeleteAccess(userId, board);
 
     // Soft delete only, on both rows. The catalogue rows and every climb ever set
     // on the wall stay behind — a deleted wall stops being reachable, it does not
@@ -3649,19 +3686,19 @@ export const sprayWallMutations = {
       // deleting.
       await lockWallForWrite(tx, wall.id);
 
-      if (beforeBoardDelete) {
-        // Gym links can change while this delete waits for the wall locks.
-        // Lock the current board only AFTER the account and wall locks so this
-        // path keeps the same order as every other spray-wall writer.
-        const [currentBoard] = await tx
-          .select()
-          .from(dbSchema.userBoards)
-          .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
-          .limit(1)
-          .for('update');
-        if (!currentBoard || currentBoard.ownerId !== board.ownerId) throw notFoundError();
-        await beforeBoardDelete(currentBoard, tx);
-      }
+      // Gym links and roles can change while this delete waits for the wall
+      // locks. Lock the current board only AFTER the account and wall locks so
+      // this path keeps the same order as every other spray-wall writer, then
+      // recheck the deletion gate against it.
+      const [currentBoard] = await tx
+        .select()
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!currentBoard || currentBoard.ownerId !== board.ownerId) throw notFoundError();
+      const actorRole = await requireBoardDeleteAccess(userId, currentBoard, tx);
+      if (beforeBoardDelete) await beforeBoardDelete(currentBoard, tx);
 
       // A deleted wall stops being reachable, so its feed rows have to go too —
       // they are served straight from `feed_items` and would outlive it otherwise.
@@ -3713,6 +3750,16 @@ export const sprayWallMutations = {
         .update(dbSchema.userBoards)
         .set({ deletedAt, syncFrozenAt: deletedAt })
         .where(eq(dbSchema.userBoards.id, board.id));
+      if (actorRole !== 'board_owner') {
+        await recordBoardModerationEvent(tx, {
+          boardId: board.id,
+          gymId: currentBoard.gymId,
+          actorUserId: userId,
+          actorRole,
+          action: 'deleted',
+          details: { mutation: 'deleteSprayWall' },
+        });
+      }
     });
 
     // AFTER the commit, never before: a delete inside the transaction would destroy
@@ -3826,6 +3873,55 @@ async function lockResetFamilyForWrite(tx: SprayWriteTransaction, ownerId: strin
     await lockWallForWrite(tx, familyWallId);
   }
   return familyWallIds;
+}
+
+/**
+ * What `updateSprayWall` records about a wall it changed, in its transaction:
+ * - a non-owner taking the wall off its gym is a staff removal, which holds the
+ *   creator off self-linking it back (the `detachBoardFromGym` rule);
+ * - a non-owner's other changes are a staff edit, naming the fields;
+ * - a link that lifted a staff hold is a relink by that gym's staff.
+ */
+async function recordSprayWallBoardEvents(
+  tx: SprayWriteTransaction,
+  input: {
+    actorUserId: string;
+    /** The board as it is under the lock, before `updates`. */
+    board: typeof dbSchema.userBoards.$inferSelect;
+    updates: Partial<typeof dbSchema.userBoards.$inferInsert>;
+    relinkLiftsHold: boolean;
+  },
+): Promise<void> {
+  const { actorUserId, board, updates, relinkLiftsHold } = input;
+  const removesFromGym = updates.gymId === null && board.gymId != null;
+  if (removesFromGym && board.ownerId !== actorUserId) {
+    await recordBoardModerationEvent(tx, {
+      boardId: board.id,
+      gymId: board.gymId,
+      actorUserId,
+      actorRole: await resolveBoardEditActorRole(actorUserId, board, tx),
+      action: 'removed_from_gym',
+      details: { mutation: 'updateSprayWall' },
+    });
+  }
+  const previousValues: Record<string, unknown> = { ...board };
+  const changedFields = Object.entries(updates)
+    .filter(([field, value]) => !(field === 'gymId' && removesFromGym) && value !== previousValues[field])
+    .map(([field]) => field)
+    .sort();
+  await recordStaffBoardEdit(tx, { actorUserId, board, mutation: 'updateSprayWall', fields: changedFields });
+  if (relinkLiftsHold && updates.gymId != null) {
+    const actorRole = await viewerGymManagerRole(updates.gymId, actorUserId, tx);
+    if (!actorRole) throw boardHeldOffGymError();
+    await recordBoardModerationEvent(tx, {
+      boardId: board.id,
+      gymId: updates.gymId,
+      actorUserId,
+      actorRole,
+      action: 'relinked',
+      details: { mutation: 'updateSprayWall' },
+    });
+  }
 }
 
 async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privacyUpdate?: SprayResourcePrivacyUpdate) {
@@ -3949,12 +4045,17 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         gymUuid: validated.gymUuid,
         userId: ctx.userId!,
         boardOwnerId: board.ownerId,
+        boardId: board.id,
         boardLatitude: nextLatitude,
         boardLongitude: nextLongitude,
       });
       nextGymId = gym.id;
     }
   }
+  // A link back to a gym whose staff removed the wall got past the gate only on
+  // that gym's own staff path, so it lifts the hold: recorded under the lock.
+  const relinkLiftsHold =
+    nextGymId != null && nextGymId !== board.gymId && (await isBoardHeldOffGym(board.id, nextGymId));
 
   const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
   if (validated.name !== undefined) updates.name = validated.name;
@@ -4058,6 +4159,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
           hideLocation: dbSchema.userBoards.hideLocation,
           deletedAt: dbSchema.userBoards.deletedAt,
           ownerId: dbSchema.userBoards.ownerId,
+          gymId: dbSchema.userBoards.gymId,
         })
         .from(dbSchema.userBoards)
         .where(eq(dbSchema.userBoards.id, board.id))
@@ -4171,6 +4273,12 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       if (Object.keys(updates).length > 0) {
         await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
       }
+      await recordSprayWallBoardEvents(tx, {
+        actorUserId: ctx.userId!,
+        board: { ...board, ownerId: boardNow.ownerId, gymId: boardNow.gymId },
+        updates,
+        relinkLiftsHold,
+      });
 
       if (losingPublic) {
         const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);

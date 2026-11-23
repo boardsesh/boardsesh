@@ -29,6 +29,9 @@ export const GYM_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
+/** Who runs a gym listing: not claimed yet, added by a climber, or run by the gym (approved claim or admin handover). */
+export type GymListingState = 'UNCLAIMED' | 'CLIMBER_LISTED' | 'RUN_BY_GYM';
+
 export type GymClaimMethod = 'domain' | 'admin';
 
 export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired';
@@ -115,6 +118,12 @@ export type Gym = {
    * document typed `Gym` genuinely returns it.
    */
   isClaimed: boolean;
+  /**
+   * Who runs this listing. Viewer-independent. Optional until the client PR
+   * selects it: GYM_FIELDS cannot ask for a field the deployed backend does not
+   * have yet, and every `Gym` fixture would otherwise need it first.
+   */
+  listingState?: GymListingState;
   /**
    * Whether this gym's website can drive the self-service email claim: a real
    * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors

@@ -53,7 +53,15 @@ import {
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
-import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader, requireAdmin } from './roles';
+import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
+import { rolesGrantAdmin } from '@boardsesh/community-roles';
+import type { BoardModerationActorRole } from '@boardsesh/db/schema';
+import {
+  recordBoardModerationEvent,
+  recordStaffBoardEdit,
+  viewerGymManagerRole,
+  type ModerationExecutor,
+} from './board-moderation-events';
 import {
   SYSTEM_BOARD_OWNER_ID,
   followBoardMergeChain,
@@ -270,52 +278,170 @@ export async function resolveBoardFromPath(
   return candidates.find((candidate) => normaliseSetIds(candidate.setIds) === targetSetIds)?.id ?? null;
 }
 
+type BoardEditExecutor = ModerationExecutor;
+
 /**
- * Whether a user owns or is an admin member of a gym. Used to authorize editing
- * a board through its linked gym (gym owners/admins may fix the gym's boards).
+ * Whether a user owns or is an admin member of a live gym. Used to authorize
+ * editing a board through its linked gym (gym owners/admins may fix the gym's
+ * boards) and, on SYSTEM boards only, deleting it.
  */
-type BoardEditExecutor = NonNullable<Parameters<typeof getUserCommunityRoles>[1]>;
-
 async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardEditExecutor = db): Promise<boolean> {
-  const [ownedGym] = await executor
-    .select({ id: dbSchema.gyms.id })
-    .from(dbSchema.gyms)
-    .where(and(eq(dbSchema.gyms.id, gymId), eq(dbSchema.gyms.ownerId, userId), isNull(dbSchema.gyms.deletedAt)))
-    .limit(1);
-
-  if (ownedGym) return true;
-
-  const [adminMembership] = await executor
-    .select({ role: dbSchema.gymMembers.role })
-    .from(dbSchema.gymMembers)
-    .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
-    .where(
-      and(
-        eq(dbSchema.gymMembers.gymId, gymId),
-        eq(dbSchema.gymMembers.userId, userId),
-        eq(dbSchema.gymMembers.role, 'admin'),
-        isNull(dbSchema.gyms.deletedAt),
-      ),
-    )
-    .limit(1);
-
-  return !!adminMembership;
+  return (await viewerGymManagerRole(gymId, userId, executor)) !== null;
 }
 
-/** Deletion requires ownership or administration of the board's current gym. */
-async function requireBoardDeleteAccess(
+/**
+ * Who may delete a board (docs/product/gym-board-governance.md, decision 1):
+ * - its creator;
+ * - the owner or an admin of its live linked gym, on a SYSTEM (synced) board
+ *   only. A climber's board at the gym is theirs: staff take it off the
+ *   listing with `detachBoardFromGym` instead;
+ * - a global admin, on any board.
+ *
+ * A non-owner must also be able to read the board: gym management and admin
+ * status never reveal a private board by UUID. Returns the role used, which
+ * the caller records on a non-owner delete. Callers run it again inside the
+ * delete's transaction, against the locked row, so authority revoked while the
+ * delete waited is not used.
+ *
+ * `viewerMayDeleteBoard` is the same rule over pre-loaded authority, for
+ * `UserBoard.canDelete`. Change both together.
+ */
+export async function requireBoardDeleteAccess(
   userId: string,
   board: Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'ownerId' | 'gymId'>,
   executor: BoardEditExecutor = db,
-): Promise<void> {
-  if (board.ownerId === userId) return;
-  if (board.gymId == null || !(await viewerCanAdminGym(board.gymId, userId, executor))) {
+): Promise<BoardModerationActorRole> {
+  if (board.ownerId === userId) return 'board_owner';
+  const actorRole = await boardDeleteAuthority(userId, board, executor);
+  if (!actorRole) {
     throw new Error('Not authorized to delete this board');
   }
-  // Gym management does not reveal another climber's private board by UUID.
   if (!(await canAccessResource('board', board.uuid, userId, executor))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
+  return actorRole;
+}
+
+async function boardDeleteAuthority(
+  userId: string,
+  board: Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'gymId'>,
+  executor: BoardEditExecutor,
+): Promise<BoardModerationActorRole | null> {
+  if (board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId != null) {
+    const gymRole = await viewerGymManagerRole(board.gymId, userId, executor);
+    if (gymRole) return gymRole;
+  }
+  if (rolesGrantAdmin(await getUserCommunityRoles(userId, executor), null)) return 'global_admin';
+  return null;
+}
+
+type BoardPermissionFacts = Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'gymId' | 'deletedAt'>;
+
+/** `requireBoardDeleteAccess`'s rule for a board the viewer can already read. */
+function viewerMayDeleteBoard(
+  board: BoardPermissionFacts,
+  viewerId: string,
+  authority: ViewerGymAuthority,
+  viewerRoles: readonly CommunityRoleScope[],
+): boolean {
+  if (board.deletedAt != null) return false;
+  if (board.ownerId === viewerId) return true;
+  if (board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId != null && authority.managedGymIds.has(board.gymId)) {
+    return true;
+  }
+  return rolesGrantAdmin(viewerRoles, null);
+}
+
+/**
+ * Whether the viewer can take this board off its gym's listing: its creator
+ * (with `linkBoardToGym`, gym null) or anyone who passes `requireGymEditAccess`
+ * for the board's gym (with `detachBoardFromGym`).
+ */
+function viewerMayRemoveBoardFromGym(
+  board: BoardPermissionFacts,
+  viewerId: string,
+  authority: ViewerGymAuthority,
+): boolean {
+  if (board.deletedAt != null || board.gymId == null) return false;
+  return board.ownerId === viewerId || authority.editableGymIds.has(board.gymId);
+}
+
+/** The viewer's relationship to each live gym among a set of board links. */
+type ViewerGymRow = { id: number; ownerId: string; memberRole: string | null };
+
+type ViewerGymAuthority = {
+  /** Live gyms the viewer owns or admins: board edit, and delete of SYSTEM boards. */
+  managedGymIds: Set<number>;
+  /** Live gyms that pass `requireGymEditAccess` for the viewer: detach. */
+  editableGymIds: Set<number>;
+};
+
+/** One query: the viewer's ownership and membership role at each live gym. */
+async function loadViewerGymRows(
+  gymIds: readonly number[],
+  viewerId: string,
+  executor: BoardEditExecutor = db,
+): Promise<ViewerGymRow[]> {
+  if (gymIds.length === 0) return [];
+  return executor
+    .select({ id: dbSchema.gyms.id, ownerId: dbSchema.gyms.ownerId, memberRole: dbSchema.gymMembers.role })
+    .from(dbSchema.gyms)
+    .leftJoin(
+      dbSchema.gymMembers,
+      and(eq(dbSchema.gymMembers.gymId, dbSchema.gyms.id), eq(dbSchema.gymMembers.userId, viewerId)),
+    )
+    .where(and(inArray(dbSchema.gyms.id, [...gymIds]), isNull(dbSchema.gyms.deletedAt)));
+}
+
+/**
+ * Gym authority for a whole list of boards without a query per row. Mirrors
+ * `requireGymEditAccess`: owner, gym admin or editor, or a community admin or
+ * leader whose role is global or scoped to a board type live at the gym. The
+ * covering-role read runs only for a viewer holding a scoped role.
+ */
+async function resolveViewerGymAuthority(
+  gymRows: readonly ViewerGymRow[],
+  viewerId: string,
+  viewerRoles: readonly CommunityRoleScope[],
+  executor: BoardEditExecutor = db,
+): Promise<ViewerGymAuthority> {
+  const managedGymIds = new Set<number>();
+  const editableGymIds = new Set<number>();
+  const liveGymIds = [...new Set(gymRows.map((row) => row.id))];
+  for (const row of gymRows) {
+    const isOwner = row.ownerId === viewerId;
+    if (isOwner || row.memberRole === 'admin') managedGymIds.add(row.id);
+    if (isOwner || row.memberRole === 'admin' || row.memberRole === 'editor') editableGymIds.add(row.id);
+  }
+  if (liveGymIds.length === 0) return { managedGymIds, editableGymIds };
+
+  if (rolesGrantAdminOrLeader([...viewerRoles], null)) {
+    for (const gymId of liveGymIds) editableGymIds.add(gymId);
+    return { managedGymIds, editableGymIds };
+  }
+  const scopedBoardTypes = [
+    ...new Set(
+      viewerRoles.flatMap((role) =>
+        role.boardType !== null && rolesGrantAdminOrLeader([role], role.boardType) ? [role.boardType] : [],
+      ),
+    ),
+  ];
+  if (scopedBoardTypes.length > 0) {
+    const coveredGyms = await executor
+      .selectDistinct({ gymId: dbSchema.userBoards.gymId })
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          inArray(dbSchema.userBoards.gymId, liveGymIds),
+          inArray(dbSchema.userBoards.boardType, scopedBoardTypes),
+          isNull(dbSchema.userBoards.deletedAt),
+        ),
+      );
+    for (const { gymId } of coveredGyms) {
+      if (gymId != null) editableGymIds.add(gymId);
+    }
+  }
+  return { managedGymIds, editableGymIds };
 }
 
 /**
@@ -463,8 +589,8 @@ async function enrichBoard(
     commentStatsResult,
     followCheckResult,
     gymInfoResult,
-    canEditByRole,
-    canEditByGym,
+    viewerRoles,
+    viewerGymRows,
     pinResult,
   ] = await Promise.all([
     // Get owner profile
@@ -524,13 +650,13 @@ async function enrichBoard(
     // location is hidden from sees instead when the gym is public.
     loadProjectionGym(board.gymId),
 
-    // Whether the viewer is a community admin/leader for this board type
-    authenticatedUserId ? hasAdminOrLeader(authenticatedUserId, board.boardType) : Promise.resolve(false),
+    // The viewer's community roles (edit, delete and covering-role checks)
+    authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
 
-    // Whether the viewer owns/admins the board's linked gym
+    // The viewer's standing at the board's linked gym
     authenticatedUserId && board.gymId != null
-      ? viewerCanAdminGym(board.gymId, authenticatedUserId)
-      : Promise.resolve(false),
+      ? loadViewerGymRows([board.gymId], authenticatedUserId)
+      : Promise.resolve([]),
 
     // Whether the viewer pinned this board.
     authenticatedUserId
@@ -558,8 +684,21 @@ async function enrichBoard(
   const commentStats = commentStatsResult[0];
   const isFollowedByMe = Number(followCheckResult[0]?.count || 0) > 0;
   const location = projectBoardLocation(board, gymInfoResult, showLocation);
+  const gymAuthority = authenticatedUserId
+    ? await resolveViewerGymAuthority(viewerGymRows, authenticatedUserId, viewerRoles)
+    : { managedGymIds: new Set<number>(), editableGymIds: new Set<number>() };
   const canEdit = authenticatedUserId
-    ? board.ownerId === authenticatedUserId || (canEditByRole && boardIsRoleEditable(board)) || canEditByGym
+    ? board.ownerId === authenticatedUserId ||
+      (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
+      (board.gymId != null && gymAuthority.managedGymIds.has(board.gymId))
+    : false;
+  // Every caller gated this row on `canAccessResource`, so the delete gate's
+  // read check holds already.
+  const canDelete = authenticatedUserId
+    ? viewerMayDeleteBoard(board, authenticatedUserId, gymAuthority, viewerRoles)
+    : false;
+  const canRemoveFromGym = authenticatedUserId
+    ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority)
     : false;
 
   const sprayImport =
@@ -614,6 +753,8 @@ async function enrichBoard(
     serialNumber: board.serialNumber ?? null,
     timerName: board.timerName ?? null,
     canEdit,
+    canDelete,
+    canRemoveFromGym,
     isPinnedByMe: pinResult.length > 0,
   };
 }
@@ -650,139 +791,102 @@ export async function enrichBoards(
   const ownerIds = [...new Set(boards.map((b) => b.board.ownerId))];
   const gymIds = [...new Set(boards.map((b) => b.board.gymId).filter((id): id is number => id != null))];
 
-  const [
-    ownerRows,
-    tickRows,
-    followerRows,
-    commentRows,
-    followRows,
-    gymRows,
-    viewerRoles,
-    ownedGymRows,
-    adminGymRows,
-    pinRows,
-  ] = await Promise.all([
-    // Batch owner profiles
-    db
-      .select({
-        userId: dbSchema.users.id,
-        name: dbSchema.users.name,
-        image: dbSchema.users.image,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-      })
-      .from(dbSchema.users)
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(inArray(dbSchema.users.id, ownerIds)),
+  const [ownerRows, tickRows, followerRows, commentRows, followRows, gymRows, viewerRoles, viewerGymRows, pinRows] =
+    await Promise.all([
+      // Batch owner profiles
+      db
+        .select({
+          userId: dbSchema.users.id,
+          name: dbSchema.users.name,
+          image: dbSchema.users.image,
+          displayName: dbSchema.userProfiles.displayName,
+          avatarUrl: dbSchema.userProfiles.avatarUrl,
+        })
+        .from(dbSchema.users)
+        .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+        .where(inArray(dbSchema.users.id, ownerIds)),
 
-    // Batch tick stats per board
-    db
-      .select({
-        boardId: dbSchema.boardseshTicks.boardId,
-        totalAscents: count(),
-        uniqueClimbers: sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.userId})`,
-      })
-      .from(dbSchema.boardseshTicks)
-      .where(
-        and(
-          inArray(dbSchema.boardseshTicks.boardId, boardIds),
-          or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send')),
-        ),
-      )
-      .groupBy(dbSchema.boardseshTicks.boardId),
+      // Batch tick stats per board
+      db
+        .select({
+          boardId: dbSchema.boardseshTicks.boardId,
+          totalAscents: count(),
+          uniqueClimbers: sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.userId})`,
+        })
+        .from(dbSchema.boardseshTicks)
+        .where(
+          and(
+            inArray(dbSchema.boardseshTicks.boardId, boardIds),
+            or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send')),
+          ),
+        )
+        .groupBy(dbSchema.boardseshTicks.boardId),
 
-    // Batch follower counts per board
-    db
-      .select({
-        boardUuid: dbSchema.boardFollows.boardUuid,
-        count: count(),
-      })
-      .from(dbSchema.boardFollows)
-      .where(inArray(dbSchema.boardFollows.boardUuid, boardUuids))
-      .groupBy(dbSchema.boardFollows.boardUuid),
+      // Batch follower counts per board
+      db
+        .select({
+          boardUuid: dbSchema.boardFollows.boardUuid,
+          count: count(),
+        })
+        .from(dbSchema.boardFollows)
+        .where(inArray(dbSchema.boardFollows.boardUuid, boardUuids))
+        .groupBy(dbSchema.boardFollows.boardUuid),
 
-    // Batch comment counts per board
-    db
-      .select({
-        entityId: dbSchema.comments.entityId,
-        count: count(),
-      })
-      .from(dbSchema.comments)
-      .where(
-        and(
-          eq(dbSchema.comments.entityType, 'board'),
-          inArray(dbSchema.comments.entityId, boardUuids),
-          isNull(dbSchema.comments.deletedAt),
-          commentPrivacyCondition(authenticatedUserId),
-        ),
-      )
-      .groupBy(dbSchema.comments.entityId),
+      // Batch comment counts per board
+      db
+        .select({
+          entityId: dbSchema.comments.entityId,
+          count: count(),
+        })
+        .from(dbSchema.comments)
+        .where(
+          and(
+            eq(dbSchema.comments.entityType, 'board'),
+            inArray(dbSchema.comments.entityId, boardUuids),
+            isNull(dbSchema.comments.deletedAt),
+            commentPrivacyCondition(authenticatedUserId),
+          ),
+        )
+        .groupBy(dbSchema.comments.entityId),
 
-    // Batch follow status for authenticated user
-    authenticatedUserId
-      ? db
-          .select({ boardUuid: dbSchema.boardFollows.boardUuid })
-          .from(dbSchema.boardFollows)
-          .where(
-            and(
-              eq(dbSchema.boardFollows.userId, authenticatedUserId),
-              inArray(dbSchema.boardFollows.boardUuid, boardUuids),
-            ),
-          )
-      : Promise.resolve([]),
+      // Batch follow status for authenticated user
+      authenticatedUserId
+        ? db
+            .select({ boardUuid: dbSchema.boardFollows.boardUuid })
+            .from(dbSchema.boardFollows)
+            .where(
+              and(
+                eq(dbSchema.boardFollows.userId, authenticatedUserId),
+                inArray(dbSchema.boardFollows.boardUuid, boardUuids),
+              ),
+            )
+        : Promise.resolve([]),
 
-    // Batch gym info: the link, and the place shown instead of a hidden one.
-    loadProjectionGyms(gymIds),
+      // Batch gym info: the link, and the place shown instead of a hidden one.
+      loadProjectionGyms(gymIds),
 
-    // Viewer's community roles — fetched once, applied per board by board type
-    authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
+      // Viewer's community roles — fetched once, applied per board by board type
+      authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
 
-    // Gyms (among the referenced ones) the viewer owns — grants edit on their boards
-    authenticatedUserId && gymIds.length > 0
-      ? db
-          .select({ id: dbSchema.gyms.id })
-          .from(dbSchema.gyms)
-          .where(
-            and(
-              inArray(dbSchema.gyms.id, gymIds),
-              eq(dbSchema.gyms.ownerId, authenticatedUserId),
-              isNull(dbSchema.gyms.deletedAt),
-            ),
-          )
-      : Promise.resolve([]),
+      // The viewer's standing at every referenced live gym: one query.
+      authenticatedUserId ? loadViewerGymRows(gymIds, authenticatedUserId) : Promise.resolve([]),
 
-    // Gyms (among the referenced ones) the viewer is an admin member of
-    authenticatedUserId && gymIds.length > 0
-      ? db
-          .select({ gymId: dbSchema.gymMembers.gymId })
-          .from(dbSchema.gymMembers)
-          .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
-          .where(
-            and(
-              inArray(dbSchema.gymMembers.gymId, gymIds),
-              eq(dbSchema.gymMembers.userId, authenticatedUserId),
-              eq(dbSchema.gymMembers.role, 'admin'),
-              isNull(dbSchema.gyms.deletedAt),
-            ),
-          )
-      : Promise.resolve([]),
-
-    // Boards the viewer has pinned. Kept here rather than joined into each
-    // caller's query so every surface that returns a UserBoard reports the
-    // pin, not just myBoards.
-    authenticatedUserId
-      ? db
-          .select({ boardUuid: dbSchema.userBoardActivity.boardUuid })
-          .from(dbSchema.userBoardActivity)
-          .where(
-            and(
-              inArray(dbSchema.userBoardActivity.boardUuid, boardUuids),
-              eq(dbSchema.userBoardActivity.userId, authenticatedUserId),
-              isNotNull(dbSchema.userBoardActivity.pinnedAt),
-            ),
-          )
-      : Promise.resolve([]),
-  ]);
+      // Boards the viewer has pinned. Kept here rather than joined into each
+      // caller's query so every surface that returns a UserBoard reports the
+      // pin, not just myBoards.
+      authenticatedUserId
+        ? db
+            .select({ boardUuid: dbSchema.userBoardActivity.boardUuid })
+            .from(dbSchema.userBoardActivity)
+            .where(
+              and(
+                inArray(dbSchema.userBoardActivity.boardUuid, boardUuids),
+                eq(dbSchema.userBoardActivity.userId, authenticatedUserId),
+                isNotNull(dbSchema.userBoardActivity.pinnedAt),
+              ),
+            )
+        : Promise.resolve([]),
+    ]);
 
   // Index results for O(1) lookups
   const ownerMap = new Map(ownerRows.map((r) => [r.userId, r]));
@@ -792,11 +896,12 @@ export async function enrichBoards(
   const followedSet = new Set(followRows.map((r) => r.boardUuid));
   const pinnedSet = new Set(pinRows.map((r) => r.boardUuid));
   const gymMap = gymRows;
-  // Gym ids the viewer can edit boards through (owns the gym OR is an admin member)
-  const editableGymIds = new Set<number>([
-    ...(ownedGymRows as Array<{ id: number }>).map((row) => row.id),
-    ...(adminGymRows as Array<{ gymId: number }>).map((row) => row.gymId),
-  ]);
+  // Managed gyms grant board edit (and delete of SYSTEM boards); editable gyms
+  // grant removing a board from the listing.
+  const gymAuthority = authenticatedUserId
+    ? await resolveViewerGymAuthority(viewerGymRows, authenticatedUserId, viewerRoles)
+    : { managedGymIds: new Set<number>(), editableGymIds: new Set<number>() };
+  const boardEditGymIds = gymAuthority.managedGymIds;
 
   const editableSprayWallUuids = authenticatedUserId
     ? boards
@@ -805,7 +910,7 @@ export async function enrichBoards(
             isSprayBoardType(board.boardType) &&
             (board.ownerId === authenticatedUserId ||
               (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
-              (board.gymId != null && editableGymIds.has(board.gymId))),
+              (board.gymId != null && boardEditGymIds.has(board.gymId))),
         )
         .map(({ board }) => board.uuid)
     : [];
@@ -825,7 +930,17 @@ export async function enrichBoards(
       const canEdit = authenticatedUserId
         ? board.ownerId === authenticatedUserId ||
           (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
-          (board.gymId != null && editableGymIds.has(board.gymId))
+          (board.gymId != null && boardEditGymIds.has(board.gymId))
+        : false;
+      // `boards` passed the access filter above, so the delete gate's read
+      // check holds already, unless that filter read as someone else (a wall
+      // device's owner): then only the viewer's own board counts.
+      const canDelete =
+        authenticatedUserId && (accessUserId === authenticatedUserId || board.ownerId === authenticatedUserId)
+          ? viewerMayDeleteBoard(board, authenticatedUserId, gymAuthority, viewerRoles)
+          : false;
+      const canRemoveFromGym = authenticatedUserId
+        ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority)
         : false;
 
       return {
@@ -873,6 +988,8 @@ export async function enrichBoards(
         serialNumber: board.serialNumber ?? null,
         timerName: board.timerName ?? null,
         canEdit,
+        canDelete,
+        canRemoveFromGym,
         isPinnedByMe: pinnedSet.has(board.uuid),
       };
     }),
@@ -936,6 +1053,8 @@ async function projectAnonymousSerialBoards(boards: Array<typeof dbSchema.userBo
       serialNumber: board.serialNumber ?? null,
       timerName: null,
       canEdit: false,
+      canDelete: false,
+      canRemoveFromGym: false,
       // Anonymous caller: no identity, so nothing can be pinned.
       isPinnedByMe: false,
     };
@@ -1889,6 +2008,28 @@ function assertAdminBoardFields(
   }
 }
 
+/** Input keys that steer the write rather than change the board. */
+const BOARD_EDIT_CONTROL_KEYS = new Set(['boardUuid', 'allowDuplicateConfig']);
+
+/**
+ * The board fields an edit actually changes. Edit screens echo every field
+ * back with a rename, so a field that was sent is not necessarily a change.
+ */
+function changedBoardFields(input: Record<string, unknown>, before: typeof dbSchema.userBoards.$inferSelect): string[] {
+  const previousValues: Record<string, unknown> = { ...before };
+  return Object.entries(input)
+    .filter(([field, value]) => {
+      if (value === undefined || BOARD_EDIT_CONTROL_KEYS.has(field)) return false;
+      const previous = previousValues[field];
+      if (field === 'setIds' && typeof value === 'string' && typeof previous === 'string') {
+        return normaliseSetIds(value) !== normaliseSetIds(previous);
+      }
+      return value !== previous;
+    })
+    .map(([field]) => field)
+    .sort();
+}
+
 /** Shared row writer; the admin mode is internal and authenticates its own caller. */
 export async function updateBoardRecord(
   input: unknown,
@@ -2085,10 +2226,12 @@ export async function updateBoardRecord(
         isPublic: boolean;
         isUnlisted: boolean;
         hideLocation: boolean;
+        gymId: number | string | null;
       }>(
         await tx.execute(sql`
           SELECT serial_number AS "serialNumber",
                  owner_id AS "ownerId",
+                 gym_id AS "gymId",
                  board_type AS "boardType",
                  layout_id AS "layoutId",
                  size_id AS "sizeId",
@@ -2268,7 +2411,26 @@ export async function updateBoardRecord(
             .where(policyCondition);
         }
       }
-      return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
+      const rows = await tx
+        .update(dbSchema.userBoards)
+        .set(updateValues)
+        .where(eq(dbSchema.userBoards.id, board.id))
+        .returning();
+      // Someone other than the creator changed it: on the record, in the same
+      // transaction, against the board as it is now.
+      await recordStaffBoardEdit(tx, {
+        actorUserId: userId,
+        board: {
+          id: board.id,
+          ownerId: lockedBoard.ownerId,
+          gymId: lockedBoard.gymId == null ? null : Number(lockedBoard.gymId),
+          boardType: lockedBoard.boardType,
+        },
+        mutation: access === 'admin' ? 'adminUpdateBoard' : 'updateBoard',
+        fields: changedBoardFields(validatedInput, board),
+        actorRole: access === 'admin' ? 'global_admin' : undefined,
+      });
+      return rows;
     });
     [updated] = updatedRows;
   } catch (error) {
@@ -2793,7 +2955,8 @@ export const socialBoardMutations = {
   },
 
   /**
-   * Soft-delete a board
+   * Soft-delete a board: its creator, the gym's owner or admin on a SYSTEM
+   * board, or a global admin (`requireBoardDeleteAccess`).
    */
   deleteBoard: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
@@ -2825,15 +2988,15 @@ export const socialBoardMutations = {
     if (isSprayBoardType(board.boardType)) {
       // Every caller, including older apps, must tombstone the wall and retract
       // its feed and public photo. Load lazily because spray-walls uses board
-      // authorization helpers from this module. Recheck the stricter generic
-      // deletion gate after its account/wall locks, against the current gym.
+      // authorization helpers from this module. deleteSprayWall rechecks this
+      // same deletion gate after its account/wall locks, against the current
+      // gym, and records a non-owner delete.
       const { sprayWallMutations } = await import('../board/spray-walls');
       await sprayWallMutations.deleteSprayWall(
         _,
         {
           uuid: boardUuid,
-          beforeBoardDelete: async (currentBoard, tx) => {
-            await requireBoardDeleteAccess(userId, currentBoard, tx);
+          beforeBoardDelete: async (_currentBoard, tx) => {
             retractPreview = await canAccessResource('board', boardUuid, null, tx);
           },
         },
@@ -2848,7 +3011,7 @@ export const socialBoardMutations = {
           .limit(1)
           .for('update');
         if (!currentBoard) throw new Error('Board not found');
-        await requireBoardDeleteAccess(userId, currentBoard, tx);
+        const actorRole = await requireBoardDeleteAccess(userId, currentBoard, tx);
         retractPreview = await canAccessResource('board', boardUuid, null, tx);
 
         // Freeze it too, so a later sync cannot resurrect the removed board.
@@ -2857,6 +3020,16 @@ export const socialBoardMutations = {
           .update(dbSchema.userBoards)
           .set({ deletedAt, syncFrozenAt: deletedAt })
           .where(eq(dbSchema.userBoards.id, board.id));
+        if (actorRole !== 'board_owner') {
+          await recordBoardModerationEvent(tx, {
+            boardId: board.id,
+            gymId: currentBoard.gymId,
+            actorUserId: userId,
+            actorRole,
+            action: 'deleted',
+            details: { mutation: 'deleteBoard' },
+          });
+        }
       });
     }
 
