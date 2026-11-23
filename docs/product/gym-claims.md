@@ -6,6 +6,10 @@ The product decision is decision 3 in [gym-board-governance.md](gym-board-govern
 
 Epic #8043, PR 6 of 8.
 
+## Who can claim
+
+Anyone signed in who can't already edit the gym, on a public gym, unless the gym is run by its staff (`listingState` `RUN_BY_GYM`: its owner holds an approved claim or got the gym in an admin handover). Nobody can claim a gym its staff run. A dispute goes through Report a problem, which reaches our team. `Gym.canClaim` and `SimilarGym.isClaimable` are false there, and `requestGymClaim` refuses with `extensions.code = 'GYM_RUN_BY_STAFF'` (`GYM_RUN_BY_STAFF_CODE` in `@boardsesh/gym-claim`): "This gym is run by its staff. If that's wrong, report a problem and our team will look." Both claim forms map the code to their own translated line (`isGymRunByStaffError`). A claim already pending on such a gym stays in the queue for a person, and approving one that is older than the gym's current ownership is still refused as superseded (`GYM_CLAIM_SUPERSEDED`).
+
 ## Turning auto-approval on
 
 Auto-approval is off until a global admin turns it on. It is two community settings, global scope, both admin-only because of their `gym_` prefix:
@@ -13,9 +17,9 @@ Auto-approval is off until a global admin turns it on. It is two community setti
 | Setting | Default | Meaning |
 |---|---|---|
 | `gym_claim_auto_approve` | `0` | `1` turns auto-approval on |
-| `gym_claim_auto_approve_daily_cap` | `10` | at most this many claims approve themselves in any 24 hours, across all accounts. `0` stops them all; a value that is not a whole number reads as 10 |
+| `gym_claim_auto_approve_daily_cap` | `10` | at most this many claims approve themselves in any 24 hours, across all accounts. `0` stops them all; a negative value reads as 0, and one that is not a whole number as 10 |
 
-Both are in /admin settings (`gym-settings-panel.tsx`): the switch, and under it the daily limit, a whole number from 0 to 1000 that shows 10 while the setting is unset. The founder turns `gym_claim_auto_approve` on in production; nobody else flips it.
+Both are in /admin settings (`gym-settings-panel.tsx`): the switch, and under it the daily limit. The field shows the cap the backend applies, read the backend's way (any whole number, a negative one as 0, 10 while unset or unreadable); a new value must be a whole number from 0 to 1000. The founder turns `gym_claim_auto_approve` on in production; nobody else flips it.
 
 ## The guards
 
@@ -102,7 +106,7 @@ Not undone: boards the claimant edited, took off the listing or attached from ne
 
 Revert opens a confirm that names the gym and the claimant, says what goes back to SYSTEM and what doesn't (board changes, kiosks, the description, hours and photo), and takes an optional reason for the audit row. A refusal keeps the confirm open with its own line, and every line but `NOT_APPROVED` points at Move gym ownership, the panel below it on the same page.
 
-The daily digest's `?revert=<claim id>` opens that claim's confirm straight away, looked up with `claimId` so an approval older than the first page still opens. A claim already reverted, or one that didn't approve itself, gets a line saying so instead. Only a positive whole number is read from the link (`parseRevertParam`).
+The daily digest's `?revert=<claim id>` opens that claim's confirm straight away, looked up with `claimId` so an approval older than the first page still opens. A claim already reverted, or one that didn't approve itself, gets a line saying so instead. Only a positive whole number is read from the link (`parseRevertParam`). Each link is handled once per visit, and the list and the lookup read the auth token through a ref, so its refresh every few minutes doesn't reopen a closed confirm, clear a typed reason, call a claim just reverted "already reverted", or drop the pages already loaded.
 
 ## The daily digest
 
@@ -152,4 +156,5 @@ When a domain-claim link fails (`used`, `expired`, `superseded`) the redirect to
 - Probation gates: `deleteGym`, `addGymMember`, `removeGymMember`, `revokeGymWriteAccess` in `gyms.ts`; `boardDeleteAuthority` and `viewerMayDeleteBoard` in `boards.ts`.
 - Staff writes and `deleteGym` under the gym row lock: `withGymStaffLock` and `deleteGym` in `gyms.ts`.
 - Sweep step and digest section: `packages/backend/src/services/directory-report-sweep.ts`.
-- Tests: `packages/backend/src/__tests__/gym-claim-guardrails.test.ts`.
+- Who can claim: `canClaim` in `enrichGym` (`gyms.ts`), `computeClaimableFlags` in `gym-matching.ts`, the `GYM_RUN_BY_STAFF` refusal in `requestGymClaim`, and `gymIdsRunByStaff` in `gym-run-by-staff.ts`.
+- Tests: `packages/backend/src/__tests__/gym-claim-guardrails.test.ts`; who can claim in `gym-write-access-and-claims.test.ts`.
