@@ -315,7 +315,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
     return unavailableResponse();
   }
 
-  return xmlResponse(body, id === 'playlists' ? 'private, no-store' : undefined);
+  return xmlResponse(body, id === 'playlists' || id === 'gyms' ? 'private, no-store' : undefined);
 }
 
 // ---------------------------------------------------------------------------

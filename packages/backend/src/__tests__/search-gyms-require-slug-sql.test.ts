@@ -396,3 +396,37 @@ describe('searchGyms angles — rendered SQL', () => {
     }
   });
 });
+
+describe('searchGyms requireLocation — both query paths', () => {
+  beforeEach(() => {
+    mockDb.execute.mockClear();
+    mockDb.select.mockClear();
+    textSelectCaptures.length = 0;
+  });
+
+  it('filters the same valid coordinates in text count and rows', async () => {
+    const { wheres } = await textSearchWith({ ...TEXT_INPUT, requireLocation: true });
+    expect(wheres).toHaveLength(2);
+    expect(wheres[0]).toBe(wheres[1]);
+    expect(wheres[0]).toContain('"gyms"."latitude" BETWEEN -90 AND 90');
+    expect(wheres[0]).toContain('"gyms"."longitude" BETWEEN -180 AND 180');
+  });
+
+  it('filters the same valid coordinates in proximity count and rows', async () => {
+    const statements = await searchWith({ ...PROXIMITY_INPUT, requireLocation: true });
+    expect(statements).toHaveLength(2);
+    for (const statement of statements) {
+      expect(statement).toContain('gyms.latitude BETWEEN -90 AND 90');
+      expect(statement).toContain('gyms.longitude BETWEEN -180 AND 180');
+    }
+  });
+
+  it('preserves existing text and proximity callers when false', async () => {
+    const baseline = await textSearchWith(TEXT_INPUT);
+    textSelectCaptures.length = 0;
+    expect(await textSearchWith({ ...TEXT_INPUT, requireLocation: false })).toEqual(baseline);
+    const [countSql, rowsSql] = await searchWith({ ...PROXIMITY_INPUT, requireLocation: false });
+    expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
+    expect(rowsSql).toBe(BASELINE_PROXIMITY_ROWS_SQL);
+  });
+});

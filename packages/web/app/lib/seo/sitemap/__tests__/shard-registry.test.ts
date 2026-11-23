@@ -189,10 +189,10 @@ describe('SHARD_REGISTRY', () => {
 });
 
 describe('declared-empty shards', () => {
-  it('ships gyms empty, on purpose', () => {
+  it('ships gyms empty until cleanup is verified', async () => {
     // Guards the #4381 hand-off: the route answers 200 with a valid empty
     // <urlset> and only needs its builder filled. `setters` was the other half
     // of that hand-off and is now a paged, data-backed shard.
-    expect(buildGymEntries()).toEqual([]);
+    expect(await buildGymEntries()).toEqual([]);
   });
 });

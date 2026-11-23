@@ -38,6 +38,12 @@ describe('gymIsIndexableVenue', () => {
     expect(gymIsIndexableVenue(candidate({ latitude: 0, longitude: 0 }))).toBe(true);
   });
 
+  it('rejects out-of-range coordinates', () => {
+    expect(gymIsIndexableVenue(candidate({ latitude: 91 }))).toBe(false);
+    expect(gymIsIndexableVenue(candidate({ longitude: -181 }))).toBe(false);
+    expect(gymIsIndexableVenue(candidate({ latitude: -90, longitude: 180 }))).toBe(true);
+  });
+
   it('rejects a non-finite coordinate', () => {
     expect(gymIsIndexableVenue(candidate({ latitude: Number.NaN }))).toBe(false);
     expect(gymIsIndexableVenue(candidate({ latitude: Number.POSITIVE_INFINITY }))).toBe(false);

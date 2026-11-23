@@ -14,7 +14,8 @@ import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { localeHref } from '@/app/lib/i18n/locale-href';
-import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
+import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
+import { gymDirectoryIndexingEnabled } from '@/app/lib/seo/gym-directory-indexing';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
@@ -59,16 +60,19 @@ export type DirectoryRouteProps = {
  * this issue exists to build. `/gyms?boardType=grasshopper` canonicalises to
  * `/gyms` for the mirror-image reason: the long tail gets no page of its own.
  *
- * Every route is `noindex, follow`. The routes themselves are public and
- * unconditional, but the listings stay out of the index until the duplicate-gym
- * queue is drained and the gyms sitemap shard can enumerate them (#4372,
- * #4381) — indexed duplicates outlive their merges in Google's cache. Removing
- * the noindex is a one-line change here once that lands.
+ * Clean directory routes become indexable with the sitemap rollout switch.
+ * Filtered, paginated and attribution variants remain noindex and canonical to
+ * their clean base. Keep the switch off until duplicate cleanup is verified.
  */
-export async function generateGymDirectoryMetadata(facet: DirectoryFacet): Promise<Metadata> {
+export async function generateGymDirectoryMetadata(
+  facet: DirectoryFacet,
+  searchParams: DirectorySearchParams = {},
+): Promise<Metadata> {
   const { t, locale } = await getServerTranslation('gyms');
+  const indexable = gymDirectoryIndexingEnabled() && Object.keys(searchParams).length === 0;
+  const createMetadata = indexable ? createPageMetadata : createNoIndexMetadata;
 
-  return createNoIndexMetadata({
+  return createMetadata({
     title: facetMetaTitle(t, facet),
     description: facetMetaDescription(t, facet),
     path: FACET_BASE_PATHS[facet],

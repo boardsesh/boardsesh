@@ -9,8 +9,8 @@ export type IndexableVenueCandidate = Pick<Gym, 'isPublic' | 'latitude' | 'longi
   isListed?: boolean;
 };
 
-function isRealCoordinate(value: number | null | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+function isRealCoordinate(coordinate: number | null | undefined, maximum: number): coordinate is number {
+  return typeof coordinate === 'number' && Number.isFinite(coordinate) && Math.abs(coordinate) <= maximum;
 }
 
 /**
@@ -35,12 +35,10 @@ function isRealCoordinate(value: number | null | undefined): value is number {
  * The coordinate split is not a guess about data completeness. The Aurora gym
  * sync validates coordinates before writing, so a synced commercial gym always
  * has a pin, while a garage wall someone created by hand never does. The same
- * proxy is already load-bearing one layer down: `searchGyms` filters
- * `location IS NOT NULL` (packages/backend/src/graphql/resolvers/social/gyms.ts),
- * which is the only reason `/gyms` renders no home walls today. `location` and
- * `latitude`/`longitude` are the same gate — the `gyms_set_location` trigger
- * derives the PostGIS geography from the pair on every write and nulls it when
- * they are cleared.
+ * proxy also gates directory searches through `requireLocation` and the
+ * backend's public gym sitemap query. Both coordinates must be finite and in
+ * geographic range. Text search callers that do not request venue eligibility
+ * keep their existing behaviour.
  *
  * So: do NOT "simplify" this back to `gym.isPublic`. Dropping the coordinate
  * clause republishes 1,620 personal home walls into the index, which is the
@@ -57,5 +55,7 @@ function isRealCoordinate(value: number | null | undefined): value is number {
  * identical to the number that justifies it.
  */
 export function gymIsIndexableVenue(gym: IndexableVenueCandidate): boolean {
-  return gym.isPublic && gym.isListed !== false && isRealCoordinate(gym.latitude) && isRealCoordinate(gym.longitude);
+  return (
+    gym.isPublic && gym.isListed !== false && isRealCoordinate(gym.latitude, 90) && isRealCoordinate(gym.longitude, 180)
+  );
 }

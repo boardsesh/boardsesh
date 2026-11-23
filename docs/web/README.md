@@ -22,6 +22,8 @@ a production rollout or a physical-device result.
 | Document | Path |
 | --- | --- |
 | [Manage gym boards](gym-board-management.md) | `gym-board-management.md` |
+| [Gym directory indexing](gym-directory-indexing.md) | `gym-directory-indexing.md` |
+| [Gym duplicate audit, 22 November 2026](gym-dedup-audit-2026-11-22.md) | `gym-dedup-audit-2026-11-22.md` |
 | [Gym place search](gym-place-search.md) | `gym-place-search.md` |
 | [Climb OG share cards (`GET /og/climb`)](og-climb.md) | `og-climb.md` |
 | [Public page design: climb pages and their siblings](public-page-design.md) | `public-page-design.md` |

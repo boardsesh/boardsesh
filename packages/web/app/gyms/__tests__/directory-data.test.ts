@@ -22,25 +22,43 @@ describe('directory query isolation', () => {
       radiusKm: 50,
     });
     expect(request).toHaveBeenCalledWith({
-      input: { requireSlug: true, latitude: -33.86785, longitude: 151.20732, radiusKm: 50, limit: 24, offset: 0 },
+      input: {
+        requireSlug: true,
+        requireLocation: true,
+        latitude: -33.86785,
+        longitude: 151.20732,
+        radiusKm: 50,
+        limit: 24,
+        offset: 0,
+      },
     });
   });
   it('keeps the normal directory at 24 results without claimed priority', async () => {
     await fetchDirectoryPage({ ...query, page: 2 });
-    expect(request).toHaveBeenCalledWith({ input: { requireSlug: true, limit: 24, offset: 24 } });
+    expect(request).toHaveBeenCalledWith({
+      input: { requireSlug: true, requireLocation: true, limit: 24, offset: 24 },
+    });
   });
 
   it('sends homepage ordering and size to the backend as distinct cache arguments', async () => {
     await fetchDirectoryPage(query, { prioritizeClaimed: true, limit: 4 });
     expect(request).toHaveBeenCalledWith({
-      input: { requireSlug: true, prioritizeClaimed: true, limit: 4, offset: 0 },
+      input: { requireSlug: true, requireLocation: true, prioritizeClaimed: true, limit: 4, offset: 0 },
     });
   });
 
-  it('does not add the flag to ordinary proximity searches', async () => {
+  it('does not prioritize claimed gyms in ordinary proximity searches', async () => {
     await fetchDirectoryPage({ ...query, latitude: -33.86, longitude: 151.2, radiusKm: 25 });
     expect(request).toHaveBeenCalledWith({
-      input: { requireSlug: true, latitude: -33.86, longitude: 151.2, radiusKm: 25, limit: 24, offset: 0 },
+      input: {
+        requireSlug: true,
+        requireLocation: true,
+        latitude: -33.86,
+        longitude: 151.2,
+        radiusKm: 25,
+        limit: 24,
+        offset: 0,
+      },
     });
   });
 });

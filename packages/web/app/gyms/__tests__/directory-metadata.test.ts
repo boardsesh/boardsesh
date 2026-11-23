@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
@@ -42,12 +42,15 @@ function mockLocale(locale: string) {
 beforeEach(() => {
   getServerTranslation.mockReset();
   mockLocale('en-US');
+  vi.stubEnv('GYM_DIRECTORY_INDEXING_ENABLED', 'true');
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('canonical matrix', () => {
   it('makes every route self-canonical on its OWN clean base', async () => {
     for (const route of ROUTES) {
-      const metadata = await route.generateMetadata();
+      const metadata = await route.generateMetadata({ searchParams: Promise.resolve({}) });
       // A facet page canonicalises to itself, NOT to /gyms: it is a distinct
       // page with distinct copy, and folding it into /gyms would throw away the
       // "<board> board near me" surface this route exists to be.
@@ -58,23 +61,31 @@ describe('canonical matrix', () => {
     }
   });
 
-  it('cannot let a query param reach the canonical, because it never sees one', async () => {
-    // Structural, not defensive: `generateMetadata` takes no arguments at all,
-    // so `?q`, `?page`, `?lat`/`?lng`/`?radius` and `?boardType` physically
-    // cannot be concatenated into `path`. Every variant collapses to the base.
+  it('keeps filtered variants noindex and canonical to the clean base', async () => {
     for (const route of ROUTES) {
-      expect({ route: route.name, arity: route.generateMetadata.length }).toEqual({ route: route.name, arity: 0 });
+      for (const searchParams of [
+        { q: 'bristol' },
+        { page: '2' },
+        { lat: '51', lng: '0' },
+        { boardType: 'kilter' },
+        { claim: '1' },
+        { unknown: 'x' },
+      ]) {
+        const metadata = await route.generateMetadata({ searchParams: Promise.resolve(searchParams) });
+        expect(metadata.alternates?.canonical).toBe(route.base);
+        expect(metadata.robots).toEqual({ index: false, follow: true });
+      }
     }
   });
 
   it('carries the canonical into the locale prefix', async () => {
     mockLocale('de');
-    const metadata = await kilterRoute.generateMetadata();
+    const metadata = await kilterRoute.generateMetadata({ searchParams: Promise.resolve({}) });
     expect(metadata.alternates?.canonical).toBe('/de/gyms/kilter');
   });
 
   it('emits hreflang alternates for every locale plus x-default', async () => {
-    const metadata = await moonboardRoute.generateMetadata();
+    const metadata = await moonboardRoute.generateMetadata({ searchParams: Promise.resolve({}) });
     expect(metadata.alternates?.languages).toEqual({
       'en-US': '/gyms/moonboard',
       es: '/es/gyms/moonboard',
@@ -88,16 +99,18 @@ describe('canonical matrix', () => {
 });
 
 describe('robots', () => {
-  it('ships noindex, follow on every route while the directory is flag-gated', async () => {
+  it('indexes clean directory routes when the rollout is enabled', async () => {
     for (const route of ROUTES) {
-      const metadata = await route.generateMetadata();
-      // Launch (#4382) removes this and nothing else. Note the gate is BOTH:
-      // the page also 404s while the flag is off, because noindex alone would
-      // still leave a publicly reachable directory.
-      expect({ route: route.name, robots: metadata.robots }).toEqual({
-        route: route.name,
-        robots: { index: false, follow: true },
-      });
+      const metadata = await route.generateMetadata({ searchParams: Promise.resolve({}) });
+      expect(metadata.robots).toBeUndefined();
+    }
+  });
+
+  it.each([undefined, '', 'false', 'TRUE'])('keeps the duplicate-cleanup hold for %s', async (flag) => {
+    vi.stubEnv('GYM_DIRECTORY_INDEXING_ENABLED', flag);
+    for (const route of ROUTES) {
+      const metadata = await route.generateMetadata({ searchParams: Promise.resolve({}) });
+      expect(metadata.robots).toEqual({ index: false, follow: true });
     }
   });
 });
@@ -106,7 +119,7 @@ describe('titles and descriptions', () => {
   it('gives every route a unique, brand-suffixed title', async () => {
     const titles = await Promise.all(
       ROUTES.map(async (route) => {
-        const { title } = await route.generateMetadata();
+        const { title } = await route.generateMetadata({ searchParams: Promise.resolve({}) });
         // `createPageMetadata` always emits the `absolute` form so the root
         // layout's `%s | Boardsesh` template can't double-suffix it.
         expect(title).toHaveProperty('absolute');
@@ -121,7 +134,9 @@ describe('titles and descriptions', () => {
   });
 
   it('gives every route a unique description', async () => {
-    const descriptions = await Promise.all(ROUTES.map(async (route) => (await route.generateMetadata()).description));
+    const descriptions = await Promise.all(
+      ROUTES.map(async (route) => (await route.generateMetadata({ searchParams: Promise.resolve({}) })).description),
+    );
     expect(new Set(descriptions).size).toBe(ROUTES.length);
   });
 });
