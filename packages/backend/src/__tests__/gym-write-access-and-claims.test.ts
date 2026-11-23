@@ -87,10 +87,12 @@ const authCtx = (userId: string): ConnectionContext =>
 
 const anonCtx = (): ConnectionContext => ({ connectionId: 'conn-anon', isAuthenticated: false }) as ConnectionContext;
 
+// Accounts are 60 days old, past the 30-day minimum for a claim to approve
+// itself (gym-claim-guardrails.ts); gym-claim-guardrails.test.ts covers the guards.
 const insertUser = (id: string) =>
   db.execute(sql`
     INSERT INTO "users" (id, email, name, created_at, updated_at)
-    VALUES (${id}, ${id + '@test.com'}, ${'User ' + id}, now(), now())
+    VALUES (${id}, ${id + '@test.com'}, ${'User ' + id}, now() - interval '60 days', now())
     ON CONFLICT (id) DO NOTHING
   `);
 
@@ -1577,12 +1579,14 @@ describe('applyGymClaim / verifyGymClaimByToken — ownership transfer', () => {
     expect(applied).toEqual({
       outcome: 'applied',
       applied: {
+        gymId: claimGym.id,
         gymName: 'Real Gym',
         gymUuid: claimGym.uuid,
         gymSlug: claimGym.uuid, // insertGym seeds slug = uuid
         claimantUserId: CLAIMANT,
         claimEmail: 'boss@realgym.com',
         priorOwnerId: PRIOR_OWNER,
+        didTransfer: true,
       },
     });
 
@@ -1646,7 +1650,8 @@ describe('applyGymClaim / verifyGymClaimByToken — ownership transfer', () => {
     });
 
     const result = await verifyGymClaimByToken('expiredtok');
-    expect(result).toEqual({ ok: false, reason: 'expired' });
+    // The gym is named so the error page can link back to it (insertGym seeds slug = uuid).
+    expect(result).toEqual({ ok: false, reason: 'expired', gymRef: claimGym.uuid });
 
     // No ownership change, and the row is flipped to 'expired' so a later click can't reuse it.
     expect(await gymOwnerId(claimGym.uuid)).toBe(OWNER);
@@ -2243,10 +2248,12 @@ describe('requestGymClaim — auto-approval', () => {
       results.push(result.status);
     }
 
-    // The limit caps instant hand-overs at 3; the 4th must fall back to the
-    // queue rather than reject — its claim row is already committed, so an
-    // error would tell the user their request failed when it didn't.
-    expect(results).toEqual(['approved', 'approved', 'approved', 'admin_review']);
+    // One account gets one claim approved without review, ever; the rest queue,
+    // and so does the 4th once the rate limit is spent. None rejects — each
+    // claim row is already committed, so an error would tell the user their
+    // request failed when it didn't. gym-claim-guardrails.test.ts tells the
+    // two stops apart.
+    expect(results).toEqual(['approved', 'admin_review', 'admin_review', 'admin_review']);
 
     expect(await gymOwnerId(gyms[3].uuid)).toBe(SYSTEM_OWNER);
     expect(await claimRows(gyms[3].id)).toEqual([expect.objectContaining({ method: 'admin', status: 'pending' })]);
@@ -3403,7 +3410,11 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
     vi.clearAllMocks();
 
-    expect(await verifyGymClaimByToken('superseded-token')).toEqual({ ok: false, reason: 'superseded' });
+    expect(await verifyGymClaimByToken('superseded-token')).toEqual({
+      ok: false,
+      reason: 'superseded',
+      gymRef: claimGym.uuid,
+    });
 
     expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
     expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();

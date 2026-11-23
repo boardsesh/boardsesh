@@ -17,6 +17,16 @@ export const GYM_SETTING_PREFIX = 'gym_';
 
 export const GYM_CLAIM_AUTO_APPROVE_KEY = 'gym_claim_auto_approve';
 
+/**
+ * How many claims may approve themselves across every account in a rolling 24
+ * hours (docs/product/gym-claims.md). Past it, claims wait for review. The
+ * `gym_` prefix makes it admin-only, like the switch it limits.
+ */
+export const GYM_CLAIM_AUTO_APPROVE_DAILY_CAP_KEY = 'gym_claim_auto_approve_daily_cap';
+
+/** The cap when the setting is missing or not a whole number. */
+export const DEFAULT_GYM_CLAIM_AUTO_APPROVE_DAILY_CAP = 10;
+
 export function isGymSettingKey(key: string): boolean {
   return key.startsWith(GYM_SETTING_PREFIX);
 }
@@ -36,6 +46,7 @@ export const DEFAULTS: Record<string, string> = {
   leader_vote_weight: '2',
   // Off until an admin turns it on — auto-approval transfers gym ownership.
   [GYM_CLAIM_AUTO_APPROVE_KEY]: '0',
+  [GYM_CLAIM_AUTO_APPROVE_DAILY_CAP_KEY]: String(DEFAULT_GYM_CLAIM_AUTO_APPROVE_DAILY_CAP),
 };
 
 /**
@@ -105,6 +116,17 @@ export async function resolveCommunitySetting(
 export async function gymClaimAutoApproveEnabled(): Promise<boolean> {
   const value = await resolveCommunitySetting(GYM_CLAIM_AUTO_APPROVE_KEY);
   return value === '1' || value === 'true';
+}
+
+/**
+ * The global cap on claims that approve themselves in 24 hours. A value that is
+ * not a whole number reads as the default; a negative one as 0 (nothing
+ * approves itself).
+ */
+export async function gymClaimAutoApproveDailyCap(): Promise<number> {
+  const value = (await resolveCommunitySetting(GYM_CLAIM_AUTO_APPROVE_DAILY_CAP_KEY)).trim();
+  if (!/^-?\d+$/.test(value)) return DEFAULT_GYM_CLAIM_AUTO_APPROVE_DAILY_CAP;
+  return Math.max(0, Number.parseInt(value, 10));
 }
 
 export const socialCommunitySettingsQueries = {

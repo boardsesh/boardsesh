@@ -56,6 +56,7 @@ import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
 import { rolesGrantAdmin } from '@boardsesh/community-roles';
+import { gymClaimProbationEndsAt, gymClaimProbationError, loadGymClaimProbations } from './gym-claim-guardrails';
 import type { BoardModerationActorRole } from '@boardsesh/db/schema';
 import {
   recordBoardModerationEvent,
@@ -298,8 +299,10 @@ async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardE
  * - its creator;
  * - the owner or an admin of its live linked gym, on a SYSTEM (synced) board
  *   only. A climber's board at the gym is theirs: staff take it off the
- *   listing with `detachBoardFromGym` instead;
- * - a global admin, on any board.
+ *   listing with `detachBoardFromGym` instead. Not while the gym is in its
+ *   14-day claim probation (docs/product/gym-claims.md): that refusal carries
+ *   `GYM_CLAIM_PROBATION`;
+ * - a global admin, on any board, probation or not.
  *
  * A non-owner must also be able to read the board: gym management and admin
  * status never reveal a private board by UUID. Returns the role used, which
@@ -333,7 +336,12 @@ async function boardDeleteAuthority(
 ): Promise<BoardModerationActorRole | null> {
   if (board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId != null) {
     const gymRole = await viewerGymManagerRole(board.gymId, userId, executor);
-    if (gymRole) return gymRole;
+    if (gymRole) {
+      const probationEndsAt = await gymClaimProbationEndsAt(board.gymId, executor);
+      if (probationEndsAt === null) return gymRole;
+      if (rolesGrantAdmin(await getUserCommunityRoles(userId, executor), null)) return 'global_admin';
+      throw gymClaimProbationError(probationEndsAt);
+    }
   }
   if (rolesGrantAdmin(await getUserCommunityRoles(userId, executor), null)) return 'global_admin';
   return null;
@@ -350,7 +358,12 @@ function viewerMayDeleteBoard(
 ): boolean {
   if (board.deletedAt != null) return false;
   if (board.ownerId === viewerId) return true;
-  if (board.ownerId === SYSTEM_BOARD_OWNER_ID && board.gymId != null && authority.managedGymIds.has(board.gymId)) {
+  if (
+    board.ownerId === SYSTEM_BOARD_OWNER_ID &&
+    board.gymId != null &&
+    authority.managedGymIds.has(board.gymId) &&
+    !authority.probationGymIds.has(board.gymId)
+  ) {
     return true;
   }
   return rolesGrantAdmin(viewerRoles, null);
@@ -383,7 +396,15 @@ type ViewerGymAuthority = {
   managedGymIds: Set<number>;
   /** Live gyms that pass `requireGymEditAccess` for the viewer: detach. */
   editableGymIds: Set<number>;
+  /** Of the managed gyms, those in claim probation: no delete of SYSTEM boards there. */
+  probationGymIds: Set<number>;
 };
+
+const NO_GYM_AUTHORITY = (): ViewerGymAuthority => ({
+  managedGymIds: new Set<number>(),
+  editableGymIds: new Set<number>(),
+  probationGymIds: new Set<number>(),
+});
 
 /** One query: the viewer's ownership and membership role at each live gym. */
 async function loadViewerGymRows(
@@ -422,11 +443,13 @@ async function resolveViewerGymAuthority(
     if (isOwner || row.memberRole === 'admin') managedGymIds.add(row.id);
     if (isOwner || row.memberRole === 'admin' || row.memberRole === 'editor') editableGymIds.add(row.id);
   }
-  if (liveGymIds.length === 0) return { managedGymIds, editableGymIds };
+  // One read for every managed gym, only when the viewer manages any.
+  const probationGymIds = new Set((await loadGymClaimProbations([...managedGymIds], executor)).keys());
+  if (liveGymIds.length === 0) return { managedGymIds, editableGymIds, probationGymIds };
 
   if (rolesGrantAdminOrLeader([...viewerRoles], null)) {
     for (const gymId of liveGymIds) editableGymIds.add(gymId);
-    return { managedGymIds, editableGymIds };
+    return { managedGymIds, editableGymIds, probationGymIds };
   }
   const scopedBoardTypes = [
     ...new Set(
@@ -450,7 +473,7 @@ async function resolveViewerGymAuthority(
       if (gymId != null) editableGymIds.add(gymId);
     }
   }
-  return { managedGymIds, editableGymIds };
+  return { managedGymIds, editableGymIds, probationGymIds };
 }
 
 /**
@@ -695,7 +718,7 @@ async function enrichBoard(
   const location = projectBoardLocation(board, gymInfoResult, showLocation);
   const gymAuthority = authenticatedUserId
     ? await resolveViewerGymAuthority(viewerGymRows, authenticatedUserId, viewerRoles)
-    : { managedGymIds: new Set<number>(), editableGymIds: new Set<number>() };
+    : NO_GYM_AUTHORITY();
   const canEdit = authenticatedUserId
     ? board.ownerId === authenticatedUserId ||
       (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
@@ -917,7 +940,7 @@ export async function enrichBoards(
   // grant removing a board from the listing.
   const gymAuthority = authenticatedUserId
     ? await resolveViewerGymAuthority(viewerGymRows, authenticatedUserId, viewerRoles)
-    : { managedGymIds: new Set<number>(), editableGymIds: new Set<number>() };
+    : NO_GYM_AUTHORITY();
   const boardEditGymIds = gymAuthority.managedGymIds;
 
   const editableSprayWallUuids = authenticatedUserId

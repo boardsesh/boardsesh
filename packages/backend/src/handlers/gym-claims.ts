@@ -28,7 +28,10 @@ export async function handleGymClaimVerify(req: IncomingMessage, res: ServerResp
       redirectTo(res, `${web}/gym-claim/success?gym=${encodeURIComponent(gymRef)}`);
       return;
     }
-    redirectTo(res, `${web}/gym-claim/error?reason=${encodeURIComponent(result.reason)}`);
+    // Name the gym when the token named a claim, so the error page can link
+    // back to it ("Back to {gym}"). An unknown token names nothing.
+    const gymParam = result.gymRef ? `&gym=${encodeURIComponent(result.gymRef)}` : '';
+    redirectTo(res, `${web}/gym-claim/error?reason=${encodeURIComponent(result.reason)}${gymParam}`);
   } catch (error) {
     logger.error('[GymClaim] Verification failed:', error);
     redirectTo(res, `${web}/gym-claim/error?reason=server_error`);

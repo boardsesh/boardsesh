@@ -11,9 +11,11 @@
  *    (`escalated`).
  * 3. Open reports older than seven days with no reminder get one: a second
  *    notice to the people the report went to.
- * 4. Once a UTC day, from 08:00, the team gets the digest: reports that reached
- *    the admin queue since the last digest, and the sections other features add.
- *    No email when every section is empty.
+ * 4. Admin-review gym claims nobody decided within 30 days expire, and the
+ *    claimant hears (`expireStaleAdminClaims`, docs/product/gym-claims.md).
+ * 5. Once a UTC day, from 08:00, the team gets the digest: reports that reached
+ *    the admin queue since the last digest, claims that approved themselves,
+ *    and the sections other features add. No email when every section is empty.
  *
  * On the job queue: `DIRECTORY_REPORT_SWEEP_QUEUE` is `exclusive`, so one run is
  * queued or running across every replica.
@@ -36,6 +38,8 @@ import {
   type PendingDirectoryNotice,
 } from '../graphql/resolvers/social/directory-reports/notices';
 import { reminderRecipients } from '../graphql/resolvers/social/directory-reports/submit';
+import { expireStaleAdminClaims } from '../graphql/resolvers/social/gym-claims';
+import { autoApprovedClaimCondition } from '../graphql/resolvers/social/gym-claim-guardrails';
 
 /** Every hour at :47 UTC, away from the :00, :17, :23 and :34 jobs. */
 export const DIRECTORY_REPORT_SWEEP_CRON = '47 * * * *';
@@ -52,6 +56,8 @@ export type DirectoryReportSweepResult = {
   closedForVanishedTargets: number;
   escalated: number;
   reminded: number;
+  /** Admin-review gym claims that expired after 30 days without a decision. */
+  claimsExpired: number;
   digest: AdminDigestOutcome;
   /** Reports a step could not handle this run, and steps that failed outright. The next run tries them again. */
   failures: number;
@@ -80,8 +86,9 @@ export async function runDirectoryReportSweep(now: Date = new Date()): Promise<D
   const closedForVanishedTargets = await step('close', () => closeReportsOnVanishedTargets(failures), 0);
   const escalated = await step('escalate', () => escalateOverdueReports(now), 0);
   const reminded = await step('remind', () => remindOpenReports(now, failures), 0);
+  const claimsExpired = await step('expire claims', () => expireStaleAdminClaims(now, failures, SWEEP_BATCH), 0);
   const digest = await step('digest', () => maybeSendAdminDigest(now), 'failed' as AdminDigestOutcome);
-  return { closedForVanishedTargets, escalated, reminded, digest, failures: failures.count };
+  return { closedForVanishedTargets, escalated, reminded, claimsExpired, digest, failures: failures.count };
 }
 
 /** Step 1: reports whose board or gym is gone close as deleted or merged, by the system. */
@@ -231,8 +238,7 @@ export type AdminDigestWindow = { start: Date; end: Date };
 
 /**
  * A digest section, or null when it has nothing to report. Add a provider to
- * {@link ADMIN_DIGEST_SECTION_PROVIDERS} to put a new section in the email;
- * the claim guardrails PR fills {@link autoApprovedClaimsSection}.
+ * {@link ADMIN_DIGEST_SECTION_PROVIDERS} to put a new section in the email.
  */
 export type AdminDigestSectionProvider = (window: AdminDigestWindow) => Promise<AdminDigestSection | null>;
 
@@ -306,11 +312,69 @@ export async function escalatedReportsSection(window: AdminDigestWindow): Promis
 }
 
 /**
- * Claims that approved themselves in the window, each with a link to revert it.
- * Empty until the claim guardrails land: that PR replaces this body.
+ * Claims that approved themselves in the window (by their ownership decision's
+ * time), each with the gym, the claimant's name and how old their account was
+ * when it approved, and a link to revert it: `/admin/gym-claims?revert=<claim
+ * id>` (docs/product/gym-claims.md). One already reverted says so and keeps
+ * its link, so the count is every auto-approval in the window.
  */
-export async function autoApprovedClaimsSection(_window: AdminDigestWindow): Promise<AdminDigestSection | null> {
-  return null;
+export async function autoApprovedClaimsSection(window: AdminDigestWindow): Promise<AdminDigestSection | null> {
+  const inWindow = and(
+    autoApprovedClaimCondition(['approved', 'revoked']),
+    eq(dbSchema.gymClaimOwnershipDecisions.didTransfer, true),
+    gt(dbSchema.gymClaimOwnershipDecisions.decidedAt, window.start),
+    lte(dbSchema.gymClaimOwnershipDecisions.decidedAt, window.end),
+  );
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(dbSchema.gymClaims)
+    .innerJoin(
+      dbSchema.gymClaimOwnershipDecisions,
+      eq(dbSchema.gymClaimOwnershipDecisions.claimId, dbSchema.gymClaims.id),
+    )
+    .where(inWindow);
+  if (total === 0) return null;
+  const claims = await db
+    .select({
+      id: dbSchema.gymClaims.id,
+      status: dbSchema.gymClaims.status,
+      approvedAt: dbSchema.gymClaimOwnershipDecisions.decidedAt,
+      gymName: dbSchema.gyms.name,
+      displayName: dbSchema.userProfiles.displayName,
+      userName: dbSchema.users.name,
+      accountCreatedAt: dbSchema.users.createdAt,
+    })
+    .from(dbSchema.gymClaims)
+    .innerJoin(
+      dbSchema.gymClaimOwnershipDecisions,
+      eq(dbSchema.gymClaimOwnershipDecisions.claimId, dbSchema.gymClaims.id),
+    )
+    .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymClaims.gymId))
+    .leftJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.gymClaims.claimantUserId))
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.gymClaims.claimantUserId))
+    .where(inWindow)
+    .orderBy(asc(dbSchema.gymClaimOwnershipDecisions.decidedAt), asc(dbSchema.gymClaims.id))
+    .limit(ADMIN_DIGEST_MAX_ROWS);
+  const queueUrl = `${webPublicUrl()}/admin/gym-claims`;
+  return {
+    key: 'autoApprovedClaims',
+    heading: 'Claims that approved themselves',
+    total,
+    moreUrl: queueUrl,
+    moreLabel: 'Open the claim queue',
+    rows: claims.map((claim) => {
+      const claimant = claim.displayName || claim.userName || 'A climber';
+      const accountAgeDays = claim.accountCreatedAt
+        ? Math.max(0, Math.floor((claim.approvedAt.getTime() - claim.accountCreatedAt.getTime()) / DAY_MS))
+        : null;
+      const age = accountAgeDays === null ? 'account deleted' : `account ${accountAgeDays} days old`;
+      const reverted = claim.status === 'revoked' ? ' (already reverted)' : '';
+      return {
+        label: `${claim.gymName}: claimed by ${claimant}, ${age}${reverted}`,
+        url: `${queueUrl}?revert=${encodeURIComponent(String(claim.id))}`,
+      };
+    }),
+  };
 }
 
 /** The digest's sections, in the order the email shows them. */
@@ -403,7 +467,8 @@ export async function startDirectoryReportSweep(boss: PgBoss): Promise<void> {
   await boss.work(DIRECTORY_REPORT_SWEEP_QUEUE, async () => {
     const result = await runDirectoryReportSweep();
     if (
-      result.closedForVanishedTargets + result.escalated + result.reminded + result.failures > 0 ||
+      result.closedForVanishedTargets + result.escalated + result.reminded + result.claimsExpired + result.failures >
+        0 ||
       result.digest === 'sent'
     ) {
       logger.info('[DirectoryReports] Sweep', result);
