@@ -3,8 +3,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { SessionContext } from 'next-auth/react';
-import type { Session } from 'next-auth';
+import type { BrowserSession, useOptionalBrowserSession } from '@/app/components/providers/session-provider';
 
 /**
  * The comments section's queries used to run on every climb page view,
@@ -15,6 +14,11 @@ import type { Session } from 'next-auth';
  * The mocked section module records when it is first imported, so "nothing
  * loads" means the chunk itself, not only its queries.
  */
+
+const browserSession = vi.hoisted(() => ({ current: undefined as ReturnType<typeof useOptionalBrowserSession> }));
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useOptionalBrowserSession: () => browserSession.current,
+}));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/fr/kilter/original/12x12-square/screw_bolt/40/view/my-climb',
@@ -64,21 +68,21 @@ const LABELS = { heading: 'Comments and grade votes', signIn: 'Sign in to join i
 const update = async () => null;
 const SIGNED_IN = {
   status: 'authenticated',
-  data: { user: { id: 'climber' }, expires: '2099-01-01T00:00:00Z' } as Session,
+  data: { user: { id: 'climber' }, expires: '2099-01-01T00:00:00Z' } as BrowserSession,
   update,
 } as const;
 const SIGNED_OUT = { status: 'unauthenticated', data: null, update } as const;
 
 /** The root layout's session, as the page sees it after the session read. */
 function renderRow(session: typeof SIGNED_IN | typeof SIGNED_OUT = SIGNED_OUT) {
+  browserSession.current = session;
   return render(
-    <SessionContext.Provider value={session}>
-      <DeferredClimbSocial climbUuid="my-climb" boardType="kilter" angle={40} boardName="kilter" labels={LABELS} />
-    </SessionContext.Provider>,
+    <DeferredClimbSocial climbUuid="my-climb" boardType="kilter" angle={40} boardName="kilter" labels={LABELS} />,
   );
 }
 
 beforeEach(() => {
+  browserSession.current = undefined;
   observers.length = 0;
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
 });

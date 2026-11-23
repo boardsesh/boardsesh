@@ -17,7 +17,7 @@ tradeoffs and operating procedures.
 | [Board rendering](rendering/README.md) | Board art geometry, GPU and WASM paths, rendering experiments and measurements that support active qualification. |
 | [Operations and delivery](operations/README.md) | Deployment, releases, hosting configuration, database operations, storage, disaster recovery and CI. Read each runbook’s gates before applying it. |
 | [Testing and qualification](qa/README.md) | Local and device testing, screenshot fixtures, CI gates and retained records of outstanding acceptance work. |
-| [Website and SEO](web/README.md) | The public SSR website, app handoffs, indexation, canonical URLs, gym search and Open Graph images. |
+| [Website and SEO](web/README.md) | The public SSR website, app handoffs, indexation, canonical URLs, gym search, Open Graph images and [supported-board gallery evidence](www-refresh/boards-readability.md). |
 | [Marketing and instructional media](marketing/README.md) | Store creatives, screenshots, help videos and repeatable capture and publication workflows. |
 | [Analytics and telemetry](analytics/README.md) | Consent, event contracts, growth measurements, error telemetry and feedback intake. |
 | [Translations](i18n/README.md) | Shared terminology and translation editing. Consult the target language glossary before changing copy. |

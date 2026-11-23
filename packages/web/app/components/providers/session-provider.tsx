@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session } from 'next-auth';
 import { getSession, SessionContext, type SessionContextValue } from 'next-auth/react';
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
@@ -20,6 +20,11 @@ import {
 
 export { useSession as useBrowserSession } from 'next-auth/react';
 export type { Session as BrowserSession } from 'next-auth';
+
+/** Reads an existing browser session without requiring a provider or starting a session request. */
+export function useOptionalBrowserSession(): SessionContextValue | undefined {
+  return useContext(SessionContext);
+}
 
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';

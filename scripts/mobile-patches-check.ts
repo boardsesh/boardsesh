@@ -851,11 +851,13 @@ export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
  * Server and web patches stay outside patches/, which is a native fingerprint input.
  * Postgres is guarded by the backend's ESM/CJS disconnect regression tests;
  * MUI is checked below and by the mixed-React compiler regression fixture.
+ * Next is guarded by the installed response and proxy close-lifecycle tests.
  * Only these exact keys and paths may bypass the native patch directory.
  */
 export const NON_NATIVE_PATCHES: Readonly<Record<string, string>> = {
   'postgres@3.4.9': 'packages/db/patches/postgres@3.4.9.patch',
   '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
+  'next@16.3.5': 'packages/web/patches/next@16.3.5.patch',
 };
 
 /** Resolve these files from web, whose React declarations the patch must use. */

@@ -227,6 +227,65 @@ Production-environment config this needs:
 | `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.               |
 | `RAILWAY_WEB_ORIGIN`     | var  | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected. |
 
+### Web response retention and out-of-memory recovery
+
+The web-local [Next 16.3.5 patch](../../packages/web/patches/next@16.3.5.patch)
+releases request state from closed responses. Next's response adapter registers
+close callbacks with `once`, including its CJS, ESM and bundled production
+implementations. Previously, callbacks remained attached after close and could
+keep `AfterContext`, work-unit stores and render/fetch state alive whenever
+another owner retained the response. A controlled test holding 100 closed
+responses retained all 100 request graphs before the change and none afterwards;
+callback order, `after()` tasks and fetch-metric cleanup were preserved.
+
+The same patch removes a duplicate upstream-response abort listener from the
+HTTP proxy. Its common cleanup already destroys that response on downstream
+close. The pre-response abort hook remains and is one-shot. This removes the
+extra listener on the `/monitoring` tunnel without increasing EventEmitter
+limits. Regression coverage exercises normal delivery, gzip, client disconnects
+and upstream errors. When upgrading Next, verify these lifecycle contracts
+against the installed package before retiring the patch. Keep web-only patches
+under `packages/web/patches`; the mobile fingerprint hashes the root `patches`
+directory.
+
+During the 2026-11-23 incident, Railway retained
+five `FATAL ERROR: ... JavaScript heap out of memory` messages. Node 22's unset
+heap setting resolved to approximately 1,956 MiB, and the pre-crash GC output
+reported about 1,830 MiB still used. The container's peak RSS was about 2.55 GB,
+below its 4,000,000,000-byte limit. The temporary service variable
+`NODE_OPTIONS=--max-old-space-size=2560` added headroom during investigation;
+it is not the retention fix. Restore the prior unset value after verifying
+the repaired build. Old-space limits are in MiB and do not include all process
+memory. Leave room for young-generation memory, native allocations and buffers;
+see [Node's memory-limit guidance](https://nodejs.org/download/release/latest-v22.x/docs/api/cli.html#--max-old-space-sizesize-in-mib).
+
+For a repeat incident:
+
+1. Read the failed deployment's fatal line and GC output. Separate a V8 heap
+   failure from a container memory-limit kill and database-read timeouts.
+2. Check `NODE_OPTIONS`, the actual runtime heap limit, container memory usage
+   and HTTP error rate before changing a limit. A green `/api/health` alone
+   does not establish that database-backed pages work.
+3. After a variable change, follow its exact deployment ID to `SUCCESS` and
+   verify the live health response's deployment and release identities.
+4. Verify closed responses no longer retain render-close callbacks, then
+   observe memory and 5xx responses under real traffic across the prior failure
+   interval. The observed restarts were roughly 18–20 minutes apart. Continued
+   growth needs retention investigation, rather than repeated limit increases.
+   Verify the deployment after restoring the prior `NODE_OPTIONS` value too.
+
+The same incident emitted `MaxListenersExceededWarning` for 11 `close` listeners
+on individual responses. A bounded runtime capture located the warning in
+Next's `httpxy.handleResponse → Readable.pipe → ServerResponse.once` proxy path.
+That stack identified the threshold crossing; it did not prove an accumulating
+proxy leak. A local proxy/compression/Sentry experiment reproduced warnings
+without accumulating responses, while the separate render-state experiment
+established the retained callback edge. Do not globally increase listener
+limits or describe warning suppression as an OOM fix. Prefer a bounded warning
+stack and allocation sample; close any diagnostic inspector and remove temporary
+hooks afterwards. Heap-object queries can trigger full GC. A near-limit full
+heap snapshot needs additional memory and can interrupt the service.
+
 ## Railway deploy identity and automatic recovery
 
 Both Railway services use `.github/actions/railway-redeploy`. Before changing
