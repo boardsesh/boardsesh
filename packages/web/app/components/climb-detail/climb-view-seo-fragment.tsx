@@ -58,7 +58,7 @@ const proofSx = {
 
 // --neutral-500, not 400: the separators are text on the page ground, and the
 // public-page contrast audit (and public-reading-tokens.test.ts) hold every
-// glyph here to 4.5:1. 400 measured 3.66:1 on #110A20.
+// glyph here to 4.5:1. 400 measured 5.97:1 on #0E0E0E.
 const proofSeparatorSx = { color: 'var(--neutral-500)' };
 
 const starSx = { color: 'var(--color-amber)' };

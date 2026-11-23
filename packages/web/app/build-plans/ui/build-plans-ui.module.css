@@ -421,7 +421,7 @@
 }
 
 .toneBrand {
-  color: var(--color-primary);
+  color: var(--neutral-900);
   background: var(--semantic-fill);
 }
 

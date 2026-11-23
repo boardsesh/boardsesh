@@ -113,7 +113,7 @@
   pointer-events: none;
 }
 
-/* --neutral-400 on the page ground is 3.66:1, under the 4.5:1 floor. */
+/* --neutral-400 on the page ground is 5.97:1; keep it at or above the 4.5:1 floor. */
 .emptyText {
   font-size: var(--font-size-sm);
   color: var(--neutral-500);

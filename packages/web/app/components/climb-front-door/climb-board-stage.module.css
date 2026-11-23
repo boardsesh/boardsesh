@@ -1,28 +1,10 @@
 /*
- * The board render as the climb page's hero: the homepage hero glow behind it,
- * the board on its own frame, the hold legend under it.
+ * The board render as the climb page's hero: the board on its own frame on the
+ * plain page, the hold legend under it.
  */
 
 .stage {
   position: relative;
-  isolation: isolate;
-}
-
-/* The homepage `.heroPreview::before` glow. The horizontal inset stays inside
-   the page gutter at every width, so the glow never widens the page. */
-.stage::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: -6% -5% 4%;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, var(--color-primary-fill) 30%, transparent),
-    color-mix(in srgb, var(--color-primary-fill) 10%, transparent) 48%,
-    transparent 72%
-  );
-  pointer-events: none;
 }
 
 .frame {

@@ -1,7 +1,9 @@
 /* Boardsesh Global Styles */
 
-/* Design tokens as CSS custom properties — Velvet Send. Mirror of theme-config.ts;
-   the parity test in app/theme/__tests__ asserts these stay in sync.
+/* Design tokens as CSS custom properties — Velvet Send on the app's Graphite ladder.
+   Mirror of theme-config.ts, which imports these values from @boardsesh/velvet-tokens;
+   the parity test in app/theme/__tests__ asserts these stay in sync. Violet is for
+   action and state only: links, the filled CTA, focus, and the selected container.
    ONE scheme: there is no `html[data-theme='dark']` block any more, and the parity
    test fences one from coming back. */
 :root {
@@ -32,70 +34,78 @@
      future warning retune can't silently shift the board-presence affordance. */
   --color-live: #fbbf24;
 
-  /* Help/guide accent — violet-slate */
-  --color-info: #a5abd6;
+  /* Help/guide accent — the Graphite secondary label */
+  --color-info: #b0b0b0;
 
-  /* Neutral palette — violet-tinted greys (decoupled from the surface ladder) */
-  --neutral-50: #1e1434;
-  --neutral-100: #291c43;
-  --neutral-200: #37294b;
-  --neutral-300: #483b5c;
-  --neutral-400: #6f6882;
-  --neutral-500: #aca5bd;
-  --neutral-600: #c3bcd3;
-  --neutral-700: #d7d1e3;
-  --neutral-800: #e7e2f0;
-  --neutral-900: #f3effa;
+  /* Neutral palette — Graphite greys, darkest-first. 50-300 are surfaces; the text
+     steps collapse onto the app's three label tiers: 400 tertiary, 500-600 secondary,
+     700-900 label. */
+  --neutral-50: #1a1a1a;
+  --neutral-100: #262626;
+  --neutral-200: #2e2e2e;
+  --neutral-300: #3e3e3e;
+  --neutral-400: #8f8f8f;
+  --neutral-500: #b0b0b0;
+  --neutral-600: #b0b0b0;
+  --neutral-700: #ededed;
+  --neutral-800: #ededed;
+  --neutral-900: #ededed;
 
-  /* Semantic colors */
-  --semantic-background: #110a20;
-  --semantic-surface: #251b3a;
-  /* One step brighter than the card — depth on near-black is a lighter violet, not a
+  /* Semantic colors — the app's Graphite ladder: page, card, elevated */
+  --semantic-background: #0e0e0e;
+  --semantic-surface: #1e1e1e;
+  /* One step brighter than the card — depth on near-black is a lighter grey, not a
      shadow. Mirrors `themeTokens.semantic.surfaceElevated`. */
-  --semantic-surface-elevated: #2f234a;
-  --semantic-surface-overlay: rgba(37, 27, 58, 0.95);
-  /* The selected family is for a GENUINELY selected or current item only. Hover washes,
-     badge grounds and decorative fills used to borrow it; they have their own roles
-     below, at the same values, so retuning --semantic-selected cannot repaint them. */
-  --semantic-selected: rgba(199, 184, 232, 0.16);
-  --semantic-selected-hover: rgba(199, 184, 232, 0.24);
-  --semantic-selected-light: rgba(199, 184, 232, 0.1);
+  --semantic-surface-elevated: #262626;
+  --semantic-surface-overlay: rgba(30, 30, 30, 0.95);
+  /* The selected family is for a GENUINELY selected or current item only: the opaque
+     M3 tonal container with --semantic-on-selected ink on it (9.89:1). Never put
+     --color-primary on it (4.28:1). Hover washes, badge grounds and decorative fills
+     have their own roles below. */
+  --semantic-selected: #34276b;
+  --semantic-selected-hover: #423677;
+  --semantic-selected-light: #34276b;
   --semantic-selected-border: #9784ff;
-  /* Ink on a selected or current item. --neutral-900 today; the Graphite swap retunes it. */
-  --semantic-on-selected: #f3effa;
-  /* MUI `action.selected` ground under a selected row. The Graphite swap retunes it. */
-  --semantic-selected-row: rgba(199, 184, 232, 0.16);
-  /* Hover wash on rows, chips and list links (MUI `action.hover`). Not a selected state.
-     The Graphite swap retunes it. */
-  --semantic-hover: rgba(199, 184, 232, 0.1);
-  /* Hover wash on MUI text and outlined buttons; apart from --semantic-hover only
-     because the two differ today. The Graphite swap retunes it. */
-  --semantic-button-hover: rgba(199, 184, 232, 0.24);
-  /* Decorative low-alpha grounds: badge and status-pill grounds, glows, dot grids. Never
-     a selected state. Three strengths because the call sites use three today; the
-     Graphite swap retunes them to one fill. */
-  --semantic-fill-subtle: rgba(199, 184, 232, 0.1);
-  --semantic-fill: rgba(199, 184, 232, 0.16);
-  --semantic-fill-strong: rgba(199, 184, 232, 0.24);
+  /* Ink on a selected or current item: the tonal container's ink. */
+  --semantic-on-selected: #e1e0ff;
+  /* MUI `action.selected`. Not a selection colour on www: MUI paints it under every
+     default filled <Chip>, a selected PaginationItem and the highlighted Autocomplete
+     option, so it stays the neutral fill, never violet. */
+  --semantic-selected-row: rgba(255, 255, 255, 0.1);
+  /* Hover wash on rows, chips and list links (MUI `action.hover`): the label at 8%.
+     Not a selected state. */
+  --semantic-hover: rgba(237, 237, 237, 0.08);
+  /* Hover wash on MUI text and outlined buttons: the same state layer, its own name
+     so a button retune cannot move every row hover. */
+  --semantic-button-hover: rgba(237, 237, 237, 0.08);
+  /* Decorative low-alpha grounds: badge and status-pill grounds, dot grids, diagram
+     cells. Never a selected state. --semantic-fill is the app's neutral fill. */
+  --semantic-fill-subtle: rgba(255, 255, 255, 0.06);
+  --semantic-fill: rgba(255, 255, 255, 0.1);
+  --semantic-fill-strong: rgba(255, 255, 255, 0.14);
+  /* The 1px edge of an app capture or the hero video: a shade brighter than the
+     separator so an iOS capture's black screen never reads as a hole in its card.
+     Decorative, like --separator. */
+  --capture-frame: rgba(255, 255, 255, 0.14);
   /* THE SPLIT, and it is load-bearing — pick by ROLE, not by looks:
      `--separator` is DECORATIVE: dividers, hairlines, rules, image frames, the edge of a
      non-interactive card or badge. It is translucent and low-contrast on purpose.
      `--control-border` is the visual boundary of an INTERACTIVE thing: outlined buttons,
      chips, toggles, pagination pills, floating surfaces. WCAG 1.4.11 wants >= 3:1 for those
-     and `--separator` composites to 1.43-1.50:1 on our surfaces, so it cannot serve here.
-     `--control-border` is OPAQUE on purpose: a translucent hairline's contrast depends on
-     whatever it sits on, so it can be right on the page and wrong on a card, and no single
-     test can assert it. Opaque makes 1.4.11 one arithmetic fact — 3.58:1 on the elevated
-     surface (worst case), 4.03:1 on the card, 4.81:1 on the page. Fenced in
-     velvet-tokens-parity.test.ts. */
-  --separator: rgba(185, 170, 215, 0.2);
-  --control-border: #837a9c;
+     and `--separator` composites to 1.36-1.46:1 on our surfaces, so it cannot serve here.
+     `--control-border` is the M3 outline and OPAQUE on purpose: a translucent hairline's
+     contrast depends on whatever it sits on, so it can be right on the page and wrong on a
+     card, and no single test can assert it. Opaque makes 1.4.11 one arithmetic fact —
+     5.59:1 on the page, 4.83:1 on the card, 4.38:1 on the elevated surface and 3.93:1 on
+     --neutral-200 (the worst case). Fenced in velvet-tokens-parity.test.ts. */
+  --separator: rgba(255, 255, 255, 0.12);
+  --control-border: #8a8a8a;
 
   /* Status colors */
   --color-success: #34d399;
   --color-success-hover: #036b4d;
   --color-success-bg: rgba(52, 211, 153, 0.14);
-  /* Darkened from Velvet #c81e1e so error TEXT clears AA (4.96:1) on the #E8DDF6 page. */
+  /* Lifted for dark grounds: error TEXT clears AA on the field (5.47:1) and the page (6.98:1). */
   --color-error: #f87171;
   --color-error-bg: rgba(248, 113, 113, 0.14);
   --color-error-muted: rgba(248, 113, 113, 0.2);
@@ -108,32 +118,26 @@
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
 
-  /* Mint glow under the one hero CTA per page. The spark is fill-only in Velvet
-     Send, and this is the only place it appears as light rather than a fill —
-     it is the spark, so exactly one surface should carry it. */
-  --shadow-accent-glow: 0 6px 18px rgba(62, 230, 193, 0.35);
-  --shadow-accent-glow-hover: 0 8px 22px rgba(62, 230, 193, 0.45);
-
   /* Icon-chip tints for the homepage onboarding cards. THREE roles, by what the
      card does — this site (brand), the app (mint spark), community/help (info)
      — replacing six tints keyed to V-grade purples that had nothing to do with
-     what the card was for. ~10-12% alpha over the card surface. The brand wash
-     mixes from the FILL (#7855ff), never the tint, like every violet wash. */
-  --home-accent-brand-surface: rgba(120, 85, 255, 0.12);
+     what the card was for. Brand and info sit on the neutral fill (violet is for
+     action and state, not a decorative chip); the spark keeps its 12% mint. */
+  --home-accent-brand-surface: rgba(255, 255, 255, 0.1);
   --home-accent-spark-surface: rgba(62, 230, 193, 0.12);
-  --home-accent-info-surface: rgba(165, 171, 214, 0.12);
+  --home-accent-info-surface: rgba(255, 255, 255, 0.1);
 
-  /* Reading surface for the /help guides (mirrors `themeTokens.read`). Neutral
-     grey under long how-to copy and app captures; the chrome around it stays
-     violet. `--read-line` is decorative only, like `--separator`. */
-  --read-surface: #18171c;
-  --read-surface-raised: #222127;
-  --read-text: #ecebef;
-  --read-text-muted: #aeacb6;
-  --read-line: #2e2d34;
+  /* Reading surface for the /help guides (mirrors `themeTokens.read`): aliases of
+     the Graphite page, card, label and secondary label. `--read-line` is
+     decorative only, like `--separator`. */
+  --read-surface: #0e0e0e;
+  --read-surface-raised: #1e1e1e;
+  --read-text: #ededed;
+  --read-text-muted: #b0b0b0;
+  --read-line: #2e2e2e;
 
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.12);
 
   /* Overlays */
   --overlay-light: rgba(0, 0, 0, 0.4);
@@ -178,18 +182,20 @@
   --border-radius-xl: 16px;
   --border-radius-full: 9999px;
 
-  /* Input field tokens — the source of truth for input surface/text/border in BOTH
-     schemes. The MUI theme (mui-theme.ts) and ~150 module.css files read these. */
-  --input-bg: #2f234a;
-  --input-bg-hover: #2f234a;
-  --input-bg-focused: #2f234a;
-  /* Dark-on-white body text inside the field. */
-  --input-text: #e7e2f0;
-  /* Placeholder — fixed dark grey ≥4.5:1 on the white field. */
-  --input-placeholder: #a9a2b6;
-  /* Resting outline (≥3:1 on white and on the #E8DDF6 page); one neutral step darker on hover. */
-  --input-border: rgba(195, 188, 211, 0.5);
-  --input-border-hover: rgba(195, 188, 211, 0.7);
+  /* Input field tokens — the source of truth for input surface/text/border. The MUI
+     theme (mui-theme.ts) and ~150 module.css files read these. The field is the
+     raised Graphite surface, one step above the card it sits on. */
+  --input-bg: #262626;
+  --input-bg-hover: #262626;
+  --input-bg-focused: #262626;
+  /* The label ink: 12.93:1 on the field. */
+  --input-text: #ededed;
+  /* Placeholder — the secondary label, 6.98:1 on the field. */
+  --input-placeholder: #b0b0b0;
+  /* Resting outline: the opaque M3 outline, 4.38:1 on the field and 5.59:1 on the page.
+     Hover lifts it to the label ink; the 2px #9784ff ring carries focus. */
+  --input-border: #8a8a8a;
+  --input-border-hover: #ededed;
 
   /* Safe-area insets, exposed as CSS vars so consumers resolve through
      a single indirection (and so future per-platform or per-view overrides
@@ -237,11 +243,9 @@
      `text.brandPrimary` / `text.brandMuted` — keep in sync; the parity test
      asserts it. The `*Light` counterparts went with the light scheme, as did
      the second block that used to swap these. */
-  --bs-text-brand-primary: #f5f2fb;
-  --bs-text-brand-muted: #a9a2b6;
+  --bs-text-brand-primary: #ededed;
+  --bs-text-brand-muted: #b0b0b0;
 }
-
-/* Dark mode overrides */
 
 /* Base styles */
 html {
@@ -284,12 +288,6 @@ button,
     transform var(--motion-normal) var(--ease-standard);
 }
 
-/* Selected state styling utility class - use higher specificity instead of !important */
-.selected-item.selected-item {
-  background-color: var(--semantic-selected);
-  border-color: var(--color-primary);
-}
-
 /* Custom scrollbar for webkit browsers */
 ::-webkit-scrollbar {
   width: 8px;
@@ -313,9 +311,9 @@ button,
 /* Firefox scrollbar properties are set in the html rule above */
 
 /* Focus styles for accessibility. The foreground violet (`--color-primary`) clears the
-   3:1 UI floor on the page in both schemes — and now on the elevated dark input surface
-   (#2F234A) too — so a single rule covers both. Outline is not transitioned (stays
-   instant). MUI ButtonBase re-emits the same outline at the component layer. */
+   3:1 UI floor on the page (6.49:1), the card (5.60:1) and the raised input surface
+   (#262626, 5.09:1), so a single rule covers all three. Outline is not transitioned
+   (stays instant). MUI ButtonBase re-emits the same outline at the component layer. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;

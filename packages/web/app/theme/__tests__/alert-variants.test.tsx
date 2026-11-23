@@ -38,8 +38,8 @@ const overridden: ReadonlySet<string> = new Set(STANDARD_ALERT_SEVERITIES);
 describe('Alert variants under the dark theme', () => {
   it.each(STANDARD_ALERT_SEVERITIES)('draws a standard %s message in opaque ink on its status tint', (severity) => {
     const { color, background } = drawnColours(darkTheme, 'standard', severity);
-    expect(color).toBe('rgb(243, 239, 250)');
-    expect(themeTokens.neutral[900].toLowerCase()).toBe('#f3effa');
+    expect(color).toBe('rgb(237, 237, 237)');
+    expect(themeTokens.neutral[900].toLowerCase()).toBe('#ededed');
     expect(background).toMatch(/^rgba\(.*, 0\.14\)$/);
   });
 

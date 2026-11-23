@@ -21,7 +21,7 @@ export type FilterChipOptions = {
  * what makes that impossible to reintroduce.
  *
  * The border is `--control-border`, not `--separator`: an outlined chip's fill
- * is one step off the page ground (1.19:1), so the border is the only thing
+ * is one step off the page ground (1.16:1), so the border is the only thing
  * identifying it as a control. See the token split in `index.css`.
  *
  * A ToggleButton cannot take this wholesale — it has an `aria-pressed` contract
@@ -36,7 +36,7 @@ export function filterChipSx({ selected = false }: FilterChipOptions = {}) {
     backgroundColor: selected ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
     borderColor: selected ? 'var(--color-primary)' : 'var(--control-border)',
     color: selected ? 'var(--color-primary)' : 'var(--neutral-900)',
-    boxShadow: selected ? '0 0 0 3px var(--semantic-selected)' : 'none',
+    boxShadow: selected ? '0 0 0 3px var(--semantic-fill)' : 'none',
     '&:hover': {
       backgroundColor: 'var(--semantic-surface-elevated)',
       borderColor: 'var(--color-primary)',

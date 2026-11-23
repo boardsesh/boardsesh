@@ -133,8 +133,8 @@ export default function OnboardingCard({
       sx={{
         borderRadius: `${themeTokens.borderRadius.lg}px`,
         // A card needs a FILL on the dark ground: a bare hairline outline on
-        // #110A20 is nearly invisible, and depth here is a lighter violet
-        // rather than a shadow.
+        // the near-black page is nearly invisible, and depth here is a lighter
+        // grey rather than a shadow.
         backgroundColor: 'var(--semantic-surface)',
         border: '1px solid var(--control-border)',
         transition: themeTokens.transitions.fast,

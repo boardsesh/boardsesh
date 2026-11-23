@@ -161,7 +161,7 @@ async function expectPublicReading(page: Page, testInfo: TestInfo, label: string
 async function expectReadablePrimaryHover(page: Page, testInfo: TestInfo, target: Locator, label: string) {
   await target.hover();
   await expect(target).toHaveCSS('color', 'rgb(182, 175, 255)');
-  await expect(target).toHaveCSS('background-color', 'rgba(199, 184, 232, 0.24)');
+  await expect(target).toHaveCSS('background-color', 'rgba(237, 237, 237, 0.08)');
   const audit = await expectPublicReading(page, testInfo, label, target);
   expect(
     hasReadableTargetText(audit),

@@ -235,7 +235,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
           zIndex: 2,
           ...positionMap[placement],
           color: 'text.primary',
-          backgroundColor: 'action.selected',
+          backgroundColor: 'var(--semantic-fill)',
           '&:hover': { backgroundColor: 'action.focus' },
         }}
       >

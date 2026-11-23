@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
+import { themeTokens } from './theme/theme-config';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -9,8 +10,10 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#15101e',
-    theme_color: '#15101e',
+    // The page ground, so the install splash and the browser chrome match the page
+    // (and the root layout's themeColor) instead of a frozen marketing violet.
+    background_color: themeTokens.semantic.background,
+    theme_color: themeTokens.semantic.background,
     icons: [
       {
         src: resolveShellStaticAssetUrl('/icons/icon-192.png'),

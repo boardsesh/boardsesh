@@ -29,8 +29,8 @@ const boardLayerStyle: React.CSSProperties = {
 };
 
 /**
- * The climb page's hero: the board art, with the homepage's violet glow behind
- * it and a legend of the climb's holds under it.
+ * The climb page's hero: the board art on the plain page, with a legend of the
+ * climb's holds under it.
  *
  * The art is plain server `<img>`s, never `BoardRenderer` or
  * `BoardImageLayers`: both are hook-bearing client components, and this image

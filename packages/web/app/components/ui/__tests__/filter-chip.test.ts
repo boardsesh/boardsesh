@@ -31,13 +31,15 @@ describe('filterChipSx', () => {
   it('marks the selected chip with the brand violet and a ring', () => {
     expect(selected.borderColor).toBe('var(--color-primary)');
     expect(selected.color).toBe('var(--color-primary)');
-    expect(selected.boxShadow).toBe('0 0 0 3px var(--semantic-selected)');
+    // The halo is the neutral fill: --semantic-selected is the opaque tonal container
+    // now, and as a 3px ring it would draw a hard violet band around the chip.
+    expect(selected.boxShadow).toBe('0 0 0 3px var(--semantic-fill)');
     expect(unselected.boxShadow).toBe('none');
   });
 
   it('draws the unselected edge with --control-border, never --separator', () => {
     // WCAG 1.4.11: the chip fill is --semantic-surface on --semantic-background,
-    // which is 1.19:1, so the border carries the whole affordance.
+    // which is 1.16:1, so the border carries the whole affordance.
     expect(unselected.borderColor).toBe('var(--control-border)');
     expect(JSON.stringify(unselected)).not.toContain('--separator');
   });

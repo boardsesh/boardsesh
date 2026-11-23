@@ -66,7 +66,7 @@ export function MobileInstallBlock({ placement, qrLanding, labels, helper }: Mob
   );
 }
 
-const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large', glow: true });
+const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large' });
 
 /**
  * The hover of a text button that looks filled. The theme gives every button

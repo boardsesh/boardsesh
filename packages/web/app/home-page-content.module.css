@@ -99,7 +99,6 @@
 
 .heroPreview {
   position: relative;
-  isolation: isolate;
   width: 100%;
   max-width: 490px;
   aspect-ratio: 490 / 680;
@@ -107,21 +106,6 @@
 
 .heroPreview:has([data-preview-platform='android']) {
   aspect-ratio: 490 / 570;
-}
-
-.heroPreview::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: -8% 0;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, var(--color-primary-fill) 30%, transparent),
-    color-mix(in srgb, var(--color-primary-fill) 10%, transparent) 48%,
-    transparent 72%
-  );
-  pointer-events: none;
 }
 
 .heroShowcase {

@@ -6,9 +6,9 @@ import { themeTokens } from '@/app/theme/theme-config';
  *
  * `marketing-header.tsx`, `site-footer.tsx`, `help-content.tsx` and
  * `home-page-content.tsx` each carried their own near-identical `*_SX` object.
- * They differed only in horizontal padding and, in the hero's case, a mint
- * glow — and they had already drifted: only the hero had the glow, and only the
- * header set `flexShrink`.
+ * They differed only in horizontal padding — and they had already drifted: only
+ * the header set `flexShrink`. The button casts no glow: on the Graphite page the
+ * one filled violet is enough to mark the page's primary action.
  *
  * Colour comes from the scheme-aware CSS vars, not `themeTokens.colors.*`, so
  * the fill and its hover stay in one place: `--color-primary-fill` is the FILLED
@@ -20,12 +20,6 @@ export type BrandCtaSize = 'small' | 'medium' | 'large';
 export type BrandCtaOptions = {
   /** `small` in dense chrome, `medium` inline, `large` for a page's one hero. */
   size?: BrandCtaSize;
-  /**
-   * The mint accent glow (`--shadow-accent-glow`, #3EE6C1). The accent is
-   * fill-only in Velvet Send and this is the single place it appears as light,
-   * so at most ONE surface per page sets it.
-   */
-  glow?: boolean;
 };
 
 /**
@@ -62,7 +56,7 @@ const SIZE_SX = {
  * make the result unspreadable and force a cast at every call site that merges
  * into it. `satisfies` keeps the key checking without widening.
  */
-export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = {}) {
+export function brandCtaSx({ size = 'medium' }: BrandCtaOptions = {}) {
   return {
     borderRadius: `${themeTokens.borderRadius.button}px`,
     textTransform: 'none',
@@ -70,12 +64,10 @@ export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = 
     backgroundColor: 'var(--color-primary-fill)',
     color: 'var(--color-on-primary)',
     ...SIZE_SX[size],
-    ...(glow ? { boxShadow: 'var(--shadow-accent-glow)' } : {}),
     '&:hover': {
       backgroundColor: 'var(--color-primary-fill-hover)',
       // The shared StartClimbingButton lifts on hover; the brand button does not.
       transform: 'none',
-      ...(glow ? { boxShadow: 'var(--shadow-accent-glow-hover)' } : {}),
     },
   } satisfies SxProps<Theme>;
 }
@@ -92,9 +84,6 @@ export type BrandCtaOutlinedOptions = {
  * `fontSize` — which is why the mid-page store pair visibly did not match the
  * hero pair), and a bare `variant="outlined"` in the support block that fell
  * through to MUI's defaults and so matched neither.
- *
- * No `glow` option, deliberately. The mint glow belongs to the filled button and
- * to one surface per page; an outlined button that glows would be a third thing.
  *
  * The border reads `--control-border`, not `--separator`: this is the visual
  * boundary of a control, and a button whose fill is transparent has nothing else
