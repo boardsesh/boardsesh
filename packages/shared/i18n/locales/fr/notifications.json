@@ -117,5 +117,12 @@
     "boardReportReminderBody": "Corrige ou laisse telle quelle avant que notre équipe s'en occupe.",
     "boardRelistTitle": "Remettre {{board}} dans {{gym}} ?",
     "boardRelistBody": "Le grimpeur qui l'a ajoutée a demandé à la remettre dans la liste."
+  },
+  "explain": {
+    "boardDeletedTitle": "{{board}} a été supprimée",
+    "boardDeletedBody": "Elle a disparu pour tous les grimpeurs qui l'avaient enregistrée. Tes croix enregistrées restent dans ton carnet.",
+    "claimDeniedTitle": "Nous n'avons pas pu confirmer ta revendication",
+    "claimDeniedBody": "Nous n'avons pas pu confirmer que tu gères {{gym}}. Réponds à notre e-mail si nous nous sommes trompés.",
+    "ok": "OK"
   }
 }

@@ -8,6 +8,7 @@ import { spacing } from '../../theme/tokens';
 import { AppMenu } from '../AppMenu';
 import type { AppMenuHandle } from '../AppMenu.types';
 import { ArtRow } from '../ArtRow';
+import { StatusPill } from '../StatusPill';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import type { BoardCardMenu, DiscoveryBoardItem } from './BoardDiscoveryCardView';
@@ -103,7 +104,7 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
   // otherwise leave without a route to the press.
   const accessibilityActions = useMemo(() => {
     const menuRows: AccessibilityActionInfo[] = rows
-      .filter((row) => row.action !== 'climb_here')
+      .filter((row) => row.action !== 'climb_here' && !row.disabled)
       .map((row) => ({ name: row.action, label: row.label }));
     return menuRows.length > 0 ? rowAccessibilityActionsWith(...menuRows) : undefined;
   }, [rows]);
@@ -114,7 +115,7 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
         handlePress();
         return;
       }
-      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here');
+      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here' && !row.disabled);
       if (index >= 0) runMenuRow(index, 'accessibility');
     },
     [rows, handlePress, runMenuRow],
@@ -169,6 +170,12 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
       // A list to choose from: body titles, the one you're on in semibold.
       titleVariant="body"
       subtitle={<BoardRowSubtitle item={item} copy={copy} />}
+      // Beside the title, never on the art: a report waits on this climber.
+      status={
+        (item.openReportCount ?? 0) > 0 ? (
+          <StatusPill label={t('reportReview.statusPill')} tone="warning" testID="board-row-reported" />
+        ) : undefined
+      }
       accessory={accessory}
       selected={selected}
       onPress={handlePress}

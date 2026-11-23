@@ -36,6 +36,9 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useClimbModerationEnabled: () => state.moderationEnabled,
 }));
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
+const explainDirectoryNotice = vi.hoisted(() => vi.fn());
+vi.mock('../explain-directory-notice', () => ({ explainDirectoryNotice }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { useNotificationNavigation } from '../use-notification-navigation';
 
@@ -223,6 +226,73 @@ describe('useNotificationNavigation spray imports', () => {
   it('opens My Boards when the completed photo is no longer accessible', () => {
     tap(makeNotification({ type: 'spray_wall_detection_completed', sprayWallUuid: null, sprayVersionId: null }));
     expect(routerMock.push).toHaveBeenCalledWith('/boards');
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe('directory notice navigation', () => {
+  const directoryNotice = {
+    targetKind: 'board' as const,
+    boardUuid: 'board-1',
+    boardName: 'Crux Kilter',
+    boardType: 'kilter',
+    gymUuid: 'gym-1',
+    gymName: 'Crux',
+    reportUuid: 'report-1',
+    reason: 'wrong_setup' as const,
+    outcome: null,
+    resolvedByRole: null,
+    resolutionNote: null,
+    actorRole: null,
+    isReminder: false,
+    recipientIsCreator: true,
+  };
+
+  it('opens the review sheet on a report about your board', () => {
+    tap(makeNotification({ type: 'board_report_opened', entityType: 'board', entityId: 'board-1', directoryNotice }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { board: 'board-1', review: '1' } });
+  });
+
+  it('opens the board, offering to ask the gym to list it again, after staff took it off', () => {
+    tap(
+      makeNotification({
+        type: 'board_removed_from_gym',
+        entityType: 'board',
+        entityId: 'board-1',
+        directoryNotice: { ...directoryNotice, actorRole: 'gym_staff' },
+      }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards',
+      params: { board: 'board-1', details: '1', relistGym: 'Crux' },
+    });
+  });
+
+  it('explains a deleted board instead of opening it', () => {
+    tap(makeNotification({ type: 'board_deleted_by_staff', directoryNotice }));
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(explainDirectoryNotice).toHaveBeenCalledWith(
+      { kind: 'explain', explanation: 'board_deleted', name: 'Crux Kilter' },
+      expect.any(Function),
+    );
+  });
+
+  it('opens the gym editor for staff on a gym report', () => {
+    tap(
+      makeNotification({
+        type: 'gym_report_opened',
+        entityType: 'gym',
+        entityId: 'gym-1',
+        directoryNotice: { ...directoryNotice, targetKind: 'gym', boardUuid: null, boardName: null },
+      }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-1' } });
+  });
+
+  it('marks a gym report outcome read without opening anything', () => {
+    tap(makeNotification({ type: 'gym_report_resolved', entityType: 'gym', entityId: 'gym-1' }));
+    expect(markGroupMutate).toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 });

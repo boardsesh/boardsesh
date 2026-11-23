@@ -185,6 +185,7 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
+  useBoard: () => ({ data: undefined }),
   useMyBoards: () => ({ ...state.myBoards, refetch: vi.fn() }),
   useNearbyBoards: () => ({ data: undefined, isLoading: false }),
   useGymBoards: () => ({ data: undefined }),
@@ -276,6 +277,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useDirectoryReportsEnabled: () => false,
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
@@ -312,6 +314,10 @@ vi.mock('../../../src/components/Button', () => ({
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
+  useReportProblemHost: () => ({ openReport: vi.fn(), sheet: null }),
+}));
+vi.mock('../../../src/components/report-problem/ReportReviewSheet', () => ({ ReportReviewSheet: () => null }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
 // The Velvet shelf pieces, as plain markup: a section, its title, and its action

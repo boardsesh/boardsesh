@@ -46,6 +46,8 @@ import { SprayWallTrainingConsentRow } from '../../src/components/spray-wall/Spr
 import { SprayWallLedSection } from '../../src/components/spray-wall/SprayWallLedSection';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
+import { WhoCanEditBoard } from '../../src/components/report-problem/WhoCanEdit';
+import { useToast } from '../../src/providers/toast-provider';
 
 export default function EditBoard() {
   const router = useRouter();
@@ -85,20 +87,12 @@ export default function EditBoard() {
 
   // The edit affordance is only shown when the viewer can edit, but a direct
   // deep-link can still land here. The server rejects the save regardless, so
-  // show a clear "no access" state instead of a form that can only fail.
+  // say who can change this board and what the climber can do instead: report
+  // a problem, claim the gym, or go back.
   if (!board.canEdit) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="lock" size={40} color={systemColors.secondaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
-          {t('mobile.edit.noAccess')}
-        </Text>
-        <Button
-          title={t('mobile.edit.back')}
-          variant="outlined"
-          onPress={() => router.back()}
-          style={styles.stateButton}
-        />
+      <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
+        <WhoCanEditBoard board={board} onBack={() => router.back()} />
       </View>
     );
   }
@@ -111,6 +105,10 @@ export default function EditBoard() {
 function EditBoardForm({ board }: { board: UserBoard }) {
   const { data: privacySettings } = usePrivacySettings();
   const router = useRouter();
+  // Opened from a report's "Fix the setup": a save that changes the setup
+  // closes the report server-side, so the toast says the reporters hear.
+  const { fromReport } = useLocalSearchParams<{ fromReport?: string }>();
+  const { showToast } = useToast();
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
 
@@ -358,6 +356,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
           setSubmitting(false);
           return;
         }
+        if (fromReport === '1') showToast(t('reportReview.fixedToast'), 'success');
         router.back();
         // Navigated away on success — leave `submitting` set (unmounting).
       } catch (error) {
@@ -438,6 +437,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       t,
       backgroundChanged,
       saveBackground,
+      fromReport,
+      showToast,
     ],
   );
   handleUpdateRef.current = handleUpdate;
@@ -477,6 +478,9 @@ function EditBoardForm({ board }: { board: UserBoard }) {
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',

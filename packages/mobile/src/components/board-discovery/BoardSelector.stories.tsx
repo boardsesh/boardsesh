@@ -280,12 +280,14 @@ const YOUR_BOARDS_MENU: BoardCardMenuCapabilities = {
   canDownload: true,
   canOpenDetails: true,
   canManage: true,
+  canReport: false,
 };
 const NEARBY_MENU: BoardCardMenuCapabilities = {
   canPin: false,
   canDownload: false,
   canOpenDetails: true,
   canManage: false,
+  canReport: false,
 };
 
 /** The real thumbnail, reporting when its art has painted. */

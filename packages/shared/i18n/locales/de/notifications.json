@@ -117,5 +117,12 @@
     "boardReportReminderBody": "Korrigiere es oder belasse es so, bevor unser Team draufschaut.",
     "boardRelistTitle": "{{board}} wieder in {{gym}} aufnehmen?",
     "boardRelistBody": "Wer es hinzugefügt hat, bittet um erneute Aufnahme."
+  },
+  "explain": {
+    "boardDeletedTitle": "{{board}} wurde gelöscht",
+    "boardDeletedBody": "Es ist für alle Kletterer*innen weg, die es gespeichert hatten. Deine geloggten Begehungen bleiben in deinem Logbuch.",
+    "claimDeniedTitle": "Wir konnten deinen Anspruch nicht bestätigen",
+    "claimDeniedBody": "Wir konnten nicht bestätigen, dass du {{gym}} leitest. Antworte auf unsere E-Mail, falls wir falsch lagen.",
+    "ok": "OK"
   }
 }

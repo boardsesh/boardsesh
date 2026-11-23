@@ -187,18 +187,23 @@ const LABELS: BoardCardMenuLabels = {
   removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
   unfollow: 'Remove from your boards',
   delete: 'Delete',
+  reviewReports: 'See reports',
+  report: 'Report a problem',
+  reported: 'Reported',
 };
 const EVERYTHING: BoardCardMenuCapabilities = {
   canPin: true,
   canDownload: true,
   canOpenDetails: true,
   canManage: true,
+  canReport: false,
 };
 const NEARBY: BoardCardMenuCapabilities = {
   canPin: false,
   canDownload: false,
   canOpenDetails: true,
   canManage: false,
+  canReport: false,
 };
 
 function menuWith(capabilities: BoardCardMenuCapabilities = EVERYTHING): BoardCardMenu {
@@ -441,7 +446,7 @@ describe('BoardDiscoveryCard menu', () => {
       createElement(BoardDiscoveryCard, {
         item: { ...item, offlineState: 'downloaded' },
         onPress: vi.fn(),
-        menu: menuWith({ canPin: false, canDownload: true, canOpenDetails: false, canManage: false }),
+        menu: menuWith({ canPin: false, canDownload: true, canOpenDetails: false, canManage: false, canReport: false }),
       }),
     );
     expect(queryByTestId('menu-button')).toBeNull();
@@ -506,7 +511,13 @@ describe('BoardDiscoveryCard menu', () => {
       createElement(BoardDiscoveryCard, {
         item,
         onPress: vi.fn(),
-        menu: menuWith({ canPin: false, canDownload: false, canOpenDetails: false, canManage: false }),
+        menu: menuWith({
+          canPin: false,
+          canDownload: false,
+          canOpenDetails: false,
+          canManage: false,
+          canReport: false,
+        }),
       }),
     );
     expect(cardRootProps.last?.onLongPress).toBeUndefined();

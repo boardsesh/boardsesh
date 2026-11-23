@@ -65,6 +65,7 @@ import * as sharedNotifications from '@boardsesh/graphql/operations/notification
 import * as sharedAnalyticsConsent from '@boardsesh/graphql/operations/analytics-consent';
 import * as sharedAppleAdsAttribution from '@boardsesh/graphql/operations/apple-ads-attribution';
 import * as sharedOfflineWriteDelivery from '@boardsesh/graphql/operations/offline-write-delivery';
+import * as sharedDirectoryReports from '@boardsesh/graphql/operations/directory-reports';
 
 import {
   BATCHED_OPERATIONS,
@@ -165,6 +166,7 @@ const MINIMUM_REGISTRY_DOCUMENTS = 55;
 
 const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/offline-write-delivery': sharedOfflineWriteDelivery,
+  '@boardsesh/graphql/operations/directory-reports': sharedDirectoryReports,
   '@boardsesh/graphql/operations/apple-ads-attribution': sharedAppleAdsAttribution,
   '@boardsesh/graphql/operations/privacy': sharedPrivacy,
   '@boardsesh/graphql/operations/analytics-consent': sharedAnalyticsConsent,
