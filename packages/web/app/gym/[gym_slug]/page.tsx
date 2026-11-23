@@ -60,6 +60,8 @@ import GymClaimPendingNotice from './gym-claim-pending-notice';
 import { CLAIM_PARAM, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
+import { GymReportProblemHost, ReportBoardButton, ReportGymButton, type GymReportBoard } from './gym-report-problem';
+import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
 import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymInstallCta from './gym-install-cta';
@@ -336,11 +338,12 @@ export default async function GymPage(props: GymRouteProps) {
   const { t } = await getServerTranslation('kiosk');
   const { t: tBoards } = await getServerTranslation('boards');
   const storeLabels = await getStoreButtonLabels();
-  const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
+  const [kiosk, allBoards, gymSprayWalls, discoveryBoards, reportsEnabled] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
     fetchGymSprayWalls(gym.uuid, token),
     getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
+    isDirectoryReportsEnabled(),
   ]);
   const sprayWalls = gymSprayWalls ?? [];
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
@@ -369,6 +372,12 @@ export default async function GymPage(props: GymRouteProps) {
   // (wall, size, layout, angle), scoped to this one gym: the heading above
   // already says which gym this is, so the rows lead with the wall instead.
   const boardSubtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+  const boardRowSubtitle = (boardIndex: number): string => {
+    const board = boards[boardIndex];
+    return boardSubtitles[boardIndex].includes(`${board.angle}°`)
+      ? boardSubtitles[boardIndex]
+      : t('gymPage.boardAngle', { configuration: boardSubtitles[boardIndex], angle: board.angle });
+  };
 
   // Stored logo/photo paths are backend-relative; resolve for the browser (also
   // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
@@ -414,6 +423,20 @@ export default async function GymPage(props: GymRouteProps) {
     hasPendingClaim: pendingClaim !== null,
   });
 
+  // Report a problem (docs/product/directory-reports.md): only while the server
+  // takes reports, and not for staff, who fix things from Manage gym instead.
+  // Every visitor who gets it gets the same markup; sign-in is settled on tap.
+  const showReportProblem = reportsEnabled && !gym.canEdit;
+  const reportBoards: GymReportBoard[] = boards.map((board, boardIndex) => {
+    const name = stripGymNamePrefix(board.name, gym.name);
+    return {
+      uuid: board.uuid,
+      name,
+      label: `${name} · ${boardRowSubtitle(boardIndex)}`,
+      ownerId: board.ownerId ?? null,
+    };
+  });
+
   // Prefer the real photo for search-result thumbnails; fall back to the logo.
   const structuredDataImage = photoSrc ?? logoSrc;
 
@@ -439,6 +462,22 @@ export default async function GymPage(props: GymRouteProps) {
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'settings']}>
       {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
+      {/* One dialog for the gym and every board row; the buttons below open it. */}
+      {showReportProblem && (
+        <GymReportProblemHost
+          gym={{
+            uuid: gym.uuid,
+            name: gym.name,
+            slug: gym.slug ?? null,
+            listingState: gym.listingState ?? null,
+            // The nudge lands on this page's claim call-out, so offer it only when that is what renders.
+            canClaim: gym.canClaim && claimSurface.kind === 'cta',
+            latitude: gym.latitude,
+            longitude: gym.longitude,
+          }}
+          boards={reportBoards}
+        />
+      )}
       {/* PageShell owns the fixed-header clearance and the page measure, so the
           hand-rolled Container and its header offset are gone. The h1 is the
           shell's title now, which puts it above the wall shot rather than
@@ -593,7 +632,11 @@ export default async function GymPage(props: GymRouteProps) {
                   sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
                 >
                   {boards.map((board, boardIndex) => (
-                    <Box component="li" key={board.uuid}>
+                    <Box
+                      component="li"
+                      key={board.uuid}
+                      sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
+                    >
                       <MuiLink
                         component={LocaleLink}
                         href={`/b/${board.slug}`}
@@ -604,12 +647,7 @@ export default async function GymPage(props: GymRouteProps) {
                           {stripGymNamePrefix(board.name, gym.name)}
                         </Typography>
                         <Typography component="span" variant="body2" color="text.secondary">
-                          {boardSubtitles[boardIndex].includes(`${board.angle}°`)
-                            ? boardSubtitles[boardIndex]
-                            : t('gymPage.boardAngle', {
-                                configuration: boardSubtitles[boardIndex],
-                                angle: board.angle,
-                              })}
+                          {boardRowSubtitle(boardIndex)}
                         </Typography>
                       </MuiLink>
                       <MuiLink
@@ -619,6 +657,15 @@ export default async function GymPage(props: GymRouteProps) {
                       >
                         {t('gymPage.seeClimbs')}
                       </MuiLink>
+                      {showReportProblem && (
+                        <Box sx={{ ml: 'auto' }}>
+                          <ReportBoardButton
+                            gymUuid={gym.uuid}
+                            boardUuid={board.uuid}
+                            boardName={stripGymNamePrefix(board.name, gym.name)}
+                          />
+                        </Box>
+                      )}
                     </Box>
                   ))}
                 </Box>
@@ -828,12 +875,19 @@ export default async function GymPage(props: GymRouteProps) {
               </>
             )}
 
-            <GymReportDuplicateCta
-              gymUuid={gym.uuid}
-              gymName={gym.name}
-              latitude={gym.latitude}
-              longitude={gym.longitude}
-            />
+            {/* Report a problem replaces Report a duplicate ("Listed twice" is one
+                of its reasons). The old island stays for as long as the flag can
+                be off, so signed-in climbers keep a duplicate report either way. */}
+            {showReportProblem ? (
+              <ReportGymButton gymUuid={gym.uuid} />
+            ) : reportsEnabled ? null : (
+              <GymReportDuplicateCta
+                gymUuid={gym.uuid}
+                gymName={gym.name}
+                latitude={gym.latitude}
+                longitude={gym.longitude}
+              />
+            )}
           </Box>
         </Box>
 

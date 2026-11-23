@@ -29,7 +29,8 @@
     "sprayWalls": "Trainingsdaten der Spraywalls",
     "boards": "Registrierte Boards",
     "buildPlans": "Baupaket-Bestellungen",
-    "partnerApps": "Partner-Apps"
+    "partnerApps": "Partner-Apps",
+    "boardReports": "Board-Meldungen"
   },
   "buildPlans": {
     "title": "Baupaket-Bestellungen",
@@ -631,5 +632,81 @@
     "next": "Nächste Seite",
     "active": "Aktiv",
     "suspended": "Gesperrt"
+  },
+  "boardReports": {
+    "title": "Meldungen zu Boards und Hallen",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "description": "Meldungen, die sonst niemand bearbeiten kann, und alle, die nach 14 Tagen noch offen sind. Direkt an uns gesendete zuerst, dann die ältesten.",
+    "filters": {
+      "status": "Status",
+      "kind": "Anzeigen",
+      "kindAll": "Boards und Hallen",
+      "kindBoard": "Boards",
+      "kindGym": "Hallen"
+    },
+    "status": {
+      "escalated": "Bei unserem Team",
+      "open": "Bei der Person, die es angelegt hat, oder beim Hallenteam",
+      "fixed": "Behoben",
+      "removed": "Entfernt",
+      "deleted": "Gelöscht",
+      "kept": "Bleibt so",
+      "merged": "Zusammengeführt"
+    },
+    "kind": {
+      "board": "Board",
+      "gym": "Halle"
+    },
+    "chips": {
+      "sentToTeam": "Direkt an uns",
+      "waited": "14 Tage offen"
+    },
+    "meta_one": "{{count}} Person · geöffnet {{age}}",
+    "meta_other": "{{count}} Personen · geöffnet {{age}}",
+    "ageToday": "heute",
+    "ageDays_one": "vor {{count}} Tag",
+    "ageDays_other": "vor {{count}} Tagen",
+    "routedToLine": "Gesendet an: {{recipients}}",
+    "routedTo": {
+      "creator": "die Person, die es angelegt hat",
+      "gymStaff": "das Hallenteam",
+      "admin": "unser Team"
+    },
+    "duplicateOf": "Dasselbe wie {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Gelöschtes Konto",
+    "closedOn": "Geschlossen am {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Board löschen",
+      "removeFromGym": "Aus der Halle entfernen",
+      "hideGym": "Halle in der Suche ausblenden",
+      "keep": "So lassen",
+      "mergeGyms": "In Doppelte Hallen zusammenführen",
+      "openGym": "Halle verwalten öffnen"
+    },
+    "confirm": {
+      "deleteTitle": "{{board}} für alle löschen?",
+      "deleteBody": "Es verschwindet für alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern. Die Meldung wird als gelöscht geschlossen.",
+      "removeTitle": "{{board}} aus {{gym}} entfernen?",
+      "removeBody": "Es verschwindet von der Seite, den Kiosken und der Karte der Halle. Die Person, die es angelegt hat, behält es. Die Meldung wird als entfernt geschlossen.",
+      "hideTitle": "{{gym}} in der Suche ausblenden?",
+      "hideBody": "Die Halle erscheint nicht mehr im Hallenverzeichnis und in der Suche. Ihre Seite bleibt über den Link erreichbar. Die Meldung wird als entfernt geschlossen.",
+      "keepTitle": "So lassen?",
+      "keepBody": "Die Meldung wird geschlossen, und alle, die sie gesendet haben, erfahren, dass es so bleibt.",
+      "keepNoteLabel": "Eine Nachricht an sie (optional)",
+      "cancel": "Abbrechen"
+    },
+    "snackbar": {
+      "deleted": "Board gelöscht. Die Meldung ist geschlossen.",
+      "removed": "Aus der Halle entfernt. Die Meldung ist geschlossen.",
+      "hidden": "Halle in der Suche ausgeblendet. Die Meldung ist geschlossen.",
+      "hiddenStillOpen": "Halle in der Suche ausgeblendet, aber die Meldung ist noch offen. Versuch es erneut.",
+      "kept": "Meldung geschlossen.",
+      "failed": "Das hat nicht geklappt. Versuch es erneut."
+    },
+    "empty": "Hier ist nichts.",
+    "error": "Meldungen konnten nicht geladen werden. Versuch es erneut.",
+    "retry": "Nochmal versuchen",
+    "loadMore": "Mehr laden"
   }
 }

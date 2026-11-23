@@ -211,7 +211,6 @@
     },
     "title": "Manage {{gymName}}",
     "backToGym": "Back to gym page",
-    "accessDenied": "You don't have permission to manage this gym.",
     "tabs": {
       "kiosks": "Kiosks",
       "branding": "Branding",

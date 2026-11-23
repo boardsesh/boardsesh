@@ -211,7 +211,6 @@
     },
     "title": "Gérer {{gymName}}",
     "backToGym": "Retour à la page de la salle",
-    "accessDenied": "Tu n'as pas la permission de gérer cette salle.",
     "tabs": {
       "kiosks": "Bornes",
       "branding": "Identité",

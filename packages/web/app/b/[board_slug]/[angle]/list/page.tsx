@@ -27,6 +27,10 @@ import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite
 import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
 import { boardTypeProperty } from '@boardsesh/analytics';
 import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
+import BoardReportLink from '@/app/components/directory-reports/board-report-link';
+import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
+import I18nProvider from '@/app/components/providers/i18n-provider';
+import { getLocale } from '@/app/lib/i18n/get-locale';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
@@ -200,9 +204,13 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
   if (!parsedParams) return notFound();
   const page = parseFrontDoorPage(searchParams.page);
-  const listData = await fetchFrontDoorListPage(parsedParams, page);
+  const [listData, reportsEnabled] = await Promise.all([
+    fetchFrontDoorListPage(parsedParams, page),
+    isDirectoryReportsEnabled(),
+  ]);
   if (!listData) return notFound();
   const { boardDetails, climbs, hasMore, preloadUrls } = listData;
+  const reportLocale = reportsEnabled ? await getLocale() : null;
 
   return (
     <>
@@ -226,6 +234,17 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
         // A noindex page must not emit a BreadcrumbList naming the public
         // config-tuple twin it canonicalises nowhere near.
         noindex={board.isUnlisted || !board.isPublic}
+        // One answer for every reader (the flag is not per person), so the
+        // page's shared cache holds the same HTML for everyone.
+        reportProblem={
+          reportLocale ? (
+            // The board layout loads `climbs` and `feed`; the dialog's words are
+            // the `boards` catalogue's `report` branch, and only that branch ships.
+            <I18nProvider locale={reportLocale} namespaces={['boards']} resourceKeys={{ boards: ['report'] }}>
+              <BoardReportLink boardUuid={board.uuid} />
+            </I18nProvider>
+          ) : undefined
+        }
       />
     </>
   );

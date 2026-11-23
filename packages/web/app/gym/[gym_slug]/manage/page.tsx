@@ -2,7 +2,6 @@ import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import Container from '@mui/material/Container';
-import Alert from '@mui/material/Alert';
 import type { Gym } from '@boardsesh/shared-schema';
 import {
   GET_GYM,
@@ -18,6 +17,8 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { looksLikeGymUuid } from '@/app/components/gym-entity/manage/slug-utils';
 import ManageGymContent from './manage-gym-content';
+import ManageNoAccess from './manage-no-access';
+import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
 
 // Per-user, cookie-gated management surface — never static, never indexed.
 export const dynamic = 'force-dynamic';
@@ -104,13 +105,13 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
 
   const locale = await getLocale();
 
-  // Public gym, but this viewer can't manage it.
+  // Public gym, but this viewer can't manage it: who can, and what to do instead.
   if (!gym.canEdit) {
-    const { t } = await getServerTranslation('kiosk');
+    const reportsEnabled = await isDirectoryReportsEnabled();
     return (
       <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
         <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Alert severity="error">{t('manage.accessDenied')}</Alert>
+          <ManageNoAccess gym={gym} reportsEnabled={reportsEnabled} />
         </Container>
       </I18nProvider>
     );

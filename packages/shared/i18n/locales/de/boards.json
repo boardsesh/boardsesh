@@ -1699,7 +1699,8 @@
       "goneHint": "Abgebaut, ersetzt oder die Halle ist zu",
       "wrongPlace": "Falsche Halle oder falscher Ort",
       "wrongPlaceHint": "Es ist woanders, oder es ist eine Heimwand",
-      "other": "Etwas anderes"
+      "other": "Etwas anderes",
+      "relistRequest": "Wieder in die Halle aufnehmen"
     },
     "gymReasons": {
       "duplicate": "Doppelt eingetragen",
@@ -1743,7 +1744,21 @@
     "relistAsk": "{{gym}} bitten, es wieder einzutragen",
     "relistAskHint": "Das Team hat es aus der Halle genommen. Wir bitten es, das Board wieder einzutragen.",
     "relistSent": "Anfrage geschickt. Wir sagen dir, was das Team von {{gym}} entscheidet.",
-    "relistAlready": "Du hast schon gefragt. Wir sagen dir, was das Team von {{gym}} entscheidet."
+    "relistAlready": "Du hast schon gefragt. Wir sagen dir, was das Team von {{gym}} entscheidet.",
+    "duplicateGymSearch": "Anderen Eintrag finden",
+    "gymSearchPlaceholder": "Hallenname",
+    "noMatches": "Noch keine Treffer. Probier einen anderen Namen.",
+    "cancel": "Abbrechen",
+    "done": "Fertig",
+    "retry": "Erneut versuchen",
+    "loading": "Wird geladen",
+    "loadError": "Das Board konnte nicht geladen werden. Versuch es erneut.",
+    "signInTitle": "Melde dich an, um ein Problem zu melden",
+    "signInBody": "Melde dich an und wir bringen dich direkt hierher zurück.",
+    "boardListLink": "Stimmt etwas mit diesem Board nicht?",
+    "web": {
+      "noteRequiredLabel": "Beschreib, was nicht stimmt (mindestens 10 Zeichen)"
+    }
   },
   "reportReview": {
     "title": "Kletterer*innen haben dieses Board gemeldet",
@@ -1776,7 +1791,18 @@
     "keepPartial_one": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
     "keepPartial_other": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",
     "statusPill": "Gemeldet",
-    "open": "Meldungen ansehen"
+    "open": "Meldungen ansehen",
+    "review": "Ansehen",
+    "duplicateOf": "Dasselbe Board wie {{board}}",
+    "inTeamQueue": "Unser Team kümmert sich darum. Die Meldung wird geschlossen, wenn es entschieden hat.",
+    "removeHint": "Es verschwindet von der Seite und den Kiosken der Halle",
+    "keepFailed": "Die Meldung konnte nicht geschlossen werden. Versuch es erneut.",
+    "empty": "Zu diesem Board ist nichts mehr offen.",
+    "back": "Zurück",
+    "close": "Schließen",
+    "web": {
+      "keepPartial": "{{closed}} von {{total}} Meldungen geschlossen. Versuch es für den Rest erneut."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "Du kannst dieses Board nicht bearbeiten",
@@ -1793,6 +1819,8 @@
     "claimHint": "Wenn du hier arbeitest, beanspruche sie, dann gehört der Eintrag dir.",
     "claimGym": "{{gym}} beanspruchen",
     "claimThisGym": "Diese Halle beanspruchen",
-    "goBack": "Zurück"
+    "goBack": "Zurück",
+    "rule": "Wer etwas angelegt hat, kann es ändern. Sobald eine Halle übernommen ist, kann das auch ihr Team. Alle anderen können ein Problem melden.",
+    "backToGym": "Zurück zu {{gym}}"
   }
 }

@@ -1,6 +1,6 @@
 # Report a problem: board and gym reports
 
-Any signed-in climber can report a problem with a board or a gym listing. The report goes to whoever can fix it: the board's creator, the gym's staff when the gym is run by the gym, or the Boardsesh admin queue. This doc covers the backend: the data, the routing, the API, the notifications, the hourly sweep, the admin's daily digest and the server flag that keeps it all dark until the apps can show it.
+Any signed-in climber can report a problem with a board or a gym listing. The report goes to whoever can fix it: the board's creator, the gym's staff when the gym is run by the gym, or the Boardsesh admin queue. This doc covers the backend (the data, the routing, the API, the notifications, the hourly sweep, the admin's daily digest and the server flag that keeps it all dark until the apps can show it) and, under "On www", the website's entry points, staff review and admin queue.
 
 The product decisions behind it are in [gym-board-governance.md](gym-board-governance.md), decision 2. Climb reports are a different system: [climb-moderation.md](climb-moderation.md).
 
@@ -77,7 +77,7 @@ Reports are never deleted by the app. A board's go with the board row (an accoun
 
 ## API
 
-SDL: `packages/shared-schema/src/schema/directory-reports.ts`. Operation documents for the apps: `packages/shared/graphql/src/operations/directory-reports.ts`. The app selects them, `BOARD_FIELDS` carries `openReportCount` and `viewerHasOpenReport`, and the grouped notification feed carries `directoryNotice` (PR 4), so the app ships only once this backend is live: an unknown field fails the whole query.
+SDL: `packages/shared-schema/src/schema/directory-reports.ts`. Operation documents for the apps: `packages/shared/graphql/src/operations/directory-reports.ts`. The app selects them, `BOARD_FIELDS` carries `openReportCount` and `viewerHasOpenReport`, and the grouped notification feed carries `directoryNotice` (PR 4); www selects them too (see "On www"). Either client ships only once this backend is live: an unknown field fails the whole query.
 
 | Operation | Who | What |
 |---|---|---|
@@ -196,6 +196,19 @@ The digest is built from `ADMIN_DIGEST_SECTION_PROVIDERS`. The claim guardrails 
 
 To stop the sweep: `DELETE FROM pgboss.schedule WHERE name = 'directory-report-sweep';`. Every boot schedules it again; to keep it off, revert its registration in `packages/backend/src/index.ts`.
 
+## On www
+
+Built in PR 5. Every entry point renders only while the `directory-reports` flag is on (below): www asks PostHog the same question for the same fixed id through `isDirectoryReportsEnabled()` (`packages/web/app/lib/directory-reports/directory-reports-flag.ts`, registered in `SERVER_FEATURE_FLAG_KEYS`), so a page never offers a report the server would refuse. The answer is not per person, so it is safe in a page the CDN shares.
+
+- **Gym page** (`/gym/{slug}`). A 44px flag at the end of each board row ("Report a problem with {board}") and a **Report a problem** text button in the details column, where Report a duplicate was ("Listed twice" is one of the gym reasons). Hidden for anyone who can edit the gym (they have Manage gym). Signed out, a tap opens the login modal first; a social sign-in returns on `?report=gym` or `?report=<board uuid>` and the dialog reopens (`use-report-request.ts`, `report-return-param.ts`). With the flag off the page still shows Report a duplicate. One provider (`gym-report-problem.tsx`) holds the dialog and the board list for every row. The public board listing carries no creator names, so the routing line there says "the climber who added this board".
+The admin queue and the staff Review dialog work while the `directory-reports` flag is off, on purpose: closing reports must keep working, and legacy duplicate-gym reports reach the queue regardless. Only the entry points that create reports are flag-gated.
+
+- **Board list** (`/b/{slug}/{angle}/list`). "Something wrong with this board? Report a problem" at the end of the details (`board-report-link.tsx`). The page is in a shared 24 h CDN cache, so the island is the same markup for every reader: it reads the board (`GET_BOARD`), its gym (`GET_GYM`, for `listingState` and `canClaim`) and the gym's other boards (`GET_GYM_BOARDS`) with the reader's own session once the dialog opens. A flag flip reaches cached list pages as their cache turns over.
+- **The dialog** (`components/directory-reports/report-problem-dialog.tsx`, rules in `report-problem-logic.ts`). The reasons as a radio list; for "Listed twice", the other boards at the gym plus "Not sure", or a search of similar gyms (`findSimilarGyms`) for a gym; a note, required (10 characters) for "Something else"; the routing line from `routeBoardReport` / `routeGymReport` through `pickReportAudience`; and, on a gym nobody runs that the viewer can claim, "Run {gym}? Claim it and fix it yourself", which opens the gym page's claim dialog. Sent, it says created, joined ("2 other climbers flagged this too") or already reported. A failure says "Your report didn't go through" (or to connect, offline), never the server's English.
+- **Manage gym → Boards.** The Reported chip, reported rows first, and the Review dialog: see [gym-board-management.md](../web/gym-board-management.md#manage-gym--boards-on-www).
+- **Manage gym, no access.** The lock state says who can change the gym and offers Claim this gym and Report a problem: see [gym-board-management.md](../web/gym-board-management.md#manage-gym-for-someone-who-cant-manage-it).
+- **`/admin/board-reports`** (`components/admin/board-reports-panel.tsx`, global admins, `checkAdmin()` like the other admin pages, noindex through the admin layout). `adminDirectoryReports` with a status filter (escalated by default) and a board/gym filter; reports routed to the team when they opened come first, then those that waited 14 days, oldest first. Each shows the target, reason, climber count, the notes with the reporters' names, its age and who it was sent to. Actions (`board-reports-actions.ts`): **Delete board** (`deleteBoard`), **Remove from gym** (`detachBoardFromGym` on the gym it was reported at; not for a relist request), **Hide gym from search** (`updateGym isListed: false`) and **Keep as it is** (with a note), each followed by `resolveDirectoryReport` with the matching outcome. A delete or removal has usually closed the report already, so `REPORT_CLOSED` there counts as done. A "listed twice" gym report links to `/admin/gym-duplicates` for the merge, and every report with a gym links to its Manage gym page. The daily digest's `?report=<uuid>` link highlights that report.
+
 ## The `directory-reports` flag
 
 A server flag in the backend (`services/directory-reports-flag.ts`), off by default, fails closed. It gates `reportBoard`, `reportGym` and every notice above, so nothing reaches an app build that can't word it. Closing reports and the sweep run either way.
@@ -207,6 +220,8 @@ It is one switch for the whole service, not a per-account rollout: a report reac
 3. No PostHog key: off. No answer (a timeout, a non-2xx, an unreadable body, PostHog reporting errors while it evaluated): the last answer stands for one more interval, so one slow request does not flap it, then off until PostHog answers again.
 
 Boot awaits the first answer (at most 1.5 s) before the server and the workers start, so the first minute's notices and pushes don't read a cold cache as off.
+
+www reads the same flag for the same id to show its entry points (see "On www"); `FEATURE_FLAG_OVERRIDES` on the web deployment decides there.
 
 Turn it on once the mobile PR's copy and routes are in a production build (and the web PR's dialog is live), after this backend is deployed.
 
@@ -227,4 +242,5 @@ They are sent once the action's transaction commits, so an action that rolls bac
 - Resolvers: `packages/backend/src/graphql/resolvers/social/directory-reports/` (`submit.ts`, `read.ts`, `lifecycle.ts`, `notices.ts`, `core.ts`).
 - Sweep and digest: `packages/backend/src/services/directory-report-sweep.ts`; the email in `email/email-service.ts`.
 - Commit-time effects: `packages/backend/src/db/after-commit.ts`.
+- www: `packages/web/app/components/directory-reports/` (dialog, rules, sign-in return), `packages/web/app/gym/[gym_slug]/gym-report-problem.tsx`, `packages/web/app/components/gym-entity/manage/board-report-review-dialog.tsx`, `packages/web/app/gym/[gym_slug]/manage/manage-no-access.tsx`, `packages/web/app/admin/board-reports/` and `packages/web/app/components/admin/board-reports-panel.tsx`.
 - Tests: `packages/backend/src/__tests__/directory-reports.test.ts`, `packages/backend/src/__tests__/directory-reports-flag.test.ts`, `packages/shared/directory-moderation/src/__tests__/`.

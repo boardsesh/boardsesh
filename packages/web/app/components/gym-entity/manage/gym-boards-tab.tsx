@@ -23,6 +23,7 @@ import AddLinkOutlined from '@mui/icons-material/AddLinkOutlined';
 import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
+import FlagOutlined from '@mui/icons-material/FlagOutlined';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -64,6 +65,8 @@ import { canManageGymBoards, linkableBoards } from './gym-board-permissions';
 import ConfirmDialog from './confirm-dialog';
 import type { GymManageTabProps } from './tab-props';
 import GymBoardEditor from './gym-board-editor';
+import BoardReportReviewDialog from './board-report-review-dialog';
+import { hasOpenReports, sortBoardsReportedFirst } from './report-review-logic';
 
 export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 'isUnlisted'> }) {
   const { t } = useTranslation('kiosk');
@@ -195,6 +198,9 @@ export function GymBoardAssociation({
   const boardRequestGenerationRef = useRef(0);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingBoardUuid, setEditingBoardUuid] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<UserBoard | null>(null);
+  // Reported boards first, so the ones climbers flagged are the first thing staff see.
+  const orderedBoards = useMemo(() => sortBoardsReportedFirst(boards ?? []), [boards]);
   const linkedBoardUuids = useMemo(() => new Set((boards ?? []).map((board) => board.uuid)), [boards]);
   // Linking your own board needs gym owner/admin. Which board offers Remove
   // from gym and Delete is the server's call (`canRemoveFromGym`, `canDelete`),
@@ -415,7 +421,7 @@ export function GymBoardAssociation({
         </Typography>
       ) : (
         <List disablePadding>
-          {boards.map((board) => (
+          {orderedBoards.map((board) => (
             <ListItem
               key={board.uuid}
               divider
@@ -444,6 +450,20 @@ export function GymBoardAssociation({
                       {board.name}
                     </Typography>
                     <VisibilityChip board={board} />
+                    {hasOpenReports(board) && (
+                      <>
+                        <Chip size="small" color="warning" label={tBoards('reportReview.statusPill')} />
+                        <Button
+                          size="small"
+                          startIcon={<FlagOutlined />}
+                          onClick={() => setReviewTarget(board)}
+                          disabled={actionPending}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {tBoards('reportReview.review')}
+                        </Button>
+                      </>
+                    )}
                     {board.canEdit && (
                       <Button
                         size="small"
@@ -507,6 +527,28 @@ export function GymBoardAssociation({
           }}
         />
       )}
+
+      <BoardReportReviewDialog
+        // A fresh dialog per board, so one board's reports never show under another's name.
+        key={reviewTarget?.uuid ?? 'closed'}
+        board={reviewTarget}
+        gymName={gym.name}
+        onClose={() => setReviewTarget(null)}
+        onFix={(board) => {
+          setReviewTarget(null);
+          setEditingBoardUuid(board.uuid);
+        }}
+        onRemove={(board) => {
+          setReviewTarget(null);
+          setRemoveTarget(board);
+        }}
+        onDelete={(board) => {
+          setReviewTarget(null);
+          setDeleteTarget(board);
+        }}
+        allowDelete={allowDelete}
+        onResolved={() => void fetchBoards()}
+      />
 
       {/* "For everyone", and logged sends are kept: delete takes the board
           from every climber who saved it. */}
