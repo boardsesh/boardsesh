@@ -1,26 +1,22 @@
-// The seam for "Report a problem" on the gym page.
+// "Report a problem" on the gym page: the header ⋯ row and the row at the foot
+// of the page, for the gym itself. The board rows' reports go through the
+// page's board menu (`useGymBoardReports`).
 //
-// The report sheet arrives in a separate change (the app's report and review
-// sheets). Until it does this returns null, and the page draws neither the
-// header ⋯ row nor the row at the foot of the page, so nothing on screen
-// promises a report that can't be sent.
-//
-// To wire it: return `{ open, sheet }`. The page mounts `sheet` inside its own
-// route (the in-tree opener rule in docs/mobile/mobile-sheets-vs-routes.md) and
-// calls `open` from both entry points. Return null for viewers who can fix the
-// gym themselves (they get Edit gym details instead) and when the report
-// feature flag is off.
+// The page mounts `sheet` inside its own route (the in-tree opener rule in
+// docs/mobile/mobile-sheets-vs-routes.md) and calls `open` from both entry
+// points. Null for viewers who can fix the gym themselves (they get Edit gym
+// details instead) and while the `directory-reports` flag is off, so nothing on
+// screen promises a report that can't be sent. Once a report or the claim sheet
+// it hands over to is up, it stays non-null until that sheet closes, so a gym
+// read that changes mid-report never unmounts the sheet being filled in.
 
-import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import type { Gym } from '@boardsesh/shared-schema';
+import { useReportProblem, type ReportProblemAction } from '../report-problem/use-report-problem';
 
-export type GymReportAction = {
-  /** Opens the report sheet for this gym. */
-  open: () => void;
-  /** The sheet, mounted by the gym page route. */
-  sheet: ReactNode;
-};
+export type GymReportAction = ReportProblemAction;
 
-export function useGymReportAction(_gym: Pick<Gym, 'uuid' | 'name' | 'canEdit'> | null): GymReportAction | null {
-  return null;
+export function useGymReportAction(gym: Gym | null): GymReportAction | null {
+  const target = useMemo(() => (gym ? { kind: 'gym' as const, gym } : null), [gym]);
+  return useReportProblem({ target });
 }
