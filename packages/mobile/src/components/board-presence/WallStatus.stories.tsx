@@ -2,7 +2,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useStorySheetPresentation } from '../../dev/stories/use-story-sheet-presentation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, FlatList } from 'react-native';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import type { BottomSheetModal } from '../sheet-presentation';
 import type { BoardPresenceClimb, Climb } from '@boardsesh/shared-schema';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';

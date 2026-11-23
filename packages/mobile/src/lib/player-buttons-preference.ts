@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { getSetting, hasSetting, setSetting, subscribeSettings, useSetting } from '../settings/hooks';
+import { getSetting, hasSetting, resetSetting, setSetting, subscribeSettings, useSetting } from '../settings/hooks';
+import { getDefaultPlayerPreviousNext, useDefaultPlayerPreviousNext } from './player-navigation-default';
 import {
   isSameSectionLayout,
   sanitiseSectionLayout,
@@ -14,11 +15,9 @@ import {
   DEFAULT_PLAYER_BOARD_CONTROL,
   DEFAULT_PLAYER_BUTTONS,
   DEFAULT_PLAYER_BUTTONS_POSITION,
-  DEFAULT_PLAYER_PREVIOUS_NEXT,
   PLAYER_BUTTONS_LAYOUT,
   sanitisePlayerBoardControl,
   sanitisePlayerButtonsPosition,
-  sanitisePlayerPreviousNext,
   type PlayerBoardControl,
   type PlayerButtonId,
   type PlayerButtonsLayout,
@@ -192,7 +191,7 @@ export function isDefaultPlayerButtons({
 }: PlayerButtonsPreference): boolean {
   return (
     isSameSectionLayout(buttons, DEFAULT_PLAYER_BUTTONS) &&
-    previousNext === DEFAULT_PLAYER_PREVIOUS_NEXT &&
+    previousNext === getDefaultPlayerPreviousNext() &&
     position === DEFAULT_PLAYER_BUTTONS_POSITION &&
     boardControl === DEFAULT_PLAYER_BOARD_CONTROL
   );
@@ -203,21 +202,29 @@ export function restorePlayerButtonDefaults(): void {
   setPlayerBoardControl(DEFAULT_PLAYER_BOARD_CONTROL);
   playerButtonsStore.restoreDefaults();
   // Written only when they differ, so a restore doesn't wake every settings reader twice.
-  if (sanitisePlayerPreviousNext(getSetting('playerPreviousNext')) !== DEFAULT_PLAYER_PREVIOUS_NEXT) {
-    setSetting('playerPreviousNext', DEFAULT_PLAYER_PREVIOUS_NEXT);
-  }
+  if (hasSetting('playerPreviousNext')) resetSetting('playerPreviousNext');
   if (sanitisePlayerButtonsPosition(getSetting('playerButtonsPosition')) !== DEFAULT_PLAYER_BUTTONS_POSITION) {
     setSetting('playerButtonsPosition', DEFAULT_PLAYER_BUTTONS_POSITION);
   }
 }
 
+// Absence is a separate snapshot from false: restoring the default after a
+// mouse is attached must notify React even when the launch default was false.
+function readStoredPreviousNext(): boolean | undefined {
+  if (!hasSetting('playerPreviousNext')) return undefined;
+  const stored = getSetting('playerPreviousNext');
+  return typeof stored === 'boolean' ? stored : undefined;
+}
+const serverPreviousNext = (): undefined => undefined;
+
 /** What the player draws from. Re-renders only when one of the four changes. */
 export function usePlayerButtonsPreference(): PlayerButtonsPreference {
   const buttons = useSectionLayout(playerButtonsStore);
   const boardControl = usePlayerBoardControl();
-  const [storedPreviousNext] = useSetting('playerPreviousNext');
+  const storedPreviousNext = useSyncExternalStore(subscribeBoardControl, readStoredPreviousNext, serverPreviousNext);
   const [storedPosition] = useSetting('playerButtonsPosition');
-  const previousNext = sanitisePlayerPreviousNext(storedPreviousNext);
+  const automaticPreviousNext = useDefaultPlayerPreviousNext();
+  const previousNext = storedPreviousNext ?? automaticPreviousNext;
   const position = sanitisePlayerButtonsPosition(storedPosition);
   return useMemo(
     () => ({ buttons, previousNext, position, boardControl }),

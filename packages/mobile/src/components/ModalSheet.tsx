@@ -1,3 +1,4 @@
+import type { SheetPresentationOptions } from '../lib/sheet-presentation-policy';
 import { useSheetPresented } from './use-sheet-presented';
 // Modal bottom sheet, presented imperatively via ref (`present()` / `dismiss()`)
 // OR declaratively via the `visible` prop.
@@ -35,7 +36,7 @@ import {
   BottomSheetScrollView,
   BottomSheetView,
   type BottomSheetMethods,
-} from '@expo/ui/community/bottom-sheet';
+} from './sheet-presentation';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants/select-by-variant';
@@ -60,7 +61,7 @@ import {
   type PresenterGroup,
 } from '../providers/sheet-presentation-provider';
 
-type ModalSheetProps = {
+type ModalSheetProps = SheetPresentationOptions & {
   /** A child mounted inside a native sheet keeps its parent open on web too. */
   stacked?: boolean;
   /** Actual native parent; valid only with an in-content child Host. */
@@ -121,6 +122,9 @@ type ModalSheetProps = {
 export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(function ModalSheet(
   {
     children,
+    surfaceSize,
+    accessibilityLabel,
+    onRequestClose,
     stacked = false,
     parentSheetId,
     visible,
@@ -358,6 +362,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
 
   return (
     <BottomSheetModal
+      surfaceSize={surfaceSize}
+      accessibilityLabel={accessibilityLabel}
+      onRequestClose={onRequestClose}
       ref={sheetRef}
       {...(Platform.OS === 'web' && stacked ? { stackBehavior: 'push' as const } : {})}
       // Native `@expo/ui` ignores this prop entirely (its `BottomSheetModal`

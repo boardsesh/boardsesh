@@ -207,6 +207,7 @@ export function PlaylistFormSheet({
       snapPoints={['90%']}
       onDisplaced={onClose}
       onClose={guard.requestClose}
+      onRequestClose={guard.requestClose}
       enablePanDownToClose={guard.enablePanDownToClose}
       scrollable
       header={header}

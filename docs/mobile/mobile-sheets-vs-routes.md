@@ -1,7 +1,8 @@
 # Mobile: sheets vs. routes — which surface to use
 
-Guidance for `packages/mobile`. Every secondary surface in the app is either a **bottom
-sheet** or an **expo-router route**. This doc is the decision tree for picking one, plus the
+Guidance for `packages/mobile`. Every secondary surface in the app belongs to either the **sheet
+family** or an **expo-router route**. Browser sheets can present as centered dialogs. This doc is
+the decision tree for picking the family, plus the
 hard rules that explain _why_ — most of them learned the expensive way (see the scars at the
 bottom). When you add a new drawer, picker, menu, or full-screen flow, start here.
 
@@ -14,10 +15,16 @@ Most things are sheets. Routes are the exception, and each route variant earns i
 
 ## The two families
 
-### Bottom sheets (`@expo/ui/community/bottom-sheet`)
+### Sheet surfaces (app-owned facade)
 
-Wrapped by two helpers so they don't drift (both supply the scrim, drag handle, and iOS 26 glass
-background natively, plus JS-side keyboard avoidance for the `header` / `footer` column):
+Use `src/components/sheet-presentation.tsx` (`.web.tsx` on the browser) for sheet hosts and
+scroll/input primitives. The facade forwards to `@expo/ui/community/bottom-sheet` on native and
+the browser adapter on web, with shared `surfaceSize`, `accessibilityLabel`, and `onRequestClose`
+props. Native forwards children directly, without an added width cap or layout wrapper. Keep platform and input decisions in the central
+policy rather than adding device flags to each screen. The presentation coordinator still owns
+opening, replacement, explicit child sheets, and terminal dismissal.
+
+Two wrappers supply common chrome and JS-side keyboard avoidance for the `header` / `footer` column:
 
 **Background rule.** On iOS with the Apple variant, leave the sheet's native
 `backgroundStyle` unset. The system
@@ -42,20 +49,39 @@ on content such as a form or list when needed for readability.
 Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
 `AddToPlaylistSheet`, `AddBetaVideoSheet` (sheet surfaces), `HoldRoleSheet` (a declarative `Sheet`).
 
-**Expo web implementation exception.** App and shared code still import
-`@expo/ui/community/bottom-sheet`, but Metro redirects that one module to
-`src/web-shims/bottom-sheet.tsx` on web. Expo SDK 57's Vaul implementation renders a sheet,
-but it is not compatible with the current interaction contract: gesture-lock props are no-ops,
-configured detents cannot be dragged between, snap-point content gains a second scroll owner
-around virtualized lists, keyboard behaviour props are no-ops, and there is no accurate
-post-animation dismissal signal. The isolated web shim uses Gorhom until Expo's implementation
-passes all of those gates. Keep Gorhom outside the native dependency graph because of the Android
-freeze fixed in #3167. The web modal adapter forwards a missing closed-index event before
-terminal dismissal, so the sheet coordinator can reopen a queue after a backdrop close;
-duplicate close events are ignored. Web QA must cover a long queue, row reorder without sheet movement,
-dragging between detents, note focus at a mobile viewport, and exactly-once dismissal. Soft-keyboard
-behaviour remains a real-device browser check even though the adapter preserves Gorhom's input and
-keyboard props.
+**Expo web implementation exception.** The facade reaches the isolated
+`src/web-shims/bottom-sheet.tsx` adapter on web. Expo's Vaul implementation does not meet the app's
+existing gesture-lock, virtualized-scroll, keyboard, and post-animation dismissal contracts, so the
+adapter retains Gorhom. Keep Gorhom outside the native dependency graph because of the Android
+freeze fixed in #3167. Only the facade and platform adapter should depend directly on the underlying
+sheet module; custom Queue, Board, Filters, and picker hosts use the same app-owned contract.
+
+**Browser presentation.** Below 700 CSS px at opening, use the compact bottom sheet. At 700px or
+wider, a mouse or keyboard opener gets a centered dialog; touch or pen gets a bottom sheet capped
+at 640px. Dialog forms cap at 560px, lists at 672px, with 24px viewport gutters.
+`src/lib/sheet-presentation-policy.ts` owns the rules, and `src/lib/opening-input.web.ts` tracks the
+opening input on hybrid devices. Presentation is latched for each opening. Dialogs follow the visible
+viewport's size and position; touch sheets update horizontal bounds while Gorhom retains ownership
+of their vertical detents and keyboard behavior. Do not remount content when bounds change. Native iPad and Android keep their system sheet sizing;
+these browser input rules do not apply to native. See
+[large-screen presentation](../design/mobile-large-screen-layout.md#secondary-surfaces-on-web-and-tablets)
+for the platform matrix and official guidance.
+
+A browser dialog uses a React Native Web `Modal` shell, with a non-modal Gorhom sheet inside it to
+retain the existing scrollable and input contexts. It has one fixed-height viewport, no detents or
+pan-to-resize requirement, a fixed header/actions, and one scroll owner. Height is
+`max(0, min(720, visibleViewportHeight - 48))`. The desktop tick form shows all fields without an
+expand gesture, reading `supportsDetents` from `src/components/sheet-presentation-context.tsx`
+rather than checking the platform or input. A local Paper `Portal.Host` keeps menus inside the dialog's modal surface, and
+confirmation prompts use their own React Native modal so they remain above it. Labels, keyboard
+focus containment, Escape, backdrop/close requests, and focus restoration belong to the adapter;
+close requests still pass through the current form's unsaved-edit guard.
+
+The adapter forwards a missing closed-index event before terminal dismissal, so the coordinator
+can reopen a queue after a backdrop close; duplicate close events are ignored. Web QA covers long
+queues, row reorder without sheet movement, touch detents, input focus, mouse/keyboard dialog
+navigation, hybrid input, resize without draft loss, and exactly-once dismissal. Soft-keyboard
+behaviour remains a real-device browser check.
 
 Prefer the controlled `visible` prop over an imperative ref + a local `isPresentedRef`: the
 coordinator reconciles present/dismiss from `visible`, and `onClose` fires only when the sheet is
@@ -1193,8 +1219,9 @@ form or a different record. On Android, `DialogProvider` hosts the Paper dialog
 directly inside a transparent React Native `Modal`: a root Paper `Portal` renders
 below Expo’s separate native sheet window and makes the discard prompt unreachable.
 Do not put that Portal inside the modal; it still renders back at the app root.
-Android Back and the dialog scrim cancel only the current queued prompt. Web keeps
-the Portal and iOS keeps its native alerts/action sheets. Native Android API 36
+Android Back and the dialog scrim cancel only the current queued prompt. Browser confirmations
+also use a React Native modal above the active sheet or dialog; Paper menus stay in the local
+surface's Portal host. iOS keeps its native alerts/action sheets. Native Android API 36
 QA at 1080×1920 and 130% text shows the difference after Close:
 [unreachable prompt](images/feedback-discard-before.png),
 [visible warning](images/feedback-discard-after.png). Keep editing, Android Back,

@@ -1,7 +1,7 @@
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, useRef, type ComponentRef } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal, BottomSheetFlatList } from '../sheet-presentation';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
@@ -146,6 +146,11 @@ export function LogbookEntryChooserSheet({
 
   return (
     <BottomSheetModal
+      surfaceSize="list"
+      accessibilityLabel={
+        intent === 'delete' ? t('mobile.logbook.chooser.deleteTitle') : t('mobile.logbook.chooser.editTitle')
+      }
+      onRequestClose={managed.handle.dismiss}
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}

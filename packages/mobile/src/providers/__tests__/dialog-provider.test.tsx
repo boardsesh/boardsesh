@@ -26,7 +26,7 @@ const alertMock = vi.hoisted(() => ({
 const nativeModalMock = vi.hoisted(() => ({ onRequestClose: undefined as (() => void) | undefined }));
 
 // The provider needs Alert + Platform + StyleSheet from react-native; mock them
-// (Platform.OS controls the Android native host, web Portal, and iOS Alert).
+// (Platform.OS controls the Android/web modal host and iOS Alert).
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -224,15 +224,15 @@ describe('useConfirm — Android Material (Paper Dialog)', () => {
 });
 
 describe('useConfirm — web Material', () => {
-  it('keeps the Paper dialog in the web Portal', async () => {
+  it('keeps web confirmations above sheets in the browser modal stack', async () => {
     ctrl.os = 'web';
     const { container } = setup();
     let promise!: Promise<boolean>;
     act(() => {
       promise = confirmFn(OPTS);
     });
-    expect(container.querySelector('[data-paper-portal] [data-dialog]')).not.toBeNull();
-    expect(container.querySelector('[data-native-modal]')).toBeNull();
+    expect(container.querySelector('[data-native-modal] [data-dialog]')).not.toBeNull();
+    expect(container.querySelector('[data-paper-portal]')).toBeNull();
     act(() => materialButton(container, 'Delete').click());
     await expect(promise).resolves.toBe(true);
   });
@@ -441,4 +441,18 @@ describe('useConfirm — destructive confirms on iOS are a confirmation dialog (
     expect(actionSheetMock.calls).toHaveLength(0);
     expect(container.querySelector('[data-dialog]')).not.toBeNull();
   });
+});
+
+it('uses the browser modal stack for confirmations with the glass appearance', async () => {
+  ctrl.os = 'web';
+  ctrl.variant = 'liquidGlass';
+  const { container } = setup();
+  let confirmation!: Promise<boolean>;
+  act(() => {
+    confirmation = confirmFn(OPTS);
+  });
+  expect(container.querySelector('[data-native-modal] [data-dialog]')).not.toBeNull();
+  expect(alertMock.calls).toHaveLength(0);
+  act(() => nativeModalMock.onRequestClose?.());
+  await expect(confirmation).resolves.toBe(false);
 });

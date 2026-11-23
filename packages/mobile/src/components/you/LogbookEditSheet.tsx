@@ -1,7 +1,7 @@
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { type RefObject, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { type BottomSheet } from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
 import { useUpdateTick, useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';

@@ -3,7 +3,7 @@ import { QueueSheetView } from './QueueSheetView';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal } from '../sheet-presentation';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueListBody, type QueueListBodyHandle } from './QueueListBody';

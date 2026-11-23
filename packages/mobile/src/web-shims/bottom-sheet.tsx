@@ -1,5 +1,20 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentType,
+} from 'react';
 import { TextInput, type StyleProp, type ViewStyle } from 'react-native';
+import { SheetPresentationContext } from '../components/sheet-presentation-context';
+import { startOpeningInputTracking } from '../lib/opening-input';
+import type { OpeningInput, SheetPresentationOptions } from '../lib/sheet-presentation-policy';
+import { useWebSheetPresentation } from './web-sheet-presentation';
+import { SheetDialog, WebSheetModalHost } from './sheet-dialog';
 import GorhomBottomSheet, {
   BottomSheetBackdrop,
   BottomSheetFlatList,
@@ -28,6 +43,7 @@ import { installWebTextInputFocusCompat } from './text-input-focus-compat';
 installWebTextInputFocusCompat(TextInput.State);
 
 export interface BottomSheetMethods {
+  preparePresentation?: (input: OpeningInput) => void;
   snapToIndex: (index: number) => void;
   snapToPosition: (position: string | number) => void;
   expand: () => void;
@@ -38,19 +54,20 @@ export interface BottomSheetMethods {
   dismiss: () => void;
 }
 
-type WebBottomSheetProps = Omit<GorhomBottomSheetProps, 'onChange'> & {
-  stackBehavior?: 'replace' | 'push';
-  onChange?: (index: number) => void;
-  onDismiss?: () => void;
-  onFullyDismissed?: () => void;
-};
+type WebBottomSheetProps = Omit<GorhomBottomSheetProps, 'onChange'> &
+  SheetPresentationOptions & {
+    stackBehavior?: 'replace' | 'push';
+    onChange?: (index: number) => void;
+    onDismiss?: () => void;
+    onFullyDismissed?: () => void;
+  };
 
 type GorhomSheetRef = BottomSheetMethods;
 type GorhomModalRef = BottomSheetMethods;
 
 type SheetChromeOptions = Pick<
   WebBottomSheetProps,
-  'backdropComponent' | 'backgroundStyle' | 'handleIndicatorStyle' | 'enablePanDownToClose'
+  'backdropComponent' | 'backgroundStyle' | 'handleIndicatorStyle' | 'enablePanDownToClose' | 'onRequestClose'
 >;
 
 function useSheetChrome({
@@ -58,6 +75,7 @@ function useSheetChrome({
   backgroundStyle,
   handleIndicatorStyle,
   enablePanDownToClose = false,
+  onRequestClose,
 }: SheetChromeOptions) {
   const { sheet, systemColors } = useTheme();
   const scrimOpacity = sheet.scrimOpacity ?? material.sheet.scrimOpacity;
@@ -68,10 +86,11 @@ function useSheetChrome({
         appearsOnIndex={0}
         disappearsOnIndex={-1}
         opacity={scrimOpacity}
-        pressBehavior={enablePanDownToClose ? 'close' : 'none'}
+        pressBehavior={onRequestClose ? 'none' : enablePanDownToClose ? 'close' : 'none'}
+        onPress={onRequestClose}
       />
     ),
-    [enablePanDownToClose, scrimOpacity],
+    [enablePanDownToClose, onRequestClose, scrimOpacity],
   );
   const corners = sheet.corners ?? {
     borderTopLeftRadius: material.sheet.cornerRadius,
@@ -93,13 +112,14 @@ function presentedDismissalState(): SheetDismissalState {
   return transitionSheetDismissal(initialSheetDismissalState, 'present').state;
 }
 
-const BottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function BottomSheet(props, ref) {
+const TouchBottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function TouchBottomSheet(props, ref) {
   const {
     index: indexProp,
     onChange,
     onClose,
     onDismiss,
     onFullyDismissed,
+    onRequestClose,
     backdropComponent,
     backgroundStyle,
     handleIndicatorStyle,
@@ -118,6 +138,7 @@ const BottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function
     backgroundStyle,
     handleIndicatorStyle,
     enablePanDownToClose,
+    onRequestClose,
   });
   const gorhomDynamicSizing = resolveGorhomDynamicSizing(snapPoints, enableDynamicSizing);
 
@@ -199,7 +220,6 @@ const BottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function
     </GorhomBottomSheet>
   );
 });
-type BottomSheet = BottomSheetMethods;
 
 type PendingModalAction =
   | { type: 'index'; index: number }
@@ -224,7 +244,10 @@ function runModalAction(modal: GorhomModalRef, action: PendingModalAction): void
   }
 }
 
-const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function BottomSheetModal(props, ref) {
+const TouchBottomSheetModal = forwardRef<
+  BottomSheetMethods,
+  WebBottomSheetProps & { containerComponent?: ComponentType<{ children?: ReactNode }> }
+>(function TouchBottomSheetModal(props, ref) {
   const {
     stackBehavior = 'replace',
     index: indexProp,
@@ -232,6 +255,7 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
     onClose,
     onDismiss,
     onFullyDismissed,
+    onRequestClose,
     backdropComponent,
     backgroundStyle,
     handleIndicatorStyle,
@@ -252,6 +276,7 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
     backgroundStyle,
     handleIndicatorStyle,
     enablePanDownToClose,
+    onRequestClose,
   });
   const gorhomDynamicSizing = resolveGorhomDynamicSizing(snapPoints, enableDynamicSizing);
 
@@ -356,9 +381,250 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
     </GorhomBottomSheetModal>
   );
 });
+
+type SurfaceAction = PendingModalAction | { type: 'present' };
+
+function runSurfaceAction(surface: BottomSheetMethods, action: SurfaceAction): void {
+  if (action.type === 'present') surface.present();
+  else runModalAction(surface, action);
+}
+
+/** The controller owns presentation identity; resizing only updates geometry. */
+const AdaptiveBottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps & { modal: boolean }>(
+  function AdaptiveBottomSheet({ modal, surfaceSize = 'form', accessibilityLabel, onRequestClose, ...props }, ref) {
+    const presentation = useWebSheetPresentation(surfaceSize);
+    const [accessibleTitle, setAccessibleTitle] = useState<string>();
+    const label = accessibilityLabel ?? accessibleTitle ?? 'Boardsesh';
+    const initialDialogOpen = !modal && props.index !== -1 && presentation.mode === 'dialog';
+    const [dialogVisible, setDialogVisible] = useState(initialDialogOpen);
+    const [touchVisible, setTouchVisible] = useState(!modal && props.index !== -1);
+    const touchVisibleRef = useRef(touchVisible);
+    const dialogVisibleRef = useRef(initialDialogOpen);
+    const dialogDismissalRef = useRef<SheetDismissalState>(
+      initialDialogOpen ? presentedDismissalState() : initialSheetDismissalState,
+    );
+    const dialogNotifiedRef = useRef(false);
+    const phaseRef = useRef<'dismissed' | 'opening' | 'open' | 'closing'>(
+      !modal && props.index !== -1 ? 'opening' : 'dismissed',
+    );
+    const touchRef = useRef<BottomSheetMethods>(null);
+    const renderedModeRef = useRef(presentation.mode);
+    renderedModeRef.current = presentation.mode;
+    const pendingTouchActionRef = useRef<SurfaceAction | null>(null);
+    const propsRef = useRef(props);
+    propsRef.current = props;
+    const requestCloseRef = useRef(onRequestClose);
+    requestCloseRef.current = onRequestClose;
+    const { capturePresentation, releasePresentation, preparePresentation, modeRef } = presentation;
+
+    const closeDialog = useCallback(() => {
+      if (phaseRef.current !== 'dismissed') phaseRef.current = 'closing';
+      dialogVisibleRef.current = false;
+      setDialogVisible(false);
+    }, []);
+    const closeSurface = useCallback(() => {
+      pendingTouchActionRef.current = null;
+      if (phaseRef.current !== 'dismissed') phaseRef.current = 'closing';
+      if (modeRef.current === 'dialog') closeDialog();
+      else touchRef.current?.close();
+    }, [closeDialog, modeRef]);
+    const requestUserClose = useCallback(() => {
+      if (requestCloseRef.current) requestCloseRef.current();
+      else if (propsRef.current.enablePanDownToClose) closeSurface();
+    }, [closeSurface]);
+    const requestOpen = useCallback(
+      (action: SurfaceAction) => {
+        if (phaseRef.current === 'closing' && action.type !== 'present') return;
+        if (phaseRef.current === 'dismissed' && action.type !== 'present' && action.type !== 'index') return;
+        if (phaseRef.current === 'dismissed') phaseRef.current = 'opening';
+        const mode = capturePresentation();
+        if (mode === 'dialog') {
+          if (!dialogVisibleRef.current) dialogNotifiedRef.current = false;
+          dialogDismissalRef.current = presentedDismissalState();
+          dialogVisibleRef.current = true;
+          setDialogVisible(true);
+        } else if (!modal && !touchVisibleRef.current) {
+          touchVisibleRef.current = true;
+          setTouchVisible(true);
+          pendingTouchActionRef.current = action;
+        } else if (renderedModeRef.current === 'sheet' && touchRef.current) {
+          runSurfaceAction(touchRef.current, action);
+        } else {
+          pendingTouchActionRef.current = action;
+        }
+      },
+      [capturePresentation, modal],
+    );
+    useEffect(() => {
+      if (presentation.mode !== 'sheet' || !pendingTouchActionRef.current || !touchRef.current) return;
+      const action = pendingTouchActionRef.current;
+      pendingTouchActionRef.current = null;
+      runSurfaceAction(touchRef.current, action);
+    }, [presentation.mode, touchVisible]);
+    const previousIndexRef = useRef(props.index);
+    useEffect(() => {
+      if (modal) return;
+      if (previousIndexRef.current !== props.index) {
+        previousIndexRef.current = props.index;
+        if (props.index === -1) closeSurface();
+        else requestOpen({ type: 'index', index: props.index ?? 0 });
+      } else if (props.index !== -1) capturePresentation();
+    }, [modal, props.index, capturePresentation, closeSurface, requestOpen]);
+
+    const handleDialogShown = useCallback(() => {
+      if (!dialogVisibleRef.current || dialogNotifiedRef.current) return;
+      dialogNotifiedRef.current = true;
+      phaseRef.current = 'open';
+      propsRef.current.onChange?.(0);
+    }, []);
+    const handleDialogDismissed = useCallback(() => {
+      // A stale animation completion cannot close a presentation that reopened.
+      if (dialogVisibleRef.current) return;
+      const transition = transitionSheetDismissal(dialogDismissalRef.current, 'dismiss');
+      dialogDismissalRef.current = transition.state;
+      if (!transition.shouldNotify) return;
+      dialogNotifiedRef.current = false;
+      phaseRef.current = 'dismissed';
+      releasePresentation();
+      propsRef.current.onChange?.(-1);
+      propsRef.current.onClose?.();
+      propsRef.current.onDismiss?.();
+      propsRef.current.onFullyDismissed?.();
+    }, [releasePresentation]);
+    const handleTouchDismissed = useCallback(() => {
+      phaseRef.current = 'dismissed';
+      touchVisibleRef.current = false;
+      setTouchVisible(false);
+      releasePresentation();
+      propsRef.current.onFullyDismissed?.();
+    }, [releasePresentation]);
+
+    const handleTouchChange = useCallback((index: number) => {
+      phaseRef.current = index < 0 ? 'closing' : 'open';
+      propsRef.current.onChange?.(index);
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        preparePresentation,
+        snapToIndex: (index) => {
+          if (index >= 0) requestOpen({ type: 'index', index });
+          else {
+            pendingTouchActionRef.current = null;
+            if (phaseRef.current !== 'dismissed') phaseRef.current = 'closing';
+            if (modeRef.current === 'dialog') closeDialog();
+            else touchRef.current?.snapToIndex(index);
+          }
+        },
+        snapToPosition: (position) => requestOpen({ type: 'position', position }),
+        expand: () => requestOpen({ type: 'expand' }),
+        collapse: () => requestOpen({ type: 'collapse' }),
+        close: closeSurface,
+        forceClose: () => {
+          if (phaseRef.current !== 'dismissed') phaseRef.current = 'closing';
+          if (modeRef.current === 'dialog') closeDialog();
+          else touchRef.current?.forceClose();
+        },
+        present: () => requestOpen({ type: 'present' }),
+        dismiss: () => {
+          if (phaseRef.current !== 'dismissed') phaseRef.current = 'closing';
+          if (modeRef.current === 'dialog') closeDialog();
+          else touchRef.current?.dismiss();
+        },
+      }),
+      [preparePresentation, closeSurface, requestOpen, modeRef, closeDialog],
+    );
+
+    const touchHostOptionsRef = useRef({ label, requestUserClose });
+    touchHostOptionsRef.current = { label, requestUserClose };
+    const TouchModalContainer = useMemo(
+      () =>
+        function TouchModalContainer({ children }: { children?: ReactNode }) {
+          return (
+            <WebSheetModalHost
+              accessibilityLabel={touchHostOptionsRef.current.label}
+              onRequestClose={touchHostOptionsRef.current.requestUserClose}
+            >
+              {children}
+            </WebSheetModalHost>
+          );
+        },
+      [],
+    );
+
+    const context = useMemo(
+      () => ({
+        mode: presentation.mode,
+        supportsDetents: presentation.mode === 'sheet',
+        setAccessibleTitle,
+      }),
+      [presentation.mode],
+    );
+    if (presentation.mode === 'dialog') {
+      const {
+        onChange: _onChange,
+        onClose: _onClose,
+        onDismiss: _onDismiss,
+        onFullyDismissed: _onFullyDismissed,
+        stackBehavior: _stackBehavior,
+        children,
+        ...sheetProps
+      } = props;
+      return (
+        <SheetDialog
+          visible={dialogVisible}
+          accessibilityLabel={label}
+          onRequestClose={requestUserClose}
+          onShown={handleDialogShown}
+          onDismissed={handleDialogDismissed}
+          onSheetClose={closeDialog}
+          viewport={presentation.viewport}
+          bounds={presentation.bounds}
+          backgroundStyle={props.backgroundStyle}
+          sheetProps={sheetProps}
+        >
+          <SheetPresentationContext value={context}>{children}</SheetPresentationContext>
+        </SheetDialog>
+      );
+    }
+    const horizontalStart = presentation.viewport.left + (presentation.viewport.width - presentation.bounds.width) / 2;
+    const horizontalEnd = presentation.viewport.layoutWidth - horizontalStart - presentation.bounds.width;
+    const surfaceStyle = [props.style, { marginLeft: horizontalStart, marginRight: horizontalEnd }];
+    const touchProps = {
+      ...props,
+      accessibilityLabel: label,
+      onRequestClose: requestUserClose,
+      style: surfaceStyle,
+      onChange: handleTouchChange,
+      onFullyDismissed: handleTouchDismissed,
+    };
+    const content = <SheetPresentationContext value={context}>{props.children}</SheetPresentationContext>;
+    return modal ? (
+      <TouchBottomSheetModal {...touchProps} ref={touchRef} containerComponent={TouchModalContainer}>
+        {content}
+      </TouchBottomSheetModal>
+    ) : (
+      <WebSheetModalHost visible={touchVisible} accessibilityLabel={label} onRequestClose={requestUserClose}>
+        <TouchBottomSheet {...touchProps} ref={touchRef}>
+          {content}
+        </TouchBottomSheet>
+      </WebSheetModalHost>
+    );
+  },
+);
+
+const BottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function BottomSheet(props, ref) {
+  return <AdaptiveBottomSheet {...props} ref={ref} modal={false} />;
+});
+type BottomSheet = BottomSheetMethods;
+const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function BottomSheetModal(props, ref) {
+  return <AdaptiveBottomSheet {...props} ref={ref} modal />;
+});
 type BottomSheetModal = BottomSheetMethods;
 
 function BottomSheetModalProvider({ children }: { children: ReactNode }) {
+  useEffect(startOpeningInputTracking, []);
   return <GorhomBottomSheetModalProvider>{children}</GorhomBottomSheetModalProvider>;
 }
 

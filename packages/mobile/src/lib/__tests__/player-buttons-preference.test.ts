@@ -151,6 +151,47 @@ describe('player buttons preference', () => {
       if (storedPreviousNext === undefined) expect(getSetting('playerPreviousNext')).toBe(true);
     });
 
+    it('follows mouse attachment and removal until a navigation choice is saved', async () => {
+      let mouseAvailable = false;
+      const listeners = new Set<() => void>();
+      vi.stubGlobal('matchMedia', () => ({
+        get matches() {
+          return mouseAvailable;
+        },
+        addEventListener: (_event: string, listener: () => void) => listeners.add(listener),
+        removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
+      }));
+      const { usePlayerButtonsEditor, hasSetting } = await launchWith({}, 'web');
+      const { result, unmount } = renderHook(() => usePlayerButtonsEditor());
+      expect(result.current.previousNext).toBe(false);
+      act(() => {
+        mouseAvailable = true;
+        for (const listener of listeners) listener();
+      });
+      expect(result.current.previousNext).toBe(true);
+      expect(hasSetting('playerPreviousNext')).toBe(false);
+      act(() => result.current.setPreviousNext(false));
+      act(() => {
+        mouseAvailable = false;
+        for (const listener of listeners) listener();
+      });
+      act(() => {
+        mouseAvailable = true;
+        for (const listener of listeners) listener();
+      });
+      expect(result.current.previousNext).toBe(false);
+      act(() => result.current.restoreDefaults());
+      expect(result.current.previousNext).toBe(true);
+      expect(hasSetting('playerPreviousNext')).toBe(false);
+      act(() => {
+        mouseAvailable = false;
+        for (const listener of listeners) listener();
+      });
+      expect(result.current.previousNext).toBe(false);
+      unmount();
+      expect(listeners.size).toBe(0);
+    });
+
     it('restores visible navigation after hiding it or resetting settings', async () => {
       const { usePlayerButtonsEditor, resetAllSettings, isDefaultPlayerButtons } = await launchWith({}, 'web');
       const { result } = renderHook(() => usePlayerButtonsEditor());
@@ -371,7 +412,7 @@ describe('player buttons preference', () => {
     // `null` rather than a copy of today's defaults, so a later release's defaults still apply.
     expect(stored('playerButtonsV4')).toBeNull();
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
-    expect(stored('playerPreviousNext')).toBe(false);
+    expect(stored('playerPreviousNext')).toBeUndefined();
     expect(stored('playerButtonsPosition')).toBe('below');
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
     expect(isDefaultPlayerButtons(result.current)).toBe(true);

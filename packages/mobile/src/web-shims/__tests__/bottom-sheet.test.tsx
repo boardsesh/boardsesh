@@ -1,7 +1,32 @@
 // @vitest-environment jsdom
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createRef, forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const presentation = vi.hoisted(() => ({
+  input: 'touch' as 'mouse' | 'touch' | 'pen' | 'keyboard' | 'unknown',
+  width: 390,
+  height: 844,
+  modalProps: null as null | {
+    visible?: boolean;
+    onShow?: () => void;
+    onDismiss?: () => void;
+    onRequestClose?: () => void;
+  },
+}));
+vi.mock('../../lib/opening-input', () => ({
+  getOpeningInput: () => presentation.input,
+  startOpeningInputTracking: () => () => {},
+}));
+vi.mock('../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
+vi.mock('react-native-gesture-handler', async () => {
+  const { createElement } = await import('react');
+  return { GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children) };
+});
+vi.mock('react-native-paper', async () => {
+  const { createElement } = await import('react');
+  return { Portal: { Host: ({ children }: { children?: ReactNode }) => createElement('div', null, children) } };
+});
 
 type MockGorhomProps = {
   children?: ReactNode;
@@ -15,6 +40,9 @@ type MockGorhomProps = {
   onDismiss?: () => void;
   snapPoints?: readonly (number | string)[];
   stackBehavior?: 'replace' | 'push';
+  handleComponent?: unknown;
+  enableOverDrag?: boolean;
+  style?: unknown;
 };
 
 const gorhom = vi.hoisted(() => ({
@@ -83,10 +111,55 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('react-native', () => ({
-  Platform: { OS: 'web' },
-  TextInput: { State: { currentlyFocusedField: () => null } },
-}));
+vi.mock('react-native', async () => {
+  const { createElement } = await import('react');
+  return {
+    Platform: { OS: 'web' },
+    TextInput: { State: { currentlyFocusedField: () => null } },
+    useWindowDimensions: () => ({ width: presentation.width, height: presentation.height }),
+    StyleSheet: {
+      create: (styles: Record<string, unknown>) => styles,
+      absoluteFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+    },
+    View: ({
+      children,
+      testID,
+      style,
+      nativeID,
+      onClick,
+    }: {
+      children?: ReactNode;
+      testID?: string;
+      style?: unknown;
+      nativeID?: string;
+      onClick?: () => void;
+    }) =>
+      createElement(
+        'div',
+        { id: nativeID, onClick, 'data-testid': testID, 'data-style': JSON.stringify(style) },
+        children,
+      ),
+    Pressable: ({ onPress, testID }: { onPress?: () => void; testID?: string }) =>
+      createElement('button', { onClick: onPress, 'data-testid': testID }),
+    Modal: (props: {
+      children?: ReactNode;
+      visible?: boolean;
+      accessibilityLabel?: string;
+      onShow?: () => void;
+      onDismiss?: () => void;
+      onRequestClose?: () => void;
+    }) => {
+      presentation.modalProps = props;
+      return props.visible
+        ? createElement(
+            'div',
+            { role: 'dialog', 'aria-modal': 'true', 'aria-label': props.accessibilityLabel },
+            props.children,
+          )
+        : null;
+    },
+  };
+});
 
 import {
   SheetPresentationProvider,
@@ -94,6 +167,8 @@ import {
   useManagedSheet,
   type ManagedSheetHandle,
 } from '../../providers/sheet-presentation-provider';
+
+import { WebSheetModalHost } from '../sheet-dialog';
 
 import {
   BottomSheet,
@@ -104,6 +179,10 @@ import {
 } from '../bottom-sheet';
 
 beforeEach(() => {
+  presentation.input = 'touch';
+  presentation.width = 390;
+  presentation.height = 844;
+  presentation.modalProps = null;
   gorhom.state.bottomSheetProps = null;
   gorhom.state.modalProps = null;
   for (const method of Object.values(gorhom.state.bottomSheetMethods)) method.mockReset();
@@ -308,7 +387,7 @@ describe('Expo web bottom-sheet adapter', () => {
     );
     try {
       act(() => managedRef.current?.present());
-      act(() => vi.advanceTimersByTime(SHEET_SETTLE_MS));
+      void act(() => vi.advanceTimersByTime(SHEET_SETTLE_MS));
       act(() => gorhom.state.modalProps?.onDismiss?.());
       act(() => managedRef.current?.present());
       expect(gorhom.state.modalMethods.present).toHaveBeenCalledTimes(2);
@@ -371,5 +450,182 @@ describe('Expo web bottom-sheet adapter', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(onDismiss).toHaveBeenCalledTimes(2);
     expect(onFullyDismissed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('mouse dialog presentation', () => {
+  it('uses one bounded state and retains Gorhom input/list primitives', () => {
+    presentation.input = 'mouse';
+    presentation.width = 1440;
+    presentation.height = 1000;
+    const sheetRef = createRef<BottomSheetMethods>();
+    const onChange = vi.fn();
+    const rendered = render(
+      <BottomSheetModal ref={sheetRef} accessibilityLabel="Log a send" snapPoints={['50%', '90%']} onChange={onChange}>
+        <BottomSheetFlatList data={[]} renderItem={() => null} />
+        <BottomSheetTextInput />
+      </BottomSheetModal>,
+    );
+    act(() => sheetRef.current?.present());
+    expect(rendered.getByRole('dialog', { name: 'Log a send' })).toBeTruthy();
+    expect(rendered.getByTestId('sheet-dialog-surface').getAttribute('data-style')).toContain('"width":560');
+    expect(rendered.getByTestId('sheet-dialog-surface').getAttribute('data-style')).toContain('"height":720');
+    expect(gorhom.state.bottomSheetProps).toMatchObject({
+      snapPoints: ['100%'],
+      enableDynamicSizing: false,
+      enableContentPanningGesture: false,
+      enableHandlePanningGesture: false,
+      enableOverDrag: false,
+      handleComponent: null,
+    });
+    expect(rendered.getByTestId('gorhom-flat-list')).toBeTruthy();
+    expect(rendered.getByTestId('gorhom-text-input')).toBeTruthy();
+    act(() => presentation.modalProps?.onShow?.());
+    act(() => {
+      sheetRef.current?.snapToIndex(1);
+      sheetRef.current?.expand();
+      sheetRef.current?.collapse();
+    });
+    expect(onChange.mock.calls).toEqual([[0]]);
+    expect(gorhom.state.bottomSheetMethods.snapToIndex).not.toHaveBeenCalled();
+  });
+
+  it('captures prepared input before a queued opening and latches across resizing', () => {
+    presentation.width = 1440;
+    const sheetRef = createRef<BottomSheetMethods>();
+    const content = (
+      <BottomSheetModal ref={sheetRef} surfaceSize="list">
+        <span />
+      </BottomSheetModal>
+    );
+    const rendered = render(content);
+    act(() => sheetRef.current?.preparePresentation?.('mouse'));
+    presentation.input = 'touch';
+    act(() => sheetRef.current?.present());
+    expect(rendered.getByRole('dialog')).toBeTruthy();
+    expect(rendered.getByTestId('sheet-dialog-surface').getAttribute('data-style')).toContain('"width":672');
+    presentation.width = 390;
+    rendered.rerender(
+      <BottomSheetModal ref={sheetRef} surfaceSize="list">
+        <span />
+      </BottomSheetModal>,
+    );
+    expect(rendered.getByRole('dialog')).toBeTruthy();
+    expect(rendered.getByTestId('sheet-dialog-surface').getAttribute('data-style')).toContain('"width":342');
+    act(() => sheetRef.current?.dismiss());
+    act(() => presentation.modalProps?.onDismiss?.());
+    presentation.width = 1440;
+    rendered.rerender(
+      <BottomSheetModal ref={sheetRef} surfaceSize="list">
+        <span />
+      </BottomSheetModal>,
+    );
+    act(() => sheetRef.current?.present());
+    expect(rendered.queryByRole('dialog')).toBeNull();
+    expect(gorhom.state.modalMethods.present).toHaveBeenCalledTimes(1);
+    expect(gorhom.state.modalProps?.style).toEqual(expect.arrayContaining([{ marginLeft: 400, marginRight: 400 }]));
+  });
+
+  it('routes Escape and scrim requests through the guard, with terminal callbacks once', () => {
+    presentation.input = 'keyboard';
+    presentation.width = 1200;
+    const sheetRef = createRef<BottomSheetMethods>();
+    const callbacks: string[] = [];
+    const requestClose = vi.fn();
+    const rendered = render(
+      <BottomSheetModal
+        ref={sheetRef}
+        onRequestClose={requestClose}
+        enablePanDownToClose={false}
+        onChange={(index) => callbacks.push(`change:${index}`)}
+        onClose={() => callbacks.push('close')}
+        onDismiss={() => callbacks.push('dismiss')}
+        onFullyDismissed={() => callbacks.push('settled')}
+      >
+        <span />
+      </BottomSheetModal>,
+    );
+    act(() => sheetRef.current?.present());
+    act(() => presentation.modalProps?.onShow?.());
+    act(() => presentation.modalProps?.onRequestClose?.());
+    fireEvent.click(rendered.getByTestId('sheet-dialog-backdrop'));
+    expect(requestClose).toHaveBeenCalledTimes(2);
+    expect(rendered.getByRole('dialog')).toBeTruthy();
+    act(() => sheetRef.current?.close());
+    act(() => {
+      presentation.modalProps?.onDismiss?.();
+      presentation.modalProps?.onDismiss?.();
+    });
+    expect(callbacks).toEqual(['change:0', 'change:-1', 'close', 'dismiss', 'settled']);
+  });
+
+  it('ignores an old dismissal callback after reopening', () => {
+    presentation.input = 'mouse';
+    presentation.width = 1200;
+    const sheetRef = createRef<BottomSheetMethods>();
+    const onClose = vi.fn();
+    const rendered = render(
+      <BottomSheetModal ref={sheetRef} onClose={onClose}>
+        <span />
+      </BottomSheetModal>,
+    );
+    act(() => sheetRef.current?.present());
+    act(() => sheetRef.current?.close());
+    const staleDismiss = presentation.modalProps?.onDismiss;
+    act(() => sheetRef.current?.present());
+    act(() => staleDismiss?.());
+    expect(rendered.getByRole('dialog')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('sheet close races and nested menus', () => {
+  it('does not reopen a hidden or closing dialog for late detent requests', () => {
+    presentation.input = 'mouse';
+    presentation.width = 1200;
+    const sheetRef = createRef<BottomSheetMethods>();
+    const rendered = render(
+      <BottomSheetModal ref={sheetRef}>
+        <span />
+      </BottomSheetModal>,
+    );
+    act(() => {
+      sheetRef.current?.expand();
+      sheetRef.current?.collapse();
+      sheetRef.current?.snapToPosition('90%');
+    });
+    expect(rendered.queryByRole('dialog')).toBeNull();
+    act(() => sheetRef.current?.present());
+    act(() => sheetRef.current?.close());
+    act(() => {
+      sheetRef.current?.snapToIndex(1);
+      sheetRef.current?.expand();
+      sheetRef.current?.collapse();
+    });
+    expect(rendered.queryByRole('dialog')).toBeNull();
+    act(() => presentation.modalProps?.onDismiss?.());
+    act(() => {
+      sheetRef.current?.expand();
+      sheetRef.current?.snapToPosition('90%');
+    });
+    expect(rendered.queryByRole('dialog')).toBeNull();
+    act(() => sheetRef.current?.snapToIndex(0));
+    expect(rendered.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('lets an in-modal menu own Escape before closing the sheet', async () => {
+    const requestClose = vi.fn();
+    const rendered = render(
+      <WebSheetModalHost onRequestClose={requestClose}>
+        <button role="menuitem">Send</button>
+      </WebSheetModalHost>,
+    );
+    fireEvent.keyUp(document, { key: 'Escape' });
+    act(() => presentation.modalProps?.onRequestClose?.());
+    expect(requestClose).not.toHaveBeenCalled();
+    rendered.getByRole('menuitem').remove();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    act(() => presentation.modalProps?.onRequestClose?.());
+    expect(requestClose).toHaveBeenCalledTimes(1);
   });
 });

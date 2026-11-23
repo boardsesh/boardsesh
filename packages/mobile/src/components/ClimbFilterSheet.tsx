@@ -1,7 +1,7 @@
 import { ClimbFilterSheetContent } from './ClimbFilterSheetContent';
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import { Platform, View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from './sheet-presentation';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useSheetSubRoute } from '../hooks/use-sheet-sub-route';
 import { useSheetKeyboardInset } from './sheet-keyboard-inset';
@@ -1268,6 +1268,7 @@ export function ClimbFilterSheet({
 
   return (
     <BottomSheetModal
+      surfaceSize="list"
       key={presentEpoch}
       ref={sheetRef}
       index={0}

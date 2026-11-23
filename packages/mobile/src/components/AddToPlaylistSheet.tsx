@@ -91,6 +91,7 @@ function AddToPlaylistSheet({
 
   return (
     <ModalSheet
+      surfaceSize="list"
       visible={visible && !!climb}
       snapPoints={snapPoints}
       onClose={onClose}

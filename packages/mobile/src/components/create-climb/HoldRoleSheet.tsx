@@ -4,7 +4,7 @@ import { View, ScrollView, StyleSheet, useWindowDimensions } from 'react-native'
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { PointAnchoredPopover } from '../navigation/PointAnchoredPopover';
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
-import BottomSheet from '@expo/ui/community/bottom-sheet';
+import BottomSheet from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { Sheet } from '../Sheet';

@@ -181,6 +181,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         visible={visible}
         onDisplaced={onClose}
         onClose={guard.requestClose}
+        onRequestClose={guard.requestClose}
         enablePanDownToClose={guard.enablePanDownToClose}
         snapPoints={snapPoints}
         scrollable

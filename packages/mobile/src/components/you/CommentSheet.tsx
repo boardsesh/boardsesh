@@ -1,5 +1,5 @@
 import { type RefObject, useState } from 'react';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import type { BottomSheet } from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';

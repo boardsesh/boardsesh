@@ -569,6 +569,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
 
   return (
     <ModalSheet
+      surfaceSize="list"
       visible={visible && climb !== null}
       snapPoints={SNAP_POINTS}
       onClose={onClose}

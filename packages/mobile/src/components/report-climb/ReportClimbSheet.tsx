@@ -219,6 +219,7 @@ export function ReportClimbSheet({
       androidContentSized
       onDisplaced={onClose}
       onClose={guard.requestClose}
+      onRequestClose={guard.requestClose}
       enablePanDownToClose={guard.enablePanDownToClose}
       onFullyDismissed={handleFullyDismissed}
       header={header}
