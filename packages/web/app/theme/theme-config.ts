@@ -163,19 +163,19 @@ export const themeTokens = {
     overlayDark: 'rgba(0, 0, 0, 0.7)', // Dark overlay for text backgrounds
   },
 
-  // The reading surface: a neutral, barely-violet grey the /help guides sit on.
-  // It predates the Graphite ladder above, which the chrome around it (header,
-  // hero, footer) now sits on; a later change folds these into that ladder and
-  // deletes them. Until then they keep their values. `surfaceRaised` is one step up (tiles, state
-  // rows, count cards); `line` is decorative only (band rules, card edges).
-  // Contrast, fenced in the parity test: text 15.0:1 on surface / 13.5:1 on
-  // raised, textMuted 8.0:1 / 7.1:1, the foreground violet 6.6:1 / 5.9:1.
+  // The reading surface the /help guides sit on: aliases of the Graphite page,
+  // card, label and secondary label, so the guides and the chrome around them
+  // share one ladder. `surfaceRaised` is one step up (tiles, state rows, count
+  // cards); `line` is decorative only (band rules, card edges).
+  // Contrast, fenced in the parity test: text 14.24:1 on the card (#1E1E1E),
+  // textMuted 7.69:1 on the card, the foreground violet #9784FF 6.49:1 on the
+  // page (#0E0E0E) and 5.60:1 on the card.
   read: {
-    surface: '#18171C',
-    surfaceRaised: '#222127',
-    text: '#ECEBEF',
-    textMuted: '#AEACB6',
-    line: '#2E2D34',
+    surface: graphite.background,
+    surfaceRaised: graphite.secondaryBackground,
+    text: graphite.label,
+    textMuted: graphite.secondaryLabel,
+    line: graphiteContainers.highest,
   },
 
   // Syntax highlighting colors (VS Code dark theme inspired)

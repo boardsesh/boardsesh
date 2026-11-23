@@ -108,6 +108,8 @@ describe('index.css ↔ theme-config parity', () => {
     ['--semantic-fill-strong', themeTokens.semantic.fillStrong],
     ['--semantic-surface-overlay', themeTokens.semantic.surfaceOverlay],
     ['--separator', themeTokens.semantic.separator],
+    ['--border-subtle', themeTokens.semantic.separator],
+    ['--home-accent-brand-surface', themeTokens.semantic.fill],
     ['--capture-frame', themeTokens.semantic.captureFrame],
     ['--control-border', themeTokens.semantic.controlBorder],
     // Input surface: the raised Graphite field. Rest of the --input-* family (no
@@ -516,6 +518,7 @@ describe('the web surface ladder is the Graphite ladder the app uses', () => {
     expect(themeTokens.neutral[900]).toBe(materialSurfaces.dark.label);
     expect(themeTokens.neutral[500]).toBe(materialSurfaces.dark.secondaryLabel);
     expect(themeTokens.neutral[400]).toBe(materialSurfaces.dark.tertiaryLabel);
+    expect(themeTokens.colors.secondary).toBe(materialSurfaces.dark.secondaryLabel);
     expect(themeTokens.semantic.separator).toBe(materialSurfaces.dark.separator);
     expect(themeTokens.semantic.fill).toBe(materialSurfaces.dark.fill);
     expect(themeTokens.semantic.controlBorder).toBe(materialOutline.dark);

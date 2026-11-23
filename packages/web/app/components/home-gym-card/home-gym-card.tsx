@@ -31,7 +31,7 @@ const cardSx = {
   },
 } as const;
 
-// Low-key violet-slate icon chip (matches the OnboardingCard 'help' accent) —
+// Low-key neutral icon chip (matches the OnboardingCard 'help' accent) —
 // the gym card is a quiet, contextual nudge, not a hero CTA.
 const iconChipSx = {
   width: 44,

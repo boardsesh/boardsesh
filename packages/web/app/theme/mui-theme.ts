@@ -313,7 +313,7 @@ const sharedComponents: Components<Theme> = {
     styleOverrides: {
       root: {
         fontWeight: themeTokens.typography.fontWeight.medium,
-        backgroundColor: 'var(--neutral-50)',
+        backgroundColor: 'var(--semantic-fill-subtle)',
       },
     },
   },
@@ -394,7 +394,7 @@ const sharedComponents: Components<Theme> = {
   MuiSkeleton: {
     styleOverrides: {
       root: {
-        backgroundColor: 'var(--neutral-100)',
+        backgroundColor: 'var(--semantic-fill)',
       },
     },
   },

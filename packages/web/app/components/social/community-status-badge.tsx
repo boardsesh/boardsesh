@@ -33,7 +33,7 @@ export default function CommunityStatusBadge({
         size="small"
         sx={{
           bgcolor: 'var(--semantic-fill)',
-          color: 'var(--color-primary)',
+          color: 'var(--neutral-900)',
           fontWeight: 600,
           fontSize: compact ? 10 : 11,
           height: compact ? 20 : 24,

@@ -99,7 +99,6 @@
 
 .heroPreview {
   position: relative;
-  isolation: isolate;
   width: 100%;
   max-width: 490px;
   aspect-ratio: 490 / 680;
