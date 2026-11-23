@@ -38,9 +38,9 @@
     },
     "kilter": {
       "title": "Kilter Board App Guide | Boardsesh",
-      "description": "Use Boardsesh on Kilter Board Original or Homewall. Light climbs, share a queue, and import your current Kilter logbook or older Aurora export.",
+      "description": "Use Boardsesh on Kilter Board Original or Homewall. Preview climbs from hold thumbnails, share a queue, and import your Kilter or Aurora logbook.",
       "heading": "Boardsesh for Kilter Board",
-      "intro": "Boardsesh is an independent alternative to the official Kilter Board app. Download it for iPhone or Android to find problems, light the board and share a queue. If you need your old JSON export, request it from Aurora first. Once you have the file, you can start importing your history right away.",
+      "intro": "Boardsesh is an independent alternative to the official Kilter Board app. Its modern interface shows hold thumbnails as you browse and lets you swipe between climb previews. Download it for iPhone or Android to light climbs and share a queue. If you need your old JSON export, request it from Aurora first. Once you have the file, you can start importing your history right away.",
       "compatibility": "Boardsesh supports Kilter Board Original and Homewall. Match the wall size, installed hold sets and angle before you pick a climb. LED control requires a compatible Bluetooth controller.",
       "tradeoffs": "Use Boardsesh if you want a shared queue and a logbook across board brands. Use Kilter’s app to manage your Kilter profile, recover old setter credit or keep new activity in your Kilter account. Imports into Boardsesh run one way.",
       "screenshotAlt": "Boardsesh displaying a Kilter climb with the starting, middle and finishing holds marked",
@@ -48,6 +48,10 @@
         "layout": {
           "title": "Match the wall",
           "body": "Pick Original or Homewall, then match the size, hold sets and angle at your gym or home wall. Filter by grade or try Kilter’s Verified climbs."
+        },
+        "preview": {
+          "title": "See the holds before you light a climb",
+          "body": "Scan the thumbnails for a hold pattern you want to try. Swipe sideways through climb previews, then tap Put on board to light your pick on a connected wall."
         },
         "queue": {
           "title": "Light a climb and share the queue",
@@ -68,8 +72,13 @@
       "comparison": {
         "discovery": {
           "label": "Find climbs",
-          "boardsesh": "Browse Original and Homewall, filter by grade and find Kilter’s Verified climbs.",
+          "boardsesh": "Scan thumbnails that show the holds, tap to preview and swipe through the list. Filter by grade or look for Kilter’s Verified climbs.",
           "official": "Browse Kilter problems by grade and other filters, with Verified climbs selected by Kilter."
+        },
+        "climbControls": {
+          "label": "Climb view and controls",
+          "boardsesh": "In the phone layout, lighting, logging and queue controls sit below the board image by default. The queue and logging open in sheets. The logging sheet keeps Attempt and save controls at the bottom, within thumb reach. Swipe down to close the climb view when you’re scrolled to the top.",
+          "official": "Kilter’s published climb screenshot shows a Back button at the top left and logging controls at the bottom."
         },
         "session": {
           "label": "Climb with others",
@@ -89,10 +98,16 @@
       },
       "sources": {
         "official": "Kilter’s current app and download links",
+        "officialScreenshots": "Kilter’s published Google Play screenshots",
         "support": "Kilter support on Verified climbs, Bluetooth and old accounts",
         "claim": "Kilter’s Claim Data instructions and processing estimate",
         "claimWaitReports": "April 2026 Reddit reports about Kilter claim waits",
         "boardseshAuroraImport": "Boardsesh app source for Aurora file import and progress",
+        "boardseshClimbThumbnails": "Boardsesh app source for climb hold thumbnails",
+        "boardseshClimbPreviews": "Boardsesh help for previewing and swiping through climbs",
+        "boardseshPlayer": "Boardsesh design notes on swiping down to close the climb view",
+        "boardseshPlayerButtons": "Boardsesh app source for default climb control placement",
+        "boardseshTickControls": "Boardsesh app source for the logging sheet footer",
         "boardseshGallery": "Kilter layouts in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and Verified climb filter",
         "boardseshSessions": "Boardsesh shared session and queue guide",

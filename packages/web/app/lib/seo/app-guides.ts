@@ -94,9 +94,16 @@ const guides = {
     boardType: 'kilter',
     screenshot: 'kilter',
     updatedAt: CHECKED_AT,
-    workflow: [{ id: 'layout' }, { id: 'queue' }, { id: 'import' }, { id: 'auroraImport' }],
+    workflow: [{ id: 'layout' }, { id: 'preview' }, { id: 'queue' }, { id: 'import' }, { id: 'auroraImport' }],
     comparisonRows: [
-      { id: 'discovery', sourceIds: ['boardseshStore', 'boardseshGallery', 'support'] },
+      {
+        id: 'discovery',
+        sourceIds: ['boardseshClimbThumbnails', 'boardseshClimbPreviews', 'boardseshStore', 'support'],
+      },
+      {
+        id: 'climbControls',
+        sourceIds: ['boardseshPlayer', 'boardseshPlayerButtons', 'boardseshTickControls', 'officialScreenshots'],
+      },
       { id: 'session', sourceIds: ['boardseshSessions', 'official', 'support'] },
       { id: 'history', sourceIds: ['boardseshMigration', 'support'] },
       { id: 'auroraImportTiming', sourceIds: ['boardseshAuroraImport', 'claim', 'claimWaitReports'] },
@@ -104,6 +111,7 @@ const guides = {
     competitors: ['official'],
     sources: [
       source('official', 'https://kilterboard.io/'),
+      source('officialScreenshots', 'https://play.google.com/store/apps/details?id=com.kiltergrips.kilter_board_app'),
       source('support', 'https://kilterboard.io/support'),
       source('claim', 'https://kilterboard.io/claim'),
       source(
@@ -113,6 +121,23 @@ const guides = {
       source(
         'boardseshAuroraImport',
         'https://github.com/boardsesh/boardsesh/blob/f3f23de86983599d8f58493758c05e2b32b689ec/packages/mobile/src/components/integrations/BoardAccountsSection.tsx#L476-L513',
+      ),
+      source(
+        'boardseshClimbThumbnails',
+        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/components/ClimbListThumbnail.tsx#L88-L95',
+      ),
+      source('boardseshClimbPreviews', 'https://www.boardsesh.com/help/finding-climbs#player'),
+      source(
+        'boardseshPlayer',
+        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/docs/mobile/mobile-sheets-vs-routes.md#player-swipe-dismissal',
+      ),
+      source(
+        'boardseshPlayerButtons',
+        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/lib/player-buttons.ts#L19-L54',
+      ),
+      source(
+        'boardseshTickControls',
+        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/components/LogAscentSheetView.tsx#L158-L185',
       ),
       boardGallerySource('kilter'),
       boardseshStore,
