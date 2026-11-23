@@ -2,13 +2,14 @@ import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import Container from '@mui/material/Container';
-import Alert from '@mui/material/Alert';
-import type { Gym } from '@boardsesh/shared-schema';
+import type { Gym, MyGymClaim } from '@boardsesh/shared-schema';
 import {
   GET_GYM,
   GET_GYM_BY_SLUG,
+  GET_GYM_PENDING_CLAIM,
   type GetGymQueryResponse,
   type GetGymBySlugQueryResponse,
+  type GetGymPendingClaimQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
@@ -18,6 +19,9 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { looksLikeGymUuid } from '@/app/components/gym-entity/manage/slug-utils';
 import ManageGymContent from './manage-gym-content';
+import ManageNoAccess from './manage-no-access';
+import { gymClaimOpenToViewer } from './manage-no-access-logic';
+import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
 
 // Per-user, cookie-gated management surface — never static, never indexed.
 export const dynamic = 'force-dynamic';
@@ -57,6 +61,27 @@ const resolveManageGym = cache(async (slugOrUuid: string, token: string): Promis
   }
   return null;
 });
+
+/**
+ * The viewer's own claim in flight, for the lock state: its own document and its
+ * own catch, as on the public gym page, so a backend that can't answer it costs
+ * the notice and nothing else. Only asked where a Claim button could show, so
+ * never on a gym its staff run.
+ */
+async function fetchMyPendingClaim(gym: Gym, token: string): Promise<MyGymClaim | null> {
+  if (!gymClaimOpenToViewer(gym) || !gym.slug) return null;
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymPendingClaimQueryResponse>(
+      GET_GYM_PENDING_CLAIM,
+      { slug: gym.slug },
+      token,
+    );
+    return response.gymBySlug?.myPendingClaim ?? null;
+  } catch (error) {
+    console.error('manage fetchMyPendingClaim failed:', error);
+    return null;
+  }
+}
 
 export async function generateMetadata(props: ManageGymRouteProps): Promise<Metadata> {
   const { gym_slug } = await props.params;
@@ -104,13 +129,16 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
 
   const locale = await getLocale();
 
-  // Public gym, but this viewer can't manage it.
+  // Public gym, but this viewer can't manage it: who can, and what to do instead.
   if (!gym.canEdit) {
-    const { t } = await getServerTranslation('kiosk');
+    const [reportsEnabled, pendingClaim] = await Promise.all([
+      isDirectoryReportsEnabled(),
+      fetchMyPendingClaim(gym, token),
+    ]);
     return (
       <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
         <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Alert severity="error">{t('manage.accessDenied')}</Alert>
+          <ManageNoAccess gym={gym} reportsEnabled={reportsEnabled} pendingClaim={pendingClaim} />
         </Container>
       </I18nProvider>
     );

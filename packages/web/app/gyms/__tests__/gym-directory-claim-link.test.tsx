@@ -16,6 +16,8 @@ vi.mock('@/app/lib/gym-funnel-analytics', () => ({ trackGymFunnelEvent }));
 
 const GymDirectoryClaimLink = (await import('../gym-directory-claim-link')).default;
 
+const CLAIM_HREF = '/gyms?q=Nine&claim=1#gym-directory-search';
+
 beforeEach(() => {
   trackGymFunnelEvent.mockReset();
 });
@@ -25,7 +27,7 @@ describe('GymDirectoryClaimLink', () => {
     // `directory-footer`, not the old `directory-card`: the prompt renders once
     // under the whole list instead of on every unclaimed row, so the two values
     // count different things and a saved insight must not average them.
-    render(<GymDirectoryClaimLink viewerState="signed-out" />);
+    render(<GymDirectoryClaimLink viewerState="signed-out" href={CLAIM_HREF} />);
 
     fireEvent.click(screen.getByRole('link', { name: 'Find your gym' }));
 
@@ -37,7 +39,7 @@ describe('GymDirectoryClaimLink', () => {
   });
 
   it('passes a signed-in viewer through unchanged', () => {
-    render(<GymDirectoryClaimLink viewerState="signed-in" />);
+    render(<GymDirectoryClaimLink viewerState="signed-in" href={CLAIM_HREF} />);
 
     fireEvent.click(screen.getByRole('link', { name: 'Find your gym' }));
 
@@ -47,10 +49,10 @@ describe('GymDirectoryClaimLink', () => {
     });
   });
 
-  it('asks the question once, and jumps back to the search box rather than guessing a gym', () => {
-    render(<GymDirectoryClaimLink viewerState="signed-out" />);
+  it('asks the question once, and opens claim mode on the same search rather than guessing a gym', () => {
+    render(<GymDirectoryClaimLink viewerState="signed-out" href={CLAIM_HREF} />);
 
-    expect(screen.getAllByText(/Is this your gym\?/)).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Find your gym' }).getAttribute('href')).toBe('#gym-directory-search');
+    expect(screen.getAllByText(/Run one of these gyms\?/)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Find your gym' }).getAttribute('href')).toBe(CLAIM_HREF);
   });
 });

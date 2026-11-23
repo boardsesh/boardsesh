@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { boardChips, cardLocation, distanceChipKm, roundDistanceKm } from '../directory-card-model';
+import { boardChips, cardClaimHref, cardLocation, distanceChipKm, roundDistanceKm } from '../directory-card-model';
 
 describe('boardChips', () => {
   it('is empty when the gym reported no boards', () => {
@@ -123,5 +123,26 @@ describe('distanceChipKm', () => {
     expect(distanceChipKm(withAddress, null, cardLocation(withAddress, null))).toBeNull();
     const noPin = { address: 'Hansastr. 15', latitude: null, longitude: null };
     expect(distanceChipKm(noPin, bristol, cardLocation(noPin, bristol))).toBeNull();
+  });
+});
+
+describe('cardClaimHref', () => {
+  it('goes straight to the gym page with the claim open when signed in', () => {
+    expect(cardClaimHref('crux', 'signed-in', 'es')).toBe('/gym/crux?claim=1');
+  });
+
+  it('signed out, logs in first and comes back to the page in the language being read', () => {
+    expect(cardClaimHref('crux', 'signed-out', 'es')).toBe(
+      `/auth/login?callbackUrl=${encodeURIComponent('/es/gym/crux?claim=1')}`,
+    );
+    expect(cardClaimHref('crux & co', 'signed-out', 'de')).toBe(
+      `/auth/login?callbackUrl=${encodeURIComponent('/de/gym/crux%20%26%20co?claim=1')}`,
+    );
+  });
+
+  it('leaves the default locale unprefixed', () => {
+    expect(cardClaimHref('crux', 'signed-out', 'en-US')).toBe(
+      `/auth/login?callbackUrl=${encodeURIComponent('/gym/crux?claim=1')}`,
+    );
   });
 });

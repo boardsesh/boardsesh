@@ -72,11 +72,13 @@ import {
   REVOKE_GYM_WRITE_ACCESS,
   REQUEST_GYM_CLAIM,
   LINK_BOARD_TO_GYM,
+  DETACH_BOARD_FROM_GYM,
   type SearchGymsQueryResponse,
   type GetGymQueryResponse,
   type GetMyGymsQueryResponse,
   type UpdateGymMutationResponse,
   type LinkBoardToGymMutationResponse,
+  type DetachBoardFromGymMutationResponse,
   type GetGymMembersQueryResponse,
   type GrantGymWriteAccessMutationResponse,
   type RevokeGymWriteAccessMutationResponse,
@@ -329,12 +331,18 @@ export function useMyBoards(input?: MyBoardsInput, options?: { enabled?: boolean
   });
 }
 
-export function useBoard(boardUuid: string | null) {
+/**
+ * One board by uuid. `staleTime: 0` makes this read refetch on arrival even
+ * when the cache holds a fresh copy: a deep link must not act on a board a
+ * staff removal changed a minute ago.
+ */
+export function useBoard(boardUuid: string | null, options?: { staleTime?: number }) {
   return useQuery({
     queryKey: ['board', boardUuid],
     queryFn: () => getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid }),
     select: (data) => data.board,
     enabled: !!boardUuid,
+    ...(options?.staleTime !== undefined ? { staleTime: options.staleTime } : {}),
   });
 }
 
@@ -698,6 +706,7 @@ export function useUpdateGym() {
     },
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: ['gym', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
@@ -724,6 +733,33 @@ export function useLinkBoardToGym() {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Gym staff taking a board someone else added off their gym's listing. The
+ * board stays with its creator; the server also holds it off this gym, so the
+ * creator can't link it straight back. The board's own creator removes it with
+ * `useLinkBoardToGym` and a null gym instead. A synced board is refused with
+ * `SYSTEM_BOARD_DELETE_INSTEAD` (see `isSystemBoardDeleteInsteadError`).
+ */
+export function useDetachBoardFromGym() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { boardUuid: string; gymUuid: string }) => {
+      const response = await getHttpClient().request<DetachBoardFromGymMutationResponse>(DETACH_BOARD_FROM_GYM, {
+        input,
+      });
+      return response.detachBoardFromGym;
+    },
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['board', variables.boardUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
+      void queryClient.invalidateQueries({ queryKey: ['gym', variables.gymUuid] });
       void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
     },
   });
@@ -808,6 +844,9 @@ export function useRequestGymClaim() {
       if (result.status !== 'approved') return;
       void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
       void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
+      // The new owner's board roster carries staff-only actions the cached
+      // 5-minute copy was read without.
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
     },

@@ -150,6 +150,7 @@ const COMMENT_BODY = 'Zqx Sentinel Comment Body Zqx';
 const PROPOSAL_REASON = 'Zqx Sentinel Proposal Reason Zqx';
 const HIDE_REASON = 'Zqx Sentinel Hide Reason Zqx';
 const TICK_COMMENT = 'Zqx Sentinel Tick Comment Zqx';
+const REPORT_NOTE = 'Zqx Sentinel Report Note Zqx';
 // Deliberately NOT an Instagram or TikTok URL: those two enrich through a live
 // outbound fetch that has nothing to answer it in CI, and the row is dropped.
 const BETA_LINK = 'https://beta.example/ZqxSentinelBetaZqx';
@@ -1183,6 +1184,27 @@ async function seedWorld(): Promise<SeededWorld> {
 
   await db.insert(dbSchema.sprayWallLedSetups).values({ boardId, controllerUrl: LED_CONTROLLER_URL, enabled: true });
 
+  // A "set up wrong" report on the wall, filed by the friend, waiting for its
+  // creator (docs/product/directory-reports.md). Seeded directly: `reportBoard`
+  // refuses a wall the reporter cannot read, but a report filed while the wall
+  // was public outlives it going private, and must not then show the wall's name
+  // or the note to anybody but the owner.
+  const [report] = await db
+    .insert(dbSchema.directoryReports)
+    .values({
+      uuid: uuidv4(),
+      targetKind: 'board',
+      boardId,
+      gymIdAtReport: Number(gymRow.id),
+      reason: 'wrong_setup',
+      status: 'open',
+      routedTo: ['creator'],
+    })
+    .returning({ id: dbSchema.directoryReports.id });
+  await db
+    .insert(dbSchema.directoryReportReporters)
+    .values({ reportId: report.id, reporterId: FRIEND, note: REPORT_NOTE });
+
   return {
     climbUuid: savedClimb.uuid,
     frames,
@@ -1291,6 +1313,7 @@ beforeAll(async () => {
     { name: 'hide-proposal reason', value: HIDE_REASON, kind: 'secret' },
     { name: 'hide-proposal uuid', value: world.hideProposalUuid, kind: 'identifier' },
     { name: 'tick comment', value: TICK_COMMENT, kind: 'secret' },
+    { name: 'report note', value: REPORT_NOTE, kind: 'secret' },
     { name: 'beta link', value: BETA_LINK, kind: 'secret' },
     { name: 'LED controller address', value: LED_CONTROLLER_URL, kind: 'secret' },
     { name: 'photo id', value: world.photoId, kind: 'secret' },
@@ -1484,6 +1507,65 @@ describe('the spray-wall visibility sweep', () => {
       const expected = viewer.name === 'owner' ? 1 : 0;
       expect(data.sessionWorkouts, viewer.name).toHaveLength(expected);
       expect(data.sessionWorkoutHeadlines, viewer.name).toHaveLength(expected);
+    }
+  });
+
+  /**
+   * The directory-report readers the generic sweep cannot name.
+   * `boardReports(boardUuid:)` is swept above; `myDirectoryReportsToReview` and
+   * `adminDirectoryReports` take no argument that names the wall, and
+   * `UserBoard.openReportCount` is a count no sentinel can match. The report
+   * seeded on the private wall reaches its owner through the review list and
+   * the count, and nobody else through any of them. The admin queue refuses all
+   * three viewers, none of whom is a global admin, as `sprayWallReports` does.
+   */
+  it('shows a report on the private wall to its owner only, in every report reader', async () => {
+    const reviewRow: SweepRow = {
+      key: 'Query.myDirectoryReportsToReview',
+      rootName: 'Query',
+      fieldName: 'myDirectoryReportsToReview',
+      document:
+        'query Sweep { myDirectoryReportsToReview(includeResolved: true) ' +
+        '{ __typename uuid boardUuid boardName gymName notes { note } } }',
+      variables: {},
+      kinds: [],
+    };
+    const adminQueueRow: SweepRow = {
+      key: 'Query.adminDirectoryReports',
+      rootName: 'Query',
+      fieldName: 'adminDirectoryReports',
+      document:
+        'query Sweep { adminDirectoryReports(status: open) ' +
+        '{ __typename reports { uuid boardUuid boardName notes { note } } } }',
+      variables: {},
+      kinds: [],
+    };
+    const countRow: SweepRow = {
+      key: 'UserBoard.openReportCount',
+      rootName: 'Query',
+      fieldName: 'board',
+      document: 'query Sweep($boardUuid: ID!) { board(boardUuid: $boardUuid) { uuid openReportCount } }',
+      variables: { boardUuid: world.wallUuid },
+      kinds: [],
+    };
+
+    for (const viewer of VIEWERS) {
+      const review = await runRow(reviewRow, viewer.ctx);
+      const reviewFound = findSentinels(review.data, scannableSentinels(reviewRow.variables));
+      const adminQueue = await runRow(adminQueueRow, viewer.ctx);
+      expect(adminQueue.errorMessages, `adminDirectoryReports: ${viewer.name}`).not.toEqual([]);
+      expect(findSentinels(adminQueue.data, sentinels), `adminDirectoryReports: ${viewer.name}`).toEqual([]);
+      const count = await runRow(countRow, viewer.ctx);
+      const board = (count.data as { board: { openReportCount: number | null } | null } | null)?.board ?? null;
+
+      if (viewer.name === 'owner') {
+        expect(reviewFound.join(' | ')).toContain('report note');
+        expect(reviewFound.join(' | ')).toContain('wall name');
+        expect(board?.openReportCount).toBe(1);
+      } else {
+        expect({ viewer: viewer.name, found: reviewFound }).toEqual({ viewer: viewer.name, found: [] });
+        expect(board?.openReportCount ?? null, viewer.name).toBeNull();
+      }
     }
   });
 

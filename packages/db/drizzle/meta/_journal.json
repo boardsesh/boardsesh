@@ -2339,6 +2339,27 @@
       "when": 1795428172077,
       "tag": "0333_board_moderation_events",
       "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1795432928470,
+      "tag": "0334_directory_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1795439791727,
+      "tag": "0335_gym_claim_revoked",
+      "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1795443893672,
+      "tag": "0336_gym_claim_decision_previous_owner",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,8 @@ import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +24,35 @@ const SCOPE = 'global';
 const SCOPE_KEY = '';
 
 const AUTO_APPROVE_KEY = 'gym_claim_auto_approve';
+const DAILY_CAP_KEY = 'gym_claim_auto_approve_daily_cap';
+
+/**
+ * The cap the backend applies while the setting is unset
+ * (`DEFAULT_GYM_CLAIM_AUTO_APPROVE_DAILY_CAP` in
+ * packages/backend/src/graphql/resolvers/social/community-settings.ts).
+ */
+const DEFAULT_DAILY_CAP = 10;
+const MAX_DAILY_CAP = 1000;
+
+/**
+ * The cap the backend applies for a stored value, read its way
+ * (`gymClaimAutoApproveDailyCap`): any whole number, a negative one as 0, and
+ * anything else as the default. Shown as is, so the field never claims a limit
+ * the backend isn't using.
+ */
+function appliedDailyCap(stored: string | undefined): number {
+  const trimmed = (stored ?? '').trim();
+  if (!/^-?\d+$/.test(trimmed)) return DEFAULT_DAILY_CAP;
+  return Math.max(0, Number.parseInt(trimmed, 10));
+}
+
+/** What the admin may save: a whole number from 0 to {@link MAX_DAILY_CAP}, or null. */
+function parseCapDraft(draft: string): number | null {
+  const trimmed = draft.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const cap = Number.parseInt(trimmed, 10);
+  return cap <= MAX_DAILY_CAP ? cap : null;
+}
 
 const settingsQueryKey = ['communitySettings', SCOPE, SCOPE_KEY] as const;
 
@@ -51,6 +82,36 @@ export default function GymSettingsPanel() {
   });
 
   const autoApprove = isOn(settingsQuery.data?.find((setting) => setting.key === AUTO_APPROVE_KEY)?.value);
+  const storedCap = settingsQuery.data?.find((setting) => setting.key === DAILY_CAP_KEY)?.value;
+  const storedBase = storedCap ?? null;
+  const savedCap = appliedDailyCap(storedCap);
+  // What the admin typed, against the stored text it was typed over: a new
+  // stored value (theirs, or another admin's) puts the field back in step.
+  const [capDraft, setCapDraft] = useState<{ base: string | null; text: string } | null>(null);
+  const activeDraft = capDraft !== null && capDraft.base === storedBase ? capDraft : null;
+  const capText = activeDraft ? activeDraft.text : String(savedCap);
+  // Only what the admin types is held to 0 to 1000; a stored value is shown as the backend reads it.
+  const draftValue = activeDraft ? parseCapDraft(activeDraft.text) : null;
+  const draftInvalid = activeDraft !== null && draftValue === null;
+  // Against the stored text, not the cap read from it, so a value the backend
+  // reads as the default (unset, or not a number) can still be saved as one.
+  const canSaveCap = draftValue !== null && String(draftValue) !== storedCap;
+
+  const setDailyCap = useMutation({
+    mutationFn: async (next: number) => {
+      if (!token) throw new Error('Not authenticated');
+      const client = createGraphQLHttpClient(token);
+      await client.request(SET_COMMUNITY_SETTING, {
+        input: { scope: SCOPE, scopeKey: SCOPE_KEY, key: DAILY_CAP_KEY, value: String(next) },
+      });
+      return next;
+    },
+    onError: () => setSnackbar(t('gymSettings.snackbar.saveFailed')),
+    onSuccess: () => setSnackbar(t('gymSettings.dailyCap.saved')),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: settingsQueryKey });
+    },
+  });
 
   const setAutoApprove = useMutation({
     mutationFn: async (next: boolean) => {
@@ -141,6 +202,40 @@ export default function GymSettingsPanel() {
         </Typography>
         <Typography variant="caption" component="p" sx={{ color: themeTokens.neutral[500], mt: 1 }}>
           {t('gymSettings.autoApprove.queueNote')}
+        </Typography>
+
+        {/* The guard that bounds the switch above: past it, claims wait for review. */}
+        <Box
+          component="form"
+          onSubmit={(event: React.FormEvent) => {
+            event.preventDefault();
+            if (canSaveCap && draftValue !== null) setDailyCap.mutate(draftValue);
+          }}
+          sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flexWrap: 'wrap', mt: 2.5 }}
+        >
+          <TextField
+            label={t('gymSettings.dailyCap.label')}
+            type="number"
+            size="small"
+            value={capText}
+            onChange={(event) => setCapDraft({ base: storedBase, text: event.target.value })}
+            disabled={!token || !settingsQuery.isSuccess || setDailyCap.isPending}
+            error={draftInvalid}
+            helperText={draftInvalid ? t('gymSettings.dailyCap.invalid') : undefined}
+            slotProps={{ htmlInput: { min: 0, max: MAX_DAILY_CAP, step: 1, inputMode: 'numeric' } }}
+            sx={{ width: 160 }}
+          />
+          <Button
+            type="submit"
+            variant="outlined"
+            disabled={!token || !settingsQuery.isSuccess || !canSaveCap || setDailyCap.isPending}
+            sx={{ textTransform: 'none', minHeight: 40 }}
+          >
+            {t('gymSettings.dailyCap.save')}
+          </Button>
+        </Box>
+        <Typography variant="caption" component="p" sx={{ color: themeTokens.neutral[500], mt: 0.5 }}>
+          {t('gymSettings.dailyCap.description')}
         </Typography>
       </Paper>
 

@@ -57,7 +57,7 @@ describe('AddBoardMenu', () => {
 
     expect(iconName).toBe('plus');
     expect(accessibilityLabel).toBe('Add a board');
-    expect(actions.map((action) => action.label)).toEqual(['Set up a board', 'Add a Spraywall', 'Find a gym board']);
+    expect(actions.map((action) => action.label)).toEqual(['Set up a board', 'Add a Spraywall', 'Find a gym']);
     expect(actions.map((action) => action.dividerBefore === true)).toEqual([false, false, true]);
   });
 

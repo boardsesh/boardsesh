@@ -74,6 +74,7 @@ function gym(overrides: Partial<GymDirectoryCard> = {}): GymDirectoryCard {
     latitude: 51.4,
     longitude: -2.5,
     isClaimed: true,
+    listingState: 'RUN_BY_GYM',
     boardSummaries: [],
     ...overrides,
   };
@@ -158,10 +159,11 @@ describe('browse mode', () => {
         >
           <div>Gym results</div>
         </GymDirectoryNearMe>
-        <GymDirectoryClaimLink viewerState="signed-out" />
+        <GymDirectoryClaimLink viewerState="signed-out" href="/gyms?claim=1#gym-directory-search" />
       </>,
     );
-    const fragment = screen.getByRole('link', { name: tFromCatalog('gyms', 'claim.action') }).getAttribute('href');
+    const href = screen.getByRole('link', { name: tFromCatalog('gyms', 'claim.action') }).getAttribute('href');
+    const fragment = href?.slice(href.indexOf('#'));
     if (!fragment?.startsWith('#')) throw new Error('Missing in-page claim destination');
     const anchors = document.querySelectorAll(fragment);
     expect(anchors).toHaveLength(1);

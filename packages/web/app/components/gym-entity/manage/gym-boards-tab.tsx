@@ -16,12 +16,14 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
+import type { TFunction } from 'i18next';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
 import AddLinkOutlined from '@mui/icons-material/AddLinkOutlined';
 import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
+import FlagOutlined from '@mui/icons-material/FlagOutlined';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -30,14 +32,15 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import {
   GET_GYM,
-  GET_GYM_BOARDS,
+  GET_GYM_BOARDS_FOR_MANAGE,
   GET_MY_BOARDS,
   DELETE_BOARD,
   LINK_BOARD_TO_GYM,
+  DETACH_BOARD_FROM_GYM,
   STRAY_BOARDS_FOR_GYM,
   ATTACH_BOARD_TO_GYM,
-  type GetGymBoardsQueryResponse,
-  type GetGymBoardsQueryVariables,
+  type GetGymBoardsForManageQueryResponse,
+  type GetGymBoardsForManageQueryVariables,
   type GetGymQueryResponse,
   type GetGymQueryVariables,
   type DeleteBoardMutationResponse,
@@ -45,20 +48,25 @@ import {
   type GetMyBoardsQueryResponse,
   type LinkBoardToGymMutationResponse,
   type LinkBoardToGymMutationVariables,
+  type DetachBoardFromGymMutationResponse,
+  type DetachBoardFromGymMutationVariables,
   type StrayBoardsForGymQueryResponse,
   type StrayBoardsForGymQueryVariables,
   type AttachBoardToGymMutationResponse,
   type AttachBoardToGymMutationVariables,
 } from '@boardsesh/graphql/operations';
-import type { StrayBoard, UserBoard } from '@boardsesh/shared-schema';
+import { boardOriginFor, type StrayBoard, type UserBoard } from '@boardsesh/shared-schema';
+import { isBoardRemovedByGymError, isSystemBoardDeleteInsteadError } from '@boardsesh/graphql/errors';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { boardPosterConsoleHref } from '@/app/lib/board-poster';
-import { canManageGymBoards, canUnlinkBoard, canDeleteGymBoard, linkableBoards } from './gym-board-permissions';
+import { canManageGymBoards, linkableBoards } from './gym-board-permissions';
 import ConfirmDialog from './confirm-dialog';
 import type { GymManageTabProps } from './tab-props';
 import GymBoardEditor from './gym-board-editor';
+import BoardReportReviewDialog from './board-report-review-dialog';
+import { hasOpenReports, sortBoardsReportedFirst } from './report-review-logic';
 
 export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 'isUnlisted'> }) {
   const { t } = useTranslation('kiosk');
@@ -69,6 +77,52 @@ export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 
     return <Chip size="small" color="success" variant="outlined" label={t('manage.boards.visibility.public')} />;
   }
   return <Chip size="small" variant="outlined" label={t('manage.boards.visibility.private')} />;
+}
+
+/**
+ * Where a board came from, as the row says it: "Added by you", "Added by Sam",
+ * "Added by a climber" (their privacy keeps the name back) or "From public
+ * board data". Static-literal keys: the i18n linter forbids t(variable).
+ */
+function boardOriginLabel(board: UserBoard, viewerUserId: string | null, t: TFunction<'boards'>): string {
+  switch (boardOriginFor(board, viewerUserId)) {
+    case 'own':
+      return t('boardOrigin.addedByYou');
+    case 'synced':
+      return t('boardOrigin.synced');
+    case 'climber':
+      return t('boardOrigin.addedBy', { name: board.ownerDisplayName ?? '' });
+    case 'hidden':
+      return t('boardOrigin.addedByHidden');
+  }
+}
+
+/** The delete confirm's body: for everyone, and logged sends are kept. */
+function deleteBody(board: UserBoard, viewerUserId: string | null, t: TFunction<'boards'>): string {
+  switch (boardOriginFor(board, viewerUserId)) {
+    case 'own':
+      return t('gymBoards.deleteBodyOwn');
+    case 'synced':
+      return t('gymBoards.deleteBodySynced');
+    case 'climber':
+      return t('gymBoards.deleteBodyOther', { name: board.ownerDisplayName ?? '' });
+    case 'hidden':
+      return t('gymBoards.deleteBodyOtherHidden');
+  }
+}
+
+/** The Remove from gym confirm's body: where it comes off, and who keeps it. */
+function removeBody(board: UserBoard, gymName: string, viewerUserId: string | null, t: TFunction<'boards'>): string {
+  switch (boardOriginFor(board, viewerUserId)) {
+    case 'own':
+      return t('gymBoards.removeBodyOwn', { gym: gymName });
+    case 'synced':
+      return t('gymBoards.removeBodySynced', { gym: gymName });
+    case 'climber':
+      return t('gymBoards.removeBodyOther', { name: board.ownerDisplayName ?? '', gym: gymName });
+    case 'hidden':
+      return t('gymBoards.removeBodyOtherHidden', { gym: gymName });
+  }
 }
 
 export default function GymBoardsTab({ gym, onGymChange, onDirtyChange }: GymManageTabProps) {
@@ -134,29 +188,67 @@ export function GymBoardAssociation({
   const viewerUserId = session?.user?.id ?? null;
   const [boards, setBoards] = useState<UserBoard[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [unlinkTarget, setUnlinkTarget] = useState<UserBoard | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<UserBoard | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserBoard | null>(null);
   const [deletingBoardUuid, setDeletingBoardUuid] = useState<string | null>(null);
+  const [removingBoardUuid, setRemovingBoardUuid] = useState<string | null>(null);
   const deletionPendingRef = useRef(false);
+  const removalPendingRef = useRef(false);
   const isMountedRef = useRef(true);
   const boardRequestGenerationRef = useRef(0);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingBoardUuid, setEditingBoardUuid] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<UserBoard | null>(null);
+  // Reported boards first, so the ones climbers flagged are the first thing staff see.
+  const orderedBoards = useMemo(() => sortBoardsReportedFirst(boards ?? []), [boards]);
   const linkedBoardUuids = useMemo(() => new Set((boards ?? []).map((board) => board.uuid)), [boards]);
-  // Backend contract: linking requires gym owner/admin; unlinking requires
-  // owning the board. Deletion also accepts the linked gym's owner/admin.
+  // Linking your own board needs gym owner/admin. Which board offers Remove
+  // from gym and Delete is the server's call (`canRemoveFromGym`, `canDelete`),
+  // never rebuilt here: a gym's staff can take any board off their listing, but
+  // only delete the synced ones (docs/product/gym-board-governance.md).
   const canLinkBoards = canManageGymBoards(gym, viewerUserId);
+  const actionPending = deletingBoardUuid !== null || removingBoardUuid !== null;
 
-  // Link and unlink are the SAME backend mutation — LINK_BOARD_TO_GYM with
-  // gymUuid: null performs the unlink. Two instances only so each direction
-  // gets its own success/error toast copy.
   const linkMutation = useEntityMutation<LinkBoardToGymMutationResponse, LinkBoardToGymMutationVariables>(
     LINK_BOARD_TO_GYM,
-    { successMessage: t('manage.boards.linked'), errorMessage: t('manage.boards.linkFailed') },
+    {
+      successMessage: t('manage.boards.linked'),
+      errorMessage: t('manage.boards.linkFailed'),
+      // A board this gym's staff took off the listing can't be self-linked
+      // back. Staff linking their own board never meets it, but say it plainly
+      // if the server ever does rather than show its English. Any other code
+      // gets the translated failure, never the server's raw message.
+      onError: (error) =>
+        showMessage(
+          isBoardRemovedByGymError(error) ? tBoards('gymBoards.removedByGymError') : t('manage.boards.linkFailed'),
+          'error',
+        ),
+    },
   );
+  // Remove from gym has two mutations behind one button. The board's creator
+  // unlinks it (LINK_BOARD_TO_GYM, gym null); anyone else is staff, whose
+  // removal also stops the creator linking it straight back.
   const unlinkMutation = useEntityMutation<LinkBoardToGymMutationResponse, LinkBoardToGymMutationVariables>(
     LINK_BOARD_TO_GYM,
-    { successMessage: t('manage.boards.unlinked'), errorMessage: t('manage.boards.unlinkFailed') },
+    {
+      successMessage: tBoards('gymBoards.removed', { gym: gym.name }),
+      errorMessage: tBoards('gymBoards.removeFailed'),
+    },
+  );
+  const detachMutation = useEntityMutation<DetachBoardFromGymMutationResponse, DetachBoardFromGymMutationVariables>(
+    DETACH_BOARD_FROM_GYM,
+    {
+      successMessage: tBoards('gymBoards.removed', { gym: gym.name }),
+      errorMessage: tBoards('gymBoards.removeFailed'),
+      // A synced board is deleted, not removed: the server says so by code.
+      onError: (error) =>
+        showMessage(
+          isSystemBoardDeleteInsteadError(error)
+            ? tBoards('gymBoards.removeSyncedError')
+            : tBoards('gymBoards.removeFailed'),
+          'error',
+        ),
+    },
   );
   const deleteMutation = useEntityMutation<DeleteBoardMutationResponse, DeleteBoardMutationVariables>(DELETE_BOARD, {
     errorMessage: tBoards('boardEntity.snackbar.deleteFailed'),
@@ -168,9 +260,10 @@ export function GymBoardAssociation({
     setLoadError(false);
     try {
       const client = createGraphQLHttpClient(token);
-      const data = await client.request<GetGymBoardsQueryResponse, GetGymBoardsQueryVariables>(GET_GYM_BOARDS, {
-        gymUuid: gym.uuid,
-      });
+      const data = await client.request<GetGymBoardsForManageQueryResponse, GetGymBoardsForManageQueryVariables>(
+        GET_GYM_BOARDS_FOR_MANAGE,
+        { gymUuid: gym.uuid },
+      );
       if (requestGeneration !== boardRequestGenerationRef.current || !isMountedRef.current) return;
       setBoards(data.gymBoards ?? []);
     } catch (error) {
@@ -195,25 +288,32 @@ export function GymBoardAssociation({
     };
   }, []);
 
-  const handleUnlinkConfirm = async () => {
-    if (!unlinkTarget) return;
-    const target = unlinkTarget;
-    setUnlinkTarget(null);
-    const result = await unlinkMutation.execute({ input: { boardUuid: target.uuid, gymUuid: null } });
-    if (result) {
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget || removalPendingRef.current || removeTarget.canRemoveFromGym !== true) return;
+    const target = removeTarget;
+    removalPendingRef.current = true;
+    setRemovingBoardUuid(target.uuid);
+    setRemoveTarget(null);
+    try {
+      const removed =
+        boardOriginFor(target, viewerUserId) === 'own'
+          ? (await unlinkMutation.execute({ input: { boardUuid: target.uuid, gymUuid: null } }))?.linkBoardToGym
+          : (await detachMutation.execute({ input: { gymUuid: gym.uuid, boardUuid: target.uuid } }))
+              ?.detachBoardFromGym;
+      if (!isMountedRef.current || !removed) return;
+      setBoards((previous) => previous?.filter((board) => board.uuid !== target.uuid) ?? null);
+      // The public gym page and kiosks read the listing on the server.
+      router.refresh();
       await fetchBoards();
-      await onAssociated?.();
+      if (isMountedRef.current) await onAssociated?.();
+    } finally {
+      removalPendingRef.current = false;
+      if (isMountedRef.current) setRemovingBoardUuid(null);
     }
   };
 
   const handleDeleteConfirm = async () => {
-    if (
-      !allowDelete ||
-      !deleteTarget ||
-      deletionPendingRef.current ||
-      !canDeleteGymBoard(deleteTarget, gym, viewerUserId)
-    )
-      return;
+    if (!allowDelete || !deleteTarget || deletionPendingRef.current || deleteTarget.canDelete !== true) return;
     const target = deleteTarget;
     deletionPendingRef.current = true;
     setDeletingBoardUuid(target.uuid);
@@ -290,7 +390,9 @@ export function GymBoardAssociation({
           </Button>
         )}
       </Box>
-      {!canLinkBoards && (
+      {/* Editors (and community roles without a gym seat) can remove boards
+          and add the ones near the gym, but not link their own or delete. */}
+      {!canLinkBoards && !boards?.some((board) => board.canDelete === true) && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           {t('manage.boards.readOnlyHint')}
         </Typography>
@@ -319,28 +421,26 @@ export function GymBoardAssociation({
         </Typography>
       ) : (
         <List disablePadding>
-          {boards.map((board) => (
+          {orderedBoards.map((board) => (
             <ListItem
               key={board.uuid}
               divider
               disableGutters
               secondaryAction={
-                canUnlinkBoard(board, viewerUserId) ? (
+                // Not red: the board stays with whoever added it, and staff can
+                // put it back.
+                board.canRemoveFromGym === true ? (
                   <Button
                     size="small"
-                    color="error"
                     startIcon={<LinkOffOutlined />}
-                    onClick={() => setUnlinkTarget(board)}
-                    disabled={deletingBoardUuid !== null}
+                    onClick={() => setRemoveTarget(board)}
+                    disabled={actionPending}
+                    loading={removingBoardUuid === board.uuid}
                     sx={{ textTransform: 'none' }}
                   >
-                    {t('manage.boards.unlink')}
+                    {tBoards('gymBoards.remove')}
                   </Button>
-                ) : (
-                  <Typography variant="caption" color="text.secondary">
-                    {t('manage.boards.onlyOwnerCanUnlink')}
-                  </Typography>
-                )
+                ) : null
               }
             >
               <ListItemText
@@ -350,28 +450,42 @@ export function GymBoardAssociation({
                       {board.name}
                     </Typography>
                     <VisibilityChip board={board} />
+                    {hasOpenReports(board) && (
+                      <>
+                        <Chip size="small" color="warning" label={tBoards('reportReview.statusPill')} />
+                        <Button
+                          size="small"
+                          startIcon={<FlagOutlined />}
+                          onClick={() => setReviewTarget(board)}
+                          disabled={actionPending}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {tBoards('reportReview.review')}
+                        </Button>
+                      </>
+                    )}
                     {board.canEdit && (
                       <Button
                         size="small"
                         startIcon={<EditOutlined />}
                         onClick={() => setEditingBoardUuid(board.uuid)}
-                        disabled={deletingBoardUuid !== null}
+                        disabled={actionPending}
                         sx={{ textTransform: 'none' }}
                       >
                         {tBoards('boardEntity.actions.edit')}
                       </Button>
                     )}
-                    {/* In the wrapping title row, not beside Unlink: two actions
-                        in the fixed-width secondary slot would run over the
-                        board's name on a phone. */}
+                    {/* In the wrapping title row, not beside Remove from gym: two
+                        actions in the fixed-width secondary slot would run over
+                        the board's name on a phone. */}
                     <BoardPosterAction board={board} />
-                    {allowDelete && canDeleteGymBoard(board, gym, viewerUserId) && (
+                    {allowDelete && board.canDelete === true && (
                       <Button
                         size="small"
                         color="error"
                         startIcon={<DeleteOutlined />}
                         onClick={() => setDeleteTarget(board)}
-                        disabled={deletingBoardUuid !== null}
+                        disabled={actionPending}
                         loading={deletingBoardUuid === board.uuid}
                         sx={{ textTransform: 'none' }}
                       >
@@ -380,7 +494,24 @@ export function GymBoardAssociation({
                     )}
                   </Box>
                 }
-                secondary={`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
+                secondary={
+                  <>
+                    <Box component="span" sx={{ display: 'block' }}>
+                      {`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
+                    </Box>
+                    <Box component="span" sx={{ display: 'block' }}>
+                      {boardOriginLabel(board, viewerUserId, tBoards)}
+                    </Box>
+                    {/* A synced board with no action for this viewer: say who can. */}
+                    {boardOriginFor(board, viewerUserId) === 'synced' &&
+                      board.canRemoveFromGym !== true &&
+                      board.canDelete !== true && (
+                        <Box component="span" sx={{ display: 'block' }}>
+                          {t('manage.boards.askAdminToDelete')}
+                        </Box>
+                      )}
+                  </>
+                }
               />
             </ListItem>
           ))}
@@ -397,30 +528,50 @@ export function GymBoardAssociation({
         />
       )}
 
+      <BoardReportReviewDialog
+        // A fresh dialog per board, so one board's reports never show under another's name.
+        key={reviewTarget?.uuid ?? 'closed'}
+        board={reviewTarget}
+        gymName={gym.name}
+        onClose={() => setReviewTarget(null)}
+        onFix={(board) => {
+          setReviewTarget(null);
+          setEditingBoardUuid(board.uuid);
+        }}
+        onRemove={(board) => {
+          setReviewTarget(null);
+          setRemoveTarget(board);
+        }}
+        onDelete={(board) => {
+          setReviewTarget(null);
+          setDeleteTarget(board);
+        }}
+        allowDelete={allowDelete}
+        onResolved={() => void fetchBoards()}
+      />
+
+      {/* "For everyone", and logged sends are kept: delete takes the board
+          from every climber who saved it. */}
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={tBoards('boardEntity.delete.title')}
-        body={tBoards('boardEntity.delete.confirm', { name: deleteTarget?.name ?? '' })}
-        confirmLabel={tBoards('boardEntity.delete.delete')}
-        cancelLabel={tBoards('boardEntity.delete.cancel')}
+        title={tBoards('gymBoards.deleteTitle', { board: deleteTarget?.name ?? '' })}
+        body={deleteTarget ? deleteBody(deleteTarget, viewerUserId, tBoards) : ''}
+        confirmLabel={tBoards('gymBoards.deleteConfirm')}
+        cancelLabel={tBoards('gymBoards.cancel')}
         onConfirm={() => void handleDeleteConfirm()}
         onClose={() => setDeleteTarget(null)}
       />
 
-      <Dialog open={unlinkTarget !== null} onClose={() => setUnlinkTarget(null)}>
-        <DialogTitle>{t('manage.boards.unlinkTitle')}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>{t('manage.boards.unlinkBody', { name: unlinkTarget?.name ?? '' })}</DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setUnlinkTarget(null)} sx={{ textTransform: 'none' }}>
-            {t('manage.boards.cancel')}
-          </Button>
-          <Button onClick={handleUnlinkConfirm} color="error" autoFocus sx={{ textTransform: 'none' }}>
-            {t('manage.boards.unlinkConfirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title={tBoards('gymBoards.removeTitle', { board: removeTarget?.name ?? '', gym: gym.name })}
+        body={removeTarget ? removeBody(removeTarget, gym.name, viewerUserId, tBoards) : ''}
+        confirmLabel={tBoards('gymBoards.removeConfirm')}
+        cancelLabel={tBoards('gymBoards.cancel')}
+        confirmColor="primary"
+        onConfirm={() => void handleRemoveConfirm()}
+        onClose={() => setRemoveTarget(null)}
+      />
 
       {canLinkBoards && (
         <AddBoardDialog
@@ -632,7 +783,7 @@ type StrayBoardsSectionProps = {
 };
 
 /**
- * "Boards that might be yours": candidates the backend surfaces as physically at
+ * "Boards near your gym": candidates the backend surfaces as physically at
  * this gym (within ~150 m, unlinked or on a synced listing) or left behind by a
  * merged listing. One tap re-points the board to this gym. Only mounted for
  * viewers with gym edit access — the resolver enforces the same gate.

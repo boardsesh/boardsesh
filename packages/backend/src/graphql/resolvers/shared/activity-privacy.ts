@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -14,6 +14,7 @@ import {
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
 import { gymVisibleCondition } from '../social/gym-visibility';
+import { DIRECTORY_NOTICE_TYPES } from '../social/directory-reports/notice-types';
 import {
   contentVisibilityCondition,
   entityOwnerCondition,
@@ -630,8 +631,41 @@ export function notificationPrivacyCondition(
   const followRequest = alias(schema.userFollowRequests, 'privacy_notification_follow_request');
   const feedback = alias(schema.appFeedback, 'privacy_notification_feedback');
   const feedbackMessage = alias(schema.appFeedbackMessages, 'privacy_notification_feedback_message');
+  const deletedBoard = alias(schema.userBoards, 'privacy_notification_deleted_board');
+  const deletedGym = alias(schema.gyms, 'privacy_notification_deleted_gym');
   return or(
     eq(notification.type, 'new_follower'),
+    // A directory notice (a report, a staff action on a board) about a board or
+    // gym that has since been deleted stays with the people it went to: they
+    // could read it when it was sent, which is when the sender checked
+    // (docs/product/directory-reports.md). One about a live board or gym follows
+    // its audience through the last rule below, like every other notice.
+    and(
+      sql`${notification.type}::text IN (${sql.join(
+        DIRECTORY_NOTICE_TYPES.map((type) => sql`${type}`),
+        sql`, `,
+      )})`,
+      or(
+        and(
+          sql`${notification.entityType}::text = 'board'`,
+          exists(
+            queryBuilder
+              .select({ id: deletedBoard.id })
+              .from(deletedBoard)
+              .where(and(eq(deletedBoard.uuid, notification.entityId), isNotNull(deletedBoard.deletedAt))),
+          ),
+        ),
+        and(
+          sql`${notification.entityType}::text = 'gym'`,
+          exists(
+            queryBuilder
+              .select({ id: deletedGym.id })
+              .from(deletedGym)
+              .where(and(eq(deletedGym.uuid, notification.entityId), isNotNull(deletedGym.deletedAt))),
+          ),
+        ),
+      ),
+    ),
     and(
       eq(notification.type, 'app_feedback_reply'),
       exists(

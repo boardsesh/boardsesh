@@ -1,5 +1,8 @@
-import type { GymBoardSummary } from '@boardsesh/shared-schema';
+import type { GymClaimViewerState } from '@boardsesh/analytics';
+import type { GymBoardSummary, GymListingState } from '@boardsesh/shared-schema';
 import { CATALOGUE_BOARD_TYPES, isCatalogueBoardType } from '@boardsesh/board-constants';
+import type { Locale } from '@/app/lib/i18n/config';
+import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { distanceKm } from './directory-facets';
 
 /** One board chip: a board type and the angle that wall is set at. */
@@ -137,4 +140,26 @@ export function numberFormatFor(locale: string): Intl.NumberFormat {
   const created = new Intl.NumberFormat(locale);
   numberFormatCache.set(locale, created);
   return created;
+}
+
+/**
+ * Who runs the listing, as the card's chip says it. A card from a backend that
+ * doesn't answer `listingState` falls back to the old reading, where any real
+ * owner reads as running it.
+ */
+export function cardListingState(gym: { listingState?: GymListingState | null; isClaimed: boolean }): GymListingState {
+  return gym.listingState ?? (gym.isClaimed ? 'RUN_BY_GYM' : 'UNCLAIMED');
+}
+
+/**
+ * Where a card's Claim this gym goes: the gym page with its claim dialog open
+ * (`?claim=1`, which the page's call-out reads). Signed out, through log-in
+ * first, which drops the visitor back there in the language they were reading:
+ * `LocaleLink` prefixes the href it is given, never a path inside its query.
+ */
+export function cardClaimHref(gymSlug: string, viewerState: GymClaimViewerState, locale: Locale): string {
+  const claimPath = `/gym/${encodeURIComponent(gymSlug)}?claim=1`;
+  return viewerState === 'signed-in'
+    ? claimPath
+    : `/auth/login?callbackUrl=${encodeURIComponent(applyLocale(claimPath, locale))}`;
 }

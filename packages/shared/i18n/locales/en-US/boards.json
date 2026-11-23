@@ -128,7 +128,6 @@
       "updateError": "Couldn't save your changes. Try again.",
       "updateSuccess": "Gym updated",
       "notFound": "We couldn't find that gym",
-      "noAccess": "You don't have permission to edit this gym",
       "back": "Go back",
       "name": "Name",
       "namePlaceholder": "Gym name",
@@ -148,24 +147,25 @@
       "publicHint": "Show it on the map so climbers can find it",
       "website": "Website",
       "websitePlaceholder": "https://yourgym.com",
-      "websiteHint": "We use this to verify ownership when someone claims the gym"
+      "websiteHint": "We use this to verify ownership when someone claims the gym",
+      "hours": "Opening hours",
+      "hoursPlaceholder": "Mon-Fri 10-22, Sat-Sun 9-20"
     },
     "manage": {
-      "ownedHeader": "Your boards",
+      "ownedHeader": "Added by you",
       "followingHeader": "Following",
-      "deleteTitle": "Delete board?",
-      "deleteMessage": "Remove \"{{name}}\" from your boards? This can't be undone.",
       "deleteConfirm": "Delete",
       "cancel": "Cancel",
       "deleteError": "Couldn't delete that board. Try again.",
-      "unfollowError": "Couldn't unfollow that board. Try again.",
+      "unfollowError": "Couldn't remove that board from your boards. Try again.",
       "deleteAria": "Delete {{name}}",
-      "unfollowTitle": "Stop following?",
-      "unfollowMessage": "\"{{name}}\" is your active board. Unfollowing drops it from your boards and clears the selection.",
-      "unfollowConfirm": "Unfollow",
+      "unfollowTitle": "Remove from your boards?",
+      "unfollowMessage": "\"{{name}}\" is your active board. Removing it clears the selection. Other climbers still see it.",
+      "unfollowConfirm": "Remove",
       "deleteWallTitle": "Delete Spraywall?",
       "deleteWallMessage": "Delete \"{{name}}\"? Its photos and climbs will no longer be available. This cannot be undone.",
-      "deleteSuccess": "\"{{name}}\" deleted"
+      "deleteSuccess": "\"{{name}}\" deleted",
+      "unfollowRow": "Remove from your boards"
     },
     "emptyTitle": "No boards yet",
     "emptySubtitle": "Search for a board to get started",
@@ -248,7 +248,7 @@
       "nearbyMap": "Map",
       "allowLocation": "Allow location",
       "locationBanner": "Location is off. Turn it on to see boards near you.",
-      "manage": "Manage",
+      "manage": "See all",
       "nearbyAllAbove": "No other boards within 20 km",
       "yourBoardsAllAbove": "All your boards are listed above"
     },
@@ -344,7 +344,7 @@
       "aria": "Add a board",
       "setUp": "Set up a board",
       "sprayWall": "Add a Spraywall",
-      "findGym": "Find a gym board"
+      "findGym": "Find a gym"
     },
     "boardDetail": {
       "setActive": "Set as active board",
@@ -379,7 +379,9 @@
         "publicHint": "Anyone can open this board.",
         "unlistedHint": "Only the climbers you send it to.",
         "inviteHint": "Whoever opens it can tap Join to get access."
-      }
+      },
+      "about": "About this board",
+      "atGym": "At {{gym}}"
     },
     "disambiguation": {
       "title": "Which board are you on?",
@@ -420,11 +422,54 @@
       "shareAriaLabel": "Share {{name}}",
       "shareText": "Climb at {{name}} on Boardsesh",
       "linkCopied": "Link copied",
-      "shareFailed": "Couldn’t share the link"
+      "shareFailed": "Couldn’t share the link",
+      "seeGym": "See gym",
+      "seeGymAria": "See {{gym}}"
+    },
+    "gymPage": {
+      "addressHint": "Opens in Maps",
+      "boardsTitle": "Boards",
+      "emptyBoardsTitle": "No boards here yet",
+      "emptyBoardsBody": "Climb here? Set up the board so your crew can find it.",
+      "emptyBoardsAction": "Set up a board",
+      "boardsError": "Couldn't load this gym's boards.",
+      "boardsRetry": "Try again",
+      "yoursPill": "Yours",
+      "infoTitle": "Info",
+      "hours": "Hours",
+      "hoursUpdated": "Updated {{when}}",
+      "website": "Website",
+      "phone": "Phone",
+      "email": "Email",
+      "follow": "Follow gym",
+      "unfollow": "Unfollow gym",
+      "followError": "Couldn't update that. Try again.",
+      "actionsAria": "More for {{gym}}",
+      "startTitle": "Start here",
+      "startBoards": "Check the boards",
+      "startHours": "Add opening hours",
+      "startTv": "Put the wall on a TV",
+      "staffTitle": "Run your gym",
+      "editDetails": "Edit gym details",
+      "nearbyBoards": "Boards near your gym",
+      "kiosks": "Kiosks and TVs",
+      "insights": "Insights",
+      "opensWebsite": "Opens the website",
+      "openError": "Couldn't open that. Try it in a browser.",
+      "claimTitle": "Run this gym?",
+      "claimBody": "Claim it to fix boards, add your hours and put the wall on a TV. It's free.",
+      "claimCta": "Claim this gym",
+      "claimCtaSignedOut": "Log in and claim it",
+      "claimPending": "Your claim is under review. We'll email you either way, usually within a few days.",
+      "claimDenied": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong, or try again.",
+      "claimDeniedClosed": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong.",
+      "claimRetry": "Try again",
+      "notFound": "We couldn't find that gym",
+      "report": "Report a problem"
     },
     "myGyms": {
-      "moreRowTitle": "My gyms",
-      "screenTitle": "My gyms",
+      "moreRowTitle": "Gyms you run",
+      "screenTitle": "Gyms you run",
       "loadError": "We couldn't load your gyms. Try again.",
       "retry": "Try again",
       "emptyTitle": "No gyms yet",
@@ -473,10 +518,9 @@
     "gymClaim": {
       "title": "Claim {{gym}}",
       "done": "Done",
-      "sectionTitle": "Own this gym?",
-      "sectionDescription": "Claim it to keep the listing and boards accurate.",
       "claimAction": "Claim this gym",
       "errorGeneric": "Something went wrong. Try again.",
+      "errorRunByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "switchToAdmin": "No work email? Ask our team to review",
       "switchToDomain": "Verify with a work email instead",
       "domain": {
@@ -485,7 +529,8 @@
         "emailPlaceholder": "you@{{domain}}",
         "submit": "Send verification email",
         "submitShort": "Send",
-        "sent": "Check your inbox at {{email}} and tap the link to finish."
+        "sent": "Check your inbox at {{email}} and tap the link to finish.",
+        "mismatch": "That email isn’t at {{domain}}. Use an address at the gym’s website domain, or request a review instead."
       },
       "admin": {
         "description": "Tell us you run {{gym}} and our team will review your claim.",
@@ -497,8 +542,7 @@
       },
       "approved": {
         "sent": "{{gym}} is yours to manage.",
-        "manageCta": "Set up your gym",
-        "manageError": "Couldn't open gym setup. Try it in a browser."
+        "manageCta": "Check your boards"
       },
       "protections": {
         "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
@@ -593,7 +637,7 @@
       "noGymHintOffMap": "It stays off the map while it isn't public.",
       "addNew": "My gym isn't listed",
       "empty": "No gyms nearby",
-      "sharedEditHint": "This gym's staff will be able to edit this board's details.",
+      "sharedEditHint": "The gym's staff can edit this board's details and take it off their listing. It stays yours.",
       "linkError": "Couldn't link that gym. It may be too far from your board. Your other changes were saved."
     },
     "sprayShare": {
@@ -648,44 +692,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Board not found",
-    "chips": {
-      "unlisted": "Unlisted",
-      "locationHidden": "Location hidden"
-    },
-    "tabs": {
-      "leaderboard": "Leaderboard",
-      "comments": "Comments"
-    },
     "actions": {
-      "addToGym": "Add to Gym",
       "edit": "Edit",
-      "delete": "Delete"
-    },
-    "stats": {
-      "ascents": "ascents",
-      "climbers": "climbers",
-      "followers": "followers",
-      "comments": "comments"
-    },
-    "delete": {
-      "title": "Delete Board",
-      "confirm": "Delete \"{{name}}\"? This can't be undone.",
-      "cancel": "Cancel",
       "delete": "Delete"
     },
     "snackbar": {
       "deleted": "Board deleted",
-      "deleteFailed": "Failed to delete board",
-      "linkedToGym": "Board linked to gym",
-      "unlinkedFromGym": "Board unlinked from gym",
-      "linkFailed": "Failed to link board to gym"
-    },
-    "comments": {
-      "title": "Board Discussion"
-    },
-    "follow": {
-      "entityLabel": "board"
+      "deleteFailed": "Failed to delete board"
     }
   },
   "boardForm": {
@@ -778,21 +791,6 @@
     "myLocation": "My location",
     "helpText": "Click the map to set your board's location, or drag the marker to adjust"
   },
-  "boardLeaderboard": {
-    "empty": "No activity yet for this period.",
-    "period": {
-      "week": "Week",
-      "month": "Month",
-      "year": "Year",
-      "all": "All Time"
-    },
-    "columns": {
-      "climber": "Climber",
-      "sends": "Sends",
-      "flashes": "Flashes",
-      "hardest": "Hardest"
-    }
-  },
   "boardPill": {
     "switchHint": "Opens the board switcher"
   },
@@ -837,12 +835,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Loading gyms...",
-    "linkToGym": "Link to a gym",
-    "noGym": "No gym",
-    "createNew": "Create new"
-  },
   "similarGyms": {
     "heading": "Looks like your gym might already be here",
     "subtitle": "Claim yours to manage it, or add a new one below.",
@@ -854,16 +846,6 @@
     "createAnyway": "None of these? Add your gym with the button below."
   },
   "gymEntity": {
-    "notFound": "Gym not found",
-    "tabs": {
-      "members": "Members",
-      "comments": "Comments"
-    },
-    "actions": {
-      "edit": "Edit",
-      "delete": "Delete",
-      "claim": "Claim"
-    },
     "stats": {
       "boards": "boards",
       "members": "members",
@@ -877,16 +859,6 @@
       "followers_other": "followers",
       "comments_one": "comment",
       "comments_other": "comments"
-    },
-    "delete": {
-      "title": "Delete Gym",
-      "confirm": "Delete \"{{name}}\"? This can't be undone.",
-      "cancel": "Cancel",
-      "delete": "Delete"
-    },
-    "snackbar": {
-      "deleted": "Gym deleted",
-      "deleteFailed": "Failed to delete gym"
     },
     "comments": {
       "title": "Gym Discussion"
@@ -946,6 +918,7 @@
     "switchToDomain": "Verify with a work email instead",
     "errors": {
       "generic": "Something went wrong. Try again.",
+      "runByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "tokenUnavailable": "We couldn't confirm you're logged in. Reload the page and try again."
     },
     "domain": {
@@ -965,7 +938,7 @@
     },
     "approved": {
       "body": "{{gym}} is yours. Set it up whenever you're ready.",
-      "manageCta": "Set up your gym"
+      "manageCta": "Check your boards"
     },
     "protections": {
       "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
@@ -977,7 +950,7 @@
     "success": {
       "title": "The gym is yours",
       "body": "You're the owner now. Keep the listing and boards accurate, and invite your crew to help.",
-      "setupCta": "Set up your gym"
+      "setupCta": "Check your boards"
     },
     "error": {
       "title": "That link didn't work",
@@ -987,7 +960,8 @@
         "used": "This link was already used.",
         "superseded": "This gym has a different owner now, so this link can't hand it over. Start the claim again from the gym.",
         "serverError": "Something went wrong on our end. Try again in a bit."
-      }
+      },
+      "backToGym": "Back to {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1648,185 @@
     "lightingUnavailable": "Enable LEDs and save a WLED address.",
     "lightingRangeError": "The cable uses LED numbers outside the range configured in WLED. Check the cable path and skipped LEDs.",
     "lightingChasing": "Row-by-row test running…"
+  },
+  "gymBoards": {
+    "remove": "Remove from gym",
+    "removeFromNamed": "Remove from {{gym}}",
+    "removeTitle": "Remove {{board}} from {{gym}}?",
+    "removeBodyOwn": "It comes off {{gym}}'s page and kiosks. It stays in your boards.",
+    "removeBodyOther": "It comes off {{gym}}'s page and kiosks. {{name}} keeps it in their boards.",
+    "removeBodyOtherHidden": "It comes off {{gym}}'s page and kiosks. The climber who added it keeps it in their boards.",
+    "removeBodySynced": "It comes off {{gym}}'s page and kiosks.",
+    "removeConfirm": "Remove",
+    "removed": "Removed from {{gym}}.",
+    "removeFailed": "Couldn't remove that board. Try again.",
+    "removeSyncedError": "This board comes from public board data, so it can't be removed. Delete it instead.",
+    "removedByGymError": "This gym's staff took this board off their listing. Ask them to put it back.",
+    "deleteTitle": "Delete {{board}} for everyone?",
+    "deleteBodyOwn": "It disappears for you and every climber who saved it. Logged sends stay in their logbooks.",
+    "deleteBodyOther": "{{name}} added this board. It disappears for them and every climber who saved it. Logged sends stay in their logbooks.",
+    "deleteBodyOtherHidden": "A climber added this board. It disappears for them and every climber who saved it. Logged sends stay in their logbooks.",
+    "deleteBodySynced": "It disappears for every climber who saved it. Logged sends stay in their logbooks.",
+    "deleteConfirm": "Delete board",
+    "cancel": "Cancel"
+  },
+  "boardOrigin": {
+    "addedBy": "Added by {{name}}",
+    "addedByYou": "Added by you",
+    "addedByHidden": "Added by a climber",
+    "synced": "From public board data"
+  },
+  "report": {
+    "action": "Report a problem",
+    "actionAria": "Report a problem with {{name}}",
+    "reported": "Reported",
+    "title": "Report a problem",
+    "boardAtGym": "{{board}} at {{gym}}",
+    "question": "What's wrong?",
+    "boardReasons": {
+      "wrongSetup": "Set up wrong",
+      "wrongSetupHint": "Layout, size, holds or angle don't match the wall",
+      "duplicate": "Listed twice",
+      "duplicateHint": "Another board here is the same wall",
+      "gone": "Not on the wall anymore",
+      "goneHint": "Taken down, replaced, or the gym closed",
+      "wrongPlace": "Wrong gym or place",
+      "wrongPlaceHint": "It's somewhere else, or it's someone's home wall",
+      "other": "Something else",
+      "relistRequest": "Put it back on the gym"
+    },
+    "gymReasons": {
+      "duplicate": "Listed twice",
+      "duplicateHint": "Another listing is the same gym",
+      "closed": "Closed for good",
+      "closedHint": "It doesn't open anymore",
+      "details": "Wrong address or details",
+      "detailsHint": "The address, hours, website or phone is off",
+      "home": "It's someone's home",
+      "homeHint": "A private wall shouldn't be on the map",
+      "other": "Something else"
+    },
+    "duplicateBoardPick": "Which board is the same wall?",
+    "notSure": "Not sure",
+    "noteLabel": "Anything else? (optional)",
+    "notePlaceholder": "What's on the wall, like 12x14 at 40°",
+    "noteRequiredLabel": "What's wrong?",
+    "noteRequiredPlaceholder": "Tell them what's wrong (10 characters minimum)",
+    "noteRemaining_one": "{{count}} more character",
+    "noteRemaining_other": "{{count}} more characters",
+    "send": "Send",
+    "routeCreator": "{{name}}, who added this board, will see this.",
+    "routeCreatorHidden": "The climber who added this board will see this.",
+    "routeCreatorAndStaff": "{{name}}, who added this board, and {{gym}} staff will see this.",
+    "routeCreatorHiddenAndStaff": "The climber who added this board and {{gym}} staff will see this.",
+    "routeCreatorAndTeam": "{{name}}, who added this board, and our team will see this.",
+    "routeCreatorHiddenAndTeam": "The climber who added this board and our team will see this.",
+    "routeCreatorStaffAndTeam": "{{name}}, who added this board, {{gym}} staff and our team will see this.",
+    "routeCreatorHiddenStaffAndTeam": "The climber who added this board, {{gym}} staff and our team will see this.",
+    "routeStaff": "{{gym}} staff will see this.",
+    "routeGymAndStaff": "{{gym}} staff and our team will see this.",
+    "routeTeam": "Nobody runs {{gym}} on Boardsesh yet, so our team will see this.",
+    "routeGym": "Our team will see this.",
+    "claimNudge": "Run {{gym}}? Claim it and fix it yourself.",
+    "sent": "Sent. We'll tell you when it's sorted.",
+    "joined_one": "{{count}} other climber flagged this too. Yours is added.",
+    "joined_other": "{{count}} other climbers flagged this too. Yours is added.",
+    "alreadyReported": "You already reported this. We'll tell you when it's sorted.",
+    "offline": "Connect to the internet to send your report.",
+    "error": "Your report didn't go through. Try again.",
+    "relistAsk": "Ask {{gym}} to list it again",
+    "relistAskHint": "Their staff took it off the gym. We'll ask them to put it back.",
+    "relistSent": "Asked. We'll tell you what {{gym}} staff decide.",
+    "relistAlready": "You already asked. We'll tell you what {{gym}} staff decide.",
+    "duplicateGymSearch": "Find the other listing",
+    "gymSearchPlaceholder": "Gym name",
+    "noMatches": "No matches yet. Try a different name.",
+    "cancel": "Cancel",
+    "done": "Done",
+    "retry": "Try again",
+    "loading": "Loading",
+    "loadError": "Couldn't load this board. Try again.",
+    "signInTitle": "Log in to report a problem",
+    "signInBody": "Log in and we'll bring you straight back here.",
+    "boardListLink": "Something wrong with this board?",
+    "web": {
+      "noteRequiredLabel": "Tell them what's wrong (10 characters minimum)"
+    }
+  },
+  "reportReview": {
+    "title": "Climbers flagged this board",
+    "reasonCount_one": "{{reason}} · {{count}} climber",
+    "reasonCount_other": "{{reason}} · {{count}} climbers",
+    "relistRequest": "Asked to be listed again",
+    "notesHeading": "What they said",
+    "teamDate": "If it's still open on {{date}}, our team takes a look.",
+    "teamLooking": "Our team is looking at this one. It closes when they do.",
+    "nothingOpen": "Nothing is open on this board anymore.",
+    "loadError": "Couldn't load the reports. Try again.",
+    "fix": "Fix the setup",
+    "fixHint": "Change the layout, size, holds or angle",
+    "remove": "Remove from {{gym}}",
+    "removeHintOwn": "It stays in your boards",
+    "removeHintOther": "It stays in {{name}}'s boards",
+    "removeHintOtherHidden": "It stays with the climber who added it",
+    "delete": "Delete board",
+    "deleteHint": "Gone for everyone. Logged sends stay.",
+    "keep": "It's right as it is",
+    "keepHint": "Close the report and tell them why",
+    "keepTitle": "It's right as it is",
+    "keepReplyLabel": "Tell them why (optional)",
+    "keepReplyPlaceholder": "We reset it last week. The app matches the wall now.",
+    "keepSend": "Send",
+    "fixedToast": "Saved. We'll tell the climbers who flagged it.",
+    "savedToast": "Saved.",
+    "keptToast": "Report closed. We'll pass your note on.",
+    "keepError": "That didn't go through. Try again.",
+    "keepPartial_one": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
+    "keepPartial_other": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
+    "statusPill": "Reported",
+    "open": "See reports",
+    "review": "Review",
+    "duplicateOf": "Same wall as {{board}}",
+    "inTeamQueue": "Our team is looking at this one. It closes when they do.",
+    "removeHint": "It comes off this gym's page and kiosks",
+    "keepFailed": "Couldn't close the report. Try again.",
+    "empty": "Nothing is open on this board anymore.",
+    "back": "Back",
+    "close": "Close",
+    "web": {
+      "keepPartial": "Closed {{closed}} of {{total}} reports. Try again for the rest."
+    }
+  },
+  "whoCanEdit": {
+    "boardTitle": "You can't edit this board",
+    "boardCreator": "{{name}} added this board, so they can change it.",
+    "boardCreatorHidden": "The climber who added it can change it.",
+    "boardStaff": "{{gym}} staff can change it too.",
+    "boardSynced": "It comes from public board data. Once someone claims {{gym}}, its staff can change it.",
+    "boardSyncedNoGym": "It comes from public board data.",
+    "gymTitle": "You can't edit this gym",
+    "gymStaff": "{{gym}} staff run this listing.",
+    "gymClimber": "{{name}} added this gym, so they can change it.",
+    "gymClimberHidden": "A climber added this gym, so they can change it.",
+    "gymUnclaimed": "Nobody runs this gym on Boardsesh yet.",
+    "claimHint": "If you work here, claim it and the listing is yours to run.",
+    "claimGym": "Claim {{gym}}",
+    "claimThisGym": "Claim this gym",
+    "goBack": "Go back",
+    "rule": "Whoever added it can change it. Once a gym is claimed, its staff can too. Everyone else can report a problem.",
+    "backToGym": "Back to {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Run by the gym",
+    "pillClimberListed": "Added by a climber",
+    "pillUnclaimed": "Not claimed yet",
+    "pillYouOwner": "You run this gym",
+    "pillYouAdmin": "You're an admin here",
+    "pillYouEditor": "You're an editor here",
+    "lineStaff": "{{gym}} staff keep this page up to date.",
+    "lineClimber": "{{name}} added this gym. Staff can claim it.",
+    "lineClimberHidden": "A climber added this gym. Staff can claim it.",
+    "lineUnclaimed": "Listed from public board data. Nobody runs it on Boardsesh yet.",
+    "claimInline": "Run this gym? Claim it"
   }
 }

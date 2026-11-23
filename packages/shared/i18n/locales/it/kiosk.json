@@ -92,8 +92,8 @@
     "noBoardsYet": "Ancora nessun pannello elencato qui.",
     "explorePlaylists": "Guarda cosa stanno creando gli altri",
     "startDiscussion": "Inizia la discussione",
-    "claimTitle": "È la tua palestra?",
-    "claimBody": "Rivendicala per gestire i pannelli, il brand e ciò che compare in parete.",
+    "claimTitle": "Gestisci questa palestra?",
+    "claimBody": "Rivendicala per sistemare i pannelli, aggiungere gli orari e portare la parete su una TV. È gratis.",
     "claimCta": "Rivendica questa palestra",
     "claimCtaSignedOut": "Accedi e rivendicala",
     "claimPendingTitle": "La tua richiesta è in revisione",
@@ -200,8 +200,8 @@
           "body": "Aggiungi logo e colori"
         },
         "boards": {
-          "title": "Collega i tuoi pannelli",
-          "body": "Collega i pannelli della tua palestra"
+          "title": "Controlla i tuoi pannelli",
+          "body": "Correggi o togli quelli che non sono sulle tue pareti"
         },
         "members": {
           "title": "Invita la tua crew",
@@ -211,7 +211,6 @@
     },
     "title": "Gestisci {{gymName}}",
     "backToGym": "Torna alla pagina della palestra",
-    "accessDenied": "Non hai il permesso di gestire questa palestra.",
     "tabs": {
       "kiosks": "Kiosk",
       "branding": "Brand",
@@ -310,23 +309,17 @@
     },
     "boards": {
       "heading": "Pannelli in questa palestra",
-      "description": "Collega i pannelli che possiedi così compaiono sulla pagina della tua palestra e sui kiosk.",
+      "description": "Questi pannelli li hanno aggiunti climber e dati pubblici sui pannelli. Correggi quelli sbagliati e togli quelli che non sono sulle tue pareti.",
       "back": "Tutti i pannelli",
       "editLoadError": "Impossibile caricare questo pannello per modificarlo.",
       "addBoard": "Aggiungi un pannello",
       "empty": "Ancora nessun pannello collegato. Aggiungine uno per iniziare.",
       "loadError": "Impossibile caricare i pannelli di questa palestra.",
-      "unlink": "Scollega",
-      "onlyOwnerCanUnlink": "Solo il proprietario del pannello può scollegarlo",
-      "readOnlyHint": "Solo il proprietario della palestra o un admin può collegare i pannelli.",
-      "unlinkTitle": "Scollegare questo pannello?",
-      "unlinkBody": "\"{{name}}\" non compare più sulla pagina e sui kiosk di questa palestra. Puoi ricollegarlo quando vuoi.",
-      "unlinkConfirm": "Scollega",
+      "readOnlyHint": "Il proprietario e gli admin aggiungono i propri pannelli ed eliminano quelli sincronizzati. Tu puoi togliere i pannelli aggiunti dagli scalatori e aggiungere quelli vicino alla tua palestra.",
+      "askAdminToDelete": "Chiedi a un proprietario o a un admin di eliminare questo pannello.",
       "cancel": "Annulla",
       "linked": "Pannello collegato.",
       "linkFailed": "Impossibile collegare il pannello.",
-      "unlinked": "Pannello scollegato.",
-      "unlinkFailed": "Impossibile scollegare il pannello.",
       "visibility": {
         "public": "Pubblico",
         "unlisted": "Non in elenco",
@@ -342,8 +335,8 @@
         "close": "Chiudi"
       },
       "strays": {
-        "heading": "Pannelli che potrebbero essere tuoi",
-        "description": "Si trovano nella tua palestra o si sono staccati da una scheda unita. Aggiungi quelli che appartengono qui.",
+        "heading": "Pannelli vicino alla tua palestra",
+        "description": "Sono a meno di 150 m dalla tua palestra o arrivano da una scheda unita. Aggiungi quelli sulle tue pareti.",
         "reasonMerged": "Era su una scheda unita",
         "reasonNearby": "a {{meters}} m",
         "reasonNearbyGeneric": "Proprio vicino",
@@ -444,8 +437,8 @@
           "body": "Aggiungi logo e colori del brand"
         },
         "boards": {
-          "title": "Collega i tuoi pannelli",
-          "body": "Collega i pannelli della tua palestra"
+          "title": "Controlla i tuoi pannelli",
+          "body": "Correggi o togli quelli che non sono sulle tue pareti"
         },
         "members": {
           "title": "Invita la tua crew",

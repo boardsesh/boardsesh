@@ -44,7 +44,7 @@ vi.mock('../use-integrations', () => ({
   useSyncSessionToIntegration: vi.fn(),
 }));
 
-import { useUpdateBoard, useUpdateSprayWall } from '../index';
+import { useRequestGymClaim, useUpdateBoard, useUpdateSprayWall } from '../index';
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -74,5 +74,25 @@ describe('board edits refresh the gym roster', () => {
       await result.current.mutateAsync({ uuid: 'w1' } as never);
     });
     await waitFor(() => expect(client.getQueryState(gymBoardsQueryKey('gym-1'))?.isInvalidated).toBe(true));
+  });
+
+  it('an approved gym claim invalidates the cached gym roster', async () => {
+    request.mockResolvedValueOnce({ requestGymClaim: { status: 'approved' } });
+    const { client, wrapper } = setup();
+    const { result } = renderHook(() => useRequestGymClaim(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ gymUuid: 'gym-1' } as never);
+    });
+    await waitFor(() => expect(client.getQueryState(gymBoardsQueryKey('gym-1'))?.isInvalidated).toBe(true));
+  });
+
+  it('a claim sent for review leaves the roster alone', async () => {
+    request.mockResolvedValueOnce({ requestGymClaim: { status: 'admin_review' } });
+    const { client, wrapper } = setup();
+    const { result } = renderHook(() => useRequestGymClaim(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ gymUuid: 'gym-1' } as never);
+    });
+    expect(client.getQueryState(gymBoardsQueryKey('gym-1'))?.isInvalidated).toBe(false);
   });
 });

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
+import { aboutBoardHref } from '../../lib/boards/about-board-href';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { smartPlaylistHref } from '../../lib/smart-playlists';
@@ -32,7 +34,9 @@ type ClimbListBoardActionsProps = {
   createRow?: { label: string; onPress: () => void };
 };
 
-type ListMenuRow = AppMenuAction & { id: 'create' | 'myClimbs' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & {
+  id: 'create' | 'myClimbs' | 'viewOptions' | 'wallDisplay' | 'aboutBoard' | 'switchBoard';
+};
 
 type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
 
@@ -70,8 +74,12 @@ export function ClimbListBoardActions({
 }: ClimbListBoardActionsProps) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
+  const { t: tBoards } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
+  // About this board: the active board's detail sheet, where Report a problem
+  // lives (never on the climb or the board art).
+  const aboutBoardUuid = useDirectoryReportsEnabled() ? (activeBoard?.uuid ?? null) : null;
   const router = useRouter();
   const actionSize = useToolbarActionSize();
   // Wall display is for a tablet mounted at the board. A tablet with the native
@@ -95,14 +103,24 @@ export function ClimbListBoardActions({
             },
           ]
         : []),
+      ...(aboutBoardUuid
+        ? [
+            {
+              id: 'aboutBoard' as const,
+              label: tBoards('mobile.boardDetail.about'),
+              systemIcon: 'info.circle',
+              dividerBefore: true,
+            },
+          ]
+        : []),
       {
         id: 'switchBoard',
         label: tSession('mobile.boardPresence.switchBoard'),
         systemIcon: 'arrow.left.arrow.right',
-        dividerBefore: true,
+        dividerBefore: !aboutBoardUuid,
       },
     ],
-    [createRow, t, tSession, wallDisplayInMenu],
+    [createRow, t, tSession, tBoards, wallDisplayInMenu, aboutBoardUuid],
   );
   const rowSignature = rows.map((row) => `${row.id}:${row.label}`).join('|');
   const handleOpenHistory = useCallback(() => {
@@ -170,6 +188,9 @@ export function ClimbListBoardActions({
                 break;
               case 'wallDisplay':
                 router.push(WALL_DISPLAY_HREF);
+                break;
+              case 'aboutBoard':
+                if (aboutBoardUuid) router.push(aboutBoardHref(aboutBoardUuid));
                 break;
               case 'switchBoard':
                 router.push('/boards');

@@ -34,6 +34,10 @@ vi.mock('../../lib/graphql/ws-client', () => ({
 }));
 vi.mock('../device-registration', () => ({ registerNotificationDevice: mocks.register }));
 vi.mock('../handlers', () => ({ setupNotificationHandlers: mocks.setupHandlers }));
+vi.mock('../../providers/feature-flags-provider', () => ({
+  useFeatureFlagsResolved: () => true,
+  useDirectoryReportsEnabled: () => true,
+}));
 
 import { useNotificationUpdates } from '../use-notification-updates';
 

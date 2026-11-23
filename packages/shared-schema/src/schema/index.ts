@@ -51,6 +51,7 @@ import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 import { cncPacksTypeDefs } from './cnc-packs';
 import { offlineWriteDeliveryTypeDefs } from './offline-write-delivery';
+import { directoryReportsTypeDefs } from './directory-reports';
 
 export const typeDefs = [
   offlineWriteDeliveryTypeDefs,
@@ -108,4 +109,5 @@ export const typeDefs = [
   partnerWebhooksTypeDefs,
   appWorkoutsTypeDefs,
   connectedAppsTypeDefs,
+  directoryReportsTypeDefs,
 ];

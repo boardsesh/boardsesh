@@ -92,8 +92,8 @@
     "noBoardsYet": "Aún no hay plafones aquí.",
     "explorePlaylists": "Mira las playlists que monta la gente",
     "startDiscussion": "Iniciar la conversación",
-    "claimTitle": "¿Es tuyo este rocódromo?",
-    "claimBody": "Reclámalo para gestionar los plafones, la marca y lo que se ve en el muro.",
+    "claimTitle": "¿Gestionas este rocódromo?",
+    "claimBody": "Reclámalo para corregir plafones, añadir tu horario y poner la pared en una TV. Es gratis.",
     "claimCta": "Reclamar este rocódromo",
     "claimCtaSignedOut": "Inicia sesión y reclámalo",
     "claimPendingTitle": "Tu solicitud está en revisión",
@@ -200,8 +200,8 @@
           "body": "Añade tu logo y tus colores"
         },
         "boards": {
-          "title": "Vincula tus plafones",
-          "body": "Conecta los muros de tu rocódromo"
+          "title": "Revisa tus plafones",
+          "body": "Corrige o quita los que no estén en tus muros"
         },
         "members": {
           "title": "Invita a tu equipo",
@@ -211,7 +211,6 @@
     },
     "title": "Gestionar {{gymName}}",
     "backToGym": "Volver a la página del rocódromo",
-    "accessDenied": "No tienes permiso para gestionar este rocódromo.",
     "tabs": {
       "kiosks": "Kioscos",
       "branding": "Marca",
@@ -310,21 +309,15 @@
     },
     "boards": {
       "heading": "Plafones de este rocódromo",
-      "description": "Vincula los plafones que posees para que aparezcan en la página de tu rocódromo y en los kioscos.",
+      "description": "Estos plafones los pusieron aquí escaladores y datos públicos de plafones. Corrige los que estén mal y quita los que no estén en tus muros.",
       "addBoard": "Añadir un plafón",
       "empty": "Aún no hay plafones vinculados. Añade uno para empezar.",
       "loadError": "No se pudieron cargar los plafones de este rocódromo.",
-      "unlink": "Desvincular",
-      "onlyOwnerCanUnlink": "Solo el propietario del plafón puede desvincularlo",
-      "readOnlyHint": "Solo el propietario del rocódromo o un administrador puede vincular plafones.",
-      "unlinkTitle": "¿Desvincular este plafón?",
-      "unlinkBody": "«{{name}}» dejará de aparecer en la página y los kioscos de este rocódromo. Puedes volver a vincularlo cuando quieras.",
-      "unlinkConfirm": "Desvincular",
+      "readOnlyHint": "El propietario y los administradores añaden sus propios plafones y eliminan los sincronizados. Tú puedes quitar los plafones que añadieron otros escaladores y añadir los que estén cerca de tu rocódromo.",
+      "askAdminToDelete": "Pídele a un propietario o administrador que elimine este.",
       "cancel": "Cancelar",
       "linked": "Plafón vinculado.",
       "linkFailed": "No se pudo vincular el plafón.",
-      "unlinked": "Plafón desvinculado.",
-      "unlinkFailed": "No se pudo desvincular el plafón.",
       "visibility": {
         "public": "Público",
         "unlisted": "No listado",
@@ -340,8 +333,8 @@
         "close": "Cerrar"
       },
       "strays": {
-        "heading": "Plafones que podrían ser tuyos",
-        "description": "Están en tu rocódromo o quedaron sueltos tras fusionar una ficha. Añade los que te correspondan.",
+        "heading": "Plafones cerca de tu rocódromo",
+        "description": "Están a menos de 150 m de tu rocódromo o vienen de una ficha fusionada. Añade los que estén en tus muros.",
         "reasonMerged": "Estaba en una ficha fusionada",
         "reasonNearby": "a {{meters}} m",
         "reasonNearbyGeneric": "Justo al lado",
@@ -444,8 +437,8 @@
           "body": "Añade tu logo y los colores de tu marca"
         },
         "boards": {
-          "title": "Vincula tus plafones",
-          "body": "Conecta los muros de tu rocódromo"
+          "title": "Revisa tus plafones",
+          "body": "Corrige o quita los que no estén en tus muros"
         },
         "members": {
           "title": "Invita a tu equipo",

@@ -8,6 +8,7 @@ import type {
   SocialEntityType,
   Comment,
 } from '@boardsesh/shared-schema';
+import { DIRECTORY_NOTICE_FIELDS } from './directory-reports';
 
 // ============================================
 // Notification Queries
@@ -79,6 +80,7 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         sprayWallUuid
         sprayVersionId
         sprayResetOfWallUuid
+        ${DIRECTORY_NOTICE_FIELDS}
         isRead
         createdAt
       }

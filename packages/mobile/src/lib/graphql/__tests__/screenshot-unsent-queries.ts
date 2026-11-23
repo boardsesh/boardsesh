@@ -40,6 +40,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetAngles',
   'GetBetaLinks',
   'GetBoardBySlug',
+  // Report a problem: only the report review sheet asks, behind a report notification or a menu row.
+  'GetBoardReports',
   'GetBoardsBySerialNumbers',
   'GetClimbLogs',
   'GetClimbLostHolds',
@@ -52,7 +54,10 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetFollowing',
   'GetGroupedNotifications',
   'GetGym',
+  // The gym page: only a pasted gym link asks by slug, and no capture flow opens the page.
+  'GetGymBySlug',
   'GetGymMembers',
+  'GetGymPendingClaim',
   // ConsentGate skips account privacy synchronization in screenshot mode.
   'GetMyAnalyticsConsent',
   'GetMyBoardSerialConfigs',

@@ -29,7 +29,8 @@
     "sprayWalls": "喷点墙训练数据",
     "boards": "已注册训练板",
     "buildPlans": "建造图纸包订单",
-    "partnerApps": "合作应用"
+    "partnerApps": "合作应用",
+    "boardReports": "训练板报告"
   },
   "buildPlans": {
     "title": "建造图纸包订单",
@@ -304,6 +305,13 @@
       "disabled": "已关闭自动批准。",
       "saveFailed": "无法保存，请重试。",
       "loadFailed": "无法加载岩馆设置。"
+    },
+    "dailyCap": {
+      "label": "每日上限",
+      "description": "24 小时内所有账号合计最多可以自动批准多少条认领。超过上限的认领会等待审核。设为 0 则全部进入审核。",
+      "save": "保存上限",
+      "invalid": "请输入 0 到 1000 之间的整数。",
+      "saved": "每日上限已保存。"
     }
   },
   "gymClaims": {
@@ -315,6 +323,7 @@
     "retry": "重试",
     "approve": "批准",
     "deny": "拒绝",
+    "claimantHistory": "账号：{{days}} 天 · 日志：{{ticks}} · 管理的场馆：{{gyms}}",
     "method": {
       "domain": "域名",
       "admin": "人工审核"
@@ -333,7 +342,36 @@
       "date": "日期",
       "actions": "操作"
     },
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "autoApproved": {
+      "heading": "自动批准的认领",
+      "intro": "每一条都未经审核就接管了一家未认领的岩馆。撤销会把岩馆交还给公开训练板数据。",
+      "empty": "还没有自动批准的认领。",
+      "error": "无法加载这些认领，请重试。",
+      "approvedOn": "批准于 {{date}}",
+      "reverted": "已撤销",
+      "revert": "撤销",
+      "revertAria": "撤销 {{claimant}} 对 {{gym}} 的认领"
+    },
+    "revert": {
+      "title": "撤销 {{claimant}} 对 {{gym}} 的认领？",
+      "body": "{{gym}} 将恢复为未认领。{{claimant}} 以及认领后被添加为成员或编辑的人都会失去权限，位置同步会重新维护这条资料，我们也会发邮件告诉 {{claimant}}。",
+      "notUndone": "训练板的改动、展示屏以及岩馆的简介、营业时间和照片都会保持原样，需要手动修正。",
+      "reasonLabel": "原因（可选）",
+      "confirm": "撤销认领",
+      "cancel": "取消",
+      "done": "{{gym}} 已恢复为未认领。",
+      "missing": "认领 {{claimId}} 不是自动批准的，或已不存在。要交还岩馆，请使用下方的转移岩馆所有权。",
+      "alreadyReverted": "认领 {{claimId}} 已被撤销。",
+      "errors": {
+        "notFound": "该认领或其岩馆已不存在。",
+        "notApproved": "该认领已不再是已批准状态，没有可撤销的内容。",
+        "notTransferred": "该认领从未转移过岩馆，没有可撤销的内容。请使用下方的转移岩馆所有权。",
+        "ownerChanged": "该认领之后岩馆已更换所有者。请使用下方的转移岩馆所有权。",
+        "priorOwner": "该认领是从某个人手中接管的岩馆，而不是从公开训练板数据。请使用下方的转移岩馆所有权把它交还。",
+        "failed": "无法撤销认领，请重试。"
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "转移岩馆所有权",
@@ -631,5 +669,81 @@
     "next": "下一页",
     "active": "有效",
     "suspended": "已停用"
+  },
+  "boardReports": {
+    "title": "训练板和岩馆报告",
+    "backToAdmin": "返回管理面板",
+    "description": "其他人无法处理的报告，以及开启超过 14 天的报告。直接发给我们的排在前面，然后按时间从早到晚排列。",
+    "filters": {
+      "status": "状态",
+      "kind": "显示",
+      "kindAll": "训练板和岩馆",
+      "kindBoard": "训练板",
+      "kindGym": "岩馆"
+    },
+    "status": {
+      "escalated": "由我们的团队处理",
+      "open": "由添加者或岩馆工作人员处理",
+      "fixed": "已修正",
+      "removed": "已移除",
+      "deleted": "已删除",
+      "kept": "保持原样",
+      "merged": "已合并"
+    },
+    "kind": {
+      "board": "训练板",
+      "gym": "岩馆"
+    },
+    "chips": {
+      "sentToTeam": "直接发给我们",
+      "waited": "已开启 14 天"
+    },
+    "meta_one": "{{count}} 位攀岩者 · {{age}}开启",
+    "meta_other": "{{count}} 位攀岩者 · {{age}}开启",
+    "ageToday": "今天",
+    "ageDays_one": "{{count}} 天前",
+    "ageDays_other": "{{count}} 天前",
+    "routedToLine": "发送给：{{recipients}}",
+    "routedTo": {
+      "creator": "添加者",
+      "gymStaff": "岩馆工作人员",
+      "admin": "我们的团队"
+    },
+    "duplicateOf": "与 {{name}} 相同",
+    "note": "{{name}}：{{note}}",
+    "reporterUnknown": "已删除的账户",
+    "closedOn": "{{date}} 关闭：{{outcome}}",
+    "actions": {
+      "deleteBoard": "删除训练板",
+      "removeFromGym": "从岩馆移除",
+      "hideGym": "在搜索中隐藏岩馆",
+      "keep": "保持原样",
+      "mergeGyms": "在重复岩馆中合并",
+      "openGym": "打开岩馆管理"
+    },
+    "confirm": {
+      "deleteTitle": "要为所有人删除 {{board}} 吗？",
+      "deleteBody": "它会从所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。报告将以“已删除”关闭。",
+      "removeTitle": "要把 {{board}} 从 {{gym}} 移除吗？",
+      "removeBody": "它会从岩馆的页面、展示终端和地图上消失，添加者仍会保留它。报告将以“已移除”关闭。",
+      "hideTitle": "要在搜索中隐藏 {{gym}} 吗？",
+      "hideBody": "它将不再出现在岩馆目录和搜索中，持有链接的人仍可打开它的页面。报告将以“已移除”关闭。",
+      "keepTitle": "保持原样？",
+      "keepBody": "报告将关闭，提交报告的人会收到保持原样的通知。",
+      "keepNoteLabel": "给他们的说明（选填）",
+      "cancel": "取消"
+    },
+    "snackbar": {
+      "deleted": "训练板已删除，报告已关闭。",
+      "removed": "已从岩馆移除，报告已关闭。",
+      "hidden": "岩馆已在搜索中隐藏，报告已关闭。",
+      "hiddenStillOpen": "岩馆已在搜索中隐藏，但报告仍未关闭，请重试。",
+      "kept": "报告已关闭。",
+      "failed": "操作未成功，请重试。"
+    },
+    "empty": "这里没有内容。",
+    "error": "无法加载报告，请重试。",
+    "retry": "重试",
+    "loadMore": "加载更多"
   }
 }

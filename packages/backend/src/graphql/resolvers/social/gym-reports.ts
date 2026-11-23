@@ -7,6 +7,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { ReportGymDuplicateInputSchema } from '../../../validation/schemas';
 import { sendGymDuplicateReportAdminNotification } from '../../../email/email-service';
 import { logger } from '../../../utils/logger';
+import { fileLegacyGymDuplicateReport } from './directory-reports/submit';
 import {
   acquireGymDuplicateReportClaim,
   gymDuplicateReportClaimKey,
@@ -91,6 +92,22 @@ export const socialGymReportMutations = {
     if (!duplicate) {
       throw new GraphQLError('The gym you picked as a duplicate no longer exists.', {
         extensions: { code: 'NOT_FOUND' },
+      });
+    }
+
+    // The pair also opens (or joins) a "listed twice" directory report, so this
+    // older path feeds the admin queue (docs/product/directory-reports.md). Best
+    // effort: the email below stays the record this mutation promises.
+    try {
+      await fileLegacyGymDuplicateReport({
+        reporterId: userId,
+        gymId: gym.id,
+        duplicateGymId: duplicate.id,
+        note: validatedInput.note,
+      });
+    } catch (error) {
+      logger.error('[GymDuplicateReport] Could not file the directory report', {
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 

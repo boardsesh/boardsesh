@@ -142,7 +142,10 @@ const activeBoardMock = vi.hoisted(() => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoardMock }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
-vi.mock('../../../providers/feature-flags-provider', () => ({ useClimbModerationEnabled: () => true }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useClimbModerationEnabled: () => true,
+  useDirectoryReportsEnabled: () => true,
+}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),

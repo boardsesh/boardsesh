@@ -29,7 +29,8 @@
     "sprayWalls": "Dati di addestramento Spraywall",
     "boards": "Pannelli registrati",
     "buildPlans": "Ordini dei pacchetti di costruzione",
-    "partnerApps": "App partner"
+    "partnerApps": "App partner",
+    "boardReports": "Segnalazioni dei pannelli"
   },
   "feedback": {
     "title": "Segnalazioni di bug e feedback",
@@ -266,6 +267,13 @@
       "disabled": "Approvazione automatica disattivata.",
       "saveFailed": "Impossibile salvare. Riprova.",
       "loadFailed": "Impossibile caricare le impostazioni delle palestre."
+    },
+    "dailyCap": {
+      "label": "Limite giornaliero",
+      "description": "Quante richieste possono approvarsi da sole in 24 ore, sommando tutti gli account. Oltre il limite aspettano la revisione. Con 0 vanno tutte in revisione.",
+      "save": "Salva limite",
+      "invalid": "Inserisci un numero intero da 0 a 1000.",
+      "saved": "Limite giornaliero salvato."
     }
   },
   "gymClaims": {
@@ -277,6 +285,7 @@
     "retry": "Riprova",
     "approve": "Approva",
     "deny": "Rifiuta",
+    "claimantHistory": "Account: {{days}} giorni · Diario: {{ticks}} · Palestre gestite: {{gyms}}",
     "method": {
       "domain": "Dominio",
       "admin": "Revisione"
@@ -295,7 +304,36 @@
       "date": "Data",
       "actions": "Azioni"
     },
-    "loadMore": "Carica altre"
+    "loadMore": "Carica altre",
+    "autoApproved": {
+      "heading": "Richieste approvate in automatico",
+      "intro": "Ognuna ha preso una palestra non rivendicata senza revisione. Annulla restituisce la palestra ai dati pubblici dei pannelli.",
+      "empty": "Nessuna richiesta si è ancora approvata da sola.",
+      "error": "Impossibile caricare queste richieste. Riprova.",
+      "approvedOn": "Approvata il {{date}}",
+      "reverted": "Annullata",
+      "revert": "Annulla",
+      "revertAria": "Annulla la richiesta di {{claimant}} per {{gym}}"
+    },
+    "revert": {
+      "title": "Annullare la richiesta di {{claimant}} per {{gym}}?",
+      "body": "{{gym}} torna non rivendicata. {{claimant}} e chi è stato aggiunto come membro o editor dopo la richiesta perdono l'accesso, la sincronizzazione delle sedi torna a occuparsi della scheda e avvisiamo {{claimant}} via email.",
+      "notUndone": "Le modifiche ai pannelli, i kiosk e la descrizione, gli orari e la foto della palestra restano come sono. Sistemali a mano.",
+      "reasonLabel": "Motivo (facoltativo)",
+      "confirm": "Annulla richiesta",
+      "cancel": "Chiudi",
+      "done": "{{gym}} è di nuovo non rivendicata.",
+      "missing": "La richiesta {{claimId}} non si è approvata da sola, oppure non esiste più. Per restituire una palestra, usa Sposta la proprietà della palestra qui sotto.",
+      "alreadyReverted": "La richiesta {{claimId}} è già stata annullata.",
+      "errors": {
+        "notFound": "Quella richiesta o la sua palestra non esiste più.",
+        "notApproved": "Questa richiesta non è più approvata, quindi non c’è niente da annullare.",
+        "notTransferred": "Questa richiesta non ha mai spostato la palestra, quindi non c’è niente da annullare. Usa Sposta la proprietà della palestra qui sotto.",
+        "ownerChanged": "La palestra ha cambiato proprietario dopo questa richiesta. Usa Sposta la proprietà della palestra qui sotto.",
+        "priorOwner": "Questa richiesta ha tolto la palestra a una persona, non ai dati pubblici dei pannelli. Usa Sposta la proprietà della palestra qui sotto per restituirla.",
+        "failed": "Impossibile annullare la richiesta. Riprova."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Sposta la proprietà della palestra",
@@ -631,5 +669,81 @@
     "next": "Pagina successiva",
     "active": "Attiva",
     "suspended": "Sospesa"
+  },
+  "boardReports": {
+    "title": "Segnalazioni di pannelli e palestre",
+    "backToAdmin": "Torna all'admin",
+    "description": "Le segnalazioni che nessun altro può gestire e quelle ancora aperte dopo 14 giorni. Prima quelle arrivate direttamente a noi, poi le più vecchie.",
+    "filters": {
+      "status": "Stato",
+      "kind": "Mostra",
+      "kindAll": "Pannelli e palestre",
+      "kindBoard": "Pannelli",
+      "kindGym": "Palestre"
+    },
+    "status": {
+      "escalated": "Al nostro team",
+      "open": "A chi l'ha aggiunto o allo staff della palestra",
+      "fixed": "Corretta",
+      "removed": "Tolta",
+      "deleted": "Eliminata",
+      "kept": "Lasciata così",
+      "merged": "Unita"
+    },
+    "kind": {
+      "board": "Pannello",
+      "gym": "Palestra"
+    },
+    "chips": {
+      "sentToTeam": "Arrivata direttamente a noi",
+      "waited": "Aperta da 14 giorni"
+    },
+    "meta_one": "{{count}} persona · aperta {{age}}",
+    "meta_other": "{{count}} persone · aperta {{age}}",
+    "ageToday": "oggi",
+    "ageDays_one": "{{count}} giorno fa",
+    "ageDays_other": "{{count}} giorni fa",
+    "routedToLine": "Inviata a: {{recipients}}",
+    "routedTo": {
+      "creator": "chi l'ha aggiunto",
+      "gymStaff": "lo staff della palestra",
+      "admin": "il nostro team"
+    },
+    "duplicateOf": "Uguale a {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Account eliminato",
+    "closedOn": "Chiusa il {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Elimina il pannello",
+      "removeFromGym": "Togli dalla palestra",
+      "hideGym": "Nascondi la palestra dalla ricerca",
+      "keep": "Lascia così",
+      "mergeGyms": "Unisci in Palestre duplicate",
+      "openGym": "Apri Gestisci palestra"
+    },
+    "confirm": {
+      "deleteTitle": "Eliminare {{board}} per tutti?",
+      "deleteBody": "Sparisce per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari. La segnalazione si chiude come eliminata.",
+      "removeTitle": "Togliere {{board}} da {{gym}}?",
+      "removeBody": "Sparisce dalla pagina, dai kiosk e dalla mappa della palestra. Chi l'ha aggiunto lo tiene. La segnalazione si chiude come tolta.",
+      "hideTitle": "Nascondere {{gym}} dalla ricerca?",
+      "hideBody": "Non compare più nell'elenco delle palestre né nella ricerca. La sua pagina resta raggiungibile con il link. La segnalazione si chiude come tolta.",
+      "keepTitle": "Lasciarlo così?",
+      "keepBody": "La segnalazione si chiude e chi l'ha inviata saprà che è rimasto così.",
+      "keepNoteLabel": "Un messaggio per loro (facoltativo)",
+      "cancel": "Annulla"
+    },
+    "snackbar": {
+      "deleted": "Pannello eliminato. La segnalazione è chiusa.",
+      "removed": "Tolto dalla palestra. La segnalazione è chiusa.",
+      "hidden": "Palestra nascosta dalla ricerca. La segnalazione è chiusa.",
+      "hiddenStillOpen": "Palestra nascosta dalla ricerca, ma la segnalazione è ancora aperta. Riprova.",
+      "kept": "Segnalazione chiusa.",
+      "failed": "Non è andata a buon fine. Riprova."
+    },
+    "empty": "Qui non c'è niente.",
+    "error": "Impossibile caricare le segnalazioni. Riprova.",
+    "retry": "Riprova",
+    "loadMore": "Carica altre"
   }
 }

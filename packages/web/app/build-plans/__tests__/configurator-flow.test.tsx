@@ -455,6 +455,8 @@ it('shows the layout number when the catalog introduces an unknown layout', asyn
   expect(lastLayoutConfig()).toMatchObject({ layoutId: 99 });
 });
 
+// A long flow (two layouts × five sizes, engraving, submit) that runs close to
+// the default 5 s under a loaded CI shard; give it room instead of a flaky red.
 it('selects TB2 dimensions and engraving and submits the matching tuple', async () => {
   const supported = catalog();
   for (const layoutId of [10, 11]) {
@@ -528,4 +530,4 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
       },
     }),
   );
-});
+}, 15_000);

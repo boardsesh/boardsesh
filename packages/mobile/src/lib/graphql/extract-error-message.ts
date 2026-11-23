@@ -274,5 +274,7 @@ export {
   isDuplicateBoardError,
   readDuplicateBoardError,
   isBoardLimitError,
+  isBoardRemovedByGymError,
+  isSystemBoardDeleteInsteadError,
   type DuplicateBoardError,
 } from '@boardsesh/graphql/errors';

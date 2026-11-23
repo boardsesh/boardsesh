@@ -20,6 +20,7 @@ import { spacing, borderRadius, shadows } from '../../theme/tokens';
 import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture';
 import { findRowIndex, type GymListRow } from './gym-list-rows';
 import { GymShareButton } from './GymShareButton';
+import { GymListingPill } from '../gym-page/GymListingPill';
 
 export type GymListPanelHandle = {
   /** Scroll the row carrying this key into view (for a marker tap). */
@@ -46,6 +47,8 @@ type GymListPanelProps = {
    *  is true. Kept off collapsed rows (almost every signed-in viewer can claim almost
    *  any gym, so a per-row button would clutter the finder). */
   onClaimGym?: (gym: Gym) => void;
+  /** Open the gym's own page — shown inside an EXPANDED gym row, under its boards. */
+  onOpenGym?: (gym: Gym) => void;
   /** Caption shown under an expanded gym that has no boards yet. */
   noBoardsLabel: string;
   /** The pinned search field (lives in the panel header so it survives a blank map). */
@@ -78,6 +81,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     onEditGym,
     onEditBoard,
     onClaimGym,
+    onOpenGym,
     noBoardsLabel,
     searchSlot,
     placeCaption,
@@ -142,6 +146,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               onEditGym={onEditGym}
               onEditBoard={onEditBoard}
               onClaimGym={onClaimGym}
+              onOpenGym={onOpenGym}
             />
           );
         case 'standalone':
@@ -156,7 +161,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           );
       }
     },
-    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym],
+    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym, onOpenGym],
   );
 
   const listContentStyle = useMemo(
@@ -255,6 +260,7 @@ type GymRowProps = {
   onEditGym: (gym: Gym) => void;
   onEditBoard: (board: UserBoard) => void;
   onClaimGym?: (gym: Gym) => void;
+  onOpenGym?: (gym: Gym) => void;
 };
 
 const GymRow = memo(function GymRow({
@@ -270,12 +276,14 @@ const GymRow = memo(function GymRow({
   onEditGym,
   onEditBoard,
   onClaimGym,
+  onOpenGym,
 }: GymRowProps) {
   const { systemColors, selection } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onPressGym(gym), [onPressGym, gym]);
   const handleEdit = useCallback(() => onEditGym(gym), [onEditGym, gym]);
   const handleClaim = useCallback(() => onClaimGym?.(gym), [onClaimGym, gym]);
+  const handleOpenGym = useCallback(() => onOpenGym?.(gym), [onOpenGym, gym]);
   return (
     <View
       style={[
@@ -310,6 +318,12 @@ const GymRow = memo(function GymRow({
                 {gym.boardTypes.map(formatBoardDisplayName).join(' · ')}
               </Text>
             ) : null}
+            {/* Who runs it, so a gym's staff can spot a listing that's theirs to claim. */}
+            {gym.listingState ? (
+              <View style={styles.listingPill}>
+                <GymListingPill listingState={gym.listingState} testID="gym-list-listing-pill" />
+              </View>
+            ) : null}
           </View>
           {gym.canEdit ? <EditButton onPress={handleEdit} label={t('mobile.gyms.editGym')} /> : null}
           <Icon name={expanded ? 'minus' : 'add'} size={20} color={systemColors.tertiaryLabel} />
@@ -331,13 +345,54 @@ const GymRow = memo(function GymRow({
         )
       ) : null}
 
+      {/* The gym's own page: who runs it, every board, its details and the claim. */}
+      {expanded && onOpenGym ? (
+        <SeeGymRow
+          onPress={handleOpenGym}
+          label={t('mobile.gyms.seeGym')}
+          accessibilityLabel={t('mobile.gyms.seeGymAria', { gym: gym.name })}
+        />
+      ) : null}
+
       {/* The claim entry for the person a claim is FOR — a real gym owner with no
           Boardsesh rights yet (canClaim true, canEdit false). Only inside the
-          expanded row so it never clutters the collapsed finder list. */}
-      {expanded && gym.canClaim && onClaimGym ? (
+          expanded row so it never clutters the collapsed finder list. Never on a
+          gym its staff run: nobody can claim one, and the server says so too. */}
+      {expanded && gym.canClaim && gym.listingState !== 'RUN_BY_GYM' && onClaimGym ? (
         <ClaimRow onPress={handleClaim} label={t('mobile.gymClaim.claimAction')} />
       ) : null}
     </View>
+  );
+});
+
+/**
+ * "See gym" under an expanded gym's boards: opens the gym's page. Reads its own
+ * colours so the parent's `renderItem` deps stay free of theme values.
+ */
+const SeeGymRow = memo(function SeeGymRow({
+  onPress,
+  label,
+  accessibilityLabel,
+}: {
+  onPress: () => void;
+  label: string;
+  accessibilityLabel: string;
+}) {
+  const { systemColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
+      testID="gym-list-see-gym"
+    >
+      <Icon name="gym" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent} style={styles.seeGymLabel}>
+        {label}
+      </Text>
+      <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+    </PressableSurface>
   );
 });
 
@@ -550,6 +605,10 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
   },
+  listingPill: {
+    flexDirection: 'row',
+    marginTop: spacing[1],
+  },
   boardRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -572,6 +631,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     paddingStart: spacing[6],
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  seeGymLabel: {
+    flex: 1,
   },
   standaloneRow: {
     flexDirection: 'row',

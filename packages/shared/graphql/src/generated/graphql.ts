@@ -735,6 +735,16 @@ export type AuroraCredentialStatus = {
   username: Scalars['String']['output'];
 };
 
+/** Input for listing claims that approved themselves (admin only). */
+export type AutoApprovedGymClaimsInput = {
+  /** Only this claim, for the daily digest's revert link. A claim that didn't approve itself comes back as an empty list. */
+  claimId?: InputMaybe<Scalars['ID']['input']>;
+  /** Max claims to return */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
 /**
  * An external Instagram or TikTok beta link attached to a climb.
  * Thumbnail (when present) is served from our own S3 bucket.
@@ -1140,6 +1150,9 @@ export type BoardQueuePreviewItem = {
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
 };
+
+/** Why a climber reported a board. relist_request is filed only by the board's creator, after gym staff removed it. */
+export type BoardReportReason = 'duplicate' | 'gone' | 'other' | 'relist_request' | 'wrong_place' | 'wrong_setup';
 
 /**
  * Auto-recorded board configuration that the current user was on the last time
@@ -2985,6 +2998,150 @@ export type DeviceLogEntry = {
   ts: Scalars['Float']['input'];
 };
 
+/**
+ * What a directory notification is about. Set on the board_report_*,
+ * gym_report_*, board_removed_from_gym, board_deleted_by_staff and
+ * board_edited_by_staff types.
+ */
+export type DirectoryNotice = {
+  __typename?: 'DirectoryNotice';
+  /** board_removed_from_gym / board_deleted_by_staff / board_edited_by_staff: who did it. */
+  actorRole?: Maybe<DirectoryNoticeActorRole>;
+  boardName?: Maybe<Scalars['String']['output']>;
+  /** Spray walls are worded apart from boards. */
+  boardType?: Maybe<Scalars['String']['output']>;
+  boardUuid?: Maybe<Scalars['ID']['output']>;
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** The gym concerned: the board's gym at report time, or the gym staff removed it from. */
+  gymUuid?: Maybe<Scalars['ID']['output']>;
+  /** board_report_opened / gym_report_opened: the seven-day reminder rather than the first notice. */
+  isReminder: Scalars['Boolean']['output'];
+  /** Resolved notices: how the report was closed. */
+  outcome?: Maybe<DirectoryReportOutcome>;
+  reason?: Maybe<DirectoryReportReason>;
+  /** The recipient created the board (wording: 'your board' rather than '{{board}} at {{gym}}'). */
+  recipientIsCreator: Scalars['Boolean']['output'];
+  reportUuid?: Maybe<Scalars['ID']['output']>;
+  /** Resolved as kept: what the person who closed it said. */
+  resolutionNote?: Maybe<Scalars['String']['output']>;
+  resolvedByRole?: Maybe<DirectoryReportResolverRole>;
+  targetKind: DirectoryReportTargetKind;
+};
+
+/** Who acted on a board in a staff action notice: the gym's staff, or a Boardsesh moderator (a community leader or admin). */
+export type DirectoryNoticeActorRole = 'gym_staff' | 'moderator';
+
+export type DirectoryReport = {
+  __typename?: 'DirectoryReport';
+  boardName?: Maybe<Scalars['String']['output']>;
+  boardType?: Maybe<Scalars['String']['output']>;
+  /** Board reports: the board. */
+  boardUuid?: Maybe<Scalars['ID']['output']>;
+  createdAt: Scalars['String']['output'];
+  duplicateOfBoardName?: Maybe<Scalars['String']['output']>;
+  /** Listed twice: the other board, when the viewer can read it. */
+  duplicateOfBoardUuid?: Maybe<Scalars['ID']['output']>;
+  duplicateOfGymName?: Maybe<Scalars['String']['output']>;
+  /** Listed twice: the other gym listing. */
+  duplicateOfGymUuid?: Maybe<Scalars['ID']['output']>;
+  escalatedAt?: Maybe<Scalars['String']['output']>;
+  /** When a waiting report goes to the admin queue (14 days after it opened). */
+  escalatesAt: Scalars['String']['output'];
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Board reports: the gym the board was at when reported (for relist_request, the gym that removed it). Gym reports: the gym. */
+  gymUuid?: Maybe<Scalars['ID']['output']>;
+  /** What reporters said, oldest first. Reporters without a note are counted but not listed. */
+  notes: Array<DirectoryReportNote>;
+  reason: DirectoryReportReason;
+  remindedAt?: Maybe<Scalars['String']['output']>;
+  /** How many climbers are on the report. */
+  reporterCount: Scalars['Int']['output'];
+  resolutionNote?: Maybe<Scalars['String']['output']>;
+  resolvedAt?: Maybe<Scalars['String']['output']>;
+  resolvedByRole?: Maybe<DirectoryReportResolverRole>;
+  routedTo: Array<DirectoryReportRecipient>;
+  status: DirectoryReportStatus;
+  targetKind: DirectoryReportTargetKind;
+  uuid: Scalars['ID']['output'];
+  /** The viewer may close it as kept (and, as a global admin, with the other outcomes). */
+  viewerCanResolve: Scalars['Boolean']['output'];
+  /** The viewer is one of the reporters. */
+  viewerIsReporter: Scalars['Boolean']['output'];
+  /** Why the viewer can read this report. */
+  viewerRole: DirectoryReportViewerRole;
+};
+
+export type DirectoryReportConnection = {
+  __typename?: 'DirectoryReportConnection';
+  /** Pass as after for the next page; null on the last page. */
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  reports: Array<DirectoryReport>;
+};
+
+/** One reporter's note. reporter is null for everyone but global admins: reporters stay anonymous. */
+export type DirectoryReportNote = {
+  __typename?: 'DirectoryReportNote';
+  createdAt: Scalars['String']['output'];
+  note: Scalars['String']['output'];
+  reporter?: Maybe<DirectoryReportReporter>;
+};
+
+/** How a report was closed. */
+export type DirectoryReportOutcome = 'deleted' | 'fixed' | 'kept' | 'merged' | 'removed';
+
+/** Every board and gym report reason. */
+export type DirectoryReportReason =
+  | 'closed'
+  | 'duplicate'
+  | 'gone'
+  | 'not_a_gym'
+  | 'other'
+  | 'relist_request'
+  | 'wrong_details'
+  | 'wrong_place'
+  | 'wrong_setup';
+
+/** Who a report goes to. gym_staff is the gym's owner and admins. */
+export type DirectoryReportRecipient = 'admin' | 'creator' | 'gym_staff';
+
+/** A reporter, shown to global admins only. */
+export type DirectoryReportReporter = {
+  __typename?: 'DirectoryReportReporter';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  userId: Scalars['ID']['output'];
+};
+
+/** Who closed a report. auto is the system (the merge tool, or a sweep that found the board or gym gone). */
+export type DirectoryReportResolverRole = 'admin' | 'auto' | 'creator' | 'gym_staff';
+
+/**
+ * Where a report stands. open and escalated are still waiting (escalated: in the
+ * Boardsesh admin queue); the rest are outcomes and never change.
+ */
+export type DirectoryReportStatus = 'deleted' | 'escalated' | 'fixed' | 'kept' | 'merged' | 'open' | 'removed';
+
+export type DirectoryReportSubmitResult = {
+  __typename?: 'DirectoryReportSubmitResult';
+  /** How many other climbers are on the same report, for 'N other climbers flagged this too'. */
+  otherReporterCount: Scalars['Int']['output'];
+  reportUuid: Scalars['ID']['output'];
+  /** Who the report goes to, as the report sheet's routing line said. */
+  routedTo: Array<DirectoryReportRecipient>;
+  status: DirectoryReportSubmitStatus;
+};
+
+/**
+ * What a report call did: opened a new report, added the reporter to the open
+ * report on the same target and reason, or found they had already reported it.
+ */
+export type DirectoryReportSubmitStatus = 'added' | 'already_reported' | 'created';
+
+export type DirectoryReportTargetKind = 'board' | 'gym';
+
+/** Why the viewer can read a report. */
+export type DirectoryReportViewerRole = 'admin' | 'creator' | 'gym_staff';
+
 /** Input for discovering public playlists. */
 export type DiscoverPlaylistsInput = {
   /** Board angle for generated recommendation filters */
@@ -3867,6 +4024,7 @@ export type GroupedNotification = {
   commentBody?: Maybe<Scalars['String']['output']>;
   /** When the most recent notification was created */
   createdAt: Scalars['String']['output'];
+  directoryNotice?: Maybe<DirectoryNotice>;
   /** Entity ID */
   entityId?: Maybe<Scalars['String']['output']>;
   /** Entity type */
@@ -3970,7 +4128,7 @@ export type Gym = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
   followerCount: Scalars['Int']['output'];
-  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  /** Opening hours as free text the gym maintains itself, line breaks kept (no structured per-day model). */
   hours?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale. */
   hoursUpdatedAt?: Maybe<Scalars['String']['output']>;
@@ -4054,12 +4212,20 @@ export type GymBoardSummary = {
 /** A pending or resolved gym ownership claim (admin queue). */
 export type GymClaim = {
   __typename?: 'GymClaim';
+  /** Auto-approved list only: when the claim took the gym. */
+  approvedAt?: Maybe<Scalars['String']['output']>;
   /** Email address (domain path) */
   claimEmail?: Maybe<Scalars['String']['output']>;
+  /** Admin queue only: days since the claimant's account was created. */
+  claimantAccountAgeDays?: Maybe<Scalars['Int']['output']>;
   /** Claimant avatar URL */
   claimantAvatarUrl?: Maybe<Scalars['String']['output']>;
   /** Claimant display name */
   claimantDisplayName?: Maybe<Scalars['String']['output']>;
+  /** Admin queue only: how many other live gyms the claimant owns or is an admin of. */
+  claimantGymsHeld?: Maybe<Scalars['Int']['output']>;
+  /** Admin queue only: how many climbs the claimant has logged. */
+  claimantTickCount?: Maybe<Scalars['Int']['output']>;
   /** Claimant user ID */
   claimantUserId: Scalars['ID']['output'];
   /** When the claim was created */
@@ -4107,7 +4273,14 @@ export type GymClaimRequestStatus =
   /** A verification email was sent to the claimant's work address. */
   | 'email_sent';
 
-export type GymClaimStatus = 'approved' | 'denied' | 'expired' | 'pending';
+export type GymClaimStatus =
+  | 'approved'
+  | 'denied'
+  /** An admin-review claim nobody decided within 30 days, or a domain link that went unused. */
+  | 'expired'
+  | 'pending'
+  /** An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again. */
+  | 'revoked';
 
 /** The strongest ownership-claim state on a gym row. */
 export type GymClusterClaimStatus =
@@ -4348,6 +4521,9 @@ export type GymOwnershipUserSummary = {
   label: Scalars['String']['output'];
   userId: Scalars['ID']['output'];
 };
+
+/** Why a climber reported a gym listing. */
+export type GymReportReason = 'closed' | 'duplicate' | 'not_a_gym' | 'other' | 'wrong_details';
 
 /** A public canonical venue URL and its last content update, without private gym fields. */
 export type GymSitemapEntry = {
@@ -5361,6 +5537,12 @@ export type Mutation = {
   /** Replace a queue item with a new one (same UUID). */
   replaceQueueItem: ClimbQueueItem;
   /**
+   * Report a problem with a board. Signed in, 5 per minute, and the board must be
+   * readable by the reporter. Joins the waiting report on the same board and
+   * reason when there is one. Refused while the directory-reports flag is off.
+   */
+  reportBoard: DirectoryReportSubmitResult;
+  /**
    * Report that this client turned off every light on `boardId` while keeping its
    * BLE link (the "Turn off all lights" action). Publishes `BoardClimbCleared` so
    * every viewer stops showing the cleared climb as lit, and keeps the clear for a
@@ -5391,6 +5573,8 @@ export type Mutation = {
    * (one vote + one comment per user) or opens one.
    */
   reportClimb: ReportClimbResult;
+  /** Report a problem with a gym listing. Same rules as reportBoard. */
+  reportGym: DirectoryReportSubmitResult;
   /**
    * Report that two gym listings are the same gym (any signed-in user). Surfaces the
    * pair to admins for review in the merge queue. Rate-limited and de-duplicated per
@@ -5501,6 +5685,8 @@ export type Mutation = {
    * connects and stay aligned with board-scoped ticks.
    */
   resolveBoardForUuid: ResolvedBoard;
+  /** Close a report. See ResolveDirectoryReportInput.outcome for who may close it how. */
+  resolveDirectoryReport: DirectoryReport;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
   /**
@@ -5510,6 +5696,16 @@ export type Mutation = {
    */
   retryAppBugReportMessage: AppBugReportMessage;
   retrySprayWallDetection: SprayWallDetection;
+  /**
+   * Take back an approved gym claim (global admin only): the gym goes back to
+   * the SYSTEM account, every approved claim on it becomes `revoked`, the sync
+   * freeze set at approval is cleared so the location sync curates the listing
+   * again, and the claimant plus every gym member or editor added since the
+   * claim lose their membership. Only for a claim that took the gym from the
+   * SYSTEM account when nobody has moved it since; anything else is refused, and
+   * reassignGymOwner is the tool for it.
+   */
+  revertGymClaim: RevertGymClaimResult;
   /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
    * ownership to the claimant.
@@ -6315,6 +6511,11 @@ export type MutationReplaceQueueItemArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationReportBoardArgs = {
+  input: ReportBoardInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReportBoardClearArgs = {
   boardId: Scalars['Int']['input'];
 };
@@ -6334,6 +6535,11 @@ export type MutationReportBoardDisconnectArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportClimbArgs = {
   input: ReportClimbInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportGymArgs = {
+  input: ReportGymInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6434,6 +6640,11 @@ export type MutationResolveBoardForUuidArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationResolveDirectoryReportArgs = {
+  input: ResolveDirectoryReportInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
 };
@@ -6446,6 +6657,11 @@ export type MutationRetryAppBugReportMessageArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRetrySprayWallDetectionArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRevertGymClaimArgs = {
+  input: RevertGymClaimInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6915,6 +7131,7 @@ export type Notification = {
   commentBody?: Maybe<Scalars['String']['output']>;
   /** When the notification was created (ISO 8601) */
   createdAt: Scalars['String']['output'];
+  directoryNotice?: Maybe<DirectoryNotice>;
   /** Entity ID this notification relates to */
   entityId?: Maybe<Scalars['String']['output']>;
   /** Entity type this notification relates to */
@@ -6981,6 +7198,11 @@ export type NotificationEvent = {
 
 export type NotificationType =
   | 'app_feedback_reply'
+  | 'board_deleted_by_staff'
+  | 'board_edited_by_staff'
+  | 'board_removed_from_gym'
+  | 'board_report_opened'
+  | 'board_report_resolved'
   | 'comment_on_board'
   | 'comment_on_climb'
   | 'comment_on_gym'
@@ -6990,6 +7212,10 @@ export type NotificationType =
   | 'comment_reply'
   | 'follow_request'
   | 'gym_claim_approved'
+  | 'gym_claim_denied'
+  | 'gym_claimed_with_your_board'
+  | 'gym_report_opened'
+  | 'gym_report_resolved'
   | 'new_climb'
   | 'new_climb_global'
   | 'new_climbs_synced'
@@ -7893,6 +8119,8 @@ export type Query = {
    * is capped at 100, and `cursor` comes from the previous page.
    */
   adminCncOrders: CncOrderConnection;
+  /** The admin queue. Global admins only. status defaults to escalated. */
+  adminDirectoryReports: DirectoryReportConnection;
   adminPartnerApps: AdminPartnerAppConnection;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
@@ -7920,6 +8148,11 @@ export type Query = {
    * Authority failures return SERVICE_UNAVAILABLE instead of an identity.
    */
   authenticatedUserId: Scalars['ID']['output'];
+  /**
+   * Claims that approved themselves (admin only), newest first: approved ones
+   * an admin can revert with revertGymClaim, and ones already reverted.
+   */
+  autoApprovedGymClaims: GymClaimConnection;
   /**
    * Live preview metadata for a shared Instagram/TikTok URL, before it's
    * attached. Powers the mobile share flow: shows the post thumbnail/caption and
@@ -8030,6 +8263,12 @@ export type Query = {
   boardRecentClimbs: Array<BoardPresenceClimb>;
   /** Merged native and imported recent displays, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
+  /**
+   * Reports about one board, waiting and closed in the last 30 days, newest
+   * first. For its creator, the staff of the gym a report went to, and global
+   * admins; an empty list for anyone else.
+   */
+  boardReports: Array<DirectoryReport>;
   /**
    * The owner's share link for a Followers or Invite-only home board, minted on
    * first read. Null for a Public, Unlisted or Only-me board, and for a spray wall.
@@ -8364,6 +8603,12 @@ export type Query = {
   /** The signed-in climber's connected apps, in every PARTNER_OAUTH_MODE. */
   myConnectedApps: ConnectedApps;
   myControllers: Array<ControllerInfo>;
+  /**
+   * Reports the viewer can act on: about boards they created, and routed to the
+   * staff of gyms they own, administer or edit. Waiting reports first (oldest
+   * first), then those closed in the last 30 days when includeResolved is true.
+   */
+  myDirectoryReportsToReview: Array<DirectoryReport>;
   /**
    * Get current user's gyms (owned + optionally followed).
    * Requires authentication.
@@ -8870,6 +9115,14 @@ export type QueryAdminCncOrdersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryAdminDirectoryReportsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<DirectoryReportStatus>;
+  targetKind?: InputMaybe<DirectoryReportTargetKind>;
+};
+
+/** Root query type for all read operations. */
 export type QueryAdminPartnerAppsArgs = {
   input?: InputMaybe<AdminPartnerAppsInput>;
 };
@@ -8903,6 +9156,11 @@ export type QueryAppWorkoutArgs = {
 /** Root query type for all read operations. */
 export type QueryAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAutoApprovedGymClaimsArgs = {
+  input?: InputMaybe<AutoApprovedGymClaimsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -8995,6 +9253,11 @@ export type QueryBoardRecentClimbsArgs = {
 export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardReportsArgs = {
+  boardUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9318,6 +9581,12 @@ export type QueryMyBoardSerialConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryMyBoardsArgs = {
   input?: InputMaybe<MyBoardsInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryMyDirectoryReportsToReviewArgs = {
+  first?: InputMaybe<Scalars['Int']['input']>;
+  includeResolved?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -10153,6 +10422,15 @@ export type ReorderPlaylistClimbInput = {
   playlistId: Scalars['ID']['input'];
 };
 
+export type ReportBoardInput = {
+  boardUuid: Scalars['ID']['input'];
+  /** For duplicate: the other board at the same gym that is the same wall. */
+  duplicateOfBoardUuid?: InputMaybe<Scalars['ID']['input']>;
+  /** Optional, trimmed, at most 500 characters. Required (10 or more characters) for other. */
+  note?: InputMaybe<Scalars['String']['input']>;
+  reason: BoardReportReason;
+};
+
 export type ReportClimbInput = {
   /** Required for grade reports; ignored for hide */
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -10199,6 +10477,15 @@ export type ReportGymDuplicateResult = {
 };
 
 export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
+
+export type ReportGymInput = {
+  /** For duplicate: the other listing that is the same gym. */
+  duplicateOfGymUuid?: InputMaybe<Scalars['ID']['input']>;
+  gymUuid: Scalars['ID']['input'];
+  /** Optional, trimmed, at most 500 characters. Required (10 or more characters) for other. */
+  note?: InputMaybe<Scalars['String']['input']>;
+  reason: GymReportReason;
+};
 
 export type ReportSprayWallInput = {
   reason: SprayWallReportReason;
@@ -10249,6 +10536,19 @@ export type ResolveBoardResult = {
   candidates?: Maybe<Array<BoardCandidate>>;
 };
 
+export type ResolveDirectoryReportInput = {
+  /** Passed on to the reporters. Optional, trimmed, at most 500 characters. */
+  note?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * kept: the creator or gym staff (owner, admins) looked and it is right as it
+   * is. Global admins may also close a report as fixed, removed, deleted or
+   * merged once they have taken that action with the existing mutations;
+   * removed and deleted are checked against the board or gym.
+   */
+  outcome: DirectoryReportOutcome;
+  reportUuid: Scalars['ID']['input'];
+};
+
 export type ResolveProposalInput = {
   proposalUuid: Scalars['ID']['input'];
   reason?: InputMaybe<Scalars['String']['input']>;
@@ -10284,6 +10584,27 @@ export type ResourcePrivacySettings = {
   ownerId?: Maybe<Scalars['ID']['output']>;
   resourceId: Scalars['ID']['output'];
   revision: Scalars['Int']['output'];
+};
+
+/** Input for taking back an approved gym claim (global admin only). */
+export type RevertGymClaimInput = {
+  /** The approved claim to take back (the id the admin queue and the daily digest use) */
+  claimId: Scalars['ID']['input'];
+  /** Why, for the ownership audit trail. Optional. */
+  reason?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** What revertGymClaim did. */
+export type RevertGymClaimResult = {
+  __typename?: 'RevertGymClaimResult';
+  /** The reverted claim */
+  claimId: Scalars['ID']['output'];
+  /** The gym's name */
+  gymName: Scalars['String']['output'];
+  /** The gym, now unclaimed */
+  gymUuid: Scalars['ID']['output'];
+  /** Gym members and editors removed: the claimant's own row and everyone added since the claim */
+  removedMemberCount: Scalars['Int']['output'];
 };
 
 /** Input for an admin reviewing a pending gym claim. */
@@ -13575,6 +13896,12 @@ export type UserBoard = {
   longitude?: Maybe<Scalars['Float']['output']>;
   /** Board name */
   name: Scalars['String']['output'];
+  /**
+   * Waiting reports the viewer can act on: all of them for the board's creator
+   * (but their own relist requests) and global admins, the ones routed to gym
+   * staff for the gym's owner, admins and editors. Null for anyone else.
+   */
+  openReportCount?: Maybe<Scalars['Int']['output']>;
   /** Owner avatar URL */
   ownerAvatarUrl?: Maybe<Scalars['String']['output']>;
   /** Owner display name */
@@ -13604,6 +13931,8 @@ export type UserBoard = {
   uniqueClimbers: Scalars['Int']['output'];
   /** Unique identifier */
   uuid: Scalars['ID']['output'];
+  /** The viewer is a reporter on a waiting report about this board. Null when signed out. */
+  viewerHasOpenReport?: Maybe<Scalars['Boolean']['output']>;
 };
 
 /** Paginated list of boards. */

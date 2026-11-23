@@ -24,6 +24,14 @@ const boardModerationEventsSchema = readFileSync(
   new URL('../../../db/drizzle/0333_board_moderation_events.sql', import.meta.url),
   'utf8',
 ).replaceAll('--> statement-breakpoint', '');
+// Notification types are text in this fixture, so the enum additions are skipped.
+const directoryReportsSchema = readFileSync(
+  new URL('../../../db/drizzle/0334_directory_reports.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
+  .join('\n');
 
 const partnerSessionHintPrivacySchema = readFileSync(
   new URL('../../../db/drizzle/0330_session_hint_privacy.sql', import.meta.url),
@@ -1635,7 +1643,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "claim_id" bigint PRIMARY KEY NOT NULL REFERENCES "gym_claims"("id") ON DELETE CASCADE,
     "gym_uuid" text NOT NULL,
     "did_transfer" boolean NOT NULL,
-    "decided_at" timestamp NOT NULL
+    "decided_at" timestamp NOT NULL,
+    "previous_owner_id" text
   );
   CREATE INDEX IF NOT EXISTS "gym_claim_ownership_decisions_transfer_history_idx"
     ON "gym_claim_ownership_decisions" ("gym_uuid", "decided_at") WHERE "did_transfer";
@@ -1827,12 +1836,28 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_performed_by_idx"
     ON "gym_owner_reassignments" ("performed_by");
 
+  -- The directory report tables (below) use board_moderation_actor_role, so
+  -- they go before the type does on a reapplied fixture.
+  DROP TABLE IF EXISTS "directory_notification_context" CASCADE;
+
   -- Staff and admin actions on boards (migration 0333), straight from the
   -- generated migration. Dropped first so a reapplied fixture starts clean.
   DROP TABLE IF EXISTS "board_moderation_events" CASCADE;
   DROP TYPE IF EXISTS board_moderation_action;
   DROP TYPE IF EXISTS board_moderation_actor_role;
   ${boardModerationEventsSchema}
+
+  -- Directory reports (migration 0334), straight from the generated migration.
+  DROP TABLE IF EXISTS "directory_notification_context" CASCADE;
+  DROP TABLE IF EXISTS "directory_report_reporters" CASCADE;
+  DROP TABLE IF EXISTS "directory_reports" CASCADE;
+  DROP TABLE IF EXISTS "admin_daily_digests" CASCADE;
+  DROP TYPE IF EXISTS directory_report_reason;
+  DROP TYPE IF EXISTS directory_report_recipient;
+  DROP TYPE IF EXISTS directory_report_resolver_role;
+  DROP TYPE IF EXISTS directory_report_status;
+  DROP TYPE IF EXISTS directory_report_target_kind;
+  ${directoryReportsSchema}
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

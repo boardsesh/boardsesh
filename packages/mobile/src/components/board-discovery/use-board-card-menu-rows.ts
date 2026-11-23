@@ -35,16 +35,49 @@ export function useBoardCardMenuRows(item: DiscoveryBoardItem, menu: BoardCardMe
   const isPinned = item.isPinned === true;
   const isImport = item.sprayImport != null;
   const isSprayWall = item.boardName === 'spray';
-  const { offlineState, isViewerOwner } = item;
+  const { offlineState, isViewerOwner, canEdit, canDelete, canRemoveFromGym, gymName } = item;
+  const openReportCount = item.openReportCount ?? null;
+  const viewerHasOpenReport = item.viewerHasOpenReport ?? null;
   const capabilities = menu?.capabilities;
   const labels = menu?.labels;
   const onMenuAction = menu?.onAction;
   const rows = useMemo<readonly BoardCardMenuRow[]>(() => {
     if (capabilities === undefined || labels === undefined) return NO_ROWS;
-    const entries = boardCardMenuEntries({ isPinned, offlineState, isViewerOwner, isImport }, capabilities);
+    const entries = boardCardMenuEntries(
+      {
+        isPinned,
+        offlineState,
+        isViewerOwner,
+        isImport,
+        canEdit,
+        canDelete,
+        canRemoveFromGym,
+        gymName,
+        openReportCount,
+        viewerHasOpenReport,
+      },
+      capabilities,
+    );
     if (entries.length === 0) return NO_ROWS;
-    return entries.map((entry) => ({ ...entry, label: boardCardMenuLabel(entry.action, labels, isSprayWall) }));
-  }, [capabilities, labels, isPinned, offlineState, isViewerOwner, isImport, isSprayWall]);
+    return entries.map((entry) => ({
+      ...entry,
+      label: boardCardMenuLabel(entry.action, labels, isSprayWall, gymName),
+    }));
+  }, [
+    capabilities,
+    labels,
+    isPinned,
+    offlineState,
+    isViewerOwner,
+    isImport,
+    isSprayWall,
+    canEdit,
+    canDelete,
+    canRemoveFromGym,
+    gymName,
+    openReportCount,
+    viewerHasOpenReport,
+  ]);
   const menuActions = useMemo<AppMenuAction[]>(
     () =>
       rows.map((row) => ({
@@ -52,13 +85,14 @@ export function useBoardCardMenuRows(item: DiscoveryBoardItem, menu: BoardCardMe
         systemIcon: BOARD_CARD_MENU_SYSTEM_ICONS[row.action],
         destructive: row.destructive,
         dividerBefore: row.dividerBefore,
+        disabled: row.disabled,
       })),
     [rows],
   );
   const runMenuRow = useCallback(
     (index: number, via: BoardCardMenuVia) => {
       const row = rows[index];
-      if (row !== undefined) onMenuAction?.(item, row.action, via);
+      if (row !== undefined && !row.disabled) onMenuAction?.(item, row.action, via);
     },
     [rows, onMenuAction, item],
   );

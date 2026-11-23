@@ -183,20 +183,27 @@ const LABELS: BoardCardMenuLabels = {
   details: 'Details',
   edit: 'Edit board',
   editWall: 'Edit Spraywall',
-  unfollow: 'Unfollow',
+  removeFromGym: 'Remove from gym',
+  removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
+  unfollow: 'Remove from your boards',
   delete: 'Delete',
+  reviewReports: 'See reports',
+  report: 'Report a problem',
+  reported: 'Reported',
 };
 const EVERYTHING: BoardCardMenuCapabilities = {
   canPin: true,
   canDownload: true,
   canOpenDetails: true,
   canManage: true,
+  canReport: false,
 };
 const NEARBY: BoardCardMenuCapabilities = {
   canPin: false,
   canDownload: false,
   canOpenDetails: true,
   canManage: false,
+  canReport: false,
 };
 
 function menuWith(capabilities: BoardCardMenuCapabilities = EVERYTHING): BoardCardMenu {
@@ -439,7 +446,7 @@ describe('BoardDiscoveryCard menu', () => {
       createElement(BoardDiscoveryCard, {
         item: { ...item, offlineState: 'downloaded' },
         onPress: vi.fn(),
-        menu: menuWith({ canPin: false, canDownload: true, canOpenDetails: false, canManage: false }),
+        menu: menuWith({ canPin: false, canDownload: true, canOpenDetails: false, canManage: false, canReport: false }),
       }),
     );
     expect(queryByTestId('menu-button')).toBeNull();
@@ -461,7 +468,7 @@ describe('BoardDiscoveryCard menu', () => {
     const pinnedItem = { ...item, isViewerOwner: false, isPinned: true, offlineState: 'downloaded' as const };
     render(createElement(BoardDiscoveryCard, { item: pinnedItem, onPress, menu }));
     const labels = menus.button?.actions.map((action) => action.label) ?? [];
-    expect(labels).toEqual(['Climb here', 'Unpin', 'Details', 'Unfollow']);
+    expect(labels).toEqual(['Climb here', 'Unpin', 'Details', 'Remove from your boards']);
 
     menus.button?.onSelectIndex(1);
     expect(menu.onAction).toHaveBeenCalledWith(pinnedItem, 'unpin', 'menu_button');
@@ -504,7 +511,13 @@ describe('BoardDiscoveryCard menu', () => {
       createElement(BoardDiscoveryCard, {
         item,
         onPress: vi.fn(),
-        menu: menuWith({ canPin: false, canDownload: false, canOpenDetails: false, canManage: false }),
+        menu: menuWith({
+          canPin: false,
+          canDownload: false,
+          canOpenDetails: false,
+          canManage: false,
+          canReport: false,
+        }),
       }),
     );
     expect(cardRootProps.last?.onLongPress).toBeUndefined();

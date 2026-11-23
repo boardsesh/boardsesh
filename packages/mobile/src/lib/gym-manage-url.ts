@@ -5,6 +5,11 @@ import { WEB_BASE_URL } from './env';
 // resolves either a slug or a uuid, so a slugless legacy gym still reaches
 // setup via its uuid. `WEB_BASE_URL` respects the EXPO_PUBLIC_WEB_URL
 // override, so it points at whatever web build we're testing.
-export function buildGymManageUrl(slugOrUuid: string): string {
-  return `${WEB_BASE_URL}/gym/${encodeURIComponent(slugOrUuid)}/manage`;
+//
+// `tab` opens the console on one tab (the web reads `?tab=`); a claim that just
+// came through lands on Boards, which is why most claimants showed up. The app's
+// gym page links staff to Boards (boards near the gym), Kiosks and Insights.
+export function buildGymManageUrl(slugOrUuid: string, tab?: 'boards' | 'kiosks' | 'insights'): string {
+  const base = `${WEB_BASE_URL}/gym/${encodeURIComponent(slugOrUuid)}/manage`;
+  return tab ? `${base}?tab=${tab}` : base;
 }

@@ -128,7 +128,6 @@
       "updateError": "Impossibile salvare le modifiche. Riprova.",
       "updateSuccess": "Palestra aggiornata",
       "notFound": "Palestra non trovata",
-      "noAccess": "Non hai il permesso di modificare questa palestra",
       "back": "Indietro",
       "name": "Nome",
       "namePlaceholder": "Nome della palestra",
@@ -148,24 +147,25 @@
       "publicHint": "Mostrala sulla mappa così i climber la trovano",
       "website": "Sito web",
       "websitePlaceholder": "https://tuapalestra.it",
-      "websiteHint": "Lo usiamo per verificare la proprietà quando qualcuno rivendica la palestra"
+      "websiteHint": "Lo usiamo per verificare la proprietà quando qualcuno rivendica la palestra",
+      "hours": "Orari",
+      "hoursPlaceholder": "Lun-Ven 10-22, Sab-Dom 9-20"
     },
     "manage": {
-      "ownedHeader": "I tuoi pannelli",
+      "ownedHeader": "Aggiunti da te",
       "followingHeader": "Pannelli che segui",
-      "deleteTitle": "Eliminare il pannello?",
-      "deleteMessage": "Rimuovere \"{{name}}\" dai tuoi pannelli? L'operazione non si può annullare.",
       "deleteConfirm": "Elimina",
       "cancel": "Annulla",
       "deleteError": "Impossibile eliminare quel pannello. Riprova.",
-      "unfollowError": "Impossibile smettere di seguire quel pannello. Riprova.",
+      "unfollowError": "Impossibile togliere quel pannello dai tuoi pannelli. Riprova.",
       "deleteAria": "Elimina {{name}}",
-      "unfollowTitle": "Smettere di seguire?",
-      "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se smetti di seguirlo, sparisce dai tuoi pannelli e la selezione viene azzerata.",
-      "unfollowConfirm": "Smetti di seguire",
+      "unfollowTitle": "Togliere dai tuoi pannelli?",
+      "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se lo togli, la selezione viene azzerata. Gli altri continuano a vederlo.",
+      "unfollowConfirm": "Togli",
       "deleteWallTitle": "Eliminare la Spraywall?",
       "deleteWallMessage": "Eliminare \"{{name}}\"? Le sue foto e i suoi blocchi non saranno più disponibili. L'operazione non si può annullare.",
-      "deleteSuccess": "Hai eliminato \"{{name}}\""
+      "deleteSuccess": "Hai eliminato \"{{name}}\"",
+      "unfollowRow": "Togli dai tuoi pannelli"
     },
     "emptyTitle": "Ancora nessun pannello",
     "emptySubtitle": "Cerca un pannello per iniziare",
@@ -248,7 +248,7 @@
       "nearbyMap": "Mappa",
       "allowLocation": "Consenti posizione",
       "locationBanner": "La posizione è disattivata. Attivala per vedere i pannelli vicino a te.",
-      "manage": "Gestisci",
+      "manage": "Vedi tutti",
       "nearbyAllAbove": "Nessun altro pannello entro 20 km",
       "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"
     },
@@ -344,7 +344,7 @@
       "aria": "Aggiungi un pannello",
       "setUp": "Configura un pannello",
       "sprayWall": "Aggiungi una Spraywall",
-      "findGym": "Trova il pannello di una palestra"
+      "findGym": "Trova una palestra"
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",
@@ -379,7 +379,9 @@
         "publicHint": "Chiunque può aprire questo pannello.",
         "unlistedHint": "Solo i climber a cui lo mandi.",
         "inviteHint": "Chi lo apre può toccare Unisciti per ottenere l'accesso."
-      }
+      },
+      "about": "Info su questo pannello",
+      "atGym": "Presso {{gym}}"
     },
     "disambiguation": {
       "title": "Su quale pannello sei?",
@@ -420,11 +422,54 @@
       "shareAriaLabel": "Condividi {{name}}",
       "shareText": "Arrampica da {{name}} con Boardsesh",
       "linkCopied": "Link copiato",
-      "shareFailed": "Impossibile condividere il link"
+      "shareFailed": "Impossibile condividere il link",
+      "seeGym": "Vedi palestra",
+      "seeGymAria": "Vedi {{gym}}"
+    },
+    "gymPage": {
+      "addressHint": "Si apre in Mappe",
+      "boardsTitle": "Pannelli",
+      "emptyBoardsTitle": "Ancora nessun pannello qui",
+      "emptyBoardsBody": "Arrampichi qui? Configura il pannello così la tua crew lo trova.",
+      "emptyBoardsAction": "Configura un pannello",
+      "boardsError": "Impossibile caricare i pannelli di questa palestra.",
+      "boardsRetry": "Riprova",
+      "yoursPill": "Tuo",
+      "infoTitle": "Info",
+      "hours": "Orari",
+      "hoursUpdated": "Aggiornati {{when}}",
+      "website": "Sito web",
+      "phone": "Telefono",
+      "email": "Email",
+      "follow": "Segui la palestra",
+      "unfollow": "Smetti di seguire",
+      "followError": "Impossibile aggiornare. Riprova.",
+      "actionsAria": "Altro per {{gym}}",
+      "startTitle": "Inizia da qui",
+      "startBoards": "Controlla i pannelli",
+      "startHours": "Aggiungi gli orari",
+      "startTv": "Porta la parete su una TV",
+      "staffTitle": "Gestisci la tua palestra",
+      "editDetails": "Modifica i dettagli della palestra",
+      "nearbyBoards": "Pannelli vicino alla tua palestra",
+      "kiosks": "Kiosk e TV",
+      "insights": "Statistiche",
+      "opensWebsite": "Si apre sul sito",
+      "openError": "Impossibile aprirlo. Prova da un browser.",
+      "claimTitle": "Gestisci questa palestra?",
+      "claimBody": "Rivendicala per sistemare i pannelli, aggiungere gli orari e portare la parete su una TV. È gratis.",
+      "claimCta": "Rivendica questa palestra",
+      "claimCtaSignedOut": "Accedi e rivendicala",
+      "claimPending": "La tua richiesta è in revisione. Ti scriveremo via email in ogni caso, di solito entro pochi giorni.",
+      "claimDenied": "La tua richiesta per {{gym}} non è andata a buon fine. Rispondi alla nostra email se ci siamo sbagliati, oppure riprova.",
+      "claimDeniedClosed": "La tua richiesta per {{gym}} non è andata a buon fine. Rispondi alla nostra email se ci siamo sbagliati.",
+      "claimRetry": "Riprova",
+      "notFound": "Non abbiamo trovato questa palestra",
+      "report": "Segnala un problema"
     },
     "myGyms": {
-      "moreRowTitle": "Le mie palestre",
-      "screenTitle": "Le mie palestre",
+      "moreRowTitle": "Palestre che gestisci",
+      "screenTitle": "Palestre che gestisci",
       "loadError": "Impossibile caricare le tue palestre. Riprova.",
       "retry": "Riprova",
       "emptyTitle": "Ancora nessuna palestra",
@@ -473,10 +518,9 @@
     "gymClaim": {
       "title": "Rivendica {{gym}}",
       "done": "Fatto",
-      "sectionTitle": "Questa palestra è tua?",
-      "sectionDescription": "Rivendicala per tenere aggiornati la scheda e i pannelli.",
       "claimAction": "Rivendica questa palestra",
       "errorGeneric": "Qualcosa è andato storto. Riprova.",
+      "errorRunByStaff": "Questa palestra è gestita dal suo staff. Se non è così, segnala un problema e il nostro team controllerà.",
       "switchToAdmin": "Niente email di lavoro? Chiedi al nostro team di controllare",
       "switchToDomain": "Verifica invece con un'email di lavoro",
       "domain": {
@@ -485,7 +529,8 @@
         "emailPlaceholder": "tu@{{domain}}",
         "submit": "Invia l'email di verifica",
         "submitShort": "Invia",
-        "sent": "Controlla la posta di {{email}} e tocca il link per finire."
+        "sent": "Controlla la posta di {{email}} e tocca il link per finire.",
+        "mismatch": "Quell'email non è del dominio {{domain}}. Usa un indirizzo del dominio del sito della palestra, oppure richiedi una revisione."
       },
       "admin": {
         "description": "Dicci che gestisci {{gym}} e il nostro team esaminerà la tua richiesta.",
@@ -497,8 +542,7 @@
       },
       "approved": {
         "sent": "Ora puoi gestire {{gym}}.",
-        "manageCta": "Configura la tua palestra",
-        "manageError": "Impossibile aprire la configurazione della palestra. Provaci da un browser."
+        "manageCta": "Controlla i tuoi pannelli"
       },
       "protections": {
         "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
@@ -593,7 +637,7 @@
       "noGymHintOffMap": "Resta fuori dalla mappa finché non è pubblico.",
       "addNew": "La mia palestra non è in elenco",
       "empty": "Nessuna palestra vicina",
-      "sharedEditHint": "Lo staff di questa palestra potrà modificare i dettagli di questo pannello.",
+      "sharedEditHint": "Lo staff della palestra può modificare i dettagli di questo pannello e toglierlo dalla sua scheda. Resta tuo.",
       "linkError": "Impossibile collegare quella palestra. Potrebbe essere troppo lontana dal tuo pannello. Le altre modifiche sono state salvate."
     },
     "sprayShare": {
@@ -648,44 +692,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Pannello non trovato",
-    "chips": {
-      "unlisted": "Non in elenco",
-      "locationHidden": "Posizione nascosta"
-    },
-    "tabs": {
-      "leaderboard": "Classifica",
-      "comments": "Commenti"
-    },
     "actions": {
-      "addToGym": "Aggiungi a una palestra",
       "edit": "Modifica",
-      "delete": "Elimina"
-    },
-    "stats": {
-      "ascents": "salite",
-      "climbers": "climber",
-      "followers": "follower",
-      "comments": "commenti"
-    },
-    "delete": {
-      "title": "Elimina pannello",
-      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
-      "cancel": "Annulla",
       "delete": "Elimina"
     },
     "snackbar": {
       "deleted": "Pannello eliminato",
-      "deleteFailed": "Impossibile eliminare il pannello",
-      "linkedToGym": "Pannello collegato alla palestra",
-      "unlinkedFromGym": "Pannello scollegato dalla palestra",
-      "linkFailed": "Impossibile collegare il pannello alla palestra"
-    },
-    "comments": {
-      "title": "Discussione sul pannello"
-    },
-    "follow": {
-      "entityLabel": "pannello"
+      "deleteFailed": "Impossibile eliminare il pannello"
     }
   },
   "boardForm": {
@@ -778,21 +791,6 @@
     "myLocation": "La mia posizione",
     "helpText": "Clicca sulla mappa per impostare la posizione del tuo pannello, oppure trascina il segnaposto per regolarla"
   },
-  "boardLeaderboard": {
-    "empty": "Ancora nessuna attività in questo periodo.",
-    "period": {
-      "week": "Settimana",
-      "month": "Mese",
-      "year": "Anno",
-      "all": "Di sempre"
-    },
-    "columns": {
-      "climber": "Climber",
-      "sends": "Ripetizioni",
-      "flashes": "Flash",
-      "hardest": "Più duro"
-    }
-  },
   "boardPill": {
     "switchHint": "Apre il selettore dei pannelli"
   },
@@ -837,12 +835,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Caricamento delle palestre...",
-    "linkToGym": "Collega a una palestra",
-    "noGym": "Nessuna palestra",
-    "createNew": "Creane una nuova"
-  },
   "similarGyms": {
     "heading": "Sembra che la tua palestra sia già qui",
     "subtitle": "Rivendica la tua per gestirla, oppure aggiungine una nuova qui sotto.",
@@ -854,16 +846,6 @@
     "createAnyway": "Nessuna di queste? Aggiungi la tua palestra con il pulsante qui sotto."
   },
   "gymEntity": {
-    "notFound": "Palestra non trovata",
-    "tabs": {
-      "members": "Membri",
-      "comments": "Commenti"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "delete": "Elimina",
-      "claim": "Rivendica"
-    },
     "stats": {
       "boards": "pannelli",
       "members": "membri",
@@ -877,16 +859,6 @@
       "followers_other": "follower",
       "comments_one": "commento",
       "comments_other": "commenti"
-    },
-    "delete": {
-      "title": "Elimina palestra",
-      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
-      "cancel": "Annulla",
-      "delete": "Elimina"
-    },
-    "snackbar": {
-      "deleted": "Palestra eliminata",
-      "deleteFailed": "Impossibile eliminare la palestra"
     },
     "comments": {
       "title": "Discussione sulla palestra"
@@ -946,6 +918,7 @@
     "switchToDomain": "Verifica invece con un'email di lavoro",
     "errors": {
       "generic": "Qualcosa è andato storto. Riprova.",
+      "runByStaff": "Questa palestra è gestita dal suo staff. Se non è così, segnala un problema e il nostro team controllerà.",
       "tokenUnavailable": "Impossibile confermare che hai effettuato l'accesso. Ricarica la pagina e riprova."
     },
     "domain": {
@@ -965,7 +938,7 @@
     },
     "approved": {
       "body": "{{gym}} è tua. Configurala quando vuoi.",
-      "manageCta": "Configura la tua palestra"
+      "manageCta": "Controlla i tuoi pannelli"
     },
     "protections": {
       "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
@@ -977,7 +950,7 @@
     "success": {
       "title": "La palestra è tua",
       "body": "Ora sei tu il proprietario. Tieni aggiornati la scheda e i pannelli, e invita la tua crew a darti una mano.",
-      "setupCta": "Configura la tua palestra"
+      "setupCta": "Controlla i tuoi pannelli"
     },
     "error": {
       "title": "Quel link non ha funzionato",
@@ -987,7 +960,8 @@
         "used": "Questo link è già stato usato.",
         "superseded": "Questa palestra ora ha un altro proprietario, quindi questo link non può passargliela. Ricomincia la richiesta dalla palestra.",
         "serverError": "Qualcosa è andato storto da parte nostra. Riprova tra un po'."
-      }
+      },
+      "backToGym": "Torna a {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1648,185 @@
     "lightingUnavailable": "Attiva i LED e salva un indirizzo WLED.",
     "lightingRangeError": "Il cavo usa numeri LED fuori dall’intervallo configurato in WLED. Controlla il percorso del cavo e i LED saltati.",
     "lightingChasing": "Prova per righe in corso…"
+  },
+  "gymBoards": {
+    "remove": "Togli dalla palestra",
+    "removeFromNamed": "Togli da {{gym}}",
+    "removeTitle": "Togliere {{board}} da {{gym}}?",
+    "removeBodyOwn": "Sparisce dalla pagina e dai kiosk di {{gym}}. Resta tra i tuoi pannelli.",
+    "removeBodyOther": "Sparisce dalla pagina e dai kiosk di {{gym}}. {{name}} lo tiene tra i suoi pannelli.",
+    "removeBodyOtherHidden": "Sparisce dalla pagina e dai kiosk di {{gym}}. Chi l'ha aggiunto lo tiene tra i suoi pannelli.",
+    "removeBodySynced": "Sparisce dalla pagina e dai kiosk di {{gym}}.",
+    "removeConfirm": "Togli",
+    "removed": "Tolto da {{gym}}.",
+    "removeFailed": "Impossibile togliere quel pannello. Riprova.",
+    "removeSyncedError": "Questo pannello arriva da dati pubblici, quindi non si può togliere. Eliminalo.",
+    "removedByGymError": "Lo staff di questa palestra ha tolto questo pannello dalla sua scheda. Chiedigli di rimetterlo.",
+    "deleteTitle": "Eliminare {{board}} per tutti?",
+    "deleteBodyOwn": "Sparisce per te e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodyOther": "{{name}} ha aggiunto questo pannello. Sparisce per questa persona e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodyOtherHidden": "L'ha aggiunto un altro climber. Sparisce per questa persona e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodySynced": "Sparisce per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteConfirm": "Elimina pannello",
+    "cancel": "Annulla"
+  },
+  "boardOrigin": {
+    "addedBy": "Aggiunto da {{name}}",
+    "addedByYou": "Aggiunto da te",
+    "addedByHidden": "Aggiunto da un altro climber",
+    "synced": "Da dati pubblici sui pannelli"
+  },
+  "report": {
+    "action": "Segnala un problema",
+    "actionAria": "Segnala un problema con {{name}}",
+    "reported": "Segnalato",
+    "title": "Segnala un problema",
+    "boardAtGym": "{{board}} a {{gym}}",
+    "question": "Cosa non va?",
+    "boardReasons": {
+      "wrongSetup": "Configurato male",
+      "wrongSetupHint": "Layout, dimensioni, prese o inclinazione non corrispondono alla parete",
+      "duplicate": "Elencato due volte",
+      "duplicateHint": "Un altro pannello qui è la stessa parete",
+      "gone": "Non è più in parete",
+      "goneHint": "Smontato, sostituito o la palestra ha chiuso",
+      "wrongPlace": "Palestra o posto sbagliato",
+      "wrongPlaceHint": "Sta da un'altra parte, oppure è la parete di casa di qualcuno",
+      "other": "Altro",
+      "relistRequest": "Rimetterlo in palestra"
+    },
+    "gymReasons": {
+      "duplicate": "Elencata due volte",
+      "duplicateHint": "Un'altra scheda è la stessa palestra",
+      "closed": "Chiusa per sempre",
+      "closedHint": "Non apre più",
+      "details": "Indirizzo o dati sbagliati",
+      "detailsHint": "Indirizzo, orari, sito o telefono non sono giusti",
+      "home": "È una casa privata",
+      "homeHint": "Una parete privata non deve stare sulla mappa",
+      "other": "Altro"
+    },
+    "duplicateBoardPick": "Quale pannello è la stessa parete?",
+    "notSure": "Non so",
+    "noteLabel": "Altro? (facoltativo)",
+    "notePlaceholder": "Cosa c'è in parete, per esempio 12x14 a 40°",
+    "noteRequiredLabel": "Cosa non va?",
+    "noteRequiredPlaceholder": "Dì loro cosa non va (minimo 10 caratteri)",
+    "noteRemaining_one": "Ancora {{count}} carattere",
+    "noteRemaining_other": "Ancora {{count}} caratteri",
+    "send": "Invia",
+    "routeCreator": "{{name}}, che ha aggiunto questo pannello, vedrà la segnalazione.",
+    "routeCreatorHidden": "Chi ha aggiunto questo pannello vedrà la segnalazione.",
+    "routeCreatorAndStaff": "{{name}}, che ha aggiunto questo pannello, e lo staff di {{gym}} vedranno la segnalazione.",
+    "routeCreatorHiddenAndStaff": "Chi ha aggiunto questo pannello e lo staff di {{gym}} vedranno la segnalazione.",
+    "routeCreatorAndTeam": "{{name}}, che ha aggiunto questo pannello, e il nostro team vedranno la segnalazione.",
+    "routeCreatorHiddenAndTeam": "Chi ha aggiunto questo pannello e il nostro team vedranno la segnalazione.",
+    "routeCreatorStaffAndTeam": "{{name}}, che ha aggiunto questo pannello, lo staff di {{gym}} e il nostro team vedranno la segnalazione.",
+    "routeCreatorHiddenStaffAndTeam": "Chi ha aggiunto questo pannello, lo staff di {{gym}} e il nostro team vedranno la segnalazione.",
+    "routeStaff": "Lo staff di {{gym}} vedrà la segnalazione.",
+    "routeGymAndStaff": "Lo staff di {{gym}} e il nostro team vedranno la segnalazione.",
+    "routeTeam": "Su Boardsesh nessuno gestisce ancora {{gym}}, quindi la vedrà il nostro team.",
+    "routeGym": "La vedrà il nostro team.",
+    "claimNudge": "Gestisci {{gym}}? Rivendicala e sistemala tu.",
+    "sent": "Inviata. Ti avvisiamo appena è sistemata.",
+    "joined_one": "{{count}} altro climber l'ha segnalato. La tua si è aggiunta.",
+    "joined_other": "{{count}} altri climber l'hanno segnalato. La tua si è aggiunta.",
+    "alreadyReported": "Hai già segnalato. Ti avvisiamo appena è sistemata.",
+    "offline": "Connettiti a internet per inviare la segnalazione.",
+    "error": "La segnalazione non è partita. Riprova.",
+    "relistAsk": "Chiedi a {{gym}} di elencarlo di nuovo",
+    "relistAskHint": "Il loro staff l'ha tolto dalla palestra. Chiederemo di rimetterlo.",
+    "relistSent": "Richiesta inviata. Ti diciamo cosa decide lo staff di {{gym}}.",
+    "relistAlready": "Hai già chiesto. Ti diciamo cosa decide lo staff di {{gym}}.",
+    "duplicateGymSearch": "Trova l'altra scheda",
+    "gymSearchPlaceholder": "Nome della palestra",
+    "noMatches": "Ancora nessun risultato. Prova un altro nome.",
+    "cancel": "Annulla",
+    "done": "Fatto",
+    "retry": "Riprova",
+    "loading": "Caricamento",
+    "loadError": "Impossibile caricare questo pannello. Riprova.",
+    "signInTitle": "Accedi per segnalare un problema",
+    "signInBody": "Accedi e ti riportiamo subito qui.",
+    "boardListLink": "Qualcosa non va con questo pannello?",
+    "web": {
+      "noteRequiredLabel": "Spiega cosa non va (almeno 10 caratteri)"
+    }
+  },
+  "reportReview": {
+    "title": "I climber hanno segnalato questo pannello",
+    "reasonCount_one": "{{reason}} · {{count}} climber",
+    "reasonCount_other": "{{reason}} · {{count}} climber",
+    "relistRequest": "Ha chiesto di essere elencato di nuovo",
+    "notesHeading": "Cosa hanno scritto",
+    "teamDate": "Se il {{date}} è ancora aperta, il nostro team le dà un'occhiata.",
+    "teamLooking": "Il nostro team sta guardando questa. Si chiude quando la chiudono loro.",
+    "nothingOpen": "Su questo pannello non c'è più niente di aperto.",
+    "loadError": "Impossibile caricare le segnalazioni. Riprova.",
+    "fix": "Correggi la configurazione",
+    "fixHint": "Cambia layout, dimensioni, prese o inclinazione",
+    "remove": "Togli da {{gym}}",
+    "removeHintOwn": "Resta tra i tuoi pannelli",
+    "removeHintOther": "Resta tra i pannelli di {{name}}",
+    "removeHintOtherHidden": "Resta a chi l'ha aggiunto",
+    "delete": "Elimina pannello",
+    "deleteHint": "Sparisce per tutti. Le chiusure registrate restano.",
+    "keep": "Va bene così",
+    "keepHint": "Chiudi la segnalazione e spiega perché",
+    "keepTitle": "Va bene così",
+    "keepReplyLabel": "Spiega perché (facoltativo)",
+    "keepReplyPlaceholder": "Lo abbiamo rifatto la settimana scorsa. Ora l'app corrisponde alla parete.",
+    "keepSend": "Invia",
+    "fixedToast": "Salvato. Avvisiamo i climber che l'hanno segnalato.",
+    "savedToast": "Salvato.",
+    "keptToast": "Segnalazione chiusa. Giriamo la tua nota.",
+    "keepError": "Non è andata a buon fine. Riprova.",
+    "keepPartial_one": "{{count}} segnalazione su {{total}} chiusa. Le altre non sono andate a buon fine. Riprova.",
+    "keepPartial_other": "{{count}} segnalazioni su {{total}} chiuse. Le altre non sono andate a buon fine. Riprova.",
+    "statusPill": "Segnalato",
+    "open": "Vedi segnalazioni",
+    "review": "Rivedi",
+    "duplicateOf": "Stesso pannello di {{board}}",
+    "inTeamQueue": "Ci sta pensando il nostro team. Si chiude quando decide.",
+    "removeHint": "Sparisce dalla pagina e dai kiosk della palestra",
+    "keepFailed": "Impossibile chiudere la segnalazione. Riprova.",
+    "empty": "Su questo pannello non c'è più niente di aperto.",
+    "back": "Indietro",
+    "close": "Chiudi",
+    "web": {
+      "keepPartial": "Chiuse {{closed}} segnalazioni su {{total}}. Riprova per le altre."
+    }
+  },
+  "whoCanEdit": {
+    "boardTitle": "Non puoi modificare questo pannello",
+    "boardCreator": "{{name}} ha aggiunto questo pannello, quindi può modificarlo.",
+    "boardCreatorHidden": "Chi l'ha aggiunto può modificarlo.",
+    "boardStaff": "Anche lo staff di {{gym}} può modificarlo.",
+    "boardSynced": "Arriva da dati pubblici sui pannelli. Quando qualcuno rivendica {{gym}}, il suo staff potrà modificarlo.",
+    "boardSyncedNoGym": "Arriva da dati pubblici sui pannelli.",
+    "gymTitle": "Non puoi modificare questa palestra",
+    "gymStaff": "Lo staff di {{gym}} gestisce questa scheda.",
+    "gymClimber": "{{name}} ha aggiunto questa palestra, quindi può modificarla.",
+    "gymClimberHidden": "Un climber ha aggiunto questa palestra, quindi può modificarla.",
+    "gymUnclaimed": "Su Boardsesh nessuno gestisce ancora questa palestra.",
+    "claimHint": "Se lavori qui, rivendicala e la scheda è tua.",
+    "claimGym": "Rivendica {{gym}}",
+    "claimThisGym": "Rivendica questa palestra",
+    "goBack": "Indietro",
+    "rule": "Chi l'ha aggiunta può modificarla. Quando una palestra viene rivendicata, può farlo anche il suo staff. Tutti gli altri possono segnalare un problema.",
+    "backToGym": "Torna a {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Gestita dalla palestra",
+    "pillClimberListed": "Aggiunta da un climber",
+    "pillUnclaimed": "Non ancora rivendicata",
+    "pillYouOwner": "Gestisci questa palestra",
+    "pillYouAdmin": "Sei admin qui",
+    "pillYouEditor": "Sei editor qui",
+    "lineStaff": "Lo staff di {{gym}} tiene aggiornata questa pagina.",
+    "lineClimber": "{{name}} ha aggiunto questa palestra. Lo staff può rivendicarla.",
+    "lineClimberHidden": "Un climber ha aggiunto questa palestra. Lo staff può rivendicarla.",
+    "lineUnclaimed": "Da dati pubblici sui pannelli. Nessuno la gestisce ancora su Boardsesh.",
+    "claimInline": "Gestisci questa palestra? Rivendicala"
   }
 }

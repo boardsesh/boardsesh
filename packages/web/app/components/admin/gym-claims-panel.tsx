@@ -157,7 +157,18 @@ export default function GymClaimsPanel() {
                     <Avatar src={claim.claimantAvatarUrl || undefined} sx={{ width: 28, height: 28, fontSize: 12 }}>
                       {claim.claimantDisplayName?.[0]?.toUpperCase()}
                     </Avatar>
-                    <Typography variant="body2">{claim.claimantDisplayName || claim.claimantUserId}</Typography>
+                    <Box>
+                      <Typography variant="body2">{claim.claimantDisplayName || claim.claimantUserId}</Typography>
+                      {claim.claimantAccountAgeDays != null && (
+                        <Typography variant="caption" color="text.secondary">
+                          {t('gymClaims.claimantHistory', {
+                            days: claim.claimantAccountAgeDays,
+                            ticks: claim.claimantTickCount ?? 0,
+                            gyms: claim.claimantGymsHeld ?? 0,
+                          })}
+                        </Typography>
+                      )}
+                    </Box>
                   </Box>
                 </TableCell>
                 <TableCell>{claim.gymName}</TableCell>

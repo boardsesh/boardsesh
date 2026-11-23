@@ -10,6 +10,8 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { themeTokens } from '@/app/theme/theme-config';
 import GymClaimsPanel from '@/app/components/admin/gym-claims-panel';
+import GymClaimRevertPanel from '@/app/components/admin/gym-claim-revert-panel';
+import { parseRevertParam } from '@/app/components/admin/gym-claim-revert-logic';
 import GymOwnerReassignPanel from '@/app/components/admin/gym-owner-reassign-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
@@ -18,8 +20,14 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 // so this is defense-in-depth, but it keeps the whole /admin subtree consistent.
 export const dynamic = 'force-dynamic';
 
-export default async function AdminGymClaimsPage() {
+type AdminGymClaimsPageProps = {
+  /** `?revert=<claim id>`: the daily digest's link to one auto-approval. */
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export default async function AdminGymClaimsPage({ searchParams }: AdminGymClaimsPageProps) {
   const access = await checkAdmin();
+  const revertClaimId = parseRevertParam((await searchParams)?.revert);
   const locale = await getLocale();
   const { t } = await getServerTranslation('admin');
 
@@ -55,6 +63,8 @@ export default async function AdminGymClaimsPage() {
           </MuiLink>
         </Box>
         <GymClaimsPanel />
+        {/* Above Move gym ownership, which every revert refusal points to. */}
+        <GymClaimRevertPanel revertClaimId={revertClaimId} />
         <GymOwnerReassignPanel />
       </Container>
     </I18nProvider>

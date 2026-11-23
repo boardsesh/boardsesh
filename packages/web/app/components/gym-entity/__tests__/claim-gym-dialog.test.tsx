@@ -35,7 +35,14 @@ const GYM_UUID = 'gym-uuid-1';
 const renderDialog = () =>
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <ClaimGymDialog gymUuid={GYM_UUID} gymName="Bonsist" website={null} open onClose={vi.fn()} />
+      <ClaimGymDialog
+        gymUuid={GYM_UUID}
+        gymName="Bonsist"
+        website={null}
+        canClaimByDomain={false}
+        open
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>,
   );
 
@@ -59,8 +66,8 @@ describe('ClaimGymDialog — auto-approved claim', () => {
 
     // The CTA has to be a real link, not a click handler, so it is crawlable
     // and middle-clickable like the rest of the app's navigation.
-    const manageLink = screen.getByRole('link', { name: 'Set up your gym' });
-    expect(manageLink.getAttribute('href')).toContain(`/gym/${GYM_UUID}/manage`);
+    const manageLink = screen.getByRole('link', { name: 'Check your boards' });
+    expect(manageLink.getAttribute('href')).toContain(`/gym/${GYM_UUID}/manage?tab=boards`);
   });
 
   it('refreshes the server-rendered page so the claim CTA clears', async () => {
@@ -86,5 +93,67 @@ describe('ClaimGymDialog — auto-approved claim', () => {
     await screen.findByText("Your claim is in the review queue. We'll email you as soon as it's decided.");
     // Nothing was transferred, so there is nothing to refresh.
     expect(mockRefresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClaimGymDialog — a refused claim', () => {
+  it("says a gym its staff run can't be claimed in the viewer's words, and points at Report a problem", async () => {
+    mockRequest.mockRejectedValueOnce({
+      response: {
+        errors: [
+          {
+            // The server's prose, which the dialog must not show: it's English only.
+            message: 'Refused: staff-run listing',
+            extensions: { code: 'GYM_RUN_BY_STAFF' },
+          },
+        ],
+      },
+    });
+
+    renderDialog();
+    await submit();
+
+    await screen.findByText(tFromCatalog('boards', 'claimGym.errors.runByStaff'));
+    expect(screen.queryByText('Refused: staff-run listing')).toBeNull();
+  });
+
+  it("keeps the server's message for any other refusal", async () => {
+    mockRequest.mockRejectedValueOnce({
+      response: { errors: [{ message: 'This gym is private and cannot be claimed' }] },
+    });
+
+    renderDialog();
+    await submit();
+
+    await screen.findByText('This gym is private and cannot be claimed');
+  });
+});
+
+describe('ClaimGymDialog — which form opens', () => {
+  const renderWith = (canClaimByDomain: boolean) =>
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ClaimGymDialog
+          gymUuid={GYM_UUID}
+          gymName="Bonsist"
+          website="https://bonsist.com"
+          canClaimByDomain={canClaimByDomain}
+          open
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+  // A synced gym's website came from public data, not from whoever runs it, so
+  // the server says no and the dialog must not open a form that can't succeed.
+  it('opens admin review when the server says the website cannot prove a claim', () => {
+    renderWith(false);
+    expect(screen.getByText('Request review')).toBeTruthy();
+    expect(screen.queryByLabelText('Work email')).toBeNull();
+  });
+
+  it('opens the work-email form when the server says it can', () => {
+    renderWith(true);
+    expect(screen.getByLabelText('Work email')).toBeTruthy();
   });
 });

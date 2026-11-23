@@ -92,8 +92,8 @@
     "noBoardsYet": "Hier sind noch keine Boards gelistet.",
     "explorePlaylists": "Sieh, was Kletterer*innen zusammenstellen",
     "startDiscussion": "Diskussion starten",
-    "claimTitle": "Ist das deine Halle?",
-    "claimBody": "Übernimm sie und steuere die Boards, den Auftritt und das, was an der Wand läuft.",
+    "claimTitle": "Du betreust diese Halle?",
+    "claimBody": "Beanspruch sie, um Boards zu korrigieren, Öffnungszeiten einzutragen und die Wand auf einen TV zu bringen. Kostenlos.",
     "claimCta": "Diese Halle übernehmen",
     "claimCtaSignedOut": "Anmelden und übernehmen",
     "claimPendingTitle": "Dein Anspruch wird geprüft",
@@ -200,8 +200,8 @@
           "body": "Füg Logo und Farben hinzu"
         },
         "boards": {
-          "title": "Verknüpf deine Boards",
-          "body": "Häng die Wände deiner Halle rein"
+          "title": "Boards prüfen",
+          "body": "Korrigier oder entferne, was nicht an deinen Wänden hängt"
         },
         "members": {
           "title": "Hol deine Crew dazu",
@@ -211,7 +211,6 @@
     },
     "title": "{{gymName}} verwalten",
     "backToGym": "Zurück zur Hallenseite",
-    "accessDenied": "Du hast keine Berechtigung, diese Halle zu verwalten.",
     "tabs": {
       "kiosks": "Kioske",
       "branding": "Branding",
@@ -310,21 +309,15 @@
     },
     "boards": {
       "heading": "Boards in dieser Halle",
-      "description": "Verknüpf die Boards, die dir gehören, damit sie auf deiner Hallenseite und in den Kiosken auftauchen.",
+      "description": "Diese Boards haben Kletterer*innen und öffentliche Board-Daten hier eingetragen. Korrigier die falschen und entferne die, die nicht an deinen Wänden hängen.",
       "addBoard": "Board hinzufügen",
       "empty": "Noch keine Boards verknüpft. Füg eins hinzu, dann geht's los.",
       "loadError": "Die Boards dieser Halle kamen nicht durch.",
-      "unlink": "Trennen",
-      "onlyOwnerCanUnlink": "Nur wem das Board gehört, kann es trennen",
-      "readOnlyHint": "Nur Inhaber*innen oder Admins der Halle können Boards verknüpfen.",
-      "unlinkTitle": "Dieses Board trennen?",
-      "unlinkBody": "\"{{name}}\" taucht dann nicht mehr auf der Seite und in den Kiosken dieser Halle auf. Du kannst sie jederzeit wieder verknüpfen.",
-      "unlinkConfirm": "Trennen",
+      "readOnlyHint": "Inhaber*innen und Admins tragen eigene Boards ein und löschen die synchronisierten. Du kannst Boards entfernen, die Kletternde angelegt haben, und Boards in der Nähe deiner Halle hinzufügen.",
+      "askAdminToDelete": "Bitte eine*n Inhaber*in oder Admin, dieses Board zu löschen.",
       "cancel": "Abbrechen",
       "linked": "Board verknüpft.",
       "linkFailed": "Das Board ließ sich nicht verknüpfen.",
-      "unlinked": "Board getrennt.",
-      "unlinkFailed": "Das Board ließ sich nicht trennen.",
       "visibility": {
         "public": "Öffentlich",
         "unlisted": "Nicht gelistet",
@@ -340,8 +333,8 @@
         "close": "Schließen"
       },
       "strays": {
-        "heading": "Boards, die dir gehören könnten",
-        "description": "Die stehen bei deiner Halle oder sind von einem zusammengeführten Eintrag abgefallen. Häng die dran, die hierher gehören.",
+        "heading": "Boards in der Nähe deiner Halle",
+        "description": "Die stehen weniger als 150 m von deiner Halle entfernt oder stammen aus einem zusammengeführten Eintrag. Füg die hinzu, die an deinen Wänden hängen.",
         "reasonMerged": "Stand auf einem zusammengeführten Eintrag",
         "reasonNearby": "{{meters}} m entfernt",
         "reasonNearbyGeneric": "Gleich um die Ecke",
@@ -444,8 +437,8 @@
           "body": "Füg Logo und Markenfarben hinzu"
         },
         "boards": {
-          "title": "Verknüpf deine Boards",
-          "body": "Häng die Wände deiner Halle rein"
+          "title": "Boards prüfen",
+          "body": "Korrigier oder entferne, was nicht an deinen Wänden hängt"
         },
         "members": {
           "title": "Hol deine Crew dazu",

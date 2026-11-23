@@ -22,6 +22,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader } from './roles';
 import { createGymManageAccessNotification } from './gym-notifications';
+import { assertNoGymClaimProbation } from './gym-claim-guardrails';
 import {
   CreateGymInputSchema,
   UpdateGymInputSchema,
@@ -52,8 +53,11 @@ import {
   boardHeldOffGymError,
   isBoardHeldOffGym,
   recordOwnerGymLinkChange,
+  resolveGymEditActorRole,
   viewerGymManagerRole,
 } from './board-moderation-events';
+import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
 
 // ============================================
 // Helpers
@@ -274,7 +278,9 @@ export function gymListingState(ownerId: string, ownerHoldsClaimOrHandover: bool
 /**
  * Whether the gym's current owner holds an approved claim on it or received it
  * through an admin reassignment: two EXISTS probes, folded into enrichGym's
- * owner query so the directory pays no extra round trip per gym.
+ * owner query so the directory pays no extra round trip per gym. Its correlated
+ * twin, for a query over many gyms, is `ownerHoldsClaimOrHandoverColumn` in
+ * gym-run-by-staff.ts. Change both together.
  */
 function ownerHoldsClaimOrHandoverSql(gym: Pick<typeof dbSchema.gyms.$inferSelect, 'id' | 'uuid' | 'ownerId'>) {
   const approvedClaim = db
@@ -439,12 +445,17 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // Grantable (write-access grants) by owner/gym-admin or a covering community
   // admin/leader — NOT plain editors. Mirrors requireGymGrantAccess.
   const canGrantAccess = isOwner || memberRow?.role === 'admin' || hasCommunityAccess;
+  // Viewer-independent like isClaimed, so anonymous SSR can show it too.
+  const listingState = gymListingState(gym.ownerId, ownerInfo?.holdsClaimOrHandover === true);
+
   // A signed-in viewer who has no edit access can start a claim. Owners, gym
   // admins/editors, and covering community leaders are excluded — they can
   // already edit the gym, so the self-service claim path isn't for them (and the
-  // domain path would reject them anyway).
+  // domain path would reject them anyway). Nobody can claim a gym its staff run:
+  // a dispute goes through Report a problem, and requestGymClaim refuses it.
   const canClaim =
     !!authenticatedUserId &&
+    listingState !== 'RUN_BY_GYM' &&
     !isOwner &&
     memberRow?.role !== 'admin' &&
     memberRow?.role !== 'editor' &&
@@ -464,9 +475,6 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // anonymous SSR. requestGymClaim still enforces the same website conditions
   // and separately checks the viewer's access before accepting any claim.
   const canClaimByDomain = computeCanClaimByDomain(gym);
-
-  // Viewer-independent like isClaimed, so anonymous SSR can show it too.
-  const listingState = gymListingState(gym.ownerId, ownerInfo?.holdsClaimOrHandover === true);
 
   return {
     uuid: gym.uuid,
@@ -814,6 +822,46 @@ async function requireGymGrantAccess(gymUuid: string, userId: string): Promise<t
     return gym;
   }
   throw new Error('Not authorized to grant write access for this gym');
+}
+
+/**
+ * Add someone to a gym's staff under the gym's row lock, after reading the
+ * caller's authority again under it: the owner, a gym admin, or (when
+ * `allowCommunityAccess`) a community admin/leader covering the gym.
+ *
+ * `revertGymClaim` takes the same lock, gym row first, before it removes the
+ * members added since the claim. Without it, a claimant who passed the gate
+ * just before a revert could insert a member just after the revert's delete,
+ * and that member would outlive the revert. Under it, their insert either lands
+ * first and the revert removes it, or waits and is refused.
+ */
+async function withGymStaffLock<T>(
+  gym: typeof dbSchema.gyms.$inferSelect,
+  userId: string,
+  { allowCommunityAccess, unauthorizedMessage }: { allowCommunityAccess: boolean; unauthorizedMessage: string },
+  work: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ ownerId: dbSchema.gyms.ownerId })
+      .from(dbSchema.gyms)
+      .where(and(eq(dbSchema.gyms.id, gym.id), isNull(dbSchema.gyms.deletedAt)))
+      .limit(1)
+      .for('update');
+    if (!locked) throw new Error('Gym not found');
+    if (locked.ownerId !== userId) {
+      const [member] = await tx
+        .select({ role: dbSchema.gymMembers.role })
+        .from(dbSchema.gymMembers)
+        .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
+        .limit(1);
+      const isAdmin = member?.role === 'admin';
+      if (!isAdmin && !(allowCommunityAccess && (await hasGymCommunityAccess(gym, userId)))) {
+        throw new Error(unauthorizedMessage);
+      }
+    }
+    return work(tx);
+  });
 }
 
 // ============================================
@@ -1274,7 +1322,7 @@ export const socialGymMutations = {
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await db.transaction(async (tx) => {
+        await transactionWithAfterCommit(async (tx) => {
           const [lockedBoard] = await tx
             .select({ gymId: dbSchema.userBoards.gymId })
             .from(dbSchema.userBoards)
@@ -1400,7 +1448,29 @@ export const socialGymMutations = {
       updateValues.slug = validatedInput.slug;
     }
 
-    const [updated] = await db.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
+    // A change to the name, address, coordinates, website, phone or hours
+    // closes the gym's "wrong address or details" reports as fixed, in this
+    // transaction (docs/product/directory-reports.md). The manage form posts
+    // every field on every save, so only a value that actually changed counts:
+    // the row is read under its lock first and compared with what the update
+    // wrote.
+    const touchesReportedDetails = [...REPORT_FIXING_GYM_FIELDS].some(
+      (field) => validatedInput[field as keyof typeof validatedInput] !== undefined,
+    );
+    const updated = await transactionWithAfterCommit(async (tx) => {
+      const [before] = touchesReportedDetails
+        ? await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).limit(1).for('update')
+        : [];
+      const [row] = await tx.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
+      if (before && row) {
+        const previous: Record<string, unknown> = before;
+        const next: Record<string, unknown> = row;
+        const changedFields = [...REPORT_FIXING_GYM_FIELDS].filter((field) => previous[field] !== next[field]);
+        const actorRole = changedFields.length > 0 ? await resolveGymEditActorRole(gym, userId, tx) : null;
+        if (actorRole) await onGymDetailsEdited(tx, { gymId: gym.id, actorUserId: userId, actorRole, changedFields });
+      }
+      return row;
+    });
 
     // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
@@ -1437,15 +1507,31 @@ export const socialGymMutations = {
       throw new Error('Not authorized to delete this gym');
     }
 
-    // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
-    // listing the owner deliberately removed (the sync clears deletedAt).
-    await db
-      .update(dbSchema.gyms)
-      .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
-      .where(eq(dbSchema.gyms.id, gym.id));
+    // Under the gym's row lock, taken first as `revertGymClaim` and the staff
+    // changes take it, the owner and probation are read again: a revert that
+    // commits after the read above hands the gym to SYSTEM, and its former
+    // claimant must not delete it.
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ ownerId: dbSchema.gyms.ownerId })
+        .from(dbSchema.gyms)
+        .where(and(eq(dbSchema.gyms.id, gym.id), isNull(dbSchema.gyms.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!locked) throw new Error('Gym not found');
+      if (locked.ownerId !== userId) throw new Error('Not authorized to delete this gym');
+      // Not in the 14 days after the gym's claim approved itself
+      // (docs/product/gym-claims.md, "Probation").
+      await assertNoGymClaimProbation(gym.id, userId, tx);
 
-    // Unlink all boards
-    await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.gymId, gym.id));
+      // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
+      // listing the owner deliberately removed (the sync clears deletedAt).
+      const now = new Date();
+      await tx.update(dbSchema.gyms).set({ deletedAt: now, syncFrozenAt: now }).where(eq(dbSchema.gyms.id, gym.id));
+
+      // Unlink all boards
+      await tx.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.gymId, gym.id));
+    });
 
     return true;
   },
@@ -1470,15 +1556,26 @@ export const socialGymMutations = {
       throw new Error('User not found');
     }
 
-    const inserted = await db
-      .insert(dbSchema.gymMembers)
-      .values({
-        gymId: gym.id,
-        userId: validatedInput.userId,
-        role: validatedInput.role,
-      })
-      .onConflictDoNothing()
-      .returning({ userId: dbSchema.gymMembers.userId });
+    const unauthorizedMessage = 'Not authorized: must be gym owner or admin';
+    const inserted = await withGymStaffLock(
+      gym,
+      userId,
+      { allowCommunityAccess: false, unauthorizedMessage },
+      async (tx) => {
+        // A new admin is held during probation: a second account would get round
+        // every other probation rule (docs/product/gym-claims.md).
+        if (validatedInput.role === 'admin') await assertNoGymClaimProbation(gym.id, userId, tx);
+        return tx
+          .insert(dbSchema.gymMembers)
+          .values({
+            gymId: gym.id,
+            userId: validatedInput.userId,
+            role: validatedInput.role,
+          })
+          .onConflictDoNothing()
+          .returning({ userId: dbSchema.gymMembers.userId });
+      },
+    );
 
     // A fresh admin member gets the same "you now manage this gym" heads-up as a
     // granted editor — admins manage staff, so they're being handed the keys too.
@@ -1505,6 +1602,7 @@ export const socialGymMutations = {
     if (validatedInput.userId === gym.ownerId) {
       throw new Error('Cannot remove the gym owner');
     }
+    await assertNoGymClaimProbation(gym.id, userId);
 
     await db
       .delete(dbSchema.gymMembers)
@@ -1546,19 +1644,22 @@ export const socialGymMutations = {
     // insert or a member→editor promotion, and empty on a no-op re-grant of an
     // existing editor/admin — so we don't re-ping someone who already manages the
     // gym.
-    const granted = await db
-      .insert(dbSchema.gymMembers)
-      .values({
-        gymId: gym.id,
-        userId: validatedInput.userId,
-        role: 'editor',
-      })
-      .onConflictDoUpdate({
-        target: [dbSchema.gymMembers.gymId, dbSchema.gymMembers.userId],
-        set: { role: 'editor' },
-        setWhere: sql`${dbSchema.gymMembers.role} = 'member'`,
-      })
-      .returning({ userId: dbSchema.gymMembers.userId });
+    const unauthorizedMessage = 'Not authorized to grant write access for this gym';
+    const granted = await withGymStaffLock(gym, userId, { allowCommunityAccess: true, unauthorizedMessage }, (tx) =>
+      tx
+        .insert(dbSchema.gymMembers)
+        .values({
+          gymId: gym.id,
+          userId: validatedInput.userId,
+          role: 'editor',
+        })
+        .onConflictDoUpdate({
+          target: [dbSchema.gymMembers.gymId, dbSchema.gymMembers.userId],
+          set: { role: 'editor' },
+          setWhere: sql`${dbSchema.gymMembers.role} = 'member'`,
+        })
+        .returning({ userId: dbSchema.gymMembers.userId }),
+    );
 
     // Tell the new editor they can manage the gym now (best-effort; the helper
     // swallows its own errors so a notification hiccup never fails the grant).
@@ -1577,6 +1678,9 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymGrantAccess(validatedInput.gymUuid, userId);
+    // Taking an editor's access away removes staff, like removeGymMember, so
+    // it waits out the probation too (docs/product/gym-claims.md).
+    await assertNoGymClaimProbation(gym.id, userId);
 
     // Only remove editor rows — never a gym admin or plain member.
     await db
@@ -1696,7 +1800,7 @@ export const socialGymMutations = {
       : null;
     const nextGymId = gym?.id ?? null;
 
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // Decided again under the board's row lock, which `detachBoardFromGym`
       // also takes. A staff removal committing between the gate and this write
       // would otherwise be overwritten, hold and all.

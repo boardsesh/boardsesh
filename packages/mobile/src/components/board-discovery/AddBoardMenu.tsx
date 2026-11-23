@@ -11,7 +11,7 @@ export const ADD_BOARD_MENU_KINDS: readonly BoardPickerAddKind[] = ['board', 'sp
 /**
  * The + in the board picker's and Manage boards' top bar: Set up a board (the
  * builder), Add a Spraywall (the add-a-wall wizard), then, after a divider,
- * Find a gym board (the gym map). One menu for both screens, so the ways to add
+ * Find a gym (the gym map). One menu for both screens, so the ways to add
  * a board read the same wherever the climber meets them.
  *
  * Set as the screen's `headerRight`. On Liquid Glass UIKit draws its glass around
