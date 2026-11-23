@@ -18,7 +18,11 @@ export const gymMemberRoleEnum = pgEnum('gym_member_role', ['admin', 'editor', '
 
 export const gymClaimMethodEnum = pgEnum('gym_claim_method', ['domain', 'admin']);
 
-export const gymClaimStatusEnum = pgEnum('gym_claim_status', ['pending', 'approved', 'denied', 'expired']);
+// `revoked`: an approved claim a global admin took back (`revertGymClaim`). The
+// gym went back to the SYSTEM account and the location sync curates it again;
+// readers of "an approved claim exists" (listing state, the sync's
+// owner-curated test) stop seeing it, which is the point.
+export const gymClaimStatusEnum = pgEnum('gym_claim_status', ['pending', 'approved', 'denied', 'expired', 'revoked']);
 
 /**
  * Gyms table — represents a physical gym location that can contain multiple boards.
