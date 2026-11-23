@@ -308,8 +308,8 @@ export const ADMIN_DIGEST_MAX_ROWS = 20;
 
 /**
  * The once-a-day email to the Boardsesh team: what reached the admin queue
- * since the last one, and (once the claim guardrails land) every claim that
- * approved itself, with a link to revert it. The caller skips the email when
+ * since the last one, and every claim that approved itself, with a link to
+ * revert it. The caller skips the email when
  * every section is empty (docs/product/directory-reports.md, "Daily digest").
  */
 export async function sendAdminDailyDigestEmail(details: {
@@ -455,6 +455,71 @@ export async function sendGymClaimDeniedEmail(email: string, gymName: string): P
     });
   } catch (error) {
     logger.warn('[GymClaim] Failed to send denial email:', error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Tell a claimant their admin-review claim expired: nobody decided it within
+ * 30 days (docs/product/gym-claims.md). Sent by the hourly sweep once the
+ * expiry commits. Best-effort.
+ */
+export async function sendGymClaimExpiredEmail(email: string, gymName: string): Promise<void> {
+  try {
+    const validatedEmail = emailSchema.parse(email);
+    const safeGym = escapeHtml(gymName);
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: validatedEmail,
+      subject: headerSafe(`Your claim for ${gymName} expired`),
+      html: shell(
+        'Your claim expired',
+        `
+        <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          We didn't get to your claim for <strong>${safeGym}</strong> within 30 days, so it has expired
+          and the listing stays where it is. Sorry about the wait.
+        </p>
+        <p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">
+          If you run this gym, claim it again from its page, or reply to this email with something that
+          shows you manage it — a work email address, your role, anything on the gym's own site.
+        </p>
+      `,
+      ),
+      text: `We didn't get to your claim for ${gymName} within 30 days, so it has expired and the listing stays where it is. If you run this gym, claim it again from its page, or reply with something that shows you manage it.`,
+    });
+  } catch (error) {
+    logger.warn('[GymClaim] Failed to send expiry email:', error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Tell a claimant the Boardsesh team took their approved claim back
+ * (`revertGymClaim`). Best-effort; sent once the revert commits.
+ */
+export async function sendGymClaimRevokedEmail(email: string, gymName: string): Promise<void> {
+  try {
+    const validatedEmail = emailSchema.parse(email);
+    const safeGym = escapeHtml(gymName);
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: validatedEmail,
+      subject: headerSafe(`Your claim for ${gymName} was reversed`),
+      html: shell(
+        'We reversed your gym claim',
+        `
+        <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          We looked at your claim for <strong>${safeGym}</strong> again and couldn't confirm you run it,
+          so the listing is unclaimed again and you no longer manage it on Boardsesh.
+        </p>
+        <p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">
+          If this is your gym, reply to this email with something that shows you manage it — a work
+          email address, your role, anything on the gym's own site — and we'll take another look.
+        </p>
+      `,
+      ),
+      text: `We looked at your claim for ${gymName} again and couldn't confirm you run it, so the listing is unclaimed again and you no longer manage it on Boardsesh. If this is your gym, reply with something that shows you manage it and we'll take another look.`,
+    });
+  } catch (error) {
+    logger.warn('[GymClaim] Failed to send revert email:', error instanceof Error ? error.message : error);
   }
 }
 

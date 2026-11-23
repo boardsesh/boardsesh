@@ -316,6 +316,7 @@
     "retry": "Retry",
     "approve": "Approve",
     "deny": "Deny",
+    "claimantHistory": "Account: {{days}} days · Logbook: {{ticks}} · Gyms run: {{gyms}}",
     "method": {
       "domain": "Domain",
       "admin": "Review"

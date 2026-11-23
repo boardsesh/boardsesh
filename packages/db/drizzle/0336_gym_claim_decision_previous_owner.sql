@@ -1,0 +1,1 @@
+ALTER TABLE "gym_claim_ownership_decisions" ADD COLUMN "previous_owner_id" text;

@@ -29,6 +29,7 @@ a production rollout or a physical-device result.
 | [Climb-wide favorites rollout](favorites-rollout.md) | `favorites-rollout.md` |
 | [Followed authors and Crew](followed-authors.md) | `followed-authors.md` |
 | [Who fixes a wrong board: gym and board governance](gym-board-governance.md) | `gym-board-governance.md` |
+| [Gym claims: auto-approval, probation, revert and expiry](gym-claims.md) | `gym-claims.md` |
 | [Account, activity, session and home-board privacy](privacy.md) | `privacy.md` |
 | [Rest timer](rest-timer.md) | `rest-timer.md` |
 | [Spray recognition: homelab rollout](spray-recognition-rollout.md) | `spray-recognition-rollout.md` |

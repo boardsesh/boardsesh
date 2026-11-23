@@ -14,6 +14,9 @@ export const DIRECTORY_NOTICE_TYPES = [
   'board_edited_by_staff',
   'gym_report_opened',
   'gym_report_resolved',
+  // The claim notices (docs/product/gym-claims.md). Their entity is the gym.
+  'gym_claimed_with_your_board',
+  'gym_claim_denied',
 ] as const satisfies readonly NotificationType[];
 export type DirectoryNoticeType = (typeof DIRECTORY_NOTICE_TYPES)[number];
 

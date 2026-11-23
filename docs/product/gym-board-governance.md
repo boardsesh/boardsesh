@@ -55,6 +55,7 @@ Auto-approval applies only when all of these hold:
 
 - The gym is still owned by SYSTEM.
 - No climber-owned board is linked to it.
+- No gym admin or editor is on it (added in PR 6).
 - The account is at least 30 days old and has never had a claim auto-approved.
 - Fewer than the daily cap (`gym_claim_auto_approve_daily_cap`, default 10) were auto-approved today.
 
@@ -111,7 +112,23 @@ Implementation calls made while building, recorded so they can be revisited.
 - In the app, staff actions show on boards the staff member saved (Your boards, and their saved walls At {gym}). Staff actions on every board at the gym arrive with the app's gym page.
 - The app offers Remove from {gym} only when it can name the gym. Location privacy can hide it; the row then stays off.
 - "Added by" comes from `boardOriginFor`: the SYSTEM owner id is public board data, the viewer's own id is "you", a named owner is named, and a hidden one is "a climber".
-- `/gym-claim/error` shows "Back to {gym}" when the redirect carries `?gym=`. The verification handler doesn't send it yet: a failed token lookup returns no gym.
+- `/gym-claim/error` shows "Back to {gym}" when the redirect carries `?gym=`. The verification handler sends it from PR 6 on, for every failure whose token named a claim.
+
+### PR 6: claim guardrails
+
+The mechanics are in [gym-claims.md](gym-claims.md).
+
+- **The claimant's own boards don't block auto-approval.** Decision 3 says "no climber-owned board"; a board the claimant made gives them no power over anyone else, and gym staff often set up their own wall first.
+- **A reverted auto-approval still uses up the account's one.** Otherwise revert-and-reclaim would be a loop.
+- **Probation ends when the claimant stops owning the gym** (a revert or an admin handover), and binds every owner and admin of the gym, not only the claimant. Editing, adding members or editors, and removing climbers' boards stay open: a revert undoes those.
+- **Revert clears the sync freeze outright** rather than restoring an earlier one. The claimant's edits froze the gym too, and keeping a freeze would keep their changes.
+- **Revert takes the website's owner vouch away**, so the website the claimant may have set can't carry a domain claim by them.
+- **Claims are addressed by id, not uuid.** `gym_claims` has no uuid column, and the queue and `reviewGymClaim` already use the id. The digest links `/admin/gym-claims?revert=<claim id>`.
+- **Expiry and revert reuse `gym_claim_denied`** in the app ("We couldn't confirm you run {gym}. Reply to our email if we got it wrong."), with a separate email for each. No new notification type, so no new copy for old app builds.
+- **`gym_claimed_with_your_board` is one per creator**, naming their oldest board at the gym, and is sent after the transfer commits so a failure to tell people never undoes a claim.
+- **A SYSTEM gym with an admin or editor never approves itself.** Someone already runs it, and the claim would put the claimant over them.
+- **Revert only undoes a claim that took an untouched gym from SYSTEM.** A claim that displaced a real owner, or a gym moved since, goes through Move gym ownership instead. Revert also revokes every older approved claim on the gym, so the sync curates it again.
+- **Claim expiry starts on 24 November 2026.** Admin-path claims filed before then stay in the queue for a person, so the first sweep doesn't expire the backlog and email everyone in it.
 
 ### PR 8: the app's gym page
 

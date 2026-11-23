@@ -19,6 +19,8 @@ import type {
   RequestGymClaimInput,
   RequestGymClaimResult,
   ReviewGymClaimInput,
+  RevertGymClaimInput,
+  RevertGymClaimResult,
   PendingGymClaimsInput,
   GymClaimConnection,
   FindSimilarGymsInput,
@@ -509,6 +511,18 @@ export const REVIEW_GYM_CLAIM = gql`
   }
 `;
 
+/** Take back an approved claim (global admin). The daily digest links each auto-approval to it. */
+export const REVERT_GYM_CLAIM = gql`
+  mutation RevertGymClaim($input: RevertGymClaimInput!) {
+    revertGymClaim(input: $input) {
+      claimId
+      gymUuid
+      gymName
+      removedMemberCount
+    }
+  }
+`;
+
 // ============================================
 // Gym Claim Admin Queue
 // ============================================
@@ -525,6 +539,9 @@ const GYM_CLAIM_FIELDS = `
   claimEmail
   message
   createdAt
+  claimantAccountAgeDays
+  claimantTickCount
+  claimantGymsHeld
 `;
 
 export const PENDING_GYM_CLAIMS = gql`
@@ -901,6 +918,14 @@ export type ReviewGymClaimMutationVariables = {
 
 export type ReviewGymClaimMutationResponse = {
   reviewGymClaim: boolean;
+};
+
+export type RevertGymClaimMutationVariables = {
+  input: RevertGymClaimInput;
+};
+
+export type RevertGymClaimMutationResponse = {
+  revertGymClaim: RevertGymClaimResult;
 };
 
 export type PendingGymClaimsQueryVariables = {
