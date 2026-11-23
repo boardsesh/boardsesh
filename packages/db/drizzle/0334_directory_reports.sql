@@ -28,6 +28,7 @@ CREATE TABLE "directory_notification_context" (
 	"board_id" bigint,
 	"gym_id" bigint,
 	"is_reminder" boolean DEFAULT false NOT NULL,
+	"actor_role" "board_moderation_actor_role",
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
