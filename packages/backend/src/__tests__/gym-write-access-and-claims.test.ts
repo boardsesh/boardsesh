@@ -199,58 +199,90 @@ const claimRowCount = async (gymId: number): Promise<number> => {
 };
 
 /**
- * Run `body()` with `db.update(gyms)` intercepted, for the two things a #3431
- * TOCTOU test needs and cannot get any other way:
+ * Run `body()` with every UPDATE of `gyms` intercepted, for the two things a
+ * #3431 TOCTOU test needs and cannot get any other way:
  *
  * 1. It records the SET payload the resolver hands Drizzle, so an assertion can
  *    read the predicate the resolver ACTUALLY built rather than a rebuilt copy
  *    (a rebuilt predicate asserts nothing).
  * 2. `interleave` runs after the resolver has read its gym snapshot and before
- *    its UPDATE reaches Postgres — the exact window a concurrent owner write
+ *    its write reaches Postgres — the exact window a concurrent owner write
  *    lands in. That makes the race deterministic instead of unpinnable.
+ *
+ * Both executors are covered: `db.update(gyms)`, and `tx.update(gyms)` inside
+ * `db.transaction`. updateGym writes in a transaction, so closing the gym's
+ * "wrong details" reports commits with the edit (docs/product/directory-reports.md),
+ * and it reads the row FOR UPDATE before its UPDATE. On that path `interleave`
+ * runs just before the transaction opens: once the row lock is held, a second
+ * connection writing the row would wait on the transaction, which would wait
+ * on the interleave.
  *
  * The stand-in only implements the exact `.set().where().returning()` chain
  * updateGym uses, then delegates to the real builder. If that chain ever
- * changes, this throws rather than quietly skipping the interleave.
+ * changes, this throws. When an `interleave` is given and no gym UPDATE runs
+ * after it, the helper throws too, so a race test cannot pass without its race.
  */
 const withInterceptedGymUpdate = async <T>(
   body: () => Promise<T>,
   interleave?: () => Promise<void>,
 ): Promise<{ result: T; setPayloads: Record<string, unknown>[] }> => {
   const setPayloads: Record<string, unknown>[] = [];
-  const realUpdate = db.update.bind(db);
-  const spy = vi.spyOn(db, 'update') as unknown as {
+  // How many payloads were recorded when the interleave ran; null until it has.
+  let payloadsBeforeInterleave: number | null = null;
+  const runInterleave = async () => {
+    if (!interleave || payloadsBeforeInterleave !== null) return;
+    payloadsBeforeInterleave = setPayloads.length;
+    await interleave();
+  };
+
+  // An executor's `update`, except that a gyms UPDATE records its payload first.
+  const recordingUpdate =
+    (realUpdate: typeof db.update, interleaveBeforeWrite: boolean) =>
+    (table: unknown): unknown => {
+      if (table !== dbSchema.gyms) return realUpdate(table as typeof dbSchema.gyms);
+      let captured: Record<string, unknown> = {};
+      let condition: SQL | undefined;
+      const standIn = {
+        set(values: Record<string, unknown>) {
+          captured = values;
+          setPayloads.push(values);
+          return standIn;
+        },
+        where(cond: SQL | undefined) {
+          condition = cond;
+          return standIn;
+        },
+        async returning() {
+          if (interleaveBeforeWrite) await runInterleave();
+          return realUpdate(dbSchema.gyms).set(captured).where(condition).returning();
+        },
+      };
+      return standIn;
+    };
+
+  const realTransaction = db.transaction.bind(db);
+  const updateSpy = vi.spyOn(db, 'update') as unknown as {
     mockImplementation: (fn: (table: unknown) => unknown) => void;
     mockRestore: () => void;
   };
-
-  spy.mockImplementation((table: unknown) => {
-    if (table !== dbSchema.gyms) return realUpdate(table as typeof dbSchema.gyms);
-    let captured: Record<string, unknown> = {};
-    let condition: SQL | undefined;
-    const standIn = {
-      set(values: Record<string, unknown>) {
-        captured = values;
-        setPayloads.push(values);
-        return standIn;
-      },
-      where(cond: SQL | undefined) {
-        condition = cond;
-        return standIn;
-      },
-      async returning() {
-        if (interleave) await interleave();
-        return realUpdate(dbSchema.gyms).set(captured).where(condition).returning();
-      },
-    };
-    return standIn;
+  updateSpy.mockImplementation(recordingUpdate(db.update.bind(db), true));
+  const transactionSpy = vi.spyOn(db, 'transaction').mockImplementation(async (work, config) => {
+    await runInterleave();
+    return realTransaction((tx) => {
+      Object.assign(tx, { update: recordingUpdate(tx.update.bind(tx), false) });
+      return work(tx);
+    }, config);
   });
 
   try {
     const result = await body();
+    if (interleave && (payloadsBeforeInterleave === null || setPayloads.length <= payloadsBeforeInterleave)) {
+      throw new Error('withInterceptedGymUpdate: no gyms UPDATE ran after the interleave, so the race never happened');
+    }
     return { result, setPayloads };
   } finally {
-    spy.mockRestore();
+    transactionSpy.mockRestore();
+    updateSpy.mockRestore();
   }
 };
 
