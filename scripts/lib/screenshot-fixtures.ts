@@ -216,6 +216,17 @@ const BOARD_WALL_DEVICE_SELECTION = 'hasLeds litByWallDevice';
  */
 const BOARD_STAFF_ACTION_SELECTION = ' canDelete canRemoveFromGym';
 
+/**
+ * GetBoard and GetMyBoards also predate each board's `openReportCount` and
+ * `viewerHasOpenReport` (#8043, report a problem), selected as a pair straight
+ * after `canRemoveFromGym` in BOARD_FIELDS. Both are nullable and the server
+ * answers null for a viewer they don't concern, which is what the recording's
+ * viewer would have read for boards nobody had reported (reports did not exist
+ * when the sets were recorded). So they replay as null: no "Reported" pill, no
+ * review row. A recording that already holds either field is not this case.
+ */
+const BOARD_REPORT_FLAG_SELECTION = ' openReportCount viewerHasOpenReport';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -254,6 +265,9 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
  *   `canDelete` and `canRemoveFromGym`, as `false`
  *   (`replayBoardsWithoutStaffActions`). It composes with both adapters above.
+ * - GetBoard / GetMyBoards: each board's nullable `openReportCount` and
+ *   `viewerHasOpenReport`, as null (`replayBoardsWithoutReportFlags`). It
+ *   composes with every board adapter above.
  * - GetSessionWorkoutHeadlines: each headline's `mainTargetBoardType`.
  */
 export function replayCompatibleFixtureResponse(
@@ -267,6 +281,8 @@ export function replayCompatibleFixtureResponse(
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
     // The newest board fields first: each adapter strips its own selection and
     // hands the rest back here, so a recording that predates both still lands.
+    const withoutReportFlags = replayBoardsWithoutReportFlags(requestQuery, fixture, evidence);
+    if (withoutReportFlags) return withoutReportFlags;
     const withoutStaffActions = replayBoardsWithoutStaffActions(requestQuery, fixture, evidence);
     if (withoutStaffActions) return withoutStaffActions;
     const adapted = replayBoardsWithoutWallDevice(requestQuery, fixture, evidence);
@@ -551,6 +567,53 @@ function replayBoardsWithoutStaffActions(
       : replayCompatibleFixtureResponse(withoutStaffActions, fixture, evidence);
   if (!base || !isRecord(base.response)) return null;
   return { response: { ...base.response, data: withStaffActionsOff(base.response.data) } };
+}
+
+/**
+ * A board document recorded before `openReportCount` and `viewerHasOpenReport`:
+ * the request is the recorded one with the pair added to every board object,
+ * plus any change another adapter accepts. Every board in the response (each
+ * object that answers `canEdit`) gets both as null.
+ */
+function replayBoardsWithoutReportFlags(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(BOARD_REPORT_FLAG_SELECTION);
+  // Always the pair, in that order: a lone copy of either means some other change.
+  if (pieces.length < 2) return null;
+  if (normalized.split('openReportCount').length !== pieces.length) return null;
+  if (normalized.split('viewerHasOpenReport').length !== pieces.length) return null;
+  if (!isRecord(fixture.response) || fixture.response.data === undefined) return null;
+  if (
+    containsKey(fixture.response.data, 'openReportCount') ||
+    containsKey(fixture.response.data, 'viewerHasOpenReport')
+  ) {
+    return null;
+  }
+  const withoutReportFlags = pieces.join('');
+  // The request minus the pair has neither field left, so this cannot come back
+  // here: it is the recorded document, or another adapter's change.
+  const base =
+    withoutReportFlags === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutReportFlags, fixture, evidence);
+  if (!base || !isRecord(base.response)) return null;
+  return { response: { ...base.response, data: withReportFlagsUnknown(base.response.data) } };
+}
+
+function withReportFlagsUnknown(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withReportFlagsUnknown);
+  if (!isRecord(value)) return value;
+  const adapted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) adapted[key] = withReportFlagsUnknown(child);
+  if ('canEdit' in value) {
+    adapted.openReportCount = null;
+    adapted.viewerHasOpenReport = null;
+  }
+  return adapted;
 }
 
 function withStaffActionsOff(value: unknown): unknown {

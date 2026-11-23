@@ -307,6 +307,15 @@ export const SHARED_EVENTS = {
   // gathering reports, mostly `already_reported` means the UI isn't telling
   // people their report already landed.
   ClimbReported: 'Climb Reported',
+  // A climber sent "Report a problem" on a board or gym listing from the app
+  // (docs/product/directory-reports.md). Props: { targetKind: 'board' | 'gym',
+  // reason, status: 'created' | 'added' | 'already_reported', platform }.
+  // Deliberately not the backend's `Board Report Submitted`: that one counts
+  // every filed report anonymously after its transaction commits and feeds the
+  // launch metric. This one is the climber's side, tied to their person, so a
+  // funnel from the menu row to a sent report can be read. Two names keep an
+  // insight on either from counting every report twice.
+  ReportProblemSent: 'Report Problem Sent',
   OpenInAuroraApp: 'Open in Aurora App',
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',
