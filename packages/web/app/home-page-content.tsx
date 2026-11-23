@@ -33,7 +33,7 @@ type HomePageContentProps = {
    * The laptop's install block: the QR code card with both store badges
    * (`PhoneQrCard`). Rendered by the server page and handed down, so the code
    * arrives as plain SVG and `qrcode.react` never ships to the browser. Shown
-   * from 900px; below that the hero shows this visitor's store badge instead.
+   * from 1100px; below that the hero shows this visitor's store badge instead.
    */
   desktopInstall?: React.ReactNode;
   initialRecentBeta?: RecentBetaLinkRow[];

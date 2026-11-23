@@ -209,7 +209,7 @@ on seven kinds of page, so a scan is counted by one of seven events:
 | `desktop` | The same code on a board's climb list, shown from md only: `listQrUrl(basePath, locale)`, page 1 of the list the reader is on | The same list, in either tree | `List QR Scanned` |
 | `desktop` | The same code on a setter's page, shown from md only: `setterQrUrl('/setter/{name}', locale)`, page 1 of the setter's climbs | `/setter/{name}` | `Setter QR Scanned` |
 | `desktop` | The same code on a public playlist, shown from md only: `playlistQrUrl(uuid, locale)` | `/playlists/{uuid}` | `Playlist QR Scanned` |
-| `desktop` | The same code in the home hero, shown from md only: `homeQrUrl(locale)` | `/` | `Home QR Scanned` |
+| `desktop` | The same code in the home hero, shown from 1100px only: `homeQrUrl(locale)` | `/` | `Home QR Scanned` |
 
 `Gym QR Scanned` stays poster-only: its tracker mounts on `/gym/[gym_slug]` and
 nowhere else, and it carries `gymSlug`. A `kiosk` or `board` row on it means
@@ -406,8 +406,10 @@ carry their own placements and link ids, `setter-qr-card` and
 
 ### `Home QR Scanned`: the desktop code in the home hero
 
-From md (900px) the home hero shows the same `PhoneQrCard` with both store
-badges in place of the phone's single badge. The code encodes `/` in the
+From 1100px the home hero shows the same `PhoneQrCard` with both store badges
+in place of the phone's badge (later than the climb pages' 900px, because the
+home hero's two columns leave too little room for two badges beside the code
+below that). The code encodes `/` in the
 reader's language with `?src=qr&medium=desktop` (`homeQrUrl` in
 `app/lib/gym-attribution.ts`). Same medium, parser and properties as the other
 desktop codes, built by `homeQrScanned`; the home page shows no board, so

@@ -159,6 +159,12 @@ export default function StoreInstallButtons({
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => setHasMounted(true), []);
   const { stores, mode } = sharedHtml && !hasMounted ? SHARED_HTML_INSTALL : resolveHeroInstall(platform, nativeStore);
+  // Whether the FIRST render, the one in the server HTML, showed one store. A
+  // pair that narrows after mount keeps the pair's look: an iPad's Safari sends
+  // a Mac user agent, so its server render is a desktop pair, and only the
+  // browser's touch points say iPad. Without this the App Store badge would
+  // turn white and grow as Google Play disappears.
+  const [firstRenderWasLone] = useState(stores.length === 1);
   // A caller that lost the locale (a test double, say) gets English artwork, never a broken image.
   const locale: Locale = isSupportedLocale(labels.locale) ? labels.locale : DEFAULT_LOCALE;
   const justifyContent = align === 'center' ? 'center' : 'flex-start';
@@ -177,10 +183,11 @@ export default function StoreInstallButtons({
     // A lone badge on a page rendered for this visitor is the phone's install
     // action: a size up, and on an iPhone the white App Store badge, which reads
     // far better on the dark page and which Apple allows only when it stands
-    // alone. Shared HTML keeps the paired size and the black badge, because it
-    // starts as a pair for everyone and a badge that grew or turned white at
-    // hydration would jump.
-    const isLoneBadge = stores.length === 1 && !sharedHtml;
+    // alone. A badge that started as one of a pair keeps the paired size and the
+    // black artwork: shared HTML starts as a pair for everyone, and so does an
+    // iPad's server render, and a badge that grew or turned white at hydration
+    // would jump.
+    const isLoneBadge = stores.length === 1 && firstRenderWasLone && !sharedHtml;
     const badgeHeight = isLoneBadge ? LONE_BADGE_HEIGHT : PAIRED_BADGE_HEIGHT;
     return (
       // 12px between badges is more than the quarter-height clear space both stores ask for.

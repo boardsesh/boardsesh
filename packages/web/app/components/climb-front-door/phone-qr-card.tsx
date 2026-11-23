@@ -43,8 +43,9 @@ const cardSx = {
   gridTemplateColumns: 'auto minmax(0, 1fr)',
   alignItems: 'center',
   gap: `${themeTokens.spacing[4]}px`,
-  // 520 leaves a 324px text column beside the 148px code: room for the two
-  // store badges side by side at 44px (292px, 299px in French).
+  // At its full 520 the card leaves a 324px text column beside the 148px code:
+  // room for the two store badges side by side at 44px (292px, 299px in
+  // French). In a narrower column they wrap onto two rows.
   maxWidth: 520,
   padding: `${themeTokens.spacing[3]}px ${themeTokens.spacing[5]}px ${themeTokens.spacing[3]}px ${themeTokens.spacing[3]}px`,
   backgroundColor: 'var(--semantic-surface)',

@@ -18,6 +18,8 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 }));
 
 const StoreInstallButtons = (await import('../store-install-buttons')).default;
+const { MarketingPreviewProvider } = await import('../marketing-preview-provider');
+const { classifyMarketingBrowser } = await import('@/app/lib/marketing-platform');
 
 const LABELS = { ios: 'App Store', android: 'Google Play', update: 'Update', locale: 'en-US' } as const;
 
@@ -26,6 +28,9 @@ const ANDROID_UA =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 const IPHONE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+// iPadOS Safari asks for the desktop site: a Mac user agent, told apart only by touch points.
+const IPAD_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -50,6 +55,7 @@ describe('StoreInstallButtons', () => {
     window.history.replaceState(null, '', '/');
     __resetSessionInboundCampaignForTests();
     setUserAgent(ORIGINAL_UA);
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 0, configurable: true });
     capacitorShell.isNative = false;
   });
 
@@ -165,6 +171,25 @@ describe('StoreInstallButtons', () => {
     expect(appStoreBadge.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
     expect(appStoreBadge.getAttribute('height')).toBe('48');
     expect(appStoreBadge.getAttribute('alt')).toBe('App Store');
+  });
+
+  it("keeps an iPad's badge black and paired-size when its desktop-looking server render narrows", async () => {
+    // The server read a Mac and rendered the desktop pair; only the browser's
+    // touch points say iPad. Google Play goes, but the App Store badge must not
+    // also turn white and grow under the reader's eyes.
+    setUserAgent(IPAD_UA);
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true });
+    render(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(IPAD_UA)}>
+        <StoreInstallButtons placement="help" labels={LABELS} />
+      </MarketingPreviewProvider>,
+    );
+
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+    const appStoreBadge = badgeOf(screen.getByRole('link', { name: 'App Store' }));
+
+    expect(appStoreBadge.getAttribute('src')).toBe('/images/store-badges/app-store-black-en-US.svg');
+    expect(appStoreBadge.getAttribute('height')).toBe('44');
   });
 
   it('keeps the black 44px badge on shared HTML after it narrows, so nothing changes at hydration', async () => {

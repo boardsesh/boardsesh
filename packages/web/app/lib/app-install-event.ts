@@ -49,7 +49,7 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `playlist-qr-card`: the store pair in the QR card a public playlist shows
  *    from md.
  *  - `home-qr-card`: the store badges in the QR card the home hero shows from
- *    md, apart from the phone's badge, which keeps `hero`.
+ *    1100px, apart from the phone's badge, which keeps `hero`.
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
  *    share link and its printed QR land (#4415). After a scan the link id is
