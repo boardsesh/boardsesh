@@ -8,15 +8,13 @@
  * "2024年3月1日"), or null when there is no usable date. Read in UTC: the column
  * is a date, and a reader west of Greenwich must not see the day before.
  */
-export function formatFirstAscentDate(
-  rawDate: string | null | undefined,
-  locale: string,
-  month: 'short' | 'long' = 'short',
-): string | null {
+export function formatFirstAscentDate(rawDate: string | null | undefined, locale: string): string | null {
   if (!rawDate) return null;
   const parsed = new Date(rawDate);
   if (Number.isNaN(parsed.getTime())) return null;
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month, year: 'numeric', timeZone: 'UTC' }).format(parsed);
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    parsed,
+  );
 }
 
 /** A 1-5 quality average with exactly one decimal, as the heading prints it ("3.0", "3,0"). */

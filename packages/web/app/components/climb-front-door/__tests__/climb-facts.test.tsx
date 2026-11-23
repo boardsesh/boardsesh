@@ -68,7 +68,7 @@ describe('ClimbFacts', () => {
     expect(labels(html)).toEqual([
       'frontDoor.facts.board',
       'frontDoor.facts.setter',
-      'frontDoor.facts.firstAscent',
+      'frontDoor.facts.firstAscent(angle=40)',
       'frontDoor.facts.qualityAtAngle(angle=40)',
     ]);
     expect(html).toContain('Kilter Board Original');

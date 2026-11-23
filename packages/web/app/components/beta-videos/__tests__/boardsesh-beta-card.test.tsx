@@ -93,6 +93,7 @@ describe('BoardseshBetaList grid layout', () => {
     const link = screen.getByRole('link');
     expect(link.getAttribute('href')).toBe(betaLink.link);
     expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('ugc nofollow noopener noreferrer');
     expect(link.textContent).toContain('@climber');
     expect(link.textContent).toContain('Instagram');
     expect(link.textContent).toContain('betaVideos.watch');
@@ -143,6 +144,8 @@ describe('BoardseshBetaList grid layout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'betaVideos.showAll' }));
     expect(container.querySelector('ul')?.getAttribute('data-expanded')).toBe('true');
     expect(screen.queryByRole('button')).toBeNull();
+    // The button is gone, so focus moves to the first card it revealed, not <body>.
+    expect(document.activeElement).toBe(screen.getAllByRole('link')[6]);
   });
 
   it('offers no "Show all" when six or fewer videos fit', () => {

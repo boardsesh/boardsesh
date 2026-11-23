@@ -971,7 +971,7 @@
     "facts": {
       "setter": "Setter",
       "board": "Board",
-      "firstAscent": "First ascent",
+      "firstAscent": "First ascent at {{angle}}°",
       "firstAscentUnknown": "Not recorded",
       "unknown": "Unknown",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} is a {{grade}} on the {{board}} at {{angle}}°, set by {{setter}}.",
       "introUngraded": "{{climbName}} is a climb on the {{board}} at {{angle}}°.",
       "introUngradedWithSetter": "{{climbName}} is a climb on the {{board}} at {{angle}}°, set by {{setter}}.",
-      "firstAscent": "{{climber}} made the first ascent on {{date}}.",
+      "firstAscent": "{{climber}} made the first ascent at {{angle}}° on {{date}}.",
       "gradeRange": "It climbs as {{easiest}} at {{easiestAngle}}° and {{hardest}} at {{hardestAngle}}°.",
       "sendsHere_one": "{{formattedCount}} send logged at this angle.",
       "sendsHere_other": "{{formattedCount}} sends logged at this angle."
@@ -999,6 +999,7 @@
       "colSends": "Sends",
       "colQuality": "Quality",
       "thisPage": "this page",
+      "linkName": "{{climbName}} at {{angle}}°",
       "notRated": "Not rated",
       "total_one": "{{formattedCount}} send logged across {{angleCount}} angles",
       "total_other": "{{formattedCount}} sends logged across {{angleCount}} angles"

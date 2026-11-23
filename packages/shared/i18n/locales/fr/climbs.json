@@ -971,7 +971,7 @@
     "facts": {
       "setter": "Ouvreur",
       "board": "Board",
-      "firstAscent": "Première ascension",
+      "firstAscent": "Première ascension à {{angle}}°",
       "firstAscentUnknown": "Non renseignée",
       "unknown": "Inconnu",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} est un {{grade}} sur la {{board}} à {{angle}}°, ouvert par {{setter}}.",
       "introUngraded": "{{climbName}} est un bloc sur la {{board}} à {{angle}}°.",
       "introUngradedWithSetter": "{{climbName}} est un bloc sur la {{board}} à {{angle}}°, ouvert par {{setter}}.",
-      "firstAscent": "{{climber}} a fait la première ascension le {{date}}.",
+      "firstAscent": "{{climber}} a fait la première ascension à {{angle}}° le {{date}}.",
       "gradeRange": "Il est coté {{easiest}} à {{easiestAngle}}° et {{hardest}} à {{hardestAngle}}°.",
       "sendsHere_one": "{{formattedCount}} croix enregistrée à cette inclinaison.",
       "sendsHere_other": "{{formattedCount}} croix enregistrées à cette inclinaison."
@@ -999,6 +999,7 @@
       "colSends": "Croix",
       "colQuality": "Qualité",
       "thisPage": "cette page",
+      "linkName": "{{climbName}} à {{angle}}°",
       "notRated": "Pas noté",
       "total_one": "{{formattedCount}} croix enregistrée sur {{angleCount}} inclinaisons",
       "total_other": "{{formattedCount}} croix enregistrées sur {{angleCount}} inclinaisons"

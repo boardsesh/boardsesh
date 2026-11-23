@@ -971,7 +971,7 @@
     "facts": {
       "setter": "Routenbauer*in",
       "board": "Board",
-      "firstAscent": "Erstbegehung",
+      "firstAscent": "Erstbegehung bei {{angle}}°",
       "firstAscentUnknown": "Nicht erfasst",
       "unknown": "Unbekannt",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} ist ein {{grade}} am {{board}} bei {{angle}}°, geschraubt von {{setter}}.",
       "introUngraded": "{{climbName}} ist ein Boulder am {{board}} bei {{angle}}°.",
       "introUngradedWithSetter": "{{climbName}} ist ein Boulder am {{board}} bei {{angle}}°, geschraubt von {{setter}}.",
-      "firstAscent": "Die Erstbegehung gelang {{climber}} am {{date}}.",
+      "firstAscent": "Die Erstbegehung bei {{angle}}° gelang {{climber}} am {{date}}.",
       "gradeRange": "Bei {{easiestAngle}}° ist er {{easiest}}, bei {{hardestAngle}}° {{hardest}}.",
       "sendsHere_one": "{{formattedCount}} Begehung bei diesem Winkel eingetragen.",
       "sendsHere_other": "{{formattedCount}} Begehungen bei diesem Winkel eingetragen."
@@ -999,6 +999,7 @@
       "colSends": "Begehungen",
       "colQuality": "Qualität",
       "thisPage": "diese Seite",
+      "linkName": "{{climbName}} bei {{angle}}°",
       "notRated": "Nicht bewertet",
       "total_one": "{{formattedCount}} Begehung über {{angleCount}} Winkel eingetragen",
       "total_other": "{{formattedCount}} Begehungen über {{angleCount}} Winkel eingetragen"

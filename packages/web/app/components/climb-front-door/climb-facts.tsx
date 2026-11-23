@@ -30,7 +30,7 @@ const dlSx = {
 };
 
 const itemSx = {
-  paddingBlock: `${themeTokens.spacing[3]}px`,
+  paddingBlock: `${themeTokens.spacing[2]}px`,
   borderTop: '1px solid var(--separator)',
   minWidth: 0,
 };
@@ -42,8 +42,14 @@ const dtSx = {
   margin: 0,
 };
 
+// Every value sits in a 44px row, so the Setter link is a full tap target
+// without reaching up over its label, and Board beside it lines up. The 4px
+// above it is the room its 2px focus ring (2px out) needs to clear the label.
 const ddSx = {
-  margin: `${themeTokens.spacing[1] / 2}px 0 0`,
+  display: 'flex',
+  alignItems: 'center',
+  minHeight: 44,
+  margin: `${themeTokens.spacing[1]}px 0 0`,
   fontSize: themeTokens.typography.fontSize.base,
   fontWeight: themeTokens.typography.fontWeight.medium,
   color: 'var(--neutral-800)',
@@ -54,15 +60,12 @@ const mutedValueSx = { color: 'var(--neutral-500)' };
 
 const starSx = { color: 'var(--color-amber)' };
 
-// A 44px tap target that keeps the line's own height: the negative block
-// margins hand back everything above one line (`1lh`), so the Setter cell
-// lines up with Board beside it. The public-page e2e taps this exact link.
+// A 44px tap target filling its row. The public-page e2e taps this exact link.
 const setterLinkSx = {
   display: 'inline-flex',
   alignItems: 'center',
   minWidth: 44,
   minHeight: 44,
-  marginBlock: 'calc((1lh - 44px) / 2)',
   maxWidth: '100%',
   overflowWrap: 'anywhere' as const,
 };
@@ -121,7 +124,7 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
 
       <Box sx={itemSx}>
         <Box component="dt" sx={dtSx}>
-          {t('frontDoor.facts.firstAscent')}
+          {t('frontDoor.facts.firstAscent', { angle })}
         </Box>
         <Box component="dd" sx={ddSx}>
           {faUsername && faDate ? (

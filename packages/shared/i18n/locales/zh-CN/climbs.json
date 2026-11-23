@@ -971,7 +971,7 @@
     "facts": {
       "setter": "定线员",
       "board": "训练板",
-      "firstAscent": "首次完攀",
+      "firstAscent": "{{angle}}° 首次完攀",
       "firstAscentUnknown": "未记录",
       "unknown": "未知",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条 {{grade}} 线路，由 {{setter}} 设定。",
       "introUngraded": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条线路。",
       "introUngradedWithSetter": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条线路，由 {{setter}} 设定。",
-      "firstAscent": "{{climber}} 于 {{date}} 首次完攀。",
+      "firstAscent": "{{climber}} 于 {{date}} 在 {{angle}}° 首次完攀。",
       "gradeRange": "它在 {{easiestAngle}}° 时为 {{easiest}}，在 {{hardestAngle}}° 时为 {{hardest}}。",
       "sendsHere_one": "此角度已记录 {{formattedCount}} 次完攀。",
       "sendsHere_other": "此角度已记录 {{formattedCount}} 次完攀。"
@@ -999,6 +999,7 @@
       "colSends": "完攀",
       "colQuality": "质量",
       "thisPage": "当前页面",
+      "linkName": "{{angle}}° 下的 {{climbName}}",
       "notRated": "暂无评分",
       "total_one": "{{angleCount}} 个角度共记录 {{formattedCount}} 次完攀",
       "total_other": "{{angleCount}} 个角度共记录 {{formattedCount}} 次完攀"

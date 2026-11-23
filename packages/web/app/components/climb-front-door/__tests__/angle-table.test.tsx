@@ -90,6 +90,15 @@ describe('AngleTable', () => {
     expect(angles).toEqual(['25', '40', '50']);
   });
 
+  it('names the table by its heading and each angle link by the climb and angle', async () => {
+    const html = await renderTable();
+    expect(html).toMatch(/<table[^>]*aria-labelledby="angle-table-heading"/);
+    expect(html).toContain('id="angle-table-heading"');
+    const [link] = bodyRows(html)[0].match(/<a [\s\S]*?<\/a>/) ?? [];
+    expect(link).toMatch(/aria-hidden="true"[^>]*>frontDoor\.facts\.angleValue\(angle=25\)</);
+    expect(link).toContain('frontDoor.angles.linkName(climbName=Test Climb,angle=25)');
+  });
+
   it('links every other angle on the config-tuple tree with a real href', async () => {
     const html = await renderTable();
     expect(html).toContain(`href="${buildCanonicalClimbViewUrl(BOARD, 25, 'CLIMB123', 'Test Climb')}"`);

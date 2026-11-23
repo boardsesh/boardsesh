@@ -14,14 +14,18 @@ export type AboutClimbInput = {
   boardLabel: string;
   angle: number;
   setter: string | null | undefined;
+  /** The first ascent AT THIS ANGLE: the stats row is per angle, so it is never the climb's overall first. */
   firstAscentClimber: string | null | undefined;
-  /** The first ascent's timestamp as the stats row carries it. */
+  /** That first ascent's timestamp as the stats row carries it. */
   firstAscentAt: string | null | undefined;
   /** Sends logged at the angle being viewed. */
   sendsHere: number | string | null | undefined;
   /** Every angle the climb has stats for: the source of its easiest and hardest angle. */
   angleStats: ReadonlyArray<
-    Pick<ClimbStatsForAngle, 'angle' | 'difficulty' | 'display_difficulty' | 'difficulty_average'>
+    Pick<
+      ClimbStatsForAngle,
+      'angle' | 'difficulty' | 'display_difficulty' | 'difficulty_average' | 'ascensionist_count'
+    >
   >;
 };
 
@@ -31,14 +35,16 @@ type RankedAngle = { angle: number; grade: string; rank: number };
  * The angles whose grade the stats can rank, easiest first. The rank is the
  * row's own difficulty number (`display_difficulty`, else the raw average), so
  * two angles with the same grade label still order honestly. A row with no
- * grade or no number has nothing to say about the range and is left out.
+ * grade, no number or no sends has nothing to say about how the climb climbs
+ * there (an angle nobody has sent carries only the setter's guess) and is left
+ * out.
  */
 function rankedAngles(angleStats: AboutClimbInput['angleStats']): RankedAngle[] {
   return angleStats
     .flatMap((stats) => {
       const rawRank = stats.display_difficulty ?? stats.difficulty_average;
       const rank = rawRank === null || rawRank === undefined ? Number.NaN : Number(rawRank);
-      if (!stats.difficulty || !Number.isFinite(rank)) return [];
+      if (!stats.difficulty || !Number.isFinite(rank) || sendCount(stats.ascensionist_count) === 0) return [];
       return [{ angle: stats.angle, grade: climbGradeForSearch(stats.difficulty), rank }];
     })
     .sort((first, second) => first.rank - second.rank || first.angle - second.angle);
@@ -76,9 +82,11 @@ export function buildAboutSentences(input: AboutClimbInput, t: TranslateSentence
   }
 
   const firstAscentClimber = input.firstAscentClimber?.trim();
-  const firstAscentDate = formatFirstAscentDate(input.firstAscentAt, locale, 'long');
+  const firstAscentDate = formatFirstAscentDate(input.firstAscentAt, locale);
   if (firstAscentClimber && firstAscentDate) {
-    sentences.push(t('frontDoor.about.firstAscent', { climber: firstAscentClimber, date: firstAscentDate }));
+    sentences.push(
+      t('frontDoor.about.firstAscent', { climber: firstAscentClimber, angle: input.angle, date: firstAscentDate }),
+    );
   }
 
   const ranked = rankedAngles(input.angleStats);

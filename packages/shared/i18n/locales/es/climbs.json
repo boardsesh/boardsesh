@@ -971,7 +971,7 @@
     "facts": {
       "setter": "Setter",
       "board": "Plafón",
-      "firstAscent": "Primer encadene",
+      "firstAscent": "Primer encadene a {{angle}}°",
       "firstAscentUnknown": "Sin registrar",
       "unknown": "Desconocido",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} es un {{grade}} en el {{board}} a {{angle}}°, creado por {{setter}}.",
       "introUngraded": "{{climbName}} es un bloque en el {{board}} a {{angle}}°.",
       "introUngradedWithSetter": "{{climbName}} es un bloque en el {{board}} a {{angle}}°, creado por {{setter}}.",
-      "firstAscent": "{{climber}} hizo el primer encadene el {{date}}.",
+      "firstAscent": "{{climber}} hizo el primer encadene a {{angle}}° el {{date}}.",
       "gradeRange": "Se escala como {{easiest}} a {{easiestAngle}}° y como {{hardest}} a {{hardestAngle}}°.",
       "sendsHere_one": "{{formattedCount}} encadene registrado en este ángulo.",
       "sendsHere_other": "{{formattedCount}} encadenes registrados en este ángulo."
@@ -999,6 +999,7 @@
       "colSends": "Encadenes",
       "colQuality": "Calidad",
       "thisPage": "esta página",
+      "linkName": "{{climbName}} a {{angle}}°",
       "notRated": "Sin valorar",
       "total_one": "{{formattedCount}} encadene registrado en {{angleCount}} ángulos",
       "total_other": "{{formattedCount}} encadenes registrados en {{angleCount}} ángulos"

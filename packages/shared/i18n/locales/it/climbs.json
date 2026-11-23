@@ -971,7 +971,7 @@
     "facts": {
       "setter": "Tracciatore",
       "board": "Pannello",
-      "firstAscent": "Prima salita",
+      "firstAscent": "Prima salita a {{angle}}°",
       "firstAscentUnknown": "Non registrata",
       "unknown": "Sconosciuto",
       "angleValue": "{{angle}}°",
@@ -987,7 +987,7 @@
       "introWithSetter": "{{climbName}} è un {{grade}} sul pannello {{board}} a {{angle}}°, tracciato da {{setter}}.",
       "introUngraded": "{{climbName}} è un blocco sul pannello {{board}} a {{angle}}°.",
       "introUngradedWithSetter": "{{climbName}} è un blocco sul pannello {{board}} a {{angle}}°, tracciato da {{setter}}.",
-      "firstAscent": "{{climber}} ha fatto la prima salita il {{date}}.",
+      "firstAscent": "{{climber}} ha fatto la prima salita a {{angle}}° il {{date}}.",
       "gradeRange": "Vale {{easiest}} a {{easiestAngle}}° e {{hardest}} a {{hardestAngle}}°.",
       "sendsHere_one": "{{formattedCount}} ripetizione registrata a questa inclinazione.",
       "sendsHere_other": "{{formattedCount}} ripetizioni registrate a questa inclinazione."
@@ -999,6 +999,7 @@
       "colSends": "Ripetizioni",
       "colQuality": "Qualità",
       "thisPage": "questa pagina",
+      "linkName": "{{climbName}} a {{angle}}°",
       "notRated": "Non valutato",
       "total_one": "{{formattedCount}} ripetizione registrata su {{angleCount}} inclinazioni",
       "total_other": "{{formattedCount}} ripetizioni registrate su {{angleCount}} inclinazioni"

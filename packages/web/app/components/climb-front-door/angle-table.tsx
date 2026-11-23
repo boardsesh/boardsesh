@@ -1,6 +1,12 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableFooter from '@mui/material/TableFooter';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { visuallyHidden } from '@mui/utils';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -39,17 +45,26 @@ const tableCardSx = {
 };
 
 const tableSx = {
-  width: '100%',
-  borderCollapse: 'collapse' as const,
   fontVariantNumeric: 'tabular-nums',
   fontSize: themeTokens.typography.fontSize.sm,
 };
 
 const cellInlinePadding = { xs: `${themeTokens.spacing[3]}px`, md: `${themeTokens.spacing[4]}px` };
 
+// MUI's TableCell brings its own type scale, 16px padding and bottom rule; the
+// rows here take the table's type and draw one hairline above each row.
+const tableCellResetSx = {
+  borderBottom: 'none',
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  lineHeight: 'inherit',
+  letterSpacing: 'inherit',
+};
+
 // --neutral-500 for every muted glyph here: the public-page audit holds all
 // text to 4.5:1, and it measures 6.08:1 on the current row's raised surface.
 const headerCellSx = {
+  ...tableCellResetSx,
   paddingBlock: `${themeTokens.spacing[3]}px`,
   paddingInline: cellInlinePadding,
   textAlign: 'left' as const,
@@ -60,6 +75,7 @@ const headerCellSx = {
 };
 
 const cellSx = {
+  ...tableCellResetSx,
   height: { xs: 44, md: 46 },
   paddingBlock: 0,
   paddingInline: cellInlinePadding,
@@ -207,36 +223,35 @@ export default async function AngleTable({
         {t('frontDoor.angles.heading')}
       </Typography>
       <Box sx={tableCardSx}>
-        <Box component="table" sx={tableSx}>
-          <Box component="thead">
-            <Box component="tr">
-              <Box component="th" scope="col" sx={headerCellSx}>
+        <Table aria-labelledby="angle-table-heading" sx={tableSx}>
+          <TableHead>
+            <TableRow>
+              <TableCell component="th" scope="col" sx={headerCellSx}>
                 {t('frontDoor.angles.colAngle')}
-              </Box>
-              <Box component="th" scope="col" sx={headerCellSx}>
+              </TableCell>
+              <TableCell component="th" scope="col" sx={headerCellSx}>
                 {t('frontDoor.angles.colGrade')}
-              </Box>
-              <Box component="th" scope="col" sx={rightHeaderCellSx}>
+              </TableCell>
+              <TableCell component="th" scope="col" sx={rightHeaderCellSx}>
                 {t('frontDoor.angles.colSends')}
-              </Box>
-              <Box component="th" scope="col" sx={rightHeaderCellSx}>
+              </TableCell>
+              <TableCell component="th" scope="col" sx={rightHeaderCellSx}>
                 {t('frontDoor.angles.colQuality')}
-              </Box>
-            </Box>
-          </Box>
-          <Box component="tbody">
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {sortedStats.map((stats) => {
               const isCurrent = stats.angle === currentAngle;
               const quality = normalizedQuality(stats);
               const formattedQuality = quality ? formatQualityAverage(quality.average, locale) : null;
               return (
-                <Box
-                  component="tr"
+                <TableRow
                   key={stats.angle}
                   aria-current={isCurrent ? 'page' : undefined}
                   sx={isCurrent ? currentRowSx : undefined}
                 >
-                  <Box component="th" scope="row" sx={isCurrent ? currentAngleCellSx : angleCellSx}>
+                  <TableCell component="th" scope="row" sx={isCurrent ? currentAngleCellSx : angleCellSx}>
                     {isCurrent ? (
                       <>
                         {t('frontDoor.facts.angleValue', { angle: stats.angle })}
@@ -246,21 +261,26 @@ export default async function AngleTable({
                       </>
                     ) : (
                       <MuiLink component={LocaleLink} href={angleHref(stats.angle)} underline="hover" sx={angleLinkSx}>
-                        {t('frontDoor.facts.angleValue', { angle: stats.angle })}
+                        {/* "25°" on screen; the link's name, for a screen reader and
+                          as anchor text, is "Climb name at 25°". */}
+                        <Box component="span" aria-hidden="true">
+                          {t('frontDoor.facts.angleValue', { angle: stats.angle })}
+                        </Box>
+                        <Box component="span" sx={visuallyHidden}>
+                          {t('frontDoor.angles.linkName', { climbName, angle: stats.angle })}
+                        </Box>
                       </MuiLink>
                     )}
-                  </Box>
-                  <Box component="td" sx={cellSx}>
+                  </TableCell>
+                  <TableCell sx={cellSx}>
                     <GradeCellContent
                       difficulty={stats.difficulty}
                       boardName={boardDetails.board_name}
                       unknownLabel={t('frontDoor.facts.unknown')}
                     />
-                  </Box>
-                  <Box component="td" sx={numberCellSx}>
-                    {numberFormat.format(sendCount(stats.ascensionist_count))}
-                  </Box>
-                  <Box component="td" sx={qualityCellSx}>
+                  </TableCell>
+                  <TableCell sx={numberCellSx}>{numberFormat.format(sendCount(stats.ascensionist_count))}</TableCell>
+                  <TableCell sx={qualityCellSx}>
                     {formattedQuality ? (
                       <>
                         <Box component="span" aria-hidden="true">
@@ -278,26 +298,26 @@ export default async function AngleTable({
                         {t('frontDoor.angles.notRated')}
                       </Box>
                     )}
-                  </Box>
-                </Box>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </Box>
+          </TableBody>
           {/* A one-row table would only repeat its row, and nothing logged is no total. */}
           {sortedStats.length > 1 && totalSends > 0 ? (
-            <Box component="tfoot">
-              <Box component="tr">
-                <Box component="td" colSpan={4} sx={totalCellSx}>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={4} sx={totalCellSx}>
                   {t('frontDoor.angles.total', {
                     count: totalSends,
                     formattedCount: numberFormat.format(totalSends),
                     angleCount: sortedStats.length,
                   })}
-                </Box>
-              </Box>
-            </Box>
+                </TableCell>
+              </TableRow>
+            </TableFooter>
           ) : null}
-        </Box>
+        </Table>
       </Box>
     </Box>
   );

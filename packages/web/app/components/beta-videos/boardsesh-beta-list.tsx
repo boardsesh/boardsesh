@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -64,6 +64,13 @@ type BoardseshBetaGridProps = {
 function BoardseshBetaGrid({ links, isLoading, source }: BoardseshBetaGridProps) {
   const { t } = useTranslation('common');
   const [expanded, setExpanded] = useState(false);
+  const firstRevealedLinkRef = useRef<HTMLAnchorElement>(null);
+
+  // "Show all" removes itself, which would drop keyboard focus to <body>. Hand
+  // it to the first card it revealed, where the reader's next Tab would go.
+  useEffect(() => {
+    if (expanded) firstRevealedLinkRef.current?.focus();
+  }, [expanded]);
 
   if (isLoading) {
     return (
@@ -96,6 +103,7 @@ function BoardseshBetaGrid({ links, isLoading, source }: BoardseshBetaGridProps)
             link={link}
             source={source}
             beyondPreview={index >= GRID_PREVIEW_COUNT}
+            linkRef={index === GRID_PREVIEW_COUNT ? firstRevealedLinkRef : undefined}
           />
         ))}
       </Box>

@@ -16,6 +16,8 @@ type BoardseshBetaGridCardProps = {
   source: BoardseshBetaCardSource;
   /** Past the grid's first rows: hidden on md+ until the reader asks for all of them. */
   beyondPreview?: boolean;
+  /** The card's link, for the grid to move focus to after "Show all". */
+  linkRef?: React.Ref<HTMLAnchorElement>;
 };
 
 /**
@@ -27,7 +29,12 @@ type BoardseshBetaGridCardProps = {
  * grid stays even and the link stays one tap away. The whole card is the link,
  * and its text is its accessible name.
  */
-export default function BoardseshBetaGridCard({ link, source, beyondPreview = false }: BoardseshBetaGridCardProps) {
+export default function BoardseshBetaGridCard({
+  link,
+  source,
+  beyondPreview = false,
+  linkRef,
+}: BoardseshBetaGridCardProps) {
   const { t } = useTranslation('common');
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   // A cached failure can finish before hydration attaches onError. Inspect the
@@ -43,9 +50,11 @@ export default function BoardseshBetaGridCard({ link, source, beyondPreview = fa
     <Box component="li" className={styles.gridItem} data-beyond-preview={beyondPreview ? 'true' : undefined}>
       <Box
         component="a"
+        ref={linkRef}
         href={link.link}
         target="_blank"
-        rel="noopener noreferrer"
+        // A filmer's own post: user content, so no endorsement passes with it.
+        rel="ugc nofollow noopener noreferrer"
         className={styles.gridCard}
         onClick={() =>
           track('Beta Video Link Clicked', {
