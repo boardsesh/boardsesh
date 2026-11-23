@@ -101,10 +101,12 @@ describe('MobileStorePrimary on the server', () => {
     expect(page.querySelector('[aria-label]')).toBeNull();
   });
 
-  it('ships the white App Store badge and Google Play at the lone 48px, since CSS shows only one', () => {
+  it('ships both badges black at the lone 48px: CSS shows only one, but the page has other store badges', () => {
     const page = parseHtml(renderToString(<MobileStorePrimary placement="climb-view" labels={LABELS} />));
 
-    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+    // Black, not white: the climb page's app module and the list's QR card show
+    // another store pair, and Apple allows white only for the page's one badge.
+    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-black-en-US.svg');
     expect(badgeImage(page, 'android')?.getAttribute('src')).toBe('/images/store-badges/google-play-en-US.svg');
     for (const store of ['ios', 'android'] as const) {
       expect(badgeImage(page, store)?.getAttribute('height')).toBe('48');
@@ -118,7 +120,7 @@ describe('MobileStorePrimary on the server', () => {
       renderToString(<MobileStorePrimary placement="climb-view" labels={{ ...LABELS, locale: 'de' }} />),
     );
 
-    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-de.svg');
+    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-black-de.svg');
     expect(badgeImage(page, 'android')?.getAttribute('src')).toBe('/images/store-badges/google-play-de.svg');
   });
 
@@ -151,9 +153,8 @@ describe('MobileStorePrimary after mount', () => {
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('android'));
 
-    // Mount changes nothing but `data-store`: same artwork, same size, so the
-    // white App Store badge is still the only badge on show.
-    expect(badgeImage(wrapper(), 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+    // Mount changes nothing but `data-store`: same artwork, same size.
+    expect(badgeImage(wrapper(), 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-black-en-US.svg');
     expect(badgeImage(wrapper(), 'ios')?.getAttribute('height')).toBe('48');
     expect(badgeImage(wrapper(), 'android')?.getAttribute('height')).toBe('48');
     // Only the chosen store is visible: the other one is `display: none` in the same cell.
@@ -199,6 +200,20 @@ describe('MobileStorePrimary after mount', () => {
       mode: 'install',
       qrMedium: 'desktop',
     });
+  });
+
+  it('leaves the CSS guess standing on a desktop window under md, so no badge swaps at hydration', async () => {
+    // A desktop names both stores. Picking the first (the App Store) would swap
+    // the Google Play badge the CSS showed for a different badge of a different width.
+    setUserAgent(DESKTOP_UA);
+    window.history.replaceState(null, '', '/b/the-kilter/40/view/abc?utm_source=instagram');
+    render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
+
+    // The tagged link arrives after mount, so this waits for the mounted render.
+    const playLink = screen.getByRole('link', { name: 'Get it on Google Play' });
+    await waitFor(() => expect(playLink.getAttribute('href')).toContain('instagram'));
+    expect(wrapper().hasAttribute('data-store')).toBe(false);
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('data-store-badge'))).toEqual(['android']);
   });
 
   it('carries the campaign the visit landed with', async () => {

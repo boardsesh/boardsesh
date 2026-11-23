@@ -157,8 +157,9 @@ function parseHtml(html: string): Document {
 
 /**
  * The phone's store link: the official badge of each store, both in the HTML.
- * Only one is ever on show (CSS picks it), so the App Store badge is the white
- * one Apple allows for a lone badge, and both are the lone badge's 48px.
+ * Only one is ever on show (CSS picks it), so both are the lone badge's 48px,
+ * and black: the page shows another store pair further down, and Apple allows
+ * its white badge only when it is the page's one store badge.
  */
 function expectPhoneBadges(page: Document) {
   const badges = [...page.querySelectorAll('[data-cta="mobile-install"] a[data-store-badge] > img')].map((image) => ({
@@ -170,7 +171,7 @@ function expectPhoneBadges(page: Document) {
   expect(badges).toEqual([
     {
       store: 'ios',
-      src: '/images/store-badges/app-store-white-en-US.svg',
+      src: '/images/store-badges/app-store-black-en-US.svg',
       alt: 'home.hero.ctaInstallIos',
       height: '48',
     },

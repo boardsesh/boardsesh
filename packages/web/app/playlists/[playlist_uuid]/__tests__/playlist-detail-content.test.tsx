@@ -165,7 +165,7 @@ describe('PlaylistDetailContent app hand-off', () => {
     expect(container.querySelectorAll('.MuiButton-contained')).toHaveLength(0);
     const badges = [...container.querySelectorAll('[data-cta="mobile-install"] a[data-store-badge] > img')];
     expect(badges.map((image) => [image.getAttribute('src'), image.getAttribute('alt')])).toEqual([
-      ['/images/store-badges/app-store-white-en-US.svg', tFromCatalog('marketing', 'home.hero.ctaInstallIos')],
+      ['/images/store-badges/app-store-black-en-US.svg', tFromCatalog('marketing', 'home.hero.ctaInstallIos')],
       ['/images/store-badges/google-play-en-US.svg', tFromCatalog('marketing', 'home.hero.ctaInstallAndroid')],
     ]);
     const mobileInstall = container.querySelector('[data-cta="mobile-install"]');

@@ -35,8 +35,11 @@ const UPDATE_BUTTON_SX = { ...brandCtaSx({ size: 'large' }), ...CELL_SX };
  * hydration the browser picks with CSS alone: `-webkit-touch-callout` exists
  * only in Safari's engine on iOS and iPadOS, where every browser is Safari's
  * engine, so an iPhone shows the App Store from the first paint and everything
- * else shows Google Play. After mount `data-store` names the store
- * `useInstallPlatform` chose and wins over the guess.
+ * else shows Google Play. After mount, when `useInstallPlatform` names ONE
+ * store (a phone, or the retired app's update), `data-store` names it and wins
+ * over the guess. A desktop browser narrower than md names both stores, so it
+ * gets no `data-store` and the CSS guess stands: no badge swaps under the
+ * reader at hydration.
  *
  * The cell is centred, like the helper line under it: a badge keeps its own
  * width, never stretched.
@@ -69,13 +72,12 @@ const WRAPPER_SX = {
  * two anchors stack in one grid cell and CSS picks one before hydration, so the
  * phone never sees two badges, and the pick cannot shift the layout.
  *
- * WHITE APP STORE BADGE. Apple allows its white badge only when it is the one
- * store badge on the layout. Here it always is, before hydration and after:
- * the CSS above shows exactly one of the two anchors, and the whole block is
- * hidden from md, where the QR card's black pair takes over. So the App Store
- * badge is the white one, which reads far better on the dark page, and both
- * are the lone badge's 48px. Neither changes at hydration: the markup is the
- * same, only `data-store` arrives.
+ * BLACK, 48PX. The CSS above shows exactly one of the two anchors, so this is
+ * the lone badge's 48px. It is still the black badge: the same page shows
+ * another store pair further down (the climb page's app module, the board
+ * list's QR card), and Apple allows its white badge only when it is the one
+ * store badge on the page. The badges' markup never changes at hydration; only
+ * `data-store` may arrive, and only when the platform names one store.
  *
  * A visitor still in the retired Capacitor app gets a filled "Update the app"
  * button after mount instead: "Download on the App Store" would be the wrong
@@ -94,7 +96,11 @@ export default function MobileStorePrimary({ placement, labels, qrLanding }: Mob
   // `unknown` is still waiting for a Capacitor bridge; the CSS guess stands until it answers.
   const decided = hasMounted && platform !== 'unknown';
   const { stores, mode } = resolveHeroInstall(platform, nativeStore);
-  const chosenStore = decided ? stores[0] : undefined;
+  // Only a platform that names one store overrides the CSS guess. A desktop
+  // window under md names both, and swapping its Google Play guess for the App
+  // Store badge would change the badge, and its width, under the reader.
+  const namesOneStore = stores.length === 1 || mode === 'update';
+  const chosenStore = decided && namesOneStore ? stores[0] : undefined;
   const asksForUpdate = decided && mode === 'update';
 
   return (
@@ -133,7 +139,6 @@ export default function MobileStorePrimary({ placement, labels, qrLanding }: Mob
             href={href}
             labels={labels}
             height={LONE_BADGE_HEIGHT}
-            tone="white"
             onClick={trackClick}
             sx={CELL_SX}
             data-store-link={store}

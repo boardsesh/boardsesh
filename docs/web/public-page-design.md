@@ -45,7 +45,10 @@ an iPhone and a laptop:
 - **No visitor-specific markup.** Both store links are always in the HTML. The
   phone's store is picked before hydration with
   `@supports (-webkit-touch-callout: none)` (iOS gets the App Store), then by
-  `useInstallPlatform` after mount (`mobile-store-primary.tsx`).
+  `useInstallPlatform` after mount, but only when it names one store: an
+  Android phone, an iPhone, or the retired app's update
+  (`mobile-store-primary.tsx`). A desktop window under md names both stores,
+  so its CSS guess stands and no badge swaps at hydration.
 - **App screenshots render one neutral platform on the server.** The app module
   wraps its screenshots in a `MarketingPreviewProvider` seeded with a user agent
   nobody sends, and swaps to the reader's phone after mount. The root layout's
@@ -108,16 +111,17 @@ publishes `es-mx` and Google `es-419`.
 
 - **Never edit the artwork.** No recolouring, cropping, glow or hover effect.
   The anchor around a badge adds only a focus ring.
-- **Black, except where it stands alone.** Apple allows its white badge only
-  when it is the one store badge on the layout, and Google Play is black only.
-  A lone App Store badge on a page rendered per request (an iPhone on the home
-  page) is white and 48px tall; every pair, and every `StoreInstallButtons`
-  badge on shared HTML (which starts as a pair for everyone), is black and 44px
-  tall, so nothing changes colour or size at hydration. The phone's hero badge
-  on climb, board-list and playlist pages is the other lone badge: both stores
-  are in the shared HTML, stacked in one grid cell, and CSS shows exactly one
-  before hydration and after, and hides the cell from md. So its App Store
-  badge is white and both are 48px, centred over the helper line.
+- **Black, except one case.** Apple allows its white badge only when it is the
+  one store badge on the page, and Google Play is black only. So the App Store
+  badge is white only when it stands alone on a page rendered per request that
+  shows no other store badge (an iPhone on the home page), at 48px. Every
+  other badge is black. Pairs, and every `StoreInstallButtons` badge on shared
+  HTML (which starts as a pair for everyone), are 44px, so nothing changes
+  colour or size at hydration. The phone's hero badge on climb, board-list and
+  playlist pages is black and 48px: both stores are in the shared HTML, stacked
+  in one grid cell, CSS shows exactly one and hides the cell from md, and it is
+  centred over the helper line. It stays black because the same page shows
+  another store pair further down (the app module, the QR card).
 - **The gym page** shows both badges, always: black, 44px, App Store first,
   neither styled as the primary, so the look does not tilt the per-platform
   split of `App Install Click`.
