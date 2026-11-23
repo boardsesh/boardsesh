@@ -1253,6 +1253,7 @@
     "tagline": "一个应用，兼容多种训练板。下次攀爬，免费使用。",
     "navLabel": "页脚",
     "trademarkNote": "兼容 {{boards}} 等训练板。Boardsesh 独立运营，并非由 Aurora Climbing 或其他训练板制造商开发，也未获其背书。各商标归其所有者所有。",
+    "storeTrademarks": "Apple 和 Apple 标志是 Apple Inc. 在美国及其他国家和地区注册的商标。App Store 是 Apple Inc. 的服务商标。Google Play 和 Google Play 标志是 Google LLC 的商标。",
     "links": {
       "about": "关于",
       "support": "支持 Boardsesh",

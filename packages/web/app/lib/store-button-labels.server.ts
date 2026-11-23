@@ -11,10 +11,11 @@ import { getServerTranslation } from './i18n/server';
  * `server-only` guard.
  */
 export async function getStoreButtonLabels(): Promise<StoreButtonLabels> {
-  const { t } = await getServerTranslation('marketing');
+  const { t, locale } = await getServerTranslation('marketing');
   return {
     ios: t('home.hero.ctaInstallIos'),
     android: t('home.hero.ctaInstallAndroid'),
     update: t('home.hero.ctaUpdate'),
+    locale,
   };
 }

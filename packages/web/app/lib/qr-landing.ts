@@ -12,9 +12,10 @@
 //    `…/{angle}/list?src=qr&medium=desktop`. On `/b/{slug}/{angle}/list` it
 //    shares the page with the board codes; each kind reads only its own
 //    mediums, so one scan is never both.
-//  - **setter** and **playlist**: the same laptop code on a setter's page
-//    (`/setter/{name}?src=qr&medium=desktop`) and on a public playlist
-//    (`/playlists/{uuid}?src=qr&medium=desktop`).
+//  - **setter**, **playlist** and **home**: the same laptop code on a
+//    setter's page (`/setter/{name}?src=qr&medium=desktop`), on a public
+//    playlist (`/playlists/{uuid}?src=qr&medium=desktop`) and in the home
+//    hero (`/?src=qr&medium=desktop`).
 //
 // Both pages are stored at the edge with a shared `s-maxage`, so their HTML
 // cannot say whether THIS visit came off a code: the medium is read here, from
@@ -40,7 +41,7 @@ import {
 } from '@boardsesh/analytics';
 
 /** Which kind of code a page is landed on through. */
-export type QrLandingKind = 'board' | 'climb' | 'list' | 'setter' | 'playlist';
+export type QrLandingKind = 'board' | 'climb' | 'list' | 'setter' | 'playlist' | 'home';
 
 /** A landing with the medium its kind of code prints. */
 export type QrLanding =
@@ -48,7 +49,8 @@ export type QrLanding =
   | { kind: 'climb'; medium: ClimbQrMedium }
   | { kind: 'list'; medium: ClimbQrMedium }
   | { kind: 'setter'; medium: ClimbQrMedium }
-  | { kind: 'playlist'; medium: ClimbQrMedium };
+  | { kind: 'playlist'; medium: ClimbQrMedium }
+  | { kind: 'home'; medium: ClimbQrMedium };
 
 /** Any medium a landing can carry, for a store link's id. */
 export type QrLandingMedium = QrLanding['medium'];
@@ -80,8 +82,8 @@ function parseLanding(kind: QrLandingKind, params: GymQrSearchParams): QrLanding
     const boardLanding = parseBoardQrLanding(params);
     return boardLanding ? { kind, medium: boardLanding.medium } : null;
   }
-  // A board list's, a setter's and a playlist's laptop code is the climb page's
-  // code pointed at that page.
+  // A board list's, a setter's, a playlist's and the home page's laptop code is
+  // the climb page's code pointed at that page.
   const desktopLanding = parseClimbQrLanding(params);
   return desktopLanding ? { kind, medium: desktopLanding.medium } : null;
 }

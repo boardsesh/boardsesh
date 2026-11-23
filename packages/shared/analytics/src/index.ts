@@ -121,6 +121,7 @@ export {
   listQrScanned,
   setterQrScanned,
   playlistQrScanned,
+  homeQrScanned,
   parseClimbQrLanding,
   CLIMB_QR_MEDIUMS,
   type ClimbQrMedium,

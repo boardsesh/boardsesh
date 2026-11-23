@@ -1147,6 +1147,12 @@ export const SHARED_EVENTS = {
   // the climb event's, `boardType` the playlist's board. Built by
   // `playlistQrScanned` (climb-qr-events.ts). Only www fires it.
   PlaylistQrScanned: 'Playlist QR Scanned',
+  // The home page's QR code was scanned and the home page loaded on the phone.
+  // The same desktop code, shown in the hero from md in place of the phone's
+  // store badge (`/?src=qr&medium=desktop`). Props and parser are the climb
+  // event's; the home page has no board, so `boardType` is always null. Built
+  // by `homeQrScanned` (climb-qr-events.ts). Only www fires it.
+  HomeQrScanned: 'Home QR Scanned',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

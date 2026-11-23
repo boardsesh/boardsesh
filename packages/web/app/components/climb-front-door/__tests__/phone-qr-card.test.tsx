@@ -11,7 +11,7 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
 
 const PhoneQrCard = (await import('../phone-qr-card')).default;
 
-const STORE_LABELS = { ios: 'App Store', android: 'Google Play', update: 'Update' };
+const STORE_LABELS = { ios: 'App Store', android: 'Google Play', update: 'Update', locale: 'en-US' } as const;
 
 function renderCard(): string {
   return renderToString(

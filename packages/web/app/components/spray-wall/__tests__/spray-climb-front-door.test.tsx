@@ -212,7 +212,9 @@ describe('SprayClimbFrontDoor', () => {
     const html = await render({ photoUrl: null });
 
     expect(html).toContain('This spray wall has no photo to show yet.');
-    expect(html).not.toContain('<img');
+    // The store badges are the only images left: nothing points at a missing photo.
+    const images = html.match(/<img [^>]*>/g) ?? [];
+    expect(images.every((image) => image.includes('/images/store-badges/'))).toBe(true);
   });
 
   it('draws the holds-only look in canonical mode on the dark field when the owner chose it', async () => {

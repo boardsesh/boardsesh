@@ -115,8 +115,9 @@ describe('SprayWallFrontDoor', () => {
     expect(appStoreAt).toBeGreaterThan(-1);
     expect(appStoreAt).toBeLessThan(openAt);
     expect(html.indexOf('spray.wall.haveApp')).toBeLessThan(openAt);
-    // One filled button, and it is a store: the Open link is a text button.
-    expect(html.match(/MuiButton-contained[\s"]/g) ?? []).toHaveLength(1);
+    // No filled button: the store is its official badge and the Open link a text button.
+    expect(html.match(/MuiButton-contained[\s"]/g) ?? []).toHaveLength(0);
+    expect(html).toContain('/images/store-badges/');
     const openAnchor = html.slice(html.lastIndexOf('<a', openAt), openAt);
     expect(openAnchor).toContain('MuiButton-text');
     expect(openAnchor).not.toContain('MuiButton-contained');

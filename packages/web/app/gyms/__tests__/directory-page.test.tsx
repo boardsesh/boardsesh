@@ -63,8 +63,9 @@ describe('store button (#6027)', () => {
 
     expect(serialised).toContain('Get the app');
     expect(serialised).toContain("Light up your gym's boards from your phone and log every send.");
-    expect(serialised).toContain('"ios":"App Store"');
-    expect(serialised).toContain('"android":"Google Play"');
+    // The badges' own words, which are their images' alt text.
+    expect(serialised).toContain('"ios":"Download on the App Store"');
+    expect(serialised).toContain('"android":"Get it on Google Play"');
   });
 
   it('stays on an empty result page, where the search failed but the app still works', async () => {

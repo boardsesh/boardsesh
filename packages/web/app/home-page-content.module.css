@@ -56,6 +56,28 @@
   margin-top: var(--spacing-2);
 }
 
+/* One install block per screen. Below 1100px the hero shows this visitor's
+   store badge (a pair on a narrow laptop window); from 1100px a laptop gets the
+   QR code card with both badges, since a laptop installs nothing. Later than
+   the climb pages' 900px because the home hero is two columns from 760px: below
+   1100px its copy column leaves the card's text column too narrow for two badges
+   side by side (299px in French), and they would stack under the code. */
+.heroDesktopInstall {
+  display: none;
+  width: 100%;
+  margin-top: var(--spacing-2);
+}
+
+@media (min-width: 1100px) {
+  .heroActions {
+    display: none;
+  }
+
+  .heroDesktopInstall {
+    display: block;
+  }
+}
+
 .heroSecondary {
   display: flex;
   align-items: center;
@@ -201,12 +223,6 @@
   .heroActions {
     margin-top: var(--spacing-1);
     gap: var(--spacing-2);
-  }
-
-  .heroActions > a,
-  .heroActions > button {
-    font-size: var(--font-size-base);
-    padding-inline: var(--spacing-4);
   }
 
   .heroSecondary {

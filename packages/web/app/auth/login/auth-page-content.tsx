@@ -19,6 +19,7 @@ import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-ev
 import { isAuthBackendUnavailable } from '@boardsesh/auth-protocol/client-errors';
 import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import Logo from '@/app/components/brand/logo';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
@@ -43,7 +44,7 @@ import { safeCallbackUrl } from '../signout/safe-callback-url';
 
 export default function AuthPageContent() {
   const { t } = useTranslation('auth');
-  const { t: tMarketing } = useTranslation('marketing');
+  const { t: tMarketing, i18n: marketingI18n } = useTranslation('marketing');
   const { status } = useSession();
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
@@ -487,6 +488,7 @@ export default function AuthPageContent() {
               ios: tMarketing('home.hero.ctaInstallIos'),
               android: tMarketing('home.hero.ctaInstallAndroid'),
               update: tMarketing('home.hero.ctaUpdate'),
+              locale: isSupportedLocale(marketingI18n.language) ? marketingI18n.language : DEFAULT_LOCALE,
             }}
           />
         </Box>

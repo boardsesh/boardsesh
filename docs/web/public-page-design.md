@@ -63,9 +63,9 @@ One primary action per screen.
 | Where | Phone | Desktop |
 | --- | --- | --- |
 | Hero | Filled "Get the free app" (one store) | Filled "Open in your browser" next to a QR code |
-| Hero, second action | "Or open it in your browser" text link | QR card with an outlined store pair |
+| Hero, second action | "Or open it in your browser" text link | QR card with both store badges |
 | Bottom of the screen | Sticky install bar, after the hero button scrolls away | None |
-| App module | Outlined store pair with the install icon (one store after mount) | Outlined store pair |
+| App module | Store badges (one store after mount) | Both store badges |
 
 Why the phone's primary button is the store: phones with the app open climb
 links straight in the app (universal links), so a phone reading the web page
@@ -77,9 +77,48 @@ hand-off stays primary there, and the QR code carries the climb to the phone.
 The split is CSS only (MUI `sx` breakpoints), so nothing shifts after paint.
 `front-door-install.test.tsx` allows filled buttons only in the hero's mobile
 store block (`data-cta="mobile-install"`). The app module's pair
-(`data-cta="app-install"`) uses `StoreInstallButtons`' `brand-outlined`
-appearance, the brand pill outlined for every store, so it never adds a second
-filled button to a screen.
+(`data-cta="app-install"`) is `StoreInstallButtons`, which renders the official
+store badges, so it never adds a second filled button to a screen.
+
+## Store badges
+
+Every store link `StoreInstallButtons` renders is the official badge, the
+artwork Apple and Google publish, in the page's language. The files are in
+`packages/web/public/images/store-badges/`; `app/lib/store-badges.ts` maps a
+store and locale to a file and its size. To update a badge, download it again
+and replace the file:
+
+| Files | Source |
+| --- | --- |
+| `app-store-{black,white}-<locale>.svg` | Apple Marketing Tools: `https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/{black,white}/<apple-locale>` |
+| `google-play-<locale>.svg` | Google Partner Marketing Hub, [Google Play badges](https://partnermarketinghub.withgoogle.com/brands/google-play/google-play/lockups-icons-badges/#badges): `Badge_GetItOnGP_<locale>_Digital_Fullcolor_GooglePlay`, the SVG |
+
+Our `en-US`, `es`, `fr`, `de`, `it` and `zh-CN` take the stores' `en-us`,
+`es-es`, `fr-fr`, `de-de`, `it-it` and `zh-cn` artwork. Spanish uses the Spain
+badges ("Consíguelo en el App Store", "Descargar en Google Play"); Apple also
+publishes `es-mx` and Google `es-419`.
+
+- **Never edit the artwork.** No recolouring, cropping, glow or hover effect.
+  The anchor around a badge adds only a focus ring.
+- **Black, except one case.** Apple allows its white badge only when it is the
+  one store badge on the layout, and Google Play is black only. A lone App
+  Store badge on a page rendered per request (an iPhone on the home page) is
+  white and 48px tall; every pair, and every badge on shared HTML (which
+  starts as a pair for everyone), is black and 44px tall, so nothing changes
+  colour or size at hydration.
+- **Sizes.** Both heights clear the 44px target and Apple's 40px minimum. At
+  the same height Google Play is wider than the App Store badge, which is what
+  Google asks for. 12px between badges is more than the quarter-height clear
+  space both stores want.
+- **Alt text is the badge's own words** in the page's language
+  (`marketing.home.hero.ctaInstallIos` / `ctaInstallAndroid`), so a screen
+  reader says what a sighted reader sees.
+- **Update mode stays text.** A visitor still on the retired Capacitor app gets
+  an "Update the app" button: "Download on the App Store" would be the wrong
+  words for them. `appearance` styles only that button now.
+- **Credit line.** The footer carries Apple's and Google's trademark credit
+  (`common.footer.storeTrademarks`), which Apple requires wherever its badge
+  appears.
 
 The sticky bar (`sticky-install-bar.tsx`) shows only below md, on Android and on
 iOS browsers that show no Smart App Banner (Safari already shows ours). It stays
@@ -93,6 +132,8 @@ stream in after it mounts, since the app module renders inside `<Suspense>`.
 Every store button has its own placement, which is also its store link id
 (`app/lib/app-install-event.ts`): `climb-view` (the phone's hero button),
 `climb-qr-card` (the desktop QR card), `sticky-bar` and `climb-app-module`.
+The home page uses the same QR card: `hero` is the phone's badge and
+`home-qr-card` the laptop's pair, and a scan fires `Home QR Scanned`.
 
 Board lists, setter pages and playlists follow the same pattern with their own
 placements: `climb-list` / `climb-list-qr-card`, `setter` / `setter-qr-card`

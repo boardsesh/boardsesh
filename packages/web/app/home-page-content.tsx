@@ -2,12 +2,9 @@
 
 import React from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
-import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
-import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
@@ -18,14 +15,10 @@ import {
 } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
-import { useInstallPlatform } from '@/app/hooks/use-install-platform';
-import { buildStoreUrl } from '@/app/lib/store-links';
-import { resolveHeroInstall } from '@/app/lib/hero-install';
-import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
-import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageSection, PageCard } from '@/app/components/ui/page-shell';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import StartClimbingButton from '@/app/components/start-climbing-button';
@@ -36,6 +29,13 @@ import styles from './home-page-content.module.css';
 
 type HomePageContentProps = {
   heroProof?: string;
+  /**
+   * The laptop's install block: the QR code card with both store badges
+   * (`PhoneQrCard`). Rendered by the server page and handed down, so the code
+   * arrives as plain SVG and `qrcode.react` never ships to the browser. Shown
+   * from 1100px; below that the hero shows this visitor's store badge instead.
+   */
+  desktopInstall?: React.ReactNode;
   initialRecentBeta?: RecentBetaLinkRow[];
   gymSearch?: React.ReactNode;
   featureStrip?: React.ReactNode;
@@ -43,12 +43,11 @@ type HomePageContentProps = {
   supportBanner?: React.ReactNode;
   trustFaq?: React.ReactNode;
 };
-const HERO_PRIMARY = brandCtaSx({ size: 'large', glow: true });
-const HERO_SECONDARY = brandCtaOutlinedSx({ size: 'large' });
 const LINK_TARGET = { display: 'inline-flex', alignItems: 'center', minHeight: 44 } as const;
 
 export default function HomePageContent({
   heroProof,
+  desktopInstall,
   initialRecentBeta = [],
   gymSearch,
   featureStrip,
@@ -58,10 +57,6 @@ export default function HomePageContent({
 }: HomePageContentProps) {
   const { t, i18n } = useTranslation('marketing');
   const { t: website } = useTranslation('website');
-  const { platform, nativeStore } = useInstallPlatform();
-  const inboundCampaign = useInboundCampaign();
-  const install = resolveHeroInstall(platform, nativeStore);
-  const HeroInstallIcon = install.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
   const showsHeroVideo = i18n.language === 'en-US';
   return (
     <Box component="main" className={styles.main} sx={{ pt: 'var(--global-header-height)' }}>
@@ -83,36 +78,23 @@ export default function HomePageContent({
           <Typography component="p" className={styles.heroLead}>
             {t('home.hero.subtitle')}
           </Typography>
+          {/* Phones (and narrow windows): the official badge for this visitor's
+              store. A phone that scanned the laptop's code lands here, so the
+              badge's link id says `hero.desktop` after a scan. */}
           <Box className={styles.heroActions}>
-            {install.stores.map((store, index) => (
-              <Button
-                key={store}
-                variant={index === 0 ? 'contained' : 'outlined'}
-                size="large"
-                startIcon={<HeroInstallIcon />}
-                sx={index === 0 ? HERO_PRIMARY : HERO_SECONDARY}
-                href={buildStoreUrl(store, { placement: 'hero', inbound: inboundCampaign })}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() =>
-                  trackAppInstallClick({
-                    platform: store,
-                    source: store === 'ios' ? 'app-store' : 'google-play',
-                    placement: 'hero',
-                    mode: install.mode,
-                  })
-                }
-              >
-                {install.mode === 'update'
-                  ? t('home.hero.ctaUpdate')
-                  : install.stores.length === 1
-                    ? website('freeApp')
-                    : store === 'ios'
-                      ? t('home.hero.ctaInstallIos')
-                      : t('home.hero.ctaInstallAndroid')}
-              </Button>
-            ))}
+            <StoreInstallButtons
+              placement="hero"
+              align="start"
+              qrLanding="home"
+              labels={{
+                ios: t('home.hero.ctaInstallIos'),
+                android: t('home.hero.ctaInstallAndroid'),
+                update: t('home.hero.ctaUpdate'),
+                locale: isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE,
+              }}
+            />
           </Box>
+          {desktopInstall ? <Box className={styles.heroDesktopInstall}>{desktopInstall}</Box> : null}
           <Box className={styles.heroSecondary}>
             <StartClimbingButton
               label={t('home.hero.startClimbingWeb')}
