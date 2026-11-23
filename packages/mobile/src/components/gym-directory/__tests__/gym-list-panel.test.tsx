@@ -329,6 +329,29 @@ describe('GymListPanel', () => {
     expect(onClaimGym).not.toHaveBeenCalled();
   });
 
+  it('offers no claim on a gym its staff run, even with a stale canClaim', () => {
+    const onClaimGym = vi.fn();
+    const runByStaff = makeExpandedClaimData().map((row) =>
+      row.kind === 'gym' ? { ...row, gym: { ...row.gym, listingState: 'RUN_BY_GYM' } as Gym } : row,
+    );
+    const { getAllByRole, queryByText } = render(
+      <GymListPanel
+        data={runByStaff}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        onClaimGym={onClaimGym}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    // Only the gym header row: no claim action.
+    expect(getAllByRole('button')).toHaveLength(1);
+    expect(queryByText('mobile.gymClaim.claimAction')).toBeNull();
+  });
+
   it('does not render a claim action when no onClaimGym handler is supplied', () => {
     const { getAllByRole } = render(
       <GymListPanel

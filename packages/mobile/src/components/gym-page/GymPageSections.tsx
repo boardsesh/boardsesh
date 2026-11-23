@@ -506,7 +506,11 @@ export const GymClaimCardBlock = memo(function GymClaimCardBlock({
             <View style={styles.pending}>
               <Icon name="info" size={20} color={systemColors.secondaryLabel} />
               <Text variant="subheadline" tone="secondary" style={styles.pendingText}>
-                {t('mobile.gymPage.claimDenied', { gym: gymName })}
+                {/* One card for a denial, an expiry and a revert. Without Try again
+                    (the gym can't be claimed now), the copy doesn't offer it either. */}
+                {card === 'denied'
+                  ? t('mobile.gymPage.claimDenied', { gym: gymName })
+                  : t('mobile.gymPage.claimDeniedClosed', { gym: gymName })}
               </Text>
             </View>
             {card === 'denied' ? (

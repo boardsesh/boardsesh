@@ -204,6 +204,31 @@ describe('ClaimGymSheet — claim outcome', () => {
   });
 });
 
+describe('ClaimGymSheet — a refused claim', () => {
+  it("says a gym its staff run can't be claimed in the app's words, not the server's English", async () => {
+    mockMutateAsync.mockRejectedValueOnce(
+      Object.assign(new Error('Refused: staff-run listing'), {
+        response: { errors: [{ extensions: { code: 'GYM_RUN_BY_STAFF' } }] },
+      }),
+    );
+
+    renderSheet();
+    submit();
+
+    await waitFor(() => expect(screen.getByText('mobile.gymClaim.errorRunByStaff')).toBeTruthy());
+    expect(screen.queryByText('Refused: staff-run listing')).toBeNull();
+  });
+
+  it("keeps the server's message for any other refusal", async () => {
+    mockMutateAsync.mockRejectedValueOnce(new Error('This gym is private and cannot be claimed'));
+
+    renderSheet();
+    submit();
+
+    await waitFor(() => expect(screen.getByText('This gym is private and cannot be claimed')).toBeTruthy());
+  });
+});
+
 describe('ClaimGymSheet — which form opens', () => {
   it('opens admin review when the server says the website cannot prove a claim, whatever the website looks like', () => {
     renderSheet({ website: 'https://bonsist.nl', canClaimByDomain: false });

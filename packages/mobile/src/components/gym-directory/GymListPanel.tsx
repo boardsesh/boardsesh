@@ -356,8 +356,9 @@ const GymRow = memo(function GymRow({
 
       {/* The claim entry for the person a claim is FOR — a real gym owner with no
           Boardsesh rights yet (canClaim true, canEdit false). Only inside the
-          expanded row so it never clutters the collapsed finder list. */}
-      {expanded && gym.canClaim && onClaimGym ? (
+          expanded row so it never clutters the collapsed finder list. Never on a
+          gym its staff run: nobody can claim one, and the server says so too. */}
+      {expanded && gym.canClaim && gym.listingState !== 'RUN_BY_GYM' && onClaimGym ? (
         <ClaimRow onPress={handleClaim} label={t('mobile.gymClaim.claimAction')} />
       ) : null}
     </View>

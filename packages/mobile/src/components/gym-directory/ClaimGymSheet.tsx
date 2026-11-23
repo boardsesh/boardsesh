@@ -12,6 +12,7 @@ import {
   extractDomain,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
   GYM_CLAIM_SUPPORT_EMAIL,
+  isGymRunByStaffError,
 } from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
@@ -116,7 +117,13 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed, onCheckBoards }: ClaimG
         const result = await requestClaim.mutateAsync({ gymUuid: gym.uuid, ...input });
         setConfirmation({ status: result.status, email: result.email });
       } catch (error) {
-        setErrorMessage(extractGraphqlMessage(error) ?? t('mobile.gymClaim.errorGeneric'));
+        // A gym its staff run can't be claimed: say so in the climber's language,
+        // not the server's English.
+        setErrorMessage(
+          isGymRunByStaffError(error)
+            ? t('mobile.gymClaim.errorRunByStaff')
+            : (extractGraphqlMessage(error) ?? t('mobile.gymClaim.errorGeneric')),
+        );
       }
     },
     [requestClaim, gym.uuid, t],
