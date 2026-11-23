@@ -17,6 +17,7 @@ import { users } from '../auth/users';
 import { userBoards } from './boards';
 import { gyms } from './gyms';
 import { notifications } from './notifications';
+import { boardModerationActorRoleEnum } from './board-moderation-events';
 
 // The values below are `@boardsesh/directory-moderation`'s lists, written out:
 // this package builds to plain JS for drizzle-kit and cannot import a TS-source
@@ -183,9 +184,9 @@ export const directoryReportReporters = pgTable(
 /**
  * What a directory notification is about, beyond the `notifications` row's own
  * entity (the board or gym uuid). The feed reads it to word the row: the
- * report's reason and outcome, whether it was the seven-day reminder, and the
- * gym a staff removal took the board off (which the board itself no longer
- * names once it is unlinked).
+ * report's reason and outcome, whether it was the seven-day reminder, who
+ * acted on a board (gym staff or a moderator), and the gym a staff removal took
+ * the board off (which the board itself no longer names once it is unlinked).
  *
  * A side table rather than columns on `notifications`, which is large and hot;
  * `app_feedback_messages.notification_uuid` is the same shape.
@@ -200,6 +201,9 @@ export const directoryNotificationContext = pgTable(
     boardId: bigint('board_id', { mode: 'number' }).references(() => userBoards.id, { onDelete: 'cascade' }),
     gymId: bigint('gym_id', { mode: 'number' }).references(() => gyms.id, { onDelete: 'set null' }),
     isReminder: boolean('is_reminder').default(false).notNull(),
+    // A staff action notice (removed, deleted, edited): the authority the actor
+    // used, so the feed can say "{{gym}} staff" or "a Boardsesh moderator".
+    actorRole: boardModerationActorRoleEnum('actor_role'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [index('directory_notification_context_report_idx').on(table.reportId)],

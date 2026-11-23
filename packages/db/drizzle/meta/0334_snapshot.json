@@ -1,5 +1,5 @@
 {
-  "id": "f28676c6-7123-4d12-9e74-426b395974e8",
+  "id": "35aafdda-b029-44a2-9afe-517d0dcea044",
   "prevId": "72f780ba-ef17-4ff3-ae63-c6e7fa2225a6",
   "version": "7",
   "dialect": "postgresql",
@@ -25861,6 +25861,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "board_moderation_actor_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
