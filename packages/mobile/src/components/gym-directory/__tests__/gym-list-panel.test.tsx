@@ -13,6 +13,11 @@ type PressProps = { children?: ReactNode; onPress?: () => void };
 const ensureVisible = vi.fn();
 const snapTo = vi.fn();
 const scrollToIndex = vi.fn();
+vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
 vi.mock('../use-gym-panel-gesture', () => ({
   useGymPanelGesture: () => ({
     gesture: {},
@@ -272,11 +277,10 @@ describe('GymListPanel', () => {
         searchSlot={<div>search</div>}
       />,
     );
-    // The expanded, claimable, board-less row yields two pressables: the gym
-    // header (index 0) and the claim action (index 1).
+    // The expanded row offers the gym heading, board merges, and claiming.
     const buttons = getAllByRole('button');
-    expect(buttons).toHaveLength(2);
-    fireEvent.click(buttons[1]);
+    expect(buttons).toHaveLength(3);
+    fireEvent.click(buttons[2]);
     expect(onClaimGym).toHaveBeenCalledWith(claimableGym);
   });
 
@@ -293,8 +297,8 @@ describe('GymListPanel', () => {
         searchSlot={<div>search</div>}
       />,
     );
-    // Only the gym header row is pressable without a claim handler.
-    expect(getAllByRole('button')).toHaveLength(1);
+    // The gym header and board-merge action remain, without a claim action.
+    expect(getAllByRole('button')).toHaveLength(2);
   });
 
   it('shows the location prompt in place of the list before a location resolves', () => {

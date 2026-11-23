@@ -176,6 +176,13 @@ function EditGymForm({ gym }: { gym: Gym }) {
 
   const extraSections = (
     <>
+      {gym.canEdit ? (
+        <Button
+          title={t('merge.manage')}
+          variant="tonal"
+          onPress={() => router.push({ pathname: '/moderation/board-merges', params: { gymUuid: gym.uuid } })}
+        />
+      ) : null}
       {gym.canGrantAccess ? <GymWriteAccessSection gymUuid={gym.uuid} /> : null}
       {gym.canClaim ? (
         <View style={styles.claimSection}>

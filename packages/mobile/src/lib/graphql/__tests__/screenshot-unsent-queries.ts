@@ -27,6 +27,10 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardClimbRecentSenders',
   'BoardHistory',
   'BoardHistoryPage',
+  // Only the explicit merge-request/review route; screenshot capture flows never open it.
+  'BoardMergeCandidates',
+  'BoardMergePreview',
+  'BoardMergeRequests',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
   'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.

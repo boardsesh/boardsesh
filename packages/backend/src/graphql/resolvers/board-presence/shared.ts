@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { executeRows } from '@boardsesh/db/client';
+import { boardMatchesSerial } from '@boardsesh/db/queries';
+export { boardMatchesSerial } from '@boardsesh/db/queries';
 import {
   SYSTEM_BOARD_OWNER_ID,
   SYSTEM_BOARD_OWNER_EMAIL,
@@ -130,6 +132,7 @@ type ChosenBoardLookup = {
  * candidates at all. Omitted by clients that predate the fix, which keep the old
  * type-blind behaviour.
  */
+
 export async function findActiveBoardsBySerial(
   serial: string,
   readDb: BoardPresenceReadDb = db,
@@ -165,7 +168,7 @@ export async function findActiveBoardsBySerial(
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
     .where(
       and(
-        eq(dbSchema.userBoards.serialNumber, serial),
+        boardMatchesSerial(serial),
         isNull(dbSchema.userBoards.deletedAt),
         advertisedBoardType ? eq(dbSchema.userBoards.boardType, advertisedBoardType) : undefined,
       ),
@@ -223,7 +226,7 @@ export async function hasSyncedGymBoardForSerial(
     .from(dbSchema.userBoards)
     .where(
       and(
-        eq(dbSchema.userBoards.serialNumber, serial),
+        boardMatchesSerial(serial),
         isNull(dbSchema.userBoards.deletedAt),
         eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
         isNotNull(dbSchema.userBoards.gymId),

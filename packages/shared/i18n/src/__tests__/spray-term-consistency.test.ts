@@ -62,6 +62,7 @@ const NOT_A_WALL_KEYS = ['boards.json:sprayModeration.reasons.notAWall', 'admin.
 // Strings that say "Spray" but mean the Tension Board 2 Spray layout, a product
 // name like Mirror, never a spray wall. They are not spray-wall strings at all.
 const TB2_SPRAY_LAYOUT_KEYS = new Set([
+  'boards.json:merge.selectionHint',
   'cnc.json:hero.firstBoard',
   'cnc.json:configurator.options.tb2Engraving.values.spray',
   'cnc.json:configurator.options.tb2Engraving.values.both',

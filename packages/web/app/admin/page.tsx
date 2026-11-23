@@ -22,6 +22,7 @@ import { rolesGrantGlobalAdmin, rolesGrantScopedAdmin } from '@/app/lib/admin/ad
 
 export default function AdminPage() {
   const { t } = useTranslation('admin');
+  const { t: tBoards } = useTranslation('boards');
   const { token } = useWsAuthToken();
   const [tab, setTab] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -143,6 +144,9 @@ export default function AdminPage() {
         </MuiLink>
       </Box>
 
+      <MuiLink component={LocaleLink} href="/moderation/board-merges">
+        {tBoards('merge.queue')}
+      </MuiLink>
       <Box sx={{ borderBottom: 1, borderColor: themeTokens.neutral[200], mb: 3 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab label={t('tabs.roles')} sx={{ textTransform: 'none' }} />

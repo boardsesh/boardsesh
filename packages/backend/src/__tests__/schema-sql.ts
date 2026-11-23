@@ -4,6 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs';
+const boardMergeSchema = readFileSync(
+  new URL('../../../db/drizzle/0333_nifty_the_anarchist.sql', import.meta.url),
+  'utf8',
+);
 // Notification types are text in this fixture; reuse the generated conversation DDL.
 const feedbackConversationSchema = readFileSync(
   new URL('../../../db/drizzle/0331_feedback_github_conversations.sql', import.meta.url),
@@ -2613,4 +2617,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerSessionTriggersSchema};
   ${partnerSessionHintPrivacySchema};
   ${offlineWriteDeliverySchema};
+  ${boardMergeSchema};
 `;

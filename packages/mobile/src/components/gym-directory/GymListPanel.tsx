@@ -1,3 +1,5 @@
+import { useRouter } from 'expo-router';
+import { Button } from '../Button';
 import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -271,6 +273,11 @@ const GymRow = memo(function GymRow({
   onEditBoard,
   onClaimGym,
 }: GymRowProps) {
+  const router = useRouter();
+  const openMerges = useCallback(
+    () => router.push({ pathname: '/moderation/board-merges', params: { gymUuid: gym.uuid } }),
+    [router, gym.uuid],
+  );
   const { systemColors, selection } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onPressGym(gym), [onPressGym, gym]);
@@ -316,6 +323,7 @@ const GymRow = memo(function GymRow({
         </PressableSurface>
         {expanded ? <GymShareButton gym={gym} /> : null}
       </View>
+      {expanded ? <Button title={t('merge.manage')} variant="text" onPress={openMerges} /> : null}
 
       {expanded ? (
         boards.length > 0 ? (

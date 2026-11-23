@@ -100,6 +100,7 @@ describe('root modal routes and the launch update gate', () => {
       'boards',
       'join/[sessionId]',
       'moderation',
+      'moderation/board-merges',
       'moderation/spray-walls',
       'onboarding',
       'play',

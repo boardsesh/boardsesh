@@ -275,11 +275,14 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
     [activeBoardType],
   );
 
+  const openBoardMerges = useCallback(() => router.push('/moderation/board-merges'), [router]);
+
   const openSprayReports = useCallback(() => router.push('/moderation/spray-walls'), [router]);
 
   const listHeader = useMemo(
     () => (
       <View style={styles.header}>
+        <Button title={tBoards('merge.queue')} variant="tonal" onPress={openBoardMerges} />
         {canReviewSpray ? (
           <Button title={tBoards('sprayModeration.queueTitle')} variant="tonal" onPress={openSprayReports} />
         ) : null}
@@ -314,6 +317,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
       </View>
     ),
     [
+      openBoardMerges,
       canReviewSpray,
       openSprayReports,
       tBoards,

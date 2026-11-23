@@ -994,6 +994,68 @@ export type BoardLeaderboardInput = {
   period?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type BoardMergeCandidateConnection = {
+  __typename?: 'BoardMergeCandidateConnection';
+  boards: Array<UserBoard>;
+  hasMore: Scalars['Boolean']['output'];
+};
+
+export type BoardMergeCandidatesInput = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type BoardMergePreview = {
+  __typename?: 'BoardMergePreview';
+  boards: Array<UserBoard>;
+  canMerge: Scalars['Boolean']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  suggestedCanonicalBoardUuid: Scalars['ID']['output'];
+  version: Scalars['String']['output'];
+};
+
+export type BoardMergeReport = {
+  __typename?: 'BoardMergeReport';
+  createdAt: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+};
+
+export type BoardMergeRequest = {
+  __typename?: 'BoardMergeRequest';
+  boardUuids: Array<Scalars['ID']['output']>;
+  boards: Array<UserBoard>;
+  canResolve: Scalars['Boolean']['output'];
+  canonicalBoardUuid: Scalars['ID']['output'];
+  createdAt: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+  reports: Array<BoardMergeReport>;
+  resolutionReason?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type BoardMergeRequestConnection = {
+  __typename?: 'BoardMergeRequestConnection';
+  hasMore: Scalars['Boolean']['output'];
+  requests: Array<BoardMergeRequest>;
+};
+
+export type BoardMergeRequestsInput = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type BoardMergeResult = {
+  __typename?: 'BoardMergeResult';
+  canonicalBoardUuid: Scalars['ID']['output'];
+};
+
 /**
  * A climb reported as lit on a physical board. Denormalised for display (mirrors
  * the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
@@ -4813,6 +4875,13 @@ export type LoggedSetter = {
   tickCount: Scalars['Int']['output'];
 };
 
+export type MergeBoardsInput = {
+  boardUuids: Array<Scalars['ID']['input']>;
+  canonicalBoardUuid: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  version: Scalars['String']['input'];
+};
+
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
 export type MergeGymsInput = {
   /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
@@ -5207,6 +5276,7 @@ export type Mutation = {
   markGroupNotificationsRead: Scalars['Int']['output'];
   /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
+  mergeBoards: BoardMergeResult;
   /**
    * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
    * duplicate's boards, follows, members, claims, kiosks, comments, feed items,
@@ -5392,6 +5462,7 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestBoardMerge: BoardMergeRequest;
   requestCncArtworkValidation: CncComputation;
   requestCncLayout: CncComputation;
   requestFollow: PrivacyRelationship;
@@ -5478,6 +5549,7 @@ export type Mutation = {
    * connects and stay aligned with board-scoped ticks.
    */
   resolveBoardForUuid: ResolvedBoard;
+  resolveBoardMergeRequest: BoardMergeRequest;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
   /**
@@ -6133,6 +6205,11 @@ export type MutationMarkNotificationReadArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationMergeBoardsArgs = {
+  input: MergeBoardsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationMergeGymsArgs = {
   input: MergeGymsInput;
 };
@@ -6319,6 +6396,11 @@ export type MutationReportSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestBoardMergeArgs = {
+  input: RequestBoardMergeInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRequestCncArtworkValidationArgs = {
   config: CncBoardConfigInput;
 };
@@ -6403,6 +6485,11 @@ export type MutationResolveBoardForSerialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveBoardForUuidArgs = {
   boardUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResolveBoardMergeRequestArgs = {
+  input: ResolveBoardMergeRequestInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7964,6 +8051,9 @@ export type Query = {
    * followed-climber reasons need authentication.
    */
   boardLiveSessions: Array<LiveSession>;
+  boardMergeCandidates: BoardMergeCandidateConnection;
+  boardMergePreview: BoardMergePreview;
+  boardMergeRequests: BoardMergeRequestConnection;
   /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
@@ -8937,6 +9027,21 @@ export type QueryBoardLeaderboardArgs = {
 export type QueryBoardLiveSessionsArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergeCandidatesArgs = {
+  input?: InputMaybe<BoardMergeCandidatesInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergePreviewArgs = {
+  boardUuids: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergeRequestsArgs = {
+  input?: InputMaybe<BoardMergeRequestsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -10167,6 +10272,12 @@ export type ReportSprayWallInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type RequestBoardMergeInput = {
+  boardUuids: Array<Scalars['ID']['input']>;
+  canonicalBoardUuid: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
 /** Input for requesting ownership of a gym. */
 export type RequestGymClaimInput = {
   /** Work email at the gym's website domain (domain-verified path). Omit to request admin review. */
@@ -10194,6 +10305,14 @@ export type RequestSprayWallDetectionInput = {
 export type ResetSprayWallInput = {
   /** The published, live wall to replace. */
   wallUuid: Scalars['ID']['input'];
+};
+
+export type ResolveBoardMergeRequestInput = {
+  approve: Scalars['Boolean']['input'];
+  canonicalBoardUuid?: InputMaybe<Scalars['ID']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+  requestUuid: Scalars['ID']['input'];
+  version?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**
@@ -13955,6 +14074,14 @@ export type ResolversTypes = ResolversObject<{
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
   BoardLeaderboardInput: BoardLeaderboardInput;
+  BoardMergeCandidateConnection: ResolverTypeWrapper<BoardMergeCandidateConnection>;
+  BoardMergeCandidatesInput: BoardMergeCandidatesInput;
+  BoardMergePreview: ResolverTypeWrapper<BoardMergePreview>;
+  BoardMergeReport: ResolverTypeWrapper<BoardMergeReport>;
+  BoardMergeRequest: ResolverTypeWrapper<BoardMergeRequest>;
+  BoardMergeRequestConnection: ResolverTypeWrapper<BoardMergeRequestConnection>;
+  BoardMergeRequestsInput: BoardMergeRequestsInput;
+  BoardMergeResult: ResolverTypeWrapper<BoardMergeResult>;
   BoardPresenceClimb: ResolverTypeWrapper<BoardPresenceClimb>;
   BoardPresenceEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['BoardPresenceEvent']>;
   BoardPresenceHardestSend: ResolverTypeWrapper<BoardPresenceHardestSend>;
@@ -14194,6 +14321,7 @@ export type ResolversTypes = ResolversObject<{
   LiveSessionUser: ResolverTypeWrapper<LiveSessionUser>;
   LocationSyncEntityType: LocationSyncEntityType;
   LoggedSetter: ResolverTypeWrapper<LoggedSetter>;
+  MergeBoardsInput: MergeBoardsInput;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
   MobileReleaseStatusInput: MobileReleaseStatusInput;
@@ -14316,10 +14444,12 @@ export type ResolversTypes = ResolversObject<{
   ReportGymDuplicateResult: ResolverTypeWrapper<ReportGymDuplicateResult>;
   ReportGymDuplicateStatus: ReportGymDuplicateStatus;
   ReportSprayWallInput: ReportSprayWallInput;
+  RequestBoardMergeInput: RequestBoardMergeInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: ResolverTypeWrapper<RequestGymClaimResult>;
   RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResetSprayWallInput: ResetSprayWallInput;
+  ResolveBoardMergeRequestInput: ResolveBoardMergeRequestInput;
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolverTypeWrapper<ResolvedBoard>;
@@ -14588,6 +14718,14 @@ export type ResolversParentTypes = ResolversObject<{
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
   BoardLeaderboardInput: BoardLeaderboardInput;
+  BoardMergeCandidateConnection: BoardMergeCandidateConnection;
+  BoardMergeCandidatesInput: BoardMergeCandidatesInput;
+  BoardMergePreview: BoardMergePreview;
+  BoardMergeReport: BoardMergeReport;
+  BoardMergeRequest: BoardMergeRequest;
+  BoardMergeRequestConnection: BoardMergeRequestConnection;
+  BoardMergeRequestsInput: BoardMergeRequestsInput;
+  BoardMergeResult: BoardMergeResult;
   BoardPresenceClimb: BoardPresenceClimb;
   BoardPresenceEvent: ResolversUnionTypes<ResolversParentTypes>['BoardPresenceEvent'];
   BoardPresenceHardestSend: BoardPresenceHardestSend;
@@ -14800,6 +14938,7 @@ export type ResolversParentTypes = ResolversObject<{
   LiveSessionClimb: LiveSessionClimb;
   LiveSessionUser: LiveSessionUser;
   LoggedSetter: LoggedSetter;
+  MergeBoardsInput: MergeBoardsInput;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: MergeGymsResult;
   MobileReleaseStatusInput: MobileReleaseStatusInput;
@@ -14904,10 +15043,12 @@ export type ResolversParentTypes = ResolversObject<{
   ReportGymDuplicateInput: ReportGymDuplicateInput;
   ReportGymDuplicateResult: ReportGymDuplicateResult;
   ReportSprayWallInput: ReportSprayWallInput;
+  RequestBoardMergeInput: RequestBoardMergeInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: RequestGymClaimResult;
   RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResetSprayWallInput: ResetSprayWallInput;
+  ResolveBoardMergeRequestInput: ResolveBoardMergeRequestInput;
   ResolveBoardResult: ResolveBoardResult;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolvedBoard;
@@ -15722,6 +15863,72 @@ export type BoardLeaderboardEntryResolvers<
   userAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergeCandidateConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergeCandidateConnection'] =
+    ResolversParentTypes['BoardMergeCandidateConnection'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergePreviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergePreview'] = ResolversParentTypes['BoardMergePreview'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  canMerge?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  reason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suggestedCanonicalBoardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergeReportResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergeReport'] = ResolversParentTypes['BoardMergeReport'],
+> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergeRequestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergeRequest'] = ResolversParentTypes['BoardMergeRequest'],
+> = ResolversObject<{
+  boardUuids?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  boards?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  canResolve?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  canonicalBoardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  reports?: Resolver<Array<ResolversTypes['BoardMergeReport']>, ParentType, ContextType>;
+  resolutionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergeRequestConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergeRequestConnection'] =
+    ResolversParentTypes['BoardMergeRequestConnection'],
+> = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  requests?: Resolver<Array<ResolversTypes['BoardMergeRequest']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardMergeResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardMergeResult'] = ResolversParentTypes['BoardMergeResult'],
+> = ResolversObject<{
+  canonicalBoardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -18029,6 +18236,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationMarkNotificationReadArgs, 'notificationUuid'>
   >;
+  mergeBoards?: Resolver<
+    ResolversTypes['BoardMergeResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationMergeBoardsArgs, 'input'>
+  >;
   mergeGyms?: Resolver<
     ResolversTypes['MergeGymsResult'],
     ParentType,
@@ -18236,6 +18449,12 @@ export type MutationResolvers<
     RequireFields<MutationReportSprayWallArgs, 'input'>
   >;
   reportWallDisconnect?: Resolver<ResolversTypes['Session'], ParentType, ContextType>;
+  requestBoardMerge?: Resolver<
+    ResolversTypes['BoardMergeRequest'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestBoardMergeArgs, 'input'>
+  >;
   requestCncArtworkValidation?: Resolver<
     ResolversTypes['CncComputation'],
     ParentType,
@@ -18323,6 +18542,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationResolveBoardForUuidArgs, 'boardUuid'>
+  >;
+  resolveBoardMergeRequest?: Resolver<
+    ResolversTypes['BoardMergeRequest'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationResolveBoardMergeRequestArgs, 'input'>
   >;
   resolveProposal?: Resolver<
     ResolversTypes['Proposal'],
@@ -19490,6 +19715,24 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryBoardLiveSessionsArgs, 'boardId'>
+  >;
+  boardMergeCandidates?: Resolver<
+    ResolversTypes['BoardMergeCandidateConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryBoardMergeCandidatesArgs>
+  >;
+  boardMergePreview?: Resolver<
+    ResolversTypes['BoardMergePreview'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardMergePreviewArgs, 'boardUuids'>
+  >;
+  boardMergeRequests?: Resolver<
+    ResolversTypes['BoardMergeRequestConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryBoardMergeRequestsArgs>
   >;
   boardPresenceStats?: Resolver<
     ResolversTypes['BoardPresenceStats'],
@@ -22273,6 +22516,12 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardHoldOutlines?: BoardHoldOutlinesResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;
+  BoardMergeCandidateConnection?: BoardMergeCandidateConnectionResolvers<ContextType>;
+  BoardMergePreview?: BoardMergePreviewResolvers<ContextType>;
+  BoardMergeReport?: BoardMergeReportResolvers<ContextType>;
+  BoardMergeRequest?: BoardMergeRequestResolvers<ContextType>;
+  BoardMergeRequestConnection?: BoardMergeRequestConnectionResolvers<ContextType>;
+  BoardMergeResult?: BoardMergeResultResolvers<ContextType>;
   BoardPresenceClimb?: BoardPresenceClimbResolvers<ContextType>;
   BoardPresenceEvent?: BoardPresenceEventResolvers<ContextType>;
   BoardPresenceHardestSend?: BoardPresenceHardestSendResolvers<ContextType>;

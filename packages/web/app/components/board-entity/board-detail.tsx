@@ -23,6 +23,7 @@ import TrendingUpOutlined from '@mui/icons-material/TrendingUpOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import ChatBubbleOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -359,6 +360,14 @@ export function BoardDetailContent({
         </Box>
 
         {/* Actions */}
+        {board.isPublic && board.boardType !== 'spray' && (
+          <MuiButton
+            component={LocaleLink}
+            href={`/moderation/board-merges?boardUuid=${encodeURIComponent(board.uuid)}`}
+          >
+            {t('merge.report')}
+          </MuiButton>
+        )}
         <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
           {!isOwner && (
             <FollowButton
