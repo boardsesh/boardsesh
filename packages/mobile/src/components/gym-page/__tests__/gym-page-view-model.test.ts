@@ -114,6 +114,12 @@ describe('deriveGymPageViewModel: claiming', () => {
     expect(model.inlineClaim).toBe(true);
   });
 
+  it('shows no claim card while the session is still being restored', () => {
+    const model = deriveGymPageViewModel(gym({ canClaim: true }), { ...SIGNED_OUT, authResolved: false });
+    expect(model.claimCard).toBe('hidden');
+    expect(model.inlineClaim).toBe(false);
+  });
+
   it('hides the claim for everyone on a gym its staff run', () => {
     const runByGym = gym({ listingState: 'RUN_BY_GYM', canClaim: true });
     expect(deriveGymPageViewModel(runByGym, CLIMBER).claimCard).toBe('hidden');
@@ -225,6 +231,12 @@ describe('buildGymPageItems', () => {
     const items = buildGymPageItems({ model, boards: [], boardsState, canReport: false });
     expect(items.map((item) => item.kind)).toEqual(['top', 'boardsHeader', kind]);
     expect(items[1]).toMatchObject({ count });
+  });
+
+  it('shows no count while placeholder rows stand in for the loading list', () => {
+    const model = deriveGymPageViewModel(gym(), CLIMBER);
+    const items = buildGymPageItems({ model, boards, boardsState: 'loading', canReport: false });
+    expect(items[1]).toMatchObject({ kind: 'boardsHeader', count: null });
   });
 
   it('keeps boards on screen through a refetch that fails', () => {
