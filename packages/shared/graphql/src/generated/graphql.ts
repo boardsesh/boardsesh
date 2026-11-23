@@ -4204,10 +4204,16 @@ export type GymClaim = {
   __typename?: 'GymClaim';
   /** Email address (domain path) */
   claimEmail?: Maybe<Scalars['String']['output']>;
+  /** Admin queue only: days since the claimant's account was created. */
+  claimantAccountAgeDays?: Maybe<Scalars['Int']['output']>;
   /** Claimant avatar URL */
   claimantAvatarUrl?: Maybe<Scalars['String']['output']>;
   /** Claimant display name */
   claimantDisplayName?: Maybe<Scalars['String']['output']>;
+  /** Admin queue only: how many other live gyms the claimant owns or is an admin of. */
+  claimantGymsHeld?: Maybe<Scalars['Int']['output']>;
+  /** Admin queue only: how many climbs the claimant has logged. */
+  claimantTickCount?: Maybe<Scalars['Int']['output']>;
   /** Claimant user ID */
   claimantUserId: Scalars['ID']['output'];
   /** When the claim was created */
@@ -4255,7 +4261,14 @@ export type GymClaimRequestStatus =
   /** A verification email was sent to the claimant's work address. */
   | 'email_sent';
 
-export type GymClaimStatus = 'approved' | 'denied' | 'expired' | 'pending';
+export type GymClaimStatus =
+  | 'approved'
+  | 'denied'
+  /** An admin-review claim nobody decided within 30 days, or a domain link that went unused. */
+  | 'expired'
+  | 'pending'
+  /** An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again. */
+  | 'revoked';
 
 /** The strongest ownership-claim state on a gym row. */
 export type GymClusterClaimStatus =
@@ -5670,6 +5683,14 @@ export type Mutation = {
   retryAppBugReportMessage: AppBugReportMessage;
   retrySprayWallDetection: SprayWallDetection;
   /**
+   * Take back an approved gym claim (global admin only): the gym goes back to
+   * the SYSTEM account, the claim becomes `revoked`, the sync freeze set at
+   * approval is cleared so the location sync curates the listing again, and the
+   * claimant plus every gym member or editor added since the claim lose their
+   * membership. Refused when the gym has changed hands since the claim.
+   */
+  revertGymClaim: RevertGymClaimResult;
+  /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
    * ownership to the claimant.
    */
@@ -6615,6 +6636,11 @@ export type MutationRetryAppBugReportMessageArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRetrySprayWallDetectionArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRevertGymClaimArgs = {
+  input: RevertGymClaimInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -10527,6 +10553,27 @@ export type ResourcePrivacySettings = {
   ownerId?: Maybe<Scalars['ID']['output']>;
   resourceId: Scalars['ID']['output'];
   revision: Scalars['Int']['output'];
+};
+
+/** Input for taking back an approved gym claim (global admin only). */
+export type RevertGymClaimInput = {
+  /** The approved claim to take back (the id the admin queue and the daily digest use) */
+  claimId: Scalars['ID']['input'];
+  /** Why, for the ownership audit trail. Optional. */
+  reason?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** What revertGymClaim did. */
+export type RevertGymClaimResult = {
+  __typename?: 'RevertGymClaimResult';
+  /** The reverted claim */
+  claimId: Scalars['ID']['output'];
+  /** The gym's name */
+  gymName: Scalars['String']['output'];
+  /** The gym, now unclaimed */
+  gymUuid: Scalars['ID']['output'];
+  /** Gym members and editors removed: the claimant's own row and everyone added since the claim */
+  removedMemberCount: Scalars['Int']['output'];
 };
 
 /** Input for an admin reviewing a pending gym claim. */

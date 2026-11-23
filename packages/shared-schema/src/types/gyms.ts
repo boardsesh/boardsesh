@@ -34,7 +34,7 @@ export type GymListingState = 'UNCLAIMED' | 'CLIMBER_LISTED' | 'RUN_BY_GYM';
 
 export type GymClaimMethod = 'domain' | 'admin';
 
-export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired';
+export type GymClaimStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'revoked';
 
 export type GymClaimRequestStatus = 'email_sent' | 'admin_review' | 'approved';
 
@@ -301,6 +301,12 @@ export type GymClaim = {
   claimEmail?: string | null;
   message?: string | null;
   createdAt: string;
+  /** Admin queue only: days since the claimant's account was created. */
+  claimantAccountAgeDays?: number | null;
+  /** Admin queue only: climbs the claimant has logged. */
+  claimantTickCount?: number | null;
+  /** Admin queue only: other live gyms the claimant owns or admins. */
+  claimantGymsHeld?: number | null;
 };
 
 export type GymClaimConnection = {
@@ -312,6 +318,18 @@ export type GymClaimConnection = {
 export type ReviewGymClaimInput = {
   claimId: string;
   decision: GymClaimDecision;
+};
+
+export type RevertGymClaimInput = {
+  claimId: string;
+  reason?: string | null;
+};
+
+export type RevertGymClaimResult = {
+  claimId: string;
+  gymUuid: string;
+  gymName: string;
+  removedMemberCount: number;
 };
 
 export type PendingGymClaimsInput = {
