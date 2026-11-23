@@ -92,6 +92,8 @@ After the commit, best effort, it sends the claimant the in-app `gym_claim_denie
 
 `addGymMember` and `grantGymWriteAccess` take the same gym row lock before they write, and read the caller's authority again under it. A claimant who passed the gate just before a revert either lands first, and the revert removes the row, or waits and is refused.
 
+`deleteGym` takes the same lock and reads the owner and probation again under it before the soft delete. A claimant who passed the first check just before a revert either deletes the gym first, and the revert finds it gone, or waits and is refused: the gym is SYSTEM's by then.
+
 Not undone: boards the claimant edited, took off the listing or attached from nearby, kiosks they set up, a pre-claim member they promoted to editor, and the gym's description, hours, photo and branding. An admin fixes those by hand.
 
 The web screen for it is PR 7. The daily digest already links each auto-approval to `/admin/gym-claims?revert=<claim id>`.
@@ -141,6 +143,6 @@ When a domain-claim link fails (`used`, `expired`, `superseded`) the redirect to
 - Auto-approval, notices, expiry, queue: `packages/backend/src/graphql/resolvers/social/gym-claims.ts`.
 - Revert: `packages/backend/src/graphql/resolvers/social/gym-claim-revert.ts`.
 - Probation gates: `deleteGym`, `addGymMember`, `removeGymMember`, `revokeGymWriteAccess` in `gyms.ts`; `boardDeleteAuthority` and `viewerMayDeleteBoard` in `boards.ts`.
-- Staff writes under the gym row lock: `withGymStaffLock` in `gyms.ts`.
+- Staff writes and `deleteGym` under the gym row lock: `withGymStaffLock` and `deleteGym` in `gyms.ts`.
 - Sweep step and digest section: `packages/backend/src/services/directory-report-sweep.ts`.
 - Tests: `packages/backend/src/__tests__/gym-claim-guardrails.test.ts`.

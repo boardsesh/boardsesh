@@ -880,6 +880,36 @@ describe('revertGymClaim', () => {
     expect(await adding).toEqual(expect.objectContaining({ message: 'Not authorized: must be gym owner or admin' }));
     expect(await memberIds(gym.id)).toEqual([]);
   });
+
+  it('refuses a delete when the revert commits between its owner check and the delete', async () => {
+    const { gym, systemBoard, claim } = await autoApprovedGym();
+    // Past probation, so the claimant may delete the gym they own.
+    await ageApproval(claim.id, GYM_CLAIM_PROBATION_DAYS + 0.1);
+
+    // deleteGym has read the gym and found the claimant its owner; the revert
+    // commits just before its write's transaction opens.
+    const realTransaction = db.transaction.bind(db);
+    const revertFirst = vi.spyOn(db, 'transaction').mockImplementationOnce(async (work, config) => {
+      await revert(claim.id);
+      return realTransaction(work, config);
+    });
+    try {
+      await expect(socialGymMutations.deleteGym(null, { gymUuid: gym.uuid }, authCtx(CLAIMANT))).rejects.toThrow(
+        'Not authorized to delete this gym',
+      );
+      expect(revertFirst).toHaveBeenCalled();
+    } finally {
+      revertFirst.mockRestore();
+    }
+
+    const after = await gymRow(gym.id);
+    expect(after).toMatchObject({ ownerId: SYSTEM_OWNER, deletedAt: null, syncFrozenAt: null });
+    const [board] = await db
+      .select({ gymId: dbSchema.userBoards.gymId })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, systemBoard.id));
+    expect(board.gymId).toBe(gym.id);
+  });
 });
 
 // ============================================================================

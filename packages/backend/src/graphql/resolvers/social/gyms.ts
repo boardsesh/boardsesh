@@ -1502,19 +1502,32 @@ export const socialGymMutations = {
     if (gym.ownerId !== userId) {
       throw new Error('Not authorized to delete this gym');
     }
-    // Not in the 14 days after the gym's claim approved itself
-    // (docs/product/gym-claims.md, "Probation").
-    await assertNoGymClaimProbation(gym.id, userId);
 
-    // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
-    // listing the owner deliberately removed (the sync clears deletedAt).
-    await db
-      .update(dbSchema.gyms)
-      .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
-      .where(eq(dbSchema.gyms.id, gym.id));
+    // Under the gym's row lock, taken first as `revertGymClaim` and the staff
+    // changes take it, the owner and probation are read again: a revert that
+    // commits after the read above hands the gym to SYSTEM, and its former
+    // claimant must not delete it.
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ ownerId: dbSchema.gyms.ownerId })
+        .from(dbSchema.gyms)
+        .where(and(eq(dbSchema.gyms.id, gym.id), isNull(dbSchema.gyms.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!locked) throw new Error('Gym not found');
+      if (locked.ownerId !== userId) throw new Error('Not authorized to delete this gym');
+      // Not in the 14 days after the gym's claim approved itself
+      // (docs/product/gym-claims.md, "Probation").
+      await assertNoGymClaimProbation(gym.id, userId, tx);
 
-    // Unlink all boards
-    await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.gymId, gym.id));
+      // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
+      // listing the owner deliberately removed (the sync clears deletedAt).
+      const now = new Date();
+      await tx.update(dbSchema.gyms).set({ deletedAt: now, syncFrozenAt: now }).where(eq(dbSchema.gyms.id, gym.id));
+
+      // Unlink all boards
+      await tx.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.gymId, gym.id));
+    });
 
     return true;
   },
