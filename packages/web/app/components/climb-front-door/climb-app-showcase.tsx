@@ -8,7 +8,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
-import type { BetaLink } from '@/app/lib/beta-video-url';
+import { dedupeBetaLinks, mapBetaLinkRow, type BetaLink } from '@/app/lib/beta-video-url';
+import { cachedPublicRecentBetaLinks } from '@/app/lib/graphql/server-cached-client';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
@@ -23,8 +24,8 @@ import styles from './climb-app-showcase.module.css';
 type ClimbAppShowcaseProps = {
   /**
    * This climb's beta, as the page already loaded it for the beta section.
-   * The "Instant beta" card shows up to three of the thumbnails; with none it
-   * shows a plain play tile. Nothing here asks the backend for more.
+   * The "Instant beta" card shows up to three of its thumbnails; with none it
+   * falls back to the site's newest beta (`InstantBetaVisual`).
    */
   betaLinks: readonly BetaLink[];
 };
@@ -102,12 +103,12 @@ type BenefitCardProps = {
   /** A link under the sentence, for the one card with somewhere to go. */
   action?: React.ReactNode;
   /** The picture, pinned to the bottom of the card. */
-  visual: React.ReactNode;
+  children: React.ReactNode;
   visualClassName?: string;
   wide?: boolean;
 };
 
-function BenefitCard({ title, body, action, visual, visualClassName, wide = false }: BenefitCardProps) {
+function BenefitCard({ title, body, action, children, visualClassName, wide = false }: BenefitCardProps) {
   return (
     <Box component="li" className={wide ? `${styles.card} ${styles.wide}` : styles.card}>
       <Box className={styles.cardText}>
@@ -119,30 +120,47 @@ function BenefitCard({ title, body, action, visual, visualClassName, wide = fals
         </Typography>
         {action}
       </Box>
-      <Box className={visualClassName ? `${styles.visual} ${visualClassName}` : styles.visual}>{visual}</Box>
+      <Box className={visualClassName ? `${styles.visual} ${visualClassName}` : styles.visual}>{children}</Box>
     </Box>
   );
 }
 
-/**
- * This climb's own beta, fanned out, each card with the filmer's handle in the
- * strip the next card leaves uncovered. Decoration: the beta section above
- * links every video, so this repeats nothing to a screen reader.
- */
-function BetaFan({ links }: { links: readonly BetaLink[] }) {
-  if (links.length === 0) {
-    return (
-      <Box aria-hidden className={styles.betaTile}>
-        <Box component="span" className={styles.playMark}>
-          <PlayArrowRounded fontSize="inherit" />
-        </Box>
+/** The plain tile: no beta to show, or while the site-wide beta is still on its way. */
+function BetaTile() {
+  return (
+    <Box aria-hidden className={styles.betaTile}>
+      <Box component="span" className={styles.playMark}>
+        <PlayArrowRounded fontSize="inherit" />
       </Box>
-    );
-  }
+    </Box>
+  );
+}
+
+/** Up to three links that have a thumbnail, one card per video. */
+function withThumbnails(links: readonly BetaLink[]): BetaLink[] {
+  return dedupeBetaLinks(links.filter((link) => Boolean(link.thumbnail))).slice(0, MAX_FAN_CARDS);
+}
+
+/**
+ * Beta videos fanned out, each card with the filmer's handle in the strip the
+ * next card leaves uncovered: this climb's own when it has any, else the
+ * newest beta on Boardsesh (the homepage's "Fresh beta", read anonymously
+ * through a ten-minute cache). The plain tile only when neither has a picture.
+ *
+ * Decoration: the beta section above links every video of this climb, so this
+ * repeats nothing to a screen reader.
+ */
+async function InstantBetaVisual({ climbBeta }: { climbBeta: readonly BetaLink[] }) {
+  const ownBeta = withThumbnails(climbBeta);
+  const fanLinks =
+    ownBeta.length > 0
+      ? ownBeta
+      : withThumbnails((await cachedPublicRecentBetaLinks()).map((row) => mapBetaLinkRow(row.betaLink)));
+  if (fanLinks.length === 0) return <BetaTile />;
 
   return (
-    <Box aria-hidden className={styles.fan} data-count={links.length}>
-      {links.map((link) =>
+    <Box aria-hidden className={styles.fan} data-count={fanLinks.length}>
+      {fanLinks.map((link) =>
         link.thumbnail ? (
           <BetaFanCard
             key={link.link}
@@ -167,11 +185,12 @@ function BetaFan({ links }: { links: readonly BetaLink[] }) {
  * The page renders this inside `<Suspense>`, and the 30-day line inside its
  * own: the hero never waits on it, and the store buttons never wait on the
  * stats read. The store block carries `data-sticky-install-hide`, so the
- * sticky install bar stays down while these buttons are on screen.
+ * sticky install bar stays down while these buttons are on screen. Both store
+ * buttons are outlined (`brand-outlined`): the page's one filled store button
+ * is the phone's hero button, and every screen keeps a single filled action.
  */
 export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcaseProps) {
   const [{ t }, storeLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);
-  const fanLinks = betaLinks.filter((link) => Boolean(link.thumbnail)).slice(0, MAX_FAN_CARDS);
 
   return (
     <Box component="section" className={styles.section} aria-labelledby="climb-app-showcase-heading">
@@ -183,29 +202,30 @@ export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcasePr
       </Typography>
 
       <MarketingPreviewProvider initialBrowser={SHARED_HTML_BROWSER}>
-        <Box component="ul" className={styles.cards}>
-          <BenefitCard
-            title={t('frontDoor.app.beta.title')}
-            body={t('frontDoor.app.beta.body')}
-            visual={<BetaFan links={fanLinks} />}
-          />
-          <BenefitCard
-            title={t('frontDoor.app.wall.title')}
-            body={t('frontDoor.app.wall.body')}
-            visual={
+        {/* Below md this scrolls sideways: focusable, so the arrow keys reach
+            every card, and named by the band's heading. */}
+        <Box className={styles.scroller} role="region" aria-labelledby="climb-app-showcase-heading" tabIndex={0}>
+          <Box component="ul" className={styles.cards}>
+            <BenefitCard title={t('frontDoor.app.beta.title')} body={t('frontDoor.app.beta.body')}>
+              {/* Its own boundary: the site-wide fallback read must not hold up
+                  the other cards or the store buttons. The tile is the same size. */}
+              <Suspense fallback={<BetaTile />}>
+                <InstantBetaVisual climbBeta={betaLinks} />
+              </Suspense>
+            </BenefitCard>
+            <BenefitCard title={t('frontDoor.app.wall.title')} body={t('frontDoor.app.wall.body')}>
               <MarketingScreenshot
                 shot="wall-status"
                 alt={t('frontDoor.app.wall.alt')}
                 className={styles.phone}
                 sizes={PHONE_SIZES}
               />
-            }
-          />
-          <BenefitCard
-            title={t('frontDoor.app.boards.title')}
-            body={t('frontDoor.app.boards.body')}
-            visualClassName={styles.poster}
-            visual={
+            </BenefitCard>
+            <BenefitCard
+              title={t('frontDoor.app.boards.title')}
+              body={t('frontDoor.app.boards.body')}
+              visualClassName={styles.poster}
+            >
               <Image
                 src={resolveStaticAssetUrl(POSTER_PATH)}
                 alt={t('frontDoor.app.boards.alt')}
@@ -214,39 +234,33 @@ export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcasePr
                 sizes={POSTER_SIZES}
                 className={styles.posterImage}
               />
-            }
-          />
-          <BenefitCard
-            wide
-            title={t('frontDoor.app.logbook.title')}
-            body={t('frontDoor.app.logbook.body')}
-            action={
-              <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={cardLinkSx}>
-                {t('frontDoor.app.logbook.link')}
-              </MuiLink>
-            }
-            visual={
+            </BenefitCard>
+            <BenefitCard
+              wide
+              title={t('frontDoor.app.logbook.title')}
+              body={t('frontDoor.app.logbook.body')}
+              action={
+                <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={cardLinkSx}>
+                  {t('frontDoor.app.logbook.link')}
+                </MuiLink>
+              }
+            >
               <MarketingScreenshot
                 shot="profile"
                 alt={t('frontDoor.app.logbook.alt')}
                 className={styles.phone}
                 sizes={PHONE_SIZES}
               />
-            }
-          />
-          <BenefitCard
-            wide
-            title={t('frontDoor.app.workouts.title')}
-            body={t('frontDoor.app.workouts.body')}
-            visual={
+            </BenefitCard>
+            <BenefitCard wide title={t('frontDoor.app.workouts.title')} body={t('frontDoor.app.workouts.body')}>
               <MarketingScreenshot
                 shot="workouts"
                 alt={t('frontDoor.app.workouts.alt')}
                 className={styles.phone}
                 sizes={PHONE_SIZES}
               />
-            }
-          />
+            </BenefitCard>
+          </Box>
         </Box>
       </MarketingPreviewProvider>
 
@@ -258,6 +272,7 @@ export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcasePr
           <StoreInstallButtons
             placement="climb-app-module"
             labels={storeLabels}
+            appearance="brand-outlined"
             align="start"
             sharedHtml
             qrLanding="climb"

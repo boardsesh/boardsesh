@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
+import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';
@@ -31,8 +33,12 @@ export type StoreButtonLabels = {
  * second. `plain` is for a page that already has a filled primary action next
  * to it (the climb front door's "Climb this"): every store button is outlined,
  * so the page keeps one primary, and on a desktop both stores weigh the same.
+ * `brand-outlined` is the brand pill, outlined for every store and with the
+ * install icon: a page's second store pair that should look like the brand's
+ * without adding a filled button (the climb page's app module, a long scroll
+ * below its own filled hero button).
  */
-export type StoreButtonAppearance = 'brand' | 'plain';
+export type StoreButtonAppearance = 'brand' | 'plain' | 'brand-outlined';
 
 type StoreInstallButtonsProps = {
   /**
@@ -114,6 +120,7 @@ export default function StoreInstallButtons({
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => setHasMounted(true), []);
   const { stores, mode } = sharedHtml && !hasMounted ? SHARED_HTML_INSTALL : resolveHeroInstall(platform, nativeStore);
+  const StoreIcon = mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
 
   return (
     <Box
@@ -122,6 +129,7 @@ export default function StoreInstallButtons({
       {stores.map((store, index) => {
         const isPrimary = appearance === 'brand' && index === 0;
         const brandSx = isPrimary ? BRAND_PRIMARY_SX : BRAND_SECONDARY_SX;
+        const usesBrandSize = appearance !== 'plain';
         return (
           <Button
             key={store}
@@ -130,8 +138,9 @@ export default function StoreInstallButtons({
             rel="noopener noreferrer"
             variant={isPrimary ? 'contained' : 'outlined'}
             // The brand recipe carries its own size step; the plain one takes MUI's.
-            size={appearance === 'brand' ? undefined : 'large'}
-            sx={appearance === 'brand' ? brandSx : PLAIN_SX}
+            size={usesBrandSize ? undefined : 'large'}
+            sx={usesBrandSize ? brandSx : PLAIN_SX}
+            startIcon={appearance === 'brand-outlined' ? <StoreIcon aria-hidden /> : undefined}
             onClick={() => {
               trackAppInstallClick({
                 platform: store,

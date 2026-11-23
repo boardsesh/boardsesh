@@ -1016,11 +1016,11 @@
       "lead": "Kostenlos für iPhone und Android. Alles davon läuft heute Abend an deinem Board.",
       "beta": {
         "title": "Beta sofort",
-        "body": "Wenn jemand ein Beta-Video verlinkt, sehen es alle sofort am Boulder."
+        "body": "Wenn jemand ein Beta-Video verlinkt, sehen es alle sofort beim Boulder."
       },
       "wall": {
         "title": "Sieh, was am Board leuchtet",
-        "body": "Alle am Board sehen live, welcher Boulder beleuchtet ist und was die Crew gerade geklettert ist.",
+        "body": "Alle am Board sehen live, welcher Boulder gerade beleuchtet ist und welche vorher dran waren.",
         "alt": "Boardsesh zeigt über der Boulderliste den Boulder, der am Board beleuchtet ist"
       },
       "boards": {

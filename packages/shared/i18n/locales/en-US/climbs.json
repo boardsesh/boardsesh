@@ -1020,7 +1020,7 @@
       },
       "wall": {
         "title": "Know what's on the board",
-        "body": "Everyone at the board sees what's lit and what the crew just climbed, as it happens.",
+        "body": "Everyone at the board sees what's lit now and what was up before it, as it happens.",
         "alt": "Boardsesh showing the climb lit on the board above the climb list"
       },
       "boards": {

@@ -24,8 +24,10 @@ const communityStats = vi.hoisted(() => ({
     litLast30Days: number;
   } | null,
 }));
+const recentBeta = vi.hoisted(() => ({ rows: [] as unknown[] }));
 vi.mock('@/app/lib/graphql/server-cached-client', () => ({
   cachedCommunityStats: vi.fn(async () => communityStats.current),
+  cachedPublicRecentBetaLinks: vi.fn(async () => recentBeta.rows),
 }));
 
 vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation: vi.fn() }));
@@ -60,8 +62,29 @@ async function renderShowcase(betaLinks: BetaLink[] = []): Promise<Document> {
   return new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
 }
 
+/** A row of the homepage's "Fresh beta" read, as the backend sends it. */
+function recentBetaRow(index: number, thumbnail: string | null = `https://thumbs.example/recent${index}.jpg`) {
+  return {
+    climbName: `Recent ${index}`,
+    boardType: 'kilter',
+    layoutId: 1,
+    betaLink: {
+      climbUuid: `RECENT${index}`,
+      link: `https://www.instagram.com/p/recent${index}/`,
+      foreignUsername: `recent${index}`,
+      angle: 40,
+      thumbnail,
+      isListed: true,
+      createdAt: '2026-11-20T00:00:00Z',
+      tickUuid: null,
+      boardId: null,
+    },
+  };
+}
+
 beforeEach(() => {
   communityStats.current = { climbersLast30Days: 3249, litLast30Days: 205_800 };
+  recentBeta.rows = [];
 });
 
 describe('ClimbAppShowcase', () => {
@@ -78,6 +101,14 @@ describe('ClimbAppShowcase', () => {
       'frontDoor.app.workouts.title',
     ]);
     for (const card of cards) expect(card.querySelectorAll('p')).toHaveLength(1);
+    // Nothing but the heading, the sentence and the logbook link is words.
+    expect(cards.map((card) => card.textContent)).toEqual([
+      'frontDoor.app.beta.titlefrontDoor.app.beta.body',
+      'frontDoor.app.wall.titlefrontDoor.app.wall.body',
+      'frontDoor.app.boards.titlefrontDoor.app.boards.body',
+      'frontDoor.app.logbook.titlefrontDoor.app.logbook.bodyfrontDoor.app.logbook.link',
+      'frontDoor.app.workouts.titlefrontDoor.app.workouts.body',
+    ]);
   });
 
   it('shows real app captures and the homepage poster, all lazy', async () => {
@@ -119,7 +150,29 @@ describe('ClimbAppShowcase', () => {
     expect(fan?.textContent).not.toContain('@filmer2');
   });
 
-  it('shows a plain play tile when the climb has no beta thumbnails', async () => {
+  it("falls back to the site's newest beta when the climb has no beta pictures", async () => {
+    recentBeta.rows = [recentBetaRow(1, null), recentBetaRow(2), recentBetaRow(3)];
+    const page = await renderShowcase([betaLink(1, { thumbnail: null })]);
+    const fan = page.querySelector('[data-count]');
+
+    expect(fan?.getAttribute('data-count')).toBe('2');
+    expect([...(fan?.querySelectorAll('img') ?? [])].map((image) => image.getAttribute('src'))).toEqual([
+      'https://thumbs.example/recent2.jpg',
+      'https://thumbs.example/recent3.jpg',
+    ]);
+    expect(fan?.textContent).toContain('@recent2');
+  });
+
+  it("never reaches for the site's beta when the climb has its own", async () => {
+    const { cachedPublicRecentBetaLinks } = await import('@/app/lib/graphql/server-cached-client');
+    vi.mocked(cachedPublicRecentBetaLinks).mockClear();
+
+    await renderShowcase([betaLink(1)]);
+
+    expect(cachedPublicRecentBetaLinks).not.toHaveBeenCalled();
+  });
+
+  it('shows a plain play tile when neither the climb nor the site has a beta picture', async () => {
     const page = await renderShowcase([betaLink(1, { thumbnail: null })]);
 
     expect(page.querySelector('[data-count]')).toBeNull();
@@ -155,6 +208,18 @@ describe('ClimbAppShowcase', () => {
       buildStoreUrl('android', { placement: 'climb-app-module' }),
     ]);
     expect(stores?.hasAttribute('data-sticky-install-hide')).toBe(true);
+    // Outlined, both of them: the page's one filled store button is the hero's.
+    expect(stores?.querySelectorAll('.MuiButton-outlined')).toHaveLength(2);
+    expect(stores?.querySelector('.MuiButton-contained')).toBeNull();
+  });
+
+  it('lets a keyboard scroll the cards: the scroller is a named, focusable region', async () => {
+    const page = await renderShowcase();
+    const scroller = page.querySelector('ul')?.parentElement;
+
+    expect(scroller?.getAttribute('role')).toBe('region');
+    expect(scroller?.getAttribute('tabindex')).toBe('0');
+    expect(scroller?.getAttribute('aria-labelledby')).toBe(page.querySelector('h2')?.id);
   });
 });
 

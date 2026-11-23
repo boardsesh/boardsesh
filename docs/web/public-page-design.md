@@ -52,8 +52,9 @@ an iPhone and a laptop:
   provider reads the request's user agent, which a cached page must not trust.
 - **Nothing personal.** No ticks, no "signed in as". The comments row renders
   signed out on the server and changes after mount.
-- `front-door-install.test.tsx` renders the page under four user agents and
-  fails if any of them changes the store links or the app screenshots.
+- `front-door-install.test.tsx` renders the page as if Googlebot Smartphone, an
+  iPhone, a desktop or a request with no user agent filled the cache, and fails
+  if any of them changes the store links or the app screenshots.
 
 ## Calls to action
 
@@ -64,7 +65,7 @@ One primary action per screen.
 | Hero | Filled "Get the free app" (one store) | Filled "Open in your browser" next to a QR code |
 | Hero, second action | "Or open it in your browser" text link | QR card with an outlined store pair |
 | Bottom of the screen | Sticky install bar, after the hero button scrolls away | None |
-| App module | Store pair: App Store filled, Google Play outlined | Same |
+| App module | Outlined store pair with the install icon (one store after mount) | Outlined store pair |
 
 Why the phone's primary button is the store: phones with the app open climb
 links straight in the app (universal links), so a phone reading the web page
@@ -74,15 +75,18 @@ zero store clicks in 30 days. On a laptop the browser app works, so the
 hand-off stays primary there, and the QR code carries the climb to the phone.
 
 The split is CSS only (MUI `sx` breakpoints), so nothing shifts after paint.
-`front-door-install.test.tsx` allows exactly two places to fill a button: the
-hero's mobile store block (`data-cta="mobile-install"`) and the app module's
-store pair (`data-cta="app-install"`, one filled). A third fails the test.
+`front-door-install.test.tsx` allows filled buttons only in the hero's mobile
+store block (`data-cta="mobile-install"`). The app module's pair
+(`data-cta="app-install"`) uses `StoreInstallButtons`' `brand-outlined`
+appearance, the brand pill outlined for every store, so it never adds a second
+filled button to a screen.
 
 The sticky bar (`sticky-install-bar.tsx`) shows only below md, on Android and on
 iOS browsers that show no Smart App Banner (Safari already shows ours). It stays
 down while the consent card is up, and while any element marked
 `data-sticky-install-hide` is on screen: the hero's store block and the app
-module's store pair both carry it.
+module's store pair both carry it. The bar watches `<main>` for markers that
+stream in after it mounts, since the app module renders inside `<Suspense>`.
 
 ## Attribution
 
@@ -128,10 +132,14 @@ Run it locally against a dev server with `--grep journey --trace off`.
 
 1. **Instant beta.** A linked beta video shows on the climb for everyone straight
    away. The picture is this climb's own beta thumbnails (up to three, with the
-   filmers' handles) when the page loaded any, and a plain play tile otherwise.
-   No extra query.
-2. **Know what's on the board.** Everyone at the board sees what's lit and what
-   the crew just climbed. The `wall-status` capture.
+   filmers' handles) when the page loaded any. Otherwise it is the newest beta
+   on Boardsesh: the homepage's "Fresh beta" operation, read anonymously through
+   a ten-minute cache (`cachedPublicRecentBetaLinks`), in its own `<Suspense>`.
+   A plain play tile only when neither has a picture, or a thumbnail fails. The
+   handle sits on a solid pill so it reads on a white thumbnail.
+2. **Know what's on the board.** The board's history is shared live: everyone at
+   the board sees what's lit now and what was up before it. The `wall-status`
+   capture.
 3. **Every board, one app.** "One app for all your boards. Works with Kilter,
    Tension, MoonBoard and more." Never "one app for Kilter": we describe
    compatibility, not affiliation (`LEGAL.md`). The homepage poster, cropped to
@@ -157,11 +165,12 @@ No AI-generated images, anywhere. Every picture is a real capture or photo:
   `workouts.webp` exists for Android only: it is the phone screen cropped at full
   resolution (804x1429) out of
   `app-stores/google/screenshots/pixel-2/06-workout-generator.png`, without the
-  store headline, and iOS shows the same file.
+  store headline. iPhone readers see this Android capture on the Workouts card
+  until the App Store set has a workout shot; add it to the registry then.
 - **The board poster** is the homepage's `images/home/showcase-hero-9x16.webp`.
-- **Beta thumbnails** come from the platforms' CDNs through each beta link, as
-  in the beta grid. They are plain `<img>`s with `referrerPolicy="no-referrer"`,
-  not `next/image`.
+- **Beta thumbnails** come from each beta link, as in the beta grid. They are
+  plain `<img>`s with `referrerPolicy="no-referrer"`, not `next/image`, and a
+  failed one becomes a play tile (`beta-fan-card.tsx`).
 - **Board art** is rendered by the backend's `/render/board` overlay.
 
 After adding or changing an image under `packages/web/public/images`, run

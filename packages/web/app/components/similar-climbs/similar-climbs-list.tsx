@@ -291,9 +291,10 @@ function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, comp
     return getDefaultClimbViewPath(boardType, climb.layoutId, angle, climb.uuid, climb.name || undefined);
   }, [boardSlug, boardType, climb.layoutId, angle, climb.uuid, climb.name, boardDetails]);
 
-  // Dim the thumbnail / name / grade when the climb is incompatible with the
-  // viewer's wall size: the link still resolves (on the layout default config),
-  // it just isn't a climb they can pull on today.
+  // Dim the thumbnail when the climb is incompatible with the viewer's wall
+  // size: the link still resolves (on the layout default config), it just isn't
+  // a climb they can pull on today. Only the picture: the name, setter and grade
+  // stay at full contrast, so the row still reads at 4.5:1.
   const dimClass = compatible ? '' : ` ${styles.dimmed}`;
   const fontGrade = formatFontGrade(difficulty);
   const hasVGrade = Boolean(formatVGrade(difficulty, boardType));
@@ -311,7 +312,7 @@ function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, comp
           />
         ) : null}
       </Box>
-      <Box className={`${styles.text}${dimClass}`}>
+      <Box className={styles.text}>
         <Box className={styles.name} title={climb.name || undefined}>
           {climb.name || t('similarClimbs.untitledClimb')}
           {/* The tile is a picture of the grade; this is the grade in words, once. */}
@@ -323,7 +324,7 @@ function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, comp
         </Box>
         <Box className={styles.byline}>{formatByline(climb, t)}</Box>
       </Box>
-      <Box className={`${styles.grade}${dimClass}`}>
+      <Box className={styles.grade}>
         {hasVGrade ? (
           <>
             <GradeTile difficulty={difficulty} boardName={boardType} size="compact" />

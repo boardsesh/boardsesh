@@ -1020,7 +1020,7 @@
       },
       "wall": {
         "title": "Guarda cosa c’è sul pannello",
-        "body": "Chi è al pannello vede in diretta quale blocco è illuminato in parete e cosa ha appena scalato la crew.",
+        "body": "Chi è al pannello vede in diretta quale blocco è illuminato in parete ora e quali lo erano prima.",
         "alt": "Boardsesh che mostra il blocco illuminato in parete sopra l’elenco dei blocchi"
       },
       "boards": {

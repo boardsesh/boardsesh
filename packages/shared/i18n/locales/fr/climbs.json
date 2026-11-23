@@ -1020,7 +1020,7 @@
       },
       "wall": {
         "title": "Vois ce qui est allumé sur la board",
-        "body": "Tout le monde à la board voit le bloc allumé et ce que le crew vient de grimper, en direct.",
+        "body": "Tout le monde à la board voit le bloc allumé en ce moment et ceux allumés avant lui, en direct.",
         "alt": "Boardsesh affichant le bloc allumé sur la board au-dessus de la liste des blocs"
       },
       "boards": {

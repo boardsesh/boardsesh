@@ -1020,7 +1020,7 @@
       },
       "wall": {
         "title": "Mira qué hay en el plafón",
-        "body": "Todos en el plafón ven qué bloque está iluminado y qué acaba de escalar tu grupo, en directo.",
+        "body": "Todos en el plafón ven qué bloque está iluminado ahora y cuáles lo estuvieron antes, en directo.",
         "alt": "Boardsesh mostrando el bloque iluminado en el plafón encima de la lista de bloques"
       },
       "boards": {

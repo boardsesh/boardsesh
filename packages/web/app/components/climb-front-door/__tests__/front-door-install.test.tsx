@@ -33,6 +33,7 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation: v
 // The app module's 30-day line: one cached read, here a fixed answer.
 vi.mock('@/app/lib/graphql/server-cached-client', () => ({
   cachedCommunityStats: vi.fn(async () => ({ climbersLast30Days: 3249, litLast30Days: 205_800 })),
+  cachedPublicRecentBetaLinks: vi.fn(async () => []),
 }));
 
 // What the root layout's provider gives a cold server render: no answer yet.
@@ -186,20 +187,17 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
     expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowser');
   });
 
-  // Two blocks may fill a button, and nothing else may: the phone's store
-  // button in the hero, and the store pair under "What you get in the app",
-  // which sits a long scroll below it, so each screen still has one primary
-  // action. Widened on purpose in A5; a third filled button anywhere fails here.
-  it('fills only store buttons, in the hero and the app module; the hand-off is not a contained button', async () => {
+  it('fills only the store buttons, inside the mobile block; the hand-off is not a contained button', async () => {
     const page = parseHtml(await renderClimbPage(tree));
     const containedButtons = [...page.querySelectorAll('.MuiButton-contained')];
 
-    expect(containedButtons).toHaveLength(3);
+    expect(containedButtons).toHaveLength(2);
     for (const button of containedButtons) {
-      expect(button.closest('[data-cta="mobile-install"], [data-cta="app-install"]')).not.toBeNull();
+      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
     }
-    expect(page.querySelectorAll('[data-cta="app-install"] .MuiButton-contained')).toHaveLength(1);
     expect(page.querySelector('[data-cta="handoff"]')?.classList.contains('MuiButton-contained')).toBe(false);
+    // The app module's second store pair is outlined: one filled action per screen.
+    expect(page.querySelectorAll('[data-cta="app-install"] .MuiButton-outlined')).toHaveLength(2);
   });
 
   it('ships the app module its own store pair, with its own link id, that keeps the sticky bar down', async () => {
@@ -335,6 +333,7 @@ describe('a cached front door', () => {
     expect(fromGooglebot).toContain('data-marketing-shot="wall-status"');
     expect(await showcaseFor(IPHONE_UA)).toBe(fromGooglebot);
     expect(await showcaseFor(DESKTOP_UA)).toBe(fromGooglebot);
+    expect(await showcaseFor('')).toBe(fromGooglebot);
   });
 
   it('ships both stores on a cached list page too', async () => {

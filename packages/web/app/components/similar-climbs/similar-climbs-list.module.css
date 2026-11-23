@@ -47,11 +47,10 @@ a.row:focus-visible {
   outline-offset: 2px;
 }
 
-/* Applied to the row's content (thumbnail, text, grade) when the climb's
-   compatibleSizeIds doesn't include the viewer's product size. 0.45 is between
-   --opacity-subtle (0.7) and --opacity-disabled (0.5); the lower value reads as
-   "not for you" at a glance while keeping the climb name readable. On the
-   content, not the link, so the focus ring stays at full strength. */
+/* Applied to the thumbnail only, when the climb's compatibleSizeIds doesn't
+   include the viewer's product size. 0.45 is between --opacity-subtle (0.7) and
+   --opacity-disabled (0.5); the lower value reads as "not for you" at a glance.
+   The text stays at full strength, so it keeps its 4.5:1. */
 .dimmed {
   opacity: 0.45;
 }

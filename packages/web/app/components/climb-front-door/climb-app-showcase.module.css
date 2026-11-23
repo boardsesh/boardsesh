@@ -2,7 +2,7 @@
  * "What you get in the app" (`climb-app-showcase.tsx`).
  *
  * Below md (900px) the five cards are a snap scroller that bleeds to the
- * screen edges, so the next card peeks in. From md they are a six-column grid:
+ * screen edges, so the next card peeks in, with a thin scrollbar for a mouse. From md they are a six-column grid:
  * three cards across, then two wide ones. From 1100px the wide cards lay their
  * words beside the phone instead of above it.
  *
@@ -15,20 +15,31 @@
   margin-top: var(--spacing-12);
 }
 
-.cards {
-  display: flex;
-  gap: var(--spacing-3);
+/* The scroll container. A thin scrollbar stays visible: a mouse on a narrow
+   window (600-899px) has no swipe, and the bar is how it reaches the last
+   cards. It takes keyboard focus too (`tabIndex` in the component), so the
+   arrow keys scroll it. Touch phones draw their own overlay bar. */
+.scroller {
   margin: var(--spacing-5) calc(-1 * var(--page-gutter)) 0;
-  padding: 0 var(--page-gutter) var(--spacing-1);
-  list-style: none;
+  padding: 0 var(--page-gutter) var(--spacing-3);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scroll-padding-inline: var(--page-gutter);
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-300) transparent;
 }
 
-.cards::-webkit-scrollbar {
-  display: none;
+.scroller:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.cards {
+  display: flex;
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .card {
@@ -147,11 +158,18 @@
 }
 
 .fanCaption {
+  /* A solid pill under the handle, not a fade: white thumbnails are common
+     (a white wall, a bright gym), and the text has to clear 4.5:1 on any of
+     them. 90% of the page ground is 12:1 against the ink even over white. */
   position: absolute;
-  inset: 0 0 auto;
-  padding: 7px var(--spacing-2) 18px;
+  top: 6px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  box-sizing: border-box;
+  padding: 3px 7px;
   overflow: hidden;
-  background: linear-gradient(color-mix(in srgb, var(--semantic-background) 88%, transparent), transparent);
+  border-radius: var(--border-radius-full);
+  background: color-mix(in srgb, var(--semantic-background) 90%, transparent);
   color: var(--neutral-900);
   font-size: 11px;
   font-weight: 600;
@@ -201,13 +219,16 @@
     margin-top: calc(var(--spacing-16) + var(--spacing-8));
   }
 
+  .scroller {
+    margin: var(--spacing-6) 0 0;
+    padding: 0;
+    overflow: visible;
+  }
+
   .cards {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: var(--spacing-4);
-    margin: var(--spacing-6) 0 0;
-    padding: 0;
-    overflow: visible;
   }
 
   .card {

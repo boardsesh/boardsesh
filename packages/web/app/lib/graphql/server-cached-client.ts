@@ -11,6 +11,7 @@ import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type { GetCommunityStatsQueryResponse } from '@boardsesh/graphql/operations';
+import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import type {
   GetUserClimbPercentileQueryResponse,
   GetUserProfileStatsQueryResponse,
@@ -150,6 +151,34 @@ export async function cachedCommunityStats(): Promise<{
     return { climbersLast30Days, litLast30Days };
   } catch {
     return null;
+  }
+}
+
+const PUBLIC_RECENT_BETA_REVALIDATE_SECONDS = 600;
+
+/**
+ * The newest beta videos site-wide, as an anonymous reader sees them: the
+ * homepage's "Fresh beta" operation (`GET_RECENT_BETA_LINKS`, same scope), read
+ * without the visitor's session and cached for ten minutes, one key for the
+ * whole site.
+ *
+ * For a page stored at the edge for everyone (the climb page's app module
+ * shows these when the climb has no beta of its own), so nothing in it may
+ * depend on who asked. The homepage keeps its own per-request, authenticated
+ * read. Fail-soft: `[]` on any error.
+ */
+export async function cachedPublicRecentBetaLinks(limit = 12): Promise<RecentBetaLinkRow[]> {
+  try {
+    const { GET_RECENT_BETA_LINKS } = await import('@boardsesh/graphql/operations/beta-links');
+    const query = createCachedGraphQLQuery<{ recentBetaLinks: RecentBetaLinkRow[] }>(
+      GET_RECENT_BETA_LINKS,
+      'recent-beta-links-public',
+      PUBLIC_RECENT_BETA_REVALIDATE_SECONDS,
+    );
+    const result = await query({ limit });
+    return result.recentBetaLinks;
+  } catch {
+    return [];
   }
 }
 
