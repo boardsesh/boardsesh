@@ -193,10 +193,16 @@
  * shifts, and takes the link out of the tab order and the accessibility tree.
  * Hiding fades out first, then turns visibility off.
  *
+ * Never while the link has keyboard focus (`:not(:focus-visible)`): hiding a
+ * focused element drops focus to <body>, so a badge scrolling into view would
+ * throw a keyboard user back to the top of the page. It hides once focus
+ * moves on. A browser without `:focus-visible` drops the rule and keeps the
+ * link showing, as it did before.
+ *
  * Two rules, not one selector list: a browser without `:has()` drops a whole
  * list it cannot parse, and the hook's answer must still apply there.
  */
-.phoneInstall.phoneInstall[data-store-badge-on-screen='yes'] {
+.phoneInstall.phoneInstall[data-store-badge-on-screen='yes']:not(:focus-visible) {
   opacity: 0;
   visibility: hidden;
   transition:
@@ -207,8 +213,11 @@
 /* Before the hook has answered (server HTML, hydration, the first observer
    report), guess from the markup: a badge in <main> hides the link. The home
    page's hero badge is on screen at the top, so the link must never paint there
-   and then leave. A page whose only badge is far down shows it a beat late. */
-:root:has(main a[data-store-badge]) .phoneInstall.phoneInstall:not([data-store-badge-on-screen]) {
+   and then leave. A page whose only badge is far down shows it a beat late.
+   With JavaScript off, or a hydration that fails, the guess is never replaced
+   and the link stays hidden on every page with a badge in <main>. Accepted:
+   that page shows its own badge, which is the same store link. */
+:root:has(main a[data-store-badge]) .phoneInstall.phoneInstall:not([data-store-badge-on-screen]):not(:focus-visible) {
   opacity: 0;
   visibility: hidden;
   transition: none;
@@ -216,7 +225,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .phoneInstall.phoneInstall,
-  .phoneInstall.phoneInstall[data-store-badge-on-screen='yes'] {
+  .phoneInstall.phoneInstall[data-store-badge-on-screen='yes']:not(:focus-visible) {
     transition: none;
   }
 }
