@@ -79,11 +79,29 @@ const sharedComponents: Components<Theme> = {
         // Velvet hover is a background TINT, never a lift. Contained variants carry
         // their own fill-hover (see containedPrimary); text/outlined get the button
         // hover wash, which is a hover, not a selected state. No transform/shadow
-        // here — nothing to gate behind a hover media query on this element.
+        // here — nothing to gate behind a hover media query on this element. Only a
+        // primary TEXT button (a text action) lifts its violet label on hover; the
+        // outlined secondary keeps its grey ink.
         '&:not(:disabled):not(.MuiButton-contained):hover': {
           backgroundColor: 'var(--semantic-button-hover)',
-          '&.MuiButton-colorPrimary': {
+          '&.MuiButton-textPrimary': {
             color: 'var(--color-primary-hover)',
+          },
+        },
+      },
+      // Outlined PRIMARY is the grey secondary action: the label ink (#EDEDED, 4.5:1
+      // or more on every surface step) on a transparent pill with the opaque
+      // `--control-border` edge, which stays put on hover (the wash carries hover).
+      // A page spends its violet on the one filled action, links and text actions.
+      // Set the v7 variant vars plus a direct fallback, like containedPrimary.
+      outlinedPrimary: {
+        '--variant-outlinedColor': 'var(--neutral-900)',
+        '--variant-outlinedBorder': 'var(--control-border)',
+        color: 'var(--neutral-900)',
+        borderColor: 'var(--control-border)',
+        '@media (hover: hover)': {
+          '&:hover': {
+            '--variant-outlinedBorder': 'var(--control-border)',
           },
         },
       },
@@ -120,6 +138,78 @@ const sharedComponents: Components<Theme> = {
     },
     defaultProps: {
       disableElevation: true,
+    },
+  },
+  // Inline links are the foreground violet and always underlined: the underline,
+  // not the hue, is what tells a link from body copy (#9784FF vs #EDEDED is 2.54:1,
+  // under WCAG 1.4.1's 3:1). Nav, footer and breadcrumb links opt out with their
+  // own grey recipe.
+  MuiLink: {
+    defaultProps: {
+      underline: 'always',
+    },
+    styleOverrides: {
+      root: {
+        textUnderlineOffset: '3px',
+      },
+    },
+  },
+  // Selected toggles and segments are the tonal container with its own ink, the same
+  // selected state as a filter chip. Rest is a grey control: transparent, the label
+  // ink, the opaque `--control-border` edge. A selected toggle that needs a
+  // non-colour cue renders `SelectedCheck` (the gyms radius control does).
+  MuiToggleButton: {
+    styleOverrides: {
+      root: {
+        textTransform: 'none' as const,
+        color: 'var(--neutral-900)',
+        borderColor: 'var(--control-border)',
+        '&:hover': {
+          backgroundColor: 'var(--semantic-hover)',
+        },
+        '&.Mui-selected': {
+          color: 'var(--semantic-on-selected)',
+          backgroundColor: 'var(--semantic-selected)',
+          '&:hover': {
+            backgroundColor: 'var(--semantic-selected-hover)',
+          },
+        },
+      },
+    },
+  },
+  // Same two states for MUI's pager, should a page use it.
+  MuiPaginationItem: {
+    styleOverrides: {
+      root: {
+        color: 'var(--neutral-900)',
+        '&.MuiPaginationItem-outlined': {
+          borderColor: 'var(--control-border)',
+        },
+        '&.Mui-selected': {
+          color: 'var(--semantic-on-selected)',
+          backgroundColor: 'var(--semantic-selected)',
+          borderColor: 'var(--semantic-selected)',
+          '&:hover, &.Mui-focusVisible': {
+            backgroundColor: 'var(--semantic-selected-hover)',
+          },
+        },
+      },
+    },
+  },
+  // The current item in a menu (the header menu's current page, the language
+  // menu's current locale) is a current state, so it takes the tonal container
+  // rather than MUI's translucent primary wash.
+  MuiMenuItem: {
+    styleOverrides: {
+      root: {
+        '&.Mui-selected, &.Mui-selected.Mui-focusVisible': {
+          color: 'var(--semantic-on-selected)',
+          backgroundColor: 'var(--semantic-selected)',
+        },
+        '&.Mui-selected:hover': {
+          backgroundColor: 'var(--semantic-selected-hover)',
+        },
+      },
     },
   },
   MuiFab: {

@@ -50,6 +50,29 @@ describe('the board-type row', () => {
     // Toggling the only selected type off clears the filter rather than swapping it.
     expect(kilter.getAttribute('href')).toBe('/gyms');
   });
+
+  it('gives only the selected board a check, hidden from assistive tech', () => {
+    // The tonal ground is 1.52:1 against the page, so the check is the non-colour
+    // cue; `aria-pressed` is what a screen reader hears, and the name stays "Kilter".
+    renderFilters('all', { boardType: 'kilter' });
+    const check = screen.getByRole('link', { name: 'Kilter' }).querySelector('[data-selected-check]');
+    expect(check).not.toBeNull();
+    expect(check?.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('link', { name: 'Tension' }).querySelector('[data-selected-check]')).toBeNull();
+  });
+});
+
+describe('the checkbox chips carry their own check', () => {
+  it('renders one hidden check per chip, next to the checkbox that announces the state', () => {
+    // The check follows `input:checked` in CSS, so every chip renders it and the
+    // recipe shows it only while checked.
+    renderFilters('all', { boardType: 'kilter' });
+    const angleChip = screen.getByText('40°').closest('label');
+    expect(angleChip?.querySelector('input[type="checkbox"]')).not.toBeNull();
+    const checks = angleChip?.querySelectorAll('[data-selected-check]');
+    expect(checks).toHaveLength(1);
+    expect(checks?.[0]?.getAttribute('aria-hidden')).toBe('true');
+  });
 });
 
 describe('the cascade, as rendered', () => {

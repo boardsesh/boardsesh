@@ -47,6 +47,7 @@ import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { PageShell } from '@/app/components/ui/page-shell';
 import GymStatChip from '@/app/components/gym-entity/gym-stat-chip';
 import CommentSection from '@/app/components/social/comment-section';
@@ -442,7 +443,7 @@ export default async function GymPage(props: GymRouteProps) {
         title={gym.name}
         breadcrumb={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+            <MuiLink component={LocaleLink} href="/" underline="hover" sx={quietLinkSx}>
               {t('gymPage.breadcrumbHome')}
             </MuiLink>
             <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
@@ -450,7 +451,7 @@ export default async function GymPage(props: GymRouteProps) {
             </Box>
             {/* The directory is how most people got here — a poster scan lands
                 on this page with no other way back into the gym list. */}
-            <MuiLink component={LocaleLink} href="/gyms" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+            <MuiLink component={LocaleLink} href="/gyms" underline="hover" sx={quietLinkSx}>
               {t('gymPage.breadcrumbGyms')}
             </MuiLink>
           </Box>

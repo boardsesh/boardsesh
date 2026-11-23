@@ -62,11 +62,26 @@ describe('the outlined recipe reads the control-boundary token', () => {
     expect(JSON.stringify(outlined)).not.toContain('--separator');
   });
 
-  it('uses the FOREGROUND violet for its label, not the fill violet', () => {
-    // #9784FF on the page; #7855FF is the filled-surface violet and would be
-    // 4.17:1 as text, under AA. The filled recipe is the one that may touch the fill.
-    expect(brandCtaOutlinedSx().color).toBe('var(--color-primary)');
+  it('is the grey secondary action: label ink, transparent ground, no violet at rest or on hover', () => {
+    // A page spends its violet on the one filled action, links and text actions.
+    // The outlined pill beside the filled one is grey: #EDEDED clears 4.5:1 on every
+    // surface step (the parity test pins it). Only the filled recipe touches violet.
+    const outlined = brandCtaOutlinedSx();
+
+    expect(outlined.color).toBe('var(--neutral-900)');
+    expect(outlined.backgroundColor).toBe('transparent');
+    expect(outlined.fontWeight).toBe(600);
+    expect(outlined['&:hover']).toMatchObject({
+      color: 'var(--neutral-900)',
+      borderColor: 'var(--control-border)',
+      backgroundColor: 'var(--semantic-button-hover)',
+    });
+    const { '&:focus-visible, &.Mui-focusVisible': focusRing, ...restOfRecipe } = outlined;
+    expect(JSON.stringify(restOfRecipe)).not.toContain('--color-primary');
+    // The focus ring is the one violet it carries, shared by every control.
+    expect(focusRing).toEqual({ outline: '2px solid var(--color-primary)', outlineOffset: '2px' });
     expect(brandCtaSx().backgroundColor).toBe('var(--color-primary-fill)');
+    expect(brandCtaSx()['&:hover'].backgroundColor).toBe('var(--color-primary-fill-hover)');
   });
 
   it('casts no glow on either button, at rest or on hover', () => {

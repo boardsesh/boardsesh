@@ -26,6 +26,7 @@ import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageCard } from '@/app/components/ui/page-shell';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import GymDirectorySearchForm, { type GymDirectorySearchFormProps } from './gym-directory-search-form';
 import { buildDirectoryHref, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
 import { numberFormatFor } from './directory-card-model';
@@ -157,6 +158,9 @@ export default function GymDirectoryNearMe({
     setMapOpen(nextMapOpen);
   };
   const [radiusKm, setRadiusKm] = useState<NearMeRadiusKm>(DEFAULT_NEAR_ME_RADIUS_KM);
+  // The radius the toggle group shows as selected: the place's own radius when a
+  // place is picked (the buttons are links then), the local choice otherwise.
+  const activeRadiusKm: number = selectedArea ? (selectedArea.query.radiusKm ?? 50) : radiusKm;
   // Resolved in an effect rather than at render: `navigator` does not exist
   // during SSR, and a render-time read would make the server and the first
   // client render disagree.
@@ -347,14 +351,16 @@ export default function GymDirectoryNearMe({
             </Button>
           )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Wraps, so the label can sit above the group when a translated
+              label and the selected button's check do not fit one row. */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" color="text.secondary" id="gym-near-me-radius-label">
               {t('nearMe.radiusLabel')}
             </Typography>
             <ToggleButtonGroup
               exclusive
               size="small"
-              value={selectedArea ? (selectedArea.query.radiusKm ?? 50) : radiusKm}
+              value={activeRadiusKm}
               onChange={selectedArea ? undefined : handleRadiusChange}
               aria-labelledby="gym-near-me-radius-label"
             >
@@ -368,24 +374,13 @@ export default function GymDirectoryNearMe({
                         href: buildDirectoryHref(selectedArea.facet, { ...selectedArea.query, radiusKm: option }, 1),
                       }
                     : {})}
-                  // Same two states as the facet chips, for the same reason: on
-                  // the near-black ground a default toggle group is a row of
-                  // hairlines with no legible "this one".
-                  sx={{
-                    textTransform: 'none',
-                    minHeight: 44,
-                    fontSize: 14,
-                    borderColor: 'var(--control-border)',
-                    backgroundColor: 'var(--semantic-surface)',
-                    color: 'var(--neutral-900)',
-                    '&.Mui-selected': {
-                      backgroundColor: 'var(--semantic-surface-elevated)',
-                      borderColor: 'var(--color-primary)',
-                      color: 'var(--color-primary)',
-                    },
-                    '&.Mui-selected:hover': { backgroundColor: 'var(--semantic-surface-elevated)' },
-                  }}
+                  // The theme draws both states (grey edge at rest, the tonal
+                  // container when selected); the check is the selected state's
+                  // non-colour cue, and ToggleButton's `aria-pressed` is what a
+                  // screen reader hears.
+                  sx={{ minHeight: 44, fontSize: 14, gap: 0.5 }}
                 >
+                  {option === activeRadiusKm && <SelectedCheck />}
                   {radiusOptionLabel(t, option)}
                 </ToggleButton>
               ))}

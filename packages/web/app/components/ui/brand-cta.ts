@@ -78,12 +78,19 @@ export type BrandCtaOutlinedOptions = {
 };
 
 /**
- * The outlined button that stands beside the filled one. One definition, because
- * there were three near-identical ones: the hero's `HERO_SECONDARY_CTA_SX`,
- * a drifted copy inside `marketing-install-links.tsx` (different `px`, different
- * `fontSize` — which is why the mid-page store pair visibly did not match the
- * hero pair), and a bare `variant="outlined"` in the support block that fell
- * through to MUI's defaults and so matched neither.
+ * The outlined button that stands beside the filled one: the grey secondary
+ * action. One definition, because there were three near-identical ones: the
+ * hero's `HERO_SECONDARY_CTA_SX`, a drifted copy inside
+ * `marketing-install-links.tsx` (different `px`, different `fontSize` — which is
+ * why the mid-page store pair visibly did not match the hero pair), and a bare
+ * `variant="outlined"` in the support block that fell through to MUI's defaults
+ * and so matched neither.
+ *
+ * Grey, not violet: a page spends its violet on the one filled action, inline
+ * links and text actions. The label is the label ink (`--neutral-900`, #EDEDED),
+ * which clears 4.5:1 on every surface step up to `--neutral-200` (11.60:1 there).
+ * Hover is the button state layer, never a violet edge; focus is the 2px
+ * foreground-violet ring every control shares.
  *
  * The border reads `--control-border`, not `--separator`: this is the visual
  * boundary of a control, and a button whose fill is transparent has nothing else
@@ -94,14 +101,20 @@ export function brandCtaOutlinedSx({ size = 'medium' }: BrandCtaOutlinedOptions 
     borderRadius: `${themeTokens.borderRadius.button}px`,
     textTransform: 'none',
     fontWeight: themeTokens.typography.fontWeight.semibold,
-    color: 'var(--color-primary)',
+    color: 'var(--neutral-900)',
+    backgroundColor: 'transparent',
     borderColor: 'var(--control-border)',
     ...SIZE_SX[size],
     '&:hover': {
-      borderColor: 'var(--color-primary)',
-      backgroundColor: 'var(--semantic-hover)',
+      color: 'var(--neutral-900)',
+      borderColor: 'var(--control-border)',
+      backgroundColor: 'var(--semantic-button-hover)',
       // Cancels the same global StartClimbingButton lift the filled button cancels.
       transform: 'none',
+    },
+    '&:focus-visible, &.Mui-focusVisible': {
+      outline: '2px solid var(--color-primary)',
+      outlineOffset: '2px',
     },
   } satisfies SxProps<Theme>;
 }

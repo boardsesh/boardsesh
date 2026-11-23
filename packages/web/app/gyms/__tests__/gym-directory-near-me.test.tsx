@@ -191,6 +191,12 @@ describe('browse mode', () => {
     expect(screen.getByRole('link', { name: '100 km' }).getAttribute('href')).toBe(
       '/gyms/kilter?place=Sydney&lat=-33.86&lng=151.2&radius=100',
     );
+    // The selected radius is announced as pressed and shows the check, the
+    // non-colour cue for its tonal ground; the others show neither.
+    const selectedRadius = screen.getByRole('link', { name: '50 km' });
+    expect(selectedRadius.getAttribute('aria-pressed')).toBe('true');
+    expect(selectedRadius.querySelector('[data-selected-check]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('link', { name: '100 km' }).querySelector('[data-selected-check]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Use my location' })).toBeNull();
     expect(lastQueryOptions?.enabled).toBe(false);
     expect(geolocation.requestPermission).not.toHaveBeenCalled();

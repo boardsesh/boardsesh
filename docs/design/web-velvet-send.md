@@ -62,6 +62,26 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
   (`hover`, `buttonHover`, `fillSubtle` / `fill` / `fillStrong`), and MUI `action.selected`
   (`selectedRow`) is the neutral fill: MUI paints it under every default filled `<Chip>`, a selected
   `PaginationItem` and the highlighted Autocomplete option, so it must never be violet.
+- **Where violet goes, and the recipes that keep it there.** Inline links and text actions
+  (`#9784FF`; MUI `Link` defaults to `underline="always"` with a 3px offset, because the underline,
+  not the hue, tells a link from body copy), ONE filled `#7855FF` CTA per region (`brandCtaSx`), the
+  focus ring, the tonal selected state, the current page's 2px underline in the header, on-states and
+  map pins. Everything else is grey:
+  - Secondary buttons: `brandCtaOutlinedSx` and MUI `variant="outlined"` primary are a transparent
+    pill with the `#EDEDED` label (weight 600 in the recipe), the `--control-border` edge and the
+    `--semantic-button-hover` layer on hover. Only a primary `variant="text"` button lifts to violet
+    on hover.
+  - Filter chips: `filterChipSx`, 8px corners, 44px tall. Rest is transparent with the
+    `--control-border` edge and `#EDEDED` ink at weight 500. Selected is `--semantic-selected` with
+    `--semantic-on-selected` ink and a leading `SelectedCheck` (`components/ui/selected-check.tsx`);
+    no ring. The check is `aria-hidden`; the control announces the state (`aria-pressed`, a
+    checkbox's checked state).
+  - Toggles, segments, pagination and the current menu item: the theme gives `MuiToggleButton`,
+    `MuiPaginationItem` and `MuiMenuItem` the same tonal selected state; the gyms radius control and
+    the gym directory pager follow it, and the radius control adds the check.
+  - Nav, footer and breadcrumb links: `#B0B0B0`, lifting to `#EDEDED` with an underline on hover
+    (`quietLinkSx` in `components/ui/quiet-link.ts` for breadcrumbs). The header's current page is
+    `#EDEDED` with a 2px `#9784FF` underline, never a pill or bar.
 - **Input fields.** The `--input-*` family in `index.css` (bg / bg-hover / bg-focused / text / placeholder
   / border / border-hover) is the source of truth for form fields; the MUI theme and the `.module.css`
   files both read it. Fields ride the raised Graphite surface (`semantic.inputSurface`, `#262626`), one

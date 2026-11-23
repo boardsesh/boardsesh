@@ -13,11 +13,14 @@ import { useConsent } from '../consent/consent-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import CompactLanguageSwitcher from '@/app/components/i18n/compact-language-switcher';
 import StartClimbingButton from '@/app/components/start-climbing-button';
+import { brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
 
+// Column links are grey (#B0B0B0), lifting to the label ink with an underline on
+// hover or focus. The violet stays with inline links and the page's one CTA.
 const LINK_SX = {
   color: 'text.secondary',
   textDecoration: 'none',
@@ -29,6 +32,9 @@ const LINK_SX = {
   lineHeight: 1.5,
   '&:hover, &:focus-visible': { color: 'text.primary', textDecoration: 'underline' },
 } as const;
+// "Open it in your browser": the shared grey outlined pill, the same secondary
+// action as the hero's second store button.
+const OPEN_BROWSER_SX = brandCtaOutlinedSx({ size: 'medium' });
 type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean };
 
 export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
@@ -127,7 +133,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
               ariaLabel={t('ariaLabels.startClimbing')}
               placement="footer"
               variant="outlined"
-              sx={{ minHeight: 44 }}
+              sx={OPEN_BROWSER_SX}
             />
           )}
         </Box>
