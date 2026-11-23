@@ -140,13 +140,11 @@ function PlayNextSwipeActionInner({ translation }: { translation: SharedValue<nu
 function PlayNextSwipeAction({
   translation,
   active,
-  hidden,
   onPress,
   label,
 }: {
   translation: SharedValue<number>;
   active: boolean;
-  hidden: boolean;
   onPress: () => void;
   label: string;
 }) {
@@ -156,7 +154,7 @@ function PlayNextSwipeAction({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={[styles.swipeAction, styles.playNextAction, hidden && styles.hiddenSwipeAction]}
+      style={[styles.swipeAction, styles.playNextAction]}
     >
       {active ? (
         <PlayNextSwipeActionInner translation={translation} />
@@ -209,13 +207,11 @@ function PlaylistSwipeActionInner({ translation }: { translation: SharedValue<nu
 function PlaylistSwipeAction({
   translation,
   active,
-  hidden,
   onPress,
   label,
 }: {
   translation: SharedValue<number>;
   active: boolean;
-  hidden: boolean;
   onPress: () => void;
   label: string;
 }) {
@@ -225,7 +221,7 @@ function PlaylistSwipeAction({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={[styles.swipeAction, styles.playlistAction, hidden && styles.hiddenSwipeAction]}
+      style={[styles.swipeAction, styles.playlistAction]}
     >
       {active ? (
         <PlaylistSwipeActionInner translation={translation} />
@@ -266,8 +262,8 @@ export type ClimbListRowProps = {
   renderContent?: (args: ClimbListRowRenderContentArgs) => ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
   contentRowStyle?: StyleProp<ViewStyle>;
-  /** Inherit a sheet's glass at rest; keep swipes and lifted menus opaque. */
-  transparentBackground?: boolean;
+  /** Use the lifted iOS menu without painting a native trigger background. */
+  liftedMenu?: boolean;
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
   /**
@@ -368,7 +364,7 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
   renderContent,
   containerStyle,
   contentRowStyle,
-  transparentBackground = false,
+  liftedMenu = false,
   separatorStyle,
   showSeparator = true,
   fillCell = false,
@@ -399,10 +395,8 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
   // scroll — only the cheap panel shells mount. The hook resets the machine on
   // recycle (climb.uuid) and exposes a ref so the render callbacks below can
   // read the live value without taking it as a dep (see useSwipeArm for why).
-  const { armed, armedRef: dragArmedRef, arm, disarm } = useSwipeArm(climb.uuid);
-  // The native context-menu trigger paints its preview fill even while idle.
-  // Our lifted menu keeps the source clear and paints only the open preview.
-  const usesLiftedMenu = showMoreButton || transparentBackground;
+  const { armedRef: dragArmedRef, arm, disarm } = useSwipeArm(climb.uuid);
+  const usesLiftedMenu = showMoreButton || liftedMenu;
 
   // FlashList recycles rows (same instance, new climb). Snap any open swipe
   // shut so a recycled row never shows the previous climb's open panel.
@@ -578,24 +572,22 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
       <PlayNextSwipeAction
         translation={translation}
         active={dragArmedRef.current}
-        hidden={transparentBackground && !dragArmedRef.current}
         onPress={pressLeadingAction}
         label={playNextActionLabel}
       />
     ),
-    [dragArmedRef, pressLeadingAction, playNextActionLabel, transparentBackground],
+    [dragArmedRef, pressLeadingAction, playNextActionLabel],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
       <PlaylistSwipeAction
         translation={translation}
         active={dragArmedRef.current}
-        hidden={transparentBackground && !dragArmedRef.current}
         onPress={pressTrailingAction}
         label={playlistActionLabel}
       />
     ),
-    [dragArmedRef, pressTrailingAction, playlistActionLabel, transparentBackground],
+    [dragArmedRef, pressTrailingAction, playlistActionLabel],
   );
 
   const rowContent = renderContent({ climb, boardName, layoutId, sizeId, setIds, angle, readyBoardArtRef });
@@ -651,7 +643,6 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
             fillCell && styles.fillCell,
             { backgroundColor: systemColors.background },
             contentRowStyle,
-            transparentBackground && { backgroundColor: armed ? systemColors.secondaryBackground : 'transparent' },
           ]}
         >
           {selected ? (
@@ -702,7 +693,6 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
 export { ClimbListRow };
 
 const styles = StyleSheet.create({
-  hiddenSwipeAction: { opacity: 0 },
   menuBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   outerContainer: {
     position: 'relative',

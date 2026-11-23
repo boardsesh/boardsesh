@@ -57,7 +57,6 @@ import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock'
 import { WallDisplayEntry } from './WallDisplayEntry';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
-import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
@@ -269,11 +268,6 @@ function NowOnTheWallPanelComponent(
   const insets = useSafeAreaInsets();
   const windowBottomInset = useWindowBottomInset();
   const { systemColors, brandColors } = useTheme();
-  const surfaceMode = useEffectiveSurfaceMode();
-  // The native sheet already supplies the glass/blur. Keep its current climb
-  // clear of nested fills; standalone columns and opaque modes keep their card.
-  const transparentHero = variant === 'sheet' && (surfaceMode === 'glass' || surfaceMode === 'blur');
-  const heroSurfaceColor = transparentHero ? 'transparent' : systemColors.secondaryBackground;
   const { showToast } = useToast();
   // `formatGrade` still renders the board-wide aggregate grade tiles (hardest / top
   // grade), which aren't a single climb's grade; `resolveGrade` swaps the per-climb
@@ -833,10 +827,9 @@ function NowOnTheWallPanelComponent(
               labelColor={systemColors.label}
               secondaryColor={systemColors.secondaryLabel}
               accentColor={brandColors.warning}
-              surfaceColor={heroSurfaceColor}
+              surfaceColor={systemColors.secondaryBackground}
               formattedGrade={currentClimb.grade ? heroGrade.label : null}
               gradeColor={heroGrade.color}
-              transparentBackground={transparentHero}
               isActionLoading={heroActionLoading}
               onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
               onPlayNext={handleInteractivePlayNext}
@@ -851,7 +844,7 @@ function NowOnTheWallPanelComponent(
               labelColor={systemColors.label}
               secondaryColor={systemColors.secondaryLabel}
               accentColor={brandColors.warning}
-              surfaceColor={heroSurfaceColor}
+              surfaceColor={systemColors.secondaryBackground}
               formattedGrade={currentClimb?.grade ? heroGrade.label : null}
               gradeColor={heroGrade.color}
             />
@@ -950,8 +943,6 @@ function NowOnTheWallPanelComponent(
     handleInteractiveOpenActions,
     heroMenuClimb,
     heroActionLoading,
-    heroSurfaceColor,
-    transparentHero,
     onClimbPress,
     variant,
     activeBoard,
@@ -1136,7 +1127,6 @@ function NowOnTheWallHeroContent(props: HeroContentProps) {
 type InteractiveHeroRowProps = HeroProps & {
   climb: BoardPresenceClimb;
   rowBoard: BoardSheetRowBoard;
-  transparentBackground: boolean;
   isActionLoading: boolean;
 } & InteractiveRowActionProps;
 
@@ -1150,7 +1140,6 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   surfaceColor,
   formattedGrade,
   gradeColor,
-  transparentBackground,
   isActionLoading,
   onPress,
   onPlayNext,
@@ -1212,7 +1201,8 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
       onPlayNext={onPlayNext ? handlePlayNext : undefined}
       onOpenPlaylist={onOpenPlaylist ? handleOpenPlaylist : undefined}
       onOpenActions={onOpenActions ? handleOpenActions : undefined}
-      transparentBackground={transparentBackground}
+      // Match the stat tiles; the native menu trigger would paint over this card.
+      liftedMenu
       containerStyle={styles.heroInteractiveContainer}
       contentRowStyle={contentRowStyle}
       showSeparator={false}

@@ -49,10 +49,7 @@ const historyPagination = vi.hoisted(() => ({
   capturedOnPageLoaded: null as ((info: { pageSize: number; returnedCount: number }) => void) | null,
 }));
 
-const surface = vi.hoisted(() => ({ mode: 'glass' as 'glass' | 'blur' | 'material' | 'solid' }));
-vi.mock('../../../hooks/use-effective-surface-mode', () => ({
-  useEffectiveSurfaceMode: () => surface.mode,
-}));
+const cardSurface = vi.hoisted(() => ({ background: '#f2f2f7' }));
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
 type PressableMockProps = ViewMockProps & {
@@ -83,7 +80,7 @@ type ClimbListRowMockProps = {
     angle?: number;
   }) => ReactNode;
   contentRowStyle?: unknown;
-  transparentBackground?: boolean;
+  liftedMenu?: boolean;
   onPress?: () => void;
   onPlayNext?: () => void;
   onOpenPlaylist?: () => void;
@@ -264,7 +261,7 @@ vi.mock('../../ClimbListRow', () => ({
       {
         'data-climb-row': climbUuid,
         'data-background': Object.assign({}, ...[props.contentRowStyle].flat(10).filter(Boolean)).backgroundColor,
-        'data-transparent': String(props.transparentBackground ?? false),
+        'data-lifted-menu': String(props.liftedMenu ?? false),
       },
       createElement('button', { 'aria-label': `press ${climbUuid}`, onClick: props.onPress }, content),
       createElement('button', { 'aria-label': `queue ${climbUuid}`, onClick: props.onPlayNext }, 'queue'),
@@ -283,7 +280,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       label: '#000',
       secondaryLabel: '#666',
       tertiaryLabel: '#999',
-      secondaryBackground: '#f2f2f7',
+      secondaryBackground: cardSurface.background,
       separator: '#ccc',
     },
     brandColors: { warning: '#B45309', primary: '#6D28D9' },
@@ -397,7 +394,7 @@ function panelElement(overrides: Partial<NowOnTheWallPanelProps> = {}) {
 
 describe('NowOnTheWallPanel', () => {
   beforeEach(() => {
-    surface.mode = 'glass';
+    cardSurface.background = '#f2f2f7';
     presence.currentClimb = null;
     presence.holder = null;
     presence.history = [];
@@ -413,24 +410,25 @@ describe('NowOnTheWallPanel', () => {
   });
 
   it.each([
-    ['sheet', 'glass', 'transparent'],
-    ['sheet', 'blur', 'transparent'],
-    ['sheet', 'material', '#f2f2f7'],
-    ['sheet', 'solid', '#f2f2f7'],
-    ['column', 'glass', '#f2f2f7'],
-    ['column', 'blur', '#f2f2f7'],
-    ['column', 'material', '#f2f2f7'],
-    ['column', 'solid', '#f2f2f7'],
-  ] as const)('keeps the %s hero on its %s surface', (variant, mode, background) => {
-    surface.mode = mode;
+    ['sheet', '#f2f2f7'],
+    ['sheet', '#2c2c2e'],
+    ['column', '#f2f2f7'],
+    ['column', '#2c2c2e'],
+  ] as const)('matches the %s current-climb card to the stat tiles on %s', (variant, background) => {
+    cardSurface.background = background;
     presence.currentClimb = makeClimb('hero', 3);
+    presence.stats = { climbsSentCount: 7, distinctClimbersCount: 2 };
     const { getByText, container, rerender } = render(panelElement({ variant }));
-    expect(getByText('Climb hero').closest('[data-background]')?.getAttribute('data-background')).toBe(background);
+    const tileBackground = () => getByText('7').closest('[data-background]')?.getAttribute('data-background');
+    expect(tileBackground()).toBe(background);
+    expect(getByText('Climb hero').closest('[data-background]')?.getAttribute('data-background')).toBe(
+      tileBackground(),
+    );
 
     rerender(panelElement({ variant, onClimbPress: vi.fn() }));
     const interactiveHero = container.querySelector('[data-climb-row="hero"]');
-    expect(interactiveHero?.getAttribute('data-background')).toBe(background);
-    expect(interactiveHero?.getAttribute('data-transparent')).toBe(String(background === 'transparent'));
+    expect(interactiveHero?.getAttribute('data-background')).toBe(tileBackground());
+    expect(interactiveHero?.getAttribute('data-lifted-menu')).toBe('true');
   });
 
   const sprayWall: UserBoard = {
