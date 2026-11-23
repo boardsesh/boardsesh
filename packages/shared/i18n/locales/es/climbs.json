@@ -47,17 +47,31 @@
       "heading": "Bloques de {{boardName}} a {{angle}}°",
       "intro": "Todos los bloques montados en esta configuración de {{boardName}} a {{angle}}°, los más escalados primero. Entra en cualquiera para ver el plafón, el grado en cada ángulo y la beta.",
       "empty": "Todavía no hay bloques en este plafón.",
-      "cta": "Escala en este plafón",
+      "cta": {
+        "getAppHelper": "Ilumina cualquiera de ellos en tu {{board}}.",
+        "openInBrowser": "Ábrela en el navegador",
+        "openInBrowserMobile": "O abre la lista en el navegador"
+      },
       "pagination": {
         "aria": "Paginación",
         "previous": "Página anterior",
         "next": "Página siguiente",
         "pageLabel": "Página {{page}}"
       },
-      "install": {
-        "helper": "¿Aún no tienes la app? Descárgala y enciende estos bloques en tu plafón."
+      "climbsHeading": "Más escalados a {{angle}}°",
+      "stage": {
+        "caption": "Primero de la lista: {{climb}}",
+        "captionLaterPage": "Primero de esta página: {{climb}}"
       },
-      "climbsHeading": "Más escalados a {{angle}}°"
+      "qr": {
+        "title": "Escanea para abrir esta lista en tu móvil",
+        "imageLabel": "Código QR que abre los bloques de {{boardName}} a {{angle}}° en tu móvil"
+      },
+      "angles": {
+        "label": "El mismo plafón, otros ángulos",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°, bloques de {{boardName}}"
+      }
     }
   },
   "header": {},

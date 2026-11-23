@@ -37,7 +37,10 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *    phone's "Get the free app" button.
  *  - `climb-qr-card`: the store pair in the QR card a climb page shows from md
  *    (`PhoneQrCard`), so a laptop's store click reads apart from a phone's.
- *  - `climb-list`: a board's climb list (`StaticListFrontDoor`).
+ *  - `climb-list`: a board's climb list (`StaticListFrontDoor`): the phone's
+ *    "Get the free app" button.
+ *  - `climb-list-qr-card`: the store pair in the QR card a board list shows
+ *    from md, apart from the phone's button like `climb-qr-card`.
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
  *    share link and its printed QR land (#4415). After a scan the link id is
@@ -92,6 +95,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'auth-login',
   'climb-qr-card',
   'climb-app-module',
+  'climb-list-qr-card',
 ] as const;
 
 /**

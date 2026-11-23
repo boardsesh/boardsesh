@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CLIMB_QR_MEDIUMS, climbQrScanned, parseClimbQrLanding } from '../climb-qr-events';
+import { CLIMB_QR_MEDIUMS, climbQrScanned, listQrScanned, parseClimbQrLanding } from '../climb-qr-events';
 import { BOARD_QR_MEDIUMS, parseBoardQrLanding } from '../board-qr-events';
 import { SHARED_EVENTS } from '../events';
 import { GYM_QR_MEDIUMS, buildGymQrHref, parseGymQrLanding } from '../gym-funnel';
@@ -25,6 +25,30 @@ describe('climbQrScanned', () => {
     const { properties } = climbQrScanned({ medium: 'desktop', surface: 'app', boardType: 'tension' });
 
     expect(Object.keys(properties).sort()).toEqual(['boardType', 'medium', 'surface']);
+  });
+});
+
+describe('listQrScanned', () => {
+  it('names the board list scan apart from the climb page scan, with the same three properties', () => {
+    expect(listQrScanned({ medium: 'desktop', surface: 'web', boardType: 'kilter' })).toEqual({
+      name: SHARED_EVENTS.ListQrScanned,
+      properties: { medium: 'desktop', surface: 'web', boardType: 'kilter' },
+    });
+    expect(SHARED_EVENTS.ListQrScanned).toBe('List QR Scanned');
+    expect(SHARED_EVENTS.ListQrScanned).not.toBe(SHARED_EVENTS.ClimbQrScanned);
+  });
+
+  it('carries nothing that names the board', () => {
+    const { properties } = listQrScanned({ medium: 'desktop', surface: 'web', boardType: 'my-garage-board' });
+
+    expect(properties).toEqual({ medium: 'desktop', surface: 'web', boardType: null });
+  });
+
+  it('parses what the board list encodes', () => {
+    const href = buildGymQrHref('/kilter/original/12x12-square/screw_bolt/40/list', 'desktop');
+    const params = Object.fromEntries(new URL(href, 'https://www.boardsesh.com').searchParams);
+
+    expect(parseClimbQrLanding(params)).toEqual({ medium: 'desktop' });
   });
 });
 

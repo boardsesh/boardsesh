@@ -46,3 +46,26 @@ describe('GradeTile ink', () => {
     expect(contrastRatio('#FFFFFF', V_GRADE_COLORS.V5)).toBeLessThan(4.5);
   });
 });
+
+type ChipElement = React.ReactElement<{
+  sx: { bgcolor: string; color: string; height: number };
+  children: React.ReactNode;
+  'aria-hidden': boolean;
+}>;
+
+describe('GradeTile compact chip', () => {
+  it.each(Object.keys(V_GRADE_COLORS))('prints a %s chip as the V-grade alone, in the same readable ink', (vGrade) => {
+    const chip = GradeTile({ difficulty: `6a/${vGrade}`, boardName: 'kilter', size: 'compact' }) as ChipElement;
+    const gradeColor = V_GRADE_COLORS[vGrade];
+
+    expect(chip.props.children).toBe(vGrade);
+    expect(chip.props.sx.bgcolor).toBe(gradeColor);
+    expect(contrastRatio(chip.props.sx.color, gradeColor)).toBeGreaterThanOrEqual(4.5);
+    expect(chip.props.sx.height).toBeLessThan(44);
+    expect(chip.props['aria-hidden']).toBe(true);
+  });
+
+  it('renders nothing for a climb with no V-grade', () => {
+    expect(GradeTile({ difficulty: null, boardName: 'kilter', size: 'compact' })).toBeNull();
+  });
+});

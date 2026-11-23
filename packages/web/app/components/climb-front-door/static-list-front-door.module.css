@@ -1,0 +1,127 @@
+/*
+ * The board list layout, on the climb page's grid (`climb-front-door.module.css`).
+ * The DOM order is the phone order: breadcrumb, title, the first climb's board,
+ * call to action, then the details (the 30-day line, the angle rail and the
+ * climbs). From md (900px, MUI's breakpoint) it becomes two columns: the board
+ * sticky on the left, everything else reading down the right, so the board
+ * stays in view the whole way down the list.
+ *
+ * Its own module rather than the climb page's: there is no sticky install bar
+ * here, so no space is reserved for one, and the details column runs to the end
+ * of the page.
+ */
+
+.page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--page-wide);
+  margin: 0 auto;
+  padding-block: var(--spacing-4);
+  padding-inline: var(--page-gutter);
+  /* `clip`, not `hidden`: it makes no scroll container, so the sticky board
+     still sticks to the viewport. */
+  overflow-x: clip;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'title'
+    'stage'
+    'cta'
+    'details';
+}
+
+.title,
+.stage,
+.cta,
+.details {
+  min-width: 0;
+}
+
+.title {
+  grid-area: title;
+}
+
+.stage {
+  grid-area: stage;
+  margin-top: var(--spacing-5);
+}
+
+.cta {
+  grid-area: cta;
+  margin-top: var(--spacing-5);
+}
+
+/* `minmax(0, 1fr)`, not the implicit `auto` track: an auto track grows to its
+   widest item's min-content, and the page's `overflow-x: clip` would then cut
+   the angle rail and the rows' grades off the right edge without a scrollbar. */
+.details {
+  grid-area: details;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-6);
+  margin-top: var(--spacing-6);
+}
+
+/* Under the board: "First on the list: <climb> V6". */
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-2);
+  margin: var(--spacing-2) 0 0;
+  color: var(--neutral-700);
+}
+
+@media (min-width: 900px) {
+  .hero {
+    /* Same columns as the climb page: the text column never drops under
+       360px, and the board gets its full 560px from about 1100px. */
+    grid-template-columns: minmax(0, 560px) minmax(360px, 1fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      'stage title'
+      'stage cta'
+      'stage details';
+    column-gap: calc(var(--spacing-12) + var(--spacing-2));
+    align-items: start;
+  }
+
+  /* An empty list has no first climb to show: one column, no empty board slot. */
+  .heroWithoutStage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'cta'
+      'details';
+  }
+
+  .title,
+  .stage {
+    margin-top: var(--spacing-4);
+  }
+
+  .stage {
+    position: sticky;
+    top: calc(var(--global-header-height) + var(--spacing-4));
+    align-self: start;
+  }
+
+  .cta {
+    margin-top: var(--spacing-6);
+  }
+
+  .details {
+    margin-top: var(--spacing-8);
+  }
+
+  /* index.css sizes every `main h1.MuiTypography-root` at 44px. The heading
+     shares a 360px+ column here, so it scales with the window instead, as on
+     the climb page: 32px at 900px wide, 44px from about 1440px. */
+  .title :global(h1.MuiTypography-root) {
+    font-size: clamp(32px, calc(2.2vw + 12px), 44px);
+  }
+}

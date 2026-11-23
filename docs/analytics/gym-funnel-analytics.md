@@ -197,8 +197,8 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
 
 ### Which code fires which event
 
-Four printed or on-screen codes share the param contract above, and they land
-on three kinds of page, so a scan is counted by one of three events:
+Five printed or on-screen codes share the param contract above, and they land
+on three kinds of page, so a scan is counted by one of four events:
 
 | `medium` | Code | Lands on | Event |
 | --- | --- | --- | --- |
@@ -206,6 +206,7 @@ on three kinds of page, so a scan is counted by one of three events:
 | `kiosk` | The kiosk screen's per-board install code (`app/components/kiosk/board-slot/board-install-qr.tsx`) | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
 | `board` | The board poster (`/poster/b/{slug}`, #4415): `boardQrUrl(slug, 'board')`, with an unlisted Spraywall's `wall=<uuid>` in front of the pair | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
 | `desktop` | The code beside "Open in your browser" on a climb page, shown from md (900px) only: `climbQrUrl(handoffPath, locale)`, the climb page itself in the reader's language | The same climb page, in either tree | `Climb QR Scanned` |
+| `desktop` | The same code on a board's climb list, shown from md only: `listQrUrl(basePath, locale)`, page 1 of the list the reader is on | The same list, in either tree | `List QR Scanned` |
 
 `Gym QR Scanned` stays poster-only: its tracker mounts on `/gym/[gym_slug]` and
 nowhere else, and it carries `gymSlug`. A `kiosk` or `board` row on it means
@@ -346,6 +347,35 @@ carries `qrMedium: 'desktop'`. The hook is `useQrLandingMedium('climb')`.
 The QR card's own App Store and Google Play buttons are a laptop's store
 clicks, so they carry their own placement and link id, `climb-qr-card`, apart
 from the phone's `climb-view`.
+
+### `List QR Scanned`: the desktop code on a board list
+
+A board's climb list on a laptop shows the climb page's code beside its own
+"Open in your browser" (`FrontDoorHeroCta`, shared by both pages). It encodes
+page 1 of the list the reader is on, `…/{angle}/list?src=qr&medium=desktop`
+(`listQrUrl` in `app/lib/gym-attribution.ts`), so on `/b/{slug}` it keeps the
+board. Same medium, same strict parser (`parseClimbQrLanding`) and the same
+three properties as `Climb QR Scanned`; built by `listQrScanned` in
+`packages/shared/analytics/src/climb-qr-events.ts`. It has its own name so
+`Climb QR Scanned` stays a count of climb pages.
+
+`QrLandingTracker` with `kind="list"` fires it, mounted by `StaticListFrontDoor`
+in both trees. On `/b/{slug}/{angle}/list` it sits beside the `board` tracker
+the page has always mounted: each kind reads only its own mediums, so a kiosk
+or poster scan is still one `Board QR Scanned` and a laptop scan is one
+`List QR Scanned`, never both. Either tracker strips the pair once it has read
+its own landing.
+
+After a scan the store link id adds the medium only where the page's store
+buttons read that kind. The config-tuple list's buttons read `list`, so a
+laptop scan there gives `climb-list.desktop`. The `/b` list's buttons keep
+reading `board`, so they still say `climb-list.kiosk` or `climb-list.board`
+after a printed code, and a laptop scan there leaves the plain `climb-list`
+link id. Count those scans with `List QR Scanned` instead.
+
+As on the climb page, the QR card's own store buttons are a laptop's clicks
+and carry their own placement and link id, `climb-list-qr-card`, apart from
+the phone's `climb-list`.
 
 ### A scan only counts if the page loads: iOS and the association file
 

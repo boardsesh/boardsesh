@@ -106,3 +106,33 @@ describe('captureQrLandingMedium on a climb page', () => {
     expect(captureQrLandingMedium('climb')).toBe('desktop');
   });
 });
+
+describe('captureQrLandingMedium on a board list', () => {
+  const LIST_PATH = '/b/the-kilter/40/list';
+
+  it("reads the list's own desktop code", () => {
+    window.history.replaceState(null, '', `${LIST_PATH}?src=qr&medium=desktop`);
+
+    expect(captureQrLandingMedium('list')).toBe('desktop');
+    expect(captureQrLanding('list')).toEqual({ kind: 'list', medium: 'desktop' });
+  });
+
+  it.each(['?src=qr&medium=board', '?src=qr&medium=kiosk', '?src=qr&medium=poster'])(
+    'reads null for %s, which the board tracker on the same page owns',
+    (search) => {
+      window.history.replaceState(null, '', `${LIST_PATH}${search}`);
+
+      expect(captureQrLandingMedium('list')).toBeNull();
+    },
+  );
+
+  it('keeps a printed board code and the laptop code apart on the one page', () => {
+    window.history.replaceState(null, '', `${LIST_PATH}?src=qr&medium=kiosk`);
+    expect(captureQrLandingMedium('board')).toBe('kiosk');
+    expect(captureQrLandingMedium('list')).toBeNull();
+
+    window.history.replaceState(null, '', `${LIST_PATH}?src=qr&medium=desktop`);
+    expect(captureQrLandingMedium('list')).toBe('desktop');
+    expect(captureQrLandingMedium('board')).toBeNull();
+  });
+});

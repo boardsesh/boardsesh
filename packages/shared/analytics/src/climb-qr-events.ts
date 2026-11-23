@@ -1,5 +1,8 @@
 // Climb QR scans: the code a climb page shows on a laptop, beside "Open in your
-// browser", so a climber can carry the climb to the phone in their pocket.
+// browser", so a climber can carry the climb to the phone in their pocket. A
+// board's climb list shows the same code for the same reason; its scan is the
+// separate `List QR Scanned` (`listQrScanned` below), so neither funnel counts
+// the other's page.
 //
 // The same contract as board-qr-events.ts:
 //
@@ -22,7 +25,10 @@ import { boardTypeProperty, type BoardTypeProperty } from './board-type-property
 import { SHARED_EVENTS } from './events';
 import { parseQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
 
-/** The medium a climb page's code says: `desktop`, the code beside the browser button on a laptop. */
+/**
+ * The medium a climb page's code says: `desktop`, the code beside the browser
+ * button on a laptop. A board list's code prints the same medium.
+ */
 export const CLIMB_QR_MEDIUMS = ['desktop'] as const satisfies readonly GymQrMedium[];
 export type ClimbQrMedium = (typeof CLIMB_QR_MEDIUMS)[number];
 
@@ -67,6 +73,29 @@ export function climbQrScanned(input: ClimbQrScannedInput): {
 } {
   return {
     name: SHARED_EVENTS.ClimbQrScanned,
+    properties: {
+      medium: input.medium,
+      surface: input.surface,
+      ...boardTypeProperty(input.boardType),
+    },
+  };
+}
+
+/**
+ * A board list's code was scanned and the list loaded on the phone. Once per
+ * landing.
+ *
+ * The same code as a climb page's, on `/…/{angle}/list`: `medium=desktop`,
+ * parsed by `parseClimbQrLanding`, and the same three properties. Its own name
+ * so `Climb QR Scanned` stays a count of climb pages. Nothing names the board;
+ * the page URL the SDK stamps on every event says which list it was.
+ */
+export function listQrScanned(input: ClimbQrScannedInput): {
+  name: typeof SHARED_EVENTS.ListQrScanned;
+  properties: ClimbQrScannedProps;
+} {
+  return {
+    name: SHARED_EVENTS.ListQrScanned,
     properties: {
       medium: input.medium,
       surface: input.surface,

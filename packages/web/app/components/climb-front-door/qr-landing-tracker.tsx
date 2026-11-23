@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { boardQrScanned, climbQrScanned, stripGymQrParams, type AnalyticsBoardType } from '@boardsesh/analytics';
+import {
+  boardQrScanned,
+  climbQrScanned,
+  listQrScanned,
+  stripGymQrParams,
+  type AnalyticsBoardType,
+} from '@boardsesh/analytics';
 import { useConsent } from '@/app/components/consent/consent-provider';
 import { track } from '@/app/lib/analytics';
 import { captureQrLanding, type QrLanding, type QrLandingKind } from '@/app/lib/qr-landing';
@@ -10,7 +16,8 @@ type QrLandingTrackerProps = {
   /**
    * Which code lands on this page: `board` on `/b/{slug}/{angle}/list` (a
    * printed board poster or the kiosk's install code), `climb` on a climb page
-   * (the code beside "Open in your browser" on a laptop).
+   * and `list` on a board's climb list (the code beside "Open in your browser"
+   * on a laptop).
    */
   kind: QrLandingKind;
   /**
@@ -34,9 +41,14 @@ export function __resetReportedQrLandingsForTests(): void {
 }
 
 function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
-  return landing.kind === 'board'
-    ? boardQrScanned({ medium: landing.medium, surface: 'web', boardType })
-    : climbQrScanned({ medium: landing.medium, surface: 'web', boardType });
+  switch (landing.kind) {
+    case 'board':
+      return boardQrScanned({ medium: landing.medium, surface: 'web', boardType });
+    case 'climb':
+      return climbQrScanned({ medium: landing.medium, surface: 'web', boardType });
+    case 'list':
+      return listQrScanned({ medium: landing.medium, surface: 'web', boardType });
+  }
 }
 
 /**
@@ -49,6 +61,9 @@ function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
  *    `Board QR Scanned`.
  *  - `climb`: mounted on the climb page in both route trees. The code beside
  *    "Open in your browser" says `medium=desktop`. Fires `Climb QR Scanned`.
+ *  - `list`: mounted on the catalogue board list in both route trees, the same
+ *    laptop code pointed at the list. Fires `List QR Scanned`. On `/b` it sits
+ *    beside the `board` tracker; each reads only its own mediums.
  *
  * Unlike `GymQrLandingTracker`, the medium is read here in the browser and not
  * passed by the server: these pages' HTML is shared at the edge, so it cannot

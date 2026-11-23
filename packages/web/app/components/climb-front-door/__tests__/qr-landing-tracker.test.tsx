@@ -292,3 +292,41 @@ describe('QrLandingTracker on a climb page', () => {
     });
   });
 });
+
+describe('QrLandingTracker on a board list, for its laptop code', () => {
+  const LIST_PATH = '/b/the-kilter/40/list';
+
+  /** The `/b` list mounts both: the board tracker in the page, the list tracker in the front door. */
+  function BothListTrackers() {
+    return (
+      <>
+        <QrLandingTracker kind="board" boardType="kilter" />
+        <QrLandingTracker kind="list" boardType="kilter" />
+      </>
+    );
+  }
+
+  it('reports the desktop code once as a list scan, not as a climb or board scan', () => {
+    window.history.replaceState(null, '', `${LIST_PATH}?src=qr&medium=desktop`);
+
+    const { rerender } = render(<BothListTrackers />);
+    rerender(<BothListTrackers />);
+    flushStrip();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('List QR Scanned', { medium: 'desktop', surface: 'web', boardType: 'kilter' });
+    expect(window.location.search).toBe('');
+    expect(captureQrLandingMedium('list')).toBe('desktop');
+  });
+
+  it('leaves a kiosk scan on the same page to the board tracker, counted once', () => {
+    window.history.replaceState(null, '', `${LIST_PATH}?src=qr&medium=kiosk`);
+
+    render(<BothListTrackers />);
+    flushStrip();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('Board QR Scanned', { medium: 'kiosk', surface: 'web', boardType: 'kilter' });
+    expect(captureQrLandingMedium('list')).toBeNull();
+  });
+});
