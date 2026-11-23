@@ -141,11 +141,12 @@ Run it locally against a dev server with `--grep journey --trace off`.
 
 1. **Instant beta.** A linked beta video shows on the climb for everyone straight
    away. The picture is this climb's own beta thumbnails (up to three, with the
-   filmers' handles) when the page loaded any. Otherwise it is the newest beta
-   on Boardsesh: the homepage's "Fresh beta" operation, read anonymously through
-   a ten-minute cache (`cachedPublicRecentBetaLinks`), in its own `<Suspense>`.
-   A plain play tile only when neither has a picture, or a thumbnail fails. The
-   handle sits on a solid pill so it reads on a white thumbnail.
+   filmers' handles), the same links the page's beta section already shows, and
+   a plain play tile when it has none or a thumbnail fails. Never other climbs'
+   beta: a climber can make a video private at any time, and this HTML sits in a
+   shared edge cache for a day, so revocable user media must never be copied into
+   it from another climb. The handle sits on a solid pill so it reads on a white
+   thumbnail.
 2. **Know what's on the board.** The board's history is shared live: everyone at
    the board sees what's lit now and what was up before it. The `wall-status`
    capture.

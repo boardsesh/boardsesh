@@ -8,8 +8,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
-import { dedupeBetaLinks, mapBetaLinkRow, type BetaLink } from '@/app/lib/beta-video-url';
-import { cachedPublicRecentBetaLinks } from '@/app/lib/graphql/server-cached-client';
+import { dedupeBetaLinks, type BetaLink } from '@/app/lib/beta-video-url';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
@@ -24,8 +23,8 @@ import styles from './climb-app-showcase.module.css';
 type ClimbAppShowcaseProps = {
   /**
    * This climb's beta, as the page already loaded it for the beta section.
-   * The "Instant beta" card shows up to three of its thumbnails; with none it
-   * falls back to the site's newest beta (`InstantBetaVisual`).
+   * The "Instant beta" card shows up to three of its thumbnails; with none, a
+   * plain play tile (`InstantBetaVisual` says why never other climbs' beta).
    */
   betaLinks: readonly BetaLink[];
 };
@@ -125,7 +124,7 @@ function BenefitCard({ title, body, action, children, visualClassName, wide = fa
   );
 }
 
-/** The plain tile: no beta to show, or while the site-wide beta is still on its way. */
+/** The plain tile, for a climb with no beta picture of its own. */
 function BetaTile() {
   return (
     <Box aria-hidden className={styles.betaTile}>
@@ -136,26 +135,20 @@ function BetaTile() {
   );
 }
 
-/** Up to three links that have a thumbnail, one card per video. */
-function withThumbnails(links: readonly BetaLink[]): BetaLink[] {
-  return dedupeBetaLinks(links.filter((link) => Boolean(link.thumbnail))).slice(0, MAX_FAN_CARDS);
-}
-
 /**
- * Beta videos fanned out, each card with the filmer's handle in the strip the
- * next card leaves uncovered: this climb's own when it has any, else the
- * newest beta on Boardsesh (the homepage's "Fresh beta", read anonymously
- * through a ten-minute cache). The plain tile only when neither has a picture.
+ * This climb's own beta, fanned out, each card with the filmer's handle in the
+ * strip the next card leaves uncovered; the plain tile when it has no picture.
  *
- * Decoration: the beta section above links every video of this climb, so this
- * repeats nothing to a screen reader.
+ * Only this climb's beta, the links the page already shows in its beta
+ * section. Never other climbs' beta: a climber can make their video private at
+ * any time, and this page's HTML sits in a shared edge cache for a day, so
+ * another climber's revocable media must not be copied into it from elsewhere.
+ *
+ * Decoration: the beta section above links every video, so this repeats
+ * nothing to a screen reader.
  */
-async function InstantBetaVisual({ climbBeta }: { climbBeta: readonly BetaLink[] }) {
-  const ownBeta = withThumbnails(climbBeta);
-  const fanLinks =
-    ownBeta.length > 0
-      ? ownBeta
-      : withThumbnails((await cachedPublicRecentBetaLinks()).map((row) => mapBetaLinkRow(row.betaLink)));
+function InstantBetaVisual({ climbBeta }: { climbBeta: readonly BetaLink[] }) {
+  const fanLinks = dedupeBetaLinks(climbBeta.filter((link) => Boolean(link.thumbnail))).slice(0, MAX_FAN_CARDS);
   if (fanLinks.length === 0) return <BetaTile />;
 
   return (
@@ -207,11 +200,7 @@ export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcasePr
         <Box className={styles.scroller} role="region" aria-labelledby="climb-app-showcase-heading" tabIndex={0}>
           <Box component="ul" className={styles.cards}>
             <BenefitCard title={t('frontDoor.app.beta.title')} body={t('frontDoor.app.beta.body')}>
-              {/* Its own boundary: the site-wide fallback read must not hold up
-                  the other cards or the store buttons. The tile is the same size. */}
-              <Suspense fallback={<BetaTile />}>
-                <InstantBetaVisual climbBeta={betaLinks} />
-              </Suspense>
+              <InstantBetaVisual climbBeta={betaLinks} />
             </BenefitCard>
             <BenefitCard title={t('frontDoor.app.wall.title')} body={t('frontDoor.app.wall.body')}>
               <MarketingScreenshot

@@ -34,7 +34,6 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation: v
 // fixed answer.
 vi.mock('@/app/lib/graphql/server-cached-client', () => ({
   cachedCommunityStats: vi.fn(async () => ({ climbersLast30Days: 3249, litLast30Days: 205_800 })),
-  cachedPublicRecentBetaLinks: vi.fn(async () => []),
 }));
 
 // What the root layout's provider gives a cold server render: no answer yet.
