@@ -34,7 +34,10 @@ export const gymsTypeDefs = /* GraphQL */ `
     pending
     approved
     denied
+    "An admin-review claim nobody decided within 30 days, or a domain link that went unused."
     expired
+    "An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again."
+    revoked
   }
 
   "Outcome of a requestGymClaim call, so clients can show the right next step."
@@ -585,6 +588,12 @@ export const gymsTypeDefs = /* GraphQL */ `
     message: String
     "When the claim was created"
     createdAt: String!
+    "Admin queue only: days since the claimant's account was created."
+    claimantAccountAgeDays: Int
+    "Admin queue only: how many climbs the claimant has logged."
+    claimantTickCount: Int
+    "Admin queue only: how many other live gyms the claimant owns or is an admin of."
+    claimantGymsHeld: Int
   }
 
   """
@@ -615,6 +624,30 @@ export const gymsTypeDefs = /* GraphQL */ `
     claimId: ID!
     "Whether to approve (transfer ownership) or deny"
     decision: GymClaimDecision!
+  }
+
+  """
+  Input for taking back an approved gym claim (global admin only).
+  """
+  input RevertGymClaimInput {
+    "The approved claim to take back (the id the admin queue and the daily digest use)"
+    claimId: ID!
+    "Why, for the ownership audit trail. Optional."
+    reason: String
+  }
+
+  """
+  What revertGymClaim did.
+  """
+  type RevertGymClaimResult {
+    "The reverted claim"
+    claimId: ID!
+    "The gym, now unclaimed"
+    gymUuid: ID!
+    "The gym's name"
+    gymName: String!
+    "Gym members and editors removed: the claimant's own row and everyone added since the claim"
+    removedMemberCount: Int!
   }
 
   """

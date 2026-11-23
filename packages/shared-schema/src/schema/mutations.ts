@@ -679,6 +679,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     reviewGymClaim(input: ReviewGymClaimInput!): Boolean!
 
     """
+    Take back an approved gym claim (global admin only): the gym goes back to
+    the SYSTEM account, the claim becomes \`revoked\`, the sync freeze set at
+    approval is cleared so the location sync curates the listing again, and the
+    claimant plus every gym member or editor added since the claim lose their
+    membership. Refused when the gym has changed hands since the claim.
+    """
+    revertGymClaim(input: RevertGymClaimInput!): RevertGymClaimResult!
+
+    """
     Fold one or more duplicate gyms into a canonical survivor (admin only). Every
     duplicate's boards, follows, members, claims, kiosks, comments, feed items,
     notifications, and votes re-point to the survivor, then each duplicate is

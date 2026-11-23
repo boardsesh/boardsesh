@@ -4026,7 +4026,10 @@ enum GymClaimStatus {
   pending
   approved
   denied
+  "An admin-review claim nobody decided within 30 days, or a domain link that went unused."
   expired
+  "An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again."
+  revoked
 }
 
 "Outcome of a requestGymClaim call, so clients can show the right next step."
@@ -4577,6 +4580,12 @@ type GymClaim {
   message: String
   "When the claim was created"
   createdAt: String!
+  "Admin queue only: days since the claimant's account was created."
+  claimantAccountAgeDays: Int
+  "Admin queue only: how many climbs the claimant has logged."
+  claimantTickCount: Int
+  "Admin queue only: how many other live gyms the claimant owns or is an admin of."
+  claimantGymsHeld: Int
 }
 
 """
@@ -4607,6 +4616,30 @@ input ReviewGymClaimInput {
   claimId: ID!
   "Whether to approve (transfer ownership) or deny"
   decision: GymClaimDecision!
+}
+
+"""
+Input for taking back an approved gym claim (global admin only).
+"""
+input RevertGymClaimInput {
+  "The approved claim to take back (the id the admin queue and the daily digest use)"
+  claimId: ID!
+  "Why, for the ownership audit trail. Optional."
+  reason: String
+}
+
+"""
+What revertGymClaim did.
+"""
+type RevertGymClaimResult {
+  "The reverted claim"
+  claimId: ID!
+  "The gym, now unclaimed"
+  gymUuid: ID!
+  "The gym's name"
+  gymName: String!
+  "Gym members and editors removed: the claimant's own row and everyone added since the claim"
+  removedMemberCount: Int!
 }
 
 """
@@ -10537,6 +10570,15 @@ type Mutation {
   ownership to the claimant.
   """
   reviewGymClaim(input: ReviewGymClaimInput!): Boolean!
+
+  """
+  Take back an approved gym claim (global admin only): the gym goes back to
+  the SYSTEM account, the claim becomes `revoked`, the sync freeze set at
+  approval is cleared so the location sync curates the listing again, and the
+  claimant plus every gym member or editor added since the claim lose their
+  membership. Refused when the gym has changed hands since the claim.
+  """
+  revertGymClaim(input: RevertGymClaimInput!): RevertGymClaimResult!
 
   """
   Fold one or more duplicate gyms into a canonical survivor (admin only). Every
