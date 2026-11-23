@@ -1699,7 +1699,8 @@
       "goneHint": "Taken down, replaced, or the gym closed",
       "wrongPlace": "Wrong gym or place",
       "wrongPlaceHint": "It's somewhere else, or it's someone's home wall",
-      "other": "Something else"
+      "other": "Something else",
+      "relistRequest": "Put it back on the gym"
     },
     "gymReasons": {
       "duplicate": "Listed twice",
@@ -1743,7 +1744,21 @@
     "relistAsk": "Ask {{gym}} to list it again",
     "relistAskHint": "Their staff took it off the gym. We'll ask them to put it back.",
     "relistSent": "Asked. We'll tell you what {{gym}} staff decide.",
-    "relistAlready": "You already asked. We'll tell you what {{gym}} staff decide."
+    "relistAlready": "You already asked. We'll tell you what {{gym}} staff decide.",
+    "duplicateGymSearch": "Find the other listing",
+    "gymSearchPlaceholder": "Gym name",
+    "noMatches": "No matches yet. Try a different name.",
+    "cancel": "Cancel",
+    "done": "Done",
+    "retry": "Try again",
+    "loading": "Loading",
+    "loadError": "Couldn't load this board. Try again.",
+    "signInTitle": "Log in to report a problem",
+    "signInBody": "Log in and we'll bring you straight back here.",
+    "boardListLink": "Something wrong with this board?",
+    "web": {
+      "noteRequiredLabel": "Tell them what's wrong (10 characters minimum)"
+    }
   },
   "reportReview": {
     "title": "Climbers flagged this board",
@@ -1775,7 +1790,15 @@
     "keepPartial_one": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
     "keepPartial_other": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",
     "statusPill": "Reported",
-    "open": "See reports"
+    "open": "See reports",
+    "review": "Review",
+    "duplicateOf": "Same wall as {{board}}",
+    "inTeamQueue": "Our team is looking at this one. It closes when they do.",
+    "removeHint": "It comes off this gym's page and kiosks",
+    "keepFailed": "Couldn't close the report. Try again.",
+    "empty": "Nothing is open on this board anymore.",
+    "back": "Back",
+    "close": "Close"
   },
   "whoCanEdit": {
     "boardTitle": "You can't edit this board",
@@ -1792,6 +1815,8 @@
     "claimHint": "If you work here, claim it and the listing is yours to run.",
     "claimGym": "Claim {{gym}}",
     "claimThisGym": "Claim this gym",
-    "goBack": "Go back"
+    "goBack": "Go back",
+    "rule": "Whoever added it can change it. Once a gym is claimed, its staff can too. Everyone else can report a problem.",
+    "backToGym": "Back to {{gym}}"
   }
 }

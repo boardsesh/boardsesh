@@ -29,7 +29,8 @@
     "sprayWalls": "Données d'entraînement des Spraywalls",
     "boards": "Boards enregistrées",
     "buildPlans": "Commandes de packs de construction",
-    "partnerApps": "Applications partenaires"
+    "partnerApps": "Applications partenaires",
+    "boardReports": "Signalements de boards"
   },
   "buildPlans": {
     "title": "Commandes de packs de construction",
@@ -631,5 +632,80 @@
     "next": "Page suivante",
     "active": "Active",
     "suspended": "Suspendue"
+  },
+  "boardReports": {
+    "title": "Signalements de boards et de salles",
+    "backToAdmin": "Retour à l’administration",
+    "description": "Les signalements que personne d'autre ne peut traiter, et tous ceux encore ouverts après 14 jours. Ceux qui nous arrivent directement d'abord, puis les plus anciens.",
+    "filters": {
+      "status": "Statut",
+      "kind": "Afficher",
+      "kindAll": "Boards et salles",
+      "kindBoard": "Boards",
+      "kindGym": "Salles"
+    },
+    "status": {
+      "escalated": "Chez notre équipe",
+      "open": "Chez la personne qui l'a ajoutée ou l'équipe de la salle",
+      "fixed": "Corrigé",
+      "removed": "Retiré",
+      "deleted": "Supprimé",
+      "kept": "Gardé tel quel",
+      "merged": "Fusionné"
+    },
+    "kind": {
+      "board": "Board",
+      "gym": "Salle"
+    },
+    "chips": {
+      "sentToTeam": "Arrivé directement chez nous",
+      "waited": "Ouvert depuis 14 jours"
+    },
+    "meta_one": "{{count}} personne · ouvert {{age}}",
+    "meta_other": "{{count}} personnes · ouvert {{age}}",
+    "ageToday": "aujourd'hui",
+    "ageDays_one": "il y a {{count}} jour",
+    "ageDays_other": "il y a {{count}} jours",
+    "routedToLine": "Envoyé à : {{recipients}}",
+    "routedTo": {
+      "creator": "la personne qui l'a ajoutée",
+      "gymStaff": "l'équipe de la salle",
+      "admin": "notre équipe"
+    },
+    "duplicateOf": "Identique à {{name}}",
+    "note": "{{name}} : {{note}}",
+    "reporterUnknown": "Compte supprimé",
+    "closedOn": "Fermé le {{date}} : {{outcome}}",
+    "actions": {
+      "deleteBoard": "Supprimer la board",
+      "removeFromGym": "Retirer de la salle",
+      "hideGym": "Masquer la salle de la recherche",
+      "keep": "Garder tel quel",
+      "mergeGyms": "Fusionner dans Salles en double",
+      "openGym": "Ouvrir Gérer la salle"
+    },
+    "confirm": {
+      "deleteTitle": "Supprimer {{board}} pour tout le monde ?",
+      "deleteBody": "Elle disparaît pour chaque personne qui l'a enregistrée. Les croix déjà faites restent dans les carnets. Le signalement est fermé comme supprimé.",
+      "removeTitle": "Retirer {{board}} de {{gym}} ?",
+      "removeBody": "Elle disparaît de la page, des bornes et de la carte de la salle. La personne qui l'a ajoutée la garde. Le signalement est fermé comme retiré.",
+      "hideTitle": "Masquer {{gym}} de la recherche ?",
+      "hideBody": "Elle n'apparaît plus dans l'annuaire des salles ni dans la recherche. Sa page reste accessible avec le lien. Le signalement est fermé comme retiré.",
+      "keepTitle": "Garder tel quel ?",
+      "keepBody": "Le signalement est fermé et les personnes qui l'ont envoyé apprennent qu'il a été gardé tel quel.",
+      "keepNoteLabel": "Un mot pour elles (facultatif)",
+      "cancel": "Annuler"
+    },
+    "snackbar": {
+      "deleted": "Board supprimée. Le signalement est fermé.",
+      "removed": "Retirée de la salle. Le signalement est fermé.",
+      "hidden": "Salle masquée de la recherche. Le signalement est fermé.",
+      "kept": "Signalement fermé.",
+      "failed": "Ça n'a pas marché. Réessaie."
+    },
+    "empty": "Rien ici.",
+    "error": "Impossible de charger les signalements. Réessaie.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus"
   }
 }
