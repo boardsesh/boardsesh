@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "nodemailer": "^10.0.12",
+    "nodemailer": "^10.1.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
