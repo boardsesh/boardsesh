@@ -278,6 +278,11 @@ export function GymBoardAssociation({
             {t('manage.boards.description')}
           </Typography>
         </Box>
+        {allowDelete && (
+          <Button component={LocaleLink} href={`/moderation/board-merges?gymUuid=${encodeURIComponent(gym.uuid)}`}>
+            {tBoards('merge.manage')}
+          </Button>
+        )}
         {canLinkBoards && (
           <Button
             variant="contained"

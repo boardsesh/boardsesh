@@ -991,6 +991,68 @@ export type BoardLeaderboardInput = {
   period?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type BoardMergeCandidateConnection = {
+  __typename?: 'BoardMergeCandidateConnection';
+  boards: Array<UserBoard>;
+  hasMore: Scalars['Boolean']['output'];
+};
+
+export type BoardMergeCandidatesInput = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type BoardMergePreview = {
+  __typename?: 'BoardMergePreview';
+  boards: Array<UserBoard>;
+  canMerge: Scalars['Boolean']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  suggestedCanonicalBoardUuid: Scalars['ID']['output'];
+  version: Scalars['String']['output'];
+};
+
+export type BoardMergeReport = {
+  __typename?: 'BoardMergeReport';
+  createdAt: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+};
+
+export type BoardMergeRequest = {
+  __typename?: 'BoardMergeRequest';
+  boardUuids: Array<Scalars['ID']['output']>;
+  boards: Array<UserBoard>;
+  canResolve: Scalars['Boolean']['output'];
+  canonicalBoardUuid: Scalars['ID']['output'];
+  createdAt: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+  reports: Array<BoardMergeReport>;
+  resolutionReason?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type BoardMergeRequestConnection = {
+  __typename?: 'BoardMergeRequestConnection';
+  hasMore: Scalars['Boolean']['output'];
+  requests: Array<BoardMergeRequest>;
+};
+
+export type BoardMergeRequestsInput = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type BoardMergeResult = {
+  __typename?: 'BoardMergeResult';
+  canonicalBoardUuid: Scalars['ID']['output'];
+};
+
 /**
  * A climb reported as lit on a physical board. Denormalised for display (mirrors
  * the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
@@ -4803,6 +4865,13 @@ export type LoggedSetter = {
   tickCount: Scalars['Int']['output'];
 };
 
+export type MergeBoardsInput = {
+  boardUuids: Array<Scalars['ID']['input']>;
+  canonicalBoardUuid: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  version: Scalars['String']['input'];
+};
+
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
 export type MergeGymsInput = {
   /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
@@ -5197,6 +5266,7 @@ export type Mutation = {
   markGroupNotificationsRead: Scalars['Int']['output'];
   /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
+  mergeBoards: BoardMergeResult;
   /**
    * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
    * duplicate's boards, follows, members, claims, kiosks, comments, feed items,
@@ -5382,6 +5452,7 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestBoardMerge: BoardMergeRequest;
   requestCncArtworkValidation: CncComputation;
   requestCncLayout: CncComputation;
   requestFollow: PrivacyRelationship;
@@ -5468,6 +5539,7 @@ export type Mutation = {
    * connects and stay aligned with board-scoped ticks.
    */
   resolveBoardForUuid: ResolvedBoard;
+  resolveBoardMergeRequest: BoardMergeRequest;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
   /**
@@ -6123,6 +6195,11 @@ export type MutationMarkNotificationReadArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationMergeBoardsArgs = {
+  input: MergeBoardsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationMergeGymsArgs = {
   input: MergeGymsInput;
 };
@@ -6309,6 +6386,11 @@ export type MutationReportSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestBoardMergeArgs = {
+  input: RequestBoardMergeInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRequestCncArtworkValidationArgs = {
   config: CncBoardConfigInput;
 };
@@ -6393,6 +6475,11 @@ export type MutationResolveBoardForSerialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveBoardForUuidArgs = {
   boardUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResolveBoardMergeRequestArgs = {
+  input: ResolveBoardMergeRequestInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7954,6 +8041,9 @@ export type Query = {
    * followed-climber reasons need authentication.
    */
   boardLiveSessions: Array<LiveSession>;
+  boardMergeCandidates: BoardMergeCandidateConnection;
+  boardMergePreview: BoardMergePreview;
+  boardMergeRequests: BoardMergeRequestConnection;
   /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
@@ -8925,6 +9015,21 @@ export type QueryBoardLeaderboardArgs = {
 export type QueryBoardLiveSessionsArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergeCandidatesArgs = {
+  input?: InputMaybe<BoardMergeCandidatesInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergePreviewArgs = {
+  boardUuids: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardMergeRequestsArgs = {
+  input?: InputMaybe<BoardMergeRequestsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -10155,6 +10260,12 @@ export type ReportSprayWallInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type RequestBoardMergeInput = {
+  boardUuids: Array<Scalars['ID']['input']>;
+  canonicalBoardUuid: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
 /** Input for requesting ownership of a gym. */
 export type RequestGymClaimInput = {
   /** Work email at the gym's website domain (domain-verified path). Omit to request admin review. */
@@ -10182,6 +10293,14 @@ export type RequestSprayWallDetectionInput = {
 export type ResetSprayWallInput = {
   /** The published, live wall to replace. */
   wallUuid: Scalars['ID']['input'];
+};
+
+export type ResolveBoardMergeRequestInput = {
+  approve: Scalars['Boolean']['input'];
+  canonicalBoardUuid?: InputMaybe<Scalars['ID']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+  requestUuid: Scalars['ID']['input'];
+  version?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**

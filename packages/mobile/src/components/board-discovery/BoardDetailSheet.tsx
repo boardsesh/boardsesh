@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { PressableSurface } from '../PressableSurface';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useState } from 'react';
@@ -31,6 +32,12 @@ type BoardDetailSheetProps = {
 };
 
 export function BoardDetailSheet({ board, visible, onClose, onSetActive }: BoardDetailSheetProps) {
+  const router = useRouter();
+  const openBoardMerge = useCallback(() => {
+    if (!board) return;
+    onClose();
+    router.push({ pathname: '/moderation/board-merges', params: { boardUuid: board.uuid } });
+  }, [board, onClose, router]);
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
@@ -117,6 +124,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             onOpenHomeShare={openHomeShare}
             canReport={canReport && toBoardName(board.boardType) === 'spray'}
             onOpenReport={openReport}
+            onOpenBoardMerge={openBoardMerge}
           />
         ) : null}
       </Sheet>
@@ -160,6 +168,7 @@ function BoardDetailBody({
   onOpenHomeShare,
   canReport,
   onOpenReport,
+  onOpenBoardMerge,
 }: {
   board: UserBoard;
   isActive: boolean;
@@ -171,6 +180,7 @@ function BoardDetailBody({
   onOpenHomeShare: () => void;
   canReport: boolean;
   onOpenReport: () => void;
+  onOpenBoardMerge: () => void;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -261,6 +271,17 @@ function BoardDetailBody({
             onPress={onOpenHomeShare}
           />
         </View>
+      ) : null}
+
+      {board.isPublic && board.boardType !== 'spray' ? (
+        <WallRow
+          icon="warning"
+          label={t('merge.report')}
+          hint={t('merge.description')}
+          showSeparator={false}
+          systemColors={systemColors}
+          onPress={onOpenBoardMerge}
+        />
       ) : null}
 
       {canReport ? (

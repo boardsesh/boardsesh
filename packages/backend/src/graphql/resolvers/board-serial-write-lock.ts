@@ -1,7 +1,7 @@
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { normaliseSetIds } from '@boardsesh/board-config';
-import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '@boardsesh/db/queries';
+import { boardMatchesSerial, lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { canAccessResourceWithoutLink } from '../../services/privacy';
@@ -70,9 +70,11 @@ export async function lockAndAssertBoardSerialAvailable(
     .from(dbSchema.userBoards)
     .where(
       and(
-        eq(dbSchema.userBoards.serialNumber, input.serialNumber),
+        boardMatchesSerial(input.serialNumber),
         eq(dbSchema.userBoards.boardType, input.boardType),
-        eq(dbSchema.userBoards.layoutId, input.layoutId),
+        input.boardType === 'tension' && [10, 11].includes(input.layoutId)
+          ? inArray(dbSchema.userBoards.layoutId, [10, 11])
+          : eq(dbSchema.userBoards.layoutId, input.layoutId),
         eq(dbSchema.userBoards.sizeId, input.sizeId),
         ne(dbSchema.userBoards.ownerId, ownerId),
         isNull(dbSchema.userBoards.deletedAt),

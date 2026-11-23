@@ -570,6 +570,15 @@ export default async function GymPage(props: GymRouteProps) {
                 )}
               </Box>
 
+              {boards.some((board) => board.isPublic && board.boardType !== 'spray') && (
+                <MuiLink
+                  component={LocaleLink}
+                  href={`/moderation/board-merges?gymUuid=${encodeURIComponent(gym.uuid)}`}
+                >
+                  {tBoards('merge.report')}
+                </MuiLink>
+              )}
+
               {/* Together with the breadcrumb above, this keeps the page at ≥2
             crawlable internal links even for a gym with no boards or kiosk. */}
               {boards.length === 0 ? (

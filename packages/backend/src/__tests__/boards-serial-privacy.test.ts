@@ -818,7 +818,7 @@ describe('observedBoardSerialMatches', () => {
       boardType: 'moonboard',
       serialNumber: 'QA-MOON-01',
     });
-    setupDbSelectSequence([[board], [], [], [], []]);
+    setupDbSelectSequence([[{ board, mergedSerials: [] }], [], [], [], []]);
     vi.mocked(canAccessResourceWithoutLink).mockResolvedValueOnce(true);
     const matches = await socialBoardQueries.observedBoardSerialMatches(
       null,
@@ -850,6 +850,7 @@ describe('observedBoardSerialMatches', () => {
       { serialNumbers: ['QA-HIDDEN'], boardType: 'kilter' },
       makeUnauthCtx(),
     );
+    setupDbSelect([{ board, mergedSerials: [] }]);
     const context = signedIn ? makeAuthCtx('stranger') : makeUnauthCtx();
     const matches = await socialBoardQueries.observedBoardSerialMatches(
       null,

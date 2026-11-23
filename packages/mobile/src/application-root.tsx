@@ -619,6 +619,13 @@ function RootLayout() {
                                                                                   headerShown: true,
                                                                                 }}
                                                                               />
+                                                                              <Stack.Screen
+                                                                                name="moderation/board-merges"
+                                                                                options={{
+                                                                                  presentation: 'modal',
+                                                                                  headerShown: true,
+                                                                                }}
+                                                                              />
                                                                               {/* The walkthrough, now reached only from Settings'
                                                       replay rows (OnboardingGate opens the first-board
                                                       picker at /boards instead, #5654). A full-screen cover

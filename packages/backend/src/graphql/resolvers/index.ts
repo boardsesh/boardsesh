@@ -1,3 +1,4 @@
+import { boardMergeQueries, boardMergeMutations } from './social/board-merges';
 import { adminBoardQueries, adminBoardMutations } from './social/admin-boards';
 import { offlineWriteDeliveryMutations } from './sync/offline-write-delivery';
 import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
@@ -156,6 +157,7 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...boardMergeQueries,
     ...adminBoardQueries,
     ...boardDiscoveryQueries,
     ...communityStatsQueries,
@@ -226,6 +228,7 @@ export const resolvers = {
     ...socialCommentMutations,
     ...socialVoteMutations,
     ...socialBoardMutations,
+    ...boardMergeMutations,
     ...adminBoardMutations,
     ...socialGymMutations,
     ...gymActivityStatsMutations,

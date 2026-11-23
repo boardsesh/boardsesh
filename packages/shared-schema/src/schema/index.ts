@@ -1,3 +1,4 @@
+import { boardMergesTypeDefs } from './board-merges';
 import { adminBoardsTypeDefs } from './admin-boards';
 import { privacyTypeDefs } from './privacy';
 import { scalarTypeDefs } from './scalars';
@@ -52,6 +53,7 @@ import { cncPacksTypeDefs } from './cnc-packs';
 import { offlineWriteDeliveryTypeDefs } from './offline-write-delivery';
 
 export const typeDefs = [
+  boardMergesTypeDefs,
   offlineWriteDeliveryTypeDefs,
   adminBoardsTypeDefs,
   releaseContextTypeDefs,

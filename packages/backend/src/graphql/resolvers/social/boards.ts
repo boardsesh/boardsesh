@@ -57,6 +57,7 @@ import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader, requi
 import {
   SYSTEM_BOARD_OWNER_ID,
   followBoardMergeChain,
+  boardMatchesSerial,
   isRowAnonReadable,
   requireAnonReadableBoard,
 } from '../board-presence/shared';
@@ -1186,7 +1187,7 @@ export const socialBoardQueries = {
       .from(dbSchema.userBoards)
       .where(
         and(
-          inArray(dbSchema.userBoards.serialNumber, cleaned),
+          or(...cleaned.map(boardMatchesSerial)),
           isNull(dbSchema.userBoards.deletedAt),
           validated.boardType ? eq(dbSchema.userBoards.boardType, validated.boardType) : undefined,
         ),
@@ -1222,22 +1223,32 @@ export const socialBoardQueries = {
     const unique = [
       ...new Map(observed.map((entry) => [`${entry.boardType}\0${entry.observedSerialNumber}`, entry])).values(),
     ];
-    const rows = await db
-      .select()
+    const matchedRows = await db
+      .select({
+        board: dbSchema.userBoards,
+        mergedSerials: sql<string[]>`ARRAY(
+        SELECT merged_source.serial_number FROM user_boards merged_source
+        WHERE merged_source.merged_into_board_uuid = ${dbSchema.userBoards.uuid}
+          AND merged_source.deleted_at IS NOT NULL
+          AND merged_source.board_type = ${dbSchema.userBoards.boardType}
+          AND merged_source.serial_number IS NOT NULL
+      )`,
+      })
       .from(dbSchema.userBoards)
       .where(
         and(
           isNull(dbSchema.userBoards.deletedAt),
           or(
             ...unique.map((entry) =>
-              and(
-                eq(dbSchema.userBoards.boardType, entry.boardType),
-                eq(dbSchema.userBoards.serialNumber, entry.observedSerialNumber),
-              ),
+              and(eq(dbSchema.userBoards.boardType, entry.boardType), boardMatchesSerial(entry.observedSerialNumber)),
             ),
           ),
         ),
       );
+    const rows = matchedRows.map(({ board }) => board);
+    const serialsByUuid = new Map(
+      matchedRows.map(({ board, mergedSerials }) => [board.uuid, new Set([board.serialNumber, ...mergedSerials])]),
+    );
     const candidatesByUuid = new Map<
       string,
       | Awaited<ReturnType<typeof projectAnonymousSerialBoards>>[number]
@@ -1266,7 +1277,10 @@ export const socialBoardQueries = {
     return unique.map((entry) => ({
       ...entry,
       candidates: rows
-        .filter((board) => board.boardType === entry.boardType && board.serialNumber === entry.observedSerialNumber)
+        .filter(
+          (board) =>
+            board.boardType === entry.boardType && serialsByUuid.get(board.uuid)?.has(entry.observedSerialNumber),
+        )
         .map((board) => candidatesByUuid.get(board.uuid))
         .filter((board) => board !== undefined),
     }));
@@ -1911,6 +1925,11 @@ export async function updateBoardRecord(
   if (!board) {
     throw new Error('Board not found');
   }
+
+  if (board.mergedIntoBoardUuid)
+    throw new GraphQLError('This board was merged. Open the surviving board.', {
+      extensions: { code: 'BOARD_MERGED' },
+    });
 
   // A soft-deleted board is visible only to its owner (who can restore it by
   // editing). Moderators/gym admins must not resurrect a board the owner

@@ -68,6 +68,8 @@ function sumDuplicateCounts(duplicates: DuplicateGymMember[]) {
 }
 
 function DuplicatesQueue() {
+  const { t: tBoards } = useTranslation('boards');
+  const [mergedGymUuid, setMergedGymUuid] = useState<string | null>(null);
   const { t } = useTranslation('admin');
   const { token } = useWsAuthToken();
   const [clusters, setClusters] = useState<DuplicateGymCluster[]>([]);
@@ -148,6 +150,7 @@ function DuplicatesQueue() {
       if (warnings.length > 0) setKioskWarnings((prev) => [...prev, ...warnings]);
       setClusters((prev) => prev.filter((cluster) => cluster.signature !== mergeTarget.signature));
       setSnackbar(t('gymDuplicates.snackbar.merged'));
+      setMergedGymUuid(canonicalGymUuid);
       setMergeTarget(null);
     } catch {
       setSnackbar(t('gymDuplicates.snackbar.mergeFailed'));
@@ -202,6 +205,16 @@ function DuplicatesQueue() {
         {t('gymDuplicates.ownerReports.note')}
       </Alert>
 
+      {mergedGymUuid && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          <MuiLink
+            component={LocaleLink}
+            href={`/moderation/board-merges?gymUuid=${encodeURIComponent(mergedGymUuid)}`}
+          >
+            {tBoards('merge.manage')}
+          </MuiLink>
+        </Alert>
+      )}
       {kioskWarnings.length > 0 && (
         <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setKioskWarnings([])}>
           <Stack spacing={0.5}>
