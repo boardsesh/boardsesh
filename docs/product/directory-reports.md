@@ -150,7 +150,10 @@ At most 10 report pushes reach one person in 24 hours (`DIRECTORY_REPORT_PUSHES_
 | `board_removed_from_gym` | creator | someone else takes their board off a gym |
 | `board_deleted_by_staff` | creator | someone else deletes their board |
 | `board_edited_by_staff` | creator | someone else changes their board |
-| `gym_claimed_with_your_board`, `gym_claim_denied` | | reserved; the claim guardrails PR sends them (entity: the gym) |
+| `gym_claimed_with_your_board` | creators with a board at the gym | the gym is claimed (entity: the gym; names their oldest board there) |
+| `gym_claim_denied` | the claimant | their claim is denied, expires or is reverted (entity: the gym) |
+
+The two claim notices are described in [gym-claims.md](gym-claims.md).
 
 Rules every notice follows (`directory-reports/notices.ts`):
 
@@ -190,9 +193,10 @@ The app counts `Report Problem Sent` {targetKind, reason, status, platform}, the
 1. Waiting reports on a board or gym that has been deleted or merged close as `deleted` / `merged` (`auto`).
 2. `open` reports older than 14 days become `escalated` (`escalated_at` set). Admin-routed reports are escalated when they open.
 3. `open` reports older than 7 days with no reminder get one: a second `board_report_opened` / `gym_report_opened` with `isReminder`, to the same people as they stand now.
-4. Once a UTC day, from 08:00, the admin daily digest (`sendAdminDailyDigestEmail` in `email/email-service.ts`, to `ADMIN_EMAIL`): reports that reached the admin queue since the last digest and are still there (count, the first 20 with links to `/admin/board-reports?report=<uuid>`). No email when every section is empty. One replica sends: the day's `admin_daily_digests` row is claimed before the email goes out. A digest that fails before or while sending gives the claim back for the next hour. One whose email went out keeps it even when recording `sent` fails, so the day's email never goes out twice; a claim left in `sending` (that, or a crash mid-send) holds its day and is cleared the next day, whose digest covers the window from the last finished one.
+4. Admin-path gym claims still waiting 30 days after they were filed expire, and the claimant hears ([gym-claims.md](gym-claims.md)).
+5. Once a UTC day, from 08:00, the admin daily digest (`sendAdminDailyDigestEmail` in `email/email-service.ts`, to `ADMIN_EMAIL`): reports that reached the admin queue since the last digest and are still there (count, the first 20 with links to `/admin/board-reports?report=<uuid>`). No email when every section is empty. One replica sends: the day's `admin_daily_digests` row is claimed before the email goes out. A digest that fails before or while sending gives the claim back for the next hour. One whose email went out keeps it even when recording `sent` fails, so the day's email never goes out twice; a claim left in `sending` (that, or a crash mid-send) holds its day and is cleared the next day, whose digest covers the window from the last finished one.
 
-The digest is built from `ADMIN_DIGEST_SECTION_PROVIDERS`. The claim guardrails PR fills `autoApprovedClaimsSection` (claims that approved themselves, each with a revert link); a provider returns `{ key, heading, total, rows, moreUrl, moreLabel }` or null.
+The digest is built from `ADMIN_DIGEST_SECTION_PROVIDERS`: `escalatedReportsSection`, then `autoApprovedClaimsSection` (claims that approved themselves, each with a link to `/admin/gym-claims?revert=<claim id>`; see [gym-claims.md](gym-claims.md)). A provider returns `{ key, heading, total, rows, moreUrl, moreLabel }` or null.
 
 To stop the sweep: `DELETE FROM pgboss.schedule WHERE name = 'directory-report-sweep';`. Every boot schedules it again; to keep it off, revert its registration in `packages/backend/src/index.ts`.
 
