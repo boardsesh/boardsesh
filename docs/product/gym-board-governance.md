@@ -82,6 +82,8 @@ A gym is in one of three states: **Run by the gym** (an approved claim or an adm
 
 ## Where it lives
 
-- Permission rules: `packages/backend/src/graphql/resolvers/social/boards.ts` (`requireBoardDeleteAccess`, `canEditBoard`) and `gym-stray-boards.ts` (`detachBoardFromGym`).
+- Permission rules: `packages/backend/src/graphql/resolvers/social/boards.ts` (`requireBoardDeleteAccess`, `canEditBoard`, and `UserBoard.canDelete` / `canRemoveFromGym` in the board enrichment) and `gym-stray-boards.ts` (`detachBoardFromGym`).
+- Staff actions on boards and the re-link hold: the `board_moderation_events` table (`packages/db/src/schema/app/board-moderation-events.ts`) and its rules in `packages/backend/src/graphql/resolvers/social/board-moderation-events.ts`.
+- Gym listing state (`Gym.listingState`): `gymListingState` in `packages/backend/src/graphql/resolvers/social/gyms.ts`.
 - Staff board actions on www: `docs/web/gym-board-management.md`.
 - Climb reports, for comparison: `docs/product/climb-moderation.md`.
