@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { BoardModerationActorRole, DirectoryReport, NewBoardModerationEvent } from '@boardsesh/db/schema';
 import type { DirectoryReportOutcome, DirectoryReportResolverRole } from '@boardsesh/directory-moderation';
@@ -309,13 +309,22 @@ export async function onBoardDeleted(
   }
 }
 
+/** SQL twin of `isInAdminQueue` (read.ts), negated: waiting reports neither routed to nor escalated to the admin queue. */
+function notInAdminQueue(): SQL {
+  return and(
+    ne(dbSchema.directoryReports.status, 'escalated'),
+    sql`NOT ('admin' = ANY(${dbSchema.directoryReports.routedTo}))`,
+  )!;
+}
+
 /**
  * Every board moderation event, as it is recorded (`recordBoardModerationEvent`):
  *
  * - `removed_from_gym`: closes the board's reports filed while it was at that
  *   gym as removed, tells the creator when someone else removed it, and counts
  *   the removal. A creator's own unlink is recorded as an event by
- *   `board_owner`, so it closes them the same way.
+ *   `board_owner`, so it closes them the same way, except reports in the admin
+ *   queue, which wait for a global admin.
  * - `relinked`: closes the creator's request to be put back on that gym as fixed.
  * - `edited_by_staff`: tells the creator.
  * - `deleted`: nothing here; `onBoardDeleted` runs for every delete, the
@@ -345,6 +354,10 @@ export async function onBoardModerationEvent(
           eq(dbSchema.directoryReports.boardId, board.id),
           eq(dbSchema.directoryReports.gymIdAtReport, event.gymId),
           ne(dbSchema.directoryReports.reason, 'relist_request'),
+          // The creator taking their own board off the gym does not settle a
+          // report in the admin queue: "wrong gym or place" can be a home
+          // address, which an unlink leaves where it is.
+          isStaff ? undefined : notInAdminQueue(),
         )!,
         { outcome: 'removed', resolvedBy: actorUserId, role: resolverRoleForActor(event.actorRole) },
       );

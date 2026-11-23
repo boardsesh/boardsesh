@@ -17,14 +17,19 @@ import { logger } from '../utils/logger';
  * 2. No PostHog project key: off.
  * 3. PostHog's answer for the fixed id `system:directory-reports`, kept 60 s.
  *    Turn the flag on with a plain 100% release condition: a condition on a
- *    person property or a cohort never matches this id.
- * 4. Anything else (timeout, non-2xx, unreadable body, flag missing): off.
+ *    person property or a cohort never matches this id. An answer that leaves
+ *    the flag out (it was deleted, or never created) is off.
+ * 4. No answer (timeout, non-2xx, unreadable body, PostHog reporting errors
+ *    while it evaluated): the last answer stands for one more interval (60 s),
+ *    so one slow request does not flap the flag; after that, off until PostHog
+ *    answers again. With no last answer, off.
  *
  * Fails closed. The answer is read in two ways: `isDirectoryReportsEnabled()`
  * awaits a fresh answer when the cached one is stale (the report mutations, the
- * sweep), and `directoryReportsEnabledNow()` reads the cached answer without
- * waiting (inside a transaction that holds row locks, where a PostHog round trip
- * must not run). A background refresh started at boot keeps the cache warm.
+ * sweep, the push worker), and `directoryReportsEnabledNow()` reads the cached
+ * answer without waiting (inside a transaction that holds row locks, where a
+ * PostHog round trip must not run). Boot awaits the first answer before the
+ * server and the workers start, and a background refresh keeps it warm.
  */
 
 export const DIRECTORY_REPORTS_FLAG = 'directory-reports';
@@ -39,7 +44,11 @@ export const DIRECTORY_REPORTS_FLAG_CACHE_MS = 60_000;
 
 type Environment = Record<string, string | undefined>;
 
-let cachedAnswer: { enabled: boolean; expiresAt: number } | null = null;
+/**
+ * The answer the reads use. `carried` marks the last answer kept through an
+ * outage: it stands for one interval, and the next outage turns the flag off.
+ */
+let cachedAnswer: { enabled: boolean; expiresAt: number; carried: boolean } | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 let outageLogged = false;
 
@@ -70,18 +79,29 @@ function flagsUrl(environment: Environment): URL | null {
 type PosthogFlagsResponse = {
   flags?: Record<string, { enabled?: unknown } | undefined>;
   featureFlags?: Record<string, unknown>;
+  errorsWhileComputingFlags?: unknown;
 };
 
-/** True or false when PostHog evaluated the flag; null when it gave no usable answer. */
-function readAnswer(payload: unknown): boolean | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const { flags, featureFlags } = payload as PosthogFlagsResponse;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * True or false when PostHog answered for the flag, false when its answer
+ * leaves the flag out, and null when it gave no usable answer: an unreadable
+ * body, or one that says evaluating the flags went wrong.
+ */
+export function readDirectoryReportsFlagAnswer(payload: unknown): boolean | null {
+  if (!isRecord(payload)) return null;
+  const { flags, featureFlags, errorsWhileComputingFlags } = payload as PosthogFlagsResponse;
   const detail = flags?.[DIRECTORY_REPORTS_FLAG];
   if (detail && typeof detail.enabled === 'boolean') return detail.enabled;
   const legacy = featureFlags?.[DIRECTORY_REPORTS_FLAG];
   if (typeof legacy === 'boolean') return legacy;
-  if (typeof legacy === 'string' && legacy.length > 0) return true;
-  return null;
+  if (typeof legacy === 'string') return legacy.length > 0;
+  if (errorsWhileComputingFlags === true) return null;
+  // A well-formed answer without the flag: it does not exist, so it is off.
+  return isRecord(flags) || isRecord(featureFlags) ? false : null;
 }
 
 async function askPosthog(apiKey: string, url: URL): Promise<boolean | null> {
@@ -101,7 +121,7 @@ async function askPosthog(apiKey: string, url: URL): Promise<boolean | null> {
       signal: controller.signal,
     });
     if (!response.ok) return null;
-    return readAnswer(await response.json());
+    return readDirectoryReportsFlagAnswer(await response.json());
   } catch {
     return null;
   } finally {
@@ -118,14 +138,14 @@ async function refresh(environment: Environment): Promise<boolean> {
       outageLogged = true;
       logger.warn('[DirectoryReports] Could not read the directory-reports flag; reports stay off until it answers');
     }
-    // Keep the last answer for one more interval rather than flapping off on
-    // one slow request; with no last answer, off.
-    const fallback = cachedAnswer?.enabled ?? false;
-    cachedAnswer = { enabled: fallback, expiresAt: Date.now() + DIRECTORY_REPORTS_FLAG_CACHE_MS };
-    return fallback;
+    // Keep a real answer for one more interval rather than flapping off on one
+    // slow request. An answer already carried once, or none at all: off.
+    const carryOver = cachedAnswer !== null && !cachedAnswer.carried && cachedAnswer.enabled;
+    cachedAnswer = { enabled: carryOver, expiresAt: Date.now() + DIRECTORY_REPORTS_FLAG_CACHE_MS, carried: true };
+    return carryOver;
   }
   outageLogged = false;
-  cachedAnswer = { enabled: answer, expiresAt: Date.now() + DIRECTORY_REPORTS_FLAG_CACHE_MS };
+  cachedAnswer = { enabled: answer, expiresAt: Date.now() + DIRECTORY_REPORTS_FLAG_CACHE_MS, carried: false };
   return answer;
 }
 
@@ -160,9 +180,14 @@ export function directoryReportsEnabledNow(environment: Environment = process.en
   return cachedAnswer?.enabled ?? false;
 }
 
-/** Keep the cached answer fresh, so `directoryReportsEnabledNow()` rarely reads a stale one. */
-export function startDirectoryReportsFlagRefresh(): () => void {
-  void isDirectoryReportsEnabled();
+/**
+ * Read the first answer (at most 1.5 s) and keep it fresh, so
+ * `directoryReportsEnabledNow()` rarely reads a stale one. Boot awaits it before
+ * the server and the push worker start: a cold cache reads as off, which would
+ * drop the notices and pushes of the first minute.
+ */
+export async function startDirectoryReportsFlagRefresh(): Promise<() => void> {
+  await isDirectoryReportsEnabled();
   const interval = setInterval(() => {
     void isDirectoryReportsEnabled();
   }, DIRECTORY_REPORTS_FLAG_CACHE_MS / 2);

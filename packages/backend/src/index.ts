@@ -72,6 +72,10 @@ async function main() {
   // erasure) must never find the queue missing. A missed erasure enqueue
   // cannot be recovered once the user row is gone.
   const jobQueue = await startJobQueue();
+  // The `directory-reports` flag's first answer, before anything that reads it
+  // without waiting starts: the server's mutations and the push worker
+  // (services/directory-reports-flag.ts). Kept warm from here on. Never throws.
+  await startDirectoryReportsFlagRefresh();
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
   await startSprayDetectionMaintenance(jobQueue);
   await startSprayDetectionNotifications(jobQueue);
@@ -97,9 +101,6 @@ async function main() {
   await startDirectoryReportSweep(jobQueue).catch((error: unknown) => {
     logger.error('[DirectoryReports] Could not register the sweep job', { error });
   });
-  // Keeps the `directory-reports` flag's cached answer warm for the reads
-  // inside transactions (services/directory-reports-flag.ts).
-  startDirectoryReportsFlagRefresh();
   // Not fatal: without the job, summaries still follow every climb added or
   // removed through the app; only upstream grade drift and synced circuits wait.
   await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {

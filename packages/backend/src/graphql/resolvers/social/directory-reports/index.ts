@@ -26,6 +26,7 @@ import {
   reportGymId,
   reportsToReviewFor,
   viewerCanResolve,
+  isInAdminQueue,
   viewerRoleFor,
 } from './read';
 import { fileReport, prepareBoardReport, prepareGymReport, type FiledReport } from './submit';
@@ -162,9 +163,12 @@ export const directoryReportMutations = {
     }
     if (!(WAITING_STATUSES as readonly string[]).includes(report.status)) throw reportClosed();
     if (!viewerCanResolve(report, role, viewer)) {
-      throw new GraphQLError("Only the gym's owner or admins can close this report.", {
-        extensions: { code: 'FORBIDDEN' },
-      });
+      throw new GraphQLError(
+        isInAdminQueue(report)
+          ? 'The Boardsesh team is looking at this report; it closes when they do.'
+          : "Only the gym's owner or admins can close this report.",
+        { extensions: { code: 'FORBIDDEN' } },
+      );
     }
     if (validated.outcome !== 'kept' && !viewer.isAdmin) {
       throw new GraphQLError('Fix, remove or delete the board itself; the report closes when you do.', {

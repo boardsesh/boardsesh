@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vite-plus/test';
+import type { PgBoss } from 'pg-boss';
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -16,6 +17,11 @@ vi.mock('../services/analytics/posthog', async (importOriginal) => ({
   captureBackendEvent: vi.fn(() => true),
 }));
 
+vi.mock('../services/job-queue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/job-queue')>()),
+  getJobQueue: vi.fn(() => null),
+}));
+
 vi.mock('../email/email-service', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../email/email-service')>()),
   sendGymDuplicateReportAdminNotification: vi.fn(() => Promise.resolve()),
@@ -26,6 +32,7 @@ import { db } from '../db/client';
 import { transactionWithAfterCommit } from '../db/after-commit';
 import { sendAdminDailyDigestEmail } from '../email/email-service';
 import { captureBackendEvent } from '../services/analytics/posthog';
+import { getJobQueue } from '../services/job-queue';
 import { recordBoardModerationEvent } from '../graphql/resolvers/social/board-moderation-events';
 import { socialBoardMutations, socialBoardQueries, updateBoardRecord } from '../graphql/resolvers/social/boards';
 import { socialGymMutations } from '../graphql/resolvers/social/gyms';
@@ -37,7 +44,12 @@ import {
   directoryReportQueries,
   resolveReportsForMergedBoard,
 } from '../graphql/resolvers/social/directory-reports';
-import { settleDirectoryNoticePublishes } from '../graphql/resolvers/social/directory-reports/notices';
+import {
+  DIRECTORY_REPORT_PUSHES_PER_DAY,
+  sendDirectoryNotices,
+  settleDirectoryNoticePublishes,
+} from '../graphql/resolvers/social/directory-reports/notices';
+import { fileReport, prepareBoardReport } from '../graphql/resolvers/social/directory-reports/submit';
 import { __resetDirectoryReportsFlagForTests } from '../services/directory-reports-flag';
 import { isAdminDigestDue, maybeSendAdminDigest, runDirectoryReportSweep } from '../services/directory-report-sweep';
 import { resetAllRateLimits } from '../utils/rate-limiter';
@@ -158,6 +170,20 @@ async function noticesFor(recipientId: string, type?: string) {
   return type ? rows.filter((row) => row.type === type) : rows;
 }
 
+/** A job queue that accepts every push job, for the tests that count pushes. */
+const fakeBoss = { send: vi.fn() } as unknown as PgBoss & { send: ReturnType<typeof vi.fn> };
+
+async function registerDevice(userId: string) {
+  await db.insert(dbSchema.notificationDevices).values({
+    installationId: `install-${userId}`,
+    userId,
+    token: `ExponentPushToken[${userId}]`,
+    platform: 'ios',
+    locale: 'en-US',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
+}
+
 let runGym: Ref;
 let climberBoard: Ref;
 const savedOverrides = process.env.FEATURE_FLAG_OVERRIDES;
@@ -174,10 +200,13 @@ beforeEach(async () => {
   vi.mocked(sendAdminDailyDigestEmail).mockClear();
   vi.mocked(captureBackendEvent).mockClear();
   vi.mocked(captureBackendEvent).mockImplementation(() => true);
+  vi.mocked(getJobQueue).mockReturnValue(null);
+  vi.mocked(fakeBoss.send).mockReset();
+  vi.mocked(fakeBoss.send).mockResolvedValue('job-id');
   await db.execute(sql`
     TRUNCATE TABLE
       "directory_notification_context", "directory_report_reporters", "directory_reports", "admin_daily_digests",
-      "notifications", "resource_privacy", "resource_grants",
+      "notifications", "notification_devices", "resource_privacy", "resource_grants",
       "community_roles", "gym_members", "gym_follows", "gym_claims", "gym_owner_reassignments",
       "board_moderation_events", "user_boards", "gyms"
     RESTART IDENTITY CASCADE
@@ -534,7 +563,7 @@ describe('closing a report with the action itself', () => {
   it('the creator taking their own board off the gym as staff closes them as removed, with no notice to themselves', async () => {
     // A creator who is also gym staff removes their own board as `board_owner`.
     await db.insert(dbSchema.gymMembers).values({ gymId: runGym.id, userId: CREATOR, role: 'editor' });
-    const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
+    const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
     await detach(runGym.uuid, climberBoard.uuid, CREATOR);
     expect(await reportRow(reportUuid)).toMatchObject({ status: 'removed', resolvedByRole: 'creator' });
     expect(await noticesFor(CREATOR, 'board_removed_from_gym')).toHaveLength(0);
@@ -608,6 +637,153 @@ describe('closing a report with the action itself', () => {
     expect(await resolveReportsForMergedBoard(climberBoard.id, survivor.id)).toBe(2);
     expect(await reportRow(onMerged.reportUuid)).toMatchObject({ status: 'merged', resolvedByRole: 'auto' });
     expect((await reportRow(onSurvivor.reportUuid)).status).toBe('merged');
+  });
+});
+
+describe('the admin queue', () => {
+  it('a report routed to the admin queue or escalated is closed by a global admin only; the creator and staff read it', async () => {
+    // "Wrong gym or place" goes to the admin queue at once.
+    const wrongPlace = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
+    for (const viewer of [CREATOR, GYM_OWNER]) {
+      expect(await boardReports(viewer, climberBoard.uuid)).toEqual([
+        expect.objectContaining({ uuid: wrongPlace.reportUuid, viewerCanResolve: false }),
+      ]);
+      await expect(resolveReport(viewer, { reportUuid: wrongPlace.reportUuid, outcome: 'kept' })).rejects.toThrow(
+        /team is looking at this report/,
+      );
+    }
+
+    // So is a report that waited fourteen days.
+    const gone = await reportBoard(REPORTER_B, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    await db
+      .update(dbSchema.directoryReports)
+      .set({ status: 'escalated', escalatedAt: new Date() })
+      .where(eq(dbSchema.directoryReports.uuid, gone.reportUuid));
+    await expect(resolveReport(CREATOR, { reportUuid: gone.reportUuid, outcome: 'kept' })).rejects.toThrow(
+      /team is looking at this report/,
+    );
+    await expect(resolveReport(GYM_ADMIN, { reportUuid: gone.reportUuid, outcome: 'kept' })).rejects.toThrow(
+      /team is looking at this report/,
+    );
+    expect(await resolveReport(GLOBAL_ADMIN, { reportUuid: gone.reportUuid, outcome: 'kept' })).toMatchObject({
+      status: 'kept',
+      resolvedByRole: 'admin',
+    });
+  });
+
+  it("the creator's own unlink leaves reports in the admin queue open", async () => {
+    const wrongPlace = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
+    const gone = await reportBoard(REPORTER_B, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    await socialGymMutations.linkBoardToGym(
+      null,
+      { input: { boardUuid: climberBoard.uuid, gymUuid: null } },
+      authCtx(CREATOR),
+    );
+    expect((await reportRow(wrongPlace.reportUuid)).status).toBe('escalated');
+    expect((await reportRow(gone.reportUuid)).status).toBe('removed');
+  });
+
+  it("staff taking the board off their gym still close it: that is the gym's own call", async () => {
+    const wrongPlace = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
+    await detach(runGym.uuid, climberBoard.uuid, GYM_ADMIN);
+    expect(await reportRow(wrongPlace.reportUuid)).toMatchObject({ status: 'removed', resolvedByRole: 'gym_staff' });
+  });
+});
+
+describe('filing against the board as it stands', () => {
+  it('a board deleted between the checks and the write is not found', async () => {
+    const prepared = await prepareBoardReport(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: new Date() })
+      .where(eq(dbSchema.userBoards.id, climberBoard.id));
+    await expect(fileReport(prepared)).rejects.toThrow(/Board not found/);
+    expect(await db.select().from(dbSchema.directoryReports)).toHaveLength(0);
+  });
+
+  it('a board taken off its gym between the checks and the write is routed again', async () => {
+    const prepared = await prepareBoardReport(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    expect(prepared.routing.recipients).toEqual(['creator', 'gym_staff']);
+    await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, climberBoard.id));
+    const filed = await fileReport(prepared);
+    expect(filed.report).toMatchObject({ gymIdAtReport: null, routedTo: ['creator'] });
+    expect(await noticesFor(CREATOR, 'board_report_opened')).toHaveLength(1);
+    expect(await noticesFor(GYM_OWNER, 'board_report_opened')).toHaveLength(0);
+  });
+
+  it('about a deleted board, only its creator and its reporters hear', async () => {
+    const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    const report = await reportRow(reportUuid);
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: new Date() })
+      .where(eq(dbSchema.userBoards.id, climberBoard.id));
+    const target = { kind: 'board', boardId: climberBoard.id, boardUuid: climberBoard.uuid, ownerId: CREATOR } as const;
+    const written = await sendDirectoryNotices(db, [
+      { recipientId: GYM_OWNER, type: 'board_report_opened', target, reportId: report.id, isReminder: true },
+      { recipientId: REPORTER_B, type: 'board_report_resolved', target, reportId: report.id },
+      { recipientId: REPORTER_A, type: 'board_report_resolved', target, reportId: report.id },
+      { recipientId: CREATOR, type: 'board_deleted_by_staff', target },
+    ]);
+    expect(written).toHaveLength(2);
+    expect(await noticesFor(REPORTER_A, 'board_report_resolved')).toHaveLength(1);
+    expect(await noticesFor(REPORTER_B)).toHaveLength(0);
+    expect((await noticesFor(GYM_OWNER, 'board_report_opened')).filter((row) => row.isReminder)).toHaveLength(0);
+  });
+});
+
+describe('repeat reports and pushes', () => {
+  it("a reporter whose report closed can't open it again for seven days, but joins one someone else opens", async () => {
+    const first = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    await resolveReport(CREATOR, { reportUuid: first.reportUuid, outcome: 'kept' });
+
+    expect(await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' })).toMatchObject({
+      status: 'already_reported',
+      reportUuid: first.reportUuid,
+    });
+    expect(await noticesFor(CREATOR, 'board_report_opened')).toHaveLength(1);
+
+    const second = await reportBoard(REPORTER_B, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    expect(second.status).toBe('created');
+    expect(await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' })).toMatchObject({
+      status: 'added',
+      reportUuid: second.reportUuid,
+    });
+  });
+
+  it('after seven days the reporter can open it again', async () => {
+    const first = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    await resolveReport(CREATOR, { reportUuid: first.reportUuid, outcome: 'kept' });
+    await db
+      .update(dbSchema.directoryReports)
+      .set({ resolvedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) })
+      .where(eq(dbSchema.directoryReports.uuid, first.reportUuid));
+    const again = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    expect(again.status).toBe('created');
+    expect(again.reportUuid).not.toBe(first.reportUuid);
+  });
+
+  it('pushes at most ten report notices a day to one person; the rest stay in the inbox', async () => {
+    vi.mocked(getJobQueue).mockReturnValue(fakeBoss);
+    await registerDevice(CREATOR);
+    const total = DIRECTORY_REPORT_PUSHES_PER_DAY + 2;
+    for (let index = 0; index < total; index += 1) {
+      const board = await insertBoard(CREATOR, null);
+      await sendDirectoryNotices(db, [
+        {
+          recipientId: CREATOR,
+          type: 'board_report_opened',
+          target: { kind: 'board', boardId: board.id, boardUuid: board.uuid, ownerId: CREATOR },
+          push: true,
+        },
+      ]);
+    }
+    expect(await noticesFor(CREATOR, 'board_report_opened')).toHaveLength(total);
+    const deliveries = await db
+      .select()
+      .from(dbSchema.notificationDeliveries)
+      .where(eq(dbSchema.notificationDeliveries.recipientId, CREATOR));
+    expect(deliveries).toHaveLength(DIRECTORY_REPORT_PUSHES_PER_DAY);
   });
 });
 
@@ -770,6 +946,75 @@ describe('the sweep', () => {
     const [call] = vi.mocked(sendAdminDailyDigestEmail).mock.calls;
     expect(call[0].sections.map((section) => [section.key, section.total])).toEqual([['escalatedReports', 1]]);
     expect(call[0].sections[0].rows[0].url).toMatch(/\/admin\/board-reports\?report=/);
+  });
+});
+
+describe('the sweep when something fails', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const today = () => {
+    const midnight = new Date();
+    midnight.setUTCHours(0, 0, 0, 0);
+    return midnight;
+  };
+  const at = (dayOffset: number, hour: number) => new Date(today().getTime() + dayOffset * day + hour * 3_600_000);
+
+  it('one report that fails stops neither the others nor the digest', async () => {
+    vi.mocked(getJobQueue).mockReturnValue(fakeBoss);
+    await registerDevice(CREATOR);
+    const secondBoard = await insertBoard(CREATOR, runGym.id);
+    const failing = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    const passing = await reportBoard(REPORTER_A, { boardUuid: secondBoard.uuid, reason: 'gone' });
+    for (const [reportUuid, days] of [
+      [failing.reportUuid, 9],
+      [passing.reportUuid, 8],
+    ] as const) {
+      await db
+        .update(dbSchema.directoryReports)
+        .set({ createdAt: new Date(Date.now() - days * day) })
+        .where(eq(dbSchema.directoryReports.uuid, reportUuid));
+    }
+    // The older report's reminder push can't be queued, so its reminder rolls back.
+    vi.mocked(fakeBoss.send).mockResolvedValueOnce(null);
+
+    const result = await runDirectoryReportSweep(at(0, 9));
+    expect(result).toMatchObject({ reminded: 1, failures: 1, digest: 'empty' });
+    expect((await reportRow(failing.reportUuid)).remindedAt).toBeNull();
+    expect((await reportRow(passing.reportUuid)).remindedAt).not.toBeNull();
+  });
+
+  it('a failed send gives the claim back; an email that went out keeps it even when recording it fails', async () => {
+    // A digest two days ago starts the window the next ones cover.
+    expect(await maybeSendAdminDigest(at(-2, 9))).toBe('empty');
+    await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
+
+    vi.mocked(sendAdminDailyDigestEmail).mockRejectedValueOnce(new Error('mail server down'));
+    expect(await maybeSendAdminDigest(at(2, 9))).toBe('failed');
+    expect((await db.select().from(dbSchema.adminDailyDigests)).map((row) => row.status)).toEqual(['empty']);
+
+    vi.mocked(sendAdminDailyDigestEmail).mockImplementationOnce(async () => {
+      await db.execute(
+        sql`ALTER TABLE "admin_daily_digests" ADD CONSTRAINT "dr_test_no_sent" CHECK ("status"::text <> 'sent') NOT VALID`,
+      );
+    });
+    try {
+      expect(await maybeSendAdminDigest(at(2, 10))).toBe('sent');
+    } finally {
+      await db.execute(sql`ALTER TABLE "admin_daily_digests" DROP CONSTRAINT IF EXISTS "dr_test_no_sent"`);
+    }
+    // The claim holds the day: no second email.
+    expect(await maybeSendAdminDigest(at(2, 11))).toBe('claimed_elsewhere');
+    expect(sendAdminDailyDigestEmail).toHaveBeenCalledTimes(2);
+    // The next day clears it and covers its window: the report is in it again.
+    expect(await maybeSendAdminDigest(at(3, 9))).toBe('sent');
+    expect(
+      (await db.select().from(dbSchema.adminDailyDigests).orderBy(dbSchema.adminDailyDigests.digestDate)).map((row) => [
+        row.digestDate,
+        row.status,
+      ]),
+    ).toEqual([
+      [at(-2, 9).toISOString().slice(0, 10), 'empty'],
+      [at(3, 9).toISOString().slice(0, 10), 'sent'],
+    ]);
   });
 });
 

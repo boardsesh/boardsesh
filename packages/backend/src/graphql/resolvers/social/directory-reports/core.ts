@@ -131,6 +131,21 @@ export async function loadBoardFacts(
   return new Map(rows.map((row) => [row.id, row]));
 }
 
+/**
+ * One board's facts under a share lock, in the caller's transaction: a write to
+ * the board in flight (a delete, a removal, a move) commits first, and the next
+ * one waits for the caller to finish.
+ */
+export async function lockBoardFacts(boardId: number, executor: DirectoryExecutor): Promise<BoardFacts | undefined> {
+  const [row] = await executor
+    .select(BOARD_FACT_COLUMNS)
+    .from(dbSchema.userBoards)
+    .where(eq(dbSchema.userBoards.id, boardId))
+    .limit(1)
+    .for('share');
+  return row;
+}
+
 export async function loadBoardFactsByUuid(
   boardUuid: string,
   executor: DirectoryExecutor = db,

@@ -19,7 +19,7 @@
  * queued or running across every replica.
  */
 import type { PgBoss } from 'pg-boss';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { DirectoryReport } from '@boardsesh/db/schema';
 import { DIRECTORY_REPORT_SWEEP_QUEUE } from '@boardsesh/db/job-queue-schema';
@@ -46,9 +46,6 @@ export const ADMIN_DIGEST_HOUR_UTC = 8;
 /** Rows one sweep step handles; the next hour takes the rest. */
 const SWEEP_BATCH = 200;
 
-/** A digest claim older than this never finished sending (a crash mid-send); the next run retries it. */
-const STALE_DIGEST_CLAIM_MS = 30 * 60 * 1000;
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type DirectoryReportSweepResult = {
@@ -56,18 +53,39 @@ export type DirectoryReportSweepResult = {
   escalated: number;
   reminded: number;
   digest: AdminDigestOutcome;
+  /** Reports a step could not handle this run, and steps that failed outright. The next run tries them again. */
+  failures: number;
 };
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Every step runs whatever happened in the one before it, and each report is
+ * handled on its own, so one report that fails (a lock timeout, a notice that
+ * can't be written) neither stops the others nor the digest.
+ */
 export async function runDirectoryReportSweep(now: Date = new Date()): Promise<DirectoryReportSweepResult> {
-  const closedForVanishedTargets = await closeReportsOnVanishedTargets();
-  const escalated = await escalateOverdueReports(now);
-  const reminded = await remindOpenReports(now);
-  const digest = await maybeSendAdminDigest(now);
-  return { closedForVanishedTargets, escalated, reminded, digest };
+  const failures = { count: 0 };
+  const step = async <T>(name: string, run: () => Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      failures.count += 1;
+      logger.error(`[DirectoryReports] Sweep step failed: ${name}`, { error: errorMessage(error) });
+      return fallback;
+    }
+  };
+  const closedForVanishedTargets = await step('close', () => closeReportsOnVanishedTargets(failures), 0);
+  const escalated = await step('escalate', () => escalateOverdueReports(now), 0);
+  const reminded = await step('remind', () => remindOpenReports(now, failures), 0);
+  const digest = await step('digest', () => maybeSendAdminDigest(now), 'failed' as AdminDigestOutcome);
+  return { closedForVanishedTargets, escalated, reminded, digest, failures: failures.count };
 }
 
 /** Step 1: reports whose board or gym is gone close as deleted or merged, by the system. */
-async function closeReportsOnVanishedTargets(): Promise<number> {
+async function closeReportsOnVanishedTargets(failures: { count: number }): Promise<number> {
   const waiting = inArray(dbSchema.directoryReports.status, [...WAITING_STATUSES]);
   const boardGone = (merged: boolean) =>
     sql`EXISTS (SELECT 1 FROM ${dbSchema.userBoards} WHERE ${dbSchema.userBoards.id} = ${dbSchema.directoryReports.boardId}
@@ -89,18 +107,24 @@ async function closeReportsOnVanishedTargets(): Promise<number> {
       .from(dbSchema.directoryReports)
       .where(and(waiting, condition))
       .limit(SWEEP_BATCH);
-    if (due.length === 0) continue;
-    const resolved = await transactionWithAfterCommit((tx) =>
-      resolveWaitingReports(
-        tx,
-        inArray(
-          dbSchema.directoryReports.id,
-          due.map((row) => row.id),
-        ),
-        { outcome, resolvedBy: null, role: 'auto' },
-      ),
-    );
-    closed += resolved.length;
+    for (const { id } of due) {
+      try {
+        const resolved = await transactionWithAfterCommit((tx) =>
+          resolveWaitingReports(tx, eq(dbSchema.directoryReports.id, id), {
+            outcome,
+            resolvedBy: null,
+            role: 'auto',
+          }),
+        );
+        closed += resolved.length;
+      } catch (error) {
+        failures.count += 1;
+        logger.error('[DirectoryReports] Could not close a report on a vanished target', {
+          reportId: id,
+          error: errorMessage(error),
+        });
+      }
+    }
   }
   return closed;
 }
@@ -118,7 +142,7 @@ async function escalateOverdueReports(now: Date): Promise<number> {
 }
 
 /** Step 3: one reminder to the people an open report went to, at seven days. */
-async function remindOpenReports(now: Date): Promise<number> {
+async function remindOpenReports(now: Date, failures: { count: number }): Promise<number> {
   const cutoff = new Date(now.getTime() - REMINDER_AFTER_DAYS * DAY_MS);
   const due = await db
     .select({ id: dbSchema.directoryReports.id })
@@ -134,24 +158,30 @@ async function remindOpenReports(now: Date): Promise<number> {
     .limit(SWEEP_BATCH);
   let reminded = 0;
   for (const { id } of due) {
-    const sent = await db.transaction(async (tx) => {
-      // Claimed under the row lock, so a second runner skips it.
-      const [report] = await tx
-        .update(dbSchema.directoryReports)
-        .set({ remindedAt: now })
-        .where(
-          and(
-            eq(dbSchema.directoryReports.id, id),
-            eq(dbSchema.directoryReports.status, 'open'),
-            isNull(dbSchema.directoryReports.remindedAt),
-          ),
-        )
-        .returning();
-      if (!report) return false;
-      await sendDirectoryNotices(tx, await reminderNotices(tx, report));
-      return true;
-    });
-    if (sent) reminded += 1;
+    try {
+      const sent = await db.transaction(async (tx) => {
+        // Claimed under the row lock, so a second runner skips it.
+        const [report] = await tx
+          .update(dbSchema.directoryReports)
+          .set({ remindedAt: now })
+          .where(
+            and(
+              eq(dbSchema.directoryReports.id, id),
+              eq(dbSchema.directoryReports.status, 'open'),
+              isNull(dbSchema.directoryReports.remindedAt),
+            ),
+          )
+          .returning();
+        if (!report) return false;
+        await sendDirectoryNotices(tx, await reminderNotices(tx, report));
+        return true;
+      });
+      if (sent) reminded += 1;
+    } catch (error) {
+      // Rolled back, `reminded_at` with it: the next run reminds it again.
+      failures.count += 1;
+      logger.error('[DirectoryReports] Could not send a reminder', { reportId: id, error: errorMessage(error) });
+    }
   }
   return reminded;
 }
@@ -294,28 +324,23 @@ export type AdminDigestOutcome = 'not_due' | 'claimed_elsewhere' | 'empty' | 'se
 /**
  * Step 4. Claims today's row first, so one replica sends; reads the window from
  * the last digest (sent or empty) to now; skips the email when nothing is in
- * it. A failed send gives the claim back for the next hour's run.
+ * it. A digest that failed before or while sending gives the claim back for the
+ * next hour's run. One whose email went out keeps it, even when recording
+ * `sent` fails: the claim then holds the day, rather than the next run sending
+ * the email again.
  */
 export async function maybeSendAdminDigest(
   now: Date = new Date(),
   providers: readonly AdminDigestSectionProvider[] = ADMIN_DIGEST_SECTION_PROVIDERS,
 ): Promise<AdminDigestOutcome> {
   const today = utcDay(now);
-  const [last] = await db
-    .select()
-    .from(dbSchema.adminDailyDigests)
-    .orderBy(desc(dbSchema.adminDailyDigests.digestDate))
-    .limit(1);
-  if (last && last.status === 'sending' && now.getTime() - last.createdAt.getTime() > STALE_DIGEST_CLAIM_MS) {
-    await db
-      .delete(dbSchema.adminDailyDigests)
-      .where(
-        and(
-          eq(dbSchema.adminDailyDigests.digestDate, last.digestDate),
-          eq(dbSchema.adminDailyDigests.status, 'sending'),
-        ),
-      );
-  }
+  // A claim left in `sending` (a crash mid-send, or an email that went out but
+  // could not be recorded) holds its day, so that day's email never goes out
+  // twice. It is cleared from the next day on; that day's digest covers the
+  // window, which starts where the last finished digest ended.
+  await db
+    .delete(dbSchema.adminDailyDigests)
+    .where(and(eq(dbSchema.adminDailyDigests.status, 'sending'), lt(dbSchema.adminDailyDigests.digestDate, today)));
   const [lastFinished] = await db
     .select()
     .from(dbSchema.adminDailyDigests)
@@ -332,38 +357,55 @@ export async function maybeSendAdminDigest(
     .returning({ digestDate: dbSchema.adminDailyDigests.digestDate });
   if (!claimed) return 'claimed_elsewhere';
 
-  try {
-    const sections = (await Promise.all(providers.map((provider) => provider(window)))).filter(
-      (section): section is AdminDigestSection => section !== null && section.total > 0,
-    );
-    const counts = Object.fromEntries(sections.map((section) => [section.key, section.total]));
-    if (sections.length === 0) {
+  const giveBackClaim = async (error: unknown): Promise<AdminDigestOutcome> => {
+    logger.error('[DirectoryReports] Daily digest failed; the next run retries', { error: errorMessage(error) });
+    await db.delete(dbSchema.adminDailyDigests).where(eq(dbSchema.adminDailyDigests.digestDate, today));
+    return 'failed';
+  };
+  const record = async (status: 'sent' | 'empty', counts: Record<string, number>): Promise<void> => {
+    try {
       await db
         .update(dbSchema.adminDailyDigests)
-        .set({ status: 'empty', counts })
+        .set({ status, counts })
         .where(eq(dbSchema.adminDailyDigests.digestDate, today));
-      return 'empty';
+    } catch (error) {
+      logger.error('[DirectoryReports] Daily digest done but not recorded; the claim holds the day', {
+        status,
+        error: errorMessage(error),
+      });
     }
-    await sendAdminDailyDigestEmail({ date: today, sections });
-    await db
-      .update(dbSchema.adminDailyDigests)
-      .set({ status: 'sent', counts })
-      .where(eq(dbSchema.adminDailyDigests.digestDate, today));
-    return 'sent';
+  };
+
+  let sections: AdminDigestSection[];
+  try {
+    sections = (await Promise.all(providers.map((provider) => provider(window)))).filter(
+      (section): section is AdminDigestSection => section !== null && section.total > 0,
+    );
   } catch (error) {
-    await db.delete(dbSchema.adminDailyDigests).where(eq(dbSchema.adminDailyDigests.digestDate, today));
-    logger.error('[DirectoryReports] Daily digest failed; the next run retries', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return 'failed';
+    return giveBackClaim(error);
   }
+  const counts = Object.fromEntries(sections.map((section) => [section.key, section.total]));
+  if (sections.length === 0) {
+    await record('empty', counts);
+    return 'empty';
+  }
+  try {
+    await sendAdminDailyDigestEmail({ date: today, sections });
+  } catch (error) {
+    return giveBackClaim(error);
+  }
+  await record('sent', counts);
+  return 'sent';
 }
 
 export async function startDirectoryReportSweep(boss: PgBoss): Promise<void> {
   await boss.schedule(DIRECTORY_REPORT_SWEEP_QUEUE, DIRECTORY_REPORT_SWEEP_CRON, null, { tz: 'UTC' });
   await boss.work(DIRECTORY_REPORT_SWEEP_QUEUE, async () => {
     const result = await runDirectoryReportSweep();
-    if (result.closedForVanishedTargets + result.escalated + result.reminded > 0 || result.digest === 'sent') {
+    if (
+      result.closedForVanishedTargets + result.escalated + result.reminded + result.failures > 0 ||
+      result.digest === 'sent'
+    ) {
       logger.info('[DirectoryReports] Sweep', result);
     }
   });
