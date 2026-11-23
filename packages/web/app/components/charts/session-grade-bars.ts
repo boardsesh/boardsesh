@@ -7,10 +7,10 @@ import { formatVGrade } from '@/app/lib/grade-colors';
 // are tuned per scheme and would wash out in the other one (these feed chart data, not
 // CSS, so a scheme-aware var() can't be used here). All three are deliberately FROZEN
 // snapshots, not token-derived: a future palette retune must not silently recolour
-// historical chart data. Attempt happens to match today's light neutral-300 lavender.
+// historical chart data. Attempt is the Graphite --neutral-500 grey.
 const FLASH_COLOR = '#10b98199';
 const SEND_COLOR = '#ef444499';
-const ATTEMPT_COLOR = '#ad9ecc99';
+const ATTEMPT_COLOR = '#b0b0b099';
 
 export const SESSION_GRADE_LEGEND = [
   { label: 'Flash', color: FLASH_COLOR },
