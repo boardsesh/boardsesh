@@ -27,7 +27,6 @@
 }
 
 .hero .heroEyebrow {
-  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1.5;

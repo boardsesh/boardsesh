@@ -154,7 +154,7 @@ export default function GymWelcomeCard({ gym }: { gym: Gym }) {
       variant="outlined"
       sx={{
         mb: 3,
-        borderColor: themeTokens.colors.primary,
+        borderColor: 'divider',
         borderRadius: themeTokens.borderRadius.lg,
         overflow: 'hidden',
       }}
@@ -217,7 +217,7 @@ export default function GymWelcomeCard({ gym }: { gym: Gym }) {
                   {stepBody(t, step.key)}
                 </Typography>
               </Box>
-              {!step.done && <ArrowForwardOutlined fontSize="small" sx={{ color: themeTokens.colors.primary }} />}
+              {!step.done && <ArrowForwardOutlined fontSize="small" sx={{ color: 'var(--neutral-500)' }} />}
             </MuiLink>
           ))}
         </Stack>

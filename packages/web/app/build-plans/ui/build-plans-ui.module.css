@@ -251,7 +251,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--separator);
   border-radius: var(--border-radius-full);
   color: var(--neutral-500);
   font-size: var(--font-size-sm);
