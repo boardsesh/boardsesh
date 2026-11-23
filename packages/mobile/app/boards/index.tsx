@@ -878,8 +878,8 @@ export default function BoardSelection() {
                 : origin === 'synced'
                   ? t('gymBoards.removeBodySynced', { gym: gymName })
                   : origin === 'climber'
-                    ? t('gymBoards.removeBodyOther', { name: creatorName })
-                    : t('gymBoards.removeBodyOtherHidden'),
+                    ? t('gymBoards.removeBodyOther', { name: creatorName, gym: gymName })
+                    : t('gymBoards.removeBodyOtherHidden', { gym: gymName }),
             confirmLabel: t('gymBoards.removeConfirm'),
             cancelLabel: t('mobile.manage.cancel'),
           });
@@ -896,23 +896,32 @@ export default function BoardSelection() {
               showToast(t('gymBoards.removeFailed'), 'error');
               return;
             }
-            // The active board is a stored copy the mutation's invalidation
-            // never reaches (see /boards/edit): without this the play drawer
-            // keeps naming the gym the board just left.
-            if (wasActive) {
-              await setActiveBoardIfCurrentGeneration(activeBoardGeneration, {
-                ...board,
-                gymId: null,
-                gymUuid: null,
-                gymName: null,
-              });
-            }
             showToast(t('gymBoards.removed', { gym: gymName }), 'success');
           } catch (error) {
             showToast(
               isSystemBoardDeleteInsteadError(error) ? t('gymBoards.removeSyncedError') : t('gymBoards.removeFailed'),
               'error',
             );
+            return;
+          }
+          // The active board is a stored copy the mutation's invalidation
+          // never reaches (see /boards/edit): without this the play drawer
+          // keeps naming the gym the board just left. The removal is done and
+          // announced; a failed local copy refresh is
+          // not a failed removal, so it gets its own try and no error toast.
+          if (wasActive) {
+            try {
+              await setActiveBoardIfCurrentGeneration(activeBoardGeneration, {
+                ...board,
+                gymId: null,
+                gymUuid: null,
+                gymName: null,
+                gymIsListed: null,
+                canRemoveFromGym: false,
+              });
+            } catch (error) {
+              console.warn('Could not refresh the active board after removing it from its gym', error);
+            }
           }
           return;
         }
