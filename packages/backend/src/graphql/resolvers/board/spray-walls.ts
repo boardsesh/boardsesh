@@ -62,6 +62,7 @@ import {
   resolveBoardEditActorRole,
   viewerGymManagerRole,
 } from '../social/board-moderation-events';
+import { onBoardDeleted } from '../social/directory-reports/lifecycle';
 import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/gyms';
 import { syncLocationGeography } from '../social/location-geography';
 import {
@@ -3752,6 +3753,8 @@ export const sprayWallMutations = {
         .update(dbSchema.userBoards)
         .set({ deletedAt, syncFrozenAt: deletedAt })
         .where(eq(dbSchema.userBoards.id, board.id));
+      // Reports about the wall close as deleted; a creator hears when it wasn't them.
+      await onBoardDeleted(tx, { board: currentBoard, actorUserId: userId, actorRole });
       if (actorRole !== 'board_owner') {
         await recordBoardModerationEvent(tx, {
           boardId: board.id,

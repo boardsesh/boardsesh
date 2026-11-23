@@ -280,6 +280,82 @@ export async function sendGymClaimAdminNotification(details: {
   });
 }
 
+/** One line in a section of the admin daily digest. */
+export type AdminDigestRow = {
+  /** What the row is about, e.g. "Set up wrong: Crux Kilter at Crux". Plain text. */
+  label: string;
+  /** Where to act on it. Built by the caller from a static path; used raw in the href. */
+  url: string;
+};
+
+/**
+ * One section of the admin daily digest. The reports sweep adds "Reports in
+ * the admin queue"; the claim guardrails add "Claims that approved themselves".
+ * `rows` holds at most the first {@link ADMIN_DIGEST_MAX_ROWS}; `total` is the
+ * full count, and `moreUrl` is where the rest are.
+ */
+export type AdminDigestSection = {
+  key: string;
+  heading: string;
+  total: number;
+  rows: AdminDigestRow[];
+  moreUrl: string;
+  moreLabel: string;
+};
+
+/** Rows listed per digest section; the rest are behind the section's link. */
+export const ADMIN_DIGEST_MAX_ROWS = 20;
+
+/**
+ * The once-a-day email to the Boardsesh team: what reached the admin queue
+ * since the last one, and (once the claim guardrails land) every claim that
+ * approved itself, with a link to revert it. The caller skips the email when
+ * every section is empty (docs/product/directory-reports.md, "Daily digest").
+ */
+export async function sendAdminDailyDigestEmail(details: {
+  /** The UTC day the digest is for, YYYY-MM-DD. */
+  date: string;
+  sections: readonly AdminDigestSection[];
+}): Promise<void> {
+  const sections = details.sections.filter((section) => section.total > 0);
+  const summary = sections.map((section) => `${section.total} ${section.heading.toLowerCase()}`).join(', ');
+  const htmlSections = sections
+    .map((section) => {
+      const rows = section.rows
+        .slice(0, ADMIN_DIGEST_MAX_ROWS)
+        .map(
+          (row) =>
+            `<li style="margin-bottom: 6px;"><a href="${row.url}" style="color: ${colors.primary};">${escapeHtml(row.label)}</a></li>`,
+        )
+        .join('');
+      const more = section.total - Math.min(section.rows.length, ADMIN_DIGEST_MAX_ROWS);
+      return `
+      <h2 style="color: ${colors.textPrimary}; font-size: 18px; margin: 24px 0 8px;">${escapeHtml(section.heading)} (${section.total})</h2>
+      <ul style="color: ${colors.textPrimary}; font-size: 15px; line-height: 1.5; padding-left: 20px;">${rows}</ul>
+      ${more > 0 ? `<p style="color: ${colors.textSecondary}; font-size: 14px;">And ${more} more.</p>` : ''}
+      ${button(section.moreUrl, section.moreLabel)}
+    `;
+    })
+    .join('<hr style="border: none; border-top: 1px solid ' + colors.border + '; margin: 24px 0;" />');
+  const textSections = sections
+    .map((section) => {
+      const rows = section.rows
+        .slice(0, ADMIN_DIGEST_MAX_ROWS)
+        .map((row) => `- ${row.label}: ${row.url}`)
+        .join('\n');
+      return `${section.heading} (${section.total})\n${rows}\n${section.moreLabel}: ${section.moreUrl}`;
+    })
+    .join('\n\n');
+
+  await getTransporter().sendMail({
+    from: fromAddress(),
+    to: ADMIN_NOTIFICATION_EMAIL,
+    subject: headerSafe(`Boardsesh daily digest ${details.date}: ${summary}`),
+    html: shell('Daily digest', htmlSections),
+    text: `Boardsesh daily digest for ${details.date}\n\n${textSections}`,
+  });
+}
+
 /**
  * Notify the Boardsesh team that a gym owner (or a signed-in climber) flagged two
  * listings as the same gym, so an admin can fold them together in the merge queue.

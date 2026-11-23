@@ -9,6 +9,7 @@ import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { enrichSprayNotificationTargets } from './spray-notification-targets';
+import { enrichDirectoryNotices } from './directory-reports/notices';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { alias } from 'drizzle-orm/pg-core';
 import { notificationPrivacyCondition } from '../shared/activity-privacy';
@@ -88,6 +89,16 @@ function applyClimbBoardFields(group: ClimbBoardFields, climb: NotificationClimb
   group.climbCompatibleSizeIds = climb.compatibleSizeIds ?? undefined;
   group.climbCharacteristics = climb.characteristics ?? undefined;
 }
+
+/**
+ * Types whose entity is a gym uuid and whose row names the gym. The directory
+ * report types name theirs through `directoryNotice` (enrichDirectoryNotices).
+ */
+const GYM_NAMED_TYPES: ReadonlySet<string> = new Set([
+  'gym_claim_approved',
+  'gym_claim_denied',
+  'gym_claimed_with_your_board',
+]);
 
 function truncateCommentBody(commentBody: string | null): string | undefined {
   if (!commentBody) return undefined;
@@ -170,6 +181,7 @@ export const socialNotificationQueries = {
 
     const notifications = rows.map(mapNotificationRow);
     await enrichSprayNotificationTargets(notifications, userId);
+    await enrichDirectoryNotices(notifications, userId);
     const totalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
     const unreadCount = rows.length > 0 ? Number(rows[0].unreadCount) : 0;
 
@@ -341,7 +353,7 @@ export const socialNotificationQueries = {
         climbEntityIds.push(group.entityId);
       } else if (proposalTypes.includes(group.type)) {
         proposalEntityIds.push(group.entityId);
-      } else if (group.type === 'gym_claim_approved') {
+      } else if (GYM_NAMED_TYPES.has(group.type)) {
         gymEntityIds.push(group.entityId);
       } else if (threadTypes.includes(group.type)) {
         // A vote on a comment names the COMMENT; the thread it lives in is the
@@ -481,7 +493,7 @@ export const socialNotificationQueries = {
     for (const group of groups) {
       if (!group.entityId) continue;
 
-      if (group.type === 'gym_claim_approved') {
+      if (GYM_NAMED_TYPES.has(group.type)) {
         group.gymName = gymNameMap.get(group.entityId) ?? undefined;
       } else if (group.type === 'new_climbs_synced') {
         const climb = climbMap.get(group.entityId);
@@ -565,6 +577,7 @@ export const socialNotificationQueries = {
     }
 
     await enrichSprayNotificationTargets(groups, userId);
+    await enrichDirectoryNotices(groups, userId);
 
     // Unread count (individual notifications, not groups)
     const unreadCountResult = await db
