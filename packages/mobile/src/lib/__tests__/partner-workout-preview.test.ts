@@ -6,6 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { CreateWorkout } from '@boardsesh/public-api';
 import { getGradesForBoard } from '@boardsesh/board-config';
+import { locateInRun } from '@boardsesh/playlist-generator';
+import {
+  resolveEffectiveRestPacing,
+  resolveStageRestPacing,
+  restAdvanceAllowed,
+  type RestTimerTickStatus,
+} from '../rest-timer-pacing';
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
@@ -54,6 +61,89 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('partner block advance setting', () => {
+  const blocks = [
+    { type: 'volume', climbCount: 2, targetGrade: { scale: 'font', value: '6B' }, restSeconds: 120 },
+    { type: 'pyramid', climbCount: 2, gradeRange: { scale: 'font', from: '6B', to: '6B' }, restSeconds: 120 },
+    { type: 'ladder', climbCount: 2, gradeRange: { scale: 'font', from: '6B', to: '6B' }, restSeconds: 120 },
+    { type: 'gradeFocus', climbCount: 2, targetGrade: { scale: 'font', value: '6B' }, restSeconds: 120 },
+  ] satisfies CreateWorkout['blocks'];
+
+  async function pacingFor(block: CreateWorkout['blocks'][number]) {
+    const built = await preview(workout(block), catalogue({ 18: 4 }));
+    const queueItemUuid = built.items[0].uuid;
+    const stage = resolveStageRestPacing({
+      sessionId: 'session-1',
+      run: built.run,
+      position: locateInRun(
+        built.run,
+        queueItemUuid,
+        built.items.map((item) => item.uuid),
+      ),
+      queueItemUuid,
+      repsLogged: 1,
+    });
+    const pacing = resolveEffectiveRestPacing({
+      settings: { targetSeconds: 150, mode: 'afterTick', autoAdvance: false },
+      stage,
+      crew: null,
+    });
+    const advancesAfter = (status: RestTimerTickStatus) =>
+      restAdvanceAllowed({
+        advanceOn: pacing.advanceOn,
+        currentQueueItemUuid: queueItemUuid,
+        lastTick: { status, queueItemUuid },
+        stage: pacing.stage,
+      });
+    return { pacing, advancesAfter };
+  }
+
+  it.each(blocks)('lets $type choose whether falls advance', async (block) => {
+    for (const advanceOn of ['tick', 'send'] as const) {
+      const { pacing, advancesAfter } = await pacingFor({ ...block, advanceOn });
+      expect(pacing).toMatchObject({ source: 'stage', targetSeconds: 120, advanceOn, autoAdvance: true });
+      expect(advancesAfter('attempt')).toBe(advanceOn === 'tick');
+      expect(advancesAfter('send')).toBe(true);
+      expect(advancesAfter('flash')).toBe(true);
+    }
+  });
+
+  it.each(blocks)('preserves $type advancing after falls when the setting is omitted', async (block) => {
+    const { pacing, advancesAfter } = await pacingFor(block);
+    expect(pacing.advanceOn).toBe('tick');
+    expect(advancesAfter('attempt')).toBe(true);
+  });
+
+  it('keeps zero rests immediate and missing rests on the climber settings', async () => {
+    for (const advanceOn of ['tick', 'send'] as const) {
+      const { pacing, advancesAfter } = await pacingFor({ ...blocks[0], restSeconds: 0, advanceOn });
+      expect(pacing).toMatchObject({ source: 'stage', targetSeconds: 0, advanceOn });
+      expect(advancesAfter('attempt')).toBe(advanceOn === 'tick');
+    }
+    const { pacing } = await pacingFor({ ...blocks[0], restSeconds: undefined, advanceOn: 'send' });
+    expect(pacing).toEqual({
+      targetSeconds: 150,
+      mode: 'afterTick',
+      autoAdvance: false,
+      advanceOn: 'deadline',
+      source: 'settings',
+      stage: null,
+    });
+  });
+
+  it('keeps the selected rule when reselecting around climbs added by a crewmate', async () => {
+    const spec = workout({ ...blocks[0], advanceOn: 'send' });
+    const built = await preview(spec, catalogue({ 18: 4 }));
+    const again = reselectPartnerWorkoutPreview(
+      built,
+      spec,
+      buildPartnerWorkoutPlan(spec, kilterGrades, 'wk_one').plan,
+      new Set([built.items[0].climb.uuid]),
+    );
+    expect(again.run.stages[0].pacing).toEqual({ mode: 'afterTick', restSeconds: 120, advanceOn: 'send' });
+  });
 });
 
 describe('partner workout preview', () => {

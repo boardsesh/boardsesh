@@ -66,6 +66,18 @@ export const WorkoutGradeRangeSchema = z
     'from must not be harder than to',
   );
 const restSeconds = z.number().int().min(0).max(3600);
+const climbRest = {
+  restSeconds: restSeconds.optional().openapi({
+    description:
+      "Rest after each logged climb. The block's advanceOn setting controls when the next climb comes up after the rest. 0 means no rest; omitted means the climber's own rest-timer settings apply.",
+    example: 120,
+  }),
+  advanceOn: z.enum(['tick', 'send']).optional().openapi({
+    description:
+      'When restSeconds is provided, tick advances after any logged climb, including a fall; send advances only after a flash or send. Omitted means tick. The climber can change this setting before starting the workout. Older app versions ignore this field and advance after any logged climb.',
+    example: 'send',
+  }),
+};
 const commonBlock = {
   externalRef: z.string().trim().min(1).max(200).optional(),
   label: z.string().trim().min(1).max(40).optional(),
@@ -79,25 +91,25 @@ export const WorkoutBlockSchema = z
       ...countedBlock,
       type: z.literal('volume'),
       targetGrade: WorkoutGradeSchema,
-      restSeconds: restSeconds.optional(),
+      ...climbRest,
     }),
     z.object({
       ...countedBlock,
       type: z.literal('pyramid'),
       gradeRange: WorkoutGradeRangeSchema,
-      restSeconds: restSeconds.optional(),
+      ...climbRest,
     }),
     z.object({
       ...countedBlock,
       type: z.literal('ladder'),
       gradeRange: WorkoutGradeRangeSchema,
-      restSeconds: restSeconds.optional(),
+      ...climbRest,
     }),
     z.object({
       ...countedBlock,
       type: z.literal('gradeFocus'),
       targetGrade: WorkoutGradeSchema,
-      restSeconds: restSeconds.optional(),
+      ...climbRest,
     }),
     z.object({
       ...countedBlock,

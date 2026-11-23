@@ -278,6 +278,22 @@ over V grades, then takes turns across the Font grades inside each, so a Kilter
 V0 to V3 warm-up of four reads V0, V1, V2, V3. A Font target is one grade. A target the board cannot express (V0 on a MoonBoard)
 clamps to the nearest grade and the card says so.
 
+A partner `restSeconds` on `volume`, `pyramid`, `ladder` or `gradeFocus` paces
+that block's stage (`lib/partner-workout-preview.ts`). Its optional
+`advanceOn: 'tick' | 'send'` chooses whether a fall moves on after the rest or
+keeps the current climb. Omission preserves `tick`, so existing partner plans
+continue advancing after any logged climb. Every tick starts the rest;
+`restAdvanceAllowed` gates only advancing. A rest of 0 is an immediate rest,
+and an omitted rest leaves the stage unpaced with the climber's own settings.
+The partner card offers this choice per block before Start or Add to this
+session. The chosen rule is captured in the run and committed session plan;
+the original partner request remains the backend's workout specification.
+Saved runs retain their rule after restart, including runs started by older
+bundles. The crew clock already supports both rules through the phone's
+published `advanceOn` and the server's `hasQualifyingTick`. Older app versions
+ignore the new input field and still build `tick` stages. Freeform
+`limitBouldering` and repeated-round `fourByFour` pacing stay unchanged.
+
 The card fills the blocks through the app's own preview pipeline
 (`buildPreview` in `workout-preview-pool.ts`, called from
 `lib/partner-workout-preview.ts`), the one the workout builder and "Add a block"

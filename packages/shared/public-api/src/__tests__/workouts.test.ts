@@ -10,6 +10,50 @@ const fourByFour = {
   restBetweenRoundsSeconds: 180,
 } as const;
 
+describe('workout block advance setting', () => {
+  const pacedBlocks = [
+    { type: 'volume', climbCount: 4, targetGrade: { scale: 'v', value: 3 } },
+    { type: 'gradeFocus', climbCount: 4, targetGrade: { scale: 'v', value: 3 } },
+    { type: 'pyramid', climbCount: 4, gradeRange: { scale: 'v', from: 1, to: 3 } },
+    { type: 'ladder', climbCount: 4, gradeRange: { scale: 'v', from: 1, to: 3 } },
+  ];
+
+  it.each(['tick', 'send'])('preserves %s on every supported block through workout validation', (advanceOn) => {
+    for (const restSeconds of [0, 120]) {
+      const blocks = pacedBlocks.map((block) => ({ ...block, restSeconds, advanceOn }));
+      expect(CreateWorkoutSchema.parse({ externalRef: 'day-1', title: 'Today', blocks }).blocks).toEqual(blocks);
+    }
+  });
+
+  it('keeps omitted settings absent so existing payloads retain their shape', () => {
+    for (const block of pacedBlocks) {
+      for (const rest of [{}, { restSeconds: 0 }, { restSeconds: 120 }]) {
+        const existingBlock = { ...block, ...rest };
+        expect(WorkoutBlockSchema.parse(existingBlock)).toEqual(existingBlock);
+      }
+    }
+  });
+
+  it('rejects unsupported advance rules at the setting field', () => {
+    for (const block of pacedBlocks) {
+      for (const advanceOn of ['deadline', 'round', 'set', '', null, 1]) {
+        const parsed = WorkoutBlockSchema.safeParse({ ...block, restSeconds: 120, advanceOn });
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) expect(parsed.error.issues[0].path).toEqual(['advanceOn']);
+      }
+    }
+  });
+
+  it('does not add advance controls to round or freeform blocks', () => {
+    for (const block of [
+      fourByFour,
+      { type: 'limitBouldering', climbCount: 3, targetGrade: { scale: 'v', value: 6 }, restSeconds: 120 },
+    ]) {
+      expect(WorkoutBlockSchema.parse({ ...block, advanceOn: 'send' })).toEqual(block);
+    }
+  });
+});
+
 describe('workout exercise references', () => {
   it('preserves optional references on every block type and normalizes like workout references', () => {
     const blocks = [

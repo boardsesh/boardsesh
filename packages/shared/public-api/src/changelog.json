@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "date": "2026-11-21",
+      "documentSha256": "71065fefa441de8fdd45ed4ab1833ca8ce014d8682ca3c9a209562d9a02a893a",
+      "changes": [
+        "Volume, pyramid, ladder and gradeFocus blocks accept optional advanceOn: tick advances after any logged climb, including a fall; send advances only after a flash or send. Omission keeps tick behavior. The climber can change the choice before starting or adding the workout.",
+        "The advance rule applies when restSeconds is supplied, including zero for immediate advancement. Omitted restSeconds keeps the climber's own timer settings. Started runs retain their saved rule; older apps ignore advanceOn and keep advancing after any logged climb."
+      ]
+    },
+    {
       "date": "2026-11-20",
       "documentSha256": "538a37128528dd26aa003cdce37482fff395de54fc0b38caa7268d601cda0255",
       "changes": [

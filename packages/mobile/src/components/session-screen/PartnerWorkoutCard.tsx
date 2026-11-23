@@ -21,6 +21,7 @@ import { useToast } from '../../providers/toast-provider';
 import { Card } from '../Card';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { SwitchRow } from '../SwitchRow';
 import { spacing } from '../../theme/tokens';
 import { buildPartnerWorkoutPlan } from '../../lib/partner-workout-plan';
 import {
@@ -146,7 +147,15 @@ export function PartnerWorkoutCard({
   // "Add a block" does; a new session starts from what the climber picked, as
   // the pre-session builder does.
   const preview = useQuery({
-    queryKey: ['partnerWorkoutPreview', credentialGeneration, pending?.id, board, sessionId, boardseshGrades],
+    queryKey: [
+      'partnerWorkoutPreview',
+      credentialGeneration,
+      pending?.id,
+      board,
+      sessionId,
+      boardseshGrades,
+      pending?.spec.blocks,
+    ],
     enabled:
       enabled &&
       gradeSourceSettled &&
@@ -172,6 +181,29 @@ export function PartnerWorkoutCard({
       });
     },
   });
+
+  const setAdvanceAfterFalls = useCallback(
+    (blockIndex: number, advanceAfterFalls: boolean) => {
+      const current = getPendingWorkout();
+      if (!current || current.id !== pending?.id || current.status === 'started' || launching.has(current.id)) return;
+      setPendingWorkout({
+        ...current,
+        spec: {
+          ...current.spec,
+          blocks: current.spec.blocks.map((block, index) =>
+            index === blockIndex &&
+            (block.type === 'volume' ||
+              block.type === 'pyramid' ||
+              block.type === 'ladder' ||
+              block.type === 'gradeFocus')
+              ? { ...block, advanceOn: advanceAfterFalls ? 'tick' : 'send' }
+              : block,
+          ),
+        },
+      });
+    },
+    [pending?.id],
+  );
 
   const start = useCallback(async () => {
     if (!pending || pending.status === 'started' || !board || !preview.data || launching.has(pending.id)) return;
@@ -428,6 +460,22 @@ export function PartnerWorkoutCard({
             ) : null}
             {'restSeconds' in block && block.restSeconds !== undefined ? (
               <Text variant="footnote">{t('partnerWorkouts.rest', { seconds: block.restSeconds })}</Text>
+            ) : null}
+            {pending &&
+            pending.status !== 'started' &&
+            (block.type === 'volume' ||
+              block.type === 'pyramid' ||
+              block.type === 'ladder' ||
+              block.type === 'gradeFocus') &&
+            block.restSeconds !== undefined ? (
+              <SwitchRow
+                label={t('partnerWorkouts.advanceAfterFalls')}
+                description={t('partnerWorkouts.advanceAfterFallsHint')}
+                wrapDescription
+                value={(block.advanceOn ?? 'tick') === 'tick'}
+                onValueChange={(advanceAfterFalls) => setAdvanceAfterFalls(index, advanceAfterFalls)}
+                disabled={busy}
+              />
             ) : null}
             {block.instructions ? <Text>{block.instructions}</Text> : null}
             {block.type === 'limitBouldering' ? <Text variant="footnote">{t('partnerWorkouts.freeform')}</Text> : null}

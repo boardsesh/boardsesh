@@ -11,6 +11,7 @@ function seed(
   queue: ClimbQueueItem[] = [],
   current: ClimbQueueItem | null = null,
   historyCount?: number,
+  advanceOn: 'tick' | 'send' = 'tick',
 ) {
   return buildPartnerWorkoutInitialSeed({
     workoutId: 'wk',
@@ -25,7 +26,7 @@ function seed(
           id: 'wk:0',
           kind: 'volume',
           itemUuids: items.map(({ uuid }) => uuid),
-          pacing: { mode: 'afterTick', advanceOn: 'tick', restSeconds: 20 },
+          pacing: { mode: 'afterTick', advanceOn, restSeconds: 20 },
         },
       ],
     },
@@ -67,12 +68,12 @@ describe('atomic partner first seed', () => {
     expect(old).toHaveLength(MAX_SYNCED_QUEUE_ITEMS - 1);
   });
 
-  it('after restart restores the persisted winner and pacing, excluding a regenerated preview', () => {
-    const winning = seed([item('winning')]).seed.sessionPlan;
+  it.each(['tick', 'send'] as const)('after restart restores the persisted winner and %s pacing', (advanceOn) => {
+    const winning = seed([item('winning')], [], null, undefined, advanceOn).seed.sessionPlan;
     seed([item('regenerated')]);
     const restored = restorePartnerWorkoutRun(JSON.parse(JSON.stringify(winning)));
     expect(restored?.run.stages[0].itemUuids).toEqual(['winning']);
-    expect(restored?.run.stages[0].pacing).toEqual({ mode: 'afterTick', advanceOn: 'tick', restSeconds: 20 });
+    expect(restored?.run.stages[0].pacing).toEqual({ mode: 'afterTick', advanceOn, restSeconds: 20 });
     expect(restored?.climbs).toEqual({ winning: { climbUuid: 'climb-winning', angle: 40, isMirror: true } });
   });
 
