@@ -176,11 +176,12 @@ function InstantBetaVisual({ climbBeta }: { climbBeta: readonly BetaLink[] }) {
  * to the reader's phone after mount.
  *
  * The page renders this inside `<Suspense>`, and the 30-day line inside its
- * own: the hero never waits on it, and the store buttons never wait on the
+ * own: the hero never waits on it, and the store badges never wait on the
  * stats read. The store block carries `data-sticky-install-hide`, so the
- * sticky install bar stays down while these buttons are on screen. Both store
- * buttons are outlined (`brand-outlined`): the page's one filled store button
- * is the phone's hero button, and every screen keeps a single filled action.
+ * sticky install bar stays down while these badges are on screen. They are the
+ * official store badges, black, so they add no filled action to the screen;
+ * `brand-outlined` styles only the "Update the app" button a visitor still in
+ * the retired Capacitor app gets instead.
  */
 export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcaseProps) {
   const [{ t }, storeLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);

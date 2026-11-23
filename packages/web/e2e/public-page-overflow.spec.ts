@@ -237,15 +237,14 @@ for (const width of [390, 1440]) {
       await expectKeyboardTarget(page, page.locator('main a[href*="play.google.com"]:visible').first());
       await page.mouse.move(0, 0);
     } else {
-      // A phone's one store button is the filled "Get the free app". Wait for
-      // the browser to pick its store, so the hovered anchor stays the shown one.
-      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
-      await expectReadableFilledHover(
-        page,
-        testInfo,
-        page.locator('main [data-cta="mobile-install"] a:visible'),
-        'store-first-hover',
-      );
+      // A phone's one store link is its store's official badge, which has no
+      // text to colour on hover: hold it to the target size and a visible focus
+      // ring. CSS shows exactly one of the two stacked badges, before and after
+      // hydration.
+      const phoneBadge = page.locator('main [data-cta="mobile-install"] a[data-store-badge]:visible');
+      await expect(phoneBadge).toHaveCount(1);
+      await expectKeyboardTarget(page, phoneBadge);
+      await page.mouse.move(0, 0);
     }
     const footer = page.getByTestId('site-footer');
     await expectReadableButtonHover(
@@ -331,7 +330,7 @@ for (const width of [390, 1440]) {
       await expectReadableFilledHover(page, testInfo, playlistHandoff, 'playlist-handoff-hover');
     } else {
       await expect(playlistQr).toBeHidden();
-      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
+      await expect(page.locator('main [data-cta="mobile-install"] a[data-store-badge]:visible')).toHaveCount(1);
     }
   });
 }

@@ -1076,9 +1076,6 @@
       "allAtAngle": "{{angle}}° 的所有 {{board}} 线路"
     },
     "cta": {
-      "getApp": "免费下载应用",
-      "getAppAriaIos": "免费下载应用（App Store）",
-      "getAppAriaAndroid": "免费下载应用（Google Play）",
       "getAppHelper": "在你的 {{board}} 上点亮这条线路，并记录完攀。",
       "openInBrowser": "在浏览器中打开",
       "openInBrowserMobile": "或在浏览器中打开"

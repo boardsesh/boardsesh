@@ -87,9 +87,7 @@
     "visitWebsite": "访问网站",
     "install": {
       "heading": "下载应用，攀这面墙",
-      "body": "用手机点亮 {{gymName}} 的训练板，记录每次完攀。",
-      "googlePlay": "从 Google Play 下载",
-      "appStore": "从 App Store 下载"
+      "body": "用手机点亮 {{gymName}} 的训练板，记录每次完攀。"
     },
     "noBoardsYet": "这里尚未收录训练板。",
     "explorePlaylists": "看看大家在建什么线路集",

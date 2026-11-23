@@ -87,9 +87,7 @@
     "visitWebsite": "Visit website",
     "install": {
       "heading": "Get the app for this wall",
-      "body": "Light up the boards at {{gymName}} from your phone and log every send.",
-      "googlePlay": "Get it on Google Play",
-      "appStore": "Download on the App Store"
+      "body": "Light up the boards at {{gymName}} from your phone and log every send."
     },
     "noBoardsYet": "No boards listed here yet.",
     "explorePlaylists": "See what people are building",

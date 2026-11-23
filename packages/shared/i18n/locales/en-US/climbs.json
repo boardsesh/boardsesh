@@ -1076,9 +1076,6 @@
       "allAtAngle": "All {{board}} climbs at {{angle}}°"
     },
     "cta": {
-      "getApp": "Get the free app",
-      "getAppAriaIos": "Get the free app on the App Store",
-      "getAppAriaAndroid": "Get the free app on Google Play",
       "getAppHelper": "Light this climb on your {{board}} and log the send.",
       "openInBrowser": "Open in your browser",
       "openInBrowserMobile": "Or open it in your browser"

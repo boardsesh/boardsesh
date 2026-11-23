@@ -342,8 +342,8 @@ which reads no pair today, so those scans count nothing. Read `Climb QR Scanned`
 as "a laptop reader sent the climb to a phone that needed the app", and read
 its installs against it.
 
-After a scan the climb page's store buttons (the phone's "Get the free app" and
-the sticky install bar) add the medium: the link id becomes `climb-view.desktop`
+After a scan the climb page's store links (the phone's store badge and the
+sticky install bar) add the medium: the link id becomes `climb-view.desktop`
 or `sticky-bar.desktop`, `utm_medium` becomes `qr`, and `App Install Click`
 carries `qrMedium: 'desktop'`. The hook is `useQrLandingMedium('climb')`.
 
@@ -595,8 +595,9 @@ seven gym events out of `SHARED_EVENTS`.
 
 The CTA itself is **`app/gym/[gym_slug]/gym-install-cta.tsx`** (#4379). It
 renders both stores as real anchors — no platform sniffing, because an effect
-that picks one store leaves the server HTML with no install link at all — and
-uses the canonical slug (`gym.slug || gym_slug`), so a scan that 308s off a
+that picks one store leaves the server HTML with no install link at all — drawn
+as the official App Store and Google Play badges (black, 44px, App Store first,
+neither styled as the primary), and uses the canonical slug (`gym.slug || gym_slug`), so a scan that 308s off a
 merged twin's URL still reports one campaign rather than two.
 
 ### A poster scan and a page click are different links (#6027)

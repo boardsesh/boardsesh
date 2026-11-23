@@ -87,9 +87,7 @@
     "visitWebsite": "Visita il sito",
     "install": {
       "heading": "Scarica l'app per questa palestra",
-      "body": "Illumina i pannelli di {{gymName}} dal telefono e registra ogni ripetizione.",
-      "googlePlay": "Disponibile su Google Play",
-      "appStore": "Scarica dall'App Store"
+      "body": "Illumina i pannelli di {{gymName}} dal telefono e registra ogni ripetizione."
     },
     "noBoardsYet": "Ancora nessun pannello elencato qui.",
     "explorePlaylists": "Guarda cosa stanno creando gli altri",

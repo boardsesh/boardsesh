@@ -1076,9 +1076,6 @@
       "allAtAngle": "Tous les blocs {{board}} à {{angle}}°"
     },
     "cta": {
-      "getApp": "Installe l’app gratuite",
-      "getAppAriaIos": "Installe l’app gratuite depuis l’App Store",
-      "getAppAriaAndroid": "Installe l’app gratuite depuis Google Play",
       "getAppHelper": "Allume ce bloc sur ta {{board}} et fais la croix.",
       "openInBrowser": "Ouvrir dans ton navigateur",
       "openInBrowserMobile": "Ou ouvre-le dans ton navigateur"

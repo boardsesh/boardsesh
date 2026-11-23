@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import type { GymQrMedium } from '@boardsesh/analytics';
 import { buildStoreUrl } from '@/app/lib/store-links';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 
 const track = vi.hoisted(() => vi.fn());
@@ -10,15 +12,15 @@ vi.mock('@/app/lib/analytics', () => ({ track }));
 
 const GymInstallCta = (await import('../gym-install-cta')).default;
 
-function renderCta(gymSlug = 'boulderwelt-munich', qrMedium: GymQrMedium | null = null) {
-  render(
-    <GymInstallCta
-      gymSlug={gymSlug}
-      qrMedium={qrMedium}
-      googlePlayLabel="Get it on Google Play"
-      appStoreLabel="Get it on the App Store"
-    />,
-  );
+const LABELS: StoreButtonLabels = {
+  ios: 'Get it on the App Store',
+  android: 'Get it on Google Play',
+  update: 'Update the app',
+  locale: 'en-US',
+};
+
+function renderCta(gymSlug = 'boulderwelt-munich', qrMedium: GymQrMedium | null = null, labels = LABELS) {
+  return render(<GymInstallCta gymSlug={gymSlug} qrMedium={qrMedium} labels={labels} />);
 }
 
 /** What the app reads back from Play: the `referrer` param, split as a query string. */
@@ -27,8 +29,13 @@ function installReferrer(label: string): URLSearchParams {
   return new URLSearchParams(new URL(href).searchParams.get('referrer') ?? '');
 }
 
+/** The badge is the link's whole content, so its alt text is the link's name. */
 function anchorFor(label: string): HTMLAnchorElement | null {
-  return screen.getByText(label).closest('a');
+  return screen.getByRole('link', { name: label }) as HTMLAnchorElement;
+}
+
+function badgeOf(label: string): HTMLImageElement | null {
+  return anchorFor(label)?.querySelector('img') ?? null;
 }
 
 beforeEach(() => {
@@ -48,6 +55,21 @@ describe('GymInstallCta', () => {
     expect(anchorFor('Get it on the App Store')?.getAttribute('href')).toBe(buildStoreUrl('ios', storeLink));
   });
 
+  it('ships both badges, with their links, in the server HTML', () => {
+    const html = renderToString(<GymInstallCta gymSlug="boulderwelt-munich" qrMedium="poster" labels={LABELS} />);
+    const page = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
+    const storeLink = { placement: 'gym-page', gymSlug: 'boulderwelt-munich', qrMedium: 'poster' } as const;
+
+    expect([...page.querySelectorAll('a[data-store-badge]')].map((link) => link.getAttribute('href'))).toEqual([
+      buildStoreUrl('ios', storeLink),
+      buildStoreUrl('android', storeLink),
+    ]);
+    expect([...page.querySelectorAll('a[data-store-badge] > img')].map((image) => image.getAttribute('alt'))).toEqual([
+      'Get it on the App Store',
+      'Get it on Google Play',
+    ]);
+  });
+
   it('opens both stores in a new tab without leaking the opener', () => {
     renderCta();
 
@@ -58,13 +80,32 @@ describe('GymInstallCta', () => {
     }
   });
 
-  it('gives the first store the primary action and keeps the alternative visible', () => {
+  it('shows the official store badges as a pair: black, 44px, App Store first', () => {
     renderCta();
-    const playClasses = anchorFor('Get it on Google Play')?.className ?? '';
-    const appStoreClasses = anchorFor('Get it on the App Store')?.className ?? '';
-    expect(appStoreClasses).toContain('MuiButton-contained');
-    expect(playClasses).toContain('MuiButton-outlined');
+
     expect(screen.getAllByRole('link')[0]).toBe(anchorFor('Get it on the App Store'));
+    // A pair is always black: Apple allows its white badge only when it stands alone.
+    expect(badgeOf('Get it on the App Store')?.getAttribute('src')).toBe(
+      '/images/store-badges/app-store-black-en-US.svg',
+    );
+    expect(badgeOf('Get it on Google Play')?.getAttribute('src')).toBe('/images/store-badges/google-play-en-US.svg');
+    for (const label of ['Get it on the App Store', 'Get it on Google Play']) {
+      expect(badgeOf(label)?.getAttribute('height')).toBe('44');
+      expect(badgeOf(label)?.getAttribute('alt')).toBe(label);
+      // Neither is dressed as the primary: the look must not tilt the platform split.
+      expect(anchorFor(label)?.className).not.toContain('MuiButton');
+      expect(anchorFor(label)?.hasAttribute('aria-label')).toBe(false);
+    }
+    expect(
+      [...document.querySelectorAll('a[data-store-badge]')].map((link) => link.getAttribute('data-store-badge')),
+    ).toEqual(['ios', 'android']);
+  });
+
+  it("shows the badges in the page's language", () => {
+    renderCta('boulderwelt-munich', null, { ...LABELS, locale: 'fr' });
+
+    expect(badgeOf('Get it on the App Store')?.getAttribute('src')).toBe('/images/store-badges/app-store-black-fr.svg');
+    expect(badgeOf('Get it on Google Play')?.getAttribute('src')).toBe('/images/store-badges/google-play-fr.svg');
   });
 
   it('fires App Install Click with the gym-page placement and slug for Play', () => {

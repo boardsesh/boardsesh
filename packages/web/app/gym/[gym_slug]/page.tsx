@@ -39,6 +39,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
 import { gymIsIndexableVenue } from '@/app/lib/seo/gym-index-eligibility';
 import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
@@ -329,7 +330,11 @@ export default async function GymPage(props: GymRouteProps) {
     );
   }
 
-  const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
+  const [{ t }, { t: tBoards }, storeLabels] = await Promise.all([
+    getServerTranslation('kiosk'),
+    getServerTranslation('boards'),
+    getStoreButtonLabels(),
+  ]);
   const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
@@ -646,12 +651,7 @@ export default async function GymPage(props: GymRouteProps) {
               <Typography variant="body2" sx={{ mb: 1.5, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
                 {t('gymPage.install.body', { gymName: gym.name })}
               </Typography>
-              <GymInstallCta
-                gymSlug={gym.slug || gym_slug}
-                qrMedium={qrLanding?.medium ?? null}
-                googlePlayLabel={t('gymPage.install.googlePlay')}
-                appStoreLabel={t('gymPage.install.appStore')}
-              />
+              <GymInstallCta gymSlug={gym.slug || gym_slug} qrMedium={qrLanding?.medium ?? null} labels={storeLabels} />
             </Box>
           </Box>
           {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
