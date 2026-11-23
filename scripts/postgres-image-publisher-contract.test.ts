@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -705,5 +706,31 @@ describe('development database snapshot reader default', () => {
     expect(configuredBase).toBe('https://snapshots.boardsesh.com');
     expect(dockerfile).toContain('--snapshot-base-url "$SNAPSHOT_BASE_URL"');
     expect(dockerfile).toContain('ENV SNAPSHOT_BASE_URL=${SNAPSHOT_BASE_URL}');
+  });
+});
+
+describe('development database standalone dependencies', () => {
+  it('removes every workspace dependency before installing the isolated seed package', () => {
+    const dockerfile = readFileSync(resolve(REPOSITORY_ROOT, 'packages/db/docker/Dockerfile.dev-db'), 'utf8');
+    const manifestSource = readFileSync(resolve(REPOSITORY_ROOT, 'packages/db/package.json'), 'utf8');
+    const stripCommand = dockerfile.match(/^\s+sed -i (.+) package\.json && \\$/m)?.[1];
+    expect(stripCommand).toBeDefined();
+    const expressions = [...stripCommand!.matchAll(/-e '([^']+)'/g)].flatMap((expression) => ['-e', expression[1]]);
+    const standaloneManifest = requireRecord(
+      JSON.parse(execFileSync('sed', expressions, { input: manifestSource, encoding: 'utf8' })),
+      'standalone seed package',
+    );
+    const sourceManifest = requireRecord(JSON.parse(manifestSource), 'database package');
+
+    for (const section of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+      if (sourceManifest[section] === undefined) continue;
+      const dependencies = requireRecord(sourceManifest[section], section);
+      const expected = Object.fromEntries(
+        Object.entries(dependencies).filter(
+          ([name, version]) => name !== 'sharp' && !(typeof version === 'string' && version.startsWith('workspace:')),
+        ),
+      );
+      expect(standaloneManifest[section]).toEqual(expected);
+    }
   });
 });
