@@ -677,8 +677,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.gymBySlug': 'the same gym row by slug',
   'Query.gymMembers': 'the gym roster',
   'Query.strayBoardsForGym': 'boards NEAR a gym and not linked to it; the seeded wall is linked',
-  'Query.gymStats':
-    'gym-edit-gated aggregates; the one query that returns a climb NAME carries the predicate (see #5462)',
   'Query.gymKiosk': 'kiosk configuration, and the seed creates none',
   'Query.gymKiosks': 'kiosk configuration, and the seed creates none',
   'Query.holdOutlines': 'community-admin only, and it reads the hold catalogue rather than climbs',
