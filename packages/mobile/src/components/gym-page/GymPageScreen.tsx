@@ -103,6 +103,15 @@ export default function GymPageScreen() {
 
   const gymQuery = useGymPageGym(param);
   const gym = gymQuery.data ?? null;
+  // A slug link reads `['gymBySlug', slug]`, which the writes don't invalidate.
+  // Once it resolves, switch the page to the uuid read so every write that
+  // refreshes `['gym', uuid]` refreshes this page too.
+  const resolvedUuid = gym?.uuid ?? null;
+  useEffect(() => {
+    if (resolvedUuid !== null && param !== null && param !== resolvedUuid) {
+      router.setParams({ gym: resolvedUuid });
+    }
+  }, [resolvedUuid, param, router]);
   // A paused or failed read with nothing to show is the placard, never a spinner.
   const offline = useOfflineQueryState({
     status: gymQuery.status,
@@ -178,11 +187,14 @@ function GymPageContent({
   const effectiveOffline = useConnectivityField(selectEffectiveOffline);
 
   // Who is looking. The stored id answers before the profile does, and offline.
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const viewerId = isAuthenticated ? (profile?.id ?? storedUserId) : undefined;
-  const viewer = useMemo<GymPageViewer>(() => ({ isAuthenticated, userId: viewerId }), [isAuthenticated, viewerId]);
+  const viewer = useMemo<GymPageViewer>(
+    () => ({ isAuthenticated, userId: viewerId, authResolved: !authLoading }),
+    [isAuthenticated, viewerId, authLoading],
+  );
 
   const pendingClaimQuery = useGymPendingClaim(gym.slug ?? null, shouldLoadPendingClaim(gym, viewer));
   const pendingClaim = pendingClaimQuery.data ?? null;
@@ -205,7 +217,12 @@ function GymPageContent({
       }),
     [boards, gym.name, activeBoard?.uuid, viewerId, gymLabelOptions],
   );
-  const boardsState: GymBoardsState = boardsQuery.isError ? 'error' : boardsQuery.isPending ? 'loading' : 'ready';
+  // Cached-roster placeholder rows are not the gym's list: the count waits for the server.
+  const boardsState: GymBoardsState = boardsQuery.isError
+    ? 'error'
+    : boardsQuery.isPending || boardsQuery.isPlaceholderData
+      ? 'loading'
+      : 'ready';
   const boardMenu = useGymBoardMenu({
     gymUuid: gym.uuid,
     gymName: gym.name,
@@ -229,7 +246,7 @@ function GymPageContent({
 
   // --- analytics: once per gym per visit, after the viewer's role is known ---
   const viewedGymRef = useRef<string | null>(null);
-  const identityResolved = !isAuthenticated || viewerId !== undefined;
+  const identityResolved = !authLoading && (!isAuthenticated || viewerId !== undefined);
   useEffect(() => {
     if (!identityResolved || viewedGymRef.current === gym.uuid) return;
     viewedGymRef.current = gym.uuid;
@@ -252,6 +269,7 @@ function GymPageContent({
     // viewer staff, which the gym read answers.
     void queryClient.invalidateQueries({ queryKey: gymPendingClaimQueryKey(gym.slug ?? null) });
     void queryClient.invalidateQueries({ queryKey: ['gym', gym.uuid] });
+    void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
   }, [queryClient, gym.slug, gym.uuid]);
 
   // --- actions ---

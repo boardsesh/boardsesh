@@ -67,7 +67,7 @@ export type Gym = {
   ownerAvatarUrl?: string | null;
   name: string;
   description?: string | null;
-  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  /** Opening hours as free text the gym maintains itself, line breaks kept (no structured per-day model). */
   hours?: string | null;
   /** ISO timestamp of the last time someone with edit access confirmed `hours` — shown publicly so a stale schedule reads as stale. */
   hoursUpdatedAt?: string | null;

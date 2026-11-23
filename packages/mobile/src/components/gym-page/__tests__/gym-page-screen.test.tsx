@@ -19,7 +19,7 @@ type Actions = {
   onStartRow: (row: string) => void;
 };
 
-const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), setParams: vi.fn() }));
 const trackMock = vi.hoisted(() => vi.fn());
 const openUrlMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const scrollToIndex = vi.hoisted(() => vi.fn());
@@ -29,6 +29,7 @@ const screenOptions = vi.hoisted(() => ({ title: undefined as string | undefined
 const state = vi.hoisted(() => ({
   params: { gym: 'gym-uuid-1' } as Record<string, string | undefined>,
   isAuthenticated: true,
+  authLoading: false,
   profileId: 'climber-1' as string | undefined,
   gymQuery: {
     data: undefined as Gym | null | undefined,
@@ -111,7 +112,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/open-external-link', () => ({ openValidatedUrl: openUrlMock }));
 vi.mock('../../../lib/spray/use-spray-label-options', () => ({ useSprayLabelOptions: () => ({}) }));
 vi.mock('../../../providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: state.isAuthenticated }),
+  useAuth: () => ({ isAuthenticated: state.isAuthenticated, isLoading: state.authLoading }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#fff', secondaryLabel: '#666' } }),
@@ -233,6 +234,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.params = { gym: 'gym-uuid-1' };
   state.isAuthenticated = true;
+  state.authLoading = false;
   state.profileId = 'climber-1';
   state.gymQuery = { ...state.gymQuery, data: makeGym(), status: 'success', isPending: false };
   state.boards = { ...state.boards, data: [makeBoard('b1', 'Crux - Kilter'), makeBoard('b2', 'Crux - Tension')] };
@@ -282,6 +284,20 @@ describe('GymPageScreen', () => {
     state.profileId = undefined;
     render(<GymPageScreen />);
     expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('holds the view and the log-in card while auth is still restoring', () => {
+    state.isAuthenticated = false;
+    state.authLoading = true;
+    render(<GymPageScreen />);
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('block-claim-signIn')).toBeNull();
+  });
+
+  it('moves a slug-opened page onto the uuid read once the gym resolves', () => {
+    state.params = { gym: 'crux-gym' };
+    render(<GymPageScreen />);
+    expect(routerMock.setParams).toHaveBeenCalledWith({ gym: makeGym().uuid });
   });
 
   it('opens the claim sheet in this route', () => {

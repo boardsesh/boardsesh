@@ -210,6 +210,7 @@ export function useGymBoardMenu({
         // `deleteBoard` refreshes the climber's own lists; this list is the gym's.
         void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
         void queryClient.invalidateQueries({ queryKey: ['gym', gymUuid] });
+        void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
         showToast(t('mobile.manage.deleteSuccess', { name: board.name }), 'success');
       } catch {
         showToast(t('mobile.manage.deleteError'), 'error');

@@ -17,7 +17,7 @@ import { GYM_HOURS_MAX_LENGTH } from '@boardsesh/shared-schema';
 export type GymFormSeed = {
   name: string;
   description: string;
-  /** The opening hours line, one free-text line the gym keeps itself. */
+  /** Free-text opening hours; line breaks are kept and shown as typed. */
   hours: string;
   address: string;
   website: string;

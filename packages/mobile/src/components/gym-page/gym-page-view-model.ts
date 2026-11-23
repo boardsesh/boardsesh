@@ -27,6 +27,8 @@ export type GymPageViewer = {
   isAuthenticated: boolean;
   /** The signed-in climber's id; undefined while it resolves or with no session. */
   userId: string | undefined;
+  /** False while the auth provider is still restoring the session; `isAuthenticated` is not yet a fact. Defaults to true. */
+  authResolved?: boolean;
 };
 
 /** The run-by pill under the gym's name. Staff see their own role instead of the listing state. */
@@ -187,7 +189,9 @@ export function deriveGymPageViewModel(
 ): GymPageViewModel {
   const viewerRole = gymViewerRole(gym, viewer);
   const staffRole = staffRoleOf(viewerRole);
-  const claimCard = claimCardFor(gym, viewerRole, staffRole, pendingClaim);
+  // A session still being restored reads as signed out; don't flash the log-in card.
+  const claimCard: GymClaimCard =
+    viewer.authResolved === false ? 'hidden' : claimCardFor(gym, viewerRole, staffRole, pendingClaim);
   return {
     viewerRole,
     staffRole,
@@ -263,7 +267,8 @@ export function buildGymPageItems<Board extends { key: string }>({
   items.push({
     kind: 'boardsHeader',
     key: 'boardsHeader',
-    count: showRows || boardsState === 'ready' ? boards.length : null,
+    // Rows from the cached roster are placeholders while 'loading': not the gym's count yet.
+    count: boardsState !== 'loading' && (showRows || boardsState === 'ready') ? boards.length : null,
   });
   if (showRows) {
     boards.forEach((board, index) => {
