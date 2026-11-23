@@ -65,8 +65,8 @@ appear slightly younger than six hours and skip every other run. Force never
 bypasses cron authentication, locking, validation, or the database timeout.
 `skipped: "fresh"` and `skipped: "locked"` are successful outcomes. The web can
 bootstrap a missing or stale row with the same mutation after serving its response.
-Deploy the backend first, call the mutation once before deploying the web reader,
-then deploy the scheduler. Manual bootstrap through backend `/graphql` uses the
+Deploy the backend and scheduler first, call the mutation once, then deploy the
+web reader. Manual bootstrap through backend `/graphql` uses the
 cron bearer and this mutation:
 
 ```json
