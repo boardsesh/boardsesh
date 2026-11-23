@@ -293,19 +293,26 @@ export const GET_GYM_BOARDS_FOR_LISTING = gql`
 
 /**
  * The gym's boards for Manage gym → Boards, which says who put each one there
- * ("Added by Sam", "Added by you", "From public board data").
+ * ("Added by Sam", "Added by you", "From public board data") and which ones
+ * climbers reported.
  *
  * A separate document because `ownerDisplayName` must stay out of
  * `GYM_BOARD_FIELDS`: the anonymous leaderboard embed selects that fragment,
  * and a climber's name has no business in an unauthenticated payload. The
  * server still applies the owner's privacy, so `ownerId` and the name come back
  * null for a climber whose activity the viewer can't see.
+ *
+ * `openReportCount` is the waiting reports this viewer can act on (null for
+ * anyone who can act on none), for the "Reported" chip
+ * (docs/product/directory-reports.md). Only www selects this document, and
+ * it ships after the backend that answers the field.
  */
 export const GET_GYM_BOARDS_FOR_MANAGE = gql`
   query GetGymBoardsForManage($gymUuid: ID!) {
     gymBoards(gymUuid: $gymUuid) {
       ${GYM_BOARD_FIELDS}
       ownerDisplayName
+      openReportCount
     }
   }
 `;

@@ -163,12 +163,16 @@ export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
  *  - `report-listing` — belongs to #4385 and is out of scope for this epic tier.
  *    Report-a-DUPLICATE is a different, existing CTA and is kept.
  *
+ * `report-problem` is Report a problem (the gym's own button or a board row's
+ * flag), which replaces Report a duplicate while the `directory-reports` flag is
+ * on. `report-duplicate` keeps its call site for as long as the flag can be off.
+ *
  * `manage` (GymPageManageButton, editors only) is also a real gym-page button
  * but is intentionally not a member: it is not part of #4374's vocabulary, and
  * it is an owner action rather than a step in the discovery funnel. Add it here
  * with its own comment if a later PR needs it measured.
  */
-export type GymPageCta = 'follow' | 'kiosk' | 'website' | 'report-duplicate';
+export type GymPageCta = 'follow' | 'kiosk' | 'website' | 'report-duplicate' | 'report-problem';
 
 /**
  * Tabs of the gym management console.
