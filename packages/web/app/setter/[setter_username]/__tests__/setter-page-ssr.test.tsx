@@ -387,7 +387,7 @@ describe('the setter front door hero, cards and rows', () => {
     expect(html.match(/<h1[\s>]/g) ?? []).toHaveLength(1);
   });
 
-  it("draws page one's three most-sent climbs as lazy board art with reserved boxes", async () => {
+  it("draws page one's three most-sent climbs as board art with reserved boxes, the first one eager", async () => {
     setterData.value = pageData(FIVE_CLIMBS);
 
     const html = await render();
@@ -397,10 +397,18 @@ describe('the setter front door hero, cards and rows', () => {
     expect(html).toContain('setter.mostSent.heading');
     expect(images).toHaveLength(3);
     for (const image of images) {
-      expect(image).toContain('loading="lazy"');
       expect(image).toMatch(/width="\d+"/);
       expect(image).toMatch(/height="\d+"/);
       expect(image).toContain('frames=p1080r15');
+    }
+    // The first card is in the first screen at 390px and 1440px: it is the
+    // page's LCP candidate, so it loads now and first. The other two wait.
+    const [first, ...rest] = images;
+    expect(first).toMatch(/fetchPriority="high"/i);
+    expect(first).not.toContain('loading="lazy"');
+    for (const image of rest) {
+      expect(image).toContain('loading="lazy"');
+      expect(image).not.toMatch(/fetchPriority/i);
     }
   });
 

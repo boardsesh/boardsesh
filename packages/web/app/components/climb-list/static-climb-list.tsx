@@ -104,6 +104,13 @@ export type StaticClimbListProps = {
    * non-virtualized path reads it: the virtualizer measures one row per line.
    */
   columns?: 1 | 2;
+  /**
+   * Ask for the first row's thumbnail at `fetchpriority="high"` (default): on a
+   * list page it is the largest thing in the first screen. A page that puts
+   * bigger art above the list (the setter's most-sent cards) turns it off, so
+   * the two do not compete for the first bytes.
+   */
+  prioritizeFirstRow?: boolean;
 };
 
 const sentinelBoxSx = { minHeight: `${themeTokens.spacing[5]}px` };
@@ -152,6 +159,7 @@ type SharedRowProps = {
   rowVariant: StaticClimbRowVariant;
   showSetter: boolean;
   showAngle: boolean;
+  prioritizeFirstRow: boolean;
 };
 
 export default function StaticClimbList({
@@ -177,6 +185,7 @@ export default function StaticClimbList({
   showSetter = true,
   showAngle = false,
   columns = 1,
+  prioritizeFirstRow = true,
 }: StaticClimbListProps) {
   // Read once at list level: ClimbThumbnail takes the pathname as a prop
   // rather than each row paying for its own context lookup.
@@ -201,6 +210,7 @@ export default function StaticClimbList({
     rowVariant,
     showSetter,
     showAngle,
+    prioritizeFirstRow,
   };
 
   return (
@@ -260,6 +270,7 @@ function PlainRows({
   rowVariant,
   showSetter,
   showAngle,
+  prioritizeFirstRow,
   columns,
 }: SharedRowProps & { columns: 1 | 2 }) {
   return (
@@ -284,7 +295,7 @@ function PlainRows({
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
               pathname={pathname}
               logbook={logbook}
-              fetchPriority={index === 0 ? 'high' : undefined}
+              fetchPriority={prioritizeFirstRow && index === 0 ? 'high' : undefined}
               variant={rowVariant}
               showSetter={showSetter}
               showAngle={showAngle}
@@ -334,6 +345,7 @@ function VirtualizedRows({
   rowVariant,
   showSetter,
   showAngle,
+  prioritizeFirstRow,
   hasMore,
   isFetching,
   onLoadMore,
@@ -419,7 +431,7 @@ function VirtualizedRows({
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
               pathname={pathname}
               logbook={logbook}
-              fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
+              fetchPriority={prioritizeFirstRow && virtualItem.index === 0 ? 'high' : undefined}
               variant={rowVariant}
               showSetter={showSetter}
               showAngle={showAngle}

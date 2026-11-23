@@ -27,7 +27,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
+// Renders only the image priority it was asked for, so the first-row priority is readable off the HTML.
+vi.mock('@/app/components/board-renderer/board-image-layers', () => ({
+  default: ({ fetchPriority }: { fetchPriority?: string }) => <i data-fetch-priority={fetchPriority ?? 'auto'} />,
+}));
 vi.mock('@/app/components/climb-card/climb-title', () => ({
   default: ({ climb }: { climb: { name?: string } }) => <span>{climb.name}</span>,
 }));
@@ -199,4 +202,25 @@ it('keeps the initial virtual window in document flow before JavaScript can meas
     expect(row.style.transform).toBe('');
   }
   expect(rows[0].parentElement?.style.height).toBe('');
+});
+
+it("asks for the first row's thumbnail at high priority, unless the page has bigger art above the list", () => {
+  const priorities = (html: string) => [...html.matchAll(/data-fetch-priority="(\w+)"/g)].map((match) => match[1]);
+
+  const byDefault = renderToString(
+    <StaticClimbList climbs={twentyClimbs} boardDetails={makeBoardDetails()} virtualize={false} />,
+  );
+  expect(priorities(byDefault)[0]).toBe('high');
+  expect(priorities(byDefault).filter((priority) => priority === 'high')).toHaveLength(1);
+
+  const yielding = renderToString(
+    <StaticClimbList
+      climbs={twentyClimbs}
+      boardDetails={makeBoardDetails()}
+      virtualize={false}
+      prioritizeFirstRow={false}
+    />,
+  );
+  expect(priorities(yielding)).toHaveLength(20);
+  expect(priorities(yielding)).not.toContain('high');
 });

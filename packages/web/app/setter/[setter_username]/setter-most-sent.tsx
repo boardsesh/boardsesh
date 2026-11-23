@@ -60,7 +60,28 @@ const artSx = {
   backgroundColor: BOARD_FIELD_COLORS.dark,
   overflow: 'hidden',
   // `display` is left to the dark-art classes on a themed board's paired layers.
-  '& > img': { gridArea: '1 / 1', width: '100%', height: '100%', objectFit: 'contain', minWidth: 0, minHeight: 0 },
+  //
+  // A render that fails (a cold renderer queue can refuse one) must leave an
+  // empty board frame, not the browser's broken-image icon and painted alt
+  // text. Transparent text hides the alt; the `::after` covers the icon. A
+  // loaded image is a replaced element and never draws `::after`, so it only
+  // exists on a failed one. The alt stays in the markup for screen readers.
+  '& > img': {
+    gridArea: '1 / 1',
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    minWidth: 0,
+    minHeight: 0,
+    position: 'relative',
+    color: 'transparent',
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      backgroundColor: BOARD_FIELD_COLORS.dark,
+    },
+  },
 } as const;
 
 const metaSx = {
@@ -72,14 +93,24 @@ const metaSx = {
   marginTop: `${themeTokens.spacing[3]}px`,
 } as const;
 
-const nameSx = {
+// The name row is the card's anchor, and the anchor's own box is a full 44px
+// target. The ellipsis sits on the name inside it, so a long name shortens
+// without the anchor (or its focus ring) being clipped.
+const nameRowSx = {
+  display: 'flex',
+  alignItems: 'center',
+  minWidth: 0,
+  minHeight: 44,
+  color: 'var(--neutral-900)',
+  fontSize: { xs: themeTokens.typography.fontSize.base, md: themeTokens.typography.fontSize.lg },
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+} as const;
+
+const nameTextSx = {
   minWidth: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  color: 'var(--neutral-900)',
-  fontSize: { xs: themeTokens.typography.fontSize.base, md: themeTokens.typography.fontSize.lg },
-  fontWeight: themeTokens.typography.fontWeight.semibold,
 } as const;
 
 const rankSx = {
@@ -91,7 +122,8 @@ const rankSx = {
 
 // The whole card is the target, through the name's anchor: one link per card,
 // and the anchor text is the climb's name rather than an image.
-const stretchedLinkSx = {
+const nameLinkSx = {
+  ...nameRowSx,
   '&::after': {
     content: '""',
     position: 'absolute',
@@ -118,8 +150,9 @@ const subSx = {
  * server component cannot pass. The URLs come from the same
  * `buildBoardArtLayers` it uses, at full size and on the canonical config, so a
  * card's art is the image the climb's own page shows and is usually already in
- * the CDN. Every image is `loading="lazy"`: on a phone the cards sit below the
- * store buttons.
+ * the CDN. The first card is in the first screen at 390px and at 1440px, so it
+ * loads eagerly at high priority (the list below gives up its own first-row
+ * priority for it); the other two are lazy.
  *
  * The cards repeat climbs the list below also links, at the same URL.
  */
@@ -132,6 +165,9 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
     <PageSection title={t('setter.mostSent.heading')}>
       <Box component="ol" sx={cardsSx}>
         {picks.map(({ climb, boardDetails, linked }, index) => {
+          const isFirst = index === 0;
+          const loading = isFirst ? undefined : 'lazy';
+          const fetchPriority = isFirst ? 'high' : undefined;
           const boardLabel = boardTypeLabel(boardDetails.board_name);
           const displayName = climb.name || resolveClimbDisplayName(null, boardLabel);
           // The slug name exactly as `StaticClimbRow` builds it, so the card and
@@ -146,6 +182,16 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
             : null;
           const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames);
           const grade = formatVGrade(climb.difficulty, boardDetails.board_name);
+          const rankAndName = (
+            <>
+              <Box component="span" aria-hidden="true" sx={rankSx}>
+                {index + 1}
+              </Box>
+              <Box component="span" sx={nameTextSx}>
+                {displayName}
+              </Box>
+            </>
+          );
 
           return (
             <Box component="li" key={climb.uuid} sx={cardSx}>
@@ -159,7 +205,8 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
                       width={boardDetails.boardWidth}
                       height={boardDetails.boardHeight}
                       className={boardArtStyles.lightArt}
-                      loading="lazy"
+                      loading={loading}
+                      fetchPriority={fetchPriority}
                       decoding="async"
                     />
                     {/* eslint-disable-next-line @next/next/no-img-element -- static board photo, same as the climb page */}
@@ -169,7 +216,8 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
                       width={boardDetails.boardWidth}
                       height={boardDetails.boardHeight}
                       className={boardArtStyles.darkArt}
-                      loading="lazy"
+                      loading={loading}
+                      fetchPriority={fetchPriority}
                       decoding="async"
                     />
                   </React.Fragment>
@@ -185,31 +233,27 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
                     })}
                     width={boardDetails.boardWidth}
                     height={boardDetails.boardHeight}
-                    loading="lazy"
+                    loading={loading}
+                    fetchPriority={fetchPriority}
                     decoding="async"
                   />
                 ) : null}
               </Box>
               <Box sx={metaSx}>
-                <Box sx={nameSx}>
-                  <Box component="span" aria-hidden="true" sx={rankSx}>
-                    {index + 1}
-                  </Box>
-                  {href ? (
-                    <MuiLink
-                      component={LocaleLink}
-                      href={href}
-                      prefetch={false}
-                      underline="none"
-                      color="inherit"
-                      sx={stretchedLinkSx}
-                    >
-                      {displayName}
-                    </MuiLink>
-                  ) : (
-                    displayName
-                  )}
-                </Box>
+                {href ? (
+                  <MuiLink
+                    component={LocaleLink}
+                    href={href}
+                    prefetch={false}
+                    underline="none"
+                    color="inherit"
+                    sx={nameLinkSx}
+                  >
+                    {rankAndName}
+                  </MuiLink>
+                ) : (
+                  <Box sx={nameRowSx}>{rankAndName}</Box>
+                )}
                 {grade ? <GradeChip label={grade} /> : null}
                 <Typography component="p" sx={subSx}>
                   {t('setter.mostSent.meta', {

@@ -1,6 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import { getGradeColor, getGradeTextColor } from '@/app/lib/grade-colors';
+import { getGradeColor, getReadableGradeInk } from '@/app/lib/grade-colors';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type GradeChipProps = {
@@ -45,7 +45,9 @@ const unknownGradeSx = {
  */
 export default function GradeChip({ label }: GradeChipProps) {
   const background = getGradeColor(label);
-  const colourSx = background ? { backgroundColor: background, color: getGradeTextColor(background) } : unknownGradeSx;
+  const colourSx = background
+    ? { backgroundColor: background, color: getReadableGradeInk(background) }
+    : unknownGradeSx;
 
   return (
     <Box component="span" sx={{ ...chipSx, ...colourSx }}>

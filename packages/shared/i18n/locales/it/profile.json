@@ -200,7 +200,7 @@
       "heading": "I più ripetuti",
       "meta_one": "{{sends}} ripetizione · {{angle}}°",
       "meta_other": "{{sends}} ripetizioni · {{angle}}°",
-      "artAlt": "{{climbName}} illuminato sul {{board}} a {{angle}}°"
+      "artAlt": "{{climbName}} illuminato sul pannello {{board}} a {{angle}}°"
     },
     "climbsHeading": "Tutti i blocchi di {{name}}",
     "empty": "Nessun blocco in questa pagina.",

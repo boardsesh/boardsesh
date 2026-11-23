@@ -36,6 +36,10 @@ describe('GradeChip', () => {
     expect(style.color).toBe('rgb(255, 255, 255)');
   });
 
+  it('picks ink by contrast, so V5 red gets dark ink (white is 3.8:1 there)', () => {
+    expect(chipStyle('V5').style.color).toBe('rgb(0, 0, 0)');
+  });
+
   it('colours a Font label by its Font grade', () => {
     const fontColour = getFontGradeColor('6c+');
     if (!fontColour) throw new Error('6c+ has no Font colour');

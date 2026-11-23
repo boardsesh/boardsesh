@@ -83,19 +83,27 @@ const boardsAndFollowSx = {
 };
 
 // A board chip with no list to open is a label, so it takes the hairline, not
-// the control border.
+// the control border. 44px tall either way, the same height as the filter
+// chips, so the linked and plain chips line up and a link is a full target.
 const boardChipSx = {
+  height: 44,
+  borderRadius: 'var(--border-radius-full)',
   fontWeight: themeTokens.typography.fontWeight.semibold,
   borderColor: 'var(--separator)',
 };
 
 // One that opens the board's list looks like the control it is: violet label
-// on `--control-border`, the boundary every interactive outline uses.
+// on `--control-border`, the boundary every interactive outline uses, and a
+// 2px ring on keyboard focus rather than MUI's faint tint alone.
 const linkedBoardChipSx = {
   ...boardChipSx,
   borderColor: 'var(--control-border)',
   color: 'var(--color-primary)',
   '&:hover': { borderColor: 'var(--color-primary)' },
+  '&.Mui-focusVisible, &:focus-visible': {
+    outline: '2px solid var(--color-primary)',
+    outlineOffset: 2,
+  },
 };
 
 const navigationLinkSx = {
@@ -409,8 +417,9 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'common', 'climbs', 'settings']}>
-      {/* `wide`: the art cards and the two-column rows need the full 1200px;
-          the prose measure caps every block at 720px. */}
+      {/* `wide`: both widths share the 1200px frame, but `prose` caps each
+          direct child at 720px (`.prose > *`), and the art cards and the
+          two-column rows need the full frame. */}
       <PageShell
         width="wide"
         title={t('setter.seoHeading', { name: setterData.displayName })}
@@ -496,6 +505,10 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
               columns={2}
               showSetter={false}
               showAngle
+              // The first most-sent card is the page's largest image and sits
+              // in the first screen at 390px and 1440px; it takes the high
+              // priority the first row thumbnail would otherwise ask for.
+              prioritizeFirstRow={mostSentPicks.length === 0}
               emptyState={<Typography component="p">{t('setter.empty')}</Typography>}
             />
           ) : (

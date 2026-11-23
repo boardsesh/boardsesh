@@ -10,6 +10,9 @@ import {
   formatVGrade,
   V_GRADE_COLORS,
   FONT_GRADE_COLORS,
+  DEFAULT_GRADE_COLOR,
+  contrastRatio,
+  getReadableGradeInk,
 } from '../grade-colors';
 
 describe('Grade Colors', () => {
@@ -284,6 +287,33 @@ describe('Grade Colors', () => {
     it('returns undefined for unrecognized difficulty strings', () => {
       expect(getGradeTintColor('hard', 'session')).toBeUndefined();
       expect(getGradeTintColor('unknown', 'default')).toBeUndefined();
+    });
+  });
+
+  describe('getReadableGradeInk', () => {
+    it.each([
+      ...Object.entries(V_GRADE_COLORS).map(([grade, colour]) => [`V scale ${grade}`, colour] as const),
+      ...Object.entries(FONT_GRADE_COLORS).map(([grade, colour]) => [`Font scale ${grade}`, colour] as const),
+      ['the no-grade grey', DEFAULT_GRADE_COLOR] as const,
+    ])('puts readable ink on %s (%s)', (_grade, colour) => {
+      expect(contrastRatio(getReadableGradeInk(colour), colour)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('fixes the colours the YIQ split gets wrong: V5 red takes dark ink', () => {
+      expect(getGradeTextColor(V_GRADE_COLORS.V5)).toBe('#FFFFFF');
+      expect(contrastRatio('#FFFFFF', V_GRADE_COLORS.V5)).toBeLessThan(4.5);
+      expect(getReadableGradeInk(V_GRADE_COLORS.V5)).toBe('#000000');
+    });
+
+    it('keeps white on the dark purples', () => {
+      expect(getReadableGradeInk(V_GRADE_COLORS.V12)).toBe('#FFFFFF');
+    });
+  });
+
+  describe('contrastRatio', () => {
+    it('matches the WCAG end points', () => {
+      expect(contrastRatio('#000000', '#FFFFFF')).toBe(21);
+      expect(contrastRatio('#808080', '#808080')).toBe(1);
     });
   });
 });
