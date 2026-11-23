@@ -17,6 +17,7 @@ import {
   GYM_CLAIM_LIMIT_CODE,
   GYM_CLAIM_SUPERSEDED_CODE,
 } from '../graphql/resolvers/social/gym-claims';
+import { GYM_RUN_BY_STAFF_CODE } from '@boardsesh/gym-claim';
 import { socialGymDuplicateMutations } from '../graphql/resolvers/social/gym-duplicates';
 import { socialGymOwnerReassignMutations } from '../graphql/resolvers/social/gym-owner-reassign';
 import {
@@ -1516,6 +1517,80 @@ describe('canClaimByDomain advertises the requestGymClaim domain gate without be
   });
 });
 
+// PR 7 (docs/product/gym-board-governance.md): a gym its staff run can't be
+// claimed by anyone. A dispute goes through Report a problem.
+describe('a gym its staff run cannot be claimed (RUN_BY_GYM)', () => {
+  // OWNER runs the shared gym through an approved claim: RUN_BY_GYM.
+  const runByClaim = () => insertClaim({ gymId, claimantUserId: OWNER, method: 'admin', status: 'approved' });
+
+  it('canClaim is false for every viewer, and the listing says the staff run it', async () => {
+    await runByClaim();
+    const asClimber = await socialGymQueries.gym(null, { gymUuid }, authCtx(PLAIN_USER));
+    expect(asClimber!.listingState).toBe('RUN_BY_GYM');
+    expect(asClimber!.canClaim).toBe(false);
+    expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(CLAIMANT)))!.canClaim).toBe(false);
+  });
+
+  it('a gym a climber added (no claim, no handover) stays claimable', async () => {
+    const asClimber = await socialGymQueries.gym(null, { gymUuid }, authCtx(PLAIN_USER));
+    expect(asClimber!.listingState).toBe('CLIMBER_LISTED');
+    expect(asClimber!.canClaim).toBe(true);
+  });
+
+  it('requestGymClaim refuses on the admin path with GYM_RUN_BY_STAFF, files nothing and mails nobody', async () => {
+    await runByClaim();
+    const before = await claimRowCount(gymId);
+    const error = await socialGymClaimMutations
+      .requestGymClaim(null, { input: { gymUuid, message: 'I run it now' } }, authCtx(CLAIMANT))
+      .then(
+        () => null,
+        (rejection: unknown) => rejection as GraphQLError,
+      );
+    expect(error).not.toBeNull();
+    expect(error!.extensions?.code).toBe(GYM_RUN_BY_STAFF_CODE);
+    expect(error!.message).toBe(
+      "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
+    );
+    expect(await claimRowCount(gymId)).toBe(before);
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
+  });
+
+  it('requestGymClaim refuses on the domain path too, before any email goes out', async () => {
+    const vouched = await insertGym({ ownerId: OWNER, name: 'Vouched Gym', website: 'https://www.vouchedgym.com' });
+    await insertClaim({ gymId: vouched.id, claimantUserId: OWNER, method: 'domain', status: 'approved' });
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: vouched.uuid, claimEmail: 'boss@vouchedgym.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: GYM_RUN_BY_STAFF_CODE } });
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('a gym our team handed to its owner counts as run by its staff', async () => {
+    await db.execute(sql`
+      INSERT INTO gym_owner_reassignments (gym_uuid, previous_owner_id, new_owner_id, reason, performed_by)
+      VALUES (${gymUuid}, ${SYSTEM_OWNER}, ${OWNER}, 'verified by phone', ${GLOBAL_ADMIN})
+    `);
+    expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(PLAIN_USER)))!.canClaim).toBe(false);
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid, message: 'mine' } }, authCtx(PLAIN_USER)),
+    ).rejects.toMatchObject({ extensions: { code: GYM_RUN_BY_STAFF_CODE } });
+  });
+
+  it("the owner's own approved claim on another gym doesn't make this one run by staff", async () => {
+    const other = await insertGym({ ownerId: OWNER, name: 'Other Gym' });
+    await insertClaim({ gymId: other.id, claimantUserId: OWNER, method: 'admin', status: 'approved' });
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid, message: 'I run this gym' } },
+      authCtx(CLAIMANT),
+    );
+    expect(result).toEqual({ status: 'admin_review' });
+  });
+});
+
 describe('requestGymClaim — admin-review path', () => {
   it('creates a pending admin claim + notifies the team when no email is given', async () => {
     const claimGym = await insertGym({ ownerId: OWNER, name: 'No Website Gym' });
@@ -2865,7 +2940,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
       let pendingClaimId: number;
       if (claimAfterHandover) {
         await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
-        pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
+        pendingClaimId = await queuedAdminClaimOnStaffRunGym(originalClaimGym, CLAIMANT);
       } else {
         pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
         await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
@@ -3005,6 +3080,17 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     return Number(pending!.id);
   };
 
+  // A claim waiting in the queue on a gym our team already handed to someone.
+  // requestGymClaim refuses to file one there (a gym its staff run can't be
+  // claimed, docs/product/gym-board-governance.md PR 7), but claims filed before
+  // that rule still wait for review, so the supersede checks still meet them.
+  const queuedAdminClaimOnStaffRunGym = async (gym: { id: number; uuid: string }, claimantUserId: string) => {
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: gym.uuid } }, authCtx(claimantUserId)),
+    ).rejects.toMatchObject({ extensions: { code: GYM_RUN_BY_STAFF_CODE } });
+    return insertClaim({ gymId: gym.id, claimantUserId, method: 'admin' });
+  };
+
   // Pause the real transaction, not its SQL results. Reading the backend PID
   // also fixes PostgreSQL's transaction-start clock before the interleaved
   // request, reproducing the reviewed now()-versus-commit ordering bug.
@@ -3122,7 +3208,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     const earlierClaim = await fileAdminClaim(claimGym.uuid, CLAIMANT);
 
     await reassignTo(claimGym.uuid, PRIOR_OWNER, CLAIMANT);
-    const freshClaim = await fileAdminClaim(claimGym.uuid, PLAIN_USER);
+    const freshClaim = await queuedAdminClaimOnStaffRunGym(claimGym, PLAIN_USER);
 
     // Closing the old claimant's row is legitimate, but does not move the gym.
     await expect(approveAsAdmin(earlierClaim)).resolves.toBe(true);
@@ -3358,7 +3444,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
   it('retains database timestamp precision when a claim follows a handover within the same millisecond', async () => {
     const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Submillisecond Ownership Order' });
     await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
-    const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+    const claimId = await queuedAdminClaimOnStaffRunGym(claimGym, CLAIMANT);
     await db
       .update(dbSchema.gymOwnerReassignments)
       .set({ createdAt: sql`timestamp '2026-09-20 01:00:00.123100'` })
@@ -3390,7 +3476,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
   });
 
-  it('expires a superseded domain link and lets the claimant request and verify a fresh one', async () => {
+  it('expires a superseded domain link, and the handed-over gym refuses a fresh claim', async () => {
     // The emailed link is a second, unattended way into the same transfer. It
     // reports `superseded` rather than `used` — the link was never spent.
     const claimGym = await insertGym({
@@ -3425,17 +3511,16 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
       gymClaimFieldResolvers.myPendingClaim({ uuid: claimGym.uuid }, {}, authCtx(CLAIMANT)),
     ).resolves.toBeNull();
 
+    // Our team handed the gym over, so its staff run it now and nobody can
+    // claim it again: a fresh link is refused before any email goes out.
     await expect(
       socialGymClaimMutations.requestGymClaim(
         null,
         { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@domain-superseded.com' } },
         authCtx(CLAIMANT),
       ),
-    ).resolves.toMatchObject({ status: 'email_sent' });
-    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
-    const freshToken = vi.mocked(sendGymClaimVerificationEmail).mock.calls[0][1];
-    expect(freshToken).not.toBe('superseded-token');
-    await expect(verifyGymClaimByToken(freshToken)).resolves.toMatchObject({ ok: true });
-    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    ).rejects.toMatchObject({ extensions: { code: GYM_RUN_BY_STAFF_CODE } });
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
   });
 });

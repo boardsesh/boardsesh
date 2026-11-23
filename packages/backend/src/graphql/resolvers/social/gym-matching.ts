@@ -9,6 +9,7 @@ import { FindSimilarGymsInputSchema } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader } from './roles';
+import { gymIdsRunByStaff } from './gym-run-by-staff';
 
 // ============================================
 // Shared gym-dedup matching helpers
@@ -477,9 +478,10 @@ async function providerOriginsByGymId(gymIds: number[]): Promise<Map<number, str
 
 /**
  * `isClaimable` per candidate for an authenticated viewer, batched: one
- * community-roles read + one member-roles read + one board-types read for ALL
- * candidates, instead of an N+1 `userCanEditGym` per card. Mirrors enrichGym's
- * `canClaim` — a viewer who cannot already edit a gym is the one who may claim it.
+ * community-roles read + one member-roles read + one board-types read + one
+ * run-by-staff read for ALL candidates, instead of an N+1 `userCanEditGym` per
+ * card. Mirrors enrichGym's `canClaim`: a viewer who cannot already edit a gym
+ * may claim it, unless its staff run it, which nobody may.
  */
 async function computeClaimableFlags(
   candidates: Array<Pick<GymNameMatch, 'id' | 'ownerId'>>,
@@ -497,7 +499,7 @@ async function computeClaimableFlags(
     return result;
   }
 
-  const [memberRows, boardTypeRows] = await Promise.all([
+  const [memberRows, boardTypeRows, runByStaff] = await Promise.all([
     db
       .select({ gymId: dbSchema.gymMembers.gymId, role: dbSchema.gymMembers.role })
       .from(dbSchema.gymMembers)
@@ -506,6 +508,7 @@ async function computeClaimableFlags(
       .selectDistinct({ gymId: dbSchema.userBoards.gymId, boardType: dbSchema.userBoards.boardType })
       .from(dbSchema.userBoards)
       .where(and(inArray(dbSchema.userBoards.gymId, gymIds), isNull(dbSchema.userBoards.deletedAt))),
+    gymIdsRunByStaff(gymIds),
   ]);
 
   const roleByGym = new Map<number, string>();
@@ -525,7 +528,7 @@ async function computeClaimableFlags(
     const canEditAsMember = memberRole === 'admin' || memberRole === 'editor';
     const boardTypes = boardTypesByGym.get(candidate.id) ?? [];
     const hasCommunityAccess = boardTypes.some((boardType) => rolesGrantAdminOrLeader(communityRoles, boardType));
-    result.set(candidate.id, !(isOwner || canEditAsMember || hasCommunityAccess));
+    result.set(candidate.id, !(isOwner || canEditAsMember || hasCommunityAccess || runByStaff.has(candidate.id)));
   }
   return result;
 }

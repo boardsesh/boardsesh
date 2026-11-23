@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { eq, ne, gt, gte, or, and, isNull, desc, asc, count, sql, inArray, lte } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
+import { isClaimableDomain, emailDomainMatchesWebsite, GYM_RUN_BY_STAFF_CODE } from '@boardsesh/gym-claim';
 import { db } from '../../../db/client';
 import { afterCommit, transactionWithAfterCommit, type DbTransaction } from '../../../db/after-commit';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -10,6 +10,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { requireAdmin } from './roles';
 import { gymClaimAutoApproveEnabled } from './community-settings';
 import { userCanEditGym } from './gyms';
+import { gymIdsRunByStaff } from './gym-run-by-staff';
 import { createGymManageAccessNotification } from './gym-notifications';
 import {
   autoApprovedClaimCondition,
@@ -1088,6 +1089,19 @@ export const socialGymClaimMutations = {
     // rejects exactly what the UI hides.
     if (await userCanEditGym(gym, userId)) {
       throw new Error('You already have edit access to this gym, so you cannot file an ownership claim here.');
+    }
+    // Nobody claims a gym its staff run (`listingState` RUN_BY_GYM): its owner
+    // holds an approved claim or got it from our team, so a second claim would
+    // only reopen a decision already made. Both clients hide the claim there;
+    // this is the same rule for an old build or a hand-made request. A dispute
+    // goes through Report a problem, which reaches our team.
+    if ((await gymIdsRunByStaff([gym.id])).has(gym.id)) {
+      throw new GraphQLError(
+        "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
+        {
+          extensions: { code: GYM_RUN_BY_STAFF_CODE },
+        },
+      );
     }
 
     const claimantName = await loadClaimantName(userId);
