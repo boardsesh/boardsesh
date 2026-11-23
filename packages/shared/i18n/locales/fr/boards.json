@@ -1699,7 +1699,8 @@
       "goneHint": "Démontée, remplacée, ou la salle a fermé",
       "wrongPlace": "Mauvaise salle ou mauvais lieu",
       "wrongPlaceHint": "Elle est ailleurs, ou c'est le mur de quelqu'un chez lui",
-      "other": "Autre chose"
+      "other": "Autre chose",
+      "relistRequest": "La remettre dans la salle"
     },
     "gymReasons": {
       "duplicate": "Listée deux fois",
@@ -1743,7 +1744,21 @@
     "relistAsk": "Demander à {{gym}} de la remettre",
     "relistAskHint": "Leur équipe l'a retirée de la salle. On leur demandera de la remettre.",
     "relistSent": "Demande envoyée. On te dira ce que l'équipe de {{gym}} décide.",
-    "relistAlready": "Tu l'as déjà demandé. On te dira ce que l'équipe de {{gym}} décide."
+    "relistAlready": "Tu l'as déjà demandé. On te dira ce que l'équipe de {{gym}} décide.",
+    "duplicateGymSearch": "Trouver l'autre fiche",
+    "gymSearchPlaceholder": "Nom de la salle",
+    "noMatches": "Aucune correspondance pour l'instant. Essaie un autre nom.",
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "retry": "Réessayer",
+    "loading": "Chargement",
+    "loadError": "Impossible de charger cette board. Réessaie.",
+    "signInTitle": "Connecte-toi pour signaler un problème",
+    "signInBody": "Connecte-toi et on te ramène directement ici.",
+    "boardListLink": "Un souci avec cette board ?",
+    "web": {
+      "noteRequiredLabel": "Explique ce qui ne va pas (10 caractères minimum)"
+    }
   },
   "reportReview": {
     "title": "Des grimpeurs ont signalé cette board",
@@ -1776,7 +1791,15 @@
     "keepPartial_one": "{{count}} signalement sur {{total}} a été fermé. Les autres ne sont pas passés. Réessaie.",
     "keepPartial_other": "{{count}} signalements sur {{total}} ont été fermés. Les autres ne sont pas passés. Réessaie.",
     "statusPill": "Signalée",
-    "open": "Voir les signalements"
+    "open": "Voir les signalements",
+    "review": "Examiner",
+    "duplicateOf": "Même board que {{board}}",
+    "inTeamQueue": "Notre équipe s'en occupe. Le signalement se ferme quand elle a tranché.",
+    "removeHint": "Elle disparaît de la page et des bornes de la salle",
+    "keepFailed": "Impossible de fermer le signalement. Réessaie.",
+    "empty": "Plus rien d'ouvert sur cette board.",
+    "back": "Retour",
+    "close": "Fermer"
   },
   "whoCanEdit": {
     "boardTitle": "Tu ne peux pas modifier cette board",
@@ -1793,6 +1816,8 @@
     "claimHint": "Si tu travailles ici, revendique-la et la fiche est à toi.",
     "claimGym": "Revendiquer {{gym}}",
     "claimThisGym": "Revendiquer cette salle",
-    "goBack": "Retour"
+    "goBack": "Retour",
+    "rule": "Qui l'a ajoutée peut la modifier. Une fois la salle revendiquée, son équipe aussi. Tout le monde peut signaler un problème.",
+    "backToGym": "Retour à {{gym}}"
   }
 }

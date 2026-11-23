@@ -213,7 +213,6 @@
     },
     "title": "管理 {{gymName}}",
     "backToGym": "返回岩馆页面",
-    "accessDenied": "你没有管理此岩馆的权限。",
     "tabs": {
       "kiosks": "展示终端",
       "branding": "品牌形象",

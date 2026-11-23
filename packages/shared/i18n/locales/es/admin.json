@@ -140,7 +140,8 @@
     "sprayWalls": "Datos de entrenamiento de Spraywalls",
     "boards": "Plafones registrados",
     "buildPlans": "Pedidos de packs de construcción",
-    "partnerApps": "Aplicaciones asociadas"
+    "partnerApps": "Aplicaciones asociadas",
+    "boardReports": "Reportes de plafones"
   },
   "buildPlans": {
     "title": "Pedidos de packs de construcción",
@@ -631,5 +632,80 @@
     "next": "Página siguiente",
     "active": "Activa",
     "suspended": "Suspendida"
+  },
+  "boardReports": {
+    "title": "Reportes de plafones y rocódromos",
+    "backToAdmin": "Volver al panel",
+    "description": "Reportes que nadie más puede resolver y cualquier reporte abierto desde hace 14 días. Primero los que nos llegan directamente, luego los más antiguos.",
+    "filters": {
+      "status": "Estado",
+      "kind": "Mostrar",
+      "kindAll": "Plafones y rocódromos",
+      "kindBoard": "Plafones",
+      "kindGym": "Rocódromos"
+    },
+    "status": {
+      "escalated": "Con nuestro equipo",
+      "open": "Con quien lo añadió o el equipo del rocódromo",
+      "fixed": "Corregido",
+      "removed": "Quitado",
+      "deleted": "Eliminado",
+      "kept": "Se queda como está",
+      "merged": "Fusionado"
+    },
+    "kind": {
+      "board": "Plafón",
+      "gym": "Rocódromo"
+    },
+    "chips": {
+      "sentToTeam": "Nos llegó directamente",
+      "waited": "Abierto 14 días"
+    },
+    "meta_one": "{{count}} persona · abierto {{age}}",
+    "meta_other": "{{count}} personas · abierto {{age}}",
+    "ageToday": "hoy",
+    "ageDays_one": "hace {{count}} día",
+    "ageDays_other": "hace {{count}} días",
+    "routedToLine": "Enviado a: {{recipients}}",
+    "routedTo": {
+      "creator": "quien lo añadió",
+      "gymStaff": "el equipo del rocódromo",
+      "admin": "nuestro equipo"
+    },
+    "duplicateOf": "Igual que {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Cuenta eliminada",
+    "closedOn": "Cerrado el {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Eliminar plafón",
+      "removeFromGym": "Quitar del rocódromo",
+      "hideGym": "Ocultar rocódromo de la búsqueda",
+      "keep": "Dejar como está",
+      "mergeGyms": "Fusionar en Rocódromos duplicados",
+      "openGym": "Abrir Gestionar rocódromo"
+    },
+    "confirm": {
+      "deleteTitle": "¿Eliminar {{board}} para todos?",
+      "deleteBody": "Desaparece para todos los que lo guardaron. Los encadenes registrados se quedan en sus diarios. El reporte se cierra como eliminado.",
+      "removeTitle": "¿Quitar {{board}} de {{gym}}?",
+      "removeBody": "Desaparece de la página, los kioscos y el mapa del rocódromo. Quien lo añadió lo conserva. El reporte se cierra como quitado.",
+      "hideTitle": "¿Ocultar {{gym}} de la búsqueda?",
+      "hideBody": "Deja de aparecer en el directorio de rocódromos y en la búsqueda. Su página sigue disponible para quien tenga el enlace. El reporte se cierra como quitado.",
+      "keepTitle": "¿Dejarlo como está?",
+      "keepBody": "El reporte se cierra y quienes lo enviaron sabrán que se mantuvo.",
+      "keepNoteLabel": "Una nota para ellos (opcional)",
+      "cancel": "Cancelar"
+    },
+    "snackbar": {
+      "deleted": "Plafón eliminado. El reporte está cerrado.",
+      "removed": "Quitado del rocódromo. El reporte está cerrado.",
+      "hidden": "Rocódromo oculto de la búsqueda. El reporte está cerrado.",
+      "kept": "Reporte cerrado.",
+      "failed": "No se pudo completar. Inténtalo de nuevo."
+    },
+    "empty": "No hay nada aquí.",
+    "error": "No se pudieron cargar los reportes. Inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "loadMore": "Cargar más"
   }
 }

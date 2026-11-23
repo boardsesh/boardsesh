@@ -213,7 +213,6 @@
     },
     "title": "Gestisci {{gymName}}",
     "backToGym": "Torna alla pagina della palestra",
-    "accessDenied": "Non hai il permesso di gestire questa palestra.",
     "tabs": {
       "kiosks": "Kiosk",
       "branding": "Brand",

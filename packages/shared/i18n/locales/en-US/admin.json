@@ -29,7 +29,8 @@
     "sprayWalls": "Spraywall training data",
     "boards": "Registered boards",
     "buildPlans": "Build-pack orders",
-    "partnerApps": "Partner apps"
+    "partnerApps": "Partner apps",
+    "boardReports": "Board reports"
   },
   "buildPlans": {
     "title": "Build-pack orders",
@@ -631,5 +632,80 @@
     "next": "Next page",
     "active": "Active",
     "suspended": "Suspended"
+  },
+  "boardReports": {
+    "title": "Board and gym reports",
+    "backToAdmin": "Back to admin",
+    "description": "Reports nobody else can act on, and any report still open after 14 days. Reports sent straight to us come first, then the oldest.",
+    "filters": {
+      "status": "Status",
+      "kind": "Showing",
+      "kindAll": "Boards and gyms",
+      "kindBoard": "Boards",
+      "kindGym": "Gyms"
+    },
+    "status": {
+      "escalated": "With our team",
+      "open": "With the creator or gym staff",
+      "fixed": "Fixed",
+      "removed": "Removed",
+      "deleted": "Deleted",
+      "kept": "Kept as it is",
+      "merged": "Merged"
+    },
+    "kind": {
+      "board": "Board",
+      "gym": "Gym"
+    },
+    "chips": {
+      "sentToTeam": "Sent straight to us",
+      "waited": "Open 14 days"
+    },
+    "meta_one": "{{count}} climber · opened {{age}}",
+    "meta_other": "{{count}} climbers · opened {{age}}",
+    "ageToday": "today",
+    "ageDays_one": "{{count}} day ago",
+    "ageDays_other": "{{count}} days ago",
+    "routedToLine": "Sent to: {{recipients}}",
+    "routedTo": {
+      "creator": "the creator",
+      "gymStaff": "gym staff",
+      "admin": "our team"
+    },
+    "duplicateOf": "Same as {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Deleted account",
+    "closedOn": "Closed {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Delete board",
+      "removeFromGym": "Remove from gym",
+      "hideGym": "Hide gym from search",
+      "keep": "Keep as it is",
+      "mergeGyms": "Merge in Duplicate gyms",
+      "openGym": "Open Manage gym"
+    },
+    "confirm": {
+      "deleteTitle": "Delete {{board}} for everyone?",
+      "deleteBody": "It disappears for every climber who saved it. Logged sends stay in their logbooks. The report closes as deleted.",
+      "removeTitle": "Remove {{board}} from {{gym}}?",
+      "removeBody": "It comes off the gym's page, kiosks and the map there. Whoever added it keeps it. The report closes as removed.",
+      "hideTitle": "Hide {{gym}} from search?",
+      "hideBody": "It stops showing in the gym directory and search. Its page stays up for anyone with the link. The report closes as removed.",
+      "keepTitle": "Keep it as it is?",
+      "keepBody": "The report closes and the climbers who sent it hear that it was kept.",
+      "keepNoteLabel": "A note for them (optional)",
+      "cancel": "Cancel"
+    },
+    "snackbar": {
+      "deleted": "Board deleted. The report is closed.",
+      "removed": "Removed from the gym. The report is closed.",
+      "hidden": "Gym hidden from search. The report is closed.",
+      "kept": "Report closed.",
+      "failed": "That didn't go through. Try again."
+    },
+    "empty": "Nothing here.",
+    "error": "Couldn't load reports. Try again.",
+    "retry": "Retry",
+    "loadMore": "Load more"
   }
 }

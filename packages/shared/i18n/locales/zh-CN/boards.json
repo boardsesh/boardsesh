@@ -1699,7 +1699,8 @@
       "goneHint": "已拆除、已更换，或岩馆已关闭",
       "wrongPlace": "岩馆或地点不对",
       "wrongPlaceHint": "它在别处，或者是某人的家庭岩壁",
-      "other": "其他"
+      "other": "其他",
+      "relistRequest": "重新加回岩馆"
     },
     "gymReasons": {
       "duplicate": "重复收录",
@@ -1743,7 +1744,21 @@
     "relistAsk": "请 {{gym}} 重新收录",
     "relistAskHint": "他们的工作人员把它从岩馆移除了。我们会请他们重新添加。",
     "relistSent": "已发出请求。{{gym}} 工作人员做出决定后，我们会告诉你。",
-    "relistAlready": "你已经请求过了。{{gym}} 工作人员做出决定后，我们会告诉你。"
+    "relistAlready": "你已经请求过了。{{gym}} 工作人员做出决定后，我们会告诉你。",
+    "duplicateGymSearch": "查找另一条岩馆记录",
+    "gymSearchPlaceholder": "岩馆名称",
+    "noMatches": "还没有匹配结果，请换个名称试试。",
+    "cancel": "取消",
+    "done": "完成",
+    "retry": "重试",
+    "loading": "正在加载",
+    "loadError": "无法加载这块训练板，请重试。",
+    "signInTitle": "登录后报告问题",
+    "signInBody": "登录后我们会直接带你回到这里。",
+    "boardListLink": "这块训练板有问题？",
+    "web": {
+      "noteRequiredLabel": "说明哪里不对（至少 10 个字符）"
+    }
   },
   "reportReview": {
     "title": "攀岩者举报了这块训练板",
@@ -1776,7 +1791,15 @@
     "keepPartial_one": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
     "keepPartial_other": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
     "statusPill": "已举报",
-    "open": "查看举报"
+    "open": "查看举报",
+    "review": "查看",
+    "duplicateOf": "与 {{board}} 是同一块",
+    "inTeamQueue": "我们的团队正在处理，处理完后会关闭此报告。",
+    "removeHint": "它会从岩馆的页面和展示终端上消失",
+    "keepFailed": "无法关闭报告，请重试。",
+    "empty": "这块训练板已没有待处理的报告。",
+    "back": "返回",
+    "close": "关闭"
   },
   "whoCanEdit": {
     "boardTitle": "你不能编辑这块训练板",
@@ -1793,6 +1816,8 @@
     "claimHint": "如果你在这里工作，认领后这条记录就由你管理。",
     "claimGym": "认领 {{gym}}",
     "claimThisGym": "认领这家岩馆",
-    "goBack": "返回"
+    "goBack": "返回",
+    "rule": "谁添加的谁就能修改。岩馆被认领后，岩馆工作人员也能修改。其他人可以报告问题。",
+    "backToGym": "返回 {{gym}}"
   }
 }

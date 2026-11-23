@@ -1940,6 +1940,9 @@ importers:
       '@boardsesh/db':
         specifier: workspace:*
         version: link:../db
+      '@boardsesh/directory-moderation':
+        specifier: workspace:*
+        version: link:../shared/directory-moderation
       '@boardsesh/email':
         specifier: workspace:*
         version: link:../shared/email

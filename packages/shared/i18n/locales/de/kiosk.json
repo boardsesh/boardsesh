@@ -213,7 +213,6 @@
     },
     "title": "{{gymName}} verwalten",
     "backToGym": "Zurück zur Hallenseite",
-    "accessDenied": "Du hast keine Berechtigung, diese Halle zu verwalten.",
     "tabs": {
       "kiosks": "Kioske",
       "branding": "Branding",
