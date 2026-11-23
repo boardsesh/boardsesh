@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vite-plus/test';
 import { brandCtaSx, brandCtaOutlinedSx, type BrandCtaSize } from '../brand-cta';
 
 /**
- * These two recipes exist because the same pill was hand-written at nine call
+ * These two recipes exist because the same button was hand-written at nine call
  * sites and drifted. The drift was never in the colours — it was in the SIZE:
  * the filled store button took `px: 4` while the outlined one beside it took
  * `px: 3` and a smaller font, so a pair that was meant to read as one control
@@ -41,9 +41,11 @@ describe('the brand CTA pair shares one size ramp', () => {
     expect(brandCtaOutlinedSx({ size: 'medium' })).toHaveProperty('minHeight', 44);
   });
 
-  it('gives both recipes the same pill radius and un-shouted label', () => {
+  it('gives both recipes the same 10px corner and un-shouted label', () => {
+    // A rounded rectangle, not a pill: the round-ended version read as a capsule
+    // next to the page's 12px cards and 10px inputs.
     for (const recipe of [brandCtaSx(), brandCtaOutlinedSx()]) {
-      expect(recipe.borderRadius).toBe('9999px');
+      expect(recipe.borderRadius).toBe('10px');
       expect(recipe.textTransform).toBe('none');
     }
   });
@@ -67,7 +69,7 @@ describe('the outlined recipe reads the control-boundary token', () => {
     expect(brandCtaSx().backgroundColor).toBe('var(--color-primary-fill)');
   });
 
-  it('carries no glow, because the amber spark belongs to the filled pill', () => {
+  it('carries no glow, because the mint spark belongs to the filled button', () => {
     const outlined = brandCtaOutlinedSx() as Record<string, unknown>;
 
     expect(outlined).not.toHaveProperty('boxShadow');
@@ -75,7 +77,7 @@ describe('the outlined recipe reads the control-boundary token', () => {
   });
 
   it('cancels the global hover lift the way the filled pill does', () => {
-    // StartClimbingButton's shared override translates on hover; a brand pill
+    // StartClimbingButton's shared override translates on hover; a brand button
     // stays anchored. If one recipe cancels it and the other does not, a pair
     // wobbles apart on hover.
     for (const recipe of [brandCtaSx(), brandCtaOutlinedSx()]) {

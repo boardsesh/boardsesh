@@ -171,7 +171,7 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
                     href={stripeDonateUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    sx={{ borderRadius: 'var(--border-radius-full)', textTransform: 'none', minHeight: 44 }}
+                    sx={{ textTransform: 'none', minHeight: 44 }}
                     onClick={() =>
                       trackSupportCta({ cadence: 'once', currency: onceCurrency, src, option: 1, placement: 'options' })
                     }

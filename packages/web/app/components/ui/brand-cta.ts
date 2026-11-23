@@ -2,11 +2,11 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import { themeTokens } from '@/app/theme/theme-config';
 
 /**
- * The filled violet pill. One definition, because there were four.
+ * The filled violet button. One definition, because there were four.
  *
  * `marketing-header.tsx`, `site-footer.tsx`, `help-content.tsx` and
  * `home-page-content.tsx` each carried their own near-identical `*_SX` object.
- * They differed only in horizontal padding and, in the hero's case, an amber
+ * They differed only in horizontal padding and, in the hero's case, a mint
  * glow — and they had already drifted: only the hero had the glow, and only the
  * header set `flexShrink`.
  *
@@ -21,15 +21,16 @@ export type BrandCtaOptions = {
   /** `small` in dense chrome, `medium` inline, `large` for a page's one hero. */
   size?: BrandCtaSize;
   /**
-   * The amber glow. Amber is fill-only in Velvet Send and this is the single
-   * place it appears as light — so at most ONE surface per page sets it.
+   * The mint accent glow (`--shadow-accent-glow`, #3EE6C1). The accent is
+   * fill-only in Velvet Send and this is the single place it appears as light,
+   * so at most ONE surface per page sets it.
    */
   glow?: boolean;
 };
 
 /**
  * ONE ramp, shared by the filled and outlined recipes. That sharing is the point:
- * a filled pill and the outlined pill beside it are a PAIR, and the only reason
+ * a filled button and the outlined one beside it are a PAIR, and the only reason
  * they ever stopped matching was that each call site wrote its own padding.
  *
  * `medium` pins `minHeight: 44` because MUI's `sizeMedium` is 40px, under the
@@ -40,10 +41,12 @@ export type BrandCtaOptions = {
  */
 const SIZE_SX = {
   small: { px: 2, flexShrink: 0, whiteSpace: 'nowrap' },
-  medium: { px: 3, minHeight: 44 },
+  medium: { px: 2.5, minHeight: 44 },
   large: {
     minHeight: 48,
-    px: 4,
+    // 24px from 600px up, 16px on a phone. The old 32px made a 48px-tall button
+    // four times as wide as it is tall, which is most of what read as a capsule.
+    px: { xs: 2, sm: 3 },
     py: 1.5,
     fontSize: themeTokens.typography.fontSize.lg,
   },
@@ -61,7 +64,7 @@ const SIZE_SX = {
  */
 export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = {}) {
   return {
-    borderRadius: `${themeTokens.borderRadius.full}px`,
+    borderRadius: `${themeTokens.borderRadius.button}px`,
     textTransform: 'none',
     fontWeight: themeTokens.typography.fontWeight.semibold,
     backgroundColor: 'var(--color-primary-fill)',
@@ -70,7 +73,7 @@ export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = 
     ...(glow ? { boxShadow: 'var(--shadow-accent-glow)' } : {}),
     '&:hover': {
       backgroundColor: 'var(--color-primary-fill-hover)',
-      // The shared StartClimbingButton lifts on hover; the brand pill does not.
+      // The shared StartClimbingButton lifts on hover; the brand button does not.
       transform: 'none',
       ...(glow ? { boxShadow: 'var(--shadow-accent-glow-hover)' } : {}),
     },
@@ -83,14 +86,14 @@ export type BrandCtaOutlinedOptions = {
 };
 
 /**
- * The outlined pill that stands beside the filled one. One definition, because
+ * The outlined button that stands beside the filled one. One definition, because
  * there were three near-identical ones: the hero's `HERO_SECONDARY_CTA_SX`,
  * a drifted copy inside `marketing-install-links.tsx` (different `px`, different
  * `fontSize` — which is why the mid-page store pair visibly did not match the
  * hero pair), and a bare `variant="outlined"` in the support block that fell
  * through to MUI's defaults and so matched neither.
  *
- * No `glow` option, deliberately. The amber glow belongs to the filled pill and
+ * No `glow` option, deliberately. The mint glow belongs to the filled button and
  * to one surface per page; an outlined button that glows would be a third thing.
  *
  * The border reads `--control-border`, not `--separator`: this is the visual
@@ -99,7 +102,7 @@ export type BrandCtaOutlinedOptions = {
  */
 export function brandCtaOutlinedSx({ size = 'medium' }: BrandCtaOutlinedOptions = {}) {
   return {
-    borderRadius: `${themeTokens.borderRadius.full}px`,
+    borderRadius: `${themeTokens.borderRadius.button}px`,
     textTransform: 'none',
     fontWeight: themeTokens.typography.fontWeight.semibold,
     color: 'var(--color-primary)',
@@ -108,7 +111,7 @@ export function brandCtaOutlinedSx({ size = 'medium' }: BrandCtaOutlinedOptions 
     '&:hover': {
       borderColor: 'var(--color-primary)',
       backgroundColor: 'var(--semantic-selected-light)',
-      // Cancels the same global StartClimbingButton lift the filled pill cancels.
+      // Cancels the same global StartClimbingButton lift the filled button cancels.
       transform: 'none',
     },
   } satisfies SxProps<Theme>;

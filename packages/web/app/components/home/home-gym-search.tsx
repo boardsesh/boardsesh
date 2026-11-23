@@ -41,7 +41,7 @@ export default async function HomeGymSearch() {
           placeholder={website('directorySearch')}
           sx={{ flex: '1 1 240px' }}
         />
-        <Button type="submit" variant="outlined" sx={{ borderRadius: 'var(--border-radius-full)', minHeight: 48 }}>
+        <Button type="submit" variant="outlined" sx={{ minHeight: 48 }}>
           {website('directorySearch')}
         </Button>
       </Box>
