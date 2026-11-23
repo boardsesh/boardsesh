@@ -109,7 +109,7 @@ describe('sessionButtonsLayout', () => {
   });
 
   it('never leaves a shipped locale’s plain Join too long for its own button', () => {
-    for (const locale of ['en-US', 'es', 'fr', 'de', 'it']) {
+    for (const locale of ['en-US', 'es', 'fr', 'de', 'it', 'zh-CN']) {
       const catalog = JSON.parse(
         readFileSync(join(__dirname, '../../../../../shared/i18n/locales', locale, 'feed.json'), 'utf8'),
       ) as { mobile: { liveSessions: { actions: { join: string } } } };

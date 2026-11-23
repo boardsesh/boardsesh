@@ -49,7 +49,11 @@
           "lastWorkoutYesterday": "上次训练 · 昨天",
           "lastWorkoutOn": "上次训练 · {{day}}",
           "lastWorkoutSends_one": "{{count}} 次完攀",
-          "lastWorkoutSends_other": "{{count}} 次完攀"
+          "lastWorkoutSends_other": "{{count}} 次完攀",
+          "joinName": "加入{{name}}",
+          "startOwn": "自己开始",
+          "moreLive_one": "另有 {{count}} 场攀爬活动进行中",
+          "moreLive_other": "另有 {{count}} 场攀爬活动进行中"
         },
         "projects": {
           "title": "继续攻克目标",
