@@ -1,9 +1,10 @@
-// `/spray/...` must 404 on www.
+// The catalogue parser must refuse `/spray/...`.
 //
 // A spray wall's layout and size are created at runtime for one climber's wall,
 // so the deep `/[board_name]/[layout]/[size]/[sets]/[angle]` route names no
 // board model; a wall is reached at `/b/{slug}` like any other user board, and
-// SW-16 (#5449) decides whether www grows a public surface at all.
+// the static `/spray/.../view/{climb}` compatibility handler bypasses this
+// parser and redirects older climb links to the public `/b/{slug}` surface.
 //
 // `boardHasDeepConfigRoute` is unit-tested on its own; what this file pins is
 // that the ROUTE PARSER actually calls `notFound()`, through both of its
@@ -56,7 +57,7 @@ describe('the spray deep route', () => {
     expect(notFound).toHaveBeenCalled();
   });
 
-  it('404s on the all-numeric climb-view path', async () => {
+  it('refuses numeric climb-view params inside the catalogue parser', async () => {
     await expect(parseRouteParams({ ...NUMERIC_SPRAY_PARAMS, climb_uuid: CLIMB_UUID })).rejects.toThrow('NOT_FOUND');
     expect(notFound).toHaveBeenCalled();
   });
