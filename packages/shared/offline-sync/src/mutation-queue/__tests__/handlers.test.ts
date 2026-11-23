@@ -89,13 +89,16 @@ describe('boardsesh_ticks update dispatch', () => {
   it('passes every UpdateTickInput field through, including falsy values', async () => {
     const graphqlFetch = vi.fn().mockResolvedValue({});
     const fullInput = {
+      privacy: { audience: 'only_me', privacyRevision: 8 },
+      boardUuid: null,
       status: 'attempt',
       attemptCount: 0,
       quality: 1,
       difficulty: 10,
       isBenchmark: false,
       comment: '',
-      climbedAt: '2026-05-01T10:00:00Z',
+      climbedAt: '2026-05-01T02:00:00Z',
+      reportingTime: { precision: 'day', date: '2026-04-30', timeZone: 'America/New_York' },
       angle: 0,
     };
     const mutation = pendingMutation({
@@ -118,6 +121,35 @@ describe('boardsesh_ticks update dispatch', () => {
 
     const [, variables] = graphqlFetch.mock.calls[0];
     expect(variables).toEqual({ uuid: 'tick-uuid-3', input: { angle: 25 } });
+  });
+});
+
+describe('boardsesh_ticks reporting time during a backend rollback', () => {
+  it.each([
+    ['create', 'SaveTickInput'],
+    ['update', 'UpdateTickInput'],
+  ] as const)('retries a queued %s without only the rejected reporting metadata', async (operation, inputType) => {
+    const uuid = 'queued-tick';
+    const base = { climbedAt: '2026-05-01T02:00:00Z', comment: 'Keep this edit' };
+    const reportingTime = { precision: 'day', date: '2026-04-30', timeZone: 'America/New_York' };
+    const message = `Variable "$input" got invalid value {}; Field "reportingTime" is not defined by type "${inputType}".`;
+    const unsupportedInput = Object.assign(new Error(message), { response: { status: 200, errors: [{ message }] } });
+    const graphqlFetch = vi.fn().mockRejectedValueOnce(unsupportedInput).mockResolvedValue({});
+    const mutation = pendingMutation({
+      operation,
+      idempotency_key: uuid,
+      payload: JSON.stringify({ ...(operation === 'update' ? { uuid } : {}), ...base, reportingTime }),
+    });
+
+    await expect(processMutation(mutation, graphqlFetch)).resolves.toBeUndefined();
+
+    expect(graphqlFetch).toHaveBeenCalledTimes(2);
+    const expected = operation === 'create' ? { input: { uuid, ...base } } : { uuid, input: base };
+    expect(graphqlFetch.mock.calls[0][1]).toEqual({
+      ...expected,
+      input: { ...expected.input, reportingTime },
+    });
+    expect(graphqlFetch.mock.calls[1][1]).toEqual(expected);
   });
 });
 

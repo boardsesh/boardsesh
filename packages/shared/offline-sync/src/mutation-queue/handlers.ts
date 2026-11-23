@@ -51,6 +51,7 @@ export const UPDATE_TICK_INPUT_FIELDS = [
   'isBenchmark',
   'comment',
   'climbedAt',
+  'reportingTime',
   'angle',
 ] as const;
 
@@ -68,10 +69,12 @@ export const UPDATE_TICK_INPUT_FIELDS = [
  * the version that was live when the climb was climbed (#6023). The app no
  * longer sends it, but a tick queued by an earlier bundle still carries it in
  * its stored payload and is replayed as stored, so the entry stays until no
- * such outbox row can be left.
+ * such outbox row can be left. Reporting time certifies optional analytics
+ * precision; the original climbedAt still saves correctly on an older server.
  */
 const DROPPABLE_INPUT_FIELDS: Record<string, readonly string[]> = {
-  SaveTick: ['climbRevision'],
+  SaveTick: ['climbRevision', 'reportingTime'],
+  UpdateTick: ['reportingTime'],
 };
 
 /**

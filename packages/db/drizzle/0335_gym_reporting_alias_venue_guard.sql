@@ -2,9 +2,12 @@
 -- Defer the check until commit so a duplicate-gym consolidation can repoint
 -- boards before it stamps the old gym's canonical pointer in the same transaction.
 CREATE FUNCTION public.revoke_gym_reporting_aliases_on_board_move()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
 AS $revoke_gym_reporting_aliases$
 BEGIN
+  IF OLD.gym_id IS NOT DISTINCT FROM NEW.gym_id THEN
+    RETURN NEW;
+  END IF;
   IF OLD.gym_id IS NOT NULL AND NEW.gym_id IS NOT NULL AND EXISTS (
     WITH RECURSIVE venue_chain AS (
       SELECT venue.id, venue.merged_into_gym_id, venue.deleted_at, ARRAY[venue.id] AS visited

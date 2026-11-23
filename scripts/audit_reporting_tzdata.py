@@ -15,6 +15,16 @@ MIN_TRANSITION_SPACING = 3600
 MAX_OFFSET_SECONDS = 36 * 3600
 GREGORIAN_CYCLE_YEARS = 400
 
+# Require the POSIX TZ grammar before delegating offset ranges and calendar
+# arithmetic to CPython. Its private parser has accepted punctuation in names,
+# missing standard offsets and malformed separators in some Python releases.
+TZ_NAME = r"(?:[A-Za-z]{3,}|<[A-Za-z0-9+-]{3,}>)"
+MINUTE_SECOND = r"(?::[0-5][0-9](?::[0-5][0-9])?)?"
+TZ_OFFSET = rf"[+-]?[0-9]{{1,2}}{MINUTE_SECOND}"
+# TZif v3+ extends POSIX transition hours to signed values up to 167.
+TZ_RULE = rf"(?:J[0-9]{{1,3}}|[0-9]{{1,3}}|M[0-9]{{1,2}}\.[0-9]\.[0-9])(?:/[+-]?[0-9]{{1,3}}{MINUTE_SECOND})?"
+POSIX_TZ = re.compile(rf"{TZ_NAME}{TZ_OFFSET}(?:{TZ_NAME}(?:{TZ_OFFSET})?,{TZ_RULE},{TZ_RULE})?")
+
 READ_TIMEZONE_ARTIFACT_SQL = r"""
 WITH configuration AS (
   SELECT coalesce(
@@ -82,7 +92,10 @@ def analyze_tzif(data):
     max_offsets = list(offsets)
     seam = None
     if encoded_tail:
-        tail = _parse_tz_str(encoded_tail.decode("ascii"))
+        tz_string = encoded_tail.decode("ascii")
+        if not POSIX_TZ.fullmatch(tz_string):
+            raise ValueError(f"{tz_string!r} is not a valid TZ string")
+        tail = _parse_tz_str(tz_string)
         last_explicit = transitions[-1] if transitions else None
         last_offset = offsets[types[-1]] if types else None
         if isinstance(tail, _TZStr):

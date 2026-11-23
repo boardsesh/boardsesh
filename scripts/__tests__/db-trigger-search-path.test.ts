@@ -226,15 +226,17 @@ function createFunctionPinsPrescribedSearchPath(statement: string, reviewedCatal
   return normalized === 'public,pg_catalog' || (reviewedCatalogOnly && normalized === 'pg_catalog');
 }
 
-// These two security-definer functions qualify every public relation and use
-// pg_catalog alone. Pin the COMPLETE immutable migration, including headers and
-// bodies: trusting a name or sanitized header would hide a later unqualified
-// dependency. The credential-writer catalog proof separately pins each body,
-// owner, search_path, trigger target and relation closure after migration 0322.
-const REVIEWED_CATALOG_ONLY_MIGRATION_SHA256 = '4299773d153d91534002be3e51f643e71f427535274924349d3ff0b28ce7c73c';
-const REVIEWED_CATALOG_ONLY_FUNCTIONS = new Set([
-  'partner_account_deletion_events',
-  'partner_connection_lifecycle_events',
+// These security-definer functions qualify every public relation and use
+// pg_catalog alone. Pin each complete migration and its expected function names.
+// Trusting a name or sanitized header would hide later unqualified dependencies.
+const REVIEWED_LIFECYCLE_MIGRATION_SHA256 = '4299773d153d91534002be3e51f643e71f427535274924349d3ff0b28ce7c73c';
+const REVIEWED_GYM_ALIAS_MIGRATION_SHA256 = '6cc723ef6dde8dc732ed30bb01d2d88e5ba7f199f608265156e1813c4159b1e8';
+const REVIEWED_CATALOG_ONLY_MIGRATIONS = new Map([
+  [
+    REVIEWED_LIFECYCLE_MIGRATION_SHA256,
+    new Set(['partner_account_deletion_events', 'partner_connection_lifecycle_events']),
+  ],
+  [REVIEWED_GYM_ALIAS_MIGRATION_SHA256, new Set(['revoke_gym_reporting_aliases_on_board_move'])],
 ]);
 
 /**
@@ -253,8 +255,9 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
   const pinned = new Map<string, boolean>();
 
   for (const source of sources) {
-    const reviewedCatalogOnlySource =
-      createHash('sha256').update(source).digest('hex') === REVIEWED_CATALOG_ONLY_MIGRATION_SHA256;
+    const reviewedCatalogOnlyFunctions = REVIEWED_CATALOG_ONLY_MIGRATIONS.get(
+      createHash('sha256').update(source).digest('hex'),
+    );
     for (const statement of topLevelStatements(source)) {
       const created = CREATE_FUNCTION_RE.exec(statement);
       if (created !== null) {
@@ -271,13 +274,7 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         // identity, so requiring a literal empty `()` here would miss them.
         const createsTrigger = RETURNS_TRIGGER_RE.test(definition);
         if (name !== undefined && (pinned.has(name) || createsTrigger)) {
-          pinned.set(
-            name,
-            createFunctionPinsPrescribedSearchPath(
-              statement,
-              reviewedCatalogOnlySource && REVIEWED_CATALOG_ONLY_FUNCTIONS.has(name),
-            ),
-          );
+          pinned.set(name, createFunctionPinsPrescribedSearchPath(statement, reviewedCatalogOnlyFunctions?.has(name)));
         }
         continue;
       }
@@ -409,7 +406,7 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
 
   it('accepts catalog-only paths only in the complete reviewed lifecycle migration', () => {
     const reviewed = migrationSources().find(
-      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_CATALOG_ONLY_MIGRATION_SHA256,
+      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_LIFECYCLE_MIGRATION_SHA256,
     );
     expect(reviewed).toBeDefined();
     expect(unpinnedIn(foldMigrationSources([reviewed!]))).toEqual([]);
@@ -424,6 +421,21 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
         foldMigrationSources([reviewed!, 'ALTER FUNCTION public.partner_connection_lifecycle_events() RESET ALL;']),
       ),
     ).toContain('partner_connection_lifecycle_events');
+  });
+
+  it('pins the complete catalog-only gym alias migration and rejects changed dependencies', () => {
+    const reviewed = migrationSources().find(
+      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_GYM_ALIAS_MIGRATION_SHA256,
+    );
+    expect(reviewed).toBeDefined();
+    expect(unpinnedIn(foldMigrationSources([reviewed!]))).toEqual([]);
+    expect(
+      unpinnedIn(
+        foldMigrationSources([
+          reviewed!.replace('UPDATE public.gym_reporting_board_aliases', 'UPDATE gym_reporting_board_aliases'),
+        ]),
+      ),
+    ).toEqual(['revoke_gym_reporting_aliases_on_board_move']);
   });
 
   it.each([
