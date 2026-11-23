@@ -6,12 +6,15 @@ import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
+import { visuallyHidden } from '@mui/utils';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
+import GradeTile from '@/app/components/climb-front-door/grade-tile';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
-import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import { formatFontGrade, formatVGrade } from '@/app/lib/grade-colors';
+import { climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { resolveRenderBoard } from '@boardsesh/board-config/resolve-render-board';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
@@ -170,17 +173,17 @@ export default function SimilarClimbsList({
   // incompatible-last, preserving the similarity order within each group.
   // Incompatible climbs stay visible (greyed) — surfacing them is useful
   // for shared playlists / multi-board owners — but they shouldn't push
-  // tappable matches off the right edge of the horizontal scroll.
+  // climbs the reader can pull on today down the list.
   const isCompatible = (climb: SimilarClimb): boolean =>
     sizeId == null || climb.compatibleSizeIds.length === 0 || climb.compatibleSizeIds.includes(sizeId);
   const orderedClimbs = [...climbs.filter(isCompatible), ...climbs.filter((c) => !isCompatible(c))];
 
   return (
-    <div className={styles.scroller}>
+    <Box component="ul" className={styles.rows}>
       {orderedClimbs.map((climb) => {
         const compatible = isCompatible(climb);
         return (
-          <SimilarClimbCard
+          <SimilarClimbRow
             key={climb.uuid}
             boardSlug={compatible ? boardSlug : undefined}
             climb={climb}
@@ -188,20 +191,20 @@ export default function SimilarClimbsList({
             // When the climb fits on the viewer's wall, render the
             // thumbnail at the viewer's exact size + sets so the
             // preview matches what they'll see on their board. When
-            // it doesn't fit, pass undefined and let the card fall
+            // it doesn't fit, pass undefined and let the row fall
             // back to getDefaultBoardConfig (biggest reasonable config
-            // for the layout) so the user can still see the climb's
+            // for the layout) so the reader can still see the climb's
             // full footprint.
             viewerBoardDetails={compatible ? viewerBoardDetails : undefined}
             compatible={compatible}
           />
         );
       })}
-    </div>
+    </Box>
   );
 }
 
-type SimilarClimbCardProps = {
+type SimilarClimbRowProps = {
   climb: SimilarClimb;
   boardSlug?: string;
   boardType: BoardName;
@@ -210,20 +213,16 @@ type SimilarClimbCardProps = {
    *  compatible climbs — incompatible climbs need the bigger default
    *  config to show the holds that extend past the viewer's wall. */
   viewerBoardDetails: BoardImageDetails | undefined;
-  /** When false, the card body is greyed out. Driven by the parent's sizeId
+  /** When false, the row's content is greyed out. Driven by the parent's sizeId
    *  vs `climb.compatibleSizeIds` — the climb won't physically fit on the
    *  viewer's wall, but the link still resolves on the layout default. */
   compatible: boolean;
 };
 
-function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, compatible }: SimilarClimbCardProps) {
+function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, compatible }: SimilarClimbRowProps) {
   const { t } = useTranslation('climbs');
-  const { formatGrade, getGradeColor } = useGradeFormat();
   const angle = climb.angle ?? 0;
-  // Format and colour the grade using the same hook the main climb-title
-  // uses, so the slider respects the user's Font vs V-grade preference.
-  const formattedGrade = formatGrade(climb.difficultyName ?? undefined);
-  const gradeColor = getGradeColor(climb.difficultyName ?? undefined);
+  const difficulty = climb.difficultyName ?? null;
 
   // Compatible climb: render at the viewer's exact wall config so the
   // thumbnail matches what they'll see on their board. Incompatible:
@@ -292,66 +291,80 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
     return getDefaultClimbViewPath(boardType, climb.layoutId, angle, climb.uuid, climb.name || undefined);
   }, [boardSlug, boardType, climb.layoutId, angle, climb.uuid, climb.name, boardDetails]);
 
-  // Dim the thumbnail / name / byline when the climb is incompatible with the
+  // Dim the thumbnail / name / grade when the climb is incompatible with the
   // viewer's wall size: the link still resolves (on the layout default config),
   // it just isn't a climb they can pull on today.
   const dimClass = compatible ? '' : ` ${styles.dimmed}`;
-  const thumbnail = boardDetails ? (
-    <div className={`${styles.boardSquare}${dimClass}`}>
-      <BoardImageLayers
-        boardDetails={boardDetails}
-        frames={climb.frames ?? undefined}
-        mirrored={false}
-        thumbnail
-        style={{ width: '100%', height: '100%' }}
-      />
-    </div>
-  ) : (
-    <div className={`${styles.boardSquare}${dimClass}`} />
-  );
+  const fontGrade = formatFontGrade(difficulty);
+  const hasVGrade = Boolean(formatVGrade(difficulty, boardType));
 
-  const cardInner = (
+  const rowInner = (
     <>
-      {thumbnail}
-      <div className={`${styles.nameRow}${dimClass}`}>
-        <div className={styles.name} title={climb.name || undefined}>
-          {climb.name || t('similarClimbs.untitledClimb')}
-        </div>
-        {formattedGrade ? (
-          // Set the grade colour as a CSS custom property so the module CSS
-          // owns the rule. The cast through `as React.CSSProperties` allows
-          // the custom property without complaint from React's typed style.
-          <span
-            className={styles.grade}
-            style={gradeColor ? ({ '--grade-color': gradeColor } as React.CSSProperties) : undefined}
-          >
-            {formattedGrade}
-          </span>
+      <Box className={`${styles.thumb}${dimClass}`}>
+        {boardDetails ? (
+          <BoardImageLayers
+            boardDetails={boardDetails}
+            frames={climb.frames ?? undefined}
+            mirrored={false}
+            thumbnail
+            style={{ width: '100%', height: '100%' }}
+          />
         ) : null}
-      </div>
-      <div className={`${styles.byline}${dimClass}`}>{formatByline(climb, t)}</div>
+      </Box>
+      <Box className={`${styles.text}${dimClass}`}>
+        <Box className={styles.name} title={climb.name || undefined}>
+          {climb.name || t('similarClimbs.untitledClimb')}
+          {/* The tile is a picture of the grade; this is the grade in words, once. */}
+          {difficulty ? (
+            <Box component="span" sx={visuallyHidden}>
+              {t('frontDoor.hero.gradeForSearch', { grade: climbGradeForSearch(difficulty) })}
+            </Box>
+          ) : null}
+        </Box>
+        <Box className={styles.byline}>{formatByline(climb, t)}</Box>
+      </Box>
+      <Box className={`${styles.grade}${dimClass}`}>
+        {hasVGrade ? (
+          <>
+            <GradeTile difficulty={difficulty} boardName={boardType} size="compact" />
+            {fontGrade ? (
+              <Box component="span" aria-hidden="true" className={styles.fontGrade}>
+                {fontGrade}
+              </Box>
+            ) : null}
+          </>
+        ) : difficulty ? (
+          <Box component="span" aria-hidden="true" className={styles.fontGrade}>
+            {climbGradeForSearch(difficulty)}
+          </Box>
+        ) : null}
+      </Box>
     </>
   );
 
-  // One rendering path: a real `<a href>` to the climb's canonical view URL.
-  // The queue-activation button and the actions ellipsis moved to the app —
-  // this component now serves the SSR front door, where every card has to be
-  // a crawlable link.
+  // One rendering path: a real `<a href>` to the climb's canonical view URL,
+  // the whole row its hit area. The queue-activation button and the actions
+  // ellipsis moved to the app; this list serves the SSR front door, where every
+  // row has to be a crawlable link.
   if (climbViewPath) {
     return (
-      <div className={styles.cardWrapper}>
-        <LocaleLink href={climbViewPath} className={styles.card}>
-          {cardInner}
+      <Box component="li" className={styles.item}>
+        <LocaleLink href={climbViewPath} className={styles.row}>
+          {rowInner}
         </LocaleLink>
-      </div>
+      </Box>
     );
   }
 
-  return <div className={`${styles.card} ${styles.cardDisabled}`}>{cardInner}</div>;
+  return (
+    <Box component="li" className={styles.item}>
+      <Box className={styles.row}>{rowInner}</Box>
+    </Box>
+  );
 }
 
 /**
- * Compose the "setter · ★N · Y sends" byline shown under the climb name.
+ * Compose the "setter · ★N · Y sends" line shown under the climb name.
  * Skips any segment that's missing data — most user-created climbs have no
  * quality rating or ascent count yet, so we don't want to show stale zeros.
  */

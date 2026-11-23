@@ -1,3 +1,6 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vite-plus/test';
 import { SUPPORTED_LOCALES } from '../i18n/config';
 import { marketingScreenshot, type MarketingShot } from '../marketing-screenshots';
@@ -24,4 +27,20 @@ describe('marketing capture selection', () => {
       }
     });
   }
+});
+
+describe('the workouts capture', () => {
+  it('is the one Play Store crop on both platforms, sized to the file it names', async () => {
+    const publicRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
+    for (const platform of ['ios', 'android'] as const) {
+      const capture = marketingScreenshot(platform, 'en-US', 'workouts');
+      expect(capture.src).toBe('/images/app/android/workouts.webp');
+      // The declared size is what `next/image` reserves: a mismatch is a stretched phone.
+      const metadata = await sharp(`${publicRoot}${capture.src}`).metadata();
+      expect({ width: metadata.width, height: metadata.height }).toEqual({
+        width: capture.width,
+        height: capture.height,
+      });
+    }
+  });
 });

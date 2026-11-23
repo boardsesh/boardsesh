@@ -9,7 +9,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 import TrustFaq from '@/app/components/marketing/trust-faq';
-import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
+import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
+import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
 import styles from './about.module.css';
 import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 

@@ -7,6 +7,7 @@ The public SSR website, app handoffs, indexation, canonical URLs, gym search and
 ## Start here
 
 - [Web architecture: the SSR front door](web-reposition.md)
+- [Public page design: climb pages and their siblings](public-page-design.md)
 - [Sitemaps](sitemap.md)
 - [The web app's canonical origin (and why a missing one logs everyone out)](web-canonical-origin.md)
 - [Climb OG share cards (`GET /og/climb`)](og-climb.md)
@@ -23,6 +24,7 @@ a production rollout or a physical-device result.
 | [Manage gym boards](gym-board-management.md) | `gym-board-management.md` |
 | [Gym place search](gym-place-search.md) | `gym-place-search.md` |
 | [Climb OG share cards (`GET /og/climb`)](og-climb.md) | `og-climb.md` |
+| [Public page design: climb pages and their siblings](public-page-design.md) | `public-page-design.md` |
 | [Share metadata and Open Graph images](og-smartlinks-roadmap.md) | `og-smartlinks-roadmap.md` |
 | [Sitemaps](sitemap.md) | `sitemap.md` |
 | [The web app's canonical origin (and why a missing one logs everyone out)](web-canonical-origin.md) | `web-canonical-origin.md` |

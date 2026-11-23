@@ -29,7 +29,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
+import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
+import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
 import styles from './home-page-content.module.css';
 

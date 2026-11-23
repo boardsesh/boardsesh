@@ -4,11 +4,8 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { PageCard, PageSection } from '@/app/components/ui/page-shell';
-import {
-  MarketingScreenshot,
-  MarketingPreviewSwitch,
-  type MarketingShot,
-} from '@/app/components/marketing/marketing-screenshot';
+import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
+import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
 import styles from './home-feature-strip.module.css';
 
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */

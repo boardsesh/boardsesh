@@ -1011,12 +1011,44 @@
       "headingCount_one": "Beta · {{count}} video",
       "headingCount_other": "Beta · {{count}} video"
     },
+    "app": {
+      "heading": "Cosa trovi nell’app",
+      "lead": "Gratis su iPhone e Android. Funziona tutto sul tuo pannello già stasera.",
+      "beta": {
+        "title": "Beta all’istante",
+        "body": "Quando qualcuno collega un video della beta, compare subito sul blocco per tutti."
+      },
+      "wall": {
+        "title": "Guarda cosa c’è sul pannello",
+        "body": "Chi è al pannello vede in diretta quale blocco è illuminato in parete e cosa ha appena scalato la crew.",
+        "alt": "Boardsesh che mostra il blocco illuminato in parete sopra l’elenco dei blocchi"
+      },
+      "boards": {
+        "title": "Ogni pannello, una sola app",
+        "body": "Un’app per tutti i tuoi pannelli. Funziona con Kilter, Tension, MoonBoard e altri.",
+        "alt": "Boardsesh su un Kilter Board, una Spraywall e un Tension Board"
+      },
+      "logbook": {
+        "title": "Un solo diario",
+        "body": "Ogni ripetizione di ogni pannello in un unico posto.",
+        "link": "Porta il tuo diario",
+        "alt": "Ripetizioni e progressi su tutti i pannelli nel profilo Boardsesh"
+      },
+      "workouts": {
+        "title": "Allenamenti",
+        "body": "4×4 e sessioni di volume al tuo grado, con timer integrato.",
+        "alt": "Impostazione di un allenamento di volume a V2 in Boardsesh"
+      }
+    },
     "community": {
-      "heading": "Community"
+      "heading": "Commenti e voti sul grado",
+      "signIn": "Accedi per partecipare",
+      "show": "Mostra i commenti"
     },
     "similar": {
       "heading": "Blocchi come questo",
-      "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…"
+      "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…",
+      "allAtAngle": "Tutti i blocchi {{board}} a {{angle}}°"
     },
     "cta": {
       "getApp": "Scarica l’app gratis",

@@ -41,8 +41,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
   })),
 }));
 
-vi.mock('@/app/components/marketing/marketing-screenshot', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/app/components/marketing/marketing-screenshot')>()),
+vi.mock('@/app/components/marketing/marketing-preview-switch', () => ({
   MarketingPreviewSwitch: () => <div data-testid="preview-switch" />,
 }));
 

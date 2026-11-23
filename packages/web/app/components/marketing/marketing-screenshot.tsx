@@ -3,8 +3,6 @@
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import { useTranslation } from 'react-i18next';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { isSupportedLocale } from '@/app/lib/i18n/config';
@@ -30,7 +28,10 @@ export function MarketingScreenshot({
   preload?: boolean;
   sizes?: string;
 }) {
-  const { i18n } = useTranslation('marketing');
+  // The default namespace, which the root layout loads on every page: only the
+  // language is read here, and asking for `marketing` would make a page that
+  // has no marketing catalog (the climb page) fetch it after hydration.
+  const { i18n } = useTranslation();
   const platform = useMarketingPreview()?.platform ?? 'android';
   const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
   const capture = marketingScreenshot(platform, locale, shot);
@@ -50,27 +51,5 @@ export function MarketingScreenshot({
         className={styles.image}
       />
     </Box>
-  );
-}
-
-export function MarketingPreviewSwitch() {
-  const { t } = useTranslation('marketing');
-  const preview = useMarketingPreview();
-  if (!preview?.browser.desktop) return null;
-
-  return (
-    <ToggleButtonGroup
-      className={styles.switch}
-      value={preview.platform}
-      exclusive
-      size="small"
-      aria-label={t('preview.label')}
-      onChange={(_event, platform: unknown) => {
-        if (platform === 'ios' || platform === 'android') preview.selectPlatform(platform);
-      }}
-    >
-      <ToggleButton value="ios">{t('preview.ios')}</ToggleButton>
-      <ToggleButton value="android">{t('preview.android')}</ToggleButton>
-    </ToggleButtonGroup>
   );
 }

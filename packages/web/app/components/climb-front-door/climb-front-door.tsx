@@ -1,12 +1,13 @@
 import { toBoardImageDetails } from '@/app/lib/board-image-details';
-import React from 'react';
+import React, { Suspense } from 'react';
 import Box from '@mui/material/Box';
+import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
 import { boardTypeProperty } from '@boardsesh/analytics';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
-import ClimbSocialSection from '@/app/components/social/climb-social-section';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
 import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
@@ -19,10 +20,12 @@ import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardImageDetails, BoardName, Climb } from '@/app/lib/types';
 import AboutClimb from './about-climb';
 import AngleTable from './angle-table';
+import ClimbAppShowcase from './climb-app-showcase';
 import ClimbBoardStage from './climb-board-stage';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbHeroCta from './climb-hero-cta';
 import type { HandoffTree } from './climb-handoff-cta';
+import DeferredClimbSocial from './deferred-climb-social';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import HoldLegend from './hold-legend';
 import QrLandingTracker from './qr-landing-tracker';
@@ -77,7 +80,27 @@ const setterNotesSx = {
 // One rhythm for every full-width `<h2>` band below the hero, so the page reads
 // as a stack of sections rather than a run of UA-default headings. The bands in
 // the hero's details column are spaced by `.details` instead.
-const sectionSx = { mt: 4 };
+const sectionSx = { mt: { xs: 6, md: 9 } };
+
+// The similar-climbs heading with the way to the whole board list beside it on
+// a laptop, under it on a phone.
+const similarHeadSx = {
+  display: 'flex',
+  flexDirection: { xs: 'column', md: 'row' },
+  alignItems: { xs: 'flex-start', md: 'baseline' },
+  justifyContent: 'space-between',
+  columnGap: 2,
+  mb: 1.5,
+};
+
+const similarHeadingSx = { ...frontDoorSectionHeadingSx, mb: 0 };
+
+const boardListLinkSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 44,
+  fontWeight: 600,
+};
 
 // Shared by the "nothing here yet" and the "this did not load" lines. Same
 // muted weight for both: a degraded read is not an error the reader caused, and
@@ -125,6 +148,11 @@ export default async function ClimbFrontDoor({
   const { t, locale } = await getServerTranslation('climbs');
 
   const boardListUrl = buildCanonicalClimbListUrl(boardDetails, angle);
+  // The list a reader navigates to: on `/b/{slug}` it keeps their board.
+  const navigationBoardListUrl = boardSlug
+    ? constructBoardSlugListUrl(encodeURIComponent(boardSlug), angle)
+    : boardListUrl;
+  const boardDisplayName = formatBoardDisplayName(boardDetails.board_name);
   const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
   // The breadcrumb's leaf is the page's CANONICAL, not `handoffPath`: on `/b`
   // those differ, and the JSON-LD has to name the URL the page claims.
@@ -168,10 +196,10 @@ export default async function ClimbFrontDoor({
       {/* A phone that scanned the desktop QR code lands here: count it once. */}
       <QrLandingTracker kind="climb" boardType={boardTypeProperty(boardDetails.board_name).boardType} />
       <FrontDoorBreadcrumb
-        boardName={formatBoardDisplayName(boardDetails.board_name)}
+        boardName={boardDisplayName}
         angle={angle}
         boardListUrl={boardListUrl}
-        navigationBoardListUrl={boardSlug ? constructBoardSlugListUrl(encodeURIComponent(boardSlug), angle) : undefined}
+        navigationBoardListUrl={boardSlug ? navigationBoardListUrl : undefined}
         leaf={{ label: climbName, url: canonicalClimbUrl }}
         emitJsonLd={!noindex && isCanonicalAngle}
       />
@@ -283,10 +311,21 @@ export default async function ClimbFrontDoor({
         </Box>
       </Box>
 
-      <Box component="section" sx={sectionSx}>
-        <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
-          {t('frontDoor.similar.heading')}
-        </Typography>
+      {/* Below the climb: what the app adds. Streamed, so the hero never waits
+          on it; nothing in it depends on who is asking. */}
+      <Suspense fallback={null}>
+        <ClimbAppShowcase betaLinks={betaLinks.status === 'loaded' ? betaLinks.items : []} />
+      </Suspense>
+
+      <Box component="section" sx={sectionSx} aria-labelledby="climb-similar-heading">
+        <Box sx={similarHeadSx}>
+          <Typography variant="h5" component="h2" id="climb-similar-heading" sx={similarHeadingSx}>
+            {t('frontDoor.similar.heading')}
+          </Typography>
+          <MuiLink component={LocaleLink} href={navigationBoardListUrl} sx={boardListLinkSx}>
+            {t('frontDoor.similar.allAtAngle', { board: boardDisplayName, angle })}
+          </MuiLink>
+        </Box>
         {/* On an unavailable read the list gets NO seed, which is the retry:
               React Query treats a seeded query as fresh for five minutes, so
               handing it `[]` would pin "No similar climbs on this layout." on the
@@ -310,18 +349,18 @@ export default async function ClimbFrontDoor({
         />
       </Box>
 
-      <Box component="section" sx={sectionSx}>
-        <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
-          {t('frontDoor.community.heading')}
-        </Typography>
-        <ClimbSocialSection
-          climbUuid={climb.uuid}
-          boardType={boardDetails.board_name}
-          angle={angle}
-          currentClimbDifficulty={climb.difficulty}
-          boardName={boardDetails.board_name}
-        />
-      </Box>
+      <DeferredClimbSocial
+        climbUuid={climb.uuid}
+        boardType={boardDetails.board_name}
+        angle={angle}
+        currentClimbDifficulty={climb.difficulty}
+        boardName={boardDetails.board_name}
+        labels={{
+          heading: t('frontDoor.community.heading'),
+          signIn: t('frontDoor.community.signIn'),
+          show: t('frontDoor.community.show'),
+        }}
+      />
 
       {/* Last in `<main>`: its end marker is what tells the bar the content is over. */}
       <StickyInstallBar
