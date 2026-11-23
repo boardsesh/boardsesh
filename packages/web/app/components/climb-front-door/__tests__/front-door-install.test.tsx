@@ -57,13 +57,15 @@ vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default:
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-list/static-climb-list', () => ({ default: () => null }));
+// The board list's 30-day line is one cached GraphQL read; it has its own test.
+vi.mock('@/app/lib/graphql/server-cached-client', () => ({ cachedCommunityStats: vi.fn(async () => null) }));
 vi.mock('@/app/components/board-renderer/util', () => ({
   buildBoardArtLayers: vi.fn(() => ({ backgroundUrls: [], overlayUrl: null })),
   toDarkArtUrl: (url: string) => url,
 }));
 
 const ClimbFrontDoor = (await import('../climb-front-door')).default;
-const { climbQrUrl } = await import('@/app/lib/gym-attribution');
+const { climbQrUrl, listQrUrl } = await import('@/app/lib/gym-attribution');
 const StaticListFrontDoor = (await import('../static-list-front-door')).default;
 
 const BOARD_DETAILS = {
@@ -226,14 +228,68 @@ describe.each(TREES)('climb list store button, %s tree', (tree) => {
 
     expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-list' })));
     expect(html).toContain('ct=climb-list');
-    expect(html).toContain('list.frontDoor.install.helper');
+    expect(html).toContain('frontDoor.cta.getApp');
+    expect(html).toContain('list.frontDoor.cta.getAppHelper');
   });
 
-  it('keeps the hand-off beside it, still pointing at the app', async () => {
+  it('puts the store first on a phone: both stores in the one filled button, before the hand-off', async () => {
+    const html = await renderListPage(tree);
+    const page = parseHtml(html);
+    const storeHrefs = [...page.querySelectorAll('[data-cta="mobile-install"] a')].map((link) =>
+      link.getAttribute('href'),
+    );
+
+    expect(storeHrefs).toEqual([
+      buildStoreUrl('ios', { placement: 'climb-list' }),
+      buildStoreUrl('android', { placement: 'climb-list' }),
+    ]);
+    expect(html.indexOf('data-cta="mobile-install"')).toBeLessThan(html.indexOf('data-cta="handoff"'));
+    const containedButtons = [...page.querySelectorAll('.MuiButton-contained')];
+    expect(containedButtons).toHaveLength(2);
+    for (const button of containedButtons) {
+      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
+    }
+  });
+
+  it('keeps the hand-off, still pointing at the app, with both of its labels', async () => {
+    const handoff = parseHtml(await renderListPage(tree)).querySelector('[data-cta="handoff"]');
+
+    expect(handoff?.getAttribute('href')).toBe(`https://app.boardsesh.com${LIST_PATHS[tree]}`);
+    // No aria-label: the visible text at each width is the name (WCAG 2.5.3).
+    expect(handoff?.hasAttribute('aria-label')).toBe(false);
+    // The list's own words, not the climb page's "open it".
+    expect(handoff?.textContent).toContain('list.frontDoor.cta.openInBrowserMobile');
+    expect(handoff?.textContent).toContain('list.frontDoor.cta.openInBrowser');
+  });
+
+  it('shows a QR code that opens this list on a phone, from the page it is on', async () => {
+    const page = parseHtml(await renderListPage(tree));
+    const codes = page.querySelectorAll('svg[data-qr-value]');
+
+    expect(codes).toHaveLength(1);
+    expect(codes[0].getAttribute('data-qr-value')).toBe(listQrUrl(LIST_PATHS[tree], 'en-US'));
+    expect(codes[0].getAttribute('data-qr-value')).toContain('/list?src=qr&medium=desktop');
+    expect(codes[0].getAttribute('aria-label')).toBe('list.frontDoor.qr.imageLabel');
+    expect(page.body.textContent).toContain('list.frontDoor.qr.title');
+  });
+
+  it("gives the laptop's QR card store buttons their own link id", async () => {
     const html = await renderListPage(tree);
 
-    expect(html).toContain(`href="https://app.boardsesh.com${LIST_PATHS[tree]}"`);
-    expect(html.indexOf('list.frontDoor.cta')).toBeLessThan(html.indexOf('list.frontDoor.install.helper'));
+    expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-list-qr-card' })));
+    expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-list-qr-card' })));
+  });
+
+  it('has one call to action: no second store block at the end of the page', async () => {
+    const page = parseHtml(await renderListPage(tree));
+
+    expect(page.querySelectorAll('[data-cta="handoff"]')).toHaveLength(1);
+    expect(page.querySelectorAll('[data-cta="mobile-install"]')).toHaveLength(1);
+    // The phone's pair plus the QR card's pair: every store link on the page.
+    expect(page.querySelectorAll('a[href*="apps.apple.com"]')).toHaveLength(2);
+    expect(page.querySelectorAll('a[href*="play.google.com"]')).toHaveLength(2);
+    // The climbs come last: nothing but the pagination follows the list.
+    expect(page.querySelector('main')?.textContent?.trim().endsWith('list.frontDoor.pagination.next')).toBe(true);
   });
 });
 

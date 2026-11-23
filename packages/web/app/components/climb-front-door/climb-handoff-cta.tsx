@@ -2,20 +2,17 @@
 
 import React, { useCallback } from 'react';
 import Button from '@mui/material/Button';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import type { SxProps, Theme } from '@mui/material/styles';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track, trackBeforeNavigation } from '@/app/lib/analytics';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
-import { themeTokens } from '@/app/theme/theme-config';
 
 export type HandoffSurface = 'climb_front_door' | 'list_front_door';
 /** Which www route tree the reader came from — the config-tuple tree or `/b/{slug}`. */
 export type HandoffTree = 'config-tuple' | 'slug';
 
 /** What `Climb Handoff Clicked` says about the click, and where the link points. */
-type ClimbHandoffTarget = {
+export type ClimbHandoffTarget = {
   /**
    * The www pathname to hand off, locale prefix included or not — the
    * builder strips it. NOT a full URL and never carries a query string: the
@@ -39,36 +36,11 @@ type ClimbHandoffLinkProps = ClimbHandoffTarget & {
   ariaLabel?: string;
   /** What the link shows. A server page can pass its own markup: the label spans, an icon. */
   children: React.ReactNode;
-  /** `text` for a link that styles itself through `sx`; the list pages keep their filled or outlined button. */
-  variant?: 'contained' | 'outlined' | 'text';
-  size?: 'medium' | 'large';
+  /** The link's look, which is the caller's: a text link on a phone, the filled button on a laptop. */
   sx?: SxProps<Theme>;
   /** Names the link for a page's own tests and styles (`data-cta`). */
   ctaName?: string;
 };
-
-type ClimbHandoffCtaProps = ClimbHandoffTarget & {
-  label: string;
-  ariaLabel: string;
-  helperText?: string;
-  /**
-   * What sits under the hand-off, in the same block: the store button for a
-   * reader who has no app to open yet. Rendered by the server page, so this
-   * component stays unaware of stores and its own event stays what it was.
-   */
-  children?: React.ReactNode;
-  variant?: 'contained' | 'outlined';
-};
-
-const wrapperSx = {
-  display: 'flex',
-  flexDirection: 'column' as const,
-  alignItems: 'flex-start',
-  gap: `${themeTokens.spacing[2]}px`,
-  margin: `${themeTokens.spacing[3]}px 0`,
-};
-
-const helperSx = { color: 'var(--neutral-500)' };
 
 /**
  * The hand-off itself: an anchor that opens this exact route in the browser
@@ -80,9 +52,8 @@ const helperSx = { color: 'var(--neutral-500)' };
  * pathname on the app origin, and a query string would break the app's route
  * match — so campaign attribution rides as event properties instead.
  *
- * How it looks is the caller's: the list pages wrap it in `ClimbHandoffCta`'s
- * button block, and the climb page turns it into a text link on a phone and the
- * filled button on a laptop.
+ * How it looks is the caller's: `FrontDoorHeroCta` turns it into a text link on
+ * a phone and the filled button on a laptop, on the climb page and the board list.
  */
 export function ClimbHandoffLink({
   pathname,
@@ -95,8 +66,6 @@ export function ClimbHandoffLink({
   climbUuid,
   locale,
   children,
-  variant = 'text',
-  size = 'large',
   sx,
   ctaName,
 }: ClimbHandoffLinkProps) {
@@ -157,8 +126,8 @@ export function ClimbHandoffLink({
     <Button
       component="a"
       href={href}
-      variant={variant}
-      size={size}
+      variant="text"
+      size="large"
       aria-label={ariaLabel}
       onClick={handleClick}
       sx={sx}
@@ -166,31 +135,5 @@ export function ClimbHandoffLink({
     >
       {children}
     </Button>
-  );
-}
-
-/**
- * The primary action on the list front doors: open this route in the app, with
- * an optional helper line and the store button for a reader without the app.
- */
-export default function ClimbHandoffCta({
-  label,
-  helperText,
-  children,
-  variant = 'contained',
-  ...handoff
-}: ClimbHandoffCtaProps) {
-  return (
-    <Box sx={wrapperSx}>
-      <ClimbHandoffLink {...handoff} variant={variant}>
-        {label}
-      </ClimbHandoffLink>
-      {helperText ? (
-        <Typography variant="body2" sx={helperSx}>
-          {helperText}
-        </Typography>
-      ) : null}
-      {children}
-    </Box>
   );
 }

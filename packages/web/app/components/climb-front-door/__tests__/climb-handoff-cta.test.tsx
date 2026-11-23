@@ -26,9 +26,7 @@ vi.mock('@/app/lib/analytics', () => ({
   trackBeforeNavigation: mocks.trackBeforeNavigation,
 }));
 
-const handoffModule = await import('../climb-handoff-cta');
-const ClimbHandoffCta = handoffModule.default;
-const { ClimbHandoffLink } = handoffModule;
+const { ClimbHandoffLink } = await import('../climb-handoff-cta');
 
 const PATHNAME = '/kilter/original/12x12-square/screw_bolt/40/view/CLIMB1';
 const EXPECTED_HREF = `${APP_URL}${PATHNAME}`;
@@ -62,31 +60,22 @@ const HANDOFF_PROPS = {
 } as const;
 
 /**
- * Both shapes carry the same contract: the list pages' button block, and the
- * bare link the climb page dresses as a text link on a phone and a filled
- * button on a laptop.
+ * The bare link the climb page and the board list dress as a text link on a
+ * phone and a filled button on a laptop (`FrontDoorHeroCta`).
  */
-const SHAPES = {
-  ClimbHandoffCta: () => render(<ClimbHandoffCta {...HANDOFF_PROPS} label="Climb this" />),
-  ClimbHandoffLink: () =>
-    render(
-      <ClimbHandoffLink {...HANDOFF_PROPS} ctaName="handoff">
-        <span>Or open it in your browser</span>
-      </ClimbHandoffLink>,
-    ),
-};
-
-let renderCta: () => ReturnType<typeof render> = SHAPES.ClimbHandoffCta;
+function renderCta() {
+  return render(
+    <ClimbHandoffLink {...HANDOFF_PROPS} ctaName="handoff">
+      <span>Or open it in your browser</span>
+    </ClimbHandoffLink>,
+  );
+}
 
 function cta() {
   return screen.getByRole('link', { name: 'Climb this' });
 }
 
-describe.each(Object.keys(SHAPES) as (keyof typeof SHAPES)[])('%s', (shape) => {
-  beforeEach(() => {
-    renderCta = SHAPES[shape];
-  });
-
+describe('ClimbHandoffLink delivery', () => {
   it('is a real anchor at the app origin, so it works with JS off and to a crawler', () => {
     renderCta();
 

@@ -47,17 +47,31 @@
       "heading": "Blocs {{boardName}} à {{angle}}°",
       "intro": "Tous les blocs ouverts sur cette configuration {{boardName}} à {{angle}}°, les plus grimpés en premier. Ouvrez-en un pour voir la board, la cotation à chaque inclinaison et la beta.",
       "empty": "Aucun bloc sur cette board pour l’instant.",
-      "cta": "Grimper sur cette board",
+      "cta": {
+        "getAppHelper": "Allume n’importe lequel sur ta {{board}}.",
+        "openInBrowser": "Ouvrir dans ton navigateur",
+        "openInBrowserMobile": "Ou ouvre la liste dans ton navigateur"
+      },
       "pagination": {
         "aria": "Pagination",
         "previous": "Page précédente",
         "next": "Page suivante",
         "pageLabel": "Page {{page}}"
       },
-      "install": {
-        "helper": "Pas encore l’app ? Installe-la et allume ces blocs sur ta board."
+      "climbsHeading": "Les plus grimpés à {{angle}}°",
+      "stage": {
+        "caption": "Premier de la liste : {{climb}}",
+        "captionLaterPage": "Premier de cette page : {{climb}}"
       },
-      "climbsHeading": "Les plus grimpés à {{angle}}°"
+      "qr": {
+        "title": "Scanne pour ouvrir cette liste sur ton téléphone",
+        "imageLabel": "QR code qui ouvre les blocs {{boardName}} à {{angle}}° sur ton téléphone"
+      },
+      "angles": {
+        "label": "La même board, d’autres inclinaisons",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°, blocs {{boardName}}"
+      }
     }
   },
   "header": {},

@@ -47,17 +47,31 @@
       "heading": "{{angle}}° 下的 {{boardName}} 线路",
       "intro": "此 {{boardName}} 配置在 {{angle}}° 下的全部线路，按攀爬次数排序。点按任意线路，查看训练板示意图、各角度难度和攀爬方法。",
       "empty": "此训练板还没有线路。",
-      "cta": "在此训练板上攀爬",
+      "cta": {
+        "getAppHelper": "在你的 {{board}} 上点亮其中任意一条。",
+        "openInBrowser": "在浏览器中打开",
+        "openInBrowserMobile": "或在浏览器中打开此列表"
+      },
       "pagination": {
         "aria": "分页",
         "previous": "上一页",
         "next": "下一页",
         "pageLabel": "第 {{page}} 页"
       },
-      "install": {
-        "helper": "还没有应用？下载后即可在训练板上点亮这些线路。"
+      "climbsHeading": "{{angle}}° 下攀爬最多的线路",
+      "stage": {
+        "caption": "列表第一条：{{climb}}",
+        "captionLaterPage": "本页第一条：{{climb}}"
       },
-      "climbsHeading": "{{angle}}° 下攀爬最多的线路"
+      "qr": {
+        "title": "扫码在手机上打开这个列表",
+        "imageLabel": "在手机上打开 {{angle}}° 下 {{boardName}} 线路的二维码"
+      },
+      "angles": {
+        "label": "同一训练板，其他角度",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°，{{boardName}} 线路"
+      }
     }
   },
   "header": {},

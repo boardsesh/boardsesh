@@ -1115,6 +1115,14 @@ export const SHARED_EVENTS = {
   // phone with the app opens climb links in the app, so this counts phones
   // without it.
   ClimbQrScanned: 'Climb QR Scanned',
+  // A board list's QR code was scanned and the list loaded on the phone. The
+  // same desktop code as a climb page's, beside "Open in your browser" on a
+  // board's climb list (`/…/{angle}/list?src=qr&medium=desktop`). Props and
+  // parser are the climb event's: { medium: 'desktop', surface: 'web' | 'app',
+  // boardType }. Built by `listQrScanned` (climb-qr-events.ts). A separate name
+  // so `Climb QR Scanned` stays a count of climb pages. Only www fires it
+  // (`surface: 'web'`).
+  ListQrScanned: 'List QR Scanned',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

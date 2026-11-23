@@ -81,7 +81,25 @@ export function boardQrUrl(boardSlug: string, medium: GymQrMedium, options: { wa
  * so the scanned URL renders the same HTML as the plain one.
  */
 export function climbQrUrl(handoffPath: string, locale: Locale): string {
-  return absoluteUrl(buildGymQrHref(localeHref(handoffPath, locale), 'desktop'));
+  return desktopQrUrl(handoffPath, locale);
+}
+
+/**
+ * The absolute URL a board list's code encodes: the list itself, in the
+ * reader's language, with `?src=qr&medium=desktop`. The climb page's code
+ * pointed at the list, beside the same "Open in your browser" button.
+ *
+ * `listPath` is the list's clean pathname, the one its pagination hangs off:
+ * page 1, no locale prefix, no query string. On `/b/{slug}` it keeps the board
+ * the reader arrived with. `QrLandingTracker` with `kind="list"` counts the scan
+ * as `List QR Scanned`.
+ */
+export function listQrUrl(listPath: string, locale: Locale): string {
+  return desktopQrUrl(listPath, locale);
+}
+
+function desktopQrUrl(pagePath: string, locale: Locale): string {
+  return absoluteUrl(buildGymQrHref(localeHref(pagePath, locale), 'desktop'));
 }
 
 /**

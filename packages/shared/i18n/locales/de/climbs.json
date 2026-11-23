@@ -44,20 +44,34 @@
   "list": {
     "noMore": "Keine weiteren Boulder",
     "frontDoor": {
-      "heading": "{{boardName}}-Boulder bei {{angle}}°",
-      "intro": "Alle Boulder auf dieser {{boardName}}-Konfiguration bei {{angle}}°, die meistgekletterten zuerst. Öffne einen davon für das Board-Rendering, den Grad bei jedem Winkel und die Beta.",
+      "heading": "Boulder am {{boardName}} bei {{angle}}°",
+      "intro": "Alle Boulder am {{boardName}} in dieser Konfiguration bei {{angle}}°, die meistgekletterten zuerst. Öffne einen davon für das Board-Rendering, den Grad bei jedem Winkel und die Beta.",
       "empty": "Auf diesem Board gibt es noch keine Boulder.",
-      "cta": "Auf diesem Board bouldern",
+      "cta": {
+        "getAppHelper": "Beleuchte jeden davon an deinem {{board}}.",
+        "openInBrowser": "Im Browser öffnen",
+        "openInBrowserMobile": "Oder die Liste im Browser öffnen"
+      },
       "pagination": {
         "aria": "Seitennummerierung",
         "previous": "Vorherige Seite",
         "next": "Nächste Seite",
         "pageLabel": "Seite {{page}}"
       },
-      "install": {
-        "helper": "Noch keine App? Hol sie dir und beleuchte diese Boulder an deinem Board."
+      "climbsHeading": "Meistgeklettert bei {{angle}}°",
+      "stage": {
+        "caption": "Zuerst auf der Liste: {{climb}}",
+        "captionLaterPage": "Zuerst auf dieser Seite: {{climb}}"
       },
-      "climbsHeading": "Meistgeklettert bei {{angle}}°"
+      "qr": {
+        "title": "Scanne den Code, um diese Liste auf deinem Handy zu öffnen",
+        "imageLabel": "QR-Code, der die Boulder am {{boardName}} bei {{angle}}° auf deinem Handy öffnet"
+      },
+      "angles": {
+        "label": "Dasselbe Board, andere Winkel",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°, Boulder am {{boardName}}"
+      }
     }
   },
   "header": {},

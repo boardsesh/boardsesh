@@ -169,6 +169,18 @@ async function expectReadablePrimaryHover(page: Page, testInfo: TestInfo, target
   await page.mouse.move(0, 0);
 }
 
+/** A filled brand button keeps its own fill on hover; only its label's contrast is held to 4.5:1. */
+async function expectReadableFilledHover(page: Page, testInfo: TestInfo, target: Locator, label: string) {
+  await expect(target).toHaveCount(1);
+  await target.hover();
+  const audit = await expectPublicReading(page, testInfo, label, target);
+  expect(
+    hasReadableTargetText(audit),
+    `${label}: the hovered label must resolve at 4.5:1 or better; ${JSON.stringify(audit.targetText)}`,
+  ).toBe(true);
+  await page.mouse.move(0, 0);
+}
+
 async function expectKeyboardTarget(page: Page, link: Locator) {
   await link.scrollIntoViewIfNeeded();
   const rectangle = await link.boundingBox();
@@ -201,12 +213,25 @@ for (const width of [390, 1440]) {
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'list');
     await expectReadablePrimaryHover(page, testInfo, page.locator('main a[rel="next"]'), 'list-next-hover');
-    await expectReadablePrimaryHover(
-      page,
-      testInfo,
-      page.locator('main a[href*="play.google.com"]').first(),
-      'plain-store-hover',
-    );
+    if (width === 1440) {
+      // A laptop's store buttons are the outlined pair in the QR card.
+      await expectReadablePrimaryHover(
+        page,
+        testInfo,
+        page.locator('main a[href*="play.google.com"]:visible').first(),
+        'plain-store-hover',
+      );
+    } else {
+      // A phone's one store button is the filled "Get the free app". Wait for
+      // the browser to pick its store, so the hovered anchor stays the shown one.
+      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
+      await expectReadableFilledHover(
+        page,
+        testInfo,
+        page.locator('main [data-cta="mobile-install"] a:visible'),
+        'store-first-hover',
+      );
+    }
     const footer = page.getByTestId('site-footer');
     await expectReadablePrimaryHover(
       page,

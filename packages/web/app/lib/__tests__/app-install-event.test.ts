@@ -103,6 +103,7 @@ describe('buildAppInstallClickProperties', () => {
       'run-a-wall',
       'auth-login',
       'climb-qr-card',
+      'climb-list-qr-card',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });

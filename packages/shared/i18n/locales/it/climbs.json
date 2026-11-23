@@ -47,17 +47,31 @@
       "heading": "Blocchi {{boardName}} a {{angle}}°",
       "intro": "Tutti i blocchi tracciati su questa configurazione {{boardName}} a {{angle}}°, a partire dai più saliti. Toccane uno per vedere il pannello, il grado a ogni inclinazione e la beta.",
       "empty": "Ancora nessun blocco su questo pannello.",
-      "cta": "Scala su questo pannello",
+      "cta": {
+        "getAppHelper": "Illumina uno di questi blocchi sul tuo pannello {{board}}.",
+        "openInBrowser": "Apri nel browser",
+        "openInBrowserMobile": "Oppure apri la lista nel browser"
+      },
       "pagination": {
         "aria": "Paginazione",
         "previous": "Pagina precedente",
         "next": "Pagina successiva",
         "pageLabel": "Pagina {{page}}"
       },
-      "install": {
-        "helper": "Non hai ancora l'app? Scaricala e illumina questi blocchi sul tuo pannello."
+      "climbsHeading": "I più scalati a {{angle}}°",
+      "stage": {
+        "caption": "Primo della lista: {{climb}}",
+        "captionLaterPage": "Primo di questa pagina: {{climb}}"
       },
-      "climbsHeading": "I più scalati a {{angle}}°"
+      "qr": {
+        "title": "Inquadra il codice per aprire questa lista sul telefono",
+        "imageLabel": "Codice QR che apre i blocchi {{boardName}} a {{angle}}° sul telefono"
+      },
+      "angles": {
+        "label": "Stesso pannello, altre inclinazioni",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°, blocchi {{boardName}}"
+      }
     }
   },
   "header": {},
@@ -1022,7 +1036,7 @@
       "getApp": "Scarica l’app gratis",
       "getAppAriaIos": "Scarica l’app gratis dall’App Store",
       "getAppAriaAndroid": "Scarica l’app gratis da Google Play",
-      "getAppHelper": "Illumina questo blocco sul tuo {{board}} e registra la ripetizione.",
+      "getAppHelper": "Illumina questo blocco sul tuo pannello {{board}} e registra la ripetizione.",
       "openInBrowser": "Apri nel browser",
       "openInBrowserMobile": "Oppure aprilo nel browser"
     },

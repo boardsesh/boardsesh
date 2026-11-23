@@ -10,6 +10,7 @@ import HomePageContent from './home-page-content';
 import TrustFaq from '@/app/components/marketing/trust-faq';
 import HomeGymSearch from './components/home/home-gym-search';
 import { cachedCommunityStats } from './lib/graphql/server-cached-client';
+import { formatCommunityProof } from './lib/community-proof';
 import HomeFeatureStrip from './components/home/home-feature-strip';
 import HomeSupportBlock from './components/home/home-support-block';
 import HomeSupportBanner from './components/home/home-support-banner';
@@ -39,13 +40,7 @@ export default async function Home() {
   // and `Intl.NumberFormat` on the locale we already resolved keeps 132,341 from
   // rendering as 132341 in English or 132.341 in German by accident.
   const { t } = await getServerTranslation('marketing');
-  const numberFormat = new Intl.NumberFormat(locale);
-  const heroProof = communityStats
-    ? t('home.hero.proof', {
-        formattedClimbers: numberFormat.format(Math.round(communityStats.climbersLast30Days / 100) * 100),
-        formattedClimbs: numberFormat.format(Math.round(communityStats.litLast30Days / 1000) * 1000),
-      })
-    : undefined;
+  const heroProof = communityStats ? formatCommunityProof(communityStats, t, locale) : undefined;
 
   // The banner asks people to go monthly, so it waits for a monthly Payment Link
   // to exist. The page reads request headers, so this env read is per request.

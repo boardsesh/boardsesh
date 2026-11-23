@@ -7,6 +7,7 @@ import {
   gymQrAttributionQuery,
   gymQrUrl,
   gymRedirectAttributionQuery,
+  listQrUrl,
 } from '../gym-attribution';
 
 describe('gymQrUrl', () => {
@@ -73,6 +74,24 @@ describe('climbQrUrl', () => {
     const scanned = new URL(climbQrUrl('/b/main-kilter/40/view/abc-the-climb', 'fr'));
 
     expect(scanned.pathname).toBe('/fr/b/main-kilter/40/view/abc-the-climb');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('listQrUrl', () => {
+  it('encodes the board list itself with the desktop pair, on either tree', () => {
+    expect(listQrUrl('/kilter/original/12x12-square/screw_bolt/40/list', 'en-US')).toBe(
+      `${SITE_URL}/kilter/original/12x12-square/screw_bolt/40/list?src=qr&medium=desktop`,
+    );
+    expect(listQrUrl('/b/main-kilter/40/list', 'en-US')).toBe(
+      `${SITE_URL}/b/main-kilter/40/list?src=qr&medium=desktop`,
+    );
+  });
+
+  it("keeps the reader's language and parses back as a desktop scan", () => {
+    const scanned = new URL(listQrUrl('/b/main-kilter/40/list', 'es'));
+
+    expect(scanned.pathname).toBe('/es/b/main-kilter/40/list');
     expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
   });
 });
