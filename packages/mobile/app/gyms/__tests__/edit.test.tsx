@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Gym } from '@boardsesh/shared-schema';
 
 type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress: () => void };
 
-// Mutable per-test gym driving the mocked `useGym`, so a test can flip
-// `canClaim` the way an approved-claim refetch does.
+// Mutable per-test gym driving the mocked `useGym`.
 const state = vi.hoisted(() => ({
   gym: {} as Gym,
 }));
@@ -58,11 +57,7 @@ vi.mock('../../../src/components/gym-directory/GymForm', () => ({
   GymForm: ({ extraSections }: { extraSections?: ReactNode }) => createElement('div', null, extraSections),
 }));
 vi.mock('../../../src/components/gym-directory/GymWriteAccessSection', () => ({
-  GymWriteAccessSection: () => createElement('div'),
-}));
-// Stub the sheet down to a marker: this test only cares whether it stays mounted.
-vi.mock('../../../src/components/gym-directory/ClaimGymSheet', () => ({
-  ClaimGymSheet: () => createElement('div', { 'data-testid': 'claim-sheet' }),
+  GymWriteAccessSection: () => createElement('div', { 'data-testid': 'write-access' }),
 }));
 
 import EditGym from '../edit';
@@ -73,40 +68,35 @@ function makeGym(overrides: Partial<Gym>): Gym {
     slug: null,
     name: 'Bonsist',
     canEdit: true,
-    canClaim: true,
+    canClaim: false,
     canGrantAccess: false,
     isPublic: true,
     ...overrides,
   } as unknown as Gym;
 }
 
-describe('EditGym — claim sheet lifetime', () => {
+describe('EditGym', () => {
   beforeEach(() => {
     state.gym = makeGym({});
   });
 
-  it('keeps the claim sheet mounted after an approved claim flips canClaim false', () => {
-    const view = render(<EditGym />);
-    expect(screen.getByTestId('claim-sheet')).toBeTruthy();
-
-    fireEvent.click(screen.getByText('mobile.gymClaim.claimAction'));
-
-    // The approved claim invalidates the gym query; the refetch comes back with
-    // the claimant as owner, so `canClaim` is now false.
-    state.gym = makeGym({ canClaim: false });
-    view.rerender(<EditGym />);
-
-    // The sheet is still up showing the confirmation + "Set up your gym" CTA.
-    expect(screen.getByTestId('claim-sheet')).toBeTruthy();
-    // The claim entry point itself is correctly gone.
+  it('offers no claim on the edit form: a claimant cannot edit, so they never reach it', () => {
+    state.gym = makeGym({ canClaim: true });
+    render(<EditGym />);
     expect(screen.queryByText('mobile.gymClaim.claimAction')).toBeNull();
+    expect(screen.queryByText('mobile.gymClaim.sectionTitle')).toBeNull();
   });
 
-  it('does not mount the claim sheet for a gym the viewer cannot claim', () => {
-    state.gym = makeGym({ canClaim: false });
-
+  it('shows the write-access section to someone who can grant it', () => {
+    state.gym = makeGym({ canGrantAccess: true });
     render(<EditGym />);
+    expect(screen.getByTestId('write-access')).toBeTruthy();
+  });
 
-    expect(screen.queryByTestId('claim-sheet')).toBeNull();
+  it('locks the screen for a viewer who cannot edit the gym', () => {
+    state.gym = makeGym({ canEdit: false, canClaim: true });
+    render(<EditGym />);
+    expect(screen.getByText('mobile.gymEdit.noAccess')).toBeTruthy();
+    expect(screen.queryByTestId('write-access')).toBeNull();
   });
 });

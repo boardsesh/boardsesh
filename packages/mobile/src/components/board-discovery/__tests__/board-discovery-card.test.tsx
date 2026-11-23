@@ -183,7 +183,9 @@ const LABELS: BoardCardMenuLabels = {
   details: 'Details',
   edit: 'Edit board',
   editWall: 'Edit Spraywall',
-  unfollow: 'Unfollow',
+  removeFromGym: 'Remove from gym',
+  removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
+  unfollow: 'Remove from your boards',
   delete: 'Delete',
 };
 const EVERYTHING: BoardCardMenuCapabilities = {
@@ -461,7 +463,7 @@ describe('BoardDiscoveryCard menu', () => {
     const pinnedItem = { ...item, isViewerOwner: false, isPinned: true, offlineState: 'downloaded' as const };
     render(createElement(BoardDiscoveryCard, { item: pinnedItem, onPress, menu }));
     const labels = menus.button?.actions.map((action) => action.label) ?? [];
-    expect(labels).toEqual(['Climb here', 'Unpin', 'Details', 'Unfollow']);
+    expect(labels).toEqual(['Climb here', 'Unpin', 'Details', 'Remove from your boards']);
 
     menus.button?.onSelectIndex(1);
     expect(menu.onAction).toHaveBeenCalledWith(pinnedItem, 'unpin', 'menu_button');

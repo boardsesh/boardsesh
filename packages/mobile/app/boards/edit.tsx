@@ -17,6 +17,7 @@ import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-act
 import {
   extractGraphqlMessage,
   isBoardLimitError,
+  isBoardRemovedByGymError,
   isDuplicateBoardError,
   isSprayWallVisibilityOwnerOnlyError,
   readDuplicateBoardError,
@@ -321,7 +322,11 @@ function EditBoardForm({ board }: { board: UserBoard }) {
             await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
             gymLinked = true;
           } catch (error) {
-            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+            // The gym's staff took this board off their listing, and only they
+            // can put it back: say so in the climber's language.
+            gymLinkError = isBoardRemovedByGymError(error)
+              ? t('gymBoards.removedByGymError')
+              : (extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError'));
           }
         }
 

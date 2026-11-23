@@ -6,12 +6,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
-import {
-  extractDomain,
-  isClaimableDomain,
-  GYM_CLAIM_MESSAGE_MAX_LENGTH,
-  GYM_CLAIM_SUPPORT_EMAIL,
-} from '@boardsesh/gym-claim';
+import { extractDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH, GYM_CLAIM_SUPPORT_EMAIL } from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
@@ -37,7 +32,7 @@ type ClaimGymSheetProps = {
 };
 
 /**
- * The ownership-claim flow, shown from the gym-edit screen when `gym.canClaim`.
+ * The ownership-claim flow, shown from the gym finder when `gym.canClaim`.
  * With a work email at the gym's website domain the backend emails a verification
  * link (`email_sent`); otherwise the claim goes to admin review (`admin_review`),
  * or lands straight away (`approved`) when an admin has turned on auto-approval
@@ -47,7 +42,8 @@ type ClaimGymSheetProps = {
  * link is opened in the browser and handled by the backend, so the app does
  * nothing further after confirming an `email_sent`/`admin_review` claim. An
  * `approved` claim instead offers a "Manage gym" hand-off to the web setup
- * console, mirroring MyGymsScreen's kiosk hand-off and the web claim dialog.
+ * console's Boards tab, mirroring MyGymsScreen's kiosk hand-off and the web
+ * claim dialog.
  */
 export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const styles = useTypographyStyles(createStyles);
@@ -56,10 +52,12 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const requestClaim = useRequestGymClaim();
 
   const domain = useMemo(() => extractDomain(gym.website), [gym.website]);
-  // A gym with a free/consumer-provider website (gmail.com, wixsite.com, …) can't
-  // be domain-proof claimed — anyone can get such an address — so start in and
-  // only offer admin review for those, matching the web dialog and the backend.
-  const canUseDomain = useMemo(() => isClaimableDomain(gym.website), [gym.website]);
+  // The server says whether the website can prove a claim: a real domain the
+  // gym's OWNER put on the listing. The website alone can't tell, because a
+  // synced gym's website came from public data, not from whoever runs the gym,
+  // and a free provider (gmail.com, wixsite.com, …) proves nothing. Without it
+  // the sheet starts in, and only offers, admin review, as the web dialog does.
+  const canUseDomain = gym.canClaimByDomain === true && domain !== null;
 
   const [mode, setMode] = useState<ClaimMode>(canUseDomain ? 'domain' : 'admin');
   const [claimEmail, setClaimEmail] = useState('');
@@ -114,7 +112,9 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const openManageGym = useCallback(async () => {
     setManageError(null);
     const slugOrUuid = gym.slug ?? gym.uuid;
-    const opened = await openValidatedUrl(buildGymManageUrl(slugOrUuid), (url) => url.startsWith(WEB_BASE_URL));
+    const opened = await openValidatedUrl(buildGymManageUrl(slugOrUuid, 'boards'), (url) =>
+      url.startsWith(WEB_BASE_URL),
+    );
     if (opened) {
       dismiss();
     } else {
