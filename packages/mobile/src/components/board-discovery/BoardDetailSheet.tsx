@@ -253,7 +253,9 @@ export function BoardDetailSheet({
             reviewRow={showReview ? { onPress: openReview } : null}
             relistRow={relistRow}
             boardReportRow={reportAction ? { onPress: reportAction.open } : null}
-            onOpenGym={gymUuid !== null && board.gymName ? openGym : undefined}
+            // `gymIsListed === false` is the server's private-gym signal; the page would
+            // only answer not-found for it, so don't offer the row.
+            onOpenGym={gymUuid !== null && board.gymName && board.gymIsListed !== false ? openGym : undefined}
           />
         ) : null}
       </Sheet>

@@ -706,6 +706,7 @@ export function useUpdateGym() {
     },
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: ['gym', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
