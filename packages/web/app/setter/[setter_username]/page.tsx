@@ -37,7 +37,7 @@ import SetterShareButton from './setter-share-button';
 import SetterMostSent from './setter-most-sent';
 import { selectMostSentClimbs } from './setter-most-sent-picks';
 import { resolveSetterBoardLinks } from './setter-board-links';
-import { buildSetterStatsLine } from './setter-stats-line';
+import { buildSetterStatsLine, setterBoardLabel } from './setter-stats-line';
 
 type SetterPageProps = {
   params: Promise<{ setter_username: string }>;
@@ -391,7 +391,9 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   if (page > 1 && setterData.climbs.length === 0) return notFound();
 
   const links = view.links;
-  const boardLinks = resolveSetterBoardLinks(setterData.boardTypes, setterData.climbs, links);
+  const boardLinks = resolveSetterBoardLinks(setterData.boardTypes, setterData.climbs, links, (boardType) =>
+    setterBoardLabel(boardType, t),
+  );
   // The related link at the foot names the board most of this page's linked
   // climbs sit on, and goes where that board's chip goes.
   const primaryBoardType = links.primaryGroup?.boardType;

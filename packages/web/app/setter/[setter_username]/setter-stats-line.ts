@@ -1,6 +1,18 @@
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 
+/**
+ * A board type as the setter page names it, in the line and on the chips.
+ *
+ * Brands are never translated. A spray wall is a kind of wall rather than a
+ * brand, so it reads the glossary term the page's search title uses
+ * (`setterBoardLabel` in `lib/seo/search-description.ts`), so the line, the
+ * chips and the title all name it the same way.
+ */
+export function setterBoardLabel(boardType: string, t: TFunction): string {
+  return boardType === 'spray' ? t('metadata.setter.boardSprayWall') : boardTypeLabel(boardType);
+}
+
 type SetterStatsLineInput = {
   t: TFunction;
   locale: string;
@@ -33,7 +45,9 @@ export function buildSetterStatsLine({
   totalAscents,
 }: SetterStatsLineInput): string {
   const numberFormat = new Intl.NumberFormat(locale);
-  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(boardTypes.map(boardTypeLabel));
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    boardTypes.map((boardType) => setterBoardLabel(boardType, t)),
+  );
   const climbs = t('setter.stats.climbs', { count: climbCount, climbs: numberFormat.format(climbCount), boards });
 
   if (!(totalAscents > 0)) return climbs;

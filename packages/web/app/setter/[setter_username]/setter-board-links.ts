@@ -1,4 +1,3 @@
-import { boardTypeLabel } from '@boardsesh/board-constants';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import type { BoardImageDetails } from '@/app/lib/types';
 import type { SetterClimbRow } from './server-setter-data';
@@ -6,7 +5,7 @@ import type { SetterClimbLinks } from './setter-climb-links';
 
 export type SetterBoardLink = {
   boardType: string;
-  /** The board's brand name: "Kilter", "MoonBoard". */
+  /** The board's name as the page prints it: "Kilter", "MoonBoard", "Spraywall". */
   label: string;
   /** The board's climb list, or null when no climb on this page names a canonical config for it. */
   href: string | null;
@@ -31,6 +30,8 @@ export function resolveSetterBoardLinks(
   boardTypes: readonly string[],
   climbs: readonly SetterClimbRow[],
   links: Pick<SetterClimbLinks, 'boardDetailsByClimb' | 'unlinkedClimbUuids'>,
+  /** The page's own board label, so a chip reads the same word as the line above it. */
+  labelFor: (boardType: string) => string,
 ): SetterBoardLink[] {
   // Map iteration is insertion order, so ties go to the layout seen first: the
   // one holding the most-sent linked climb.
@@ -61,7 +62,7 @@ export function resolveSetterBoardLinks(
     }
     return {
       boardType,
-      label: boardTypeLabel(boardType),
+      label: labelFor(boardType),
       href: best ? buildCanonicalClimbListUrl(best.details, best.angle) : null,
     };
   });

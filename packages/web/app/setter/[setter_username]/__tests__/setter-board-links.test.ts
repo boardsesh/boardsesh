@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { getBoardImageDetailsForBoard, getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import type { BoardImageDetails } from '@/app/lib/types';
@@ -62,6 +63,7 @@ describe('resolveSetterBoardLinks', () => {
       ['kilter', 'tension'],
       climbs,
       links({ a: KILTER_ORIGINAL, b: TENSION, c: KILTER_ORIGINAL }),
+      boardTypeLabel,
     );
 
     expect(boardLinks).toEqual([
@@ -79,6 +81,7 @@ describe('resolveSetterBoardLinks', () => {
       ['kilter'],
       climbs,
       links({ a: KILTER_HOMEWALL, b: KILTER_ORIGINAL, c: KILTER_ORIGINAL }),
+      boardTypeLabel,
     );
 
     expect(kilter.href).toBe(buildCanonicalClimbListUrl(KILTER_ORIGINAL, 30));
@@ -93,6 +96,7 @@ describe('resolveSetterBoardLinks', () => {
       ['kilter', 'moonboard', 'tension'],
       climbs,
       links({ a: KILTER_ORIGINAL, b: KILTER_ORIGINAL }, ['b']),
+      boardTypeLabel,
     );
 
     expect(boardLinks.map((boardLink) => [boardLink.label, boardLink.href === null])).toEqual([

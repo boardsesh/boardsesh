@@ -68,6 +68,11 @@ describe('buildSetterStatsLine', () => {
     );
   });
 
+  it('names a spray wall with the glossary word the search title uses, not as a brand', async () => {
+    expect(await lineFor('en-US', 3, ['kilter', 'spray'], 0)).toBe('3 climbs on Kilter and Spraywall');
+    expect(await lineFor('zh-CN', 3, ['spray'], 0)).toBe('喷点墙 上的 3 条线路');
+  });
+
   it('formats both numbers for the locale', async () => {
     expect(await lineFor('de', 1234, ['kilter'], 98765)).toBe('1.234 Boulder auf Kilter, 98.765 Begehungen');
     expect(await lineFor('fr', 41, ['kilter', 'tension'], 9860)).toBe('41 blocs sur Kilter et Tension, 9 860 croix');
