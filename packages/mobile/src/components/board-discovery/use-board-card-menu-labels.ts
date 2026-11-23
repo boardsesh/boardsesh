@@ -30,6 +30,9 @@ export function useBoardCardMenuLabels(): BoardCardMenuLabels {
   });
   const unfollow = t('mobile.manage.unfollowRow');
   const deleteLabel = t('mobile.manage.deleteConfirm');
+  const reviewReports = t('reportReview.open');
+  const report = t('report.action');
+  const reported = t('report.reported');
   return useMemo(
     () => ({
       climbHere,
@@ -43,6 +46,9 @@ export function useBoardCardMenuLabels(): BoardCardMenuLabels {
       removeFromNamedGym: (gymName: string) => removeFromNamedGymTemplate.split(GYM_SLOT).join(gymName),
       unfollow,
       delete: deleteLabel,
+      reviewReports,
+      report,
+      reported,
     }),
     [
       climbHere,
@@ -56,6 +62,9 @@ export function useBoardCardMenuLabels(): BoardCardMenuLabels {
       removeFromNamedGymTemplate,
       unfollow,
       deleteLabel,
+      reviewReports,
+      report,
+      reported,
     ],
   );
 }

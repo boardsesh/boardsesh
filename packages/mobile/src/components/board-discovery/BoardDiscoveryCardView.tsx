@@ -68,6 +68,13 @@ export type DiscoveryBoardItem = {
   canEdit?: boolean;
   canDelete?: boolean;
   canRemoveFromGym?: boolean;
+  /**
+   * Waiting reports the viewer can act on (`UserBoard.openReportCount`): the
+   * creator's and gym staff's "Reported" pill and See reports row.
+   */
+  openReportCount?: number | null;
+  /** The viewer's own report on this board is waiting: the menu says Reported. */
+  viewerHasOpenReport?: boolean | null;
   /** The gym the board is listed at, for "Remove from {gym}". */
   gymName?: string | null;
   /** Whether the viewer pinned this board to the front of their list. */
@@ -171,7 +178,7 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
   // own activation.
   const accessibilityActions = useMemo(() => {
     const nested: AccessibilityActionInfo[] = rows
-      .filter((row) => row.action !== 'climb_here')
+      .filter((row) => row.action !== 'climb_here' && !row.disabled)
       .map((row) => ({ name: row.action, label: row.label }));
     return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
   }, [rows]);
@@ -183,7 +190,7 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
         handlePress();
         return;
       }
-      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here');
+      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here' && !row.disabled);
       if (index >= 0) runMenuRow(index, 'accessibility');
     },
     [rows, handlePress, runMenuRow],

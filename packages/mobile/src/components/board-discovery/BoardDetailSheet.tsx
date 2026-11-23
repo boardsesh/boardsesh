@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
@@ -19,18 +19,51 @@ import { BoardShareSheet } from './BoardShareSheet';
 import { HomeBoardShareSheet } from './HomeBoardShareSheet';
 import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
-import { useProfile } from '../../lib/graphql/hooks';
+import { useGym, useProfile } from '../../lib/graphql/hooks';
 import { useResourcePrivacy } from '../../lib/graphql/hooks/use-resource-privacy';
 import { homeBoardShareTarget, type HomeBoardShareTarget } from '../../lib/board-share/board-share-link';
+import { useReportProblem } from '../report-problem/use-report-problem';
+import { useReportBoard } from '../../lib/graphql/hooks/use-directory-reports';
+import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
+import { useToast } from '../../providers/toast-provider';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+
+/**
+ * The gym whose staff took a board off their listing, from the
+ * `board_removed_from_gym` notice: its uuid, and the name the notice carried
+ * for the moment before the gym itself loads.
+ */
+export type RelistGym = { uuid: string; name: string | null };
+
+/** The relist ask: not sent yet, in flight, or answered. */
+type RelistStatus = 'idle' | 'pending' | 'sent';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
   visible: boolean;
   onClose: () => void;
   onSetActive: (board: UserBoard) => void;
+  /**
+   * See reports, for the creator and gym staff while a report waits on them.
+   * The host (the board picker) owns the review sheet.
+   */
+  onReviewReports?: (board: UserBoard) => void;
+  /**
+   * The gym whose staff took this board off their listing, when the sheet was
+   * opened from that notification: offers the board's creator "Ask {{gym}} to
+   * list it again".
+   */
+  relistGym?: RelistGym | null;
 };
 
-export function BoardDetailSheet({ board, visible, onClose, onSetActive }: BoardDetailSheetProps) {
+export function BoardDetailSheet({
+  board,
+  visible,
+  onClose,
+  onSetActive,
+  onReviewReports,
+  relistGym,
+}: BoardDetailSheetProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
@@ -76,6 +109,72 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   }, [board, homeShareTarget]);
   const closeHomeShare = useCallback(() => setHomeShareSnapshot(null), []);
 
+  // Report a problem: every board type but a Spraywall, which keeps its own
+  // reasons and review queue above. Null when the flag is off or the viewer
+  // can fix the board themselves.
+  const isSprayWall = !!board && toBoardName(board.boardType) === 'spray';
+  const reportAction = useReportProblem({ target: board && !isSprayWall ? { kind: 'board', board } : null });
+  const openReview = useCallback(() => {
+    if (board) onReviewReports?.(board);
+  }, [board, onReviewReports]);
+  const showReview = !!board && !!onReviewReports && (board.openReportCount ?? 0) > 0;
+
+  // "Ask {{gym}} to list it again", from the notification that the gym's staff
+  // took the creator's board off their listing. Only the creator may ask (the
+  // server refuses anyone else), and only while the board is off every gym.
+  // The gym's name comes from the gym itself once it loads; the notice's copy
+  // only fills the moment before, and a gym that no longer resolves offers
+  // nothing to ask.
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
+  const viewerUserId = useViewerUserId();
+  const relistCandidate =
+    directoryReportsEnabled &&
+    !!relistGym &&
+    !!board &&
+    !board.gymUuid &&
+    viewerUserId !== null &&
+    board.ownerId === viewerUserId;
+  const { data: relistGymData } = useGym(relistCandidate && relistGym ? relistGym.uuid : null);
+  const relistGymName = relistGymData === null ? null : (relistGymData?.name ?? relistGym?.name ?? null);
+  const { showToast } = useToast();
+  const relist = useReportBoard();
+  const relistMutate = relist.mutate;
+  // Per board: idle, in flight, or answered. A repeat tap while one is in
+  // flight or after it went through sends nothing.
+  const [relistState, setRelistState] = useState<{ boardUuid: string; status: RelistStatus } | null>(null);
+  const relistStatus: RelistStatus = board && relistState?.boardUuid === board.uuid ? relistState.status : 'idle';
+  const relistInFlight = useRef(false);
+  const askToRelist = useCallback(() => {
+    if (!board || !relistGymName || relistInFlight.current || relistStatus !== 'idle') return;
+    const boardUuid = board.uuid;
+    const gymName = relistGymName;
+    relistInFlight.current = true;
+    setRelistState({ boardUuid, status: 'pending' });
+    relistMutate(
+      { boardUuid, reason: 'relist_request' },
+      {
+        onSuccess: (result) => {
+          setRelistState({ boardUuid, status: 'sent' });
+          showToast(
+            result.status === 'already_reported'
+              ? t('report.relistAlready', { gym: gymName })
+              : t('report.relistSent', { gym: gymName }),
+            'success',
+          );
+        },
+        onError: () => {
+          setRelistState(null);
+          showToast(t('report.error'), 'error');
+        },
+        onSettled: () => {
+          relistInFlight.current = false;
+        },
+      },
+    );
+  }, [board, relistGymName, relistStatus, relistMutate, showToast, t]);
+  const relistRow =
+    relistCandidate && relistGymName ? { gymName: relistGymName, status: relistStatus, onPress: askToRelist } : null;
+
   const isActive = board ? isActiveBoard(board, activeBoard?.uuid) : false;
   const header = board ? (
     <SheetTopBar
@@ -115,14 +214,18 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             onOpenShare={openShare}
             homeShareTarget={homeShareTarget}
             onOpenHomeShare={openHomeShare}
-            canReport={canReport && toBoardName(board.boardType) === 'spray'}
+            canReport={canReport && isSprayWall}
             onOpenReport={openReport}
+            reviewRow={showReview ? { onPress: openReview } : null}
+            relistRow={relistRow}
+            boardReportRow={reportAction ? { onPress: reportAction.open } : null}
           />
         ) : null}
       </Sheet>
       {reportTarget ? (
         <ReportSprayWallSheet wallUuid={reportTarget.uuid} wallName={reportTarget.name} onClose={closeReport} />
       ) : null}
+      {reportAction?.sheet}
       {/* A sibling of the detail sheet, not a child: it is its own native sheet,
         and the coordinator serialises the two presentations. */}
       {shareSnapshot ? (
@@ -160,6 +263,9 @@ function BoardDetailBody({
   onOpenHomeShare,
   canReport,
   onOpenReport,
+  reviewRow,
+  relistRow,
+  boardReportRow,
 }: {
   board: UserBoard;
   isActive: boolean;
@@ -171,6 +277,9 @@ function BoardDetailBody({
   onOpenHomeShare: () => void;
   canReport: boolean;
   onOpenReport: () => void;
+  reviewRow: { onPress: () => void } | null;
+  relistRow: { gymName: string; status: RelistStatus; onPress: () => void } | null;
+  boardReportRow: { onPress: () => void } | null;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -263,6 +372,39 @@ function BoardDetailBody({
         </View>
       ) : null}
 
+      {reviewRow ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="warning"
+            label={t('reportReview.open')}
+            hint={t('reportReview.title')}
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={reviewRow.onPress}
+          />
+        </View>
+      ) : null}
+
+      {/* Tappable once: while the ask is in flight and after it went through,
+          the row only says so. */}
+      {relistRow ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="gym"
+            label={t('report.relistAsk', { gym: relistRow.gymName })}
+            hint={
+              relistRow.status === 'sent'
+                ? t('report.relistSent', { gym: relistRow.gymName })
+                : t('report.relistAskHint')
+            }
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={relistRow.status === 'idle' ? relistRow.onPress : undefined}
+            testID="board-detail-relist"
+          />
+        </View>
+      ) : null}
+
       {canReport ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           <WallRow
@@ -273,6 +415,33 @@ function BoardDetailBody({
             systemColors={systemColors}
             onPress={onOpenReport}
           />
+        </View>
+      ) : null}
+
+      {/* Report a problem, the last row of the sheet in its own group: never on
+          the art or the hero (design §2). Once the climber's report is in, the
+          row says so instead. */}
+      {boardReportRow ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          {board.viewerHasOpenReport ? (
+            <WallRow
+              icon="flag"
+              label={t('report.reported')}
+              hint={t('report.alreadyReported')}
+              showSeparator={false}
+              systemColors={systemColors}
+            />
+          ) : (
+            <WallRow
+              icon="flag"
+              label={t('report.action')}
+              accessibilityLabel={t('report.actionAria', { name: board.name })}
+              showSeparator={false}
+              systemColors={systemColors}
+              onPress={boardReportRow.onPress}
+              testID="board-detail-report"
+            />
+          )}
         </View>
       ) : null}
     </>
@@ -291,39 +460,58 @@ function WallRow({
   icon,
   label,
   hint,
+  accessibilityLabel,
   showSeparator,
   systemColors,
   onPress,
+  testID,
 }: {
   icon: Parameters<typeof Icon>[0]['name'];
   label: string;
-  hint: string;
+  hint?: string;
+  accessibilityLabel?: string;
   showSeparator: boolean;
   systemColors: SystemColors;
-  onPress: () => void;
+  /** Absent: a row that only says something (Reported), drawn without a chevron. */
+  onPress?: () => void;
+  testID?: string;
 }) {
+  const body = (
+    <>
+      <Icon name={icon} size={20} color={systemColors.secondaryLabel} />
+      <View style={styles.wallRowText}>
+        <Text variant="body" color={onPress ? systemColors.label : systemColors.secondaryLabel}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+      {onPress ? <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} /> : null}
+    </>
+  );
+  const separator = showSeparator
+    ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator }
+    : null;
+  if (!onPress) {
+    return (
+      <View style={[styles.wallRow, separator]} accessible accessibilityLabel={hint ? `${label}, ${hint}` : label}>
+        {body}
+      </View>
+    );
+  }
   return (
     <PressableSurface
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={hint}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.wallRow,
-        showSeparator ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator } : null,
-        pressed ? { opacity: 0.6 } : null,
-      ]}
+      testID={testID}
+      style={({ pressed }) => [styles.wallRow, separator, pressed ? { opacity: 0.6 } : null]}
     >
-      <Icon name={icon} size={20} color={systemColors.secondaryLabel} />
-      <View style={styles.wallRowText}>
-        <Text variant="body" color={systemColors.label}>
-          {label}
-        </Text>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {hint}
-        </Text>
-      </View>
-      <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+      {body}
     </PressableSurface>
   );
 }

@@ -117,5 +117,12 @@
     "boardReportReminderBody": "请在我们的团队介入前修正或保留。",
     "boardRelistTitle": "把 {{board}} 放回 {{gym}}？",
     "boardRelistBody": "添加它的攀岩者请求重新列出。"
+  },
+  "explain": {
+    "boardDeletedTitle": "{{board}} 已被删除",
+    "boardDeletedBody": "所有保存过它的攀岩者都不再有它。你已记录的完攀仍保留在攀爬记录中。",
+    "claimDeniedTitle": "我们无法确认你的认领",
+    "claimDeniedBody": "我们无法确认你经营 {{gym}}。如果我们判断有误，请回复我们的邮件。",
+    "ok": "好的"
   }
 }

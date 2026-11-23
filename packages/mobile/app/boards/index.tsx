@@ -16,9 +16,16 @@ import {
   type BoardCardMenuSection,
   type BoardCardMenuVia,
 } from '../../src/components/board-discovery/board-card-menu';
-import { pickerTopBoardsToItems, userBoardsToItems } from '../../src/components/board-discovery/board-items';
+import {
+  pickerTopBoardsToItems,
+  userBoardToItem,
+  userBoardsToItems,
+} from '../../src/components/board-discovery/board-items';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
-import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
+import { BoardDetailSheet, type RelistGym } from '../../src/components/board-discovery/BoardDetailSheet';
+import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
+import { ReportReviewSheet, type ReportReviewAction } from '../../src/components/report-problem/ReportReviewSheet';
+import { useDirectoryReportsEnabled, useFeatureFlagsResolved } from '../../src/providers/feature-flags-provider';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { BoardRowList } from '../../src/components/board-discovery/BoardRowList';
 import { BoardSelectorView } from '../../src/components/board-discovery/BoardSelectorView';
@@ -86,6 +93,7 @@ import { pickerNearbyResultCount, useBoardPickerAnalytics } from '../../src/lib/
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { isSystemBoardDeleteInsteadError } from '../../src/lib/graphql/extract-error-message';
 import {
+  useBoard,
   useDeleteBoard,
   useDetachBoardFromGym,
   useGymBoards,
@@ -128,13 +136,19 @@ import { spacing } from '../../src/theme/tokens';
 // recompute the offline rows on every commit.
 const EMPTY_BOARDS: UserBoard[] = [];
 
-// Near you boards belong to other people: their cards offer Climb here and
-// Details, nothing that manages a board.
+// Near you boards belong to other people: their cards offer Climb here,
+// Details and, with the `directory-reports` flag, Report a problem; nothing that
+// manages a board.
 const NEARBY_MENU_CAPABILITIES: BoardCardMenuCapabilities = {
   canPin: false,
   canDownload: false,
   canOpenDetails: true,
   canManage: false,
+  canReport: false,
+};
+const NEARBY_MENU_CAPABILITIES_WITH_REPORT: BoardCardMenuCapabilities = {
+  ...NEARBY_MENU_CAPABILITIES,
+  canReport: true,
 };
 
 /**
@@ -182,10 +196,32 @@ export default function BoardSelection() {
   const { isAuthenticated, refreshAuthState } = useAuth();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { returnTo, source, firstBoard } = useLocalSearchParams<{
+  const {
+    returnTo,
+    source,
+    firstBoard,
+    board: linkedBoardParam,
+    details: linkedDetailsParam,
+    review: linkedReviewParam,
+    relistGym: linkedRelistGymParam,
+    relistGymUuid: linkedRelistGymUuidParam,
+  } = useLocalSearchParams<{
     returnTo?: string;
     source?: string;
     firstBoard?: string;
+    /**
+     * A board to open on arrival, from a notification or the Climbs menu's
+     * About this board: `details=1` opens its detail sheet, `review=1` its
+     * report review sheet (the detail sheet while the `directory-reports`
+     * flag is off). `relistGymUuid` is the gym whose staff took the board off,
+     * for the detail sheet's "Ask {{gym}} to list it again"; `relistGym` is
+     * the notice's name for it, shown until the gym loads.
+     */
+    board?: string;
+    details?: string;
+    review?: string;
+    relistGym?: string;
+    relistGymUuid?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Arriving from the first-run framing screen: this is the activation flow, so
@@ -240,10 +276,76 @@ export default function BoardSelection() {
   const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
   // Where the open detail sheet was opened from, so its Climb here reports that.
   const detailPick = useRef<PickerPick>({ pickSource: 'your_boards' });
-  const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
+  // The gym named by a "your board came off {{gym}}" notification, while its
+  // detail sheet is open: the sheet offers to ask that gym to list it again.
+  const [detailRelistGym, setDetailRelistGym] = useState<RelistGym | null>(null);
+  const closeBoardDetails = useCallback(() => {
+    setDetailBoard(null);
+    setDetailRelistGym(null);
+  }, []);
   useEffect(() => {
     if (!isAuthenticated) closeBoardDetails();
   }, [isAuthenticated, closeBoardDetails]);
+
+  // Report a problem (docs/product/directory-reports.md): the report sheet and
+  // the review sheet are hosted here, inside the picker's modal, so they
+  // present above it.
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
+  const reportHost = useReportProblemHost();
+  const openReportForBoard = reportHost.openReport;
+  const [reviewBoard, setReviewBoard] = useState<UserBoard | null>(null);
+  const closeReview = useCallback(() => setReviewBoard(null), []);
+  // A board this picker was opened on (a notification, About this board) that
+  // may sit in none of its lists: a staff member's gym board, say. Board
+  // actions picked in its sheets resolve it from here when no list has it.
+  //
+  // Read fresh on arrival (`staleTime: 0`): the cache can hold a copy from
+  // before the staff removal or report the notification is about, which would
+  // show the gym the board just left, hide "Ask {{gym}} to list it again", or
+  // offer review actions the viewer no longer has.
+  const { data: linkedBoard, isFetching: linkedBoardFetching } = useBoard(
+    isAuthenticated && linkedBoardParam ? linkedBoardParam : null,
+    { staleTime: 0 },
+  );
+  // Opening a sheet is a one-way step, so it waits for the flag bag to be final
+  // (`review=1` falls back to the detail sheet with the flag off) and for the
+  // arrival refetch to land. Offline, a refetch that can't run stops fetching
+  // and the cached copy opens.
+  const flagsResolved = useFeatureFlagsResolved();
+  // Open the linked board's sheet once.
+  const linkedBoardOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkedBoard || linkedBoardFetching || !flagsResolved) return;
+    if (linkedBoardOpened.current === linkedBoard.uuid) return;
+    const wantsReview = linkedReviewParam === '1';
+    if (wantsReview && directoryReportsEnabled) {
+      linkedBoardOpened.current = linkedBoard.uuid;
+      setReviewBoard(linkedBoard);
+    } else if (wantsReview || linkedDetailsParam === '1') {
+      linkedBoardOpened.current = linkedBoard.uuid;
+      detailPick.current = { pickSource: 'your_boards' };
+      setDetailRelistGym(
+        !wantsReview && linkedRelistGymUuidParam
+          ? { uuid: linkedRelistGymUuidParam, name: linkedRelistGymParam ? linkedRelistGymParam : null }
+          : null,
+      );
+      setDetailBoard(linkedBoard);
+    }
+  }, [
+    linkedBoard,
+    linkedBoardFetching,
+    flagsResolved,
+    directoryReportsEnabled,
+    linkedReviewParam,
+    linkedDetailsParam,
+    linkedRelistGymParam,
+    linkedRelistGymUuidParam,
+  ]);
+  // The open sheets show the linked board as it is now, not the copy they
+  // opened with: a later refetch (a report closed, the board moved) reaches
+  // them too.
+  const shownDetailBoard = detailBoard && linkedBoard?.uuid === detailBoard.uuid ? linkedBoard : detailBoard;
+  const shownReviewBoard = reviewBoard && linkedBoard?.uuid === reviewBoard.uuid ? linkedBoard : reviewBoard;
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
   // the menu without waiting for a refetch. Deliberately does NOT reorder: the
@@ -750,16 +852,37 @@ export default function BoardSelection() {
   // same moment for a climber with no boards yet (Climbs' empty state), and its
   // "At a gym" answer shows the Near you carousel, so it draws plain cards too.
   const showCardMenus = !fromOnboarding && !showFirstBoardChoice;
-  // Near you's card menu: the two rows NEARBY_MENU_CAPABILITIES offers.
+  // Report a problem and See reports: the flag is on, the climber is signed in
+  // and online, and this is not onboarding (which draws no menus anyway).
+  const canReportBoards = directoryReportsEnabled && isAuthenticated && !isLocalOnly && !fromOnboarding;
+  // Report a problem opens the report sheet; See reports the review sheet. The
+  // board comes from the lists this picker shows, or the board it was opened on.
+  const runReportAction = useCallback(
+    (item: DiscoveryBoardItem, action: 'report' | 'review_reports') => {
+      const board = detailBoardsByUuid.get(item.key) ?? (linkedBoard?.uuid === item.key ? linkedBoard : undefined);
+      if (!board) return;
+      if (action === 'report') openReportForBoard({ kind: 'board', board });
+      else setReviewBoard(board);
+    },
+    [detailBoardsByUuid, linkedBoard, openReportForBoard],
+  );
+  // Near you's card menu: the rows NEARBY_MENU_CAPABILITIES offers.
   const onNearbyMenuAction = useCallback(
     (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
-      if (!showCardMenus || (action !== 'climb_here' && action !== 'details')) return;
+      if (!showCardMenus) return;
+      if (action === 'report' || action === 'review_reports') {
+        if (!canReportBoards) return;
+        trackBoardCardAction({ action, via, section: 'nearby' });
+        runReportAction(item, action);
+        return;
+      }
+      if (action !== 'climb_here' && action !== 'details') return;
       if (action === 'climb_here' && boardActionsInFlight.current.has(item.key)) return;
       trackBoardCardAction({ action, via, section: 'nearby' });
       if (action === 'climb_here') onSelectNearbyBoard(item);
       else onNearbyBoardDetails(item);
     },
-    [showCardMenus, onSelectNearbyBoard, onNearbyBoardDetails],
+    [showCardMenus, canReportBoards, runReportAction, onSelectNearbyBoard, onNearbyBoardDetails],
   );
   const onActiveBoardDetails = useCallback(() => {
     if (!activeBoard) return;
@@ -800,7 +923,13 @@ export default function BoardSelection() {
       <BoardCarousel
         items={nearbyItems}
         onSelect={onSelectNearbyBoard}
-        menuCapabilities={showCardMenus ? NEARBY_MENU_CAPABILITIES : undefined}
+        menuCapabilities={
+          showCardMenus
+            ? canReportBoards
+              ? NEARBY_MENU_CAPABILITIES_WITH_REPORT
+              : NEARBY_MENU_CAPABILITIES
+            : undefined
+        }
         onMenuAction={showCardMenus ? onNearbyMenuAction : undefined}
       />
     ) : null;
@@ -843,11 +972,18 @@ export default function BoardSelection() {
 
   // One `find` per pick — the shape `onSelectMyBoard` already uses — never per row.
   const runMyBoardAction = useCallback(
-    async (item: DiscoveryBoardItem, action: BoardCardManageAction) => {
+    async (item: DiscoveryBoardItem, action: BoardCardManageAction, knownBoard?: UserBoard) => {
       if (boardActionsInFlight.current.has(item.key)) return;
       boardActionsInFlight.current.add(item.key);
       try {
-        const board = myBoards.find((candidate) => candidate.uuid === item.key);
+        // The board the caller already holds (the review sheet's); else Your
+        // boards first, then a gym board staff reached from Near you or a
+        // report notification, which they need not follow.
+        const board =
+          knownBoard ??
+          myBoards.find((candidate) => candidate.uuid === item.key) ??
+          nearby?.boards.find((candidate) => candidate.uuid === item.key) ??
+          (linkedBoard?.uuid === item.key ? linkedBoard : undefined);
         if (!board) {
           showToast(t('mobile.boardSwitchError'), 'error');
           return;
@@ -993,6 +1129,8 @@ export default function BoardSelection() {
     },
     [
       myBoards,
+      nearby?.boards,
+      linkedBoard,
       router,
       activeBoard?.uuid,
       currentUserId,
@@ -1021,6 +1159,30 @@ export default function BoardSelection() {
     [pinBoardMutate],
   );
 
+  // The review sheet's board actions. Fix opens the edit route (which tells the
+  // climber their save closes the report); Remove and Delete run the same
+  // confirms and mutations as the card menu's rows, on the board the sheet
+  // showed: it need not sit in any list this picker loaded.
+  const onReviewAction = useCallback(
+    (action: ReportReviewAction, board: UserBoard) => {
+      if (action === 'fix') {
+        router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid, fromReport: '1' } });
+        return;
+      }
+      const item = userBoardToItem(board, activeBoard?.uuid, undefined, currentUserId);
+      if (!item) return;
+      void runMyBoardAction(item, action === 'remove' ? 'remove_from_gym' : 'delete', board);
+    },
+    [router, activeBoard?.uuid, currentUserId, runMyBoardAction],
+  );
+  const openReviewFromDetails = useCallback(
+    (board: UserBoard) => {
+      closeBoardDetails();
+      setReviewBoard(board);
+    },
+    [closeBoardDetails],
+  );
+
   // Gates Edit, Remove from gym, Unfollow and Delete in every card's menu. Also off with no
   // boards, with no resolvable identity, and offline — where every action behind
   // it is a network mutation. Onboarding has no card menu at all (below).
@@ -1035,8 +1197,9 @@ export default function BoardSelection() {
       canDownload: offlineDownloadsEnabled,
       canOpenDetails: true,
       canManage: canEditBoards,
+      canReport: canReportBoards,
     }),
-    [canPinBoards, offlineDownloadsEnabled, canEditBoards],
+    [canPinBoards, offlineDownloadsEnabled, canEditBoards, canReportBoards],
   );
 
   // Every row of a "Your boards" card menu lands here, from the ⋯, the hold or
@@ -1077,6 +1240,15 @@ export default function BoardSelection() {
           trackBoardCardAction({ action, via, section });
           openDetails(item);
           return;
+        case 'report':
+        case 'review_reports':
+          if (!canReportBoards) return;
+          trackBoardCardAction({ action, via, section });
+          runReportAction(item, action);
+          return;
+        case 'reported':
+          // A disabled row: it only says the climber's report is in.
+          return;
         case 'edit':
         case 'remove_from_gym':
         case 'unfollow':
@@ -1089,6 +1261,8 @@ export default function BoardSelection() {
     },
     [
       showCardMenus,
+      canReportBoards,
+      runReportAction,
       canPinBoards,
       setBoardPinned,
       offlineDownloadsEnabled,
@@ -1537,12 +1711,26 @@ export default function BoardSelection() {
         />
       }
       overlays={
-        <BoardDetailSheet
-          board={detailBoard}
-          visible={detailBoard !== null}
-          onClose={closeBoardDetails}
-          onSetActive={onSetActiveFromDetails}
-        />
+        <>
+          <BoardDetailSheet
+            board={shownDetailBoard}
+            visible={shownDetailBoard !== null}
+            onClose={closeBoardDetails}
+            onSetActive={onSetActiveFromDetails}
+            onReviewReports={directoryReportsEnabled ? openReviewFromDetails : undefined}
+            relistGym={detailRelistGym}
+          />
+          {reportHost.sheet}
+          {shownReviewBoard ? (
+            <ReportReviewSheet
+              key={shownReviewBoard.uuid}
+              board={shownReviewBoard}
+              viewerUserId={currentUserId ?? null}
+              onClose={closeReview}
+              onAction={onReviewAction}
+            />
+          ) : null}
+        </>
       }
     />
   );

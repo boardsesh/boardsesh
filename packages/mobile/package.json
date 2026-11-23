@@ -25,6 +25,7 @@
     "@boardsesh/connected-apps": "workspace:*",
     "@boardsesh/consent": "workspace:*",
     "@boardsesh/create-climb-react": "workspace:*",
+    "@boardsesh/directory-moderation": "workspace:*",
     "@boardsesh/frosted-bokeh": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
     "@boardsesh/graphql-client": "workspace:*",

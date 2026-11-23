@@ -33,6 +33,30 @@ describe('native import notification handlers', () => {
     mocks.lastResponse.mockReturnValue(null);
   });
 
+  it('opens the review sheet for a board report push and rejects a malformed board uuid', async () => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    expect(
+      resolveNotificationRoute(
+        notification({ type: 'board_report_opened', boardUuid: wallUuid, reportUuid: resetOfWallUuid }),
+      ),
+    ).toEqual({ path: '/boards', params: { board: wallUuid, review: '1' } });
+    expect(resolveNotificationRoute(notification({ type: 'board_report_opened', boardUuid: '../x' }))).toBeNull();
+    expect(resolveNotificationRoute(notification({ type: 'board_report_opened' }))).toBeNull();
+  });
+
+  it('opens the plain board for a report push once the flag is known to be off', async () => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    const push = notification({ type: 'board_report_opened', boardUuid: wallUuid });
+    expect(resolveNotificationRoute(push, { directoryReportsEnabled: false })).toEqual({
+      path: '/boards',
+      params: { board: wallUuid, details: '1' },
+    });
+    expect(resolveNotificationRoute(push, { directoryReportsEnabled: true })).toEqual({
+      path: '/boards',
+      params: { board: wallUuid, review: '1' },
+    });
+  });
+
   it('opens bug report replies and rejects malformed or missing report ids', async () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply', reportId: '42' }))).toEqual({

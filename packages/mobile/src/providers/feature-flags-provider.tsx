@@ -212,6 +212,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for support asks in the Expo browser app at /app, which no store rule covers and so ignores donation-links-v2. On hides the Support Boardsesh row in Account and turns the Acknowledgements link back into unlinked text, without a deploy. Native builds never read it. Unresolved reads as enabled.',
   },
   {
+    key: 'directory-reports',
+    label: 'Report a problem on boards and gyms',
+    description:
+      'Report a problem on a board or gym listing, the report review sheet for creators and gym staff, "About this board" in the Climbs menu, and the explainers on the board and gym edit screens. The same PostHog flag gates the backend (docs/product/directory-reports.md): turn it on with a plain 100% release once this build is out. A POSITIVE rollout flag: unresolved or off shows none of it.',
+    defaultEnabled: false,
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
@@ -566,6 +573,15 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useClimbModerationEnabled(): boolean {
   return useFeatureFlag('climb-moderation-kill') !== true;
+}
+
+/**
+ * Report a problem on boards and gyms (#8043). Positive and fail-closed: off,
+ * missing or unresolved hides every entry point, because the backend refuses
+ * a report while its own copy of the same flag is off.
+ */
+export function useDirectoryReportsEnabled(): boolean {
+  return useFeatureFlag('directory-reports') === true;
 }
 
 /** Kill switch for the Android lock screen card (#7327). Missing or unresolved reads as enabled. */

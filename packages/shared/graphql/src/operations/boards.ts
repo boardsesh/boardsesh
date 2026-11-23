@@ -115,6 +115,8 @@ export const BOARD_FIELDS = `
   isPinnedByMe
   canDelete
   canRemoveFromGym
+  openReportCount
+  viewerHasOpenReport
 `;
 
 /**

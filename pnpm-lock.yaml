@@ -730,6 +730,9 @@ importers:
       '@boardsesh/create-climb-react':
         specifier: workspace:*
         version: link:../shared/create-climb-react
+      '@boardsesh/directory-moderation':
+        specifier: workspace:*
+        version: link:../shared/directory-moderation
       '@boardsesh/frosted-bokeh':
         specifier: workspace:*
         version: link:../shared/frosted-bokeh

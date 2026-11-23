@@ -8,6 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useUnreadNotificationCount } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
+import { aboutBoardHref } from '../../lib/boards/about-board-href';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { smartPlaylistHref } from '../../lib/smart-playlists';
@@ -226,6 +228,14 @@ export function useClimbListBarItems({
   const openViewOptions = useCallback(() => router.push('/(tabs)/climbs/settings/climb-list'), [router]);
   const openWallDisplay = useCallback(() => router.push(WALL_DISPLAY_HREF), [router]);
   const openBoards = useCallback(() => router.push('/boards'), [router]);
+  // About this board: the active board's detail sheet, where Report a problem
+  // lives (never on the climb or the board art).
+  const { t: tBoards } = useTranslation('boards');
+  const aboutBoardUuid = useDirectoryReportsEnabled() ? (activeBoard?.uuid ?? null) : null;
+  const openAboutBoard = useCallback(() => {
+    if (aboutBoardUuid) router.push(aboutBoardHref(aboutBoardUuid));
+  }, [router, aboutBoardUuid]);
+  const aboutBoardLabel = tBoards('mobile.boardDetail.about');
   const badgeColor = brandColors.primary;
   return useMemo(() => {
     const items: RootBarItem[] = [];
@@ -262,6 +272,9 @@ export function useClimbListBarItems({
                 },
               ]
             : []),
+          ...(aboutBoardUuid
+            ? [{ label: aboutBoardLabel, symbol: 'info.circle' as const, onPress: openAboutBoard }]
+            : []),
           {
             label: tSession('mobile.boardPresence.switchBoard'),
             symbol: 'arrow.left.arrow.right',
@@ -272,6 +285,9 @@ export function useClimbListBarItems({
     );
     return items;
   }, [
+    aboutBoardUuid,
+    aboutBoardLabel,
+    openAboutBoard,
     boardLabel,
     t,
     tSession,

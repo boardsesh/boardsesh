@@ -195,6 +195,7 @@ function nearbyBoardsResult() {
 }
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
+  useBoard: () => ({ data: undefined }),
   useGymBoards: () => ({ data: undefined }),
   useMyBoards: () => ({
     data: { boards: state.myBoards },
@@ -288,6 +289,8 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true) }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useDirectoryReportsEnabled: () => false,
+  useFeatureFlagsResolved: () => true,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => state.autoScanEnabled,
 }));
@@ -386,6 +389,10 @@ vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
     recognitionHold.remembered.push({ deviceId: held.deviceId, boardUuid: board.uuid });
   },
 }));
+vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
+  useReportProblemHost: () => ({ openReport: vi.fn(), sheet: null }),
+}));
+vi.mock('../../../src/components/report-problem/ReportReviewSheet', () => ({ ReportReviewSheet: () => null }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
 // The Velvet shelf pieces, as plain markup: a section, its title, and its action

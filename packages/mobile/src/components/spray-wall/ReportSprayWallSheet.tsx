@@ -1,20 +1,18 @@
-import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { useCallback, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SprayWallReportReason } from '@boardsesh/graphql/operations/spray-walls';
-import { ModalSheet } from '../ModalSheet';
-import { Text } from '../Text';
-import { RadioGroup, type RadioOption } from '../RadioGroup';
-import { SheetTopBar } from '../SheetTopBar';
-import { useTheme } from '../../providers/theme-provider';
+import type { RadioOption } from '../RadioGroup';
+import { ReportProblemSheet } from '../report-problem/ReportProblemSheet';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useReportSprayWall, useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
-import { spacing } from '../../theme/tokens';
 
 const REASONS: SprayWallReportReason[] = ['INAPPROPRIATE', 'NOT_A_WALL', 'PERSONAL_INFO', 'OTHER'];
 
+/**
+ * Report a Spraywall to the spray admins. A Spraywall keeps its own reasons
+ * (a photo can be inappropriate or carry personal details, which a catalogue
+ * board can't) and its own review queue, on the shared report sheet.
+ */
 export function ReportSprayWallSheet({
   wallUuid,
   wallName,
@@ -25,14 +23,11 @@ export function ReportSprayWallSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation('boards');
-  const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
   const { canReport } = useSprayModerationAccess();
   const { effectiveOffline } = useConnectivity();
   const report = useReportSprayWall();
   const inFlight = useRef(false);
   const [reason, setReason] = useState<SprayWallReportReason | null>(null);
-  const submitDisabled = !reason || effectiveOffline || report.isPending;
   const labels: Record<SprayWallReportReason, string> = {
     INAPPROPRIATE: t('sprayModeration.reasons.inappropriate'),
     NOT_A_WALL: t('sprayModeration.reasons.notAWall'),
@@ -62,76 +57,24 @@ export function ReportSprayWallSheet({
       },
     );
   }, [reason, canReport, effectiveOffline, report, wallUuid]);
-  const finished = report.isSuccess || !canReport;
-  const guard = useUnsavedSheetGuard({
-    visible: true,
-    dirty: reason !== null && !finished,
-    busy: report.isPending,
-    onClose,
-  });
 
-  const header = (
-    <SheetTopBar
+  return (
+    <ReportProblemSheet
       title={t('sprayModeration.reportTitle')}
-      leading={finished ? undefined : { kind: 'cancel', onPress: guard.requestClose }}
-      trailing={
-        finished
-          ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
-          : {
-              kind: 'confirm',
-              label: t('sprayModeration.submit'),
-              onPress: submit,
-              disabled: submitDisabled,
-              loading: report.isPending,
-              prominent: true,
-            }
-      }
+      subject={wallName}
+      reasons={reasonOptions}
+      reason={reason}
+      onReasonChange={pickReason}
+      sendLabel={t('sprayModeration.submit')}
+      canSend={!!reason && !effectiveOffline}
+      pending={report.isPending}
+      onSend={submit}
+      doneMessage={report.isSuccess ? t('sprayModeration.reported') : null}
+      unavailableMessage={canReport ? null : t('sprayModeration.unavailable')}
+      offlineMessage={effectiveOffline ? t('sprayModeration.reportOffline') : null}
+      errorMessage={report.isError ? t('sprayModeration.reportError') : null}
+      dirty={reason !== null}
+      onClose={onClose}
     />
   );
-  return (
-    <ModalSheet
-      visible
-      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
-      androidContentSized
-      scrollable
-      onDisplaced={onClose}
-      onClose={guard.requestClose}
-      onRequestClose={guard.requestClose}
-      enablePanDownToClose={guard.enablePanDownToClose}
-      contentContainerStyle={styles.body}
-      header={header}
-    >
-      <Text variant="body" color={systemColors.secondaryLabel}>
-        {wallName}
-      </Text>
-      {!canReport ? (
-        <Text>{t('sprayModeration.unavailable')}</Text>
-      ) : report.isSuccess ? (
-        <Text accessibilityLiveRegion="polite">{t('sprayModeration.reported')}</Text>
-      ) : (
-        <>
-          {/* The app's native RadioGroup (SwiftUI inline Picker / Compose RadioButtons)
-              instead of a hand-drawn list: brand-tinted checkmark, platform picker a11y. */}
-          {/* Locked while the report is in flight. The iOS inline Picker ignores a
-              per-option `disabled`, so the whole group stops taking touches and
-              the handler refuses a change too. */}
-          <View
-            pointerEvents={report.isPending ? 'none' : 'auto'}
-            accessibilityState={{ disabled: report.isPending }}
-            style={report.isPending ? styles.locked : undefined}
-          >
-            <RadioGroup options={reasonOptions} value={reason} onChange={pickReason} />
-          </View>
-          {effectiveOffline ? (
-            <Text color={systemColors.secondaryLabel}>{t('sprayModeration.reportOffline')}</Text>
-          ) : null}
-          {report.isError ? <Text accessibilityLiveRegion="polite">{t('sprayModeration.reportError')}</Text> : null}
-        </>
-      )}
-    </ModalSheet>
-  );
 }
-const styles = StyleSheet.create({
-  body: { padding: spacing[4], gap: spacing[3] },
-  locked: { opacity: 0.5 },
-});

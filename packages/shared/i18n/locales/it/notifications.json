@@ -117,5 +117,12 @@
     "boardReportReminderBody": "Correggilo o lascialo così prima che lo guardi il nostro team.",
     "boardRelistTitle": "Rimettere {{board}} in {{gym}}?",
     "boardRelistBody": "Chi l'ha aggiunto ha chiesto di rimetterlo in elenco."
+  },
+  "explain": {
+    "boardDeletedTitle": "{{board}} è stato eliminato",
+    "boardDeletedBody": "È sparito per tutti i climber che l'avevano salvato. Le tue chiusure registrate restano nel tuo logbook.",
+    "claimDeniedTitle": "Non siamo riusciti a confermare la tua rivendicazione",
+    "claimDeniedBody": "Non siamo riusciti a confermare che gestisci {{gym}}. Rispondi alla nostra email se ci siamo sbagliati.",
+    "ok": "OK"
   }
 }

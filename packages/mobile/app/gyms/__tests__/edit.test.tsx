@@ -56,6 +56,9 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator:
 vi.mock('../../../src/components/gym-directory/GymForm', () => ({
   GymForm: ({ extraSections }: { extraSections?: ReactNode }) => createElement('div', null, extraSections),
 }));
+vi.mock('../../../src/components/report-problem/WhoCanEdit', () => ({
+  WhoCanEditGym: ({ gym }: { gym: Gym }) => createElement('div', { 'data-testid': 'who-can-edit-gym' }, gym.name),
+}));
 vi.mock('../../../src/components/gym-directory/GymWriteAccessSection', () => ({
   GymWriteAccessSection: () => createElement('div', { 'data-testid': 'write-access' }),
 }));
@@ -93,10 +96,10 @@ describe('EditGym', () => {
     expect(screen.getByTestId('write-access')).toBeTruthy();
   });
 
-  it('locks the screen for a viewer who cannot edit the gym', () => {
+  it('says who can change the gym, instead of the form, for a viewer who cannot edit it', () => {
     state.gym = makeGym({ canEdit: false, canClaim: true });
     render(<EditGym />);
-    expect(screen.getByText('mobile.gymEdit.noAccess')).toBeTruthy();
+    expect(screen.getByTestId('who-can-edit-gym').textContent).toBe('Bonsist');
     expect(screen.queryByTestId('write-access')).toBeNull();
   });
 });
