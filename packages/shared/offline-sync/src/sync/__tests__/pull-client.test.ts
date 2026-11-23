@@ -33,6 +33,7 @@ import {
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
+  isScopeDownloadStarted,
 } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
 import { USER_DATA_COMPLETE_KEY } from '../local-user-owner';
@@ -281,6 +282,151 @@ describe('pullSync', () => {
         onScopeDownloadLifecycle: () => {
           throw new Error('reporter failed');
         },
+      }),
+    ).resolves.toBeUndefined();
+    expect(markScopeDownloadComplete).toHaveBeenCalled();
+  });
+
+  it('captures and clones download correlation before its FIFO wait', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const context = { requestId: 'request-at-enqueue', batchId: 'batch-at-enqueue' };
+    const getDownloadRequestContext = vi.fn(() => context);
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+    const onScopeDownloadObserved = vi.fn();
+    const queued = pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      getDownloadRequestContext,
+      onScopeDownloadStart,
+      onScopeDownloadComplete,
+      onScopeDownloadObserved,
+    });
+    expect(getDownloadRequestContext).toHaveBeenCalledExactlyOnceWith('spray:9001:9001');
+    context.requestId = 'replacement-request';
+    context.batchId = 'replacement-batch';
+    first.release();
+    await Promise.all([initial, queued]);
+    for (const reporter of [onScopeDownloadStart, onScopeDownloadComplete, onScopeDownloadObserved]) {
+      expect(reporter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scopeKey: 'spray:9001:9001',
+          downloadRequest: { requestId: 'request-at-enqueue', batchId: 'batch-at-enqueue' },
+        }),
+      );
+    }
+    expect(getDownloadRequestContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps operational attempts and bulk validation requests distinct across the same FIFO wait', async () => {
+    setupGraphqlFetchForAllTables();
+    const first = pausedFetch();
+    const initial = pullSync(db, queryClient, first.fetch, { enabledBoards: [] });
+    await first.started;
+    const operational = { requestId: 'operational-request', attemptId: 'attempt-at-enqueue', accountGeneration: 7 };
+    const bulk = { requestId: 'bulk-request', batchId: 'batch-at-enqueue' };
+    const onScopeDownloadStart = vi.fn();
+    const onScopeDownloadComplete = vi.fn();
+    const onScopeDownloadObserved = vi.fn();
+    const onScopeDownloadLifecycle = vi.fn();
+    const queued = pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['spray:9001:9001'],
+      getScopeDownloadContext: () => operational,
+      getDownloadRequestContext: () => bulk,
+      onScopeDownloadStart,
+      onScopeDownloadComplete,
+      onScopeDownloadObserved,
+      onScopeDownloadLifecycle,
+    });
+    operational.requestId = 'replacement-operational';
+    operational.attemptId = 'replacement-attempt';
+    operational.accountGeneration = 8;
+    bulk.requestId = 'replacement-bulk';
+    bulk.batchId = 'replacement-batch';
+    first.release();
+    await Promise.all([initial, queued]);
+    for (const reporter of [onScopeDownloadStart, onScopeDownloadComplete]) {
+      expect(reporter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          downloadContext: { requestId: 'operational-request', attemptId: 'attempt-at-enqueue', accountGeneration: 7 },
+          downloadRequest: { requestId: 'bulk-request', batchId: 'batch-at-enqueue' },
+        }),
+      );
+    }
+    expect(onScopeDownloadObserved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        downloadRequest: { requestId: 'bulk-request', batchId: 'batch-at-enqueue' },
+      }),
+    );
+    expect(onScopeDownloadLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: { requestId: 'operational-request', attemptId: 'attempt-at-enqueue', accountGeneration: 7 },
+        state: 'completed',
+      }),
+    );
+  });
+
+  it('observes an already-complete scope without manufacturing another Started', async () => {
+    setupGraphqlFetchForAllTables();
+    vi.mocked(isScopeDownloadComplete).mockResolvedValue(true);
+    const onScopeDownloadObserved = vi.fn();
+    const onScopeDownloadStart = vi.fn();
+    try {
+      await pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:9001:9001'],
+        getDownloadRequestContext: () => ({ requestId: 'cached-request', batchId: 'batch' }),
+        onScopeDownloadObserved,
+        onScopeDownloadStart,
+      });
+      expect(onScopeDownloadObserved).toHaveBeenCalledExactlyOnceWith({
+        scopeKey: 'spray:9001:9001',
+        complete: true,
+        downloadRequest: { requestId: 'cached-request', batchId: 'batch' },
+      });
+      expect(onScopeDownloadStart).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(isScopeDownloadComplete).mockResolvedValue(false);
+    }
+  });
+
+  it('observes a resumed request even when its legacy Started marker survived cancellation', async () => {
+    setupGraphqlFetchForAllTables();
+    vi.mocked(isScopeDownloadStarted).mockResolvedValue(true);
+    const onScopeDownloadObserved = vi.fn();
+    const onScopeDownloadStart = vi.fn();
+    try {
+      await pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:9001:9001'],
+        getDownloadRequestContext: () => ({ requestId: 're-enabled-request', batchId: 'new-batch' }),
+        onScopeDownloadObserved,
+        onScopeDownloadStart,
+      });
+      expect(onScopeDownloadObserved).toHaveBeenCalledExactlyOnceWith({
+        scopeKey: 'spray:9001:9001',
+        complete: false,
+        downloadRequest: { requestId: 're-enabled-request', batchId: 'new-batch' },
+      });
+      expect(onScopeDownloadStart).not.toHaveBeenCalled();
+      expect(markScopeDownloadComplete).toHaveBeenCalled();
+    } finally {
+      vi.mocked(isScopeDownloadStarted).mockResolvedValue(false);
+    }
+  });
+
+  it('does not let broken download probes and observations interrupt a pull', async () => {
+    setupGraphqlFetchForAllTables();
+    const failTelemetry = (): never => {
+      throw new Error('telemetry unavailable');
+    };
+    await expect(
+      pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:9001:9001'],
+        getDownloadRequestContext: failTelemetry,
+        onScopeDownloadStart: failTelemetry,
+        onScopeDownloadComplete: failTelemetry,
+        onScopeDownloadObserved: failTelemetry,
       }),
     ).resolves.toBeUndefined();
     expect(markScopeDownloadComplete).toHaveBeenCalled();

@@ -39,6 +39,7 @@ import {
 } from '../lib/auth';
 import { getAnalyticsIdentity, isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
+import { clearDownloadRequestAttribution } from '../offline/download-request-telemetry';
 import { clearRelayReceipt } from '../lib/relay-receipt';
 import { forgetRememberedBoardsOnSignOut } from '../lib/ble/remembered-boards-sign-out';
 import { reportError, reportHandledError } from '../lib/error-reporting';
@@ -285,6 +286,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // loader's copy). Some of it is per account: who replaced a wall is only
       // shown to a viewer who may see the replacement.
       clearSprayWallArchives();
+      clearDownloadRequestAttribution();
       return Promise.allSettled([
         clearUserDataExportDownloads(exportCredentialGeneration),
         clearStoredSessionId(owner),

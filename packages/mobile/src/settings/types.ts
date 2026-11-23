@@ -1,3 +1,4 @@
+import type { DownloadRequestLedger } from '@boardsesh/offline-sync';
 import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { SectionLayoutRecord } from '../lib/section-layout';
@@ -49,6 +50,8 @@ export type AppSettings = {
    * short-lived entries.
    */
   offlineDownloadTriggers: Record<string, string>;
+  /** Durable request attribution; no account IDs or mutation payloads (#7989). */
+  offlineDownloadRequestsV1: DownloadRequestLedger;
   /**
    * A "download all my boards" tap waiting for My Boards to resolve (issue
    * #4316). Same reason as the map above: the enable it causes runs from a mount

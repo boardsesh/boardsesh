@@ -23,6 +23,7 @@ import { markUserStartedDownload } from './download-keep-awake-store';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { rememberSprayWallDownloadCapability } from './opened-spray-wall-pins';
+import { recordDownloadRequests } from './download-request-telemetry';
 import { getDownloadRequest, getDownloadRequests, transitionDownload } from './download-lifecycle';
 import { getConnectivitySnapshot } from '../lib/connectivity/connectivity-store';
 
@@ -170,6 +171,7 @@ export function useBoardDownloads() {
     (list: UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const trigger = options?.trigger ?? 'unknown';
       const source = options?.source ?? 'manage';
+      const previouslyEnabled = new Set(getSetting('syncEnabledBoards'));
       void rememberSprayWallDownloadCapability(list);
       // Two boards can share one offline scope — the key is board type + layout +
       // size, so a climber who follows two gyms with the same wall gets one entry
@@ -202,6 +204,10 @@ export function useBoardDownloads() {
         });
       }
       rememberOfflineBoards(list);
+      recordDownloadRequests(
+        [...seenScopeKeys].filter((scopeKey) => !previouslyEnabled.has(scopeKey)),
+        { trigger, source, replaceDisabled: true },
+      );
       if (!schemaReadyRef.current) deferRequestedDownloads('schema-unready');
     },
     [],

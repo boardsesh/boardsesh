@@ -169,8 +169,13 @@ export type SnapshotDownloadProgress = {
   totalBytes: number | null;
 };
 
+/** Random request identity captured before a sync cycle joins its FIFO queue. */
+export type DownloadRequestCorrelation = { requestId: string; batchId: string };
+
 /** Per-download seams the engine may pass; every one is optional for a source. */
 export type SnapshotDownloadOptions = {
+  /** First requesting scope owns a physical transfer shared by several sizes. */
+  downloadRequest?: DownloadRequestCorrelation;
   onProgress?: (progress: SnapshotDownloadProgress) => void;
   /**
    * Aborted when the cycle is torn down mid-transfer (sign-out, local purge, or
@@ -271,6 +276,7 @@ export interface SnapshotSource {
 export type SnapshotBootstrapErrorReport = {
   downloadContext?: import('./download-lifecycle').ScopeDownloadContext;
   scopeKey: string;
+  downloadRequest?: DownloadRequestCorrelation;
   /** Artifact bytes arrived before this failure; absent for non-transfer failures. */
   transferCompleted?: boolean;
   /**

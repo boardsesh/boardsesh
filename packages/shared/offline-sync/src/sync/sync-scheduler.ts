@@ -92,6 +92,8 @@ export type SchedulerOptions = {
   /** Threaded through to pullSync's SyncOptions — see ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   onScopeDownloadStart?: ScopeDownloadStartReporter;
+  getDownloadRequestContext?: SyncOptions['getDownloadRequestContext'];
+  onScopeDownloadObserved?: SyncOptions['onScopeDownloadObserved'];
   /** Threaded through to pullSync's SyncOptions — see CoverageResetInfo. */
   onCoverageReset?: CoverageResetReporter;
   /** Threaded through to pullSync's SyncOptions — see CoverageEvaluatedInfo. */
@@ -217,6 +219,8 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       onScopeDownloadStart: options?.onScopeDownloadStart,
       getScopeDownloadContext: options?.getScopeDownloadContext,
       onScopeDownloadLifecycle: options?.onScopeDownloadLifecycle,
+      getDownloadRequestContext: options?.getDownloadRequestContext,
+      onScopeDownloadObserved: options?.onScopeDownloadObserved,
       onCoverageReset: options?.onCoverageReset,
       onCoverageEvaluated: options?.onCoverageEvaluated,
       onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,

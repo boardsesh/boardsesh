@@ -1293,6 +1293,20 @@ export const SHARED_EVENTS = {
   // Props: { scopeKey, requestId, attemptId?, state, requestedAt, origin, trigger,
   // reason?, stage?, completionSource? }. Recovered origins have unknown request time.
   OfflineBoardDownloadLifecycle: 'Offline Board Download Lifecycle',
+  // One requested scope, before schema/connectivity can prevent Started (#7989).
+  // Props: requestId, batchId, scopeKey, requestedAt, requestedScopeCount, trigger,
+  // source. Retries reuse IDs; the mobile settings ledger survives relaunch.
+  OfflineBoardDownloadRequested: 'Offline Board Download Requested',
+  // Once per durable request when the engine first touches its pending scope,
+  // including resumed work whose legacy once-ever Started marker survived.
+  OfflineBoardDownloadRequestStarted: 'Offline Board Download Request Started',
+  // Persisted completion/availability/cancellation observation. Props above plus
+  // outcome: completed | already_available | cancelled, resolvedAt. A recovered
+  // completion is dated when observed, never backdated to an unknown marker write.
+  OfflineBoardDownloadRequestResolved: 'Offline Board Download Request Resolved',
+  // Lifecycle filesystem samples include DB/WAL/SHM, artifacts and wall photos.
+  // Never a complete peak measurement: peakCoverage is always incomplete.
+  OfflineDownloadStorageSampled: 'Offline Download Storage Sampled',
   // Fired once per board scope when its INITIAL download completes (every board
   // table reached the tail), so the snapshot-bootstrap warm-up can be compared
   // against the plain paged crawl in the field. Props: { scopeKey,

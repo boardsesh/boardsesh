@@ -78,6 +78,22 @@ describe('sync-scheduler', () => {
     mockPullSync.mockResolvedValue(undefined);
   });
 
+  it('forwards request correlation and durable-marker observations into each pull', async () => {
+    const getDownloadRequestContext = vi.fn(() => ({ requestId: 'request', batchId: 'batch' }));
+    const onScopeDownloadObserved = vi.fn();
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, async () => {}, {
+      getDownloadRequestContext,
+      onScopeDownloadObserved,
+    });
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ getDownloadRequestContext, onScopeDownloadObserved }),
+    );
+  });
+
   it('drains (push) before pulling (fetch) on a trigger', async () => {
     const order: string[] = [];
     const drainQueue: DrainQueue = vi.fn(async () => {

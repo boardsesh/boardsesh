@@ -10,6 +10,8 @@
 // Every prop is ABSENT when unknown, never zero — a 0 kbit/s row and a row with
 // no measurement are different facts, and only one of them is a slow download.
 
+import type { DownloadRequestCorrelation } from '@boardsesh/offline-sync';
+import { downloadTransferProperties, sampleDownloadStorage } from './download-request-telemetry';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
@@ -20,6 +22,9 @@ export type ArtifactTransferOutcome = 'completed' | 'failed' | 'aborted';
 
 export type ArtifactTransferReport = {
   strategy: SnapshotDownloadStrategy;
+  /** One physical attempt; shared layout consumers must not sum it per scope. */
+  transferId?: string;
+  downloadRequest?: DownloadRequestCorrelation;
   artifact: 'layout' | 'grades';
   /** Layout artifacts only — a grades manifest block carries neither. */
   boardType?: string;
@@ -55,6 +60,8 @@ function wireKbps(report: ArtifactTransferReport): number | undefined {
 export function reportArtifactTransfer(report: ArtifactTransferReport): void {
   const metered = getLastKnownMetered();
   track(SHARED_EVENTS.OfflineArtifactTransfer, {
+    ...downloadTransferProperties(report.downloadRequest),
+    ...(report.transferId ? { transferId: report.transferId } : {}),
     strategy: report.strategy,
     artifact: report.artifact,
     ...(report.boardType !== undefined ? { boardType: report.boardType } : {}),
@@ -72,4 +79,5 @@ export function reportArtifactTransfer(report: ArtifactTransferReport): void {
     ...(metered !== null ? { metered } : {}),
     offlineEngineEnabled: isOfflineEngineEnabled(),
   });
+  if (report.downloadRequest) sampleDownloadStorage(report.downloadRequest, `transfer-${report.outcome}`);
 }
