@@ -169,7 +169,22 @@ describe('InsightsTab', () => {
       ),
     );
     await screen.findByText('12 climbers recorded');
-    fireEvent.click(screen.getByRole('button', { name: '90 days' }));
+    const week = screen.getByRole('button', { name: '7 days', pressed: true });
+    const month = screen.getByRole('button', { name: '30 days', pressed: false });
+    const quarter = screen.getByRole('button', { name: '90 days', pressed: false });
+    const selectedCheck = '[data-selected-check]';
+    const group = screen.getByRole('group', { name: 'Reporting range' });
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
+    expect(week.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(month.querySelector(selectedCheck)).toBeNull();
+    expect(quarter.querySelector(selectedCheck)).toBeNull();
+    fireEvent.click(quarter);
+    expect(week.getAttribute('aria-pressed')).toBe('false');
+    expect(week.querySelector(selectedCheck)).toBeNull();
+    expect(month.querySelector(selectedCheck)).toBeNull();
+    expect(quarter.getAttribute('aria-pressed')).toBe('true');
+    expect(quarter.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
     await waitFor(() =>
       expect(mocks.request).toHaveBeenLastCalledWith(
         expect.objectContaining({

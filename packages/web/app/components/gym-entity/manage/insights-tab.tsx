@@ -41,6 +41,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { CssBarChart } from '@/app/components/charts/css-bar-chart';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { GymManageTabProps } from './tab-props';
 import { GymReportingSettings } from './gym-reporting-settings';
@@ -298,7 +299,8 @@ function InsightsReport({
           }}
         >
           {GYM_REPORTING_PERIODS.map(({ key, days }) => (
-            <ToggleButton key={key} value={key}>
+            <ToggleButton key={key} value={key} sx={{ gap: 0.5 }}>
+              {period === key && <SelectedCheck />}
               {t('gymReporting.rangeDays', { days: new Intl.NumberFormat(i18n.language || 'en-US').format(days) })}
             </ToggleButton>
           ))}
