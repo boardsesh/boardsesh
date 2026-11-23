@@ -336,6 +336,10 @@ describe('getClimbViewPageCacheTTL', () => {
       expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_24H);
     });
 
+    it('never caches the numeric spray climb redirect', () => {
+      expect(getClimbViewPageCacheTTL('/spray/229/229/1/40/view/climb-uuid', sp())).toBeNull();
+    });
+
     it('matches the tension board view', () => {
       expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(
         TTL_24H,
@@ -842,6 +846,23 @@ describe('middleware cache headers on climb view pages', () => {
       expect(response.headers.has('CDN-Cache-Control')).toBe(false);
     },
   );
+});
+
+describe('middleware cache headers on legacy spray climb redirects', () => {
+  it.each([
+    '/spray/229/229/1/40/view/CEA229E4A8D84644B7DF7BC6F8A47222',
+    '/spray/229/229/1/40/view/climb-uuid?wall=11111111-1111-4111-8111-111111111111',
+    '/fr/spray/229/229/1/40/view/climb-uuid',
+    '/fr/spray/229/229/1/40/view/climb-uuid?wall=11111111-1111-4111-8111-111111111111',
+  ])('leaves the handler no-store headers intact on %s', (url) => {
+    const response = middleware(makeRequest(url));
+    // Next preserves middleware headers ahead of route-handler headers. Spray
+    // is absent from the catalogue cache allowlist, so the redirect's no-store
+    // headers must reach the outgoing response without a conflicting TTL.
+    expect(response.headers.has('Cache-Control')).toBe(false);
+    expect(response.headers.has('CDN-Cache-Control')).toBe(false);
+    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+  });
 });
 
 // An unlisted spray wall answers 200 only while it stays unlisted and unhidden,
