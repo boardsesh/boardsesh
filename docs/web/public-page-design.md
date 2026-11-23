@@ -52,6 +52,11 @@ an iPhone and a laptop:
   provider reads the request's user agent, which a cached page must not trust.
 - **Nothing personal.** No ticks, no "signed in as". The comments row renders
   signed out on the server and changes after mount.
+- **Report a problem** on a `/b/{slug}` list ("Something wrong with this
+  board?") is the same markup for everyone. Whether it renders depends only on
+  the `directory-reports` flag, which is one answer for every visitor; the
+  session, the board's creator and its gym are read in the browser after a tap
+  (`board-report-link.tsx`, docs/product/directory-reports.md).
 - `front-door-install.test.tsx` renders the page as if Googlebot Smartphone, an
   iPhone, a desktop or a request with no user agent filled the cache, and fails
   if any of them changes the store links or the app screenshots.
