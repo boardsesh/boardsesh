@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-11-22T22:37:58.908Z",
+  "generatedAt": "2026-11-23T09:02:33.210Z",
   "entries": [
+    {
+      "prNumber": 7831,
+      "category": "fixed",
+      "title": "Choose whether each partner workout block moves on after a fall or waits until you send.",
+      "mergedAt": "2026-11-23T08:43:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7831"
+    },
+    {
+      "prNumber": 8027,
+      "category": "fixed",
+      "title": "Climb lists and climb pages on boardsesh.com no longer get stuck on \"page not found\" after a hiccup",
+      "mergedAt": "2026-11-23T08:17:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8027"
+    },
+    {
+      "prNumber": 8026,
+      "category": "new",
+      "title": "Climb pages on the website are easier to read: a darker background, bolder titles and one clear button.",
+      "mergedAt": "2026-11-23T08:17:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8026"
+    },
     {
       "prNumber": 8016,
       "category": "fixed",

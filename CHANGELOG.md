@@ -4,6 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-23
+
+### New
+
+- Climb pages on the website are easier to read: a darker background, bolder titles and one clear button. ([#8026](https://github.com/boardsesh/boardsesh/pull/8026))
+
+### Fixed
+
+- Choose whether each partner workout block moves on after a fall or waits until you send. ([#7831](https://github.com/boardsesh/boardsesh/pull/7831))
+- Climb lists and climb pages on boardsesh.com no longer get stuck on "page not found" after a hiccup ([#8027](https://github.com/boardsesh/boardsesh/pull/8027))
+
 ## 2026-11-22
 
 ### New
