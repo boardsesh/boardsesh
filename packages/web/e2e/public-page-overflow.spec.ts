@@ -214,13 +214,10 @@ for (const width of [390, 1440]) {
     await expectPublicReading(page, testInfo, 'list');
     await expectReadablePrimaryHover(page, testInfo, page.locator('main a[rel="next"]'), 'list-next-hover');
     if (width === 1440) {
-      // A laptop's store buttons are the outlined pair in the QR card.
-      await expectReadablePrimaryHover(
-        page,
-        testInfo,
-        page.locator('main a[href*="play.google.com"]:visible').first(),
-        'plain-store-hover',
-      );
+      // A laptop's store links are the official badges in the QR card: no text
+      // to colour on hover, so hold them to the target size and a visible focus ring.
+      await expectKeyboardTarget(page, page.locator('main a[href*="play.google.com"]:visible').first());
+      await page.mouse.move(0, 0);
     } else {
       // A phone's one store button is the filled "Get the free app". Wait for
       // the browser to pick its store, so the hovered anchor stays the shown one.
@@ -287,14 +284,10 @@ for (const width of [390, 1440]) {
     await expect(page.locator('main dl')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'setter');
-    // A phone's store pair is the filled brand one; from md the QR card's
-    // outlined pair takes its place, so hover whichever one is shown.
-    await expectReadablePrimaryHover(
-      page,
-      testInfo,
-      page.locator('main a[href*="play.google.com"]:visible').first(),
-      width === 1440 ? 'setter-qr-store-hover' : 'brand-store-hover',
-    );
+    // A phone's store link is its badge; from md the QR card's pair of badges
+    // takes its place. Either way: a 44px target with a visible focus ring.
+    await expectKeyboardTarget(page, page.locator('main a[href*="play.google.com"]:visible').first());
+    await page.mouse.move(0, 0);
     if (width === 1440) {
       await expect(page.locator('main').getByRole('img', { name: /^QR code that opens/ })).toBeVisible();
       // One store block per screen: the QR card's pair, not the phone's as well.

@@ -334,6 +334,7 @@ describe('QrLandingTracker on a board list, for its laptop code', () => {
 describe.each([
   ['setter', '/setter/jimmy%20webb', 'Setter QR Scanned'],
   ['playlist', '/playlists/5d3b1c7e-2a4f-4f0e-9d53-6f1a2b3c4d5e', 'Playlist QR Scanned'],
+  ['home', '/', 'Home QR Scanned'],
 ] as const)('QrLandingTracker on a %s page, for its laptop code', (kind, pagePath, eventName) => {
   it('reports the desktop code once under its own name and strips the pair', () => {
     window.history.replaceState(null, '', `${pagePath}?src=qr&medium=desktop`);

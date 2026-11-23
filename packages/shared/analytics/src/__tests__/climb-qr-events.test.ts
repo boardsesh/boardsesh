@@ -5,6 +5,7 @@ import {
   listQrScanned,
   parseClimbQrLanding,
   playlistQrScanned,
+  homeQrScanned,
   setterQrScanned,
 } from '../climb-qr-events';
 import { BOARD_QR_MEDIUMS, parseBoardQrLanding } from '../board-qr-events';
@@ -62,6 +63,7 @@ describe('listQrScanned', () => {
 describe.each([
   ['setterQrScanned', setterQrScanned, SHARED_EVENTS.SetterQrScanned, 'Setter QR Scanned', '/setter/jimmy%20webb'],
   ['playlistQrScanned', playlistQrScanned, SHARED_EVENTS.PlaylistQrScanned, 'Playlist QR Scanned', '/playlists/abc'],
+  ['homeQrScanned', homeQrScanned, SHARED_EVENTS.HomeQrScanned, 'Home QR Scanned', '/'],
 ] as const)('%s', (_builderName, build, eventName, expectedName, pagePath) => {
   it('names its own page apart from every other desktop code, with the same three properties', () => {
     expect(build({ medium: 'desktop', surface: 'web', boardType: 'kilter' })).toEqual({

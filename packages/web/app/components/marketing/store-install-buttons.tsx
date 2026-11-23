@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
@@ -14,29 +13,43 @@ import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { type AppInstallPlacement } from '@/app/lib/app-install-event';
 import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 import type { QrLandingKind } from '@/app/lib/qr-landing';
+import { DEFAULT_LOCALE, type Locale, isSupportedLocale } from '@/app/lib/i18n/config';
+import { storeBadgeImage } from '@/app/lib/store-badges';
 
 /**
- * The three things a store button can say, already translated by whoever
+ * The three things a store link can say, already translated by whoever
  * renders the island. Passed in rather than read with `useTranslation` so the
  * island works on pages whose client i18n bundle has no `marketing` namespace:
  * the climb front doors and the gym directory. See `getStoreButtonLabels`.
  */
 export type StoreButtonLabels = {
+  /** The App Store badge's own words in this language ("Download on the App Store"): its image's alt text. */
   ios: string;
+  /** The Google Play badge's own words ("Get it on Google Play"): its image's alt text. */
   android: string;
   /** For someone still on the retired Capacitor app, who needs an update and not an install. */
   update: string;
+  /**
+   * The language these words are in, which picks the badge artwork too. Carried
+   * here rather than read from `useTranslation()` in the island: whoever
+   * translated the words already knows it, and a bare `useTranslation()` can
+   * suspend on a page that loaded no default namespace.
+   */
+  locale: Locale;
 };
 
 /**
- * `brand` is the violet pill pair of the marketing pages: filled first, outlined
+ * How the UPDATE button looks. An install is always the official store badge,
+ * whatever the appearance; only a visitor still on the retired Capacitor app
+ * gets a text button ("Update the app"), since "Download on the App Store"
+ * would be the wrong words for them.
+ *
+ * `brand` is the violet pair of the marketing pages: filled first, outlined
  * second. `plain` is for a page that already has a filled primary action next
- * to it (the climb front door's "Climb this"): every store button is outlined,
- * so the page keeps one primary, and on a desktop both stores weigh the same.
- * `brand-outlined` is the brand pill, outlined for every store and with the
- * install icon: a page's second store pair that should look like the brand's
- * without adding a filled button (the climb page's app module, a long scroll
- * below its own filled hero button).
+ * to it (the climb front door's "Climb this"): outlined, so the page keeps one
+ * primary. `brand-outlined` is the brand button, outlined and with the update
+ * icon: a page's second store block that should look like the brand's without
+ * adding a filled button (the climb page's app module).
  */
 export type StoreButtonAppearance = 'brand' | 'plain' | 'brand-outlined';
 
@@ -70,6 +83,31 @@ type StoreInstallButtonsProps = {
 /** What a shared page says before the browser has been asked: both stores, App Store first. */
 const SHARED_HTML_INSTALL: HeroInstall = { mode: 'install', stores: ['ios', 'android'] };
 
+/**
+ * Badge heights. A lone badge is the phone's one install action, so it is a
+ * size up; a pair stays at 44 so two of them fit a 280px column (the QR card's
+ * text column) side by side. Both clear the 44px target and Apple's 40px floor.
+ */
+const LONE_BADGE_HEIGHT = 48;
+const PAIRED_BADGE_HEIGHT = 44;
+
+/**
+ * The anchor around a badge. The badge already draws its own edge, so the
+ * anchor adds nothing but a focus ring shaped to its corners. Hover changes
+ * nothing: the stores ask that their artwork not be altered.
+ */
+const BADGE_LINK_SX = {
+  display: 'inline-flex',
+  flexShrink: 0,
+  lineHeight: 0,
+  borderRadius: '8px',
+  '&:focus-visible': {
+    outline: '2px solid var(--color-primary)',
+    outlineOffset: '2px',
+  },
+  '& > img': { display: 'block' },
+} as const;
+
 // Both halves of the brand pair come off the SAME size step, which is the whole
 // reason they match.
 const BRAND_PRIMARY_SX = brandCtaSx({ size: 'large' });
@@ -77,7 +115,8 @@ const BRAND_SECONDARY_SX = brandCtaOutlinedSx({ size: 'large' });
 const PLAIN_SX = { textTransform: 'none' };
 
 /**
- * The store button for the phone in the visitor's hand, on any www page (#6027).
+ * The official store badge for the phone in the visitor's hand, on any www
+ * page (#6027). A text button only in update mode.
  *
  * WHICH STORE. `useInstallPlatform` decides after hydration: Google Play on
  * Android, the App Store on an iPhone or iPad, both on a desktop.
@@ -120,12 +159,71 @@ export default function StoreInstallButtons({
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => setHasMounted(true), []);
   const { stores, mode } = sharedHtml && !hasMounted ? SHARED_HTML_INSTALL : resolveHeroInstall(platform, nativeStore);
-  const StoreIcon = mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
+  // A caller that lost the locale (a test double, say) gets English artwork, never a broken image.
+  const locale: Locale = isSupportedLocale(labels.locale) ? labels.locale : DEFAULT_LOCALE;
+  const justifyContent = align === 'center' ? 'center' : 'flex-start';
+
+  const trackClick = (store: 'ios' | 'android') => {
+    trackAppInstallClick({
+      platform: store,
+      source: store === 'ios' ? 'app-store' : 'google-play',
+      placement,
+      mode,
+      ...(qrMedium ? { qrMedium } : {}),
+    });
+  };
+
+  if (mode === 'install') {
+    // A lone badge on a page rendered for this visitor is the phone's install
+    // action: a size up, and on an iPhone the white App Store badge, which reads
+    // far better on the dark page and which Apple allows only when it stands
+    // alone. Shared HTML keeps the paired size and the black badge, because it
+    // starts as a pair for everyone and a badge that grew or turned white at
+    // hydration would jump.
+    const isLoneBadge = stores.length === 1 && !sharedHtml;
+    const badgeHeight = isLoneBadge ? LONE_BADGE_HEIGHT : PAIRED_BADGE_HEIGHT;
+    return (
+      // 12px between badges is more than the quarter-height clear space both stores ask for.
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent }}>
+        {stores.map((store) => {
+          const badge = storeBadgeImage(store, locale, badgeHeight, isLoneBadge ? 'white' : 'black');
+          return (
+            <Box
+              key={store}
+              component="a"
+              href={buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium })}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-store-badge={store}
+              sx={BADGE_LINK_SX}
+              onClick={() => trackClick(store)}
+            >
+              {/* A plain <img>, not MUI's Box: Box reads `width` and `height` as
+                  style props and drops them from the HTML, and the attributes
+                  are what reserve the badge's box before the SVG loads.
+                  Lazy, because most badges sit far down a page, and because an
+                  eager <img> makes React's server render add a
+                  <link rel="preload"> for it: two per page, competing with the
+                  page's own hero image and using up React's first ten image
+                  preloads. A lazy image already on screen still starts loading
+                  at first layout, so the phone hero's badge is not held back. */}
+              <img
+                src={badge.src}
+                alt={labels[store]}
+                width={badge.width}
+                height={badge.height}
+                loading="lazy"
+                decoding="async"
+              />
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  }
 
   return (
-    <Box
-      sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: align === 'center' ? 'center' : 'flex-start' }}
-    >
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent }}>
       {stores.map((store, index) => {
         const isPrimary = appearance === 'brand' && index === 0;
         const brandSx = isPrimary ? BRAND_PRIMARY_SX : BRAND_SECONDARY_SX;
@@ -140,18 +238,10 @@ export default function StoreInstallButtons({
             // The brand recipe carries its own size step; the plain one takes MUI's.
             size={usesBrandSize ? undefined : 'large'}
             sx={usesBrandSize ? brandSx : PLAIN_SX}
-            startIcon={appearance === 'brand-outlined' ? <StoreIcon aria-hidden /> : undefined}
-            onClick={() => {
-              trackAppInstallClick({
-                platform: store,
-                source: store === 'ios' ? 'app-store' : 'google-play',
-                placement,
-                mode,
-                ...(qrMedium ? { qrMedium } : {}),
-              });
-            }}
+            startIcon={appearance === 'brand-outlined' ? <SystemUpdateOutlined aria-hidden /> : undefined}
+            onClick={() => trackClick(store)}
           >
-            {mode === 'update' ? labels.update : labels[store]}
+            {labels.update}
           </Button>
         );
       })}

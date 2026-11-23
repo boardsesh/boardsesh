@@ -117,6 +117,16 @@ export function playlistQrUrl(playlistUuid: string, locale: Locale): string {
   return desktopQrUrl(`/playlists/${encodeURIComponent(playlistUuid)}`, locale);
 }
 
+/**
+ * The absolute URL the home page's code encodes: `/` in the reader's language,
+ * with `?src=qr&medium=desktop`. A phone lands on the home page, whose first
+ * action there is its own store badge. `QrLandingTracker` with `kind="home"`
+ * counts the scan as `Home QR Scanned`.
+ */
+export function homeQrUrl(locale: Locale): string {
+  return desktopQrUrl('/', locale);
+}
+
 function desktopQrUrl(pagePath: string, locale: Locale): string {
   return absoluteUrl(buildGymQrHref(localeHref(pagePath, locale), 'desktop'));
 }

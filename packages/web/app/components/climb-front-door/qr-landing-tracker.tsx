@@ -6,6 +6,7 @@ import {
   climbQrScanned,
   listQrScanned,
   playlistQrScanned,
+  homeQrScanned,
   setterQrScanned,
   stripGymQrParams,
   type AnalyticsBoardType,
@@ -54,6 +55,8 @@ function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
       return setterQrScanned({ medium: landing.medium, surface: 'web', boardType });
     case 'playlist':
       return playlistQrScanned({ medium: landing.medium, surface: 'web', boardType });
+    case 'home':
+      return homeQrScanned({ medium: landing.medium, surface: 'web', boardType });
   }
 }
 
@@ -73,6 +76,8 @@ function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
  *  - `setter` and `playlist`: mounted on a setter's page and on a public
  *    playlist, the same laptop code pointed at that page. Fire
  *    `Setter QR Scanned` and `Playlist QR Scanned`.
+ *  - `home`: mounted on the home page, whose hero shows the same laptop code
+ *    from md. Fires `Home QR Scanned` with a null board type.
  *
  * Unlike `GymQrLandingTracker`, the medium is read here in the browser and not
  * passed by the server: these pages' HTML is shared at the edge, so it cannot

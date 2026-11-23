@@ -21,7 +21,7 @@ vi.mock('@/app/components/marketing/store-install-buttons', () => ({
   ),
 }));
 vi.mock('@/app/lib/store-button-labels.server', () => ({
-  getStoreButtonLabels: async () => ({ ios: 'App Store', android: 'Google Play', update: 'Update' }),
+  getStoreButtonLabels: async () => ({ ios: 'App Store', android: 'Google Play', update: 'Update', locale: 'en-US' }),
 }));
 const { default: SupportedBoardsPage, generateMetadata } = await import('../page');
 

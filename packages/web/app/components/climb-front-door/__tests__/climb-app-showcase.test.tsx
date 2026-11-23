@@ -173,8 +173,8 @@ describe('ClimbAppShowcase', () => {
       buildStoreUrl('android', { placement: 'climb-app-module' }),
     ]);
     expect(stores?.hasAttribute('data-sticky-install-hide')).toBe(true);
-    // Outlined, both of them: the page's one filled store button is the hero's.
-    expect(stores?.querySelectorAll('.MuiButton-outlined')).toHaveLength(2);
+    // The official badges, both of them: the page's one filled store button is the hero's.
+    expect(stores?.querySelectorAll('img[src^="/images/store-badges/"]')).toHaveLength(2);
     expect(stores?.querySelector('.MuiButton-contained')).toBeNull();
   });
 

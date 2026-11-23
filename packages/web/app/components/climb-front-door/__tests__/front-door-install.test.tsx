@@ -196,8 +196,9 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
       expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
     }
     expect(page.querySelector('[data-cta="handoff"]')?.classList.contains('MuiButton-contained')).toBe(false);
-    // The app module's second store pair is outlined: one filled action per screen.
-    expect(page.querySelectorAll('[data-cta="app-install"] .MuiButton-outlined')).toHaveLength(2);
+    // The app module's second store pair is the official badges: no second filled action.
+    expect(page.querySelectorAll('[data-cta="app-install"] img[src^="/images/store-badges/"]')).toHaveLength(2);
+    expect(page.querySelector('[data-cta="app-install"] .MuiButton-root')).toBeNull();
   });
 
   it('ships the app module its own store pair, with its own link id, that keeps the sticky bar down', async () => {

@@ -9,15 +9,17 @@ import { buildStoreUrl } from '@/app/lib/store-links';
 const track = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track }));
 
+// Flipped by the update-mode cases: a visitor still inside the retired Capacitor app.
+const capacitorShell = vi.hoisted(() => ({ isNative: false }));
 vi.mock('@/app/lib/ble/capacitor-utils', () => ({
-  isNativeApp: () => false,
+  isNativeApp: () => capacitorShell.isNative,
   isCapacitorWebView: () => false,
   waitForCapacitor: () => Promise.resolve(false),
 }));
 
 const StoreInstallButtons = (await import('../store-install-buttons')).default;
 
-const LABELS = { ios: 'App Store', android: 'Google Play', update: 'Update' };
+const LABELS = { ios: 'App Store', android: 'Google Play', update: 'Update', locale: 'en-US' } as const;
 
 const ORIGINAL_UA = navigator.userAgent;
 const ANDROID_UA =
@@ -31,6 +33,12 @@ function setUserAgent(userAgent: string): void {
   Object.defineProperty(navigator, 'userAgent', { value: userAgent, configurable: true });
 }
 
+function badgeOf(link: HTMLElement): HTMLImageElement {
+  const image = link.querySelector('img');
+  if (!image) throw new Error('store link has no badge image');
+  return image;
+}
+
 describe('StoreInstallButtons', () => {
   beforeEach(() => {
     track.mockReset();
@@ -42,6 +50,7 @@ describe('StoreInstallButtons', () => {
     window.history.replaceState(null, '', '/');
     __resetSessionInboundCampaignForTests();
     setUserAgent(ORIGINAL_UA);
+    capacitorShell.isNative = false;
   });
 
   it('shows Google Play alone on an Android phone', async () => {
@@ -117,43 +126,100 @@ describe('StoreInstallButtons', () => {
     expect(referrer.get('utm_content')).toBe('climb-view');
   });
 
-  it('weighs both stores the same in the plain appearance', async () => {
-    // Beside a filled primary action the store buttons are both outlined, so a
-    // desktop reader is not steered to one store over the other.
-    setUserAgent(DESKTOP_UA);
-    render(<StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" align="start" />);
+  it.each(['brand', 'plain', 'brand-outlined'] as const)(
+    'shows the official badges, never a text button, in the %s appearance',
+    async (appearance) => {
+      setUserAgent(DESKTOP_UA);
+      render(<StoreInstallButtons placement="help" labels={LABELS} appearance={appearance} />);
 
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2));
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2));
 
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toContain('MuiButton-outlined');
-      expect(link.className).not.toContain('MuiButton-contained');
-    }
-  });
+      expect(document.querySelector('.MuiButton-root')).toBeNull();
+      expect(badgeOf(screen.getByRole('link', { name: 'App Store' })).getAttribute('src')).toBe(
+        '/images/store-badges/app-store-black-en-US.svg',
+      );
+      expect(badgeOf(screen.getByRole('link', { name: 'Google Play' })).getAttribute('src')).toBe(
+        '/images/store-badges/google-play-en-US.svg',
+      );
+    },
+  );
 
-  it('outlines every store, with the install icon, in the brand-outlined appearance', async () => {
-    // A page's second store pair: the brand pill without a second filled button.
-    setUserAgent(DESKTOP_UA);
-    render(<StoreInstallButtons placement="climb-app-module" labels={LABELS} appearance="brand-outlined" />);
-
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2));
-
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toContain('MuiButton-outlined');
-      expect(link.className).not.toContain('MuiButton-contained');
-      expect(link.querySelector('.MuiButton-startIcon svg')).not.toBeNull();
-    }
-  });
-
-  it('fills the first store only in the brand appearance', async () => {
+  it('sizes a pair at 44px, with Google Play never narrower than the App Store badge', async () => {
     setUserAgent(DESKTOP_UA);
     render(<StoreInstallButtons placement="help" labels={LABELS} />);
 
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2));
-    const [firstLink, secondLink] = screen.getAllByRole('link');
+    const appStoreBadge = badgeOf(await screen.findByRole('link', { name: 'App Store' }));
+    const playBadge = badgeOf(screen.getByRole('link', { name: 'Google Play' }));
 
-    expect(firstLink.className).toContain('MuiButton-contained');
-    expect(secondLink.className).toContain('MuiButton-outlined');
+    expect(appStoreBadge.getAttribute('height')).toBe('44');
+    expect(playBadge.getAttribute('height')).toBe('44');
+    expect(Number(playBadge.getAttribute('width'))).toBeGreaterThanOrEqual(Number(appStoreBadge.getAttribute('width')));
+  });
+
+  it('gives an iPhone on a per-request page the white App Store badge, a size up, since it stands alone', async () => {
+    setUserAgent(IPHONE_UA);
+    render(<StoreInstallButtons placement="hero" labels={LABELS} />);
+
+    const appStoreBadge = badgeOf(await screen.findByRole('link', { name: 'App Store' }));
+
+    expect(appStoreBadge.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+    expect(appStoreBadge.getAttribute('height')).toBe('48');
+    expect(appStoreBadge.getAttribute('alt')).toBe('App Store');
+  });
+
+  it('keeps the black 44px badge on shared HTML after it narrows, so nothing changes at hydration', async () => {
+    setUserAgent(IPHONE_UA);
+    render(<StoreInstallButtons placement="climb-view" labels={LABELS} sharedHtml />);
+
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+    const appStoreBadge = badgeOf(screen.getByRole('link', { name: 'App Store' }));
+
+    expect(appStoreBadge.getAttribute('src')).toBe('/images/store-badges/app-store-black-en-US.svg');
+    expect(appStoreBadge.getAttribute('height')).toBe('44');
+  });
+
+  it("shows the badge in the page's language", async () => {
+    setUserAgent(DESKTOP_UA);
+    render(<StoreInstallButtons placement="help" labels={{ ...LABELS, locale: 'fr' }} />);
+
+    const appStoreBadge = badgeOf(await screen.findByRole('link', { name: 'App Store' }));
+
+    expect(appStoreBadge.getAttribute('src')).toBe('/images/store-badges/app-store-black-fr.svg');
+    expect(badgeOf(screen.getByRole('link', { name: 'Google Play' })).getAttribute('src')).toBe(
+      '/images/store-badges/google-play-fr.svg',
+    );
+  });
+
+  describe('for a visitor still in the retired Capacitor app', () => {
+    it('keeps a text "Update" button, since a download badge would say the wrong thing', async () => {
+      capacitorShell.isNative = true;
+      setUserAgent(IPHONE_UA);
+      render(<StoreInstallButtons placement="hero" labels={LABELS} />);
+
+      const updateLink = await screen.findByRole('link', { name: 'Update' });
+
+      expect(updateLink.querySelector('img')).toBeNull();
+      expect(updateLink.className).toContain('MuiButton-contained');
+      expect(updateLink.getAttribute('href')).toBe(buildStoreUrl('ios', { placement: 'hero' }));
+      fireEvent.click(updateLink);
+      expect(track).toHaveBeenCalledWith('App Install Click', {
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'hero',
+        mode: 'update',
+      });
+    });
+
+    it('outlines the update button beside a page that already has a filled one', async () => {
+      capacitorShell.isNative = true;
+      setUserAgent(ANDROID_UA);
+      render(<StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" />);
+
+      const updateLink = await screen.findByRole('link', { name: 'Update' });
+
+      expect(updateLink.className).toContain('MuiButton-outlined');
+      expect(updateLink.getAttribute('href')).toBe(buildStoreUrl('android', { placement: 'climb-view' }));
+    });
   });
 
   describe('on a page a code lands on', () => {
@@ -294,7 +360,7 @@ describe('StoreInstallButtons', () => {
       render(island, { container, hydrate: true });
 
       await waitFor(() => expect(container.querySelectorAll('a')).toHaveLength(1));
-      expect(container.querySelector('a')?.textContent).toBe('App Store');
+      expect(container.querySelector('a img')?.getAttribute('alt')).toBe('App Store');
       expect(consoleError).not.toHaveBeenCalled();
       consoleError.mockRestore();
       container.remove();

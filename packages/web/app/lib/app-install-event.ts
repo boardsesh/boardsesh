@@ -48,6 +48,8 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `playlist`: a playlist's page: the phone's "Get the free app" button.
  *  - `playlist-qr-card`: the store pair in the QR card a public playlist shows
  *    from md.
+ *  - `home-qr-card`: the store badges in the QR card the home hero shows from
+ *    md, apart from the phone's badge, which keeps `hero`.
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
  *    share link and its printed QR land (#4415). After a scan the link id is
@@ -105,6 +107,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'climb-list-qr-card',
   'setter-qr-card',
   'playlist-qr-card',
+  'home-qr-card',
 ] as const;
 
 /**

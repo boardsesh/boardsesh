@@ -56,6 +56,25 @@
   margin-top: var(--spacing-2);
 }
 
+/* One install block per screen. Below 900px (MUI's md, where the climb pages
+   swap too) the hero shows this visitor's store badge; from 900px a laptop gets
+   the QR code card with both badges instead, since a laptop installs nothing. */
+.heroDesktopInstall {
+  display: none;
+  width: 100%;
+  margin-top: var(--spacing-2);
+}
+
+@media (min-width: 900px) {
+  .heroActions {
+    display: none;
+  }
+
+  .heroDesktopInstall {
+    display: block;
+  }
+}
+
 .heroSecondary {
   display: flex;
   align-items: center;
@@ -201,12 +220,6 @@
   .heroActions {
     margin-top: var(--spacing-1);
     gap: var(--spacing-2);
-  }
-
-  .heroActions > a,
-  .heroActions > button {
-    font-size: var(--font-size-base);
-    padding-inline: var(--spacing-4);
   }
 
   .heroSecondary {

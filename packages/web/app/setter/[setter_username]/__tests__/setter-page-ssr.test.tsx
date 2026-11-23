@@ -402,8 +402,9 @@ describe('the setter front door hero, cards and rows', () => {
     setterData.value = pageData(FIVE_CLIMBS);
 
     const html = await render();
-    // The row thumbnails are stubbed out in this file, so every <img> here is card art.
-    const images = html.match(/<img [^>]*>/g) ?? [];
+    // The row thumbnails are stubbed out in this file, so every <img> here but
+    // the store badges is card art.
+    const images = (html.match(/<img [^>]*>/g) ?? []).filter((image) => !image.includes('/images/store-badges/'));
 
     expect(html).toContain('setter.mostSent.heading');
     expect(images).toHaveLength(3);

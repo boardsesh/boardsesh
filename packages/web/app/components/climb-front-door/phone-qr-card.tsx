@@ -31,7 +31,7 @@ type PhoneQrCardProps = {
   body: string;
   /** What the code is, for a screen reader. */
   imageLabel: string;
-  /** The store buttons' placement: their link id and their `App Install Click`. */
+  /** The store badges' placement: their link id and their `App Install Click`. */
   placement: AppInstallPlacement;
   storeLabels: StoreButtonLabels;
   /** Which kind of code lands on this page, so a store click after a scan names it. */
@@ -43,7 +43,9 @@ const cardSx = {
   gridTemplateColumns: 'auto minmax(0, 1fr)',
   alignItems: 'center',
   gap: `${themeTokens.spacing[4]}px`,
-  maxWidth: 480,
+  // 520 leaves a 324px text column beside the 148px code: room for the two
+  // store badges side by side at 44px (292px, 299px in French).
+  maxWidth: 520,
   padding: `${themeTokens.spacing[3]}px ${themeTokens.spacing[5]}px ${themeTokens.spacing[3]}px ${themeTokens.spacing[3]}px`,
   backgroundColor: 'var(--semantic-surface)',
   border: '1px solid var(--separator)',
@@ -76,7 +78,7 @@ const bodySx = {
 
 /**
  * A QR code that carries this page to the reader's phone, with the two store
- * buttons beside it. For a laptop, where the page's button opens the browser
+ * badges beside it. For a laptop, where the page's button opens the browser
  * app: a phone with Boardsesh opens the code's link in the app, and one without
  * lands on the same page, whose first button on a phone is the store.
  *

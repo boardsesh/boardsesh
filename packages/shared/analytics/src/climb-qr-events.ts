@@ -1,9 +1,9 @@
 // Climb QR scans: the code a climb page shows on a laptop, beside "Open in your
 // browser", so a climber can carry the climb to the phone in their pocket. A
-// board's climb list, a setter's page and a playlist show the same code for the
-// same reason; each of their scans has its own name (`List QR Scanned`,
-// `Setter QR Scanned`, `Playlist QR Scanned`, built below), so no funnel counts
-// another page's scans.
+// board's climb list, a setter's page, a playlist and the home page show the
+// same code for the same reason; each of their scans has its own name
+// (`List QR Scanned`, `Setter QR Scanned`, `Playlist QR Scanned`,
+// `Home QR Scanned`, built below), so no funnel counts another page's scans.
 //
 // The same contract as board-qr-events.ts:
 //
@@ -143,6 +143,28 @@ export function playlistQrScanned(input: ClimbQrScannedInput): {
 } {
   return {
     name: SHARED_EVENTS.PlaylistQrScanned,
+    properties: {
+      medium: input.medium,
+      surface: input.surface,
+      ...boardTypeProperty(input.boardType),
+    },
+  };
+}
+
+/**
+ * The home page's code was scanned and the home page loaded on the phone.
+ * Once per landing.
+ *
+ * The laptop code in the home hero, beside the two store badges, on `/`:
+ * `medium=desktop`, parsed by `parseClimbQrLanding`, the same three properties.
+ * The home page shows no board, so callers pass `boardType: null`.
+ */
+export function homeQrScanned(input: ClimbQrScannedInput): {
+  name: typeof SHARED_EVENTS.HomeQrScanned;
+  properties: ClimbQrScannedProps;
+} {
+  return {
+    name: SHARED_EVENTS.HomeQrScanned,
     properties: {
       medium: input.medium,
       surface: input.surface,

@@ -16,6 +16,10 @@ import HomeSupportBlock from './components/home/home-support-block';
 import HomeSupportBanner from './components/home/home-support-banner';
 import { isSupportBannerWindow } from './components/home/support-banner-window';
 import { hasMonthlyLinks, readSupportLinksConfig } from './support/support-links';
+import PhoneQrCard from './components/climb-front-door/phone-qr-card';
+import QrLandingTracker from './components/climb-front-door/qr-landing-tracker';
+import { homeQrUrl } from './lib/gym-attribution';
+import { getStoreButtonLabels } from './lib/store-button-labels.server';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -30,10 +34,11 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [recentBeta, locale, communityStats] = await Promise.all([
+  const [recentBeta, locale, communityStats, storeLabels] = await Promise.all([
     getRecentBetaLinks(),
     getLocale(),
     cachedCommunityStats(),
+    getStoreButtonLabels(),
   ]);
 
   // Formatted here rather than in the client hero: the numbers are server data,
@@ -53,7 +58,6 @@ export default async function Home() {
       resourceKeys={{
         marketing: ['home', 'preview'],
         website: [
-          'freeApp',
           'trust',
           'boardChoices',
           'importTitle',
@@ -83,6 +87,8 @@ export default async function Home() {
       {/* The hero video is English-only (its text is burned in), so only the
           English page describes it to crawlers. */}
       {locale === 'en-US' ? <ShowcaseVideoJsonLd /> : null}
+      {/* Counts a phone that scanned the hero's laptop code as `Home QR Scanned`. */}
+      <QrLandingTracker kind="home" boardType={null} />
       {/* The three marketing sections are async server components, so they are
           rendered HERE and handed down as slots: HomePageContent is a client
           component (the hero reads the visitor's platform) and cannot await
@@ -90,6 +96,17 @@ export default async function Home() {
           first HTML a crawler sees. */}
       <HomePageContent
         heroProof={heroProof}
+        desktopInstall={
+          <PhoneQrCard
+            url={homeQrUrl(locale)}
+            title={t('home.hero.qrTitle')}
+            body={t('home.hero.qrBody')}
+            imageLabel={t('home.hero.qrImageLabel')}
+            placement="home-qr-card"
+            storeLabels={storeLabels}
+            qrLanding="home"
+          />
+        }
         initialRecentBeta={recentBeta}
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}

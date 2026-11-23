@@ -169,7 +169,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
       </Box>
       <Box className={styles.bottom}>
         <Typography variant="caption" color="text.secondary" sx={{ fontSize: 14, lineHeight: 1.6, maxWidth: '90ch' }}>
-          {t('footer.trademarkNote', { boards })}{' '}
+          {t('footer.trademarkNote', { boards })} {t('footer.storeTrademarks')}{' '}
           <MuiLink component={LocaleLink} href="/legal#trademark-usage" sx={LINK_SX}>
             {t('footer.links.legal')}
           </MuiLink>

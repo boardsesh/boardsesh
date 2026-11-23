@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import StoreInstallButtons from './store-install-buttons';
 
@@ -21,7 +22,7 @@ type MarketingInstallLinksProps = {
  * in instead: see `getStoreButtonLabels`.
  */
 export default function MarketingInstallLinks({ placement, align }: MarketingInstallLinksProps) {
-  const { t } = useTranslation('marketing');
+  const { t, i18n } = useTranslation('marketing');
   return (
     <StoreInstallButtons
       placement={placement}
@@ -30,6 +31,7 @@ export default function MarketingInstallLinks({ placement, align }: MarketingIns
         ios: t('home.hero.ctaInstallIos'),
         android: t('home.hero.ctaInstallAndroid'),
         update: t('home.hero.ctaUpdate'),
+        locale: isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE,
       }}
     />
   );
