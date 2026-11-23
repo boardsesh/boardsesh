@@ -4121,7 +4121,7 @@ export type Gym = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
   followerCount: Scalars['Int']['output'];
-  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  /** Opening hours as free text the gym maintains itself, line breaks kept (no structured per-day model). */
   hours?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale. */
   hoursUpdatedAt?: Maybe<Scalars['String']['output']>;

@@ -706,6 +706,7 @@ export function useUpdateGym() {
     },
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: ['gym', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
@@ -843,6 +844,9 @@ export function useRequestGymClaim() {
       if (result.status !== 'approved') return;
       void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
       void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
+      // The new owner's board roster carries staff-only actions the cached
+      // 5-minute copy was read without.
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
     },

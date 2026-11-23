@@ -217,9 +217,10 @@ const BOARD_WALL_DEVICE_SELECTION = 'hasLeds litByWallDevice';
 const BOARD_STAFF_ACTION_SELECTION = ' canDelete canRemoveFromGym';
 
 /**
- * GetBoard and GetMyBoards also predate each board's `openReportCount` and
+ * The same three operations also predate each board's `openReportCount` and
  * `viewerHasOpenReport` (#8043, report a problem), selected as a pair straight
- * after `canRemoveFromGym` in BOARD_FIELDS. Both are nullable and the server
+ * after `canRemoveFromGym` (in BOARD_FIELDS, and after GYM_BOARD_FIELDS in
+ * GetGymBoardsForSwitcher). Both are nullable and the server
  * answers null for a viewer they don't concern, which is what the recording's
  * viewer would have read for boards nobody had reported (reports did not exist
  * when the sets were recorded). So they replay as null: no "Reported" pill, no
@@ -265,9 +266,10 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
  *   `canDelete` and `canRemoveFromGym`, as `false`
  *   (`replayBoardsWithoutStaffActions`). It composes with both adapters above.
- * - GetBoard / GetMyBoards: each board's nullable `openReportCount` and
- *   `viewerHasOpenReport`, as null (`replayBoardsWithoutReportFlags`). It
- *   composes with every board adapter above.
+ * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's nullable
+ *   `openReportCount` and `viewerHasOpenReport`, as null
+ *   (`replayBoardsWithoutReportFlags`). It composes with every board adapter
+ *   above.
  * - GetSessionWorkoutHeadlines: each headline's `mainTargetBoardType`.
  */
 export function replayCompatibleFixtureResponse(

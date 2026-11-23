@@ -7,8 +7,9 @@ import { WEB_BASE_URL } from './env';
 // override, so it points at whatever web build we're testing.
 //
 // `tab` opens the console on one tab (the web reads `?tab=`); a claim that just
-// came through lands on Boards, which is why most claimants showed up.
-export function buildGymManageUrl(slugOrUuid: string, tab?: 'boards'): string {
+// came through lands on Boards, which is why most claimants showed up. The app's
+// gym page links staff to Boards (boards near the gym), Kiosks and Insights.
+export function buildGymManageUrl(slugOrUuid: string, tab?: 'boards' | 'kiosks' | 'insights'): string {
   const base = `${WEB_BASE_URL}/gym/${encodeURIComponent(slugOrUuid)}/manage`;
   return tab ? `${base}?tab=${tab}` : base;
 }

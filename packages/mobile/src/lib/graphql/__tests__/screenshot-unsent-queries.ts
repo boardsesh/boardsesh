@@ -54,7 +54,10 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetFollowing',
   'GetGroupedNotifications',
   'GetGym',
+  // The gym page: only a pasted gym link asks by slug, and no capture flow opens the page.
+  'GetGymBySlug',
   'GetGymMembers',
+  'GetGymPendingClaim',
   // ConsentGate skips account privacy synchronization in screenshot mode.
   'GetMyAnalyticsConsent',
   'GetMyBoardSerialConfigs',

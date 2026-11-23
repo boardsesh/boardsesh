@@ -10,6 +10,7 @@ import { useClimbModerationEnabled, useDirectoryReportsEnabled } from '../../pro
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import { sprayImportRoute } from '../../lib/spray/spray-import-progress';
+import { gymPageHref } from '../gym-page/gym-page-route';
 import { notificationClimbRender } from './notification-climb-render';
 import { notificationToClimb } from './notification-to-climb';
 import { directoryNoticeRoute, isDirectoryNoticeType } from './directory-notice-route';
@@ -50,7 +51,7 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * - `comment_*` and `vote_*` open the thread the row is about, via the
  *   `threadEntityType`/`threadEntityId` pair the resolver fills for exactly
  *   these types.
- * - `gym_claim_approved` opens the gym's edit screen.
+ * - `gym_claim_approved` opens the gym's page, where the new staff start.
  * - The directory notices (Report a problem, staff actions on boards) open the
  *   board picker on the board's review or detail sheet, the gym's edit screen,
  *   or, with nothing left to open, a short explanation (`directoryNoticeRoute`).
@@ -189,8 +190,9 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       }
 
       if (notification.type === 'gym_claim_approved' && notification.entityId) {
-        // entityId is the gym uuid; the edit route resolves the gym by uuid.
-        router.push({ pathname: '/gyms/edit', params: { gymUuid: notification.entityId } });
+        // entityId is the gym uuid. The gym page opens in staff mode: Start
+        // here, the boards with their staff actions, and the staff tools.
+        router.push(gymPageHref(notification.entityId));
         return;
       }
 

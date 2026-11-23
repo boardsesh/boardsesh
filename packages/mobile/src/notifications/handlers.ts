@@ -67,6 +67,15 @@ export function resolveNotificationRoute(
       return typeof payload.userId === 'string'
         ? { path: '/(tabs)/profile', params: { userId: payload.userId } }
         : null;
+    case 'gym_claim_approved': {
+      // The in-app row already opens the gym page; a push carrying the gym's
+      // uuid opens the same page. Accepts `gymUuid` or, matching the feed row,
+      // `entityId`. The backend sends no push for this type yet.
+      const gymUuid: unknown = payload.gymUuid ?? payload.entityId;
+      return typeof gymUuid === 'string' && UUID_PATTERN.test(gymUuid)
+        ? { path: '/gyms/[gym]', params: { gym: gymUuid } }
+        : null;
+    }
     default:
       return null;
   }

@@ -2,6 +2,7 @@ import { PressableSurface } from '../PressableSurface';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -27,6 +28,8 @@ import { useReportBoard } from '../../lib/graphql/hooks/use-directory-reports';
 import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+import { useSheetSubRoute } from '../../hooks/use-sheet-sub-route';
+import { gymPageHref } from '../gym-page/gym-page-route';
 
 /**
  * The gym whose staff took a board off their listing, from the
@@ -37,6 +40,9 @@ export type RelistGym = { uuid: string; name: string | null };
 
 /** The relist ask: not sent yet, in flight, or answered. */
 type RelistStatus = 'idle' | 'pending' | 'sent';
+
+/** The body has no scroll position worth restoring: the gym page is one tap deep. */
+type NoScrollRestore = { scrollTo: (options: { y: number; animated: boolean }) => void };
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -54,6 +60,8 @@ type BoardDetailSheetProps = {
    * list it again".
    */
   relistGym?: RelistGym | null;
+  /** The tab a board picked on the gym page returns to: the picker's own. */
+  returnTo?: string;
 };
 
 export function BoardDetailSheet({
@@ -63,9 +71,33 @@ export function BoardDetailSheet({
   onSetActive,
   onReviewReports,
   relistGym,
+  returnTo,
 }: BoardDetailSheetProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
+  const router = useRouter();
+
+  // "At {gym}" opens the gym's page. Native sheets don't stack under a pushed
+  // route, so the sheet suspends (closes without unmounting), the page is
+  // pushed in the picker's own stack, and the sheet comes back when the picker
+  // is on top again (docs/mobile/mobile-sheets-vs-routes.md, rule 1).
+  const boardRef = useRef(board);
+  boardRef.current = board;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const canResume = useCallback(() => boardRef.current !== null && visibleRef.current, []);
+  const { suspended, presentEpoch, isAwaitingReturn, suspend } = useSheetSubRoute<NoScrollRestore>({ canResume });
+  // The suspend itself closes the native sheet; that close is not the climber's.
+  const handleClose = useCallback(() => {
+    if (isAwaitingReturn()) return;
+    onClose();
+  }, [isAwaitingReturn, onClose]);
+  const gymUuid = board?.gymUuid ?? null;
+  const openGym = useCallback(() => {
+    if (gymUuid === null || isAwaitingReturn()) return;
+    suspend();
+    router.push(gymPageHref(gymUuid, 'boards', returnTo));
+  }, [gymUuid, isAwaitingReturn, suspend, router, returnTo]);
   const { data: activeBoard } = useActiveBoard();
   const { canReport } = useSprayModerationAccess();
   const [reportTarget, setReportTarget] = useState<{ uuid: string; name: string } | null>(null);
@@ -179,7 +211,7 @@ export function BoardDetailSheet({
   const header = board ? (
     <SheetTopBar
       title={board.name}
-      leading={{ kind: 'close', onPress: onClose }}
+      leading={{ kind: 'close', onPress: handleClose }}
       trailing={
         isActive
           ? undefined
@@ -197,9 +229,11 @@ export function BoardDetailSheet({
   return (
     <>
       <Sheet
-        visible={visible && !!board}
+        // A fresh host on each return: re-presenting a mounted host loses its detent.
+        key={presentEpoch}
+        visible={visible && !!board && !suspended}
         snapPoints={MEDIUM_LARGE_SNAP_POINTS}
-        onClose={onClose}
+        onClose={handleClose}
         scrollable
         contentContainerStyle={styles.content}
         header={header}
@@ -219,6 +253,9 @@ export function BoardDetailSheet({
             reviewRow={showReview ? { onPress: openReview } : null}
             relistRow={relistRow}
             boardReportRow={reportAction ? { onPress: reportAction.open } : null}
+            // `gymIsListed === false` is the server's private-gym signal; the page would
+            // only answer not-found for it, so don't offer the row.
+            onOpenGym={gymUuid !== null && board.gymName && board.gymIsListed !== false ? openGym : undefined}
           />
         ) : null}
       </Sheet>
@@ -266,6 +303,7 @@ function BoardDetailBody({
   reviewRow,
   relistRow,
   boardReportRow,
+  onOpenGym,
 }: {
   board: UserBoard;
   isActive: boolean;
@@ -280,6 +318,8 @@ function BoardDetailBody({
   reviewRow: { onPress: () => void } | null;
   relistRow: { gymName: string; status: RelistStatus; onPress: () => void } | null;
   boardReportRow: { onPress: () => void } | null;
+  /** The board's gym page. Absent when the board has no gym the viewer can see. */
+  onOpenGym?: () => void;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -308,6 +348,19 @@ function BoardDetailBody({
           </View>
         ) : null}
       </View>
+
+      {onOpenGym && board.gymName ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="gym"
+            label={t('mobile.boardDetail.atGym', { gym: board.gymName })}
+            hint={t('mobile.gyms.seeGym')}
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenGym}
+          />
+        </View>
+      ) : null}
 
       <View style={[styles.statsRow, { backgroundColor: systemColors.tertiaryBackground }]}>
         <Stat value={board.totalAscents} label={t('mobile.boardDetail.stats.ascents')} systemColors={systemColors} />
