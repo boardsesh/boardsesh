@@ -110,7 +110,7 @@ export function brandCtaOutlinedSx({ size = 'medium' }: BrandCtaOutlinedOptions 
     ...SIZE_SX[size],
     '&:hover': {
       borderColor: 'var(--color-primary)',
-      backgroundColor: 'var(--semantic-selected-light)',
+      backgroundColor: 'var(--semantic-hover)',
       // Cancels the same global StartClimbingButton lift the filled button cancels.
       transform: 'none',
     },

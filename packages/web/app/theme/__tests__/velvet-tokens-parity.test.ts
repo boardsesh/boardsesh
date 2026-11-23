@@ -80,7 +80,19 @@ describe('index.css ↔ theme-config parity', () => {
     ['--semantic-background', themeTokens.semantic.background],
     ['--semantic-surface', themeTokens.semantic.surface],
     ['--semantic-surface-elevated', themeTokens.semantic.surfaceElevated],
+    ['--semantic-selected', themeTokens.semantic.selected],
+    ['--semantic-selected-hover', themeTokens.semantic.selectedHover],
+    ['--semantic-selected-light', themeTokens.semantic.selectedLight],
     ['--semantic-selected-border', themeTokens.semantic.selectedBorder],
+    // Roles split off the selected family so retuning `selected` cannot repaint a hover,
+    // a badge ground or a dot grid. Same values as the tints they replaced.
+    ['--semantic-on-selected', themeTokens.semantic.onSelected],
+    ['--semantic-selected-row', themeTokens.semantic.selectedRow],
+    ['--semantic-hover', themeTokens.semantic.hover],
+    ['--semantic-button-hover', themeTokens.semantic.buttonHover],
+    ['--semantic-fill-subtle', themeTokens.semantic.fillSubtle],
+    ['--semantic-fill', themeTokens.semantic.fill],
+    ['--semantic-fill-strong', themeTokens.semantic.fillStrong],
     ['--separator', themeTokens.semantic.separator],
     ['--control-border', themeTokens.semantic.controlBorder],
     // These two lived only in index.css until now, so the parity test could not see them
@@ -207,6 +219,21 @@ describe('MUI theme wires the foreground/fill split correctly', () => {
     expect(themeTokens.colors.warning).toBe(brandColorsDark.warning);
     expect(themeTokens.colors.error).toBe(brandColorsDark.error);
     expect(themeTokens.colors.live).toBe(brandColorsDark.live);
+  });
+
+  // MUI's hover and selected-row grounds read their own roles, not the selected tint,
+  // so a selected-state retune cannot turn every hovered row into a selected one.
+  it('action.hover and action.selected read the hover and selected-row roles', () => {
+    expect(darkTheme.palette.action.hover).toBe(themeTokens.semantic.hover);
+    expect(darkTheme.palette.action.selected).toBe(themeTokens.semantic.selectedRow);
+  });
+
+  it('text and outlined button hover reads the button-hover role, not the selected tint', () => {
+    const buttonRoot: unknown = darkTheme.components?.MuiButton?.styleOverrides?.root;
+    const hoverRule = (buttonRoot as Record<string, { backgroundColor?: string } | undefined> | undefined)?.[
+      '&:not(:disabled):not(.MuiButton-contained):hover'
+    ];
+    expect(hoverRule?.backgroundColor).toBe('var(--semantic-button-hover)');
   });
 });
 

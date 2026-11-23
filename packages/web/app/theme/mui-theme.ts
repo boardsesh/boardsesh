@@ -77,11 +77,11 @@ const sharedComponents: Components<Theme> = {
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
         // Velvet hover is a background TINT, never a lift. Contained variants carry
-        // their own fill-hover (see containedPrimary); text/outlined get the violet
-        // selected wash. No transform/shadow here — nothing to gate behind a hover
-        // media query on this element.
+        // their own fill-hover (see containedPrimary); text/outlined get the button
+        // hover wash, which is a hover, not a selected state. No transform/shadow
+        // here — nothing to gate behind a hover media query on this element.
         '&:not(:disabled):not(.MuiButton-contained):hover': {
-          backgroundColor: 'var(--semantic-selected-hover)',
+          backgroundColor: 'var(--semantic-button-hover)',
           '&.MuiButton-colorPrimary': {
             color: 'var(--color-primary-hover)',
           },
@@ -660,8 +660,8 @@ function buildTheme(): Theme {
       },
       divider: semantic.separator,
       action: {
-        hover: semantic.selectedLight,
-        selected: semantic.selected,
+        hover: semantic.hover,
+        selected: semantic.selectedRow,
       },
     },
     shadows,

@@ -95,10 +95,32 @@ export const themeTokens = {
   // Semantic colors — the surface ladder. Depth on near-black is a LIGHTER violet,
   // not a shadow: background → surface → surfaceElevated each step up in lightness.
   semantic: {
+    // The selected family is for a GENUINELY selected or current item only. Hover
+    // washes, badge grounds and decorative fills used to borrow it; they now have
+    // their own roles below, at the same values, so retuning `selected` cannot
+    // repaint them.
     selected: 'rgba(199, 184, 232, 0.16)', // Violet tint for selected state
     selectedHover: 'rgba(199, 184, 232, 0.24)',
-    selectedLight: 'rgba(199, 184, 232, 0.10)', // Very subtle violet highlight
+    selectedLight: 'rgba(199, 184, 232, 0.1)', // Very subtle violet highlight
     selectedBorder: brandColorsDark.primary, // #9784FF — matches foreground primary
+    // Ink on a selected or current item (the current angle stop). neutral[900] today;
+    // the Graphite swap retunes it to the ink for the tonal selected container.
+    onSelected: '#F3EFFA',
+    // MUI `action.selected`: the ground under a selected row or menu item. Today's
+    // `selected` tint; the Graphite swap retunes it.
+    selectedRow: 'rgba(199, 184, 232, 0.16)',
+    // Hover wash on rows, chips and list links (MUI `action.hover`). Not a selected
+    // state; it borrowed `selectedLight` at this value. The Graphite swap retunes it.
+    hover: 'rgba(199, 184, 232, 0.1)',
+    // Hover wash on MUI text and outlined buttons. Apart from `hover` only because the
+    // two differ today; the Graphite swap retunes it.
+    buttonHover: 'rgba(199, 184, 232, 0.24)',
+    // Decorative low-alpha grounds: badge and status-pill grounds, the about glow, the
+    // build-plans dot grid. Never a selected state. Three strengths only because the
+    // call sites use three today; the Graphite swap retunes them to one fill.
+    fillSubtle: 'rgba(199, 184, 232, 0.1)',
+    fill: 'rgba(199, 184, 232, 0.16)',
+    fillStrong: 'rgba(199, 184, 232, 0.24)',
     separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines (decoupled from neutral-200)
     // The visual boundary of an INTERACTIVE thing (outlined buttons, chips, toggles,
     // pagination pills, floating surfaces). Opaque on purpose so WCAG 1.4.11's 3:1 floor is

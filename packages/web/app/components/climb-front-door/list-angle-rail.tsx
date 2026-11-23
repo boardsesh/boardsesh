@@ -58,14 +58,14 @@ const linkSx = {
   color: 'var(--color-primary)',
   '&:hover': {
     borderColor: 'var(--color-primary)',
-    backgroundColor: 'var(--semantic-selected-light)',
+    backgroundColor: 'var(--semantic-hover)',
   },
 };
 
-// The angle being read: text, not a self-link, in the page's ink on a raised fill.
+// The angle being read: text, not a self-link, in the selected-item ink on a raised fill.
 const currentSx = {
   ...stopSx,
-  color: 'var(--neutral-900)',
+  color: 'var(--semantic-on-selected)',
   borderColor: 'var(--color-primary)',
   backgroundColor: 'var(--semantic-surface)',
   boxShadow: 'inset 0 0 0 1px var(--color-primary)',

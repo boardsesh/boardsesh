@@ -138,7 +138,7 @@ export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCa
                 // homepage locator's shared surface.
                 sx={{
                   borderRadius: 'var(--border-radius-full)',
-                  backgroundColor: 'var(--semantic-selected)',
+                  backgroundColor: 'var(--semantic-fill)',
                   border: '1px solid var(--separator)',
                   color: 'var(--neutral-900)',
                   fontWeight: themeTokens.typography.fontWeight.semibold,
