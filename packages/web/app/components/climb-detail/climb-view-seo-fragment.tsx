@@ -4,6 +4,7 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { visuallyHidden } from '@mui/utils';
 import GradeTile from '@/app/components/climb-front-door/grade-tile';
+import { formatQualityAverage } from '@/app/components/climb-front-door/climb-facts-format';
 import { frontDoorTitleSx } from '@/app/components/climb-front-door/front-door-heading-sx';
 import { normalizedQuality } from '@/app/components/climb-front-door/normalized-quality';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -130,10 +131,7 @@ export default async function ClimbViewSeoFragment({
     });
   }
   if (quality) {
-    const formattedQuality = new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    }).format(quality.average);
+    const formattedQuality = formatQualityAverage(quality.average, locale);
     proofItems.push({
       key: 'quality',
       content: (

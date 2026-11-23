@@ -308,15 +308,18 @@ describe('climb front door server HTML', () => {
   });
 
   it('agrees with the heading on quality: the facts list shows it only on the 1-5 scale', async () => {
-    expect(await renderFrontDoor()).toContain('frontDoor.facts.qualityValue(quality=4.2)');
+    const factsList = (html: string) => html.match(/<dl[\s>][\s\S]*?<\/dl>/)?.[0] ?? '';
+    const rated = factsList(await renderFrontDoor());
+    expect(rated).toContain('frontDoor.facts.qualityAtAngle(angle=40)');
+    expect(rated).toContain('frontDoor.hero.qualityAria(quality=4.2)');
 
-    // Aurora's raw 1-3 average: neither the star nor the facts list prints it.
+    // Aurora's raw 1-3 average: neither the star, the facts list nor the table prints it.
     vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
       { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
     ]);
     const html = await renderFrontDoor();
-    expect(html).not.toContain('frontDoor.facts.qualityValue');
     expect(html).not.toContain('frontDoor.hero.qualityAria');
+    expect(factsList(html)).toContain('frontDoor.angles.notRated');
   });
 
   it('emits one board image for a board with no dark art', async () => {
@@ -334,13 +337,22 @@ describe('climb front door server HTML', () => {
     expect(html).toContain('href="/setter/setter-person"');
   });
 
-  it('cross-links the other angles and does not self-link the current one', async () => {
+  it('cross-links the other angles from the angle table and does not self-link the current one', async () => {
     const html = await renderFrontDoor();
+    const table = html.match(/<table[\s>][\s\S]*?<\/table>/)?.[0] ?? '';
     // Angle navigation retains the shared physical board, while schema above
     // continues to use its canonical configuration URL.
-    expect(html).toMatch(/href="\/b\/my-board\/25\/view\//);
+    expect(table).toMatch(/href="\/b\/my-board\/25\/view\//);
     expect(html).not.toMatch(/href="\/b\/my-board\/40\/view\//);
-    expect(html).toContain('aria-current="page"');
+    expect(table).toMatch(/<tr[^>]*aria-current="page"[^>]*>[\s\S]*?frontDoor\.facts\.angleValue\(angle=40\)/);
+  });
+
+  it('writes the about paragraph from the page data', async () => {
+    const html = await renderFrontDoor();
+    expect(html).toContain(
+      'frontDoor.about.introWithSetter(climbName=Test Climb,board=Kilter Board Original,angle=40,grade=V5,setter=setter-person)',
+    );
+    expect(html).toContain('frontDoor.about.sendsHere(count=12,formattedCount=12)');
   });
 
   it('pins the BreadcrumbList crumbs, board name included', async () => {

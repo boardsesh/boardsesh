@@ -17,10 +17,10 @@ import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardImageDetails, BoardName, Climb } from '@/app/lib/types';
-import AngleCrossLinks from './angle-cross-links';
+import AboutClimb from './about-climb';
+import AngleTable from './angle-table';
 import ClimbBoardStage from './climb-board-stage';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
-import ClimbFacts from './climb-facts';
 import ClimbHeroCta from './climb-hero-cta';
 import type { HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
@@ -74,8 +74,9 @@ const setterNotesSx = {
   margin: 0,
 };
 
-// One rhythm for every `<h2>` band below the board art, so the page reads as a
-// stack of sections rather than a run of UA-default headings.
+// One rhythm for every full-width `<h2>` band below the hero, so the page reads
+// as a stack of sections rather than a run of UA-default headings. The bands in
+// the hero's details column are spaced by `.details` instead.
 const sectionSx = { mt: 4 };
 
 // Shared by the "nothing here yet" and the "this did not load" lines. Same
@@ -228,10 +229,25 @@ export default async function ClimbFrontDoor({
         </Box>
 
         <Box className={styles.details}>
-          <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
+          <AngleTable
+            boardDetails={boardDetails}
+            boardSlug={boardSlug}
+            climbUuid={climb.uuid}
+            climbName={climbName}
+            currentAngle={angle}
+            angleStats={angleStats}
+          />
+
+          <AboutClimb
+            climb={climb}
+            boardDetails={boardDetails}
+            angle={angle}
+            angleStats={angleStats}
+            currentAngleStats={currentAngleStats}
+          />
 
           {setterNotes ? (
-            <Box component="section" sx={sectionSx}>
+            <Box component="section">
               <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
                 {t('frontDoor.setterNotes.heading')}
               </Typography>
@@ -241,18 +257,11 @@ export default async function ClimbFrontDoor({
             </Box>
           ) : null}
 
-          <AngleCrossLinks
-            boardDetails={boardDetails}
-            boardSlug={boardSlug}
-            climbUuid={climb.uuid}
-            climbName={climbName}
-            currentAngle={angle}
-            angleStats={angleStats}
-          />
-
-          <Box component="section" sx={sectionSx}>
+          <Box component="section">
             <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
-              {t('frontDoor.beta.heading')}
+              {betaLinks.status === 'loaded' && betaLinks.items.length > 0
+                ? t('frontDoor.beta.headingCount', { count: betaLinks.items.length })
+                : t('frontDoor.beta.heading')}
             </Typography>
             {/* Three states, not two. `frontDoor.beta.empty` says nobody has filmed
               this climb, which is a claim about the climb — it may only be
@@ -264,7 +273,7 @@ export default async function ClimbFrontDoor({
                 {t('frontDoor.beta.unavailable')}
               </Typography>
             ) : betaLinks.items.length > 0 ? (
-              <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" />
+              <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" layout="grid" />
             ) : (
               <Typography variant="body2" component="p" sx={emptySectionSx}>
                 {t('frontDoor.beta.empty')}

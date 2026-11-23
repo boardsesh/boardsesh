@@ -50,8 +50,8 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 vi.mock('../front-door-breadcrumb', () => ({ default: () => null }));
 vi.mock('../climb-creative-work-json-ld', () => ({ default: () => null }));
 vi.mock('../climb-list-json-ld', () => ({ default: () => null }));
-vi.mock('../climb-facts', () => ({ default: () => null }));
-vi.mock('../angle-cross-links', () => ({ default: () => null }));
+vi.mock('../angle-table', () => ({ default: () => null }));
+vi.mock('../about-climb', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
 vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default: () => null }));
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));

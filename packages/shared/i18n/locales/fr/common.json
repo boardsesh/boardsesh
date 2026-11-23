@@ -1223,7 +1223,9 @@
     "empty": "Pas encore de vidéo de beta",
     "openClimb": "Découvrir {{climb}} et sa beta",
     "openVideo": "Regarder la beta de {{creator}} sur {{platform}}",
-    "watchOn": "Regarder la beta sur {{platform}}"
+    "watchOn": "Regarder la beta sur {{platform}}",
+    "watch": "Voir la beta",
+    "showAll": "Voir les {{total}} vidéos"
   },
   "ascents": {
     "deleteTitle": "Supprimer l'ascension",

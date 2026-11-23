@@ -969,32 +969,47 @@
     },
     "setterLink": "Mehr Boulder von {{setter}}",
     "facts": {
-      "grade": "Grad",
       "setter": "Routenbauer*in",
-      "ascents": "Begehungen",
-      "quality": "Qualität",
-      "angle": "Winkel",
       "board": "Board",
-      "firstAscent": "Erstbegehung",
+      "firstAscent": "Erstbegehung bei {{angle}}°",
       "firstAscentUnknown": "Nicht erfasst",
       "unknown": "Unbekannt",
       "angleValue": "{{angle}}°",
-      "qualityValue": "{{quality}} von 5",
-      "firstAscentValue": "{{setter}}, {{date}}"
+      "firstAscentValue": "{{setter}}, {{date}}",
+      "qualityAtAngle": "Qualität bei {{angle}}°"
     },
     "setterNotes": {
       "heading": "Notizen vom Routenbau"
     },
+    "about": {
+      "heading": "Über diesen Boulder",
+      "intro": "{{climbName}} ist ein {{grade}} am {{board}} bei {{angle}}°.",
+      "introWithSetter": "{{climbName}} ist ein {{grade}} am {{board}} bei {{angle}}°, geschraubt von {{setter}}.",
+      "introUngraded": "{{climbName}} ist ein Boulder am {{board}} bei {{angle}}°.",
+      "introUngradedWithSetter": "{{climbName}} ist ein Boulder am {{board}} bei {{angle}}°, geschraubt von {{setter}}.",
+      "firstAscent": "Die Erstbegehung bei {{angle}}° gelang {{climber}} am {{date}}.",
+      "gradeRange": "Bei {{easiestAngle}}° ist er {{easiest}}, bei {{hardestAngle}}° {{hardest}}.",
+      "sendsHere_one": "{{formattedCount}} Begehung bei diesem Winkel eingetragen.",
+      "sendsHere_other": "{{formattedCount}} Begehungen bei diesem Winkel eingetragen."
+    },
     "angles": {
-      "heading": "Derselbe Boulder bei anderen Winkeln",
-      "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — du bist hier",
-      "all": "Alle Winkel"
+      "heading": "Grade bei jedem Winkel",
+      "colAngle": "Winkel",
+      "colGrade": "Grad",
+      "colSends": "Begehungen",
+      "colQuality": "Qualität",
+      "thisPage": "diese Seite",
+      "linkName": "{{climbName}} bei {{angle}}°",
+      "notRated": "Nicht bewertet",
+      "total_one": "{{formattedCount}} Begehung über {{angleCount}} Winkel eingetragen",
+      "total_other": "{{formattedCount}} Begehungen über {{angleCount}} Winkel eingetragen"
     },
     "beta": {
       "heading": "Beta-Videos",
       "empty": "Noch keine Beta gefilmt.",
-      "unavailable": "Die Beta wurde nicht geladen. Lad die Seite neu, um es nochmal zu probieren."
+      "unavailable": "Die Beta wurde nicht geladen. Lad die Seite neu, um es nochmal zu probieren.",
+      "headingCount_one": "Beta · {{count}} Video",
+      "headingCount_other": "Beta · {{count}} Videos"
     },
     "community": {
       "heading": "Community"

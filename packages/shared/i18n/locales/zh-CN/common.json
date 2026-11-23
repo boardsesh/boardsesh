@@ -1223,7 +1223,9 @@
     "empty": "还没有攀爬方法视频",
     "openClimb": "查看 {{climb}} 及其攀爬方法",
     "openVideo": "在 {{platform}} 观看 {{creator}} 的攀爬方法",
-    "watchOn": "在 {{platform}} 观看攀爬方法"
+    "watchOn": "在 {{platform}} 观看攀爬方法",
+    "watch": "观看攀爬方法",
+    "showAll": "查看全部 {{total}} 个视频"
   },
   "ascents": {
     "deleteTitle": "删除完攀记录",
