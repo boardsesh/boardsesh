@@ -29,6 +29,8 @@ import { boardTypeProperty } from '@boardsesh/analytics';
 import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
 import BoardReportLink from '@/app/components/directory-reports/board-report-link';
 import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
+import I18nProvider from '@/app/components/providers/i18n-provider';
+import { getLocale } from '@/app/lib/i18n/get-locale';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
@@ -208,6 +210,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   ]);
   if (!listData) return notFound();
   const { boardDetails, climbs, hasMore, preloadUrls } = listData;
+  const reportLocale = reportsEnabled ? await getLocale() : null;
 
   return (
     <>
@@ -233,7 +236,15 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
         noindex={board.isUnlisted || !board.isPublic}
         // One answer for every reader (the flag is not per person), so the
         // page's shared cache holds the same HTML for everyone.
-        reportProblem={reportsEnabled ? <BoardReportLink boardUuid={board.uuid} /> : undefined}
+        reportProblem={
+          reportLocale ? (
+            // The board layout loads `climbs` and `feed`; the dialog's words are
+            // the `boards` catalogue's `report` branch, and only that branch ships.
+            <I18nProvider locale={reportLocale} namespaces={['boards']} resourceKeys={{ boards: ['report'] }}>
+              <BoardReportLink boardUuid={board.uuid} />
+            </I18nProvider>
+          ) : undefined
+        }
       />
     </>
   );
