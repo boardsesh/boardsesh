@@ -3,6 +3,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -37,7 +38,10 @@ import { useReportRequest } from './use-report-request';
  */
 export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
   const { t } = useTranslation('boards');
-  const { token } = useWsAuthToken();
+  const { token, error: tokenError } = useWsAuthToken();
+  const { data: session } = useSession();
+  // Keyed on who is signed in, not the token: a rotation keeps the loaded board.
+  const viewerUserId = session?.user?.id ?? null;
   const [open, setOpen] = useState(false);
 
   const isKnownKey = useCallback((key: string) => key === boardUuid, [boardUuid]);
@@ -46,7 +50,7 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
 
   const readsEnabled = open && Boolean(token);
   const boardQuery = useQuery({
-    queryKey: ['reportProblemBoard', boardUuid, token],
+    queryKey: ['reportProblemBoard', boardUuid, viewerUserId],
     enabled: readsEnabled,
     retry: false,
     staleTime: 60_000,
@@ -60,7 +64,7 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
   });
   const gymUuid = boardQuery.data?.gymUuid ?? null;
   const gymQuery = useQuery({
-    queryKey: ['reportProblemGym', gymUuid, token],
+    queryKey: ['reportProblemGym', gymUuid, viewerUserId],
     enabled: readsEnabled && gymUuid !== null,
     retry: false,
     staleTime: 60_000,
@@ -75,7 +79,7 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
     },
   });
   const gymBoardsQuery = useQuery({
-    queryKey: ['reportProblemGymBoards', gymUuid, token],
+    queryKey: ['reportProblemGymBoards', gymUuid, viewerUserId],
     enabled: readsEnabled && gymUuid !== null,
     retry: false,
     staleTime: 60_000,
@@ -125,7 +129,7 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
     };
   }, [boardQuery.data, gymSettled, gymQuery.data, gymBoardsQuery.data, gymUuid]);
 
-  const loadFailed = boardQuery.isError || (boardQuery.isSuccess && boardQuery.data === null);
+  const loadFailed = Boolean(tokenError) || boardQuery.isError || (boardQuery.isSuccess && boardQuery.data === null);
 
   return (
     <Box component="p" sx={{ m: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 0.5 }}>

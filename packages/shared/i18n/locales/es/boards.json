@@ -1798,7 +1798,10 @@
     "keepFailed": "No se pudo cerrar el reporte. Inténtalo de nuevo.",
     "empty": "Ya no hay nada abierto sobre este plafón.",
     "back": "Atrás",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "web": {
+      "keepPartial": "Se cerraron {{closed}} de {{total}} reportes. Inténtalo de nuevo con el resto."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "No puedes editar este plafón",

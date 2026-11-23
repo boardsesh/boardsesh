@@ -700,6 +700,7 @@
       "deleted": "Board supprimée. Le signalement est fermé.",
       "removed": "Retirée de la salle. Le signalement est fermé.",
       "hidden": "Salle masquée de la recherche. Le signalement est fermé.",
+      "hiddenStillOpen": "Salle masquée de la recherche, mais le signalement est toujours ouvert. Réessaie.",
       "kept": "Signalement fermé.",
       "failed": "Ça n'a pas marché. Réessaie."
     },

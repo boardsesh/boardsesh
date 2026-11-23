@@ -117,6 +117,32 @@ describe('BoardReportsPanel', () => {
     );
   });
 
+  it('closes the report when the board already left the gym', async () => {
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('adminDirectoryReports')) {
+        return { adminDirectoryReports: { reports: [escalated], nextCursor: null } };
+      }
+      if (document.includes('detachBoardFromGym')) {
+        throw Object.assign(new Error('This board is not listed at this gym.'), {
+          response: {
+            errors: [{ message: 'This board is not listed at this gym.', extensions: { code: 'BAD_USER_INPUT' } }],
+          },
+        });
+      }
+      return { resolveDirectoryReport: { ...escalated, status: 'removed' } };
+    });
+    render(<BoardReportsPanel highlightReportUuid={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove from gym' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove from gym' }));
+
+    await waitFor(() =>
+      expect(mockShowMessage).toHaveBeenCalledWith('Removed from the gym. The report is closed.', 'success'),
+    );
+    expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('resolveDirectoryReport'), {
+      input: { reportUuid: escalated.uuid, outcome: 'removed', note: null },
+    });
+  });
+
   it('keeps a report with the admin’s note', async () => {
     mockRequest.mockImplementation(async (document: string) => {
       if (document.includes('adminDirectoryReports')) {

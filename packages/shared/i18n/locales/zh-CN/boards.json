@@ -1798,7 +1798,10 @@
     "keepFailed": "无法关闭报告，请重试。",
     "empty": "这块训练板已没有待处理的报告。",
     "back": "返回",
-    "close": "关闭"
+    "close": "关闭",
+    "web": {
+      "keepPartial": "已关闭 {{total}} 条报告中的 {{closed}} 条，请重试以关闭其余报告。"
+    }
   },
   "whoCanEdit": {
     "boardTitle": "你不能编辑这块训练板",

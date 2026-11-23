@@ -1798,7 +1798,10 @@
     "keepFailed": "Impossibile chiudere la segnalazione. Riprova.",
     "empty": "Su questo pannello non c'è più niente di aperto.",
     "back": "Indietro",
-    "close": "Chiudi"
+    "close": "Chiudi",
+    "web": {
+      "keepPartial": "Chiuse {{closed}} segnalazioni su {{total}}. Riprova per le altre."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "Non puoi modificare questo pannello",
