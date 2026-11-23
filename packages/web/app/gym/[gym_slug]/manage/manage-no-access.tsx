@@ -12,7 +12,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { themeTokens } from '@/app/theme/theme-config';
 import GymClaimPendingNotice from '../gym-claim-pending-notice';
 import ManageNoAccessActions from './manage-no-access-actions';
-import { gymListingRunner, gymPageHref } from './manage-no-access-logic';
+import { gymClaimOpenToViewer, gymListingRunner, gymPageHref } from './manage-no-access-logic';
 
 /**
  * Manage gym for a signed-in climber who can't manage this gym: who can change
@@ -34,8 +34,11 @@ export default async function ManageNoAccess({
 }) {
   const { t } = await getServerTranslation('boards');
   const runner = gymListingRunner(gym);
+  const claimOpen = gymClaimOpenToViewer(gym);
+  // Where no claim can show, neither can the notice that stands in for one.
+  const pending = claimOpen ? pendingClaim : null;
   // `canClaim` is a permission bit and stays true while a claim sits in the queue.
-  const canClaim = gym.canClaim && pendingClaim === null;
+  const canClaim = claimOpen && pending === null;
 
   return (
     <Box>
@@ -60,7 +63,7 @@ export default async function ManageNoAccess({
           {t('whoCanEdit.rule')}
         </Typography>
       </Alert>
-      {pendingClaim && <GymClaimPendingNotice method={pendingClaim.method} />}
+      {pending && <GymClaimPendingNotice method={pending.method} />}
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
         <ManageNoAccessActions
           gym={{

@@ -114,4 +114,15 @@ describe('the lock state for a climber who can claim the gym', () => {
     await ManageGymPage(props());
     expect(control.query.mock.calls.some(([document]) => document === GET_GYM_PENDING_CLAIM)).toBe(false);
   });
+
+  it("doesn't ask on a gym its staff run, even when canClaim says yes", async () => {
+    control.query.mockImplementation(async (document: unknown) =>
+      document === GET_GYM_PENDING_CLAIM
+        ? { gymBySlug: { uuid: 'private-gym', myPendingClaim: pending } }
+        : { gymBySlug: { ...publicGym, listingState: 'RUN_BY_GYM' } },
+    );
+    const page = await ManageGymPage(props());
+    expect(control.query.mock.calls.some(([document]) => document === GET_GYM_PENDING_CLAIM)).toBe(false);
+    expect(page.props.children.props.children.props.pendingClaim).toBeNull();
+  });
 });

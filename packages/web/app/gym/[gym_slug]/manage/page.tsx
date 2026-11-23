@@ -20,6 +20,7 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import { looksLikeGymUuid } from '@/app/components/gym-entity/manage/slug-utils';
 import ManageGymContent from './manage-gym-content';
 import ManageNoAccess from './manage-no-access';
+import { gymClaimOpenToViewer } from './manage-no-access-logic';
 import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
 
 // Per-user, cookie-gated management surface — never static, never indexed.
@@ -64,10 +65,11 @@ const resolveManageGym = cache(async (slugOrUuid: string, token: string): Promis
 /**
  * The viewer's own claim in flight, for the lock state: its own document and its
  * own catch, as on the public gym page, so a backend that can't answer it costs
- * the notice and nothing else. Only asked where a Claim button could show.
+ * the notice and nothing else. Only asked where a Claim button could show, so
+ * never on a gym its staff run.
  */
 async function fetchMyPendingClaim(gym: Gym, token: string): Promise<MyGymClaim | null> {
-  if (!gym.canClaim || !gym.slug) return null;
+  if (!gymClaimOpenToViewer(gym) || !gym.slug) return null;
   try {
     const response = await executeAuthenticatedGraphQL<GetGymPendingClaimQueryResponse>(
       GET_GYM_PENDING_CLAIM,

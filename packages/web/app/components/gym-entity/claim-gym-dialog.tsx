@@ -22,6 +22,7 @@ import {
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
   GYM_CLAIM_SUPPORT_EMAIL,
+  isGymRunByStaffError,
 } from '@boardsesh/gym-claim';
 import { gymClaimResult, gymClaimSubmitted } from '@boardsesh/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -144,7 +145,13 @@ export default function ClaimGymDialog({
       // `error` is ours, not a backend status: the mutation threw or the
       // network failed, so there is no claim status to report.
       trackGymFunnelEvent(gymClaimResult({ status: 'error', gymUuid }));
-      setError(graphqlErrorMessage(err) ?? t('claimGym.errors.generic'));
+      // A gym its staff run can't be claimed: say so in the viewer's language
+      // and point at Report a problem, rather than the server's English.
+      setError(
+        isGymRunByStaffError(err)
+          ? t('claimGym.errors.runByStaff')
+          : (graphqlErrorMessage(err) ?? t('claimGym.errors.generic')),
+      );
     } finally {
       setSubmitting(false);
     }

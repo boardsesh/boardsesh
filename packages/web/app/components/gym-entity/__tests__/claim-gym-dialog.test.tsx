@@ -96,6 +96,39 @@ describe('ClaimGymDialog — auto-approved claim', () => {
   });
 });
 
+describe('ClaimGymDialog — a refused claim', () => {
+  it("says a gym its staff run can't be claimed in the viewer's words, and points at Report a problem", async () => {
+    mockRequest.mockRejectedValueOnce({
+      response: {
+        errors: [
+          {
+            // The server's prose, which the dialog must not show: it's English only.
+            message: 'Refused: staff-run listing',
+            extensions: { code: 'GYM_RUN_BY_STAFF' },
+          },
+        ],
+      },
+    });
+
+    renderDialog();
+    await submit();
+
+    await screen.findByText(tFromCatalog('boards', 'claimGym.errors.runByStaff'));
+    expect(screen.queryByText('Refused: staff-run listing')).toBeNull();
+  });
+
+  it("keeps the server's message for any other refusal", async () => {
+    mockRequest.mockRejectedValueOnce({
+      response: { errors: [{ message: 'This gym is private and cannot be claimed' }] },
+    });
+
+    renderDialog();
+    await submit();
+
+    await screen.findByText('This gym is private and cannot be claimed');
+  });
+});
+
 describe('ClaimGymDialog — which form opens', () => {
   const renderWith = (canClaimByDomain: boolean) =>
     render(

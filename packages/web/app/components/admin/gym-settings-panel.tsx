@@ -34,8 +34,20 @@ const DAILY_CAP_KEY = 'gym_claim_auto_approve_daily_cap';
 const DEFAULT_DAILY_CAP = 10;
 const MAX_DAILY_CAP = 1000;
 
-/** A whole number from 0 to {@link MAX_DAILY_CAP}, or null. The backend reads anything else as the default. */
-function parseDailyCap(draft: string): number | null {
+/**
+ * The cap the backend applies for a stored value, read its way
+ * (`gymClaimAutoApproveDailyCap`): any whole number, a negative one as 0, and
+ * anything else as the default. Shown as is, so the field never claims a limit
+ * the backend isn't using.
+ */
+function appliedDailyCap(stored: string | undefined): number {
+  const trimmed = (stored ?? '').trim();
+  if (!/^-?\d+$/.test(trimmed)) return DEFAULT_DAILY_CAP;
+  return Math.max(0, Number.parseInt(trimmed, 10));
+}
+
+/** What the admin may save: a whole number from 0 to {@link MAX_DAILY_CAP}, or null. */
+function parseCapDraft(draft: string): number | null {
   const trimmed = draft.trim();
   if (!/^\d+$/.test(trimmed)) return null;
   const cap = Number.parseInt(trimmed, 10);
@@ -71,12 +83,19 @@ export default function GymSettingsPanel() {
 
   const autoApprove = isOn(settingsQuery.data?.find((setting) => setting.key === AUTO_APPROVE_KEY)?.value);
   const storedCap = settingsQuery.data?.find((setting) => setting.key === DAILY_CAP_KEY)?.value;
-  const savedCap = parseDailyCap(storedCap ?? '') ?? DEFAULT_DAILY_CAP;
-  // What the admin typed, against the saved value it was typed over: a new
-  // saved value (theirs, or another admin's) puts the field back in step.
-  const [capDraft, setCapDraft] = useState<{ base: number; text: string } | null>(null);
-  const capText = capDraft && capDraft.base === savedCap ? capDraft.text : String(savedCap);
-  const capValue = parseDailyCap(capText);
+  const storedBase = storedCap ?? null;
+  const savedCap = appliedDailyCap(storedCap);
+  // What the admin typed, against the stored text it was typed over: a new
+  // stored value (theirs, or another admin's) puts the field back in step.
+  const [capDraft, setCapDraft] = useState<{ base: string | null; text: string } | null>(null);
+  const activeDraft = capDraft !== null && capDraft.base === storedBase ? capDraft : null;
+  const capText = activeDraft ? activeDraft.text : String(savedCap);
+  // Only what the admin types is held to 0 to 1000; a stored value is shown as the backend reads it.
+  const draftValue = activeDraft ? parseCapDraft(activeDraft.text) : null;
+  const draftInvalid = activeDraft !== null && draftValue === null;
+  // Against the stored text, not the cap read from it, so a value the backend
+  // reads as the default (unset, or not a number) can still be saved as one.
+  const canSaveCap = draftValue !== null && String(draftValue) !== storedCap;
 
   const setDailyCap = useMutation({
     mutationFn: async (next: number) => {
@@ -190,7 +209,7 @@ export default function GymSettingsPanel() {
           component="form"
           onSubmit={(event: React.FormEvent) => {
             event.preventDefault();
-            if (capValue !== null && capValue !== savedCap) setDailyCap.mutate(capValue);
+            if (canSaveCap && draftValue !== null) setDailyCap.mutate(draftValue);
           }}
           sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flexWrap: 'wrap', mt: 2.5 }}
         >
@@ -199,19 +218,17 @@ export default function GymSettingsPanel() {
             type="number"
             size="small"
             value={capText}
-            onChange={(event) => setCapDraft({ base: savedCap, text: event.target.value })}
+            onChange={(event) => setCapDraft({ base: storedBase, text: event.target.value })}
             disabled={!token || !settingsQuery.isSuccess || setDailyCap.isPending}
-            error={capValue === null}
-            helperText={capValue === null ? t('gymSettings.dailyCap.invalid') : undefined}
+            error={draftInvalid}
+            helperText={draftInvalid ? t('gymSettings.dailyCap.invalid') : undefined}
             slotProps={{ htmlInput: { min: 0, max: MAX_DAILY_CAP, step: 1, inputMode: 'numeric' } }}
             sx={{ width: 160 }}
           />
           <Button
             type="submit"
             variant="outlined"
-            disabled={
-              !token || !settingsQuery.isSuccess || capValue === null || capValue === savedCap || setDailyCap.isPending
-            }
+            disabled={!token || !settingsQuery.isSuccess || !canSaveCap || setDailyCap.isPending}
             sx={{ textTransform: 'none', minHeight: 40 }}
           >
             {t('gymSettings.dailyCap.save')}

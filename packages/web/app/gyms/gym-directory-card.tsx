@@ -80,7 +80,7 @@ export default function GymDirectoryCard({ gym, origin, locale, claim }: GymDire
       ? t('card.climberListed')
       : t('card.unclaimed');
   // A gym its staff run is never offered: a dispute is a report from its page.
-  const claimHref = claim && !isRunByGym && gym.slug ? cardClaimHref(gym.slug, claim.viewerState) : null;
+  const claimHref = claim && !isRunByGym && gym.slug ? cardClaimHref(gym.slug, claim.viewerState, locale) : null;
 
   return (
     <Box component="li" className={styles.row}>

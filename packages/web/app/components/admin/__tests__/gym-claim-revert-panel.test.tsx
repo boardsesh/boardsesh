@@ -15,12 +15,18 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// The token the panel sees; a test swaps it and re-renders to play a refresh.
+const auth = vi.hoisted(() => ({ token: 'admin-token' as string | null, clientTokens: [] as string[] }));
+
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: () => ({ token: 'admin-token' }),
+  useWsAuthToken: () => ({ token: auth.token }),
 }));
 
 vi.mock('@/app/lib/graphql/client', () => ({
-  createGraphQLHttpClient: () => ({ request: mockRequest }),
+  createGraphQLHttpClient: (token: string) => {
+    auth.clientTokens.push(token);
+    return { request: mockRequest };
+  },
 }));
 
 vi.mock('@boardsesh/graphql/operations', () => ({
@@ -63,7 +69,22 @@ const refusal = (code: string) => Object.assign(new Error(code), { response: { e
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.token = 'admin-token';
+  auth.clientTokens = [];
 });
+
+/** How many times the panel looked up the digest link's claim. */
+const linkLookups = () =>
+  mockRequest.mock.calls.filter(
+    ([document, variables]) => document === 'AUTO_APPROVED_GYM_CLAIMS' && variables?.input?.claimId,
+  ).length;
+
+/** How many times the panel asked for the first page of the list. */
+const firstPageLoads = () =>
+  mockRequest.mock.calls.filter(
+    ([document, variables]) =>
+      document === 'AUTO_APPROVED_GYM_CLAIMS' && !variables?.input?.claimId && (variables?.input?.offset ?? 0) === 0,
+  ).length;
 
 describe('GymClaimRevertPanel', () => {
   it('lists claims that approved themselves, with Revert on the ones still approved', async () => {
@@ -129,6 +150,90 @@ describe('GymClaimRevertPanel', () => {
     answer({ linked: null });
     render(<GymClaimRevertPanel revertClaimId="9" />);
     expect(await screen.findByText(/Claim 9 isn't one that approved itself/)).toBeTruthy();
+  });
+});
+
+describe('GymClaimRevertPanel across an auth-token refresh', () => {
+  /**
+   * Swap the token and re-render, as the ws-auth refresh does every few
+   * minutes. A fresh element each time: React skips re-rendering for the same one.
+   */
+  const refreshToken = (
+    rerender: (ui: React.ReactElement) => void,
+    ui: () => React.ReactElement,
+    token = 'refreshed-token',
+  ) => {
+    auth.token = token;
+    rerender(ui());
+  };
+
+  it("doesn't reopen a confirm the admin closed, or look the linked claim up again", async () => {
+    answer({ listed: [], linked: claim });
+    const ui = () => <GymClaimRevertPanel revertClaimId="42" />;
+    const { rerender } = render(ui());
+
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    refreshToken(rerender, ui);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(linkLookups()).toBe(1);
+  });
+
+  it('keeps a half-typed reason', async () => {
+    answer({ listed: [], linked: claim });
+    const ui = () => <GymClaimRevertPanel revertClaimId="42" />;
+    const { rerender } = render(ui());
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Reason (optional)'), { target: { value: 'Not their gym' } });
+    refreshToken(rerender, ui);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((within(screen.getByRole('dialog')).getByLabelText('Reason (optional)') as HTMLTextAreaElement).value).toBe(
+      'Not their gym',
+    );
+  });
+
+  it('doesn\'t call a claim it just reverted "already reverted", and reverts with the fresh token', async () => {
+    const rest = answer({ listed: [claim], linked: claim });
+    rest.mockResolvedValue({
+      revertGymClaim: { claimId: '42', gymUuid: claim.gymUuid, gymName: 'Synced Wall', removedMemberCount: 0 },
+    });
+    const ui = () => <GymClaimRevertPanel revertClaimId="42" />;
+    const { rerender } = render(ui());
+
+    const dialog = await screen.findByRole('dialog');
+    refreshToken(rerender, ui);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Revert claim' }));
+    expect(await screen.findByText('Synced Wall is unclaimed again.')).toBeTruthy();
+    expect(auth.clientTokens.at(-1)).toBe('refreshed-token');
+
+    refreshToken(rerender, ui, 'refreshed-again');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Claim 42 was already reverted.')).toBeNull();
+    expect(linkLookups()).toBe(1);
+  });
+
+  it('keeps the pages already loaded', async () => {
+    const second = { ...claim, id: '41', gymName: 'Second Page Wall' };
+    mockRequest.mockImplementation(async (_document: string, variables: { input?: { offset?: number } }) =>
+      (variables.input?.offset ?? 0) === 0
+        ? { autoApprovedGymClaims: { claims: [claim], totalCount: 2, hasMore: true } }
+        : { autoApprovedGymClaims: { claims: [second], totalCount: 2, hasMore: false } },
+    );
+    const ui = () => <GymClaimRevertPanel />;
+    const { rerender } = render(ui());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByText('Second Page Wall');
+
+    refreshToken(rerender, ui);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Synced Wall')).toBeTruthy();
+    expect(screen.getByText('Second Page Wall')).toBeTruthy();
+    expect(firstPageLoads()).toBe(1);
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -69,34 +69,43 @@ export default function GymClaimRevertPanel({ revertClaimId = null }: { revertCl
   const [linkOutcome, setLinkOutcome] = useState<LinkOutcome>(null);
   const [snackbar, setSnackbar] = useState('');
 
-  const fetchClaims = useCallback(
-    async (offset = 0) => {
-      if (!token) return;
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const client = createGraphQLHttpClient(token);
-        const result = await client.request<AutoApprovedGymClaimsQueryResponse, AutoApprovedGymClaimsQueryVariables>(
-          AUTO_APPROVED_GYM_CLAIMS,
-          { input: { limit: PAGE_SIZE, offset } },
-        );
-        setClaims((previous) =>
-          offset === 0 ? result.autoApprovedGymClaims.claims : [...previous, ...result.autoApprovedGymClaims.claims],
-        );
-        setHasMore(result.autoApprovedGymClaims.hasMore);
-      } catch (error) {
-        console.error('[GymClaimRevertPanel] Failed to fetch claims:', error);
-        setLoadError(offset);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [token],
-  );
-
+  // The auth token refreshes every few minutes. Reading it through a ref keeps
+  // that from re-running the list and the digest lookup: a refresh must not
+  // drop the pages already loaded, reopen a confirm the admin closed, wipe a
+  // half-typed reason, or call a claim reverted a moment ago "already reverted".
+  const tokenRef = useRef(token);
   useEffect(() => {
-    void fetchClaims();
-  }, [fetchClaims]);
+    tokenRef.current = token;
+  }, [token]);
+  const hasToken = Boolean(token);
+
+  const fetchClaims = useCallback(async (offset = 0) => {
+    const currentToken = tokenRef.current;
+    if (!currentToken) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const client = createGraphQLHttpClient(currentToken);
+      const result = await client.request<AutoApprovedGymClaimsQueryResponse, AutoApprovedGymClaimsQueryVariables>(
+        AUTO_APPROVED_GYM_CLAIMS,
+        { input: { limit: PAGE_SIZE, offset } },
+      );
+      setClaims((previous) =>
+        offset === 0 ? result.autoApprovedGymClaims.claims : [...previous, ...result.autoApprovedGymClaims.claims],
+      );
+      setHasMore(result.autoApprovedGymClaims.hasMore);
+    } catch (error) {
+      console.error('[GymClaimRevertPanel] Failed to fetch claims:', error);
+      setLoadError(offset);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // The first page, once there is a token: again only after a sign-in, never on a refresh.
+  useEffect(() => {
+    if (hasToken) void fetchClaims();
+  }, [hasToken, fetchClaims]);
 
   const openConfirm = useCallback((claim: GymClaim) => {
     setReason('');
@@ -104,14 +113,21 @@ export default function GymClaimRevertPanel({ revertClaimId = null }: { revertCl
     setConfirming(claim);
   }, []);
 
-  // The digest's link: look the one claim up (it may be older than the first
-  // page) and open its confirm, or say why there is nothing to confirm.
+  // The digest link names one claim, and it is handled once: looked up (it may
+  // be older than the first page), then its confirm opens or a line says why
+  // there is nothing to confirm. A lookup cut short (unmount, sign-out) runs
+  // again; a finished one never does.
+  const handledRevertId = useRef<string | null>(null);
   useEffect(() => {
-    if (!token || !revertClaimId) return;
+    if (!hasToken || !revertClaimId || handledRevertId.current === revertClaimId) return;
+    const currentToken = tokenRef.current;
+    if (!currentToken) return;
+    handledRevertId.current = revertClaimId;
     let cancelled = false;
+    let settled = false;
     void (async () => {
       try {
-        const client = createGraphQLHttpClient(token);
+        const client = createGraphQLHttpClient(currentToken);
         const result = await client.request<AutoApprovedGymClaimsQueryResponse, AutoApprovedGymClaimsQueryVariables>(
           AUTO_APPROVED_GYM_CLAIMS,
           { input: { claimId: revertClaimId, limit: 1 } },
@@ -124,12 +140,15 @@ export default function GymClaimRevertPanel({ revertClaimId = null }: { revertCl
       } catch (error) {
         console.error('[GymClaimRevertPanel] Failed to look up the linked claim:', error);
         if (!cancelled) setLinkOutcome({ kind: 'missing', claimId: revertClaimId });
+      } finally {
+        settled = true;
       }
     })();
     return () => {
       cancelled = true;
+      if (!settled && handledRevertId.current === revertClaimId) handledRevertId.current = null;
     };
-  }, [token, revertClaimId, openConfirm]);
+  }, [hasToken, revertClaimId, openConfirm]);
 
   const closeConfirm = useCallback(() => {
     if (reverting) return;
@@ -137,11 +156,12 @@ export default function GymClaimRevertPanel({ revertClaimId = null }: { revertCl
   }, [reverting]);
 
   const revert = useCallback(async () => {
-    if (!token || !confirming) return;
+    const currentToken = tokenRef.current;
+    if (!currentToken || !confirming) return;
     setReverting(true);
     setRefusal(null);
     try {
-      const client = createGraphQLHttpClient(token);
+      const client = createGraphQLHttpClient(currentToken);
       const result = await client.request<RevertGymClaimMutationResponse, RevertGymClaimMutationVariables>(
         REVERT_GYM_CLAIM,
         { input: { claimId: confirming.id, reason: reason.trim() || null } },
@@ -158,7 +178,7 @@ export default function GymClaimRevertPanel({ revertClaimId = null }: { revertCl
     } finally {
       setReverting(false);
     }
-  }, [token, confirming, reason, t]);
+  }, [confirming, reason, t]);
 
   const refusalMessage = (kind: GymClaimRevertRefusal): string => {
     switch (kind) {

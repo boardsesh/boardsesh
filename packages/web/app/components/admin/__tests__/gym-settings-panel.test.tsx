@@ -155,6 +155,44 @@ describe('GymSettingsPanel: the daily limit', () => {
     );
   });
 
+  const storedCap = (value: string) => ({
+    communitySettings: [{ id: '2', scope: 'global', scopeKey: '', key: 'gym_claim_auto_approve_daily_cap', value }],
+  });
+
+  it('shows a stored cap above 1000 as the backend applies it, without calling it invalid', async () => {
+    mockRequest.mockResolvedValueOnce(storedCap('2000'));
+    renderPanel();
+    await waitFor(() => expect(capField().value).toBe('2000'));
+    expect(screen.queryByText('Enter a whole number from 0 to 1000.')).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('shows a negative stored cap as 0, the way the backend reads it', async () => {
+    mockRequest.mockResolvedValueOnce(storedCap('-3'));
+    renderPanel();
+    await waitFor(() => expect(capField().value).toBe('0'));
+  });
+
+  it('lets the admin save the default over a stored value the backend reads as the default', async () => {
+    mockRequest.mockResolvedValueOnce(storedCap('ten')).mockResolvedValue({ communitySettings: [] });
+    renderPanel();
+    await waitFor(() => expect(capField().disabled).toBe(false));
+    expect(capField().value).toBe('10');
+    expect(saveButton().disabled).toBe(true);
+
+    // Retyped: cleared, then 10, as an admin does over a field already showing 10.
+    fireEvent.change(capField(), { target: { value: '' } });
+    fireEvent.change(capField(), { target: { value: '10' } });
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(saveButton());
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(expect.anything(), {
+        input: { scope: 'global', scopeKey: '', key: 'gym_claim_auto_approve_daily_cap', value: '10' },
+      }),
+    );
+  });
+
   it('refuses anything but a whole number from 0 to 1000', async () => {
     mockRequest.mockResolvedValueOnce({ communitySettings: [] });
     renderPanel();
