@@ -118,25 +118,17 @@ export type Gym = {
    * document typed `Gym` genuinely returns it.
    */
   isClaimed: boolean;
-  /**
-   * Who runs this listing. Viewer-independent. Optional until the client PR
-   * selects it: GYM_FIELDS cannot ask for a field the deployed backend does not
-   * have yet, and every `Gym` fixture would otherwise need it first.
-   */
-  listingState?: GymListingState;
+  /** Who runs this listing. Viewer-independent. GYM_FIELDS selects it. */
+  listingState: GymListingState;
   /**
    * Whether this gym's website can drive the self-service email claim: a real
    * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
    * the two refusals in requestGymClaim, so a claim UI can open the form that
    * can succeed. Viewer-independent — it describes the listing, not the viewer.
    *
-   * Required rather than optional even though NO document selects it yet:
-   * enrichGym always returns it, and requiring it is what forces every `Gym`
-   * fixture — and the client PR that follows — to acknowledge the field instead
-   * of silently reading `undefined` and routing a claimable gym to admin
-   * review. GYM_FIELDS starts selecting it one PR later, on purpose: a field
-   * the deployed backend cannot answer fails validation for the WHOLE document
-   * (same hazard as `myPendingClaim` below).
+   * GYM_FIELDS selects it, and both claim UIs (web ClaimGymDialog, mobile
+   * ClaimGymSheet) pick their form from it rather than re-deriving it from the
+   * website, which can't see who put the website there.
    */
   canClaimByDomain: boolean;
   /**
