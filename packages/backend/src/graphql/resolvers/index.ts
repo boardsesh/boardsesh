@@ -82,6 +82,7 @@ import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
 import { socialGymOwnerReassignQueries, socialGymOwnerReassignMutations } from './social/gym-owner-reassign';
 import { socialGymReportMutations } from './social/gym-reports';
+import { directoryReportQueries, directoryReportMutations } from './social/directory-reports';
 import {
   socialNotificationQueries,
   socialNotificationMutations,
@@ -175,6 +176,7 @@ export const resolvers = {
     ...followedAuthorQueries,
     ...crewFeedQueries,
     ...socialNotificationQueries,
+    ...directoryReportQueries,
     ...socialProposalQueries,
     ...proposalReportReleaseContextQueries,
     ...socialRoleQueries,
@@ -236,6 +238,7 @@ export const resolvers = {
     ...socialLocationSyncFreezeMutations,
     ...socialGymOwnerReassignMutations,
     ...socialGymReportMutations,
+    ...directoryReportMutations,
     ...socialNotificationMutations,
     ...notificationDeviceMutations,
     ...socialProposalMutations,

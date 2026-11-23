@@ -16,7 +16,7 @@
 // ends in `date.toLocaleDateString()`, which is exactly the Intl surface the
 // mobile lint config bans (Hermes ships without it).
 
-import type { GroupedNotification, NotificationType } from '@boardsesh/shared-schema';
+import type { DirectoryNotice, GroupedNotification, NotificationType } from '@boardsesh/shared-schema';
 import type { IconName } from '../icon-map';
 
 /**
@@ -199,10 +199,177 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
       return gymName
         ? { textI18nKey: 'items.gymClaimApproved', params: { gym: gymName } }
         : { textI18nKey: 'items.gymClaimApprovedGeneric', params: {} };
+    case 'board_report_opened':
+    case 'board_report_resolved':
+    case 'board_removed_from_gym':
+    case 'board_deleted_by_staff':
+    case 'board_edited_by_staff':
+    case 'gym_report_opened':
+    case 'gym_report_resolved':
+    case 'gym_claimed_with_your_board':
+    case 'gym_claim_denied':
+      return directoryNoticeCopy(notification.type, notification.directoryNotice ?? null, gymName ?? null);
     // The backend can add a notification type without a client release, so an
     // unrecognised one still renders a row rather than a blank line.
     default:
       return { textI18nKey: 'items.default', params: {} };
+  }
+}
+
+type DirectoryNoticeType = Extract<
+  NotificationType,
+  | 'board_report_opened'
+  | 'board_report_resolved'
+  | 'board_removed_from_gym'
+  | 'board_deleted_by_staff'
+  | 'board_edited_by_staff'
+  | 'gym_report_opened'
+  | 'gym_report_resolved'
+  | 'gym_claimed_with_your_board'
+  | 'gym_claim_denied'
+>;
+
+/**
+ * The row for a directory notice that is missing the name its sentence needs
+ * (no `directoryNotice` selected, a deleted gym): what happened, without the
+ * board or gym. Never `items.default`.
+ */
+function genericDirectoryCopy(type: DirectoryNoticeType): CopyDescriptor {
+  switch (type) {
+    case 'board_report_opened':
+      return { textI18nKey: 'items.boardReportOpenedGeneric', params: {} };
+    case 'board_report_resolved':
+      return { textI18nKey: 'items.boardReportResolvedGeneric', params: {} };
+    case 'board_removed_from_gym':
+      return { textI18nKey: 'items.boardRemovedFromGymGeneric', params: {} };
+    case 'board_deleted_by_staff':
+      return { textI18nKey: 'items.boardDeletedByStaffGeneric', params: {} };
+    case 'board_edited_by_staff':
+      return { textI18nKey: 'items.boardEditedByStaffGeneric', params: {} };
+    case 'gym_report_opened':
+      return { textI18nKey: 'items.gymReportOpenedGeneric', params: {} };
+    case 'gym_report_resolved':
+      return { textI18nKey: 'items.gymReportResolvedGeneric', params: {} };
+    case 'gym_claimed_with_your_board':
+      return { textI18nKey: 'items.gymClaimedWithYourBoardGeneric', params: {} };
+    case 'gym_claim_denied':
+      return { textI18nKey: 'items.gymClaimDeniedGeneric', params: {} };
+  }
+}
+
+/**
+ * Report a problem and staff actions on boards (docs/product/directory-reports.md).
+ * These rows have no actor: a reporter stays anonymous, so who acted is carried
+ * as a role (`actorRole`, `resolvedByRole`) on `directoryNotice`. Every specific
+ * key names the board or gym, so a row missing the name it needs reads the
+ * type's generic sentence instead of interpolating nothing.
+ */
+export function directoryNoticeCopy(
+  type: DirectoryNoticeType,
+  notice: DirectoryNotice | null,
+  fallbackGymName: string | null,
+): CopyDescriptor {
+  const generic = genericDirectoryCopy(type);
+  if (!notice) return generic;
+  const board = notice.boardName ?? null;
+  const gym = notice.gymName ?? fallbackGymName;
+  const byModerator = notice.actorRole === 'moderator';
+  switch (type) {
+    case 'board_report_opened': {
+      if (!board) return generic;
+      if (notice.reason === 'relist_request') {
+        return gym ? { textI18nKey: 'items.boardRelistRequested', params: { board, gym } } : generic;
+      }
+      if (notice.isReminder) return { textI18nKey: 'items.boardReportReminder', params: { board } };
+      // Staff hear about a climber's board at their gym; only its creator reads
+      // "your board".
+      if (!notice.recipientIsCreator) {
+        return gym ? { textI18nKey: 'items.gymBoardReported', params: { board, gym } } : generic;
+      }
+      switch (notice.reason) {
+        case 'wrong_setup':
+          return { textI18nKey: 'items.boardReportedWrongSetup', params: { board } };
+        case 'duplicate':
+          return { textI18nKey: 'items.boardReportedDuplicate', params: { board } };
+        case 'gone':
+          return { textI18nKey: 'items.boardReportedGone', params: { board } };
+        case 'wrong_place':
+          return { textI18nKey: 'items.boardReportedWrongPlace', params: { board } };
+        default:
+          return { textI18nKey: 'items.boardReportedOther', params: { board } };
+      }
+    }
+    case 'board_report_resolved': {
+      if (!board) return generic;
+      // A relist request's reporter is the board's creator, hearing whether
+      // the gym put it back.
+      if (notice.reason === 'relist_request') {
+        if (!gym) return generic;
+        if (notice.outcome === 'fixed') return { textI18nKey: 'items.boardRelisted', params: { board, gym } };
+        if (notice.outcome === 'kept') return { textI18nKey: 'items.boardRelistDeclined', params: { board, gym } };
+        return generic;
+      }
+      switch (notice.outcome) {
+        case 'fixed':
+          return { textI18nKey: 'items.boardReportFixed', params: { board } };
+        case 'removed':
+          return gym ? { textI18nKey: 'items.boardReportRemoved', params: { board, gym } } : generic;
+        case 'deleted':
+          return { textI18nKey: 'items.boardReportDeleted', params: { board } };
+        case 'merged':
+          return { textI18nKey: 'items.boardReportMerged', params: { board } };
+        case 'kept':
+          if (notice.resolvedByRole === 'creator') {
+            return { textI18nKey: 'items.boardReportKeptByCreator', params: { board } };
+          }
+          if (notice.resolvedByRole === 'gym_staff' && gym) {
+            return { textI18nKey: 'items.boardReportKeptByStaff', params: { board, gym } };
+          }
+          return { textI18nKey: 'items.boardReportKeptByTeam', params: { board } };
+        default:
+          return generic;
+      }
+    }
+    case 'board_removed_from_gym':
+      if (!board || !gym) return generic;
+      return byModerator
+        ? { textI18nKey: 'items.boardRemovedByModerator', params: { board, gym } }
+        : { textI18nKey: 'items.boardRemovedByStaff', params: { board, gym } };
+    case 'board_deleted_by_staff':
+      if (!board) return generic;
+      if (byModerator) return { textI18nKey: 'items.boardDeletedByModerator', params: { board } };
+      return gym ? { textI18nKey: 'items.boardDeletedByStaff', params: { board, gym } } : generic;
+    case 'board_edited_by_staff':
+      if (!board) return generic;
+      if (byModerator) return { textI18nKey: 'items.boardEditedByModerator', params: { board } };
+      return gym ? { textI18nKey: 'items.boardEditedByStaff', params: { board, gym } } : generic;
+    case 'gym_report_opened':
+      if (!gym) return generic;
+      return notice.isReminder
+        ? { textI18nKey: 'items.gymReportReminder', params: { gym } }
+        : { textI18nKey: 'items.gymReportedWrongDetails', params: { gym } };
+    case 'gym_report_resolved':
+      if (!gym) return generic;
+      switch (notice.outcome) {
+        case 'fixed':
+          return { textI18nKey: 'items.gymReportFixed', params: { gym } };
+        case 'removed':
+          return { textI18nKey: 'items.gymReportRemoved', params: { gym } };
+        case 'deleted':
+          return { textI18nKey: 'items.gymReportDeleted', params: { gym } };
+        case 'merged':
+          return { textI18nKey: 'items.gymReportMerged', params: { gym } };
+        case 'kept':
+          return notice.resolvedByRole === 'gym_staff'
+            ? { textI18nKey: 'items.gymReportKeptByStaff', params: { gym } }
+            : { textI18nKey: 'items.gymReportKeptByTeam', params: { gym } };
+        default:
+          return generic;
+      }
+    case 'gym_claimed_with_your_board':
+      return board && gym ? { textI18nKey: 'items.gymClaimedWithYourBoard', params: { board, gym } } : generic;
+    case 'gym_claim_denied':
+      return gym ? { textI18nKey: 'items.gymClaimDenied', params: { gym } } : generic;
   }
 }
 
@@ -239,7 +406,20 @@ export function notificationIconName(type: NotificationType): IconName {
     case 'new_climbs_synced':
       return 'add';
     case 'gym_claim_approved':
+    case 'gym_claimed_with_your_board':
+    case 'gym_claim_denied':
       return 'gym';
+    case 'board_report_opened':
+    case 'gym_report_opened':
+      return 'flag';
+    case 'board_report_resolved':
+    case 'gym_report_resolved':
+      return 'checkmark.circle.fill';
+    case 'board_removed_from_gym':
+    case 'board_edited_by_staff':
+      return 'boards';
+    case 'board_deleted_by_staff':
+      return 'delete';
     case 'spray_wall_detection_completed':
       return 'success';
     default:

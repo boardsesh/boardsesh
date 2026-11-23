@@ -33,6 +33,15 @@ export const notificationsTypeDefs = /* GraphQL */ `
     comment_on_playlist
     comment_on_board
     comment_on_gym
+    board_report_opened
+    board_report_resolved
+    board_removed_from_gym
+    board_deleted_by_staff
+    board_edited_by_staff
+    gym_report_opened
+    gym_report_resolved
+    gym_claimed_with_your_board
+    gym_claim_denied
   }
 
   """

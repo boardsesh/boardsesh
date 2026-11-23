@@ -10,6 +10,7 @@ import type {
 } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { getUserCommunityRoles } from './roles';
+import { onBoardEdited, onBoardModerationEvent } from './directory-reports/lifecycle';
 
 // ============================================
 // Board moderation events
@@ -41,6 +42,9 @@ export async function recordBoardModerationEvent(
   event: NewBoardModerationEvent,
 ): Promise<void> {
   await executor.insert(dbSchema.boardModerationEvents).values(event);
+  // Reports about the board close with the action, and its creator hears about
+  // it (docs/product/directory-reports.md), in this same transaction.
+  await onBoardModerationEvent(executor, event);
 }
 
 /**
@@ -168,9 +172,15 @@ export async function recordStaffBoardEdit(
   },
 ): Promise<void> {
   const { actorUserId, board, mutation, fields } = input;
-  if (board.ownerId === actorUserId) return;
-  if (fields !== undefined && fields.length === 0) return;
+  // Any edit, the creator's included, may fix a "set up wrong" report.
+  if (board.ownerId === actorUserId || (fields !== undefined && fields.length === 0)) {
+    await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole: input.actorRole });
+    return;
+  }
+  // The role first, before anything is written: one revoked since the edit gate
+  // refuses the edit here, and no report closes on it.
   const actorRole = input.actorRole ?? (await resolveBoardEditActorRole(actorUserId, board, executor));
+  await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole });
   const details: BoardModerationEventDetails = fields === undefined ? { mutation } : { mutation, fields };
   await recordBoardModerationEvent(executor, {
     boardId: board.id,

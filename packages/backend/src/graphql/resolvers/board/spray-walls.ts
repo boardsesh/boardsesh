@@ -42,6 +42,7 @@ import {
 import * as dbSchema from '@boardsesh/db/schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { readViewerIdForBoard } from '../climbs/spray-read-access';
@@ -62,6 +63,7 @@ import {
   resolveBoardEditActorRole,
   viewerGymManagerRole,
 } from '../social/board-moderation-events';
+import { onBoardDeleted } from '../social/directory-reports/lifecycle';
 import { requireBoardGymLinkAccess, resolveCanonicalGymByUuid } from '../social/gyms';
 import { syncLocationGeography } from '../social/location-geography';
 import {
@@ -3022,7 +3024,7 @@ export const sprayWallMutations = {
       }
     }
 
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       await tx
         .update(dbSchema.sprayWalls)
         .set({ renderSettings, updatedAt: new Date() })
@@ -3380,7 +3382,7 @@ export const sprayWallMutations = {
     const validated = validateInput(CommitSprayWallVersionInputSchema, input, 'input');
     const { wall, board } = await loadEditableWall(ctx, validated.wallUuid);
 
-    const committed = await db.transaction(async (tx) => {
+    const committed = await transactionWithAfterCommit(async (tx) => {
       await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
@@ -3455,7 +3457,7 @@ export const sprayWallMutations = {
       });
     }
 
-    const publishedDraft = await db.transaction(async (tx) => {
+    const publishedDraft = await transactionWithAfterCommit(async (tx) => {
       // Non-blocking, and a no-op unless cooperative ordering is switched on.
       await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
 
@@ -3529,7 +3531,7 @@ export const sprayWallMutations = {
     if (!found) throw notFoundError();
     await requireBoardEditAccess(ctx, found.board);
 
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       await lockWallForWrite(tx, found.wall.id);
       // Re-read under the lock; the fast path above can be stale.
       const version = await loadDraftVersion(tx, found.wall.id, found.version.id);
@@ -3676,7 +3678,7 @@ export const sprayWallMutations = {
     const deletedAt = new Date();
     /** The public copy the tombstone orphans, deleted after the commit. */
     let orphanedPublicKey: string | null = null;
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // Deleting the wall its owner sees switches training consent off on the
       // rest of the reset family (below), which writes other walls' rows. Their
       // locks come first, behind the owner's account lock, in the order
@@ -3752,6 +3754,8 @@ export const sprayWallMutations = {
         .update(dbSchema.userBoards)
         .set({ deletedAt, syncFrozenAt: deletedAt })
         .where(eq(dbSchema.userBoards.id, board.id));
+      // Reports about the wall close as deleted; a creator hears when it wasn't them.
+      await onBoardDeleted(tx, { board: currentBoard, actorUserId: userId, actorRole });
       if (actorRole !== 'board_owner') {
         await recordBoardModerationEvent(tx, {
           boardId: board.id,
@@ -4138,7 +4142,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   let revokedFamilyWallIds: number[] = [];
 
   try {
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // Revoking consent writes every wall in the family, so it takes all of
       // their locks, this wall's included, before anything else is locked.
       revokedFamilyWallIds =

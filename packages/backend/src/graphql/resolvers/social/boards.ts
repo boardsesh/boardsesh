@@ -63,6 +63,9 @@ import {
   viewerGymManagerRole,
   type ModerationExecutor,
 } from './board-moderation-events';
+import { onBoardDeleted } from './directory-reports/lifecycle';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
+import { loadBoardReportFlags } from './directory-reports/read';
 import {
   SYSTEM_BOARD_OWNER_ID,
   followBoardMergeChain,
@@ -714,6 +717,9 @@ async function enrichBoard(
     canEdit && isSprayBoardType(board.boardType)
       ? ((await readSprayWallImportProgress(db, [board.uuid]))[0] ?? null)
       : null;
+  // Waiting reports the viewer can act on, and whether they reported it
+  // (docs/product/directory-reports.md).
+  const reportFlags = (await loadBoardReportFlags([board], authenticatedUserId, viewerRoles)).get(board.id);
 
   return {
     sprayImport,
@@ -765,6 +771,8 @@ async function enrichBoard(
     canDelete,
     canRemoveFromGym,
     isPinnedByMe: pinResult.length > 0,
+    openReportCount: reportFlags?.openReportCount ?? null,
+    viewerHasOpenReport: reportFlags?.viewerHasOpenReport ?? null,
   };
 }
 
@@ -926,6 +934,12 @@ export async function enrichBoards(
   const sprayImportByWall = new Map(
     (await readSprayWallImportProgress(db, editableSprayWallUuids)).map((progress) => [progress.wallUuid, progress]),
   );
+  // Waiting reports the viewer can act on, for every board in two reads.
+  const reportFlagsByBoard = await loadBoardReportFlags(
+    boards.map(({ board }) => board),
+    authenticatedUserId,
+    viewerRoles,
+  );
 
   return Promise.all(
     boards.map(async ({ board, distanceMeters }) => {
@@ -1000,6 +1014,8 @@ export async function enrichBoards(
         canDelete,
         canRemoveFromGym,
         isPinnedByMe: pinnedSet.has(board.uuid),
+        openReportCount: reportFlagsByBoard.get(board.id)?.openReportCount ?? null,
+        viewerHasOpenReport: reportFlagsByBoard.get(board.id)?.viewerHasOpenReport ?? null,
       };
     }),
   );
@@ -2237,7 +2253,7 @@ export async function updateBoardRecord(
   // kiosk tombstone below.
   let kioskAudienceChanged = false;
   try {
-    const updatedRows = await db.transaction(async (tx) => {
+    const updatedRows = await transactionWithAfterCommit(async (tx) => {
       kioskAudienceChanged = false;
       // Serialize partial edits to the same board before deriving the final
       // serial+config tuple. Without this row lock, a serial-only edit could
@@ -3035,7 +3051,7 @@ export const socialBoardMutations = {
         ctx,
       );
     } else {
-      await db.transaction(async (tx) => {
+      await transactionWithAfterCommit(async (tx) => {
         const [currentBoard] = await tx
           .select()
           .from(dbSchema.userBoards)
@@ -3052,6 +3068,8 @@ export const socialBoardMutations = {
           .update(dbSchema.userBoards)
           .set({ deletedAt, syncFrozenAt: deletedAt })
           .where(eq(dbSchema.userBoards.id, board.id));
+        // Reports about the board close as deleted; a creator hears when it wasn't them.
+        await onBoardDeleted(tx, { board: currentBoard, actorUserId: userId, actorRole });
         if (actorRole !== 'board_owner') {
           await recordBoardModerationEvent(tx, {
             boardId: board.id,
