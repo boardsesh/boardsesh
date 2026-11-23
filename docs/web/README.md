@@ -27,6 +27,7 @@ a production rollout or a physical-device result.
 | [Gym place search](gym-place-search.md) | `gym-place-search.md` |
 | [Climb OG share cards (`GET /og/climb`)](og-climb.md) | `og-climb.md` |
 | [Public page design: climb pages and their siblings](public-page-design.md) | `public-page-design.md` |
+| [Supported-board image gallery](../www-refresh/boards-readability.md) | `../www-refresh/boards-readability.md` |
 | [Share metadata and Open Graph images](og-smartlinks-roadmap.md) | `og-smartlinks-roadmap.md` |
 | [Sitemaps](sitemap.md) | `sitemap.md` |
 | [The web app's canonical origin (and why a missing one logs everyone out)](web-canonical-origin.md) | `web-canonical-origin.md` |
