@@ -31,6 +31,7 @@ import HoldLegend from './hold-legend';
 import QrLandingTracker from './qr-landing-tracker';
 import StickyInstallBar from './sticky-install-bar';
 import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
+import { themeTokens } from '@/app/theme/theme-config';
 import styles from './climb-front-door.module.css';
 
 type ClimbFrontDoorProps = {
@@ -99,7 +100,7 @@ const boardListLinkSx = {
   display: 'inline-flex',
   alignItems: 'center',
   minHeight: 44,
-  fontWeight: 600,
+  fontWeight: themeTokens.typography.fontWeight.semibold,
 };
 
 // Shared by the "nothing here yet" and the "this did not load" lines. Same

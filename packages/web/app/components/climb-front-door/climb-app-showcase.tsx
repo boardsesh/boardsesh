@@ -14,6 +14,7 @@ import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { themeTokens } from '@/app/theme/theme-config';
+import BetaFanCard from './beta-fan-card';
 import CommunityProofLine from './community-proof-line';
 import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
 import { STICKY_INSTALL_HIDE_ATTRIBUTE } from './sticky-install-markers';
@@ -124,13 +125,9 @@ function BenefitCard({ title, body, action, visual, visualClassName, wide = fals
 }
 
 /**
- * This climb's own beta, newest on top, each with the filmer's handle in the
+ * This climb's own beta, fanned out, each card with the filmer's handle in the
  * strip the next card leaves uncovered. Decoration: the beta section above
  * links every video, so this repeats nothing to a screen reader.
- *
- * Plain `<img>`s, as in the beta grid: the thumbnails live on the platforms'
- * CDNs, which `next/image` has no business proxying. A thumbnail that fails
- * leaves its card's tile colour and the handle.
  */
 function BetaFan({ links }: { links: readonly BetaLink[] }) {
   if (links.length === 0) {
@@ -145,25 +142,15 @@ function BetaFan({ links }: { links: readonly BetaLink[] }) {
 
   return (
     <Box aria-hidden className={styles.fan} data-count={links.length}>
-      {links.map((link) => (
-        <Box component="figure" key={link.link} className={styles.fanCard}>
-          <Box
-            component="img"
-            src={link.thumbnail ?? undefined}
-            alt=""
-            width={120}
-            height={190}
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
+      {links.map((link) =>
+        link.thumbnail ? (
+          <BetaFanCard
+            key={link.link}
+            thumbnail={link.thumbnail}
+            handle={link.foreign_username ? `@${link.foreign_username}` : null}
           />
-          {link.foreign_username ? (
-            <Box component="figcaption" className={styles.fanCaption}>
-              @{link.foreign_username}
-            </Box>
-          ) : null}
-        </Box>
-      ))}
+        ) : null,
+      )}
     </Box>
   );
 }

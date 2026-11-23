@@ -171,3 +171,20 @@ describe('the app module copy', () => {
     expect(strings).not.toContain('—');
   });
 });
+
+describe('a beta thumbnail that fails to load', () => {
+  it('turns into the play tile instead of a broken image, keeping the handle', async () => {
+    const { render, fireEvent, cleanup } = await import('@testing-library/react');
+    const BetaFanCard = (await import('../beta-fan-card')).default;
+    const { container } = render(<BetaFanCard thumbnail="https://thumbs.example/gone.jpg" handle="@filmer" />);
+    const image = container.querySelector('img');
+    expect(image).not.toBeNull();
+
+    fireEvent.error(image as HTMLImageElement);
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('svg')).not.toBeNull();
+    expect(container.textContent).toBe('@filmer');
+    cleanup();
+  });
+});
