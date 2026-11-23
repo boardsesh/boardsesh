@@ -325,6 +325,61 @@ function missingRequiredShards(response: SmokeResponse): RequiredSitemapShard[] 
   return REQUIRED_SITEMAP_SHARDS.filter((shard) => !response.body.includes(`<loc>${shard.loc}`));
 }
 
+/**
+ * A climb-view URL for a climb that does not exist, on a real board config. The
+ * middleware stamps the climb view's day-long `CDN-Cache-Control` on it before
+ * the page renders, then the page 404s: the same shape as the list page 404
+ * Cloudflare kept serving on 2026-11-22.
+ *
+ * Not a list URL on purpose. On www, every path ending in `/list` (and every
+ * `/setter/` path) sits behind the `boardsesh:climb-view-challenge`
+ * managed challenge (`BOARD_CONTENT_CHALLENGE_EXPRESSION` in
+ * `infra/cloudflare/config.ts`), and this smoke's User-Agent is not on
+ * `CRAWLER_ALLOW_TOKENS`. The 30-minute www run would get the challenge page
+ * instead of the 404 and fail every time. `/view/` is only rate-limited, and one
+ * request per run with two retries stays far under that limit.
+ */
+export const MISSING_CLIMB_VIEW_PATH =
+  '/kilter/original/12x12-square/screw_bolt/40/view/not-a-real-climb-00000000000000000000000000000000';
+
+/**
+ * A query key that is new on every run. Cloudflare's default cache key carries
+ * the query string, so the edge has never stored this URL and must ask the
+ * origin. Without it, a 404 cached before this deploy (or by an older one still
+ * serving during a deploy) would answer with the old header and fail every run
+ * for up to eight days. The middleware still stamps the TTL with this key
+ * present: it is not one of the user-specific params that turn the stamp off.
+ */
+const EDGE_CACHE_MISS_QUERY = `smoke-run=${Date.now().toString(36)}`;
+
+/**
+ * An error response must leave with no shared-cache TTL. The origin guard
+ * (`packages/web/app/lib/error-response-cdn-cache.server.ts`) rewrites the
+ * middleware's `CDN-Cache-Control` to `no-store` on any 4xx or 5xx.
+ *
+ * The header is observable on both targets this smoke runs against: the
+ * Railway origin after a deploy, and www every 30 minutes. Cloudflare proxies
+ * `CDN-Cache-Control` downstream (only `Cloudflare-CDN-Cache-Control` is
+ * consumed at the edge), so through www it still reads `no-store`. An absent
+ * header fails too: on this URL the middleware always stamps one, so "absent"
+ * means something stripped it and this check can no longer see the guard.
+ */
+function expectUncacheableError(response: SmokeResponse): string | null {
+  const edgeStatus = response.headers['cf-cache-status'];
+  const edgeNote = edgeStatus ? ` (cf-cache-status: ${edgeStatus})` : '';
+  const cdnCacheControl = response.headers['cdn-cache-control'];
+  if (cdnCacheControl === undefined) {
+    return `expected cdn-cache-control: no-store, got no cdn-cache-control header${edgeNote}`;
+  }
+  const cdnDirectives = cacheControlDirectives(cdnCacheControl);
+  if (cdnDirectives.length !== 1 || cdnDirectives[0] !== 'no-store') {
+    return `expected cdn-cache-control: no-store on a 404, got "${cdnCacheControl}"${edgeNote} — an edge would cache this error page`;
+  }
+  const cacheControl = response.headers['cache-control'] ?? '';
+  const sharedTtl = cacheControlDirectives(cacheControl).find((directive) => directive.startsWith('s-maxage'));
+  return sharedTtl ? `cache-control carries ${sharedTtl} on a 404, got "${cacheControl}"${edgeNote}` : null;
+}
+
 function renderedHtmlPage(response: SmokeResponse): string | null {
   return firstFailure(
     expectStatus(response, 200),
@@ -537,6 +592,20 @@ export const WWW_CHECKS: SmokeCheck[] = [
         expectContentType(response, 'xml'),
         expectBodyContains(response, '<urlset', '<urlset> root element'),
         expectBodyContains(response, '<loc>', '<loc> entry'),
+      ),
+  },
+  {
+    // The only proof that the error-response guard works inside Next rather than
+    // only on a bare node:http server: unit tests cannot boot instrumentation.ts,
+    // run the middleware and render a page 404 in one process. A rollback to a
+    // build from before the guard fails this check, by design.
+    name: 'a missing climb view 404s without a CDN cache TTL',
+    path: `${MISSING_CLIMB_VIEW_PATH}?${EDGE_CACHE_MISS_QUERY}`,
+    assert: (response) =>
+      firstFailure(
+        expectStatus(response, 404),
+        expectContentType(response, 'text/html'),
+        expectUncacheableError(response),
       ),
   },
   {

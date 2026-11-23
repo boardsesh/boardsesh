@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_PATHS,
+  MISSING_CLIMB_VIEW_PATH,
   WWW_CHECKS,
   finalVerdict,
   originFailure,
@@ -13,6 +14,7 @@ import {
   shouldStopSmokeSuite,
   type SmokeResponse,
 } from './production-smoke';
+import { CLIMB_VIEW_PATH_SEGMENT, LIST_PAGE_PATH_SUFFIX, SETTER_PATH_SEGMENT } from '../infra/cloudflare/config';
 
 // The assertions are the whole product here: the runner is a retry loop, but
 // the check table is what decides whether a broken deploy is caught. These
@@ -534,6 +536,67 @@ describe('www production smoke checks', () => {
       ).toMatch(/error shell/);
       expect(check.assert(response({ body: `<html>${'x'.repeat(5000)}</html>` }))).toBeNull();
     }
+  });
+
+  describe('a missing climb view 404s without a CDN cache TTL', () => {
+    const check = checkNamed('missing climb view');
+    const NEXT_ERROR_CACHE_CONTROL = 'private, no-cache, no-store, max-age=0, must-revalidate';
+    const guardedNotFound = (headers: Record<string, string> = {}) =>
+      response({
+        status: 404,
+        body: '<h1>404</h1><h2>This page could not be found.</h2>',
+        headers: { 'cache-control': NEXT_ERROR_CACHE_CONTROL, 'cdn-cache-control': 'no-store', ...headers },
+      });
+
+    it('asks for a URL the edge has never stored', () => {
+      const [path, query] = check.path.split('?');
+      expect(path).toBe(MISSING_CLIMB_VIEW_PATH);
+      // A key per run: a fixed URL would let a pre-deploy cached 404 answer.
+      expect(query).toMatch(/^smoke-run=[0-9a-z]+$/);
+    });
+
+    it('stays off the paths the www managed challenge covers', () => {
+      // boardsesh:climb-view-challenge challenges every `/list` and `/setter/`
+      // path on www, and this smoke's User-Agent is not allowlisted, so the
+      // 30-minute run would read a challenge page instead of the 404.
+      const [path] = check.path.split('?');
+      expect(path.endsWith(LIST_PAGE_PATH_SUFFIX)).toBe(false);
+      expect(path).not.toContain(SETTER_PATH_SEGMENT);
+      expect(path).toContain(CLIMB_VIEW_PATH_SEGMENT);
+    });
+
+    it('passes the guarded 404, from the origin or through Cloudflare', () => {
+      expect(check.assert(guardedNotFound())).toBeNull();
+      expect(check.assert(guardedNotFound({ 'cf-cache-status': 'BYPASS' }))).toBeNull();
+    });
+
+    it('fails the 404 that carried the list TTL on 2026-11-22', () => {
+      const failure = check.assert(
+        guardedNotFound({
+          'cdn-cache-control': 's-maxage=86400, stale-while-revalidate=604800',
+          'cf-cache-status': 'HIT',
+        }),
+      );
+      expect(failure).toMatch(/s-maxage=86400/);
+      expect(failure).toMatch(/cf-cache-status: HIT/);
+    });
+
+    it('fails when the header is gone, since the guard is then invisible', () => {
+      expect(check.assert(response({ status: 404, headers: { 'cache-control': NEXT_ERROR_CACHE_CONTROL } }))).toMatch(
+        /no cdn-cache-control header/,
+      );
+    });
+
+    it('fails a shared TTL in Cache-Control', () => {
+      expect(check.assert(guardedNotFound({ 'cache-control': 'public, s-maxage=86400' }))).toMatch(
+        /cache-control carries s-maxage=86400/,
+      );
+    });
+
+    it('fails when the page renders, or errors instead of 404ing', () => {
+      expect(check.assert({ ...guardedNotFound(), status: 200 })).toMatch(/expected HTTP 404, got 200/);
+      expect(check.assert({ ...guardedNotFound(), status: 500 })).toMatch(/expected HTTP 404, got 500/);
+    });
   });
 
   it('skips fixture-backed checks rather than failing when the fixture is unset', () => {

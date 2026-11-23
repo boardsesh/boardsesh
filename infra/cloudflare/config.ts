@@ -1412,6 +1412,9 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // 307) reaches the edge with NO CDN-Cache-Control and so bypasses on
         // its own. `override_origin` would be the dangerous setting here: it
         // ignores the origin AND strips Set-Cookie in order to cache.
+        // A 4xx or 5xx also bypasses: the origin rewrites the middleware's
+        // CDN-Cache-Control to `no-store` on any error response
+        // (packages/web/app/lib/error-response-cdn-cache.server.ts).
         edge_ttl: { mode: 'bypass_by_default' },
         browser_ttl: { mode: 'respect_origin' },
       },

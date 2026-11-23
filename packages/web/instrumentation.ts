@@ -4,6 +4,12 @@ import { applyCanonicalAuthUrl, diagnoseCanonicalOrigin } from './app/lib/auth/c
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Before the first request: a 4xx or 5xx must not leave with the
+    // middleware's CDN-Cache-Control TTL, or Cloudflare keeps serving it for a
+    // day (docs/operations/cloudflare.md, "Error pages stay out of the edge cache").
+    const { installErrorResponseCdnCacheGuard } = await import('./app/lib/error-response-cdn-cache.server');
+    installErrorResponseCdnCacheGuard();
+
     // Read the diagnosis off the PRISTINE env, before applyCanonicalAuthUrl can
     // delete a loopback NEXTAUTH_URL — a deleted one would look like "no origin
     // named at all" and turn a warning into a spurious boot failure.

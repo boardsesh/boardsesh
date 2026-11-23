@@ -1051,6 +1051,91 @@ the ones that populate the edge — and a human landing on a cached `/es` page
 gets no cookie. Navigation within `/es` is locale-prefixed anyway
 (`LocaleLink`), so this only affects a later unprefixed entry point.
 
+### Error pages stay out of the edge cache
+
+**What went wrong.** On 2026-11-22,
+`https://www.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/list`
+(a sitemap URL) answered Next's "404: This page could not be found" twice
+through Cloudflare. The Railway origin answered 200 for the same path. The
+origin's 404s carried the list page's TTL: a `curl -sI` against
+`boardsesh-web-production.up.railway.app` for
+`/kilter/original/99x99-not-a-size/screw_bolt/40/list` returned `HTTP/2 404`
+with `cdn-cache-control: s-maxage=86400, stale-while-revalidate=604800`. A
+missing climb under `/view/` returned the same header.
+
+**Why.** The middleware stamps `CDN-Cache-Control` before the page renders.
+Next copies middleware headers onto the response with `res.setHeader` before
+it renders (`next/dist/server/lib/router-server.js`). No error path in Next
+16.3.5 removes the header:
+
+- An in-page `notFound()` or a thrown render error ends in app-render's shell
+  catch (`server/app-render/app-render.js`, the "errorRecovery classification"
+  block). That only sets the status to 404 or 500. `Cache-Control` comes from
+  `build/templates/app-page-runtime.js` and `send-payload.js`
+  `sendRenderResult`, and both set it only when no `Cache-Control` exists yet.
+- The unmatched-route 404 in `router-server.js` and `base-server.js`
+  `renderErrorImpl` overwrite `Cache-Control` and leave other headers alone.
+
+Cloudflare ranks `CDN-Cache-Control` above `Cache-Control`, and
+`bypass_by_default` honours it. One 404 from a deploy blip or a failed read was
+therefore served from the edge for 24 hours, and then for up to 7 more days as
+stale content. Moving the TTL into `Cache-Control` would not help: the shell
+catch keeps a `Cache-Control` set beforehand in exactly the same way.
+
+**Fix: at the origin, on any plan.** `app/lib/error-response-cdn-cache.server.ts`
+wraps `ServerResponse.prototype.writeHead`, and `instrumentation.ts` installs it
+at boot, before the first request. When a 4xx or 5xx carries
+`CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control` or
+`Vercel-CDN-Cache-Control`, the response leaves with that header set to
+`no-store`. The guard sits in `writeHead` because that is where the status is
+final: Node calls it on the first `write` or on `end`, however the body is sent.
+
+- Redirects keep their TTL. The legacy climb-view 308 is cached on purpose.
+- An error response that never had a shared-cache header gets none added.
+- The middleware cannot make this decision. It would need the page's own
+  database reads to know whether a URL will 404, and the URL that failed was a
+  valid one.
+- The cost: a URL that is permanently missing now renders at the origin on every
+  request. An out-of-range `?page` 404s before the query runs, so that render is
+  cheap.
+- Not covered: a degraded page that still answers 200 keeps the full TTL. One
+  example is a setter page whose `generateMetadata` falls back to noindex
+  metadata during a database brownout. That copy stays at the edge for the TTL.
+  The follow-up is the Cache Response Rule below, which can match response
+  headers as well as status. It needs the page to mark the degradation on a
+  response header first, because a 200 status looks the same either way.
+- The production smoke (`scripts/production-smoke.ts`, "a missing climb view
+  404s without a CDN cache TTL") checks the whole path on every deploy against
+  the Railway origin, and every 30 minutes against www. It asks for a climb that
+  does not exist, because a missing climb view 404s with the same day-long
+  header. It avoids list URLs because the `boardsesh:climb-view-challenge` rule
+  challenges every `/list` and `/setter/` path on www, and the smoke's
+  User-Agent is not allowlisted. Cloudflare passes `CDN-Cache-Control`
+  downstream; only `Cloudflare-CDN-Cache-Control` stays at the edge. The check
+  adds a query key that changes on every run, so the edge has never stored the
+  URL it asks for.
+
+**Edge options considered and not adopted:**
+
+- **Cache Rule `edge_ttl.status_code_ttl`.** Cloudflare's Cache Rules docs name
+  no plan for it. The Page Rules version ("Cache TTL by status code") was
+  Enterprise only, and the docs say a status code TTL ignores the origin's
+  `Cache-Control`. It is not confirmed on this zone's Free plan.
+- **Cache Response Rules** (phase `http_response_cache_settings`, action
+  `set_cache_control`). These are documented for every plan, with 10 rules on
+  Free. They can match `http.response.code` and take precedence over an origin
+  `CDN-Cache-Control`. A rule matching
+  `http.host eq "www.boardsesh.com" and http.response.code ge 400` that sets
+  `no-store` with `cloudflare_only` would add a second layer at the edge. It is
+  not added yet for two reasons: `cf:apply` does not manage that phase
+  (`MANAGED_RULE_PHASES`), and the token scope it needs has not been checked.
+  Add it if an error response is ever seen cached again.
+
+The fix does not remove copies the edge already holds. Purge an affected URL by
+hand: Caching → Configuration → Custom Purge, by URL. There is no purge tooling,
+and the CI token has no `Zone.Cache Purge` scope. Without a purge, a cached copy
+expires on its own once its TTL and stale window run out.
+
 ### Rate limiting the climb-view path
 
 `http_ratelimit` is the third managed phase. One rule,
