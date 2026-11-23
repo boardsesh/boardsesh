@@ -287,12 +287,17 @@ for (const width of [390, 1440]) {
     await expect(page.locator('main dl')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'setter');
+    // A phone's store pair is the filled brand one; from md the QR card's
+    // outlined pair takes its place, so hover whichever one is shown.
     await expectReadablePrimaryHover(
       page,
       testInfo,
-      page.locator('main a[href*="play.google.com"]').first(),
-      'brand-store-hover',
+      page.locator('main a[href*="play.google.com"]:visible').first(),
+      width === 1440 ? 'setter-qr-store-hover' : 'brand-store-hover',
     );
+    if (width === 1440) {
+      await expect(page.locator('main').getByRole('img', { name: /^QR code that opens/ })).toBeVisible();
+    }
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
 
     if (width === 390) {
