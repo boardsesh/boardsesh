@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
@@ -55,6 +55,7 @@ import {
   reportAudienceFor,
   reportErrorKind,
   reportReasonsFor,
+  shouldResetReportDialog,
   sentMessageFor,
   type ReportDraft,
   type ReportProblemTarget,
@@ -106,12 +107,21 @@ export default function ReportProblemDialog({
   const targetKey = target ? (target.kind === 'board' ? `board:${target.board.uuid}` : `gym:${target.gym.uuid}`) : null;
 
   // One dialog serves every row on the gym page: start clean for each target.
+  // The target reads null while a token rotation or a reload is in flight, so a
+  // change to or from null is not a new target: it must not wipe a draft or the
+  // sent message.
+  const previousResetRef = useRef<{ open: boolean; targetKey: string | null }>({ open: false, targetKey: null });
   useEffect(() => {
+    const previous = previousResetRef.current;
+    // Remember the last real target across a null gap, so A → null → B still resets.
+    previousResetRef.current = { open, targetKey: targetKey ?? previous.targetKey };
     if (!open) return;
-    setDraft(EMPTY_REPORT_DRAFT);
-    setSending(false);
-    setSent(null);
-    setFailure(null);
+    if (shouldResetReportDialog(previous, { open, targetKey })) {
+      setDraft(EMPTY_REPORT_DRAFT);
+      setSending(false);
+      setSent(null);
+      setFailure(null);
+    }
   }, [open, targetKey]);
 
   const send = async () => {

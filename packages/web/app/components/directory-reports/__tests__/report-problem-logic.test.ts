@@ -12,6 +12,7 @@ import {
   reportErrorKind,
   reportReasonsFor,
   sentMessageFor,
+  shouldResetReportDialog,
   type ReportGymSubject,
   type ReportProblemTarget,
 } from '../report-problem-logic';
@@ -191,5 +192,29 @@ describe('the done state', () => {
   it('tells an offline climber to connect', () => {
     expect(reportErrorKind(false)).toBe('offline');
     expect(reportErrorKind(true)).toBe('error');
+  });
+});
+
+describe('shouldResetReportDialog', () => {
+  const closed = { open: false, targetKey: null };
+  it('resets when the dialog opens', () => {
+    expect(shouldResetReportDialog(closed, { open: true, targetKey: 'board:a' })).toBe(true);
+  });
+  it('keeps the draft when the target goes null and comes back (token rotation)', () => {
+    const open = { open: true, targetKey: 'board:a' };
+    expect(shouldResetReportDialog(open, { open: true, targetKey: null })).toBe(false);
+    expect(shouldResetReportDialog({ open: true, targetKey: 'board:a' }, { open: true, targetKey: 'board:a' })).toBe(
+      false,
+    );
+  });
+  it('resets between two different real targets', () => {
+    expect(shouldResetReportDialog({ open: true, targetKey: 'board:a' }, { open: true, targetKey: 'board:b' })).toBe(
+      true,
+    );
+  });
+  it('never resets while closed', () => {
+    expect(shouldResetReportDialog({ open: true, targetKey: 'board:a' }, { open: false, targetKey: 'board:a' })).toBe(
+      false,
+    );
   });
 });

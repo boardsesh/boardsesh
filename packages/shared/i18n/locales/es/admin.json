@@ -700,6 +700,7 @@
       "deleted": "Plafón eliminado. El reporte está cerrado.",
       "removed": "Quitado del rocódromo. El reporte está cerrado.",
       "hidden": "Rocódromo oculto de la búsqueda. El reporte está cerrado.",
+      "hiddenStillOpen": "Rocódromo oculto de la búsqueda, pero el reporte sigue abierto. Inténtalo de nuevo.",
       "kept": "Reporte cerrado.",
       "failed": "No se pudo completar. Inténtalo de nuevo."
     },

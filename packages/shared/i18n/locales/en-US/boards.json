@@ -1799,7 +1799,10 @@
     "keepFailed": "Couldn't close the report. Try again.",
     "empty": "Nothing is open on this board anymore.",
     "back": "Back",
-    "close": "Close"
+    "close": "Close",
+    "web": {
+      "keepPartial": "Closed {{closed}} of {{total}} reports. Try again for the rest."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "You can't edit this board",

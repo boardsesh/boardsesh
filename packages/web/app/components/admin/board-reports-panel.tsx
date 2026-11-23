@@ -42,7 +42,11 @@ import {
   type UpdateGymMutationResponse,
   type UpdateGymMutationVariables,
 } from '@boardsesh/graphql/operations';
-import { isDirectoryReportClosedError, isSystemBoardDeleteInsteadError } from '@boardsesh/graphql/errors';
+import {
+  isBoardNotAtGymError,
+  isDirectoryReportClosedError,
+  isSystemBoardDeleteInsteadError,
+} from '@boardsesh/graphql/errors';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -96,16 +100,23 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [keepNote, setKeepNote] = useState('');
   const requestRef = useRef(0);
+  // Read through a ref so a token rotation doesn't reload the list and drop pages already loaded.
+  const tokenRef = useRef(token);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+  const hasToken = Boolean(token);
   const [now] = useState(() => new Date());
 
   const fetchPage = useCallback(
     async (after: string | null) => {
-      if (!token) return;
+      const currentToken = tokenRef.current;
+      if (!currentToken) return;
       const request = ++requestRef.current;
       setLoading(true);
       setLoadFailed(false);
       try {
-        const response = await createGraphQLHttpClient(token).request<
+        const response = await createGraphQLHttpClient(currentToken).request<
           GetAdminDirectoryReportsQueryResponse,
           GetAdminDirectoryReportsQueryVariables
         >(GET_ADMIN_DIRECTORY_REPORTS, {
@@ -125,15 +136,16 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
         if (request === requestRef.current) setLoading(false);
       }
     },
-    [token, status, kind],
+    [status, kind],
   );
 
   // A new filter starts from an empty list rather than showing the last one under it.
   useEffect(() => {
+    if (!hasToken) return;
     setReports([]);
     setNextCursor(null);
     void fetchPage(null);
-  }, [fetchPage]);
+  }, [fetchPage, hasToken]);
 
   const ordered = useMemo(() => orderAdminReports(reports), [reports]);
 
@@ -146,7 +158,7 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
     highlightedRef.current.scrollIntoView({ block: 'center' });
   }, [ordered]);
 
-  const runSteps = async (steps: AdminReportStep[]) => {
+  const runSteps = async (steps: AdminReportStep[], onGymHidden?: () => void) => {
     const client = createGraphQLHttpClient(token);
     for (const step of steps) {
       switch (step.kind) {
@@ -159,15 +171,21 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
           break;
         }
         case 'detach_board':
-          await client.request<DetachBoardFromGymMutationResponse, DetachBoardFromGymMutationVariables>(
-            DETACH_BOARD_FROM_GYM,
-            { input: { gymUuid: step.gymUuid, boardUuid: step.boardUuid } },
-          );
+          try {
+            await client.request<DetachBoardFromGymMutationResponse, DetachBoardFromGymMutationVariables>(
+              DETACH_BOARD_FROM_GYM,
+              { input: { gymUuid: step.gymUuid, boardUuid: step.boardUuid } },
+            );
+          } catch (error) {
+            // The board already left this gym: the removal is done, so close the report.
+            if (!isBoardNotAtGymError(error)) throw error;
+          }
           break;
         case 'hide_gym':
           await client.request<UpdateGymMutationResponse, UpdateGymMutationVariables>(UPDATE_GYM, {
             input: { gymUuid: step.gymUuid, isListed: false },
           });
+          onGymHidden?.();
           break;
         case 'resolve':
           try {
@@ -188,8 +206,11 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
     const steps = planAdminAction(report, action, note);
     if (!steps || !token) return;
     setBusyReportUuid(report.uuid);
+    let gymHidden = false;
     try {
-      await runSteps(steps);
+      await runSteps(steps, () => {
+        gymHidden = true;
+      });
       setReports((previous) => previous.filter((candidate) => candidate.uuid !== report.uuid));
       showMessage(successMessage(action), 'success');
     } catch (error) {
@@ -197,7 +218,9 @@ export default function BoardReportsPanel({ highlightReportUuid }: { highlightRe
       showMessage(
         isSystemBoardDeleteInsteadError(error)
           ? tBoards('gymBoards.removeSyncedError')
-          : t('boardReports.snackbar.failed'),
+          : gymHidden
+            ? t('boardReports.snackbar.hiddenStillOpen')
+            : t('boardReports.snackbar.failed'),
         'error',
       );
     } finally {

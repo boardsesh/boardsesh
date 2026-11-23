@@ -700,6 +700,7 @@
       "deleted": "Board deleted. The report is closed.",
       "removed": "Removed from the gym. The report is closed.",
       "hidden": "Gym hidden from search. The report is closed.",
+      "hiddenStillOpen": "Gym hidden from search, but the report is still open. Try again.",
       "kept": "Report closed.",
       "failed": "That didn't go through. Try again."
     },

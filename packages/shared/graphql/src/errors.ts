@@ -141,3 +141,19 @@ export function isSystemBoardDeleteInsteadError(error: unknown): boolean {
 export function isDirectoryReportClosedError(error: unknown): boolean {
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'REPORT_CLOSED');
 }
+
+/** The exact message `detachBoardFromGym` throws (with `BAD_USER_INPUT`) when the board isn't at the gym. */
+const BOARD_NOT_AT_GYM_MESSAGE = 'This board is not listed at this gym.';
+
+/**
+ * `detachBoardFromGym` on a board that already left the gym (the creator moved
+ * it, or someone else removed it). The server has no dedicated code for it, so
+ * this matches `BAD_USER_INPUT` plus its message. The removal is already done,
+ * so callers treat it as success.
+ */
+export function isBoardNotAtGymError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) =>
+      graphqlError.extensions?.code === 'BAD_USER_INPUT' && graphqlError.message === BOARD_NOT_AT_GYM_MESSAGE,
+  );
+}

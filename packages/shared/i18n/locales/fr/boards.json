@@ -1799,7 +1799,10 @@
     "keepFailed": "Impossible de fermer le signalement. Réessaie.",
     "empty": "Plus rien d'ouvert sur cette board.",
     "back": "Retour",
-    "close": "Fermer"
+    "close": "Fermer",
+    "web": {
+      "keepPartial": "{{closed}} signalements fermés sur {{total}}. Réessaie pour le reste."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "Tu ne peux pas modifier cette board",
