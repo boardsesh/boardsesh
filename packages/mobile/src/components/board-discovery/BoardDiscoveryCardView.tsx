@@ -60,6 +60,16 @@ export type DiscoveryBoardItem = {
    * worse than offering nothing).
    */
   isViewerOwner?: boolean;
+  /**
+   * The server's word on what the viewer may do with the board (see
+   * `BoardCardMenuItemState`). Set on the climber's own and followed boards;
+   * absent wherever the card offers no management.
+   */
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canRemoveFromGym?: boolean;
+  /** The gym the board is listed at, for "Remove from {gym}". */
+  gymName?: string | null;
   /** Whether the viewer pinned this board to the front of their list. */
   isPinned?: boolean;
   /**

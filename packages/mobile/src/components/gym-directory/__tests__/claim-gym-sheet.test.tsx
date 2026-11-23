@@ -112,7 +112,7 @@ describe('ClaimGymSheet — claim outcome', () => {
     expect(screen.queryByText('mobile.gymClaim.approved.sent')).toBeNull();
   });
 
-  it('offers a manage-gym hand-off on an approved claim and dismisses the sheet on success', async () => {
+  it("opens the web console's Boards tab on an approved claim and dismisses the sheet on success", async () => {
     mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
 
     renderSheet();
@@ -122,7 +122,7 @@ describe('ClaimGymSheet — claim outcome', () => {
     fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
 
     expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
-      'https://www.boardsesh.com/gym/gym-uuid-1/manage',
+      'https://www.boardsesh.com/gym/gym-uuid-1/manage?tab=boards',
       expect.any(Function),
     );
     await waitFor(() => expect(dismissMock).toHaveBeenCalled());
@@ -138,7 +138,7 @@ describe('ClaimGymSheet — claim outcome', () => {
     fireEvent.click(screen.getByText('mobile.gymClaim.approved.manageCta'));
 
     expect(openUrl.openValidatedUrl).toHaveBeenCalledWith(
-      'https://www.boardsesh.com/gym/bonsist-amsterdam/manage',
+      'https://www.boardsesh.com/gym/bonsist-amsterdam/manage?tab=boards',
       expect.any(Function),
     );
   });
@@ -165,5 +165,24 @@ describe('ClaimGymSheet — claim outcome', () => {
     await waitFor(() => expect(screen.getByText('mobile.gymClaim.admin.sent')).toBeTruthy());
 
     expect(screen.queryByText('mobile.gymClaim.approved.manageCta')).toBeNull();
+  });
+});
+
+describe('ClaimGymSheet — which form opens', () => {
+  it('opens admin review when the server says the website cannot prove a claim, whatever the website looks like', () => {
+    renderSheet({ website: 'https://bonsist.nl', canClaimByDomain: false });
+    expect(screen.getByText('mobile.gymClaim.admin.description')).toBeTruthy();
+    expect(screen.queryByText('mobile.gymClaim.switchToDomain')).toBeNull();
+  });
+
+  it('opens the work-email form when the server says the website can prove one', () => {
+    renderSheet({ website: 'https://bonsist.nl', canClaimByDomain: true });
+    expect(screen.getByText('mobile.gymClaim.domain.description')).toBeTruthy();
+    expect(screen.getByText('mobile.gymClaim.switchToAdmin')).toBeTruthy();
+  });
+
+  it('falls back to admin review when the flag is set but there is no website to name', () => {
+    renderSheet({ website: null, canClaimByDomain: true });
+    expect(screen.getByText('mobile.gymClaim.admin.description')).toBeTruthy();
   });
 });

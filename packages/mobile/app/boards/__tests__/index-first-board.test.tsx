@@ -210,6 +210,8 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-new' } }),
   useDeleteBoard: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnfollowBoard: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useLinkBoardToGym: () => ({ mutateAsync: vi.fn() }),
+  useDetachBoardFromGym: () => ({ mutateAsync: vi.fn() }),
   usePinBoard: () => ({ mutate: vi.fn() }),
 }));
 
@@ -218,6 +220,7 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: null }),
   useSetActiveBoard: () => setActiveBoardMock,
   useClearActiveBoardIfCurrentGeneration: () => vi.fn(),
+  useSetActiveBoardIfCurrentGeneration: () => vi.fn(),
 }));
 vi.mock('../../../src/hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: undefined, isLoading: false }),

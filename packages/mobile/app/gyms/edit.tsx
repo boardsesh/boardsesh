@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -6,12 +6,10 @@ import type { Gym, UpdateGymInput } from '@boardsesh/shared-schema';
 import { useGym, useUpdateGym } from '../../src/lib/graphql/hooks';
 import { useToast } from '../../src/providers/toast-provider';
 import { useTheme } from '../../src/providers/theme-provider';
-import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { hapticSelection } from '../../src/lib/haptics';
 import { GymForm, type GymFormSeed, type GymFormSubmitValues } from '../../src/components/gym-directory/GymForm';
 import { GymWriteAccessSection } from '../../src/components/gym-directory/GymWriteAccessSection';
-import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
@@ -101,10 +99,8 @@ export default function EditGym() {
 function EditGymForm({ gym }: { gym: Gym }) {
   const router = useRouter();
   const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
   const { showToast } = useToast();
   const updateGym = useUpdateGym();
-  const claimSheetRef = useRef<ManagedSheetHandle>(null);
 
   const seed = useMemo<GymFormSeed>(
     () => ({
@@ -159,56 +155,19 @@ function EditGymForm({ gym }: { gym: Gym }) {
     [submitting, gym.uuid, updateGym, showToast, t, router],
   );
 
-  // An approved claim invalidates the `gym` query, so `canClaim` flips false a
-  // refetch later — while the sheet is still up showing the confirmation and its
-  // "Set up your gym" hand-off. Keep the sheet mounted from the moment it opens
-  // until it fully dismisses, or that refetch unmounts the confirmation out from
-  // under the user.
-  const [claimSheetOpen, setClaimSheetOpen] = useState(false);
-
-  const presentClaim = useCallback(() => {
-    hapticSelection();
-    setClaimSheetOpen(true);
-    claimSheetRef.current?.present();
-  }, []);
-
-  const onClaimSheetClosed = useCallback(() => setClaimSheetOpen(false), []);
-
-  const extraSections = (
-    <>
-      {gym.canGrantAccess ? <GymWriteAccessSection gymUuid={gym.uuid} /> : null}
-      {gym.canClaim ? (
-        <View style={styles.claimSection}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.claimLabel}>
-            {t('mobile.gymClaim.sectionTitle')}
-          </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.claimDescription}>
-            {t('mobile.gymClaim.sectionDescription')}
-          </Text>
-          <Button
-            title={t('mobile.gymClaim.claimAction')}
-            onPress={presentClaim}
-            variant="tonal"
-            icon="person.badge.plus"
-          />
-        </View>
-      ) : null}
-    </>
-  );
+  // No claim section here: `canClaim` is only true for a viewer who can't edit
+  // the gym, and that viewer never gets past the lock state above. Claims start
+  // from the gym finder's expanded row.
+  const extraSections = gym.canGrantAccess ? <GymWriteAccessSection gymUuid={gym.uuid} /> : null;
 
   return (
-    <>
-      <GymForm
-        seed={seed}
-        submitting={submitting}
-        onSubmit={(values) => void handleSubmit(values)}
-        submitLabel={t('mobile.gymEdit.save')}
-        extraSections={extraSections}
-      />
-      {gym.canClaim || claimSheetOpen ? (
-        <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} onClosed={onClaimSheetClosed} />
-      ) : null}
-    </>
+    <GymForm
+      seed={seed}
+      submitting={submitting}
+      onSubmit={(values) => void handleSubmit(values)}
+      submitLabel={t('mobile.gymEdit.save')}
+      extraSections={extraSections}
+    />
   );
 }
 
@@ -228,15 +187,5 @@ const styles = StyleSheet.create({
   },
   stateButton: {
     marginTop: spacing[4],
-  },
-  claimSection: {
-    marginTop: spacing[6],
-  },
-  claimLabel: {
-    marginBottom: spacing[1],
-    textTransform: 'uppercase',
-  },
-  claimDescription: {
-    marginBottom: spacing[3],
   },
 });
