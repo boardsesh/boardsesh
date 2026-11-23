@@ -76,6 +76,14 @@ export type UserBoard = {
    */
   canRemoveFromGym?: boolean;
   /**
+   * Waiting directory reports the viewer can act on (creator, the gym staff a
+   * report went to, global admins); null for anyone else. Optional for the same
+   * reason as `canEdit`. See docs/product/directory-reports.md.
+   */
+  openReportCount?: number | null;
+  /** Whether the viewer is a reporter on a waiting report about this board; null signed out. */
+  viewerHasOpenReport?: boolean | null;
+  /**
    * Whether the viewer pinned this board to the front of their board list.
    * Optional here (though `Boolean!` on the wire) for the same reason as
    * `canEdit`: clients build partial UserBoards from offline snapshots and board

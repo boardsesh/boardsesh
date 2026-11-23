@@ -41,3 +41,4 @@ export * from './release-context';
 
 export * from './admin-boards';
 export * from './cnc-packs';
+export * from './directory-reports';
