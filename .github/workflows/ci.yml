@@ -1520,6 +1520,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 50
+      - name: Verify PostgreSQL reporting timezone rules
+        env:
+          TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/audit_reporting_tzdata_test.py
+          python3 scripts/audit_reporting_tzdata.py "$TEST_POSTGRES_CONTAINER" boardsesh_backend_test
       # Warn (don't fail) when shared Drizzle schema changed without a matching
       # edit to the hand-maintained test DDL. Mirrors backend-tests.yml.
       - name: Check for test schema drift

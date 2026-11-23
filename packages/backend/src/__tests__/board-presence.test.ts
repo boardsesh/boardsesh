@@ -2503,7 +2503,6 @@ describe('board-presence resolvers', () => {
           name: 'Real Catalog Climb',
           grade: 'V5',
           setter: 'setter-bob',
-          confirmedAt: new Date().toISOString(),
         },
         1,
       ).then(

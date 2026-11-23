@@ -1,3 +1,4 @@
+import type { TickReportingTimeInput } from '@boardsesh/shared-schema';
 import type { LogbookEntry, TickStatus } from './logbook-keys';
 
 // Options for saving a tick. `quality` / `difficulty` accept `null` so call
@@ -15,6 +16,7 @@ export type SaveTickOptions = {
   isBenchmark: boolean;
   comment: string;
   climbedAt: string;
+  reportingTime?: TickReportingTimeInput;
   sessionId?: string;
   layoutId?: number;
   /**

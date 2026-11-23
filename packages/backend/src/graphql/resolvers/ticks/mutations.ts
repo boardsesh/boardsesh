@@ -43,6 +43,7 @@ import { canAttributeTickToBoard } from '@boardsesh/board-config';
 import { findTickClimb, tickBoardFitsClimb } from './board-options';
 import { reconcileInferredSessions } from '../../../services/inferred-sessions/reconcile';
 import { parseClimbedAt } from '../../../services/inferred-sessions/timestamps';
+import { tickReportingTime } from '../../../services/reporting-time';
 import { publishSessionWallChangedByTick } from '../../../services/session-wall-refresh';
 import {
   acquireUserTickMutationLock,
@@ -1380,6 +1381,8 @@ export const tickMutations = {
       boardAssociationSource = 'explicitBoardId';
     }
 
+    const reportingTime = await tickReportingTime(validatedInput.climbedAt, validatedInput.reportingTime);
+
     // Run write-time beta-link validation before opening the transaction so a
     // bad video URL doesn't leave a half-state. Zod already validated the
     // surface shape; Instagram gets deep public/caption validation, while
@@ -1434,13 +1437,40 @@ export const tickMutations = {
           canonicalBoardId != null &&
           presentedUuidBoard !== null &&
           (await presentedUuidLinksCanonicalBoard(tx, presentedUuidBoard, canonicalBoardId));
-        const lockedBoardId =
-          canonicalBoardId != null &&
-          (await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb, userId, {
-            allowUnlistedLink: presentedLink,
-          }))
-            ? canonicalBoardId
-            : null;
+        const lockedBoard =
+          canonicalBoardId == null
+            ? null
+            : await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb, userId, {
+                allowUnlistedLink: presentedLink,
+              });
+        const lockedBoardId = lockedBoard?.id ?? null;
+        let reportingAttribution: dbSchema.BoardseshTick['reportingAttribution'] = null;
+        if (lockedBoard && !isSharedConfigFeedBoard(lockedBoard)) {
+          if (boardAssociationSource === 'boardUuid') reportingAttribution = 'uuid';
+          if (boardAssociationSource === 'explicitBoardId') reportingAttribution = 'presence';
+          if (boardAssociationSource === null && resolvedSessionId && sessionBoardId === boardId) {
+            // A supplied session id alone does not prove this climber recorded
+            // activity there. Recheck a bound wall and persisted participation.
+            const [session] = await tx
+              .select({ id: dbSchema.boardSessions.id })
+              .from(dbSchema.boardSessions)
+              .where(
+                and(
+                  eq(dbSchema.boardSessions.id, resolvedSessionId),
+                  eq(dbSchema.boardSessions.boardId, lockedBoard.id),
+                  or(
+                    eq(dbSchema.boardSessions.createdByUserId, userId),
+                    sql`EXISTS (
+                  SELECT 1 FROM board_session_participants participant
+                  WHERE participant.session_id = ${dbSchema.boardSessions.id} AND participant.user_id = ${userId}
+                )`,
+                  ),
+                ),
+              )
+              .limit(1);
+            if (session) reportingAttribution = 'session';
+          }
+        }
         const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
         // Why the association was dropped, for the warning below. A missing
         // canonical row is a concurrent delete or a dangling tombstone chain.
@@ -1498,6 +1528,11 @@ export const tickMutations = {
             updatedAt: now,
             sessionId: resolvedSessionId,
             boardId: lockedBoardId,
+            reportingAttribution,
+            reportingBoardId: reportingAttribution ? lockedBoardId : null,
+            reportingGymId: reportingAttribution ? lockedBoard?.gymId : null,
+            ...reportingTime,
+            reportingClimbedAt: reportingTime.reportingTimePrecision ? climbedAt : null,
             // Aurora sync fields are null - will be populated by periodic sync job
             auroraType: null,
             auroraId: null,
@@ -1783,6 +1818,10 @@ export const tickMutations = {
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
     const canonicalClimbedAt =
       validatedInput.climbedAt === undefined ? undefined : normalizeClimbedAt(validatedInput.climbedAt);
+    const reportingTime =
+      validatedInput.climbedAt === undefined
+        ? undefined
+        : await tickReportingTime(validatedInput.climbedAt, validatedInput.reportingTime);
 
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
@@ -1817,14 +1856,29 @@ export const tickMutations = {
         const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
           updatedAt: new Date().toISOString(),
         };
-        if (validatedInput.boardUuid !== undefined) updates.boardId = selectedBoard?.id ?? null;
+        if (validatedInput.boardUuid !== undefined) {
+          updates.boardId = selectedBoard?.id ?? null;
+          if (targetTick.origin === 'native') {
+            const physicalBoard = selectedBoard && !isSharedConfigFeedBoard(selectedBoard) ? selectedBoard : null;
+            updates.reportingAttribution = physicalBoard ? 'edit' : null;
+            updates.reportingBoardId = physicalBoard?.id ?? null;
+            updates.reportingGymId = physicalBoard?.gymId ?? null;
+          }
+        }
         if (validatedInput.status !== undefined) updates.status = validatedInput.status;
         if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
         if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
         if (validatedInput.difficulty !== undefined) updates.difficulty = validatedInput.difficulty;
         if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
         if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
-        if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
+        if (canonicalClimbedAt !== undefined) {
+          updates.climbedAt = canonicalClimbedAt;
+          if (targetTick.origin === 'native' && reportingTime) {
+            Object.assign(updates, reportingTime, {
+              reportingClimbedAt: reportingTime.reportingTimePrecision ? canonicalClimbedAt : null,
+            });
+          }
+        }
         if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
 
         const finalStatus = validatedInput.status ?? targetTick.status;

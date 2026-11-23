@@ -103,6 +103,19 @@ export const ticksTypeDefs = /* GraphQL */ `
   """
   Input for recording a climb attempt.
   """
+  enum TickReportingTimePrecision {
+    instant
+    day
+  }
+
+  input TickReportingTimeInput {
+    precision: TickReportingTimePrecision!
+    "The chosen calendar date, in YYYY-MM-DD form, for a day-only tick."
+    date: String
+    "IANA zone of the author’s chosen calendar date."
+    timeZone: String
+  }
+
   input SaveTickInput {
     privacy: PrivacyPublicationInput
     "Optional client-generated UUID for offline idempotent replay"
@@ -131,6 +144,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     comment: String!
     "When the climb was attempted (ISO 8601)"
     climbedAt: String!
+    reportingTime: TickReportingTimeInput
     "Session ID if in a session"
     sessionId: String
     "Layout ID for board resolution"
@@ -169,6 +183,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     comment: String
     "When the climb was attempted (ISO 8601)"
     climbedAt: String
+    reportingTime: TickReportingTimeInput
     "Board angle to move this ascent to"
     angle: Int
   }

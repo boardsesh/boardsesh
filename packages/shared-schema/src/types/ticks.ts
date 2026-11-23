@@ -58,6 +58,12 @@ export type Tick = {
   commentCount?: number | null;
 };
 
+export type TickReportingTimeInput = {
+  precision: 'instant' | 'day';
+  date?: string | null;
+  timeZone?: string | null;
+};
+
 export type SaveTickInput = {
   privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   uuid?: string;
@@ -75,6 +81,7 @@ export type SaveTickInput = {
   isBenchmark: boolean;
   comment: string;
   climbedAt: string;
+  reportingTime?: TickReportingTimeInput | null;
   sessionId?: string;
   layoutId?: number;
   sizeId?: number;

@@ -112,3 +112,7 @@ export function isSprayWallLedSaveRefused(error: unknown): boolean {
     ),
   );
 }
+
+export function hasGraphqlErrorCode(error: unknown, ...codes: string[]): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => codes.includes(asString(graphqlError.extensions?.code) ?? ''));
+}

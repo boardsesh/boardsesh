@@ -224,27 +224,6 @@
       "profile": "Profilo",
       "comments": "Commenti"
     },
-    "insights": {
-      "subtitle": "Come sono andati i tuoi pannelli questa settimana rispetto alla scorsa.",
-      "uniqueClimbers": "Climber",
-      "ascents": "Ripetizioni",
-      "busiestDay": "Giorno più affollato",
-      "byDay": "Ripetizioni per giorno",
-      "byDayAria": "Ripetizioni per giorno della settimana",
-      "topClimbs": "Su cosa stanno lavorando tutti",
-      "noTopClimbs": "Nessuna ripetizione registrata questa settimana.",
-      "unnamedClimb": "Blocco senza nome",
-      "ascentsCount_one": "{{count}} ripetizione",
-      "ascentsCount_other": "{{count}} ripetizioni",
-      "deltaUp": "+{{count}} rispetto alla scorsa settimana",
-      "deltaDown": "−{{count}} rispetto alla scorsa settimana",
-      "deltaFlat": "Come la scorsa settimana",
-      "loadError": "Impossibile caricare i numeri di questa settimana.",
-      "empty": {
-        "title": "Nessuna ripetizione questa settimana",
-        "body": "È ora di cambiare i blocchi? Appena i climber registrano una ripetizione qui, vedrai chi è passato e su cosa sta lavorando."
-      }
-    },
     "navGuard": {
       "title": "Scartare le modifiche non salvate?",
       "body": "Hai modifiche in questa scheda che non sono ancora salvate. Uscendo vengono scartate.",

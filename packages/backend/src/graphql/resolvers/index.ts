@@ -77,6 +77,7 @@ import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
 import { socialGymInsightsQueries } from './social/gym-insights';
+import { gymReportingSettingsMutations } from './social/gym-reporting-settings';
 import { socialGymClaimQueries, socialGymClaimMutations, gymClaimFieldResolvers } from './social/gym-claims';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
@@ -228,6 +229,7 @@ export const resolvers = {
     ...socialBoardMutations,
     ...adminBoardMutations,
     ...socialGymMutations,
+    ...gymReportingSettingsMutations,
     ...gymActivityStatsMutations,
     ...socialGymStrayBoardMutations,
     ...socialGymKioskMutations,

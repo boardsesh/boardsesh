@@ -24,10 +24,13 @@ type MyGymRowProps = {
   manageLabel: string;
   manageAccessibilityLabel: string;
   noAddressLabel: string;
+  analyticsLabel: string;
+  analyticsAccessibilityLabel: string;
   /** Open the gym editor (only wired when `gym.canEdit`). */
   onOpenGym: (gym: Gym) => void;
   /** Hand off to the web kiosk/TV manage console (only wired when `gym.canEdit`). */
   onManageKiosks: (gym: Gym) => void;
+  onOpenAnalytics: (gym: Gym) => void;
 };
 
 // Owner beats any membership role: an owner is always the owner even if they also
@@ -55,8 +58,11 @@ function MyGymRowComponent({
   manageLabel,
   manageAccessibilityLabel,
   noAddressLabel,
+  analyticsLabel,
+  analyticsAccessibilityLabel,
   onOpenGym,
   onManageKiosks,
+  onOpenAnalytics,
 }: MyGymRowProps) {
   const { systemColors } = useTheme();
 
@@ -65,6 +71,7 @@ function MyGymRowComponent({
   const addressLine = gym.address?.trim() ? gym.address.trim() : noAddressLabel;
 
   const handleOpen = useCallback(() => onOpenGym(gym), [onOpenGym, gym]);
+  const handleAnalytics = useCallback(() => onOpenAnalytics(gym), [onOpenAnalytics, gym]);
   const handleManage = useCallback(() => onManageKiosks(gym), [onManageKiosks, gym]);
 
   // The name / address / badge block. It's the edit tap target when the viewer can
@@ -100,6 +107,20 @@ function MyGymRowComponent({
 
       {gym.canEdit ? (
         <>
+          <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+          <PressableSurface
+            onPress={handleAnalytics}
+            feedback="opacity"
+            accessibilityRole="button"
+            accessibilityLabel={analyticsAccessibilityLabel}
+            style={styles.manageRow}
+          >
+            <Icon name="chart.bar" size={18} color={systemColors.secondaryLabel} />
+            <Text variant="subheadline" color={systemColors.label} style={styles.manageLabel}>
+              {analyticsLabel}
+            </Text>
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          </PressableSurface>
           <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
           {/* Kiosk/TV management is web-only by design — this is a hand-off to the
               browser console, not an in-app screen. */}

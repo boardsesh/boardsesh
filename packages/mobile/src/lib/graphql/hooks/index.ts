@@ -347,6 +347,7 @@ export function useBoard(boardUuid: string | null) {
  * merged-away uuid resolves to the surviving canonical board (a *different*
  * uuid) while a plain-deleted board resolves to `null`.
  */
+export { useManagedMyGyms } from './use-managed-my-gyms';
 export { fetchBoardByUuid } from './fetch-board-by-uuid';
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in

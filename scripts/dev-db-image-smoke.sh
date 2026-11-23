@@ -71,6 +71,8 @@ wait_for_postgres
 [[ "$(docker exec "$CONTAINER_NAME" printenv PGDATA)" == '/var/lib/postgresql/18/docker' ]]
 docker exec "$CONTAINER_NAME" test -f /var/lib/postgresql/18/docker/.boardsesh-dev-db-ready
 
+python3 "$REPOSITORY_ROOT/scripts/audit_reporting_tzdata.py" "$CONTAINER_NAME" main
+
 # The seeded image must include the same narrow helper prerequisite as live
 # migrations, without handing the runtime login broad statistics visibility.
 # shellcheck source=scripts/lib/postgres-sync-cutoff.sh

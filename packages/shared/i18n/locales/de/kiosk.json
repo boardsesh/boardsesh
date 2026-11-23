@@ -224,27 +224,6 @@
       "profile": "Profil",
       "comments": "Kommentare"
     },
-    "insights": {
-      "subtitle": "Wie deine Boards diese Woche im Vergleich zur letzten liefen.",
-      "uniqueClimbers": "Kletterer*innen",
-      "ascents": "Begehungen",
-      "busiestDay": "Stärkster Tag",
-      "byDay": "Begehungen pro Tag",
-      "byDayAria": "Begehungen pro Wochentag",
-      "topClimbs": "Woran gerade alle arbeiten",
-      "noTopClimbs": "Diese Woche noch keine Begehungen eingetragen.",
-      "unnamedClimb": "Boulder ohne Namen",
-      "ascentsCount_one": "{{count}} Begehung",
-      "ascentsCount_other": "{{count}} Begehungen",
-      "deltaUp": "+{{count}} zur Vorwoche",
-      "deltaDown": "−{{count}} zur Vorwoche",
-      "deltaFlat": "Wie in der Vorwoche",
-      "loadError": "Die Zahlen dieser Woche kamen nicht durch.",
-      "empty": {
-        "title": "Diese Woche keine Begehungen",
-        "body": "Zeit, die Wand neu zu schrauben? Sobald hier jemand eine Begehung einträgt, siehst du, wer da war und woran alle arbeiten."
-      }
-    },
     "navGuard": {
       "title": "Ungespeicherte Änderungen verwerfen?",
       "body": "Auf diesem Tab liegen noch ungespeicherte Änderungen. Wenn du gehst, sind sie weg.",

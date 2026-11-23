@@ -1,9 +1,12 @@
 import { useCallback, useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
-import { useMyGyms, useProfile } from '../../src/lib/graphql/hooks';
+import { useManagedMyGyms } from '../../src/lib/graphql/hooks';
+import { useAuth } from '../../src/providers/auth-provider';
+import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
@@ -25,12 +28,14 @@ import { spacing, borderRadius } from '../../src/theme/tokens';
 /**
  * "My gyms" — the owner's home for the gyms they run, reached from the More tab.
  * Lists the gyms from the `myGyms` query; each row taps through to the existing
- * gym editor and offers a hand-off to the web kiosk/TV manage console. Empty state
+ * gym editor and opens staff analytics. A separate action offers a hand-off to the web kiosk/TV manage console. Empty state
  * routes to the wall finder, where claiming a gym lives.
  *
  * A plain pushed route (not a modal): it's a destination with its own header, and
  * a modal over the iOS 26 native tab bar is the wrong surface here.
  */
+const gymKey = (gym: Gym) => gym.uuid;
+
 export default function MyGymsScreen() {
   const router = useRouter();
   const { t } = useTranslation('boards');
@@ -39,15 +44,28 @@ export default function MyGymsScreen() {
   const screenOptions = useStackScreenOptions();
   const [kioskHintSeen, setKioskHintSeen] = useSetting('kioskHintSeen');
 
-  const { data: profile } = useProfile();
-  const currentUserId = profile?.id;
-  const myGymsQuery = useMyGyms({ enabled: !!currentUserId });
-  const { data: connection, isLoading, isError, refetch } = myGymsQuery;
+  const auth = useAuth();
+  const { userId, isLoading: isLoadingViewer } = useStoredUserId(auth.isAuthenticated);
+  const currentUserId = auth.isAuthenticated && !auth.isLoading ? userId : undefined;
+  const myGymsQuery = useManagedMyGyms(currentUserId);
+  const {
+    data: connection,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = myGymsQuery;
   // Offline the fetch pauses rather than failing, so `isLoading` stays true and
   // neither the error nor the empty branch below is ever reached.
   const offline = useOfflineQueryState(myGymsQuery);
 
-  const gyms = connection?.gyms ?? [];
+  const gyms = useMemo(() => {
+    if (!currentUserId || !connection) return [];
+    return [...new Map(connection.pages.flatMap((page) => page.gyms.map((gym) => [gym.uuid, gym] as const))).values()];
+  }, [connection, currentUserId]);
 
   // Memoized (stable identity) so it doesn't defeat MyGymRow's memo on every
   // parent render; `t` only changes on a locale switch.
@@ -69,6 +87,14 @@ export default function MyGymsScreen() {
     (gym: Gym) => {
       hapticSelection();
       router.push({ pathname: '/gyms/edit', params: { gymUuid: gym.uuid } });
+    },
+    [router],
+  );
+
+  const openAnalytics = useCallback(
+    (gym: Gym) => {
+      hapticSelection();
+      router.push({ pathname: '/gyms/analytics', params: { gymUuid: gym.uuid } });
     },
     [router],
   );
@@ -110,6 +136,25 @@ export default function MyGymsScreen() {
     router.push('/gyms');
   }, [router]);
 
+  const renderGym = useCallback<ListRenderItem<Gym>>(
+    ({ item: gym }) => (
+      <MyGymRow
+        gym={gym}
+        currentUserId={currentUserId}
+        roleLabels={roleLabels}
+        manageLabel={t('mobile.myGyms.manageKiosks')}
+        manageAccessibilityLabel={t('mobile.myGyms.manageKiosksFor', { gym: gym.name })}
+        analyticsLabel={t('gymReporting.title')}
+        analyticsAccessibilityLabel={t('gymReporting.openForGym', { gym: gym.name })}
+        noAddressLabel={t('mobile.myGyms.noAddress')}
+        onOpenGym={openGym}
+        onOpenAnalytics={openAnalytics}
+        onManageKiosks={handleManageKiosks}
+      />
+    ),
+    [currentUserId, roleLabels, t, openGym, openAnalytics, handleManageKiosks],
+  );
+
   if (offline.isBlocked && offline.reason) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
@@ -119,7 +164,7 @@ export default function MyGymsScreen() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || auth.isLoading || isLoadingViewer) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
@@ -128,7 +173,7 @@ export default function MyGymsScreen() {
     );
   }
 
-  if (isError) {
+  if (isError && gyms.length === 0) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
@@ -167,41 +212,51 @@ export default function MyGymsScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       {header}
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.listContent}>
-        {showKioskHint ? (
-          <View style={[styles.hint, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Icon name="tv" size={18} color={systemColors.secondaryLabel} />
-            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.hintText}>
-              {t('mobile.myGyms.kioskHint')}
-            </Text>
-            <PressableSurface
-              onPress={() => setKioskHintSeen(true)}
-              feedback="opacity"
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.myGyms.kioskHintDismiss')}
-            >
-              <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-            </PressableSurface>
-          </View>
-        ) : null}
-
-        {gyms.map((gym) => (
-          <MyGymRow
-            key={gym.uuid}
-            gym={gym}
-            currentUserId={currentUserId}
-            roleLabels={roleLabels}
-            manageLabel={t('mobile.myGyms.manageKiosks')}
-            manageAccessibilityLabel={t('mobile.myGyms.manageKiosksFor', { gym: gym.name })}
-            noAddressLabel={t('mobile.myGyms.noAddress')}
-            onOpenGym={openGym}
-            onManageKiosks={handleManageKiosks}
-          />
-        ))}
-      </ScrollView>
+      <FlashList
+        data={gyms}
+        renderItem={renderGym}
+        keyExtractor={gymKey}
+        ItemSeparatorComponent={GymRowSeparator}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          showKioskHint ? (
+            <View style={[styles.hint, { backgroundColor: systemColors.secondaryBackground }]}>
+              <Icon name="tv" size={18} color={systemColors.secondaryLabel} />
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.hintText}>
+                {t('mobile.myGyms.kioskHint')}
+              </Text>
+              <PressableSurface
+                onPress={() => setKioskHintSeen(true)}
+                feedback="opacity"
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.myGyms.kioskHintDismiss')}
+              >
+                <Icon name="close" size={16} color={systemColors.secondaryLabel} />
+              </PressableSurface>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          hasNextPage ? (
+            <View style={styles.footer}>
+              <Button
+                variant="outlined"
+                title={t(isFetchNextPageError ? 'mobile.myGyms.retry' : 'gymReporting.moreGyms')}
+                disabled={isFetchingNextPage}
+                onPress={() => void fetchNextPage()}
+              />
+            </View>
+          ) : null
+        }
+      />
     </View>
   );
+}
+
+function GymRowSeparator() {
+  return <View style={styles.rowGap} />;
 }
 
 const styles = StyleSheet.create({
@@ -225,14 +280,14 @@ const styles = StyleSheet.create({
   stateButton: {
     marginTop: spacing[4],
   },
-  listContent: {
-    padding: spacing[4],
-    gap: spacing[3],
-  },
+  listContent: { padding: spacing[4] },
+  rowGap: { height: spacing[3] },
+  footer: { paddingTop: spacing[3] },
   hint: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[3],
+    marginBottom: spacing[3],
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
     borderRadius: borderRadius.lg,

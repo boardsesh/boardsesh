@@ -4338,11 +4338,12 @@ export type GymOwnershipUserSummary = {
   userId: Scalars['ID']['output'];
 };
 
-/** A public canonical venue URL and its last content update, without private gym fields. */
-export type GymSitemapEntry = {
-  __typename?: 'GymSitemapEntry';
-  slug: Scalars['String']['output'];
-  updatedAt: Scalars['String']['output'];
+export type GymReportingBoard = {
+  __typename?: 'GymReportingBoard';
+  boardType: Scalars['String']['output'];
+  configurations: Array<GymReportingBoardConfig>;
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
 };
 
 /**
@@ -4352,18 +4353,59 @@ export type GymSitemapEntry = {
  * unbounded tick scans. `topClimbs` and `busiestDays` cover the CURRENT window
  * only (that's all the dashboard renders). Requires gym edit access.
  */
+export type GymReportingBoardConfig = {
+  __typename?: 'GymReportingBoardConfig';
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type GymReportingCoverage = {
+  __typename?: 'GymReportingCoverage';
+  /** Date-only records whose possible occurrence crosses a window boundary. */
+  boundaryUncertainCount: Scalars['Int']['output'];
+  /** Eligible records with an attested date and no trustworthy hour. */
+  dateOnlyCount: Scalars['Int']['output'];
+  /** Earliest eligible observed display in the checked interval, when known. */
+  firstDisplayAt?: Maybe<Scalars['String']['output']>;
+  /** Earliest eligible observed tick with an exact timestamp in the checked interval. */
+  firstTickAt?: Maybe<Scalars['String']['output']>;
+  /** The report includes activity scoped to boards currently linked to the gym. */
+  includesCurrentBoardHistory: Scalars['Boolean']['output'];
+  /** Recorded sources cover only activity which meets their reporting rules. */
+  isPartial: Scalars['Boolean']['output'];
+  /** Inclusive UTC start of the 365-day descriptive observation interval, ending exclusively at asOf. */
+  observedSince: Scalars['String']['output'];
+  /** Attributed ticks with no trustworthy occurrence time in the candidate scan. */
+  unknownTimeCount: Scalars['Int']['output'];
+};
+
+/** A public canonical venue URL and its last content update, without private gym fields. */
+export type GymSitemapEntry = {
+  __typename?: 'GymSitemapEntry';
+  slug: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
 export type GymStats = {
   __typename?: 'GymStats';
+  asOf: Scalars['String']['output'];
+  boardUuid?: Maybe<Scalars['ID']['output']>;
+  boards: Array<GymReportingBoard>;
   /** Ascents per day of week in the current window (only non-empty days). */
   busiestDays: Array<GymDayActivity>;
+  canManageBoardAliases: Scalars['Boolean']['output'];
+  coverage: GymReportingCoverage;
   /** Counts for the current window (last `periodDays` days). */
   current: GymStatsWindow;
+  gymName: Scalars['String']['output'];
   /** The gym these stats are for. */
   gymUuid: Scalars['ID']['output'];
   /** Window length in days (7 for the default week). */
   periodDays: Scalars['Int']['output'];
   /** Counts for the window immediately before the current one (same length). */
   previous: GymStatsWindow;
+  timeZone: Scalars['String']['output'];
+  timeZoneConfigured: Scalars['Boolean']['output'];
   /** Top 10 climbs by ascents in the current window. */
   topClimbs: Array<GymTopClimb>;
 };
@@ -4374,9 +4416,11 @@ export type GymStats = {
  * equally-long span immediately before it.
  */
 export type GymStatsInput = {
+  /** An authorized physical board in the requested gym. Omit for all boards. */
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
   /** The gym to report on. The caller must have gym edit access. */
   gymUuid: Scalars['ID']['input'];
-  /** Window length: week (7 days, default) or month (30 days). */
+  /** Window length: week (7 days, default), month (30 days) or quarter (90 days). */
   period?: InputMaybe<GymStatsPeriod>;
 };
 
@@ -4384,6 +4428,8 @@ export type GymStatsInput = {
 export type GymStatsPeriod =
   /** Rolling last 30 days. */
   | 'month'
+  /** Rolling last 90 days. */
+  | 'quarter'
   /** Rolling last 7 days. */
   | 'week';
 
@@ -4396,7 +4442,15 @@ export type GymStatsWindow = {
   __typename?: 'GymStatsWindow';
   /** Total ascents (flash + send) on the gym's boards in this window. */
   ascentCount: Scalars['Int']['output'];
-  /** Distinct climbers with a flash/send on the gym's boards in this window. */
+  /** Confirmed Boardsesh display events, including anonymous displays. */
+  displayCount: Scalars['Int']['output'];
+  /** Exclusive UTC boundary. */
+  endAt: Scalars['String']['output'];
+  /** Inclusive UTC boundary. */
+  startAt: Scalars['String']['output'];
+  /** Eligible Boardsesh ticks, including attempts. */
+  tickCount: Scalars['Int']['output'];
+  /** Distinct identified accounts from qualifying displays and ticks. */
   uniqueClimbers: Scalars['Int']['output'];
 };
 
@@ -5537,6 +5591,8 @@ export type Mutation = {
    * omit it for the shipped behaviour.
    */
   setCurrentClimb?: Maybe<ClimbQueueItem>;
+  setGymReportingBoardAlias: Scalars['Boolean']['output'];
+  setGymReportingTimeZone: Scalars['Boolean']['output'];
   /**
    * Toggle automatic upload of finished sessions for a connected integration.
    * Requires authentication.
@@ -6520,6 +6576,16 @@ export type MutationSetCurrentClimbArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationSetGymReportingBoardAliasArgs = {
+  input: SetGymReportingBoardAliasInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetGymReportingTimeZoneArgs = {
+  input: SetGymReportingTimeZoneInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationSetIntegrationAutoSyncArgs = {
   enabled: Scalars['Boolean']['input'];
   provider: IntegrationProvider;
@@ -6811,6 +6877,8 @@ export type MyGymClaim = {
 export type MyGymsInput = {
   /** Include gyms the user follows */
   includeFollowed?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Include gyms covered by the viewer’s community admin or leader role. */
+  includeManaged?: InputMaybe<Scalars['Boolean']['input']>;
   /** Max gyms to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
@@ -10384,7 +10452,6 @@ export type SaveSprayWallLedSetupInput = {
   layout?: InputMaybe<Scalars['JSON']['input']>;
 };
 
-/** Input for recording a climb attempt. */
 export type SaveTickInput = {
   /** Board angle */
   angle: Scalars['Int']['input'];
@@ -10415,6 +10482,7 @@ export type SaveTickInput = {
   privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
+  reportingTime?: InputMaybe<TickReportingTimeInput>;
   /** Session ID if in a session */
   sessionId?: InputMaybe<Scalars['String']['input']>;
   /** Set IDs for board resolution */
@@ -11371,6 +11439,19 @@ export type SetContentAudienceInput = {
   entityId: Scalars['ID']['input'];
   entityType: PrivacyContentType;
   privacyRevision: Scalars['Int']['input'];
+};
+
+export type SetGymReportingBoardAliasInput = {
+  boardUuid: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  /** The verified physical board root. Null removes the existing relationship. */
+  rootBoardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+export type SetGymReportingTimeZoneInput = {
+  gymUuid: Scalars['ID']['input'];
+  /** A valid IANA zone, or null to clear the setting. */
+  timeZone?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Result of `setSessionRestCadence`. */
@@ -13007,6 +13088,17 @@ export type TickBoardOptions = {
   totalCount: Scalars['Int']['output'];
 };
 
+export type TickReportingTimeInput = {
+  /** The chosen calendar date, in YYYY-MM-DD form, for a day-only tick. */
+  date?: InputMaybe<Scalars['String']['input']>;
+  precision: TickReportingTimePrecision;
+  /** IANA zone of the author’s chosen calendar date. */
+  timeZone?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Input for recording a climb attempt. */
+export type TickReportingTimePrecision = 'day' | 'instant';
+
 /** Status of a climb attempt. */
 export type TickStatus =
   /** Did not complete */
@@ -13426,6 +13518,7 @@ export type UpdateTickInput = {
   privacy?: InputMaybe<PrivacyPublicationInput>;
   /** User's quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
+  reportingTime?: InputMaybe<TickReportingTimeInput>;
   /** Result of the attempt */
   status?: InputMaybe<TickStatus>;
 };

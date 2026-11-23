@@ -395,6 +395,8 @@ export const gymsTypeDefs = /* GraphQL */ `
   input MyGymsInput {
     "Include gyms the user follows"
     includeFollowed: Boolean
+    "Include gyms covered by the viewer’s community admin or leader role."
+    includeManaged: Boolean
     "Max gyms to return"
     limit: Int
     "Offset for pagination"
@@ -664,7 +666,15 @@ export const gymsTypeDefs = /* GraphQL */ `
   week-over-week deltas; the lists are only rendered for the current window.
   """
   type GymStatsWindow {
-    "Distinct climbers with a flash/send on the gym's boards in this window."
+    "Inclusive UTC boundary."
+    startAt: String!
+    "Exclusive UTC boundary."
+    endAt: String!
+    "Confirmed Boardsesh display events, including anonymous displays."
+    displayCount: Int!
+    "Eligible Boardsesh ticks, including attempts."
+    tickCount: Int!
+    "Distinct identified accounts from qualifying displays and ticks."
     uniqueClimbers: Int!
     "Total ascents (flash + send) on the gym's boards in this window."
     ascentCount: Int!
@@ -677,7 +687,46 @@ export const gymsTypeDefs = /* GraphQL */ `
   unbounded tick scans. \`topClimbs\` and \`busiestDays\` cover the CURRENT window
   only (that's all the dashboard renders). Requires gym edit access.
   """
+  type GymReportingBoardConfig {
+    uuid: ID!
+    name: String!
+  }
+
+  type GymReportingBoard {
+    uuid: ID!
+    name: String!
+    boardType: String!
+    configurations: [GymReportingBoardConfig!]!
+  }
+
+  type GymReportingCoverage {
+    "Inclusive UTC start of the 365-day descriptive observation interval, ending exclusively at asOf."
+    observedSince: String!
+    "Earliest eligible observed display in the checked interval, when known."
+    firstDisplayAt: String
+    "Earliest eligible observed tick with an exact timestamp in the checked interval."
+    firstTickAt: String
+    "Eligible records with an attested date and no trustworthy hour."
+    dateOnlyCount: Int!
+    "Date-only records whose possible occurrence crosses a window boundary."
+    boundaryUncertainCount: Int!
+    "Attributed ticks with no trustworthy occurrence time in the candidate scan."
+    unknownTimeCount: Int!
+    "The report includes activity scoped to boards currently linked to the gym."
+    includesCurrentBoardHistory: Boolean!
+    "Recorded sources cover only activity which meets their reporting rules."
+    isPartial: Boolean!
+  }
+
   type GymStats {
+    gymName: String!
+    boardUuid: ID
+    boards: [GymReportingBoard!]!
+    canManageBoardAliases: Boolean!
+    asOf: String!
+    timeZone: String!
+    timeZoneConfigured: Boolean!
+    coverage: GymReportingCoverage!
     "The gym these stats are for."
     gymUuid: ID!
     "Window length in days (7 for the default week)."
@@ -700,7 +749,9 @@ export const gymsTypeDefs = /* GraphQL */ `
   input GymStatsInput {
     "The gym to report on. The caller must have gym edit access."
     gymUuid: ID!
-    "Window length: week (7 days, default) or month (30 days)."
+    "An authorized physical board in the requested gym. Omit for all boards."
+    boardUuid: ID
+    "Window length: week (7 days, default), month (30 days) or quarter (90 days)."
     period: GymStatsPeriod
   }
 
@@ -712,6 +763,21 @@ export const gymsTypeDefs = /* GraphQL */ `
     week
     "Rolling last 30 days."
     month
+    "Rolling last 90 days."
+    quarter
+  }
+
+  input SetGymReportingTimeZoneInput {
+    gymUuid: ID!
+    "A valid IANA zone, or null to clear the setting."
+    timeZone: String
+  }
+
+  input SetGymReportingBoardAliasInput {
+    gymUuid: ID!
+    boardUuid: ID!
+    "The verified physical board root. Null removes the existing relationship."
+    rootBoardUuid: ID
   }
 
   # ============================================

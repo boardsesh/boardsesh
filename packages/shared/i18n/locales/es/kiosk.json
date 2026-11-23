@@ -224,27 +224,6 @@
       "profile": "Perfil",
       "comments": "Comentarios"
     },
-    "insights": {
-      "subtitle": "Cómo fueron tus plafones esta semana frente a la anterior.",
-      "uniqueClimbers": "Escaladores",
-      "ascents": "Encadenes",
-      "busiestDay": "Día más activo",
-      "byDay": "Encadenes por día",
-      "byDayAria": "Encadenes por día de la semana",
-      "topClimbs": "Lo que todos están proyectando",
-      "noTopClimbs": "Aún no hay encadenes esta semana.",
-      "unnamedClimb": "Bloque sin nombre",
-      "ascentsCount_one": "{{count}} encadene",
-      "ascentsCount_other": "{{count}} encadenes",
-      "deltaUp": "+{{count}} frente a la semana pasada",
-      "deltaDown": "−{{count}} frente a la semana pasada",
-      "deltaFlat": "Igual que la semana pasada",
-      "loadError": "No se pudieron cargar los datos de esta semana.",
-      "empty": {
-        "title": "Sin encadenes esta semana",
-        "body": "¿Toca renovar el muro? En cuanto los escaladores registren un encadene aquí, verás quién vino y qué están proyectando."
-      }
-    },
     "navGuard": {
       "title": "¿Descartar los cambios sin guardar?",
       "body": "Tienes cambios sin guardar en esta pestaña. Si sales, se descartan.",

@@ -12,6 +12,18 @@ const feedbackConversationSchema = readFileSync(
   .split('--> statement-breakpoint')
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
+const gymReportingSchema = readFileSync(
+  new URL('../../../db/drizzle/0333_gym_reporting_foundation.sql', import.meta.url),
+  'utf8',
+);
+const gymReportingTickTimeBinding = readFileSync(
+  new URL('../../../db/drizzle/0334_gym_reporting_tick_time_binding.sql', import.meta.url),
+  'utf8',
+);
+const gymReportingAliasVenueGuard = readFileSync(
+  new URL('../../../db/drizzle/0335_gym_reporting_alias_venue_guard.sql', import.meta.url),
+  'utf8',
+);
 const offlineWriteDeliverySchema = readFileSync(
   new URL('../../../db/drizzle/0332_offline_write_delivery.sql', import.meta.url),
   'utf8',
@@ -747,6 +759,7 @@ export const schemaSQL = `
   -- JSON-import upserts (ON CONFLICT (aurora_id) / (kilter_id)) resolve an
   -- arbiter index. Postgres allows many NULLs under a unique index, so pending
   -- (unsynced) ticks are unaffected.
+  CREATE INDEX IF NOT EXISTS "boardsesh_ticks_board_climbed_at_idx" ON "boardsesh_ticks" ("board_id", "climbed_at");
   CREATE UNIQUE INDEX IF NOT EXISTS "boardsesh_ticks_aurora_id_unique" ON "boardsesh_ticks" ("aurora_id");
   CREATE UNIQUE INDEX IF NOT EXISTS "boardsesh_ticks_kilter_id_unique" ON "boardsesh_ticks" ("kilter_id");
 
@@ -2613,4 +2626,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerSessionTriggersSchema};
   ${partnerSessionHintPrivacySchema};
   ${offlineWriteDeliverySchema};
+  DROP TABLE IF EXISTS gym_reporting_board_aliases;
+  ALTER TABLE gyms DROP COLUMN IF EXISTS reporting_time_zone;
+  ${gymReportingSchema};
+  ${gymReportingTickTimeBinding};
+  DROP FUNCTION IF EXISTS public.revoke_gym_reporting_aliases_on_board_move();
+  ${gymReportingAliasVenueGuard};
 `;

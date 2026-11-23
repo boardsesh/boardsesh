@@ -221,6 +221,7 @@ export const FollowGymInputSchema = z.object({
  */
 export const MyGymsInputSchema = z.object({
   includeFollowed: z.boolean().optional(),
+  includeManaged: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
 });
@@ -320,7 +321,22 @@ export const DetachBoardFromGymInputSchema = z.object({
  */
 export const GymStatsInputSchema = z.object({
   gymUuid: UUIDSchema,
-  period: z.enum(['week', 'month']).optional().default('week'),
+  boardUuid: UUIDSchema.nullish(),
+  period: z
+    .enum(['week', 'month', 'quarter'])
+    .nullish()
+    .transform((period) => period ?? 'week'),
+});
+
+export const SetGymReportingTimeZoneInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  timeZone: z.string().trim().min(1).max(96).nullish(),
+});
+
+export const SetGymReportingBoardAliasInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  boardUuid: UUIDSchema,
+  rootBoardUuid: UUIDSchema.nullish(),
 });
 
 /**

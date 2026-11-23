@@ -108,5 +108,7 @@ END
 $$;
 SQL
 
+python3 "$(dirname "${BASH_SOURCE[0]}")/audit_reporting_tzdata.py" "$CONTAINER_NAME" main
+
 printf 'PostgreSQL 18.6 booted with PostGIS 3.6.4 and HypoPG 1.4.3 on %s.\n' \
   "$EXPECTED_PLATFORM"

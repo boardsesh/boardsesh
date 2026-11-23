@@ -13,11 +13,13 @@ const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
 const openUrl = vi.hoisted(() => ({ openValidatedUrl: vi.fn().mockResolvedValue(true) }));
 const setKioskHintSeen = vi.hoisted(() => vi.fn());
 const refetch = vi.hoisted(() => vi.fn());
+const fetchNextPage = vi.hoisted(() => vi.fn());
 
 // Mutable per-test state driving the mocked hooks.
 const state = vi.hoisted(() => ({
   profileId: 'owner-1' as string | undefined,
   kioskHintSeen: false,
+  hasNextPage: false,
   myGyms: {
     data: undefined as { gyms: Gym[] } | undefined,
     isLoading: false,
@@ -30,6 +32,27 @@ vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
   ScrollView: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+}));
+
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListFooterComponent,
+  }: {
+    data: Gym[];
+    renderItem: (item: { item: Gym }) => ReactNode;
+    ListHeaderComponent?: ReactNode;
+    ListFooterComponent?: ReactNode;
+  }) =>
+    createElement(
+      'div',
+      null,
+      ListHeaderComponent,
+      data.map((item) => createElement('div', { key: item.uuid }, renderItem({ item }))),
+      ListFooterComponent,
+    ),
 }));
 
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => routerMock }));
@@ -58,9 +81,23 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../../../src/providers/auth-provider', () => ({
+  useAuth: () => ({ isLoading: false, isAuthenticated: !!state.profileId }),
+}));
+vi.mock('../../../src/hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: state.profileId, isLoading: false }),
+}));
+vi.mock('../../../src/hooks/use-offline-query-state', () => ({
+  useOfflineQueryState: () => ({ isBlocked: false }),
+}));
 vi.mock('../../../src/lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: state.profileId ? { id: state.profileId } : null }),
-  useMyGyms: () => ({ ...state.myGyms, refetch }),
+  useManagedMyGyms: () => ({
+    ...state.myGyms,
+    data: state.myGyms.data ? { pages: [state.myGyms.data] } : undefined,
+    refetch,
+    fetchNextPage,
+    hasNextPage: state.hasNextPage,
+  }),
 }));
 
 vi.mock('../../../src/providers/theme-provider', () => ({
@@ -116,10 +153,12 @@ vi.mock('../../../src/components/gym-directory/MyGymRow', () => ({
     gym,
     onOpenGym,
     onManageKiosks,
+    onOpenAnalytics,
   }: {
     gym: Gym;
     onOpenGym: (gym: Gym) => void;
     onManageKiosks: (gym: Gym) => void;
+    onOpenAnalytics: (gym: Gym) => void;
   }) =>
     createElement('div', { 'data-gym': gym.uuid }, [
       createElement(
@@ -127,6 +166,17 @@ vi.mock('../../../src/components/gym-directory/MyGymRow', () => ({
         { key: 'open', 'aria-label': gym.name, onClick: () => onOpenGym(gym), type: 'button' },
         gym.name,
       ),
+      gym.canEdit
+        ? createElement(
+            'button',
+            {
+              key: 'analytics',
+              'aria-label': `analytics-${gym.uuid}`,
+              onClick: () => onOpenAnalytics(gym),
+            },
+            'analytics',
+          )
+        : null,
       createElement(
         'button',
         { key: 'manage', 'aria-label': `manage-${gym.uuid}`, onClick: () => onManageKiosks(gym), type: 'button' },
@@ -157,6 +207,8 @@ beforeEach(() => {
   openUrl.openValidatedUrl.mockResolvedValue(true);
   setKioskHintSeen.mockClear();
   refetch.mockClear();
+  fetchNextPage.mockClear();
+  state.hasNextPage = false;
   state.profileId = 'owner-1';
   state.kioskHintSeen = false;
   state.myGyms = { data: undefined, isLoading: false, isError: false };
@@ -190,6 +242,16 @@ describe('MyGymsScreen', () => {
     const { getByRole } = render(<MyGymsScreen />);
     fireEvent.click(getByRole('button', { name: 'Movement' }));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'g1' } });
+  });
+
+  it('opens the pushed analytics route and loads another page on request', () => {
+    state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
+    state.hasNextPage = true;
+    const { getByRole } = render(<MyGymsScreen />);
+    fireEvent.click(getByRole('button', { name: 'analytics-g1' }));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/analytics', params: { gymUuid: 'g1' } });
+    fireEvent.click(getByRole('button', { name: 'gymReporting.moreGyms' }));
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
   it('hands off to the web manage console and dismisses the kiosk hint', () => {

@@ -4,7 +4,7 @@
 // The '@' between the two pickers is deliberate — issue #4163 asked for
 // `Date  d Mon YYYY  @  HH:MM`. It is punctuation, not copy: the same glyph in
 // every locale, so it is a literal rather than a catalog key.
-import React from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import { ClimbedAtField } from '../logbook/ClimbedAtField';
@@ -15,7 +15,7 @@ const TIMESTAMP_SEPARATOR = '@';
 type TickDateRowProps = {
   value: Date;
   maximumDate: Date;
-  onChange: (next: Date) => void;
+  onChange: (next: Date, editedPart: 'date' | 'time') => void;
   /** Fired when the clamp pulled a future selection back to now. */
   onFutureAdjusted: () => void;
   dateAccessibilityLabel: string;
@@ -31,6 +31,8 @@ export const TickDateRow = React.memo(function TickDateRow({
   timeAccessibilityLabel,
 }: TickDateRowProps) {
   const { systemColors, spacing } = useTheme();
+  const onDateChange = useCallback((next: Date) => onChange(next, 'date'), [onChange]);
+  const onTimeChange = useCallback((next: Date) => onChange(next, 'time'), [onChange]);
 
   return (
     <View style={[styles.row, { gap: spacing[2] }]}>
@@ -39,7 +41,7 @@ export const TickDateRow = React.memo(function TickDateRow({
           value={value}
           mode="date"
           maximumDate={maximumDate}
-          onChange={onChange}
+          onChange={onDateChange}
           onFutureAdjusted={onFutureAdjusted}
           accessibilityLabel={dateAccessibilityLabel}
         />
@@ -63,7 +65,7 @@ export const TickDateRow = React.memo(function TickDateRow({
           value={value}
           mode="time"
           maximumDate={maximumDate}
-          onChange={onChange}
+          onChange={onTimeChange}
           onFutureAdjusted={onFutureAdjusted}
           accessibilityLabel={timeAccessibilityLabel}
         />
