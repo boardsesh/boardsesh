@@ -203,6 +203,115 @@ describe('board wall-device replay compatibility', () => {
   });
 });
 
+describe('board staff-action replay compatibility', () => {
+  const sprayImport = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
+  const fixture = (operationName: string, query: string, data: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName,
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query,
+    variables: {},
+    response: { data },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('answers false for both beside every recorded board, without mutating the recording', () => {
+    const legacy = 'query GetGymBoardsForSwitcher { gymBoards { uuid hasLeds litByWallDevice canEdit hideLocation } }';
+    const current =
+      'query GetGymBoardsForSwitcher { gymBoards { uuid hasLeds litByWallDevice canEdit canDelete canRemoveFromGym hideLocation } }';
+    const recorded = fixture('GetGymBoardsForSwitcher', legacy, {
+      gymBoards: [
+        { uuid: 'one', hasLeds: true, litByWallDevice: false, canEdit: true, hideLocation: false },
+        { uuid: 'two', hasLeds: false, litByWallDevice: false, canEdit: false, hideLocation: false },
+      ],
+    });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          gymBoards: [
+            {
+              uuid: 'one',
+              hasLeds: true,
+              litByWallDevice: false,
+              canEdit: true,
+              hideLocation: false,
+              canDelete: false,
+              canRemoveFromGym: false,
+            },
+            {
+              uuid: 'two',
+              hasLeds: false,
+              litByWallDevice: false,
+              canEdit: false,
+              hideLocation: false,
+              canDelete: false,
+              canRemoveFromGym: false,
+            },
+          ],
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('composes with the wall-device and sprayImport adapters', () => {
+    const legacy = 'query GetMyBoards { myBoards { boards { uuid boardType hasLeds canEdit isPinnedByMe boardId } } }';
+    const current = `query GetMyBoards { myBoards { boards { ${sprayImport} uuid boardType hasLeds litByWallDevice canEdit isPinnedByMe canDelete canRemoveFromGym boardId } } }`;
+    const recorded = fixture('GetMyBoards', legacy, {
+      myBoards: {
+        boards: [{ uuid: 'one', boardType: 'kilter', hasLeds: true, canEdit: true, isPinnedByMe: false, boardId: 7 }],
+      },
+    });
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          myBoards: {
+            boards: [
+              {
+                uuid: 'one',
+                boardType: 'kilter',
+                hasLeds: true,
+                litByWallDevice: false,
+                canEdit: true,
+                isPinnedByMe: false,
+                boardId: 7,
+                sprayImport: null,
+                canDelete: false,
+                canRemoveFromGym: false,
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it('refuses a recording that already holds either field, a lone or stray copy, or any other change', () => {
+    const legacy = 'query GetBoard { board { uuid canEdit isPinnedByMe } }';
+    const current = 'query GetBoard { board { uuid canEdit isPinnedByMe canDelete canRemoveFromGym } }';
+    const recordedWithField = fixture('GetBoard', legacy, {
+      board: { uuid: 'one', canEdit: true, isPinnedByMe: false, canDelete: true },
+    });
+    expect(replayCompatibleFixtureResponse(current, recordedWithField)).toBeNull();
+    const recorded = fixture('GetBoard', legacy, { board: { uuid: 'one', canEdit: true, isPinnedByMe: false } });
+    expect(replayCompatibleFixtureResponse(current, recorded)).not.toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace('uuid', 'uuid canDelete'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace(' canRemoveFromGym', ''), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace('uuid', 'uuid name'), recorded)).toBeNull();
+    const otherOperation = fixture('GetClimb', 'query GetClimb { climb { canEdit } }', { climb: { canEdit: true } });
+    expect(
+      replayCompatibleFixtureResponse(
+        'query GetClimb { climb { canEdit canDelete canRemoveFromGym } }',
+        otherOperation,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe('legacy manufacturer-board replay compatibility', () => {
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   const legacy = 'query GetBoard { board { uuid boardType } }';

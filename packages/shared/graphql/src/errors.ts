@@ -112,3 +112,23 @@ export function isSprayWallLedSaveRefused(error: unknown): boolean {
     ),
   );
 }
+
+/**
+ * A creator linking their board back to a gym whose staff took it off their
+ * listing. Not a retry: the staff have to put it back, so the client says that
+ * in the climber's language instead of the server's English.
+ */
+export function isBoardRemovedByGymError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_REMOVED_BY_GYM');
+}
+
+/**
+ * Staff removing a synced board (one listed from public board data) from their
+ * gym. The server refuses because the board would stay on the map as a loose
+ * pin; deleting it is the action that works, and the client says so.
+ */
+export function isSystemBoardDeleteInsteadError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SYSTEM_BOARD_DELETE_INSTEAD',
+  );
+}

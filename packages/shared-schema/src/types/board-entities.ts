@@ -62,7 +62,9 @@ export type UserBoard = {
   /**
    * Whether the viewer may delete this board: its owner, the owner/admin of its
    * linked gym on a synced (system-owned) board, or a global admin. Optional here
-   * (though `Boolean!` on the wire) for the same reason as `canEdit`.
+   * (though `Boolean!` on the wire) for the same reason as `canEdit`: an offline
+   * snapshot written before the field existed never carries it. Every document
+   * that selects BOARD_FIELDS or GYM_BOARD_FIELDS asks for it.
    */
   canDelete?: boolean;
   /**
