@@ -4637,6 +4637,8 @@ sitemap. Search, filter and pagination variants are `noindex, follow` and
 canonicalize to the clean directory. The `/spraywalls` setup page keeps its
 photo instructions; the `/boards` gallery instead says “Bring your own spray wall”
 and offers separate find and setup links.
+The [supported-board gallery guide](../www-refresh/boards-readability.md)
+documents its image layout and navigation.
 
 ### Opening a shared wall
 
