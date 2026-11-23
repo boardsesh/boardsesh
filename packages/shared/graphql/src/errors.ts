@@ -132,3 +132,12 @@ export function isSystemBoardDeleteInsteadError(error: unknown): boolean {
     (graphqlError) => graphqlError.extensions?.code === 'SYSTEM_BOARD_DELETE_INSTEAD',
   );
 }
+
+/**
+ * `resolveDirectoryReport` on a report that is already closed: someone else
+ * closed it, or the action that settles it (a delete, a removal) closed it on
+ * the server first. Either way the report is done, so callers treat it as success.
+ */
+export function isDirectoryReportClosedError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'REPORT_CLOSED');
+}
