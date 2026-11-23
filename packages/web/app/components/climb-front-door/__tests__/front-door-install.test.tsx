@@ -175,7 +175,8 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
     const handoff = page.querySelector('[data-cta="handoff"]');
 
     expect(handoff?.getAttribute('href')).toBe(`https://app.boardsesh.com${HANDOFF_PATHS[tree]}`);
-    expect(handoff?.getAttribute('aria-label')).toBe('frontDoor.cta.openInBrowserAria');
+    // No aria-label: the visible text at each width is the name (WCAG 2.5.3).
+    expect(handoff?.hasAttribute('aria-label')).toBe(false);
     expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowserMobile');
     expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowser');
   });
@@ -200,6 +201,13 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
     expect(code?.getAttribute('role')).toBe('img');
     expect(code?.getAttribute('aria-label')).toBe('frontDoor.qr.imageLabel');
     expect(page.body.textContent).toContain('frontDoor.qr.title');
+  });
+
+  it("gives the laptop's QR card store buttons their own link id", async () => {
+    const html = await renderClimbPage(tree);
+
+    expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-qr-card' })));
+    expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-qr-card' })));
   });
 
   it('ships no sticky install bar in the server HTML, only its end marker', async () => {

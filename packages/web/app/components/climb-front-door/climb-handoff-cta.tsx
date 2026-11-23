@@ -32,7 +32,11 @@ type ClimbHandoffTarget = {
 };
 
 type ClimbHandoffLinkProps = ClimbHandoffTarget & {
-  ariaLabel: string;
+  /**
+   * Leave it out when the visible text names the link well enough: an
+   * `aria-label` replaces that text, and must start with it (WCAG 2.5.3).
+   */
+  ariaLabel?: string;
   /** What the link shows. A server page can pass its own markup: the label spans, an icon. */
   children: React.ReactNode;
   /** `text` for a link that styles itself through `sx`; the list pages keep their filled or outlined button. */

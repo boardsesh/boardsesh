@@ -24,14 +24,19 @@
   overflow-x: clip;
 }
 
-/* Below md the sticky install bar (`sticky-install-bar.tsx`, 68px plus the
-   safe-area inset) can sit at the bottom of the screen. It leaves once the end
-   of this padding's content reaches it, and this space is what it leaves over:
-   empty, so the last line of the page is never under it. Reserved on every
-   phone, bar or not, so nothing moves when it appears. */
+/* The sticky install bar's height (`sticky-install-bar.tsx` reads it as its
+   min-height): 1px top border, 12px padding, a 44px row, 12px padding, then the
+   safe-area inset. Below md the bar can sit at the bottom of the screen. It
+   leaves once the end of this padding's content reaches it, and this space is
+   what it leaves over: empty, so the last line of the page is never under it.
+   Reserved on every phone, bar or not, so nothing moves when it appears. */
+.page {
+  --sticky-install-bar-height: calc(69px + env(safe-area-inset-bottom));
+}
+
 @media (max-width: 899.98px) {
   .page {
-    padding-bottom: calc(var(--spacing-4) + 68px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--spacing-4) + var(--sticky-install-bar-height));
   }
 }
 

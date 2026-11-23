@@ -1005,12 +1005,11 @@
     },
     "cta": {
       "getApp": "Get the free app",
-      "getAppAriaIos": "Get the free Boardsesh app on the App Store",
-      "getAppAriaAndroid": "Get the free Boardsesh app on Google Play",
+      "getAppAriaIos": "Get the free app on the App Store",
+      "getAppAriaAndroid": "Get the free app on Google Play",
       "getAppHelper": "Light this climb on your {{board}} and log the send.",
       "openInBrowser": "Open in your browser",
-      "openInBrowserMobile": "Or open it in your browser",
-      "openInBrowserAria": "Open {{climbName}} in the Boardsesh browser app"
+      "openInBrowserMobile": "Or open it in your browser"
     },
     "qr": {
       "title": "Scan to open this climb on your phone",
@@ -1020,7 +1019,9 @@
     "stickyBar": {
       "free": "Free",
       "cta": "Get the app",
-      "dismiss": "Hide this bar"
+      "dismiss": "Hide this bar",
+      "ctaAriaIos": "Get the app on the App Store",
+      "ctaAriaAndroid": "Get the app on Google Play"
     }
   },
   "spray": {

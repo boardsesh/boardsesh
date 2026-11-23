@@ -322,7 +322,7 @@ export default async function ClimbFrontDoor({
           free: t('frontDoor.stickyBar.free'),
           cta: t('frontDoor.stickyBar.cta'),
           dismiss: t('frontDoor.stickyBar.dismiss'),
-          ctaAria: { ios: t('frontDoor.cta.getAppAriaIos'), android: t('frontDoor.cta.getAppAriaAndroid') },
+          ctaAria: { ios: t('frontDoor.stickyBar.ctaAriaIos'), android: t('frontDoor.stickyBar.ctaAriaAndroid') },
         }}
       />
     </Box>

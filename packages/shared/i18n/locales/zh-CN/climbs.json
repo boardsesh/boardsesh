@@ -1005,12 +1005,11 @@
     },
     "cta": {
       "getApp": "免费下载应用",
-      "getAppAriaIos": "在 App Store 免费下载 Boardsesh 应用",
-      "getAppAriaAndroid": "在 Google Play 免费下载 Boardsesh 应用",
+      "getAppAriaIos": "免费下载应用（App Store）",
+      "getAppAriaAndroid": "免费下载应用（Google Play）",
       "getAppHelper": "在你的 {{board}} 上点亮这条线路，并记录完攀。",
       "openInBrowser": "在浏览器中打开",
-      "openInBrowserMobile": "或在浏览器中打开",
-      "openInBrowserAria": "在 Boardsesh 浏览器版中打开 {{climbName}}"
+      "openInBrowserMobile": "或在浏览器中打开"
     },
     "qr": {
       "title": "扫码在手机上打开这条线路",
@@ -1020,7 +1019,9 @@
     "stickyBar": {
       "free": "免费",
       "cta": "下载应用",
-      "dismiss": "隐藏此栏"
+      "dismiss": "隐藏此栏",
+      "ctaAriaIos": "下载应用（App Store）",
+      "ctaAriaAndroid": "下载应用（Google Play）"
     }
   },
   "spray": {

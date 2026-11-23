@@ -385,12 +385,31 @@ export type GymQrLanding = {
   medium: GymQrMedium;
 };
 
+/**
+ * The mediums that may land on a GYM page: a gym poster, and the kiosk and
+ * board codes that once pointed there. `desktop` is a climb page's own code and
+ * never names a gym, so `parseGymQrLanding` refuses it and `Gym QR Scanned`
+ * cannot carry it.
+ */
+export const GYM_PAGE_QR_MEDIUMS = ['poster', 'kiosk', 'board'] as const satisfies readonly GymQrMedium[];
+export type GymPageQrMedium = (typeof GYM_PAGE_QR_MEDIUMS)[number];
+
+export type GymPageQrLanding = {
+  medium: GymPageQrMedium;
+};
+
 function isGymQrMedium(candidate: string): candidate is GymQrMedium {
   return (GYM_QR_MEDIUMS as readonly string[]).includes(candidate);
 }
 
+function isGymPageQrMedium(medium: GymQrMedium): medium is GymPageQrMedium {
+  return (GYM_PAGE_QR_MEDIUMS as readonly GymQrMedium[]).includes(medium);
+}
+
 /**
- * Recognise a QR landing, or return `null`.
+ * Recognise a QR landing with any medium in the shared vocabulary, or return
+ * `null`. The landing pages narrow it to the mediums their codes print:
+ * `parseGymQrLanding`, `parseBoardQrLanding`, `parseClimbQrLanding`.
  *
  * Deliberately strict — this decides whether an acquisition event fires, so
  * every ambiguity resolves to "not a QR scan":
@@ -400,7 +419,7 @@ function isGymQrMedium(candidate: string): candidate is GymQrMedium {
  *    rejected outright rather than picking one, because a duplicated param is a
  *    hand-edited or crawler-mangled URL, not a scan.
  */
-export function parseGymQrLanding(searchParams: GymQrSearchParams): GymQrLanding | null {
+export function parseQrLanding(searchParams: GymQrSearchParams): GymQrLanding | null {
   // Own properties only. Next's searchParams is a plain object so this is not
   // reachable today, but the function gates an acquisition event and callers
   // will hand it whatever object they have; a `medium` inherited from a
@@ -412,6 +431,17 @@ export function parseGymQrLanding(searchParams: GymQrSearchParams): GymQrLanding
   if (typeof source !== 'string' || source !== GYM_QR_SRC_VALUE) return null;
   if (typeof medium !== 'string' || !isGymQrMedium(medium)) return null;
   return { medium };
+}
+
+/**
+ * Recognise a QR landing on a gym page, or return `null`: `parseQrLanding`'s
+ * strict rules, narrowed to `GYM_PAGE_QR_MEDIUMS`. `?src=qr&medium=desktop` on a
+ * gym page is a hand-edited link, not a scan of anything we made.
+ */
+export function parseGymQrLanding(searchParams: GymQrSearchParams): GymPageQrLanding | null {
+  const landing = parseQrLanding(searchParams);
+  if (!landing || !isGymPageQrMedium(landing.medium)) return null;
+  return { medium: landing.medium };
 }
 
 /**

@@ -38,6 +38,18 @@ describe('PhoneQrCard', () => {
     expect(code?.querySelector('path[fill="#ffffff"]')).not.toBeNull();
   });
 
+  it('is big enough to scan off a laptop screen, with the full 4-module quiet zone', () => {
+    const code = new DOMParser().parseFromString(renderCard(), 'text/html').querySelector('svg[role="img"]');
+    const side = Number(code?.getAttribute('viewBox')?.split(' ')[2]);
+    const modules = side - 2 * 4;
+
+    expect(code?.getAttribute('width')).toBe('148');
+    // A QR symbol is 17 + 4 × version modules wide; anything else means the margin is not 4.
+    expect((modules - 17) % 4).toBe(0);
+    // Level L keeps a climb URL at version 7 or below: at least 2.8 CSS px a module.
+    expect(148 / side).toBeGreaterThanOrEqual(2.75);
+  });
+
   it('puts both stores beside it, untagged, so the cached HTML is the same for everyone', () => {
     const html = renderCard();
 

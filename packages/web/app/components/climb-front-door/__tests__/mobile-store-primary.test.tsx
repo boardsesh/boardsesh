@@ -23,7 +23,7 @@ const MobileStorePrimary = (await import('../mobile-store-primary')).default;
 const LABELS = {
   install: 'Get the free app',
   update: 'Update the app',
-  installAria: { ios: 'Get it on the App Store', android: 'Get it on Google Play' },
+  installAria: { ios: 'Get the free app on the App Store', android: 'Get the free app on Google Play' },
 };
 
 const ORIGINAL_UA = navigator.userAgent;
@@ -77,7 +77,7 @@ describe('MobileStorePrimary on the server', () => {
     expect(html).toContain(`href="${buildStoreUrl('android', { placement: 'climb-view' }).replaceAll('&', '&amp;')}"`);
     expect(html).toContain('data-store-link="ios"');
     expect(html).toContain('data-store-link="android"');
-    expect(html.match(/Get the free app/g)).toHaveLength(2);
+    expect(html.match(/>Get the free app</g)).toHaveLength(2);
   });
 
   it('never carries the scanned medium in the server HTML', () => {
@@ -110,11 +110,11 @@ describe('MobileStorePrimary after mount', () => {
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('android'));
 
     expect(wrapper().querySelector('[data-store-link="ios"]')?.getAttribute('aria-label')).toBe(
-      'Get it on the App Store',
+      'Get the free app on the App Store',
     );
     // Only the chosen store is visible: the other one is `display: none` in the same cell.
     expect(screen.getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'Get it on Google Play',
+      'Get the free app on Google Play',
     ]);
   });
 
@@ -123,7 +123,7 @@ describe('MobileStorePrimary after mount', () => {
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('android'));
 
-    fireEvent.click(screen.getByRole('link', { name: 'Get it on Google Play' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Get the free app on Google Play' }));
 
     expect(track).toHaveBeenCalledWith('App Install Click', {
       platform: 'android',
@@ -138,7 +138,7 @@ describe('MobileStorePrimary after mount', () => {
     window.history.replaceState(null, '', '/b/the-kilter/40/view/abc?src=qr&medium=desktop');
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} qrLanding="climb" />);
 
-    const appStoreLink = screen.getByRole('link', { name: 'Get it on the App Store' });
+    const appStoreLink = screen.getByRole('link', { name: 'Get the free app on the App Store' });
     await waitFor(() =>
       expect(appStoreLink.getAttribute('href')).toBe(
         buildStoreUrl('ios', { placement: 'climb-view', qrMedium: 'desktop' }),
@@ -160,7 +160,7 @@ describe('MobileStorePrimary after mount', () => {
     window.history.replaceState(null, '', '/b/the-kilter/40/view/abc?utm_source=instagram&utm_medium=social');
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
 
-    const playLink = screen.getByRole('link', { name: 'Get it on Google Play' });
+    const playLink = screen.getByRole('link', { name: 'Get the free app on Google Play' });
     await waitFor(() => expect(playLink.getAttribute('href')).toContain('instagram'));
   });
 

@@ -2,10 +2,11 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
-import { createRegionDefaultConsent, type ConsentRecord } from '@boardsesh/consent';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 import { __resetQrLandingForTests } from '@/app/lib/qr-landing';
 import { buildStoreUrl } from '@/app/lib/store-links';
+import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
+import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 
 const track = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track }));
@@ -17,11 +18,11 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 }));
 
 const consentState = vi.hoisted(() => ({
-  record: null as ConsentRecord | null,
+  promptShowing: false,
   dialogOpen: false,
 }));
 vi.mock('@/app/components/consent/consent-provider', () => ({
-  useConsent: () => ({ snapshot: { record: consentState.record }, dialogOpen: consentState.dialogOpen }),
+  useConsent: () => ({ promptShowing: consentState.promptShowing, dialogOpen: consentState.dialogOpen }),
 }));
 
 const barModule = await import('../sticky-install-bar');
@@ -32,7 +33,7 @@ const LABELS = {
   free: 'Free',
   cta: 'Get the app',
   dismiss: 'Hide this bar',
-  ctaAria: { ios: 'Get it on the App Store', android: 'Get it on Google Play' },
+  ctaAria: { ios: 'Get the app on the App Store', android: 'Get the app on Google Play' },
 };
 
 const ORIGINAL_UA = navigator.userAgent;
@@ -133,7 +134,7 @@ beforeEach(() => {
   FakeIntersectionObserver.instances = [];
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   track.mockReset();
-  consentState.record = createRegionDefaultConsent('web');
+  consentState.promptShowing = false;
   consentState.dialogOpen = false;
   __resetStickyInstallBarForTests();
   __resetSessionInboundCampaignForTests();
@@ -188,16 +189,50 @@ describe('StickyInstallBar by browser', () => {
   });
 });
 
-describe('StickyInstallBar and the consent card', () => {
-  it('stays down while consent has no answer, and comes up once it does', async () => {
+describe('StickyInstallBar on a page cached for another browser', () => {
+  // The root layout seeds `useInstallPlatform` from the user agent of the request
+  // that rendered the page; the edge hands that page to everyone after it.
+  it('never offers a store when the cache was filled by Android and Safari on an iPhone reads it', async () => {
+    setUserAgent(IPHONE_SAFARI);
+    render(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(ANDROID_CHROME)}>
+        <StickyInstallBar labels={LABELS} markUrl="/m.webp" />
+      </MarketingPreviewProvider>,
+    );
+
+    await act(async () => {});
+    expect(bar()).toBeNull();
+    // Not even for one commit: no observer was ever set up for an Android bar.
+    expect(FakeIntersectionObserver.instances).toHaveLength(0);
+  });
+
+  it('offers Google Play on Android when the cache was filled by an iPhone', async () => {
     setUserAgent(ANDROID_CHROME);
-    consentState.record = null;
+    render(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(IPHONE_SAFARI)}>
+        <main>
+          <div data-sticky-install-hide="">store button</div>
+          <StickyInstallBar labels={LABELS} markUrl="/m.webp" />
+        </main>
+      </MarketingPreviewProvider>,
+    );
+    await waitForBar();
+    scrollPastHero();
+
+    expect(screen.getByRole('link', { name: LABELS.ctaAria.android })).toBeTruthy();
+  });
+});
+
+describe('StickyInstallBar and the consent card', () => {
+  it('stays down while the consent card is up (or may still come up), and comes up once it is gone', async () => {
+    setUserAgent(ANDROID_CHROME);
+    consentState.promptShowing = true;
     const { rerender } = renderPage();
     const stickyBar = await waitForBar();
     scrollPastHero();
     expect(stickyBar.getAttribute('data-open')).toBe('false');
 
-    consentState.record = createRegionDefaultConsent('web');
+    consentState.promptShowing = false;
     rerender(
       <main>
         <div data-cta="mobile-install" data-sticky-install-hide="">

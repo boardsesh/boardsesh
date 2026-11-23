@@ -11,7 +11,7 @@
 //    already stamps the page URL on every event, and a property naming the
 //    climb would only make a second, unscrubbed copy of it.
 //  * The medium vocabulary is the gym funnel's (`GYM_QR_MEDIUMS`), parsed by the
-//    same strict `parseGymQrLanding`, narrowed to the one medium a climb page
+//    same strict `parseQrLanding`, narrowed to the one medium a climb page
 //    prints (`CLIMB_QR_MEDIUMS`). A poster's or a board code's medium on a climb
 //    page is a hand-edited link, not a scan of anything we made.
 //
@@ -20,7 +20,7 @@
 
 import { boardTypeProperty, type BoardTypeProperty } from './board-type-property';
 import { SHARED_EVENTS } from './events';
-import { parseGymQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
+import { parseQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
 
 /** The medium a climb page's code says: `desktop`, the code beside the browser button on a laptop. */
 export const CLIMB_QR_MEDIUMS = ['desktop'] as const satisfies readonly GymQrMedium[];
@@ -33,11 +33,11 @@ function isClimbQrMedium(medium: GymQrMedium): medium is ClimbQrMedium {
 }
 
 /**
- * Recognise a scan of a CLIMB code, or return `null`. `parseGymQrLanding`'s
+ * Recognise a scan of a CLIMB code, or return `null`. `parseQrLanding`'s
  * strict rules, then one more: the medium must be one a climb page prints.
  */
 export function parseClimbQrLanding(searchParams: GymQrSearchParams): ClimbQrLanding | null {
-  const landing = parseGymQrLanding(searchParams);
+  const landing = parseQrLanding(searchParams);
   if (!landing || !isClimbQrMedium(landing.medium)) return null;
   return { medium: landing.medium };
 }

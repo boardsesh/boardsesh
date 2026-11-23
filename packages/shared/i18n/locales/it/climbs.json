@@ -1005,12 +1005,11 @@
     },
     "cta": {
       "getApp": "Scarica l’app gratis",
-      "getAppAriaIos": "Scarica gratis l’app Boardsesh dall’App Store",
-      "getAppAriaAndroid": "Scarica gratis l’app Boardsesh da Google Play",
+      "getAppAriaIos": "Scarica l’app gratis dall’App Store",
+      "getAppAriaAndroid": "Scarica l’app gratis da Google Play",
       "getAppHelper": "Illumina questo blocco sul tuo {{board}} e registra la ripetizione.",
       "openInBrowser": "Apri nel browser",
-      "openInBrowserMobile": "Oppure aprilo nel browser",
-      "openInBrowserAria": "Apri {{climbName}} nell’app Boardsesh per browser"
+      "openInBrowserMobile": "Oppure aprilo nel browser"
     },
     "qr": {
       "title": "Inquadra il codice per aprire questo blocco sul telefono",
@@ -1020,7 +1019,9 @@
     "stickyBar": {
       "free": "Gratis",
       "cta": "Scarica l’app",
-      "dismiss": "Nascondi questa barra"
+      "dismiss": "Nascondi questa barra",
+      "ctaAriaIos": "Scarica l’app dall’App Store",
+      "ctaAriaAndroid": "Scarica l’app da Google Play"
     }
   },
   "spray": {

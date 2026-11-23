@@ -6,12 +6,12 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
-import { needsPrompt } from '@boardsesh/consent';
 import { useConsent } from '@/app/components/consent/consent-provider';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';
-import type { HeroInstallStore, InstallPlatform } from '@/app/lib/hero-install';
+import type { HeroInstallStore } from '@/app/lib/hero-install';
+import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { smartAppBannerShows } from '@/app/lib/smart-app-banner';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
@@ -37,13 +37,6 @@ type StickyInstallBarProps = {
   qrLanding?: QrLandingKind;
 };
 
-/**
- * The bar's height before the safe-area inset: 12px padding, a 44px row, 12px
- * padding. `<main>` reserves it below md (`climb-front-door.module.css`), so
- * keep the two in step.
- */
-const STICKY_INSTALL_BAR_HEIGHT = 68;
-
 // Dismissal lasts for this document, across client-side visits to other climbs,
 // and is never written anywhere: a reload brings the bar back.
 let dismissedThisVisit = false;
@@ -54,17 +47,22 @@ export function __resetStickyInstallBarForTests(): void {
 }
 
 /**
- * Which store the bar offers on this phone, or null where it stays away.
+ * Which store the bar offers in this browser, or null where it stays away.
  *
  * Android gets it. iOS gets it only where Safari's Smart App Banner does not
  * show (Chrome, Firefox, in-app browsers): the banner is already Safari's own
- * install strip, and two would be one too many. Desktops and the retired
- * native app get nothing.
+ * install strip, and two would be one too many. Desktops get nothing.
+ *
+ * Reads `navigator` itself, never `useInstallPlatform`'s first value: that one
+ * starts from the user agent of the request that rendered the page, and a
+ * cached climb page was rendered for whoever asked first.
  */
-function stickyBarStore(platform: InstallPlatform): HeroInstallStore | null {
-  if (platform === 'android-web') return 'android';
-  if (platform === 'other-web' && !smartAppBannerShows(navigator.userAgent, navigator.maxTouchPoints)) return 'ios';
-  return null;
+function stickyBarStoreForThisBrowser(): HeroInstallStore | null {
+  const { userAgent, maxTouchPoints } = navigator;
+  const browser = classifyMarketingBrowser(userAgent, maxTouchPoints);
+  if (browser.desktop) return null;
+  if (browser.platform === 'android') return 'android';
+  return smartAppBannerShows(userAgent, maxTouchPoints) ? null : 'ios';
 }
 
 const barSx = {
@@ -76,7 +74,9 @@ const barSx = {
   display: { xs: 'flex', md: 'none' },
   alignItems: 'center',
   gap: `${themeTokens.spacing[3]}px`,
-  minHeight: STICKY_INSTALL_BAR_HEIGHT,
+  // Set on the climb page's `<main>` (`climb-front-door.module.css`), which
+  // reserves the same height below md: border, padding, row and safe-area inset.
+  minHeight: 'var(--sticky-install-bar-height)',
   boxSizing: 'border-box',
   paddingTop: `${themeTokens.spacing[3]}px`,
   paddingBottom: `calc(${themeTokens.spacing[3]}px + env(safe-area-inset-bottom))`,
@@ -134,12 +134,11 @@ const endMarkerSx = { height: 0 };
  *
  * It stays down while:
  *
- *  - consent has no answer yet (the consent card is up, or the region lookup is
- *    still out), or the privacy dialog is open: the card sits at the bottom of
- *    the screen, and the reader's answer comes first. Outside the prompt
- *    regions the stored region default answers within a moment of load; a
- *    browser sending Global Privacy Control there stores no answer, so it never
- *    gets the bar, which is the quieter mistake;
+ *  - the consent card is up, or may still come up because the region lookup
+ *    is out (`promptShowing`), or the privacy dialog is open: the card sits at
+ *    the bottom of the screen, and the reader's answer comes first. A browser
+ *    that never gets the card (outside the prompt regions, Global Privacy
+ *    Control included) gets the bar once the lookup has answered;
  *  - any of the page's store buttons (`data-sticky-install-hide`) is on screen,
  *    or none has been scrolled past yet;
  *  - the end of `<main>` has reached the bar. Below md `<main>` carries a bottom
@@ -150,7 +149,7 @@ const endMarkerSx = { height: 0 };
  */
 export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyInstallBarProps) {
   const { platform } = useInstallPlatform();
-  const { snapshot, dialogOpen } = useConsent();
+  const { promptShowing, dialogOpen } = useConsent();
   const inboundCampaign = useInboundCampaign();
   const qrMedium = useQrLandingMedium(qrLanding ?? null);
   const endMarkerRef = useRef<HTMLDivElement>(null);
@@ -160,10 +159,10 @@ export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyI
   const [reachedEnd, setReachedEnd] = useState(false);
   const [dismissed, setDismissed] = useState(dismissedThisVisit);
 
-  // After mount only: the seed `useInstallPlatform` starts from is the request's
-  // user agent, which a shared page must not trust.
+  // After mount only, from the browser itself. `platform` is read for one thing:
+  // the retired native app, which only `useInstallPlatform` can recognise.
   useEffect(() => {
-    setStore(stickyBarStore(platform));
+    setStore(platform === 'native' ? null : stickyBarStoreForThisBrowser());
   }, [platform]);
 
   useEffect(() => {
@@ -201,8 +200,8 @@ export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyI
     };
   }, [store, dismissed]);
 
-  const consentPending = needsPrompt(snapshot.record) || dialogOpen;
-  const open = Boolean(store) && !dismissed && !consentPending && scrolledPastButtons && !reachedEnd;
+  const consentInTheWay = promptShowing || dialogOpen;
+  const open = Boolean(store) && !dismissed && !consentInTheWay && scrolledPastButtons && !reachedEnd;
 
   return (
     <>

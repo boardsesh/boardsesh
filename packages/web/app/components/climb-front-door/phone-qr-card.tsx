@@ -12,8 +12,15 @@ import { themeTokens } from '@/app/theme/theme-config';
 // SVG fills, like `PosterQr`, so no stylesheet can change them.
 const QR_FOREGROUND = '#000000';
 const QR_BACKGROUND = '#ffffff';
-/** Rendered size of the code, quiet zone included. */
-const QR_SIZE = 112;
+/**
+ * Rendered size of the code, quiet zone included. A climb URL (100 to 150
+ * characters with its slug and the `src`/`medium` pair) at level L is a 37 to
+ * 45 module grid; with the 4-module quiet zone that is 2.8 to 3.4 CSS px a
+ * module at 148px, which a phone camera reads off a laptop screen.
+ */
+const QR_SIZE = 148;
+/** The quiet zone the QR spec asks for: 4 modules of white on every side, inside the code's own square. */
+const QR_QUIET_ZONE_MODULES = 4;
 
 type PhoneQrCardProps = {
   /** The absolute URL the code opens, with its `?src=qr&medium=…` pair. Build it with `climbQrUrl` and friends. */
@@ -98,10 +105,10 @@ export default function PhoneQrCard({
         <QRCodeSVG
           value={url}
           size={QR_SIZE}
-          // M (15%) like the kiosk's code: a clean screen, and a smaller grid
-          // with bigger modules than Q for the same URL.
-          level="M"
-          marginSize={2}
+          // L (7%): a screen is clean and flat, so spend the room on bigger
+          // modules instead of error correction.
+          level="L"
+          marginSize={QR_QUIET_ZONE_MODULES}
           fgColor={QR_FOREGROUND}
           bgColor={QR_BACKGROUND}
           role="img"

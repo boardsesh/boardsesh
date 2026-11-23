@@ -46,10 +46,23 @@ const helperSx = {
   textAlign: 'center',
 };
 
+const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large', glow: true });
+
+/**
+ * The hover of a text button that looks filled. The theme gives every button
+ * that is not `contained` a violet wash on hover (`mui-theme.ts`:
+ * `:not(:disabled):not(.MuiButton-contained):hover`, and `.MuiButton-colorPrimary`
+ * inside it for the text colour, specificity 0,5,0). This selector is 0,6,0, so
+ * the fill wins whatever order the two rules land in.
+ */
+const FILLED_TEXT_BUTTON_HOVER = '&.MuiButton-root.MuiButton-text.MuiButton-colorPrimary:not(:disabled):hover';
+
 /**
  * One anchor, two looks. Below md it is the quiet way out under the store
- * button: a centred text link. From md it is the filled button, the page's one
- * primary action on a laptop, where the browser app works.
+ * button: a centred text link, with the theme's text-button hover. From md it
+ * is the filled button, the page's one primary action on a laptop, where the
+ * browser app works. It stays `variant="text"` at every width, so the store
+ * button is the only `contained` one on the page.
  */
 const handoffSx = {
   justifySelf: { xs: 'center', md: 'start' },
@@ -59,7 +72,10 @@ const handoffSx = {
   fontWeight: themeTokens.typography.fontWeight.semibold,
   fontSize: themeTokens.typography.fontSize.base,
   color: 'var(--color-primary)',
-  [DESKTOP_MEDIA]: brandCtaSx({ size: 'large', glow: true }),
+  [DESKTOP_MEDIA]: {
+    ...filledSx,
+    [FILLED_TEXT_BUTTON_HOVER]: { ...filledHoverSx, color: 'var(--color-on-primary)' },
+  },
 };
 
 const mobileOnlySx = { display: { xs: 'inline', md: 'none' } };
@@ -119,7 +135,6 @@ export default async function ClimbHeroCta({
 
       <ClimbHandoffLink
         pathname={handoffPath}
-        ariaLabel={t('frontDoor.cta.openInBrowserAria', { climbName })}
         surface="climb_front_door"
         tree={tree}
         boardName={boardName}
@@ -147,7 +162,7 @@ export default async function ClimbHeroCta({
           title={t('frontDoor.qr.title')}
           body={t('frontDoor.qr.body')}
           imageLabel={t('frontDoor.qr.imageLabel', { climbName })}
-          placement="climb-view"
+          placement="climb-qr-card"
           storeLabels={storeLabels}
           qrLanding="climb"
         />

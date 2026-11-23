@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   GYM_FUNNEL_EVENTS,
+  GYM_PAGE_QR_MEDIUMS,
   GYM_QR_MEDIUMS,
   GYM_QR_MEDIUM_PARAM,
   GYM_QR_SRC_PARAM,
@@ -14,6 +15,7 @@ import {
   gymPageCtaClicked,
   gymQrScanned,
   parseGymQrLanding,
+  parseQrLanding,
   stripGymQrParams,
 } from '../gym-funnel';
 
@@ -206,12 +208,17 @@ describe('gymDirectorySearched', () => {
 });
 
 describe('parseGymQrLanding', () => {
-  it('recognises every known medium', () => {
-    for (const medium of GYM_QR_MEDIUMS) {
+  it('recognises every medium a gym page can be reached through', () => {
+    for (const medium of GYM_PAGE_QR_MEDIUMS) {
       expect(parseGymQrLanding({ [GYM_QR_SRC_PARAM]: GYM_QR_SRC_VALUE, [GYM_QR_MEDIUM_PARAM]: medium })).toEqual({
         medium,
       });
     }
+  });
+
+  it("refuses a climb page's desktop code, so it can never fire Gym QR Scanned", () => {
+    expect(parseQrLanding({ src: 'qr', medium: 'desktop' })).toEqual({ medium: 'desktop' });
+    expect(parseGymQrLanding({ src: 'qr', medium: 'desktop' })).toBeNull();
   });
 
   it('ignores other params on the URL', () => {
@@ -300,11 +307,11 @@ describe('buildGymQrHref', () => {
     expect(parseGymQrLanding(Object.fromEntries(new URLSearchParams(query).entries()))).toEqual({ medium: 'board' });
   });
 
-  it('round-trips through parseGymQrLanding for every medium', () => {
+  it('round-trips through parseQrLanding for every medium', () => {
     for (const medium of GYM_QR_MEDIUMS) {
       const href = buildGymQrHref('/b/some-board', medium);
       const search = new URLSearchParams(href.slice(href.indexOf('?')));
-      expect(parseGymQrLanding(Object.fromEntries(search.entries()))).toEqual({ medium });
+      expect(parseQrLanding(Object.fromEntries(search.entries()))).toEqual({ medium });
     }
   });
 });

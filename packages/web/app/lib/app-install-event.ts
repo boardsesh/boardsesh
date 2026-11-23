@@ -33,7 +33,10 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *    placement that also sets `gymSlug`.
  *  - `help`: the store pair on /help and on its seven sub-pages. It sent no
  *    placement before #6027.
- *  - `climb-view`: a climb page, in both route trees (`ClimbFrontDoor`).
+ *  - `climb-view`: a climb page, in both route trees (`ClimbFrontDoor`): the
+ *    phone's "Get the free app" button.
+ *  - `climb-qr-card`: the store pair in the QR card a climb page shows from md
+ *    (`PhoneQrCard`), so a laptop's store click reads apart from a phone's.
  *  - `climb-list`: a board's climb list (`StaticListFrontDoor`).
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
@@ -84,6 +87,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'support',
   'run-a-wall',
   'auth-login',
+  'climb-qr-card',
 ] as const;
 
 /**

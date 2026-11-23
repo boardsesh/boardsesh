@@ -1005,12 +1005,11 @@
     },
     "cta": {
       "getApp": "Hol dir die kostenlose App",
-      "getAppAriaIos": "Die kostenlose Boardsesh-App im App Store holen",
-      "getAppAriaAndroid": "Die kostenlose Boardsesh-App bei Google Play holen",
+      "getAppAriaIos": "Hol dir die kostenlose App im App Store",
+      "getAppAriaAndroid": "Hol dir die kostenlose App bei Google Play",
       "getAppHelper": "Beleuchte diesen Boulder an deinem {{board}} und trag die Begehung ein.",
       "openInBrowser": "Im Browser öffnen",
-      "openInBrowserMobile": "Oder im Browser öffnen",
-      "openInBrowserAria": "{{climbName}} in der Boardsesh-Browser-App öffnen"
+      "openInBrowserMobile": "Oder im Browser öffnen"
     },
     "qr": {
       "title": "Scanne den Code, um diesen Boulder auf deinem Handy zu öffnen",
@@ -1020,7 +1019,9 @@
     "stickyBar": {
       "free": "Kostenlos",
       "cta": "App holen",
-      "dismiss": "Leiste ausblenden"
+      "dismiss": "Leiste ausblenden",
+      "ctaAriaIos": "App holen im App Store",
+      "ctaAriaAndroid": "App holen bei Google Play"
     }
   },
   "spray": {

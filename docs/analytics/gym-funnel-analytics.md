@@ -74,7 +74,7 @@ no mobile counterpart. They live in their own module.
 | `viewerState`  | `signed-in`, `signed-out` — only the gym page can fire `signed-out`, see below           |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
-| `medium`       | `poster`, `kiosk`, `board`, `desktop` — only `poster` can fire today, see below          |
+| `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
 | `gymSlug`      | The slug of the gym page the scan landed on                                              |
 | `cta`          | `follow`, `kiosk`, `website`, `report-duplicate`                                         |
 | `tab`          | `overview`, `kiosks`, `insights`, `branding`, `profile`, `boards`, `members`, `comments` |
@@ -174,12 +174,18 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
   **pre-existing `src` or `medium`** (`/gym/x?src=email` → `?src=email&src=qr`,
   which Next surfaces as a `string[]` that the parser then rejects) is dropped so
   ours wins. Every other param is preserved.
-- `parseGymQrLanding(searchParams)` returns `{ medium }` or `null`. It is
+- `parseQrLanding(searchParams)` returns `{ medium }` or `null`. It is
   deliberately strict, because it decides whether an acquisition event fires:
   `src` must equal `'qr'` exactly (no trimming, no case folding), `medium` must
   be a known member, and an array-valued `src` or `medium`
   (`?medium=kiosk&medium=poster`) is rejected outright rather than picking one —
   a duplicated param is a hand-edited or crawler-mangled URL, not a scan.
+- Each landing page narrows it to the mediums its codes print:
+  `parseGymQrLanding` to `GYM_PAGE_QR_MEDIUMS` (`poster`, `kiosk`, `board`; a
+  climb page's `desktop` code never names a gym, so it can never fire
+  `Gym QR Scanned`), `parseBoardQrLanding` to `kiosk` and `board`, and
+  `parseClimbQrLanding` to `desktop`. `gymQrAttributionQuery`, which carries the
+  pair through the gym and `/b/{slug}` redirects, uses the gym parser.
 - `stripGymQrParams(search)` drops the two params and keeps the rest, so the
   landing surface can rewrite the URL after firing. Without that rewrite, a
   shared or bookmarked link re-attributes someone else's visit to a poster. It
@@ -332,11 +338,14 @@ which reads no pair today, so those scans count nothing. Read `Climb QR Scanned`
 as "a laptop reader sent the climb to a phone that needed the app", and read
 its installs against it.
 
-After a scan the climb page's store buttons (the phone's "Get the free app", the
-sticky install bar, and the QR card's own pair) add the medium: the link id
-becomes `climb-view.desktop` or `sticky-bar.desktop`, `utm_medium` becomes
-`qr`, and `App Install Click` carries `qrMedium: 'desktop'`. The hook is
-`useQrLandingMedium('climb')`.
+After a scan the climb page's store buttons (the phone's "Get the free app" and
+the sticky install bar) add the medium: the link id becomes `climb-view.desktop`
+or `sticky-bar.desktop`, `utm_medium` becomes `qr`, and `App Install Click`
+carries `qrMedium: 'desktop'`. The hook is `useQrLandingMedium('climb')`.
+
+The QR card's own App Store and Google Play buttons are a laptop's store
+clicks, so they carry their own placement and link id, `climb-qr-card`, apart
+from the phone's `climb-view`.
 
 ### A scan only counts if the page loads: iOS and the association file
 
