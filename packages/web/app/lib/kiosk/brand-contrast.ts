@@ -7,19 +7,20 @@
 // until it reads. Runs in server components (no DOM, no React).
 
 import { contrastRatio, readableTextColor } from '@boardsesh/board-constants';
+import { materialSurfaces } from '@boardsesh/velvet-tokens';
 
 /**
  * The kiosk's dark surface. Mirrors the dark-mode `--semantic-background`
  * token in `app/components/index.css` — kept as a literal here because the
  * contrast math needs a concrete hex at render time, not a CSS var reference.
  */
-export const KIOSK_DARK_SURFACE = '#110a20';
+export const KIOSK_DARK_SURFACE: string = materialSurfaces.dark.background;
 
 /**
- * Accent when the gym set no brand colours (or only invalid ones): the cool
- * near-white brand-primary from the dark theme (`--bs-text-brand-primary`).
+ * Accent when the gym set no brand colours (or only invalid ones): the dark
+ * theme label colour (`--neutral-900`, Graphite #EDEDED).
  */
-export const KIOSK_DEFAULT_ACCENT = '#f5f2fb';
+export const KIOSK_DEFAULT_ACCENT: string = materialSurfaces.dark.label;
 
 /**
  * WCAG-ish floor for the accent against the dark surface. 3:1 is the
