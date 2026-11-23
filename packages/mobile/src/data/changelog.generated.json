@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-11-23T14:11:46.660Z",
+  "generatedAt": "2026-11-23T16:26:28.397Z",
   "entries": [
+    {
+      "prNumber": 8057,
+      "category": "fixed",
+      "title": "Browse climbs straight from each board layout.",
+      "mergedAt": "2026-11-23T16:21:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8057",
+      "body": "Find more climbs around your grade when shared-hold matches run out."
+    },
+    {
+      "prNumber": 8076,
+      "category": "fixed",
+      "title": "Open spray-wall climbs from beta links without hitting a missing page.",
+      "mergedAt": "2026-11-23T15:57:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8076"
+    },
     {
       "prNumber": 7839,
       "category": "fixed",
