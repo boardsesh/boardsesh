@@ -123,7 +123,7 @@ export default function GymOwnerPrompts({
               '&:hover': { bgcolor: 'action.hover' },
             }}
           >
-            <Box sx={{ color: 'primary.main', display: 'flex' }}>{promptIcon(key)}</Box>
+            <Box sx={{ color: 'var(--neutral-500)', display: 'flex' }}>{promptIcon(key)}</Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
                 {promptTitle(t, key)}
@@ -132,7 +132,7 @@ export default function GymOwnerPrompts({
                 {promptBody(t, key)}
               </Typography>
             </Box>
-            <ArrowForwardOutlined sx={{ fontSize: 18, color: 'primary.main' }} />
+            <ArrowForwardOutlined sx={{ fontSize: 18, color: 'var(--neutral-500)' }} />
           </MuiLink>
         </Card>
       ))}

@@ -136,7 +136,7 @@ export default function FeedbackConversation({
             <Typography color="text.secondary">{t('feedback.conversation.empty')}</Typography>
           )}
           {messages.map((message) => (
-            <Box key={message.id} sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+            <Box key={message.id} sx={{ p: 2, bgcolor: 'var(--semantic-fill-subtle)', borderRadius: 1 }}>
               <Typography variant="caption" color="text.secondary">
                 {message.authorRole === 'staff'
                   ? t('feedback.conversation.staff')

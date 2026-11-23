@@ -2,7 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import SocialLoginButtons from '../social-login-buttons';
+import SocialLoginButtons, { APPLE_BUTTON_SX } from '../social-login-buttons';
 
 const { signIn } = vi.hoisted(() => ({ signIn: vi.fn() }));
 vi.mock('@/app/lib/auth/web-session-events', () => ({ signInWithSessionIntent: signIn }));
@@ -82,5 +82,18 @@ describe('supported social sign-in buttons', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
     await screen.findByText(tFromCatalog('auth', 'nativeStart.oauthError'));
     expect(signIn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('the Apple button keeps its label on hover', () => {
+  it("restates the theme's non-contained hover selector with a light ground under the dark ink", () => {
+    // The theme's 8% state layer, at this same specificity, would otherwise replace
+    // the light fill and leave the dark label on the dark page.
+    expect(APPLE_BUTTON_SX['&:not(:disabled):not(.MuiButton-contained):hover']).toEqual({
+      backgroundColor: 'var(--neutral-500)',
+      color: 'var(--semantic-surface)',
+      borderColor: 'var(--neutral-500)',
+    });
+    expect(APPLE_BUTTON_SX.color).toBe('var(--semantic-surface)');
   });
 });

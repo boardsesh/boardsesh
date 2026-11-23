@@ -26,7 +26,6 @@
   margin: 0;
   padding: var(--spacing-6);
   border-radius: var(--border-radius-xl);
-  background: radial-gradient(ellipse at center, var(--semantic-selected), transparent 75%);
 }
 
 .preview .caption {

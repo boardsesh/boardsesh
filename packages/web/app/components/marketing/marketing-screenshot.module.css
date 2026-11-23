@@ -1,7 +1,9 @@
+/* --capture-frame, not --separator: a shade brighter, so an iOS capture's black
+   screen never reads as a hole in the card it sits on. */
 .frame {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--separator);
+  border: 1px solid var(--capture-frame);
   border-radius: var(--border-radius-xl);
   background: var(--semantic-surface);
 }
@@ -53,6 +55,7 @@
 }
 
 .switch button {
+  gap: var(--spacing-1);
   min-height: 44px;
   padding-inline: var(--spacing-4);
   text-transform: none;

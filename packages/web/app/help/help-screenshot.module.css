@@ -1,5 +1,5 @@
 /* A capture of the app, framed as a phone on the reading surface: a rounded
-   edge, a hairline in --read-line and a soft drop, so near-black app UI reads
+   edge, a hairline in --neutral-200 and a soft drop, so near-black app UI reads
    as a screen and not as a hole in the grey band. `.bezel` and `.screen` are
    shared with help-clip.tsx so a clip and a still are the same object. */
 .figure {
@@ -12,9 +12,9 @@
 .bezel {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: 36px;
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
   box-shadow: 0 30px 80px var(--overlay-light);
 }
 
@@ -28,10 +28,10 @@
   height: auto;
 }
 
-/* --read-text-muted on --read-surface: 8.0:1. */
+/* --neutral-500 on --semantic-background: 8.0:1. */
 .caption.caption {
   margin: var(--spacing-4) var(--spacing-1) 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: 15px;
   line-height: 1.5;
 }

@@ -4,9 +4,12 @@ import {
   blendOpaque,
   brandColors,
   brandColorsDark,
+  materialSurfaceContainers,
   materialSurfaces,
+  materialTonalContainers,
   withAlpha,
   type BrandColors,
+  type MaterialSurfaceContainers,
   type MaterialSurfaces,
 } from '@boardsesh/velvet-tokens';
 import type { UiVariant } from './resolve-ui-variant';
@@ -73,12 +76,21 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
 /**
  * The canonical Velvet Send brand palette, surface anchors, and colour helpers now
  * live in `@boardsesh/velvet-tokens` (shared with the web app). Re-exported here so
- * every existing `@/theme/colors` import path keeps working. Platform-specific
- * resolution (Android fallbacks, M3 tonal containers, the Play-Drawer tint) stays
+ * every existing `@/theme/colors` import path keeps working. That includes the M3
+ * container ladder and tonal containers. Platform-specific resolution (Android
+ * fallbacks, the floating bar, Paper elevation levels, the Play-Drawer tint) stays
  * below and computes on top of these anchors.
  */
-export { blendOpaque, brandColors, brandColorsDark, materialSurfaces, withAlpha };
-export type { BrandColors, MaterialSurfaces };
+export {
+  blendOpaque,
+  brandColors,
+  brandColorsDark,
+  materialSurfaceContainers,
+  materialSurfaces,
+  materialTonalContainers,
+  withAlpha,
+};
+export type { BrandColors, MaterialSurfaceContainers, MaterialSurfaces };
 
 /**
  * Android-only fallback hex values for system colors, keyed by color scheme.
@@ -176,38 +188,6 @@ export const playDrawerMaterialTint = {
 } as const satisfies Record<UiVariant, Record<'light' | 'dark', string>>;
 
 /**
- * M3 surface-container tones for the Material variant, hand-set per scheme.
- *
- * "Graphite": pure greys (R = G = B), so depth reads by tone with no violet cast.
- * Dark rises from the #0E0E0E page in steps of about 1.5 to 4 L*; the #1E1E1E card
- * (`secondaryBackground`) sits between `base` and `high`. Light falls from the
- * #F2F2F2 page, below the white card. Each step is one Paper elevation level:
- * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
- *
- * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
- * #7855FF play button keeps a 3:1 edge on it (3.76:1); a lighter base erodes it.
- * `material-theme-contrast.test.ts` pins every label, outline and accent pairing.
- */
-export const materialSurfaceContainers = {
-  light: {
-    lowest: '#EEEEEE',
-    low: '#EAEAEA',
-    base: '#E4E4E4',
-    high: '#DFDFDF',
-    level4: '#DCDCDC',
-    highest: '#D9D9D9',
-  },
-  dark: {
-    lowest: '#121212',
-    low: '#161616',
-    base: '#1A1A1A',
-    high: '#262626',
-    level4: '#2A2A2A',
-    highest: '#2E2E2E',
-  },
-} as const;
-
-/**
  * The Material floating accessory bar (MiniPlayer card, climb capsule, rest
  * timer). It floats over cards, so in dark it takes the top container step:
  * the `base` step (#1A1A1A) sat darker than the #1E1E1E feed cards beneath it
@@ -218,24 +198,6 @@ export const materialSurfaceContainers = {
 export const materialFloatingBarSurface = {
   light: materialSurfaceContainers.light.base,
   dark: materialSurfaceContainers.dark.highest,
-} as const;
-
-/**
- * Opaque M3 tonal containers, the one place Material keeps a violet surface: the
- * selected or current state (nav pill, selected chip, Stepper, tonal button,
- * connected MiniPlayer). Opaque so they read the same over any ground; a
- * translucent wash took the colour of whatever sat under it.
- *
- * On the brand's Ultraviolet hue: each is M3's baseline container moved to OKLCH
- * hue 287 at the same lightness and chroma (sRGB caps the lightest at C 0.042).
- * The baseline sat at 293–304, a pinker violet than the tint beside it.
- *
- * Contrast (WCAG): ink #21005D on #E1E0FF 13.3:1 and on #DEDDFC 13.0:1; ink #E1E0FF
- * on #483A8E 7.18:1 and on #34276B 9.89:1.
- */
-export const materialTonalContainers = {
-  light: { primaryContainer: '#E1E0FF', secondaryContainer: '#DEDDFC', ink: '#21005D' },
-  dark: { primaryContainer: '#483A8E', secondaryContainer: '#34276B', ink: '#E1E0FF' },
 } as const;
 
 /**
@@ -260,9 +222,6 @@ export function materialElevationLevels(scheme: 'light' | 'dark'): {
     level5: containers.highest,
   };
 }
-
-/** One scheme's container table, widened to plain strings so a fixture can supply its own. */
-export type MaterialSurfaceContainers = Record<keyof typeof materialSurfaceContainers.light, string>;
 
 /**
  * The lit wall button's glow surfaces (#7000, look F1b): the pill the climb's

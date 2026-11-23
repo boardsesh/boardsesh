@@ -197,7 +197,7 @@ export default function OverviewTab({ gym }: { gym: Gym }) {
                   '&:hover': { bgcolor: 'action.hover' },
                 }}
               >
-                <Box sx={{ color: 'primary.main', display: 'flex' }}>{link.icon}</Box>
+                <Box sx={{ color: 'var(--neutral-500)', display: 'flex' }}>{link.icon}</Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
                     {link.title}
@@ -206,7 +206,7 @@ export default function OverviewTab({ gym }: { gym: Gym }) {
                     {link.body}
                   </Typography>
                 </Box>
-                <ArrowForwardOutlined sx={{ fontSize: 18, color: 'primary.main' }} />
+                <ArrowForwardOutlined sx={{ fontSize: 18, color: 'var(--neutral-500)' }} />
               </MuiLink>
             </Card>
           ))}

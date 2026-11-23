@@ -82,7 +82,7 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
   })();
   return (
     <Box component="li" sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-      <CheckCircleOutlined aria-hidden sx={{ color: themeTokens.colors.primary, fontSize: 22, mt: '1px' }} />
+      <CheckCircleOutlined aria-hidden sx={{ color: 'var(--neutral-500)', fontSize: 22, mt: '1px' }} />
       <Box>
         <Typography variant="body1">{label}</Typography>
         {/* Decision 21: approving logbook:read shares the ticks the climber keeps to "Only me". */}

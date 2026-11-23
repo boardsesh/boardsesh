@@ -1,4 +1,5 @@
 import { MD3DarkTheme, MD3LightTheme, type MD3Theme } from 'react-native-paper';
+import { materialOutline } from '@boardsesh/velvet-tokens';
 import {
   brandColors,
   brandColorsDark,
@@ -9,13 +10,6 @@ import {
 } from './colors';
 
 type ColorScheme = 'light' | 'dark';
-
-/**
- * M3 `outline`: the component border (text fields, outlined buttons). A fixed mid
- * grey that clears 3:1 on every Graphite container step (dark #8A8A8A 3.93:1 on the
- * highest; light #7A7A7A 3.04:1 on the highest).
- */
-const materialOutline = { light: '#7A7A7A', dark: '#8A8A8A' } as const;
 
 /**
  * Ink on the M3 `error` fill. White on the dark-scheme #F87171 is 2.77:1, so dark

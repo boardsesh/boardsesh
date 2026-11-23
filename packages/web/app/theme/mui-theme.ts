@@ -77,13 +77,36 @@ const sharedComponents: Components<Theme> = {
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
         // Velvet hover is a background TINT, never a lift. Contained variants carry
-        // their own fill-hover (see containedPrimary); text/outlined get the violet
-        // selected wash. No transform/shadow here — nothing to gate behind a hover
-        // media query on this element.
+        // their own fill-hover (see containedPrimary); text/outlined get the button
+        // hover wash, which is a hover, not a selected state. No transform/shadow
+        // here — nothing to gate behind a hover media query on this element. Only a
+        // primary TEXT button (a text action) lifts its violet label on hover; the
+        // outlined secondary keeps its grey ink.
         '&:not(:disabled):not(.MuiButton-contained):hover': {
-          backgroundColor: 'var(--semantic-selected-hover)',
-          '&.MuiButton-colorPrimary': {
+          backgroundColor: 'var(--semantic-button-hover)',
+          '&.MuiButton-textPrimary': {
             color: 'var(--color-primary-hover)',
+          },
+        },
+      },
+      // Outlined PRIMARY is the grey secondary action: the label ink (#EDEDED, 4.5:1
+      // or more on every surface step) on a transparent button with the opaque
+      // `--control-border` edge, which stays put on hover (the wash carries hover).
+      // A page spends its violet on the one filled action, links and text actions.
+      // MUI's default outlined edge is the foreground violet at 50% alpha, which
+      // drifted from `brandCtaOutlinedSx` (the consent banner's Allow / No thanks
+      // and the gym search button wore one edge, the brand buttons another), so
+      // the edge is pinned here too. Set the v7 variant vars plus a direct
+      // fallback, like containedPrimary. Keep ONE `outlinedPrimary` key: a second
+      // one later in this object silently replaces this whole block.
+      outlinedPrimary: {
+        '--variant-outlinedColor': 'var(--neutral-900)',
+        '--variant-outlinedBorder': 'var(--control-border)',
+        color: 'var(--neutral-900)',
+        borderColor: 'var(--control-border)',
+        '@media (hover: hover)': {
+          '&:hover': {
+            '--variant-outlinedBorder': 'var(--control-border)',
           },
         },
       },
@@ -100,13 +123,6 @@ const sharedComponents: Components<Theme> = {
           backgroundColor: theme.palette.primaryFill.dark,
         },
       }),
-      // MUI's default outlined edge is the foreground violet at 50% alpha, which
-      // drifted from `brandCtaOutlinedSx` (the consent banner's Allow / No thanks
-      // and the gym search button wore one edge, the brand buttons another).
-      // `--control-border` is the opaque token for an interactive edge.
-      outlinedPrimary: {
-        borderColor: 'var(--control-border)',
-      },
       sizeMedium: {
         height: 40,
         padding: `0 ${themeTokens.spacing[4]}px`,
@@ -120,6 +136,63 @@ const sharedComponents: Components<Theme> = {
     },
     defaultProps: {
       disableElevation: true,
+    },
+  },
+  // Inline links are the foreground violet and always underlined: the underline,
+  // not the hue, is what tells a link from body copy (#9784FF vs #EDEDED is 2.54:1,
+  // under WCAG 1.4.1's 3:1). Nav, footer and breadcrumb links opt out with their
+  // own grey recipe.
+  MuiLink: {
+    defaultProps: {
+      underline: 'always',
+    },
+    styleOverrides: {
+      root: {
+        textUnderlineOffset: '3px',
+      },
+    },
+  },
+  // Selected toggles and segments are the tonal container with its own ink, the same
+  // selected state as a filter chip. Rest is a grey control: transparent, the label
+  // ink, the opaque `--control-border` edge. A selected toggle that needs a
+  // non-colour cue renders `SelectedCheck` (the gyms radius control does).
+  MuiToggleButton: {
+    styleOverrides: {
+      root: {
+        textTransform: 'none' as const,
+        color: 'var(--neutral-900)',
+        borderColor: 'var(--control-border)',
+        // Pointer devices only, like MUI's own: on touch a tap would leave the
+        // wash stuck on the button it landed on.
+        '@media (hover: hover)': {
+          '&:hover': {
+            backgroundColor: 'var(--semantic-hover)',
+          },
+        },
+        '&.Mui-selected': {
+          color: 'var(--semantic-on-selected)',
+          backgroundColor: 'var(--semantic-selected)',
+          '&:hover': {
+            backgroundColor: 'var(--semantic-selected-hover)',
+          },
+        },
+      },
+    },
+  },
+  // The current item in a menu (the header menu's current page, the language
+  // menu's current locale) is a current state, so it takes the tonal container
+  // rather than MUI's translucent primary wash.
+  MuiMenuItem: {
+    styleOverrides: {
+      root: {
+        '&.Mui-selected, &.Mui-selected.Mui-focusVisible': {
+          color: 'var(--semantic-on-selected)',
+          backgroundColor: 'var(--semantic-selected)',
+        },
+        '&.Mui-selected:hover': {
+          backgroundColor: 'var(--semantic-selected-hover)',
+        },
+      },
     },
   },
   MuiFab: {
@@ -187,10 +260,10 @@ const sharedComponents: Components<Theme> = {
       }),
     },
   },
-  // Input surface + borders ride the scheme-aware `--input-*` CSS vars (light: white field,
-  // #7B7591 border; dark: elevated violet #2F234A, translucent border). The focused outline
-  // uses the FOREGROUND violet `palette.primary.main` (#9784FF; www is dark only) at 2px;
-  // the field surface itself never changes on hover/focus — hover is carried by the border.
+  // Input surface + borders ride the `--input-*` CSS vars: the raised Graphite field
+  // #262626 with the opaque #8A8A8A outline. The focused outline uses the FOREGROUND
+  // violet `palette.primary.main` (#9784FF, 5.09:1 on the field) at 2px; the field
+  // surface itself never changes on hover/focus — hover is carried by the border.
   MuiOutlinedInput: {
     styleOverrides: {
       root: ({ theme }) => ({
@@ -207,7 +280,7 @@ const sharedComponents: Components<Theme> = {
           borderWidth: 2,
         },
         '&.Mui-disabled': {
-          // Field surface dimmed + the disabled text tier (#7B7591 light, #6F6882 dark),
+          // Field surface dimmed + the disabled text tier (text.disabled, #636363),
           // never a light-scale grey stranded on the dark field. The hover surface is the
           // opaque fallback for browsers without color-mix() (Safari < 16.2).
           backgroundColor: 'var(--input-bg-hover)',
@@ -313,7 +386,7 @@ const sharedComponents: Components<Theme> = {
     styleOverrides: {
       root: {
         fontWeight: themeTokens.typography.fontWeight.medium,
-        backgroundColor: 'var(--neutral-50)',
+        backgroundColor: 'var(--semantic-fill-subtle)',
       },
     },
   },
@@ -394,7 +467,7 @@ const sharedComponents: Components<Theme> = {
   MuiSkeleton: {
     styleOverrides: {
       root: {
-        backgroundColor: 'var(--neutral-100)',
+        backgroundColor: 'var(--semantic-fill)',
       },
     },
   },
@@ -501,11 +574,11 @@ const sharedOptions: Partial<ThemeOptions> = {
 
 // Two things a dark palette needs from MUI that the shared overrides don't cover:
 // (1) MUI v7 composites a white elevation overlay onto every Paper in dark mode via
-//     `backgroundImage`. Kill it, or dialog paper drifts to ~#49415B where secondary
-//     text fails AA.
+//     `backgroundImage`. Kill it, or dialog paper drifts lighter than the ladder and
+//     stops matching the app's surfaces.
 // (2) Pin the floating surfaces (dialog/drawer/menu/popover) to the elevated surface
-//     (#2F234A) with a hairline separator border, so they read as one deliberate
-//     Velvet layer instead of an elevation-tinted grey.
+//     (#262626) with a hairline separator border, so they read as one deliberate
+//     layer instead of an elevation-tinted grey.
 const elevatedPaper = {
   backgroundColor: themeTokens.semantic.surfaceElevated,
   border: '1px solid var(--separator)',
@@ -625,9 +698,11 @@ function buildTheme(): Theme {
       // augmented `primaryFill` channel below. contrastText is the INK on the lifted
       // foreground violet, and that ink is dark: white on #9784FF is 2.97:1. Set
       // explicitly so MUI's getContrastText never warns.
+      // `dark` is pinned to `main`: there is no darker foreground step, and MUI's
+      // auto-derived one would be a violet nothing else on the page uses.
       primary: {
         main: brand.primary,
-        dark: brand.primaryActive,
+        dark: brand.primary,
         contrastText: brand.onAccent,
       },
       secondary: {
@@ -656,12 +731,14 @@ function buildTheme(): Theme {
       text: {
         primary: neutral[800],
         secondary: neutral[500],
-        disabled: neutral[400],
+        // The label at 38% over the page (3.21:1). Disabled text is exempt from AA;
+        // neutral[400] is now the readable tertiary label, so it cannot double as this.
+        disabled: themeTokens.text.disabled,
       },
       divider: semantic.separator,
       action: {
-        hover: semantic.selectedLight,
-        selected: semantic.selected,
+        hover: semantic.hover,
+        selected: semantic.selectedRow,
       },
     },
     shadows,

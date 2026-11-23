@@ -1,4 +1,4 @@
-/* The /help frame: a violet hero, then the neutral reading surface.
+/* The /help frame: a Graphite hero, then the neutral reading surface.
    Colours are tokens from app/components/index.css. Doubled selectors beat
    MUI's single Typography variant class. */
 
@@ -9,7 +9,7 @@
   min-height: calc(100dvh - var(--global-header-height));
 }
 
-/* ---- hero, on the violet chrome ---- */
+/* ---- hero, on the Graphite chrome ---- */
 
 .hero {
   border-bottom: 1px solid var(--separator);
@@ -62,7 +62,7 @@
   list-style: none;
 }
 
-/* A chip is a control, so its edge is --control-border (4.8:1 on the page). */
+/* A chip is a control, so its edge is --control-border (5.59:1 on the page). */
 .jump .chip {
   display: inline-flex;
   align-items: center;
@@ -80,7 +80,7 @@
 
 .jump .chip:hover {
   border-color: var(--color-primary);
-  background: var(--semantic-selected-light);
+  background: var(--semantic-hover);
 }
 
 .jump .chip:focus-visible {
@@ -91,8 +91,8 @@
 /* ---- the reading surface the bands sit on ---- */
 
 .read {
-  background: var(--read-surface);
-  color: var(--read-text);
+  background: var(--semantic-background);
+  color: var(--neutral-900);
 }
 
 @media (max-width: 900px) {
@@ -130,7 +130,7 @@
   width: 100%;
   min-width: 0;
   padding: var(--spacing-2) var(--page-gutter);
-  background: var(--read-surface);
+  background: var(--semantic-background);
   border-bottom: 1px solid var(--separator);
 }
 
@@ -138,9 +138,11 @@
   scroll-margin-top: calc(var(--global-header-height) + 76px);
 }
 
+/* The section being read: the tonal selected container with its own ink. The
+   foreground violet is 4.28:1 on that container, under AA, so it stays on the edge. */
 .jump .chip[aria-current='location'] {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--semantic-on-selected);
   background: var(--semantic-selected-light);
 }
 

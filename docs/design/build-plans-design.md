@@ -97,7 +97,7 @@ literal, in any `.module.css` on this surface.**
 | Secondary text, labels, notes | `--neutral-500` |
 | Links, step numerals, accent rule, focus | `--color-primary` (foreground violet) |
 | The one filled button | `--color-primary-fill` + `--color-on-primary` (MUI `variant="contained"`) |
-| Dot grid on the landing plate | `--semantic-selected-hover`, 1.6px dots at a 24px pitch |
+| Dot grid on the landing plate | `--semantic-fill-strong`, 1.6px dots at a 24px pitch |
 | Accent card rule | `--color-primary` inset, `--semantic-selected-border` on the border |
 
 The amber `--color-accent` is **not** used on this surface. It is a fill-only spark with a
@@ -113,8 +113,8 @@ preview flow adds — onto six tones. Tone is a verdict, not a colour choice:
 | Status | Tone | Reads as |
 |---|---|---|
 | `pending_payment`, `cancelled` | `neutral` (`--neutral-600` on `--neutral-100`) | nothing is happening, nothing is wrong |
-| `preview_queued`, `preview_generating`, `queued`, `generating` | `progress` (`--color-info` on `--semantic-selected-light`) | the generator has it; come back |
-| `preview_ready` | `brand` (`--color-primary` on `--semantic-selected`) | free preview is ready; the next move is yours |
+| `preview_queued`, `preview_generating`, `queued`, `generating` | `progress` (`--color-info` on `--semantic-fill-subtle`) | the generator has it; come back |
+| `preview_ready` | `brand` (`--color-primary` on `--semantic-fill`) | free preview is ready; the next move is yours |
 | `ready` | `success` (`--color-success` on `--color-success-bg`) | the paid pack is downloadable |
 | `refunded` | `warning` (`--color-warning` on `--color-warning-bg`) | download is off, nothing broke |
 | `failed`, `preview_failed` | `error` (`--color-error` on `--color-error-bg`) | it did not build |

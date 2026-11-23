@@ -25,8 +25,7 @@ import styles from './home-support-block.module.css';
  * inventing a parallel set of keys.
  */
 
-// Hoisted: brandCtaSx returns a plain object. The amber glow stays on the
-// hero's one CTA — this block takes the plain filled violet.
+// Hoisted: brandCtaSx returns a plain object.
 const CHIP_IN_SX = brandCtaSx({ size: 'medium' });
 // Its pair-mate. It used to be a bare variant="outlined", so it fell through to
 // MUI's defaults: a 40px button with a half-opacity violet edge, next to a 44px

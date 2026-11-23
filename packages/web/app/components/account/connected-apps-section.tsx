@@ -284,7 +284,7 @@ function ConnectedAppDetail({ row, scopesHeading }: { row: ConnectedAppRowView; 
       <Stack component="ul" spacing={1} sx={{ listStyle: 'none', m: 0, p: 0 }}>
         {row.scopes.map((scope) => (
           <Box component="li" key={scope.scope} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-            <CheckCircleOutlined aria-hidden sx={{ color: themeTokens.colors.primary, fontSize: 20, mt: '1px' }} />
+            <CheckCircleOutlined aria-hidden sx={{ color: 'var(--neutral-500)', fontSize: 20, mt: '1px' }} />
             <Box>
               <Typography variant="body2">{scope.label}</Typography>
               {scope.notes.map((note) => (

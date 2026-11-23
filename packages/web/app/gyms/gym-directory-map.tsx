@@ -188,9 +188,13 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale,
           // hardcoded white in its stylesheet for the same reason and gets the
           // same treatment: these are the only selectors here we do not own.
           '& .leaflet-container': { backgroundColor: 'var(--semantic-surface)' },
+          // The zoom buttons are grey controls like every other secondary one:
+          // the raised surface, the label-ink glyph and the opaque control edge
+          // (4.38:1 on the raised surface, so the pair reads over any tile).
+          '&& .leaflet-bar': { border: '1px solid var(--control-border)' },
           '& .leaflet-bar a, & .leaflet-bar a:hover': {
             backgroundColor: 'var(--semantic-surface-elevated)',
-            borderBottomColor: 'var(--separator)',
+            borderBottomColor: 'var(--control-border)',
             color: 'var(--neutral-900)',
           },
           '&& .leaflet-control-attribution': {

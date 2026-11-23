@@ -230,7 +230,7 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 - **Web uses MUI.** Always MUI components and props. Avoid the `style` prop. Always use design tokens from `packages/web/app/theme/theme-config.ts` for colours/spacing — no hardcoded values.
 - Use CSS media queries for responsive design. Avoid JS breakpoint detection (`Grid.useBreakpoint()`).
 - Remove dead code as you go.
-- **Dark mode inputs use the elevated dark surface** (`darkTokens.semantic.inputSurface`, #2F234A) with a violet `#A78BFA` focus ring — don't force white fields (`--input-*` vars in index.css are the source of truth).
+- **Inputs use the raised Graphite surface** (`themeTokens.semantic.inputSurface`, #262626) with a 2px `#9784FF` focus ring — don't force white fields (`--input-*` vars in index.css are the source of truth).
 - **Never hardcode user-facing strings** in `packages/web/app/**/*.tsx` — all visible text via i18n catalogs. CI runs `vp run check:i18n` and `vp run check:i18n:orphans`. Mark unresolvable dynamic lookups with `// i18n-keep namespace.dotted.key`.
 - **A V-grade is never cut.** "V" always renders with its number (`V1`, `V14`), never "V…". Change the layout, not the grade: see "A V-grade is never cut" in `docs/design/ai-design-guidelines.md`.
 - **Variable names describe contents.** No single-letter aliases (`r`, `x`, `s`) or vague placeholders (`data`, `info`, `temp`, `value`) outside tight loops. Destructure at the use site instead of generic aliases.

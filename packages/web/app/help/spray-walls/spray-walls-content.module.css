@@ -9,15 +9,15 @@
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-xl);
   box-shadow: 0 30px 80px var(--overlay-light);
 }
 
-/* --read-text-muted on --read-surface: 8.0:1. */
+/* --neutral-500 on --semantic-background: 8.0:1. */
 .photoCaption.photoCaption {
   margin: var(--spacing-4) var(--spacing-1) 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: 15px;
   line-height: 1.5;
 }

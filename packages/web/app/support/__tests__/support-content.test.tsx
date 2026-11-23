@@ -194,6 +194,9 @@ describe('SupportContent', () => {
       const options = screen.getByTestId('support-monthly-options');
       expect(options.textContent).toContain('USD tier A');
       expect(options.textContent).not.toContain('AUD tier A');
+      // The check moves with the selection: the non-colour cue next to the tonal ground.
+      expect(screen.getByTestId('support-currency-usd').querySelector('[data-selected-check]')).not.toBeNull();
+      expect(screen.getByTestId('support-currency-aud').querySelector('[data-selected-check]')).toBeNull();
     });
 
     it('opens on the currency the server picked', () => {

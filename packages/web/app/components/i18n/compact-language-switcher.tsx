@@ -8,6 +8,7 @@ import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import {
   DEFAULT_LOCALE,
@@ -18,12 +19,15 @@ import {
   type Locale,
 } from '@/app/lib/i18n/config';
 import { localeHref, stripLocalePrefix } from '@/app/lib/i18n/locale-href';
+import SelectedCheck from '@/app/components/ui/selected-check';
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 const languageNameSx = { fontSize: 14, lineHeight: 1 };
 const triggerSx = { minWidth: 44, minHeight: 44 };
 // MUI already gives phone menu rows 48px; desktop rows need a 44px floor.
 const menuItemSx = { minHeight: { sm: 44 } };
+// The check takes the selected item's ink rather than ListItemIcon's grey.
+const currentLocaleIconSx = { color: 'inherit' };
 
 type LabelProps = {
   ariaLabel: string;
@@ -75,9 +79,27 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
         </Button>
       </Tooltip>
       <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
+        {/* The current locale is announced with aria-current and shown on the
+            tonal container with a leading check; the others inset their label
+            so every name lines up. */}
         {SUPPORTED_LOCALES.map((locale) => (
-          <MenuItem key={locale} selected={locale === current} onClick={() => handleSelect(locale)} sx={menuItemSx}>
-            <ListItemText>{LOCALE_LABELS[locale]}</ListItemText>
+          <MenuItem
+            key={locale}
+            selected={locale === current}
+            aria-current={locale === current ? 'true' : undefined}
+            onClick={() => handleSelect(locale)}
+            sx={menuItemSx}
+          >
+            {locale === current ? (
+              <>
+                <ListItemIcon sx={currentLocaleIconSx}>
+                  <SelectedCheck />
+                </ListItemIcon>
+                <ListItemText>{LOCALE_LABELS[locale]}</ListItemText>
+              </>
+            ) : (
+              <ListItemText inset>{LOCALE_LABELS[locale]}</ListItemText>
+            )}
           </MenuItem>
         ))}
       </Menu>

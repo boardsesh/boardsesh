@@ -158,10 +158,21 @@ async function expectPublicReading(page: Page, testInfo: TestInfo, label: string
   return audit;
 }
 
-async function expectReadablePrimaryHover(page: Page, testInfo: TestInfo, target: Locator, label: string) {
+/** The hovered label of a violet text action (#B6AFFF) and of a grey outlined secondary (#EDEDED). */
+const TEXT_ACTION_HOVER_INK = 'rgb(182, 175, 255)';
+const SECONDARY_HOVER_INK = 'rgb(237, 237, 237)';
+
+/** A text or outlined button: the button state layer on hover, and its label still readable. */
+async function expectReadableButtonHover(
+  page: Page,
+  testInfo: TestInfo,
+  target: Locator,
+  label: string,
+  hoverInk: typeof TEXT_ACTION_HOVER_INK | typeof SECONDARY_HOVER_INK,
+) {
   await target.hover();
-  await expect(target).toHaveCSS('color', 'rgb(182, 175, 255)');
-  await expect(target).toHaveCSS('background-color', 'rgba(199, 184, 232, 0.24)');
+  await expect(target).toHaveCSS('color', hoverInk);
+  await expect(target).toHaveCSS('background-color', 'rgba(237, 237, 237, 0.08)');
   const audit = await expectPublicReading(page, testInfo, label, target);
   expect(
     hasReadableTargetText(audit),
@@ -213,7 +224,13 @@ for (const width of [390, 1440]) {
     const climbHref = await firstClimb.evaluate((element: HTMLAnchorElement) => element.href);
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'list');
-    await expectReadablePrimaryHover(page, testInfo, page.locator('main a[rel="next"]'), 'list-next-hover');
+    await expectReadableButtonHover(
+      page,
+      testInfo,
+      page.locator('main a[rel="next"]'),
+      'list-next-hover',
+      SECONDARY_HOVER_INK,
+    );
     if (width === 1440) {
       // A laptop's store links are the official badges in the QR card: no text
       // to colour on hover, so hold them to the target size and a visible focus ring.
@@ -231,14 +248,15 @@ for (const width of [390, 1440]) {
       );
     }
     const footer = page.getByTestId('site-footer');
-    await expectReadablePrimaryHover(
+    await expectReadableButtonHover(
       page,
       testInfo,
       footer.getByRole('link', { name: 'Start climbing in the app', exact: true }),
       'footer-app-hover',
+      SECONDARY_HOVER_INK,
     );
     const languageTrigger = footer.getByRole('button', { name: /language/i });
-    await expectReadablePrimaryHover(page, testInfo, languageTrigger, 'footer-language-hover');
+    await expectReadableButtonHover(page, testInfo, languageTrigger, 'footer-language-hover', TEXT_ACTION_HOVER_INK);
     await languageTrigger.click();
     const languageMenu = page.getByRole('menu');
     await expect(languageMenu.locator('..')).toHaveCSS('opacity', '1');

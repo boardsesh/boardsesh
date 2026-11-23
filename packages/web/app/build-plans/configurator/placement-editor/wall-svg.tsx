@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '@mui/material/styles';
+import { themeTokens } from '@/app/theme/theme-config';
 import styles from '../../build-plans.module.css';
 import type { CncLayoutWall } from '../layout-model';
 import {
@@ -325,7 +326,11 @@ export default function WallSvg({
             y={panel.yMm}
             width={panel.widthMm}
             height={panel.heightMm}
-            fill={panel.index === placement.panelIndex ? theme.palette.action.selected : theme.palette.action.hover}
+            // The panel the art sits on is a true current state: the tonal selected
+            // container. The rest are a decorative fill, never MUI's action palette.
+            fill={
+              panel.index === placement.panelIndex ? themeTokens.semantic.selected : themeTokens.semantic.fillSubtle
+            }
             stroke={panel.role === 'kicker' ? theme.palette.text.secondary : theme.palette.divider}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"

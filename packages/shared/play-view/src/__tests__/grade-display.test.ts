@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  defaultGradeDisplayFormatForLocale,
   getGradeColorWithOpacity,
   isLightColor,
   getGradeTextColor,
@@ -349,5 +350,23 @@ describe('MoonBoard grade scale', () => {
 
   it('keeps the "+" where MoonBoard still has two Font grades per V grade', () => {
     expect(formatVGrade('6b+/V4', 'moonboard')).toBe('V4+');
+  });
+});
+
+describe('defaultGradeDisplayFormatForLocale', () => {
+  it('defaults Spanish and French to Font', () => {
+    expect(defaultGradeDisplayFormatForLocale('es')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('fr')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('fr-CA')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('es_MX')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('ES')).toBe('font');
+  });
+
+  it('defaults every other language to V', () => {
+    expect(defaultGradeDisplayFormatForLocale('en-US')).toBe('v-grade');
+    expect(defaultGradeDisplayFormatForLocale('de')).toBe('v-grade');
+    expect(defaultGradeDisplayFormatForLocale('it')).toBe('v-grade');
+    expect(defaultGradeDisplayFormatForLocale(undefined)).toBe('v-grade');
+    expect(defaultGradeDisplayFormatForLocale('')).toBe('v-grade');
   });
 });

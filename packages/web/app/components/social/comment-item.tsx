@@ -164,7 +164,7 @@ export default function CommentItem({
   if (comment.isDeleted) {
     return (
       <Box sx={{ pl: depth > 0 ? 6 : 0, py: 0.5 }}>
-        <MuiTypography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+        <MuiTypography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
           {t('comment.deleted')}
         </MuiTypography>
         {/* Still show replies if they exist */}

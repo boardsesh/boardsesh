@@ -1,9 +1,12 @@
 // Design tokens for Boardsesh — the "Velvet Send" design system (web).
 //
-// Brand/surface anchors are imported from @boardsesh/velvet-tokens so web and the
-// React Native app share one source of truth for the violet identity. Web-specific
-// derived values (the neutral ramp, hover/active tones, status backgrounds, selected
-// tints) live here.
+// www sits on the app's "Graphite" palette: the same neutral page → card → elevated
+// ladder, labels and outline the React Native app's Material variant uses, imported
+// from @boardsesh/velvet-tokens so the two cannot drift. Violet is spent on action
+// and state only: links and text actions (`primary`), the filled CTA (`primaryFill`),
+// focus, and the opaque tonal container for a selected or current item. Web-only
+// derived values (hover washes, `primaryHover`, overlays, status washes, neutral[300],
+// the disabled text tier) live here.
 //
 // IMPORTANT: this file and `app/components/index.css` are two HAND-SYNCED sources —
 // theme-config feeds MUI + direct `themeTokens.*` imports; index.css feeds CSS
@@ -17,31 +20,38 @@
 // `primary` is the FOREGROUND violet (links, indicators, borders, focus) at
 // #9784FF; `primaryFill` is the FILLED-surface violet (button bg + white text) at
 // #7855FF. The two are NOT interchangeable and must never be collapsed into one:
-// white on #9784FF is 2.97:1. The parity test fences this. Hover and active are
-// the same Ultraviolet hue (OKLCH ~287) one lightness step either side.
+// white on #9784FF is 2.97:1. The parity test fences this. The fill keeps a 3:1 edge
+// on #262626 (3.27:1) but not on containers.highest #2E2E2E (2.94:1), so a filled
+// CTA never sits above the elevated surface.
 
-import { brandColorsDark } from '@boardsesh/velvet-tokens';
+import {
+  blendOpaque,
+  brandColorsDark,
+  materialOutline,
+  materialSurfaceContainers,
+  materialSurfaces,
+  materialTonalContainers,
+  withAlpha,
+} from '@boardsesh/velvet-tokens';
 
-// Only the BRAND palette is shared with mobile. Web tunes its own surface + neutral
-// ramp — richer/more violet than the shared Material surfaces, so the velvet permeates
-// the cards and greys instead of reading as white + neutral grey. These are literals
-// below; the parity test keeps them in sync with index.css.
+const graphite = materialSurfaces.dark;
+const graphiteContainers = materialSurfaceContainers.dark;
+const graphiteTonal = materialTonalContainers.dark;
 
 export const themeTokens = {
   // Brand colors — Velvet Send violet + mint spark
   colors: {
     primary: brandColorsDark.primary, // #9784FF — FOREGROUND violet (text, icons, links, borders, focus)
     primaryHover: '#B6AFFF', // Lighter step, 9.71:1 on the page
-    primaryActive: '#8360FF', // Darker step, 4.67:1 on the page
     primaryFill: brandColorsDark.primaryFill, // #7855FF — FILLED bg; white text clears 4.62:1
     primaryFillHover: '#5B22F2', // Darker than the fill so white text stays AA on hover (7.10:1)
     onPrimary: brandColorsDark.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColorsDark.accent, // #3EE6C1 — mint spark, FILL-ONLY, always pair with dark text
     onAccent: brandColorsDark.onAccent, // #16111F — dark text on accent (11.72:1)
     live: brandColorsDark.live, // #FBBF24 — "now on the wall / physically lit" status hue (own role, not warning)
-    secondary: '#A9A2B6', // violet-grey for info/secondary
-    info: '#A5ABD6', // Lifted violet-slate — help/guide accent
-    infoTint: 'rgba(94, 100, 145, 0.12)', // 12%-alpha `info` — shared low-key icon-chip bg (OnboardingCard 'help', homepage gym card)
+    secondary: graphite.secondaryLabel, // #B0B0B0 — MUI palette.secondary
+    info: graphite.secondaryLabel, // #B0B0B0 — help/guide accent (callout edge, help icon chips)
+    infoTint: graphite.fill, // rgba(255,255,255,0.10) — low-key icon-chip bg (OnboardingCard 'help', homepage gym card)
     success: brandColorsDark.success, // #34D399
     // Kept from the light ramp deliberately: it feeds palette.success.dark, where a
     // hover DARKER than #34D399 is still the right direction. Retune with a designer,
@@ -63,71 +73,94 @@ export const themeTokens = {
   },
 
   // Text colours scoped to brand surfaces (landing hero, splash, OG/social, App Store
-  // screenshots, marketing emails). Retuned from the old warm cream to cool Velvet
-  // label values so the hero reads as the same product as the violet chrome.
-  // The `--bs-text-brand-*` CSS vars mirror these. The `*Light` counterparts went
-  // with the light scheme — no brand surface on www is light any more.
+  // screenshots, marketing emails): the Graphite label and secondary label, so the hero
+  // reads as the same product as the app. The `--bs-text-brand-*` CSS vars mirror
+  // these. The `*Light` counterparts went with the light scheme — no brand surface on
+  // www is light any more.
+  //
+  // `disabled` is MUI's text.disabled: the label at M3's 38% over the page (3.21:1,
+  // exempt from AA as disabled text). Web-owned; the app has no disabled text tier.
   text: {
-    brandPrimary: '#f5f2fb',
-    brandMuted: '#a9a2b6',
+    brandPrimary: graphite.label,
+    brandMuted: graphite.secondaryLabel,
+    disabled: blendOpaque(graphite.label, graphite.background, 0.38), // #636363
   },
 
-  // Neutral palette — violet-tinted greys, and READ IT DARKEST-FIRST: on a dark
-  // scheme the ramp is inverted, so 50 is the darkest step and 900 the lightest.
+  // Neutral palette — Graphite greys, and READ IT DARKEST-FIRST: on a dark scheme
+  // the ramp is inverted, so 50 is the darkest step and 900 the lightest.
   // 50–300 are surfaces (backgrounds/chips/borders/skeletons); 400–900 bear text.
+  // The text steps collapse onto the app's three label tiers: 400 tertiary, 500–600
+  // secondary, 700–900 label. White vs #EDEDED is 1.17:1, not a usable step.
   //
   // The numeric keys are kept on purpose. Renaming them to semantic names
   // (surface1 / text3) is the right end state, but it is 107 call sites of churn
   // and would bury the value change this file just made. Follow-up, not this PR.
   neutral: {
-    50: '#1E1434',
-    100: '#291C43',
-    200: '#37294B',
-    300: '#483B5C',
-    400: '#6F6882', // disabled/decorative tier (AA-exempt; body text re-points to 500)
-    500: '#ACA5BD', // secondary text (6.8:1 on card)
-    600: '#C3BCD3',
-    700: '#D7D1E3',
-    800: '#E7E2F0', // text.primary
-    900: '#F3EFFA', // label — max-contrast text
+    50: graphiteContainers.base, // #1A1A1A
+    100: graphiteContainers.high, // #262626
+    200: graphiteContainers.highest, // #2E2E2E
+    // Web-owned: white at 20% over the page. Decorative only (1.80:1 on the page).
+    300: blendOpaque('#FFFFFF', graphite.background, 0.2), // #3E3E3E
+    // Tertiary label: 4.68:1 on #262626. Not on 200 / containers.highest (4.20:1).
+    400: graphite.tertiaryLabel, // #8F8F8F
+    500: graphite.secondaryLabel, // #B0B0B0 — secondary text (6.26:1 on #2E2E2E, the worst case)
+    600: graphite.secondaryLabel,
+    700: graphite.label,
+    800: graphite.label, // text.primary
+    900: graphite.label, // label — max-contrast text (#EDEDED, 11.60:1 on #2E2E2E)
   },
 
-  // Semantic colors — the surface ladder. Depth on near-black is a LIGHTER violet,
-  // not a shadow: background → surface → surfaceElevated each step up in lightness.
+  // Semantic colors — the surface ladder, the app's Graphite ladder. Depth on near-black
+  // is a lighter grey, not a shadow: background → surface → surfaceElevated each step up
+  // in lightness (card 1.16:1 on the page, elevated 1.10:1 on the card).
   semantic: {
-    selected: 'rgba(199, 184, 232, 0.16)', // Violet tint for selected state
-    selectedHover: 'rgba(199, 184, 232, 0.24)',
-    selectedLight: 'rgba(199, 184, 232, 0.10)', // Very subtle violet highlight
+    // The selected family is for a GENUINELY selected or current item only: the opaque
+    // M3 tonal container, with `onSelected` ink on it (9.89:1). The foreground violet is
+    // banned on it (4.28:1). Its edge is 1.52:1 on the page and 1.31:1 on the card, so a
+    // selected toggle also carries a non-colour cue (a check). Hover washes, badge grounds
+    // and decorative fills have their own roles below.
+    selected: graphiteTonal.secondaryContainer, // #34276B
+    // The ink at 8% over the container: M3's hover state layer, kept opaque (ink 8.05:1).
+    selectedHover: blendOpaque(graphiteTonal.ink, graphiteTonal.secondaryContainer, 0.08), // #423677
+    // The help jump chip's `aria-current`: a true current state, so the same container.
+    selectedLight: graphiteTonal.secondaryContainer,
     selectedBorder: brandColorsDark.primary, // #9784FF — matches foreground primary
-    separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines (decoupled from neutral-200)
+    // Ink on a selected or current item: the tonal container's ink (12.95:1 on the card).
+    onSelected: graphiteTonal.ink, // #E1E0FF
+    // MUI `action.selected`. Not a selection colour on www: MUI paints it under every
+    // default filled <Chip>, a selected PaginationItem and the highlighted Autocomplete
+    // option, so it stays a neutral fill (the same as `fill`), never violet.
+    selectedRow: graphite.fill,
+    // Hover wash on rows, chips and list links (MUI `action.hover`): the label at 8%,
+    // M3's hover state layer. Not a selected state.
+    hover: withAlpha(graphite.label, 0.08),
+    // Hover wash on MUI text and outlined buttons: the same state layer as `hover`.
+    // Its own name so a button retune cannot move every row hover.
+    buttonHover: withAlpha(graphite.label, 0.08),
+    // Decorative low-alpha grounds: badge and status-pill grounds, the build-plans dot
+    // grid, diagram cells. Never a selected state. `fill` is the app's neutral fill.
+    fillSubtle: withAlpha('#FFFFFF', 0.06),
+    fill: graphite.fill, // rgba(255,255,255,0.10); the label on it over the card is 10.48:1
+    fillStrong: withAlpha('#FFFFFF', 0.14),
+    separator: graphite.separator, // rgba(255,255,255,0.12) — dividers/hairlines, 1.36–1.46:1
+    // The 1px edge of an app capture or the hero video: a shade brighter than the
+    // separator so an iOS capture's black screen never reads as a hole in the card.
+    // Decorative, like the separator.
+    captureFrame: withAlpha('#FFFFFF', 0.14),
     // The visual boundary of an INTERACTIVE thing (outlined buttons, chips, toggles,
-    // pagination pills, floating surfaces). Opaque on purpose so WCAG 1.4.11's 3:1 floor is
-    // one fact rather than a per-backdrop guess: 3.58:1 on surfaceElevated (worst case),
-    // 4.03:1 on surface, 4.81:1 on background. `separator` composites to ~1.5:1 and stays
-    // decorative-only. Do not reuse neutral[400] here — it lands at 2.72:1 on surfaceElevated.
-    controlBorder: '#837A9C',
-    background: '#110A20', // deeper violet near-black (richer than a generic dark theme)
-    surface: '#251B3A', // cards/sheets — richer violet
-    surfaceElevated: '#2F234A', // elevated layers pop one step brighter than the card
-    inputSurface: '#2F234A', // input fields ride the elevated dark surface (violet focus ring, not white)
-    surfaceOverlay: 'rgba(37, 27, 58, 0.95)', // Semi-transparent overlay (matches surface)
+    // pagination pills, floating surfaces): the M3 outline. Opaque on purpose so WCAG
+    // 1.4.11's 3:1 floor is one fact rather than a per-backdrop guess: 5.59:1 on the page,
+    // 4.83:1 on the card, 4.38:1 on surfaceElevated and 3.93:1 on neutral[200]
+    // (containers.highest, the worst case). `separator` composites to ~1.4:1 and stays
+    // decorative-only.
+    controlBorder: materialOutline.dark, // #8A8A8A
+    background: graphite.background, // #0E0E0E — the app's page; no seam into /app
+    surface: graphite.secondaryBackground, // #1E1E1E — cards/sheets, the app card
+    surfaceElevated: graphite.elevatedSurface, // #262626 — popups, menus, one step above the card
+    inputSurface: graphite.elevatedSurface, // #262626 — fields sit one step above their card
+    surfaceOverlay: withAlpha(graphite.secondaryBackground, 0.95), // Semi-transparent overlay (matches surface)
     overlayLight: 'rgba(0, 0, 0, 0.4)', // Light dark overlay for hover states
     overlayDark: 'rgba(0, 0, 0, 0.7)', // Dark overlay for text backgrounds
-  },
-
-  // The reading surface: a neutral, barely-violet grey the /help guides sit on.
-  // The violet chrome (header, hero, footer) stays Velvet; long how-to copy and
-  // near-black app captures read better on grey, where a phone's own violet UI
-  // is the only violet in the band. `surfaceRaised` is one step up (tiles, state
-  // rows, count cards); `line` is decorative only (band rules, card edges).
-  // Contrast, fenced in the parity test: text 15.0:1 on surface / 13.5:1 on
-  // raised, textMuted 8.0:1 / 7.1:1, the foreground violet 6.6:1 / 5.9:1.
-  read: {
-    surface: '#18171C',
-    surfaceRaised: '#222127',
-    text: '#ECEBEF',
-    textMuted: '#AEACB6',
-    line: '#2E2D34',
   },
 
   // Syntax highlighting colors (VS Code dark theme inspired)
@@ -148,12 +181,6 @@ export const themeTokens = {
     lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
     xl: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
     inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.15)',
-    // Mint glow under the one hero CTA per page. The spark is fill-only in Velvet Send and this
-    // is the only place it appears as light rather than a fill — it is the spark, so exactly
-    // one surface carries it. Mirrored here because index.css claims parity with this file
-    // and these two were the gap: they lived only in CSS, so the parity test could not see them.
-    accentGlow: '0 6px 18px rgba(62, 230, 193, 0.35)',
-    accentGlowHover: '0 8px 22px rgba(62, 230, 193, 0.45)',
   },
 
   // Typography

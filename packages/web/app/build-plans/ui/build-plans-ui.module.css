@@ -65,15 +65,15 @@
 }
 
 /* The one loud surface on the whole surface: a plate carrying the T-nut grid the
-   product is actually about — 24px dots, the hold pitch, drawn in the selected
-   violet so it reads in both schemes without a second token. Used on the shop
-   landing only; every other page gets a plain header. */
+   product is actually about — 24px dots, the hold pitch, drawn in the strong
+   decorative fill. Used on the shop landing only; every other page gets a plain
+   header. */
 .plate {
   position: relative;
   border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-xl);
   background-color: var(--semantic-surface);
-  background-image: radial-gradient(circle at 1px 1px, var(--semantic-selected-hover) 1.6px, transparent 1.7px);
+  background-image: radial-gradient(circle at 1px 1px, var(--semantic-fill-strong) 1.6px, transparent 1.7px);
   background-size: 24px 24px;
   background-position: -1px -1px;
   padding: 40px;
@@ -251,9 +251,9 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--semantic-selected-border);
+  border: 1px solid var(--separator);
   border-radius: var(--border-radius-full);
-  color: var(--color-primary);
+  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -417,12 +417,12 @@
 
 .toneProgress {
   color: var(--color-info);
-  background: var(--semantic-selected-light);
+  background: var(--semantic-fill-subtle);
 }
 
 .toneBrand {
-  color: var(--color-primary);
-  background: var(--semantic-selected);
+  color: var(--neutral-900);
+  background: var(--semantic-fill);
 }
 
 .toneSuccess {

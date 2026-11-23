@@ -319,7 +319,7 @@ export function ImportProgressSteps({ progress }: { progress: ImportProgress | n
               {isPending && <RadioButtonUncheckedOutlined color="disabled" fontSize="small" />}
               <Typography
                 variant="body2"
-                color={isPending ? 'text.disabled' : 'text.primary'}
+                color={isPending ? 'text.secondary' : 'text.primary'}
                 fontWeight={isActive ? 600 : 400}
               >
                 {stepLabels[step]}

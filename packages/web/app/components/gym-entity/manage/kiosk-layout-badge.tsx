@@ -28,7 +28,7 @@ function PresetDiagram({ preset, hasRail }: { preset: KioskPreset; hasRail: bool
   const cell = (
     <Box
       sx={{
-        backgroundColor: 'action.selected',
+        backgroundColor: 'var(--semantic-fill)',
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: '2px',

@@ -4,6 +4,7 @@ import React from 'react';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import { useTranslation } from 'react-i18next';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import { useMarketingPreview } from './marketing-preview-provider';
 import styles from './marketing-screenshot.module.css';
 
@@ -30,8 +31,16 @@ export function MarketingPreviewSwitch() {
         if (platform === 'ios' || platform === 'android') preview.selectPlatform(platform);
       }}
     >
-      <ToggleButton value="ios">{t('preview.ios')}</ToggleButton>
-      <ToggleButton value="android">{t('preview.android')}</ToggleButton>
+      {/* The selected platform leads with a check, its non-colour cue next to
+          the tonal ground; ToggleButton's aria-pressed announces it. */}
+      <ToggleButton value="ios">
+        {preview.platform === 'ios' && <SelectedCheck />}
+        {t('preview.ios')}
+      </ToggleButton>
+      <ToggleButton value="android">
+        {preview.platform === 'android' && <SelectedCheck />}
+        {t('preview.android')}
+      </ToggleButton>
     </ToggleButtonGroup>
   );
 }

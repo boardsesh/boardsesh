@@ -32,8 +32,8 @@ export default function CommunityStatusBadge({
         label={communityGrade}
         size="small"
         sx={{
-          bgcolor: 'var(--semantic-selected)',
-          color: 'var(--color-primary)',
+          bgcolor: 'var(--semantic-fill)',
+          color: 'var(--neutral-900)',
           fontWeight: 600,
           fontSize: compact ? 10 : 11,
           height: compact ? 20 : 24,

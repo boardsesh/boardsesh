@@ -5,8 +5,8 @@
  * the violet identity in sync across platforms.
  *
  * Pure TS: no react-native, no MUI, no DOM. Platform-specific resolution
- * (iOS PlatformColor, M3 tonal containers, Android fallbacks, Liquid-Glass tint)
- * stays in each app and computes on top of these anchors.
+ * (iOS PlatformColor, Android fallbacks, Liquid-Glass tint) stays in each app and
+ * computes on top of these anchors.
  */
 
 // Dev-only warning gate. `process.env.NODE_ENV` is inlined by Next at build and is
@@ -148,9 +148,10 @@ export function currentBrandColor(color: string): string {
  *
  * "Graphite": every neutral here is pure grey (R = G = B, chroma 0). Violet is kept
  * for action and state only: `accent`, the brand fills, and the opaque M3 tonal
- * containers the app builds on top of these anchors. Labels are opaque so text
- * contrast clears WCAG AA; `material-theme-contrast.test.ts` in the mobile app pins
- * every pairing.
+ * containers (`materialTonalContainers`, below). The container ladder
+ * (`materialSurfaceContainers`) and the control outline (`materialOutline`) sit
+ * below too. Labels are opaque so text contrast clears WCAG AA;
+ * `material-theme-contrast.test.ts` in the mobile app pins every pairing.
  *
  * Contrast (WCAG): dark label #EDEDED 16.5:1 on the #0E0E0E page and 14.2:1 on the
  * #1E1E1E card; secondary #B0B0B0 6.2:1 or more on every container step; tertiary
@@ -158,12 +159,12 @@ export function currentBrandColor(color: string): string {
  * Light label #1A1A1A 12.3:1 or more; secondary #5A5A5A 4.89:1 or more; tertiary
  * #686868 4.98:1 on the #F2F2F2 page, so it stays on page, card, lowest and low.
  *
- * Web shares only the BRAND colours from this package (`brandColors`/`brandColorsDark`
- * — see `theme-config.ts`). The web SURFACE ladder is deliberately NOT these anchors:
- * www keeps its own hand-tuned violet page → card → elevated ladder in
- * `packages/web/app/theme/theme-config.ts` (dark #110A20 / #251B3A / #2F234A), so the
- * marketing site stays velvet while the app goes neutral. That divergence is guarded
- * by `velvet-tokens-parity.test.ts`; changing either side is a conscious decision.
+ * www reads the dark half too: `packages/web/app/theme/theme-config.ts` takes its page →
+ * card → elevated ladder, labels, separator, fill and the selected container from here
+ * (with `materialSurfaceContainers`, `materialTonalContainers` and `materialOutline`), so
+ * www and the Expo browser app at /app sit on one Graphite ground.
+ * `velvet-tokens-parity.test.ts` in the web app asserts the web ladder IS these anchors;
+ * a retune here moves both apps.
  */
 export const materialSurfaces = {
   light: {
@@ -203,6 +204,67 @@ export const materialSurfaces = {
     accent: '#9784FF',
   },
 } as const;
+
+/**
+ * M3 surface-container tones for the Material variant, hand-set per scheme.
+ *
+ * "Graphite": pure greys (R = G = B), so depth reads by tone with no violet cast.
+ * Dark rises from the #0E0E0E page in steps of about 1.5 to 4 L*; the #1E1E1E card
+ * (`secondaryBackground`) sits between `base` and `high`. Light falls from the
+ * #F2F2F2 page, below the white card. Each step is one Paper elevation level:
+ * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
+ *
+ * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
+ * #7855FF play button keeps a 3:1 edge on it (3.76:1); a lighter base erodes it.
+ * `material-theme-contrast.test.ts` in the mobile app pins every label, outline and
+ * accent pairing.
+ */
+export const materialSurfaceContainers = {
+  light: {
+    lowest: '#EEEEEE',
+    low: '#EAEAEA',
+    base: '#E4E4E4',
+    high: '#DFDFDF',
+    level4: '#DCDCDC',
+    highest: '#D9D9D9',
+  },
+  dark: {
+    lowest: '#121212',
+    low: '#161616',
+    base: '#1A1A1A',
+    high: '#262626',
+    level4: '#2A2A2A',
+    highest: '#2E2E2E',
+  },
+} as const;
+
+/**
+ * Opaque M3 tonal containers, the one place Material keeps a violet surface: the
+ * selected or current state (nav pill, selected chip, Stepper, tonal button,
+ * connected MiniPlayer). Opaque so they read the same over any ground; a
+ * translucent wash took the colour of whatever sat under it.
+ *
+ * On the brand's Ultraviolet hue: each is M3's baseline container moved to OKLCH
+ * hue 287 at the same lightness and chroma (sRGB caps the lightest at C 0.042).
+ * The baseline sat at 293–304, a pinker violet than the tint beside it.
+ *
+ * Contrast (WCAG): ink #21005D on #E1E0FF 13.3:1 and on #DEDDFC 13.0:1; ink #E1E0FF
+ * on #483A8E 7.18:1 and on #34276B 9.89:1.
+ */
+export const materialTonalContainers = {
+  light: { primaryContainer: '#E1E0FF', secondaryContainer: '#DEDDFC', ink: '#21005D' },
+  dark: { primaryContainer: '#483A8E', secondaryContainer: '#34276B', ink: '#E1E0FF' },
+} as const;
+
+/**
+ * The M3 `outline` role: the opaque control-boundary grey (text fields, outlined
+ * buttons). A fixed mid grey that clears 3:1 on every Graphite container step.
+ *
+ * Contrast (WCAG): dark #8A8A8A 5.59:1 on #0E0E0E, 4.83:1 on #1E1E1E, 4.38:1 on
+ * #262626 and 3.93:1 on #2E2E2E (the highest step); light #7A7A7A 3.04:1 on #D9D9D9
+ * (the highest step).
+ */
+export const materialOutline = { light: '#7A7A7A', dark: '#8A8A8A' } as const;
 
 /**
  * The violet-tinted Material surfaces the app shipped before "Graphite", frozen for
@@ -312,3 +374,5 @@ export type BrandColors = typeof brandColors;
 export type MaterialSurfaces = typeof materialSurfaces;
 export type MarketingSurfaces = typeof marketingSurfaces;
 export type MaterialSurfaceKey = keyof typeof materialSurfaces.light;
+/** One scheme's container table, widened to plain strings so a fixture can supply its own. */
+export type MaterialSurfaceContainers = Record<keyof typeof materialSurfaceContainers.light, string>;

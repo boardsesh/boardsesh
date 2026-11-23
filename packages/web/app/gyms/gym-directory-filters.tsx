@@ -11,6 +11,7 @@ import type { TFunction } from 'i18next';
 import type { FacetCounts } from './directory-data';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { filterChipSx } from '@/app/components/ui/filter-chip';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   FILTERABLE_BOARD_TYPES,
@@ -84,7 +85,11 @@ export default function GymDirectoryFilters({
               clickable
               component={LocaleLink}
               href={buildBoardTypeToggleHref(facet, query, boardType)}
-              aria-pressed={selected}
+              // A link, so its state is aria-current rather than aria-pressed
+              // (which only a button may carry). The check is the non-colour cue
+              // for the tonal ground.
+              aria-current={selected ? 'true' : undefined}
+              icon={selected ? <SelectedCheck /> : undefined}
               label={
                 facetCounts && (boardType === 'kilter' || boardType === 'moonboard' || boardType === 'tension')
                   ? `${boardTypeLabel(boardType)} · ${new Intl.NumberFormat(locale).format(facetCounts[boardType])}`
@@ -257,14 +262,19 @@ function CheckboxChipGroup({
                   position: 'relative',
                   display: 'inline-flex',
                   alignItems: 'center',
+                  gap: 0.5,
                   px: 2,
-                  border: '1px solid',
+                  // Width and style only: a `border` shorthand would reset the
+                  // recipe's `--control-border` edge to currentColor.
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
                   cursor: 'pointer',
                   fontSize: themeTokens.typography.fontSize.sm,
                   // The chip follows its own checkbox rather than the state the
                   // server rendered. Without this a click changes an invisible
                   // control and the chip keeps its old look until submit, so
-                  // nobody can see which filters they are about to apply.
+                  // nobody can see which filters they are about to apply. The
+                  // selected recipe also reveals the check below.
                   '&:has(input:checked)': filterChipSx({ selected: true }),
                   // Keyboard users get the same ring the mouse gets, since the
                   // control itself is visually hidden.
@@ -298,6 +308,9 @@ function CheckboxChipGroup({
                     pointerEvents: 'none',
                   }}
                 />
+                {/* Always rendered: the recipe shows it only while the checkbox
+                    is checked, with no React render in between. */}
+                <SelectedCheck />
                 {option.label}
               </Box>
             ))}

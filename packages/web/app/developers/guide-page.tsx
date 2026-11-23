@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { PageSection, PageShell, Prose, ProseList } from '@/app/components/ui/page-shell';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
@@ -36,7 +37,7 @@ export async function DeveloperGuidePage({ slug }: { slug: GuideSlug }) {
       title={t(`guides.${slug}.title`)}
       lead={t(`guides.${slug}.description`)}
       breadcrumb={
-        <MuiLink component={LocaleLink} href="/developers">
+        <MuiLink component={LocaleLink} href="/developers" sx={quietLinkSx}>
           {t('guides.labels.home')}
         </MuiLink>
       }

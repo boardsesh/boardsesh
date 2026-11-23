@@ -1,6 +1,6 @@
 /* HelpSwipeDiagram: two rows of pills and arrows. Mobile-first: each row is a
    centred vertical stack with down-pointing arrows; from 640px the rows run
-   left to right. Nodes are not controls, so their edges use --read-line. The
+   left to right. Nodes are not controls, so their edges use --neutral-200. The
    figure is raised off the reading surface; solid nodes sink back to it. */
 
 .figure {
@@ -9,9 +9,9 @@
   max-width: 900px;
   margin: var(--spacing-2) 0 0;
   padding: var(--spacing-6);
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-xl);
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
 }
 
 .row {
@@ -21,12 +21,12 @@
 
 .row + .row {
   padding-top: var(--spacing-5);
-  border-top: 1px solid var(--read-line);
+  border-top: 1px solid var(--neutral-200);
 }
 
 .caption.caption {
   margin: 0;
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: var(--font-size-sm);
   line-height: 1.5;
 }
@@ -53,10 +53,10 @@
   max-width: 260px;
   min-height: 40px;
   padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-md);
-  background: var(--read-surface);
-  color: var(--read-text);
+  background: var(--semantic-background);
+  color: var(--neutral-900);
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1.3;
@@ -87,7 +87,7 @@
   border-style: dashed;
   border-color: var(--control-border);
   background: transparent;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-weight: 500;
 }
 
@@ -95,14 +95,14 @@
   border-style: dashed;
   border-color: var(--control-border);
   background: transparent;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-weight: 500;
 }
 
 /* ---- arrows: one icon, rotated. Down on mobile, sideways from 640px. ---- */
 
 .arrow.arrow {
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: var(--font-size-xl);
 }
 

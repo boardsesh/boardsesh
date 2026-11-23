@@ -53,22 +53,24 @@ const stopSx = {
   textDecoration: 'none',
 };
 
+// The other angles: grey outlined stops, the label ink on the page with the
+// opaque control edge, and the button state layer on hover.
 const linkSx = {
   ...stopSx,
-  color: 'var(--color-primary)',
+  color: 'var(--neutral-900)',
   '&:hover': {
-    borderColor: 'var(--color-primary)',
-    backgroundColor: 'var(--semantic-selected-light)',
+    backgroundColor: 'var(--semantic-button-hover)',
   },
 };
 
-// The angle being read: text, not a self-link, in the page's ink on a raised fill.
+// The angle being read: text, not a self-link, on the tonal selected container
+// with its own ink (9.89:1). Its edge is the container itself, so the stop keeps
+// the same size as its neighbours without a violet ring.
 const currentSx = {
   ...stopSx,
-  color: 'var(--neutral-900)',
-  borderColor: 'var(--color-primary)',
-  backgroundColor: 'var(--semantic-surface)',
-  boxShadow: 'inset 0 0 0 1px var(--color-primary)',
+  color: 'var(--semantic-on-selected)',
+  borderColor: 'var(--semantic-selected)',
+  backgroundColor: 'var(--semantic-selected)',
 };
 
 /**

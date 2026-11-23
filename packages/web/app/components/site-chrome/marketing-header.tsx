@@ -37,8 +37,9 @@ import { APP_URL } from '@/app/lib/app-origin';
 import BrandLockup from './brand-lockup';
 import styles from './marketing-header.module.css';
 
-// Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
-// off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
+// The grey outlined pill for the persistent "Start climbing" hand-off to the
+// Expo-web app (and the phone's store button): a secondary action, so it leaves
+// the page's violet to the page.
 const HEADER_START_CLIMBING_SX = brandCtaOutlinedSx({ size: 'small' });
 
 const BRAND_SX = {
@@ -52,6 +53,8 @@ const BRAND_SX = {
   '&:hover': { backgroundColor: 'transparent' },
 } as const;
 
+// Nav links are grey (#B0B0B0), lifting to the label ink with an underline on
+// hover. The current page adds a 2px violet underline in the module CSS.
 const NAV_LINK_SX = {
   color: 'var(--bs-text-brand-muted)',
   fontWeight: themeTokens.typography.fontWeight.medium,
@@ -59,6 +62,8 @@ const NAV_LINK_SX = {
   whiteSpace: 'nowrap',
   '&:hover': { color: 'var(--bs-text-brand-primary)', textDecoration: 'underline' },
 } as const;
+
+const SIGN_IN_SX = { textTransform: 'none', flexShrink: 0, color: 'var(--neutral-900)' } as const;
 
 /** Route prefixes that render a simple title header instead of the default marketing header */
 
@@ -377,8 +382,11 @@ export default function MarketingHeader() {
       onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', '/auth/login'))}
       aria-label={t('header.signIn')}
       size="small"
+      // `inherit`, not primary: "Sign in" is account chrome in the label ink, not
+      // a violet text action, and a primary text button lifts to violet on hover.
+      color="inherit"
       className={styles.signIn}
-      sx={{ textTransform: 'none', flexShrink: 0 }}
+      sx={SIGN_IN_SX}
     >
       <PersonOutlined className={styles.signInIcon} />
       <Box component="span" className={styles.signInLabel}>

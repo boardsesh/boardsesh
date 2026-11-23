@@ -8,10 +8,11 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { paginationWindow } from '@/app/gyms/directory-facets';
 
 /**
- * Every page control is the same pill: a surface fill and the one hairline.
- * Underlined violet text on the page ground was fine on white and reads as
- * loose debris on the near-black ground, where nothing else at that size
- * is a link.
+ * Every page control is the same grey button: the label ink, a transparent ground
+ * and the opaque control edge, with the button state layer on hover. Underlined
+ * violet text on the page ground was fine on white and reads as loose debris on
+ * the near-black ground, where nothing else at that size is a link. The current
+ * page is the tonal selected container with its own ink.
  */
 const PAGE_PILL = {
   // `minHeight`, never `height`: 40px was under the 44px target every other
@@ -25,9 +26,9 @@ const PAGE_PILL = {
   px: 1.5,
   borderRadius: 'var(--border-radius-button)',
   border: '1px solid var(--control-border)',
-  backgroundColor: 'var(--semantic-surface)',
+  backgroundColor: 'transparent',
   fontWeight: themeTokens.typography.fontWeight.semibold,
-  '&:hover': { backgroundColor: 'var(--semantic-surface-elevated)', borderColor: 'var(--color-primary)' },
+  '&:hover': { backgroundColor: 'var(--semantic-button-hover)' },
 } as const;
 
 export type DirectoryPaginationProps = {
@@ -93,9 +94,10 @@ export function DirectoryPagination({
             variant="body2"
             sx={{
               ...PAGE_PILL,
-              backgroundColor: 'var(--semantic-surface-elevated)',
-              borderColor: 'var(--color-primary)',
-              color: 'var(--color-primary)',
+              backgroundColor: 'var(--semantic-selected)',
+              borderColor: 'var(--semantic-selected)',
+              color: 'var(--semantic-on-selected)',
+              '&:hover': { backgroundColor: 'var(--semantic-selected)' },
             }}
           >
             {/* The pill shows the number; the sentence is for screen readers
@@ -116,7 +118,7 @@ export function DirectoryPagination({
             key={page}
             component={LocaleLink}
             href={hrefForPage(page)}
-            // Same split as the current pill: the number is what you read, the
+            // Same split as the current page: the number is what you read, the
             // full "Page 3" is the accessible name, so a screen reader still
             // hears which page a bare digit would leave ambiguous.
             aria-label={labels.page(page)}
