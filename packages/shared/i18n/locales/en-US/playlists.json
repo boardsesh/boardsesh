@@ -242,6 +242,13 @@
     "climbCount_one": "{{count}} climb",
     "climbCount_other": "{{count}} climbs",
     "openInApp": "Climb this in the app",
+    "subline": {
+      "boardPlaylist": "{{board}} playlist",
+      "sprayWallPlaylist": "Spraywall playlist",
+      "sprayWall": "Spraywall",
+      "multiBoardPlaylist": "{{boards}} playlist",
+      "gradeBand": "{{low}} to {{high}}"
+    },
     "followerCount_one": "{{count}} follower",
     "followerCount_other": "{{count}} followers",
     "followFailed": "Failed to update follow status",

@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { serverMyBoards, serverPlaylist, serverPlaylistClimbs } from '@/app/lib/graphql/server-cached-client';
 import { generatePlaylistMetadata } from '@/app/lib/seo/playlist-metadata';
+import { getPlaylistOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import PlaylistDetailContent from './playlist-detail-content';
@@ -24,9 +25,15 @@ export default async function PlaylistDetailPage({ params }: { params: Promise<{
   // successful playlist lookup. Speculatively firing climbs alongside the
   // playlist would shave one round-trip on the hot path but double the
   // backend load on 404s — not worth it for a non-existent playlist.
-  const [initialMyBoards, playlistResult] = await Promise.all([
+  //
+  // The grade band rides on `getPlaylistOgSummary`, which `generateMetadata`
+  // already called for this request: React `cache()` hands back the same
+  // result, so the subline costs no query. It covers public playlists only, so
+  // a private one shows no band.
+  const [initialMyBoards, playlistResult, ogSummary] = await Promise.all([
     authToken ? serverMyBoards(authToken) : null,
     serverPlaylist(authToken, playlist_uuid),
+    getPlaylistOgSummary(playlist_uuid).catch(() => null),
   ]);
 
   // A UUID nobody owns used to render a 200 shell with no heading and no
@@ -52,6 +59,8 @@ export default async function PlaylistDetailPage({ params }: { params: Promise<{
     >
       <PlaylistDetailContent
         playlistUuid={playlist_uuid}
+        locale={locale}
+        gradeSummary={ogSummary?.gradeSummary ?? null}
         initialMyBoards={initialMyBoards}
         initialPlaylist={initialPlaylist}
         initialClimbs={initialClimbs}

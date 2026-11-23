@@ -242,6 +242,13 @@
     "climbCount_one": "{{count}} 条线路",
     "climbCount_other": "{{count}} 条线路",
     "openInApp": "在应用中攀爬此线路集",
+    "subline": {
+      "boardPlaylist": "{{board}} 线路集",
+      "sprayWallPlaylist": "喷点墙线路集",
+      "sprayWall": "喷点墙",
+      "multiBoardPlaylist": "{{boards}} 线路集",
+      "gradeBand": "{{low}} 至 {{high}}"
+    },
     "followerCount_one": "{{count}} 位关注者",
     "followerCount_other": "{{count}} 位关注者",
     "followFailed": "更新关注状态失败",

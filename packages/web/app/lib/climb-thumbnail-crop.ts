@@ -59,3 +59,47 @@ export function getClimbThumbnailCropPlacement(
     transform: `translate(-${cropX * 100}%, -${crop.y * 100}%)`,
   };
 }
+
+const WHOLE_BOARD: ClimbThumbnailCrop = { x: 0, y: 0, width: 1, height: 1 };
+
+/** Centre the art on its region, then slide it back over the slot wherever it is big enough to cover it. */
+function coverOffset(centredOffset: number, artSize: number, slotSize: number): number {
+  if (artSize <= slotSize) return (slotSize - artSize) / 2;
+  return Math.min(0, Math.max(slotSize - artSize, centredOffset));
+}
+
+const toPercent = (fraction: number) => `${fraction * 100}%`;
+
+/**
+ * Place a climb's art in a slot of any shape (a playlist cover cell) so its
+ * lit-hold region fits whole and centred.
+ *
+ * Unlike `getClimbThumbnailCropPlacement`, which centres the region and lets
+ * the art stop short of the slot's edge, this slides the art back so it keeps
+ * covering the slot: a climb that tops out against the board's edge shows more
+ * board instead of an empty strip. Without a crop the whole board is fitted.
+ *
+ * `left` and `width` are shares of the slot's width and `top` a share of its
+ * height, for an absolutely positioned box whose art keeps the board's own
+ * aspect ratio.
+ */
+export function getClimbCoverPlacement(
+  crop: ClimbThumbnailCrop | null | undefined,
+  boardWidth: number,
+  boardHeight: number,
+  mirrored: boolean,
+  slotAspect: number,
+): { left: string; top: string; width: string } {
+  const region = crop ?? WHOLE_BOARD;
+  const regionAspect = (region.width * boardWidth) / (region.height * boardHeight);
+  // Every length below is in slot widths.
+  const slotHeight = 1 / slotAspect;
+  const regionWidth = Math.min(1, regionAspect / slotAspect);
+  const artWidth = regionWidth / region.width;
+  const artHeight = (artWidth * boardHeight) / boardWidth;
+  // The art box is flipped as a whole, so the region sits mirrored inside it.
+  const regionX = mirrored ? 1 - region.x - region.width : region.x;
+  const left = coverOffset(0.5 - (regionX + region.width / 2) * artWidth, artWidth, 1);
+  const top = coverOffset(slotHeight / 2 - (region.y + region.height / 2) * artHeight, artHeight, slotHeight);
+  return { left: toPercent(left), top: toPercent(top / slotHeight), width: toPercent(artWidth) };
+}

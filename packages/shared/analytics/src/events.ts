@@ -394,6 +394,16 @@ export const SHARED_EVENTS = {
   // never carried it. The CTA href itself stays UTM-free — attribution is
   // these properties, because the app route has to match the bare pathname.
   ClimbHandoffClicked: 'Climb Handoff Clicked',
+  // The playlist page's sibling of `Climb Handoff Clicked`: a reader on
+  // www's /playlists/{uuid} taps "Climb this in the app". Props: {
+  // environment: 'production-web', surface: 'playlist_front_door', boardName
+  // (the playlist's board type), layoutId (null for a synced circuit),
+  // isPublic, playlistUuid (public playlists only), locale, campaign:
+  // 'front_door' }. A separate name, not a third `surface` on the climb event:
+  // the hand-off lands on the app's /discover/{uuid}, which fires no
+  // `Board Route Handoff`, so folding it in would drag down the climb
+  // hand-off's completion rate with clicks that can never complete.
+  PlaylistHandoffClicked: 'Playlist Handoff Clicked',
   // Logbook search / filter usage — privacy-safe (counts, field names, and the
   // sort choice only; never the raw query text, grade, date or setter values).
   // Drives the "which capsules earn a default pin" call. Props:

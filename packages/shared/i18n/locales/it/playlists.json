@@ -242,6 +242,13 @@
     "climbCount_one": "{{count}} blocco",
     "climbCount_other": "{{count}} blocchi",
     "openInApp": "Scalala nell'app",
+    "subline": {
+      "boardPlaylist": "Playlist {{board}}",
+      "sprayWallPlaylist": "Playlist Spraywall",
+      "sprayWall": "Spraywall",
+      "multiBoardPlaylist": "Playlist {{boards}}",
+      "gradeBand": "da {{low}} a {{high}}"
+    },
     "followerCount_one": "{{count}} follower",
     "followerCount_other": "{{count}} follower",
     "followFailed": "Impossibile aggiornare il follow della playlist",
