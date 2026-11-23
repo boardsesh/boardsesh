@@ -403,6 +403,7 @@ jobs:
               - 'packages/shared/community-roles/**'
               - 'packages/shared/connected-apps/**'
               - 'packages/shared/create-climb-react/**'
+              - 'packages/shared/directory-moderation/**'
               - 'packages/shared/email/**'
               - 'packages/shared/graphql/**'
               - 'packages/shared/graphql-client/**'
