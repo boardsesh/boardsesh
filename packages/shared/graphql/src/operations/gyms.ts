@@ -25,6 +25,7 @@ import type {
   SimilarGym,
   StrayBoard,
   AttachBoardToGymInput,
+  DetachBoardFromGymInput,
   UserBoard,
   GymStats,
   GymStatsInput,
@@ -88,6 +89,8 @@ const GYM_FIELDS = `
   canGrantAccess
   canClaim
   isClaimed
+  canClaimByDomain
+  listingState
 `;
 
 export const GET_GYM = gql`
@@ -204,6 +207,7 @@ export const FIND_SIMILAR_GYMS = gql`
       distanceMeters
       ownerType
       isClaimable
+      canClaimByDomain
       providerOrigins
     }
   }
@@ -228,6 +232,10 @@ export const GET_GYM_MEMBERS = gql`
 // Board fields the manage-gym board pickers and the leaderboard embed read from
 // gymBoards. `boardId` is the numeric board-presence channel id (null unless the
 // board is public or the viewer can edit it) — it feeds boardNowPlaying(boardId).
+// `canDelete` and `canRemoveFromGym` are the server's word on the staff actions,
+// so no client rebuilds the permission rule. Both read false for an anonymous
+// viewer, so they are safe in the leaderboard embed. `ownerDisplayName` is not:
+// see GET_GYM_BOARDS_FOR_MANAGE.
 const GYM_BOARD_FIELDS = `
   uuid
   slug
@@ -248,6 +256,8 @@ const GYM_BOARD_FIELDS = `
   gymUuid
   boardId
   canEdit
+  canDelete
+  canRemoveFromGym
 `;
 
 export const GET_GYM_BOARDS = gql`
@@ -277,6 +287,25 @@ export const GET_GYM_BOARDS_FOR_LISTING = gql`
     gymBoards(gymUuid: $gymUuid) {
       ${GYM_BOARD_FIELDS}
       serialNumber
+    }
+  }
+`;
+
+/**
+ * The gym's boards for Manage gym → Boards, which says who put each one there
+ * ("Added by Sam", "Added by you", "From public board data").
+ *
+ * A separate document because `ownerDisplayName` must stay out of
+ * `GYM_BOARD_FIELDS`: the anonymous leaderboard embed selects that fragment,
+ * and a climber's name has no business in an unauthenticated payload. The
+ * server still applies the owner's privacy, so `ownerId` and the name come back
+ * null for a climber whose activity the viewer can't see.
+ */
+export const GET_GYM_BOARDS_FOR_MANAGE = gql`
+  query GetGymBoardsForManage($gymUuid: ID!) {
+    gymBoards(gymUuid: $gymUuid) {
+      ${GYM_BOARD_FIELDS}
+      ownerDisplayName
     }
   }
 `;
@@ -694,6 +723,14 @@ export type GetGymBoardsQueryResponse = {
   gymBoards: UserBoard[];
 };
 
+export type GetGymBoardsForManageQueryVariables = {
+  gymUuid: string;
+};
+
+export type GetGymBoardsForManageQueryResponse = {
+  gymBoards: UserBoard[];
+};
+
 /**
  * One row of `GET_GYM_BOARDS_FOR_SWITCHER`. Narrower than `UserBoard` by exactly
  * the fields that document doesn't select, so a consumer can't read `undefined`
@@ -810,6 +847,14 @@ export type AttachBoardToGymMutationVariables = {
 
 export type AttachBoardToGymMutationResponse = {
   attachBoardToGym: boolean;
+};
+
+export type DetachBoardFromGymMutationVariables = {
+  input: DetachBoardFromGymInput;
+};
+
+export type DetachBoardFromGymMutationResponse = {
+  detachBoardFromGym: boolean;
 };
 
 export type GrantGymWriteAccessMutationVariables = {

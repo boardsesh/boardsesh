@@ -113,6 +113,8 @@ export const BOARD_FIELDS = `
   timerName
   canEdit
   isPinnedByMe
+  canDelete
+  canRemoveFromGym
 `;
 
 /**
