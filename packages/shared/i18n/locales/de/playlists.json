@@ -244,6 +244,8 @@
     "openInApp": "Kletter das in der App",
     "subline": {
       "boardPlaylist": "{{board}}-Playlist",
+      "sprayWallPlaylist": "Spraywall-Playlist",
+      "sprayWall": "Spraywall",
       "multiBoardPlaylist": "Playlist für {{boards}}",
       "gradeBand": "{{low}} bis {{high}}"
     },

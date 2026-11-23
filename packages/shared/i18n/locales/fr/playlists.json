@@ -244,6 +244,8 @@
     "openInApp": "Grimpez ça dans l'app",
     "subline": {
       "boardPlaylist": "Playlist {{board}}",
+      "sprayWallPlaylist": "Playlist Spraywall",
+      "sprayWall": "Spraywall",
       "multiBoardPlaylist": "Playlist {{boards}}",
       "gradeBand": "{{low}} à {{high}}"
     },

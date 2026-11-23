@@ -244,6 +244,8 @@
     "openInApp": "Escala esto en la app",
     "subline": {
       "boardPlaylist": "Playlist de {{board}}",
+      "sprayWallPlaylist": "Playlist de Spraywall",
+      "sprayWall": "Spraywall",
       "multiBoardPlaylist": "Playlist de {{boards}}",
       "gradeBand": "de {{low}} a {{high}}"
     },

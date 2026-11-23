@@ -500,7 +500,9 @@ export default function PlaylistDetailContent({
             </Typography>
             <PlaylistSubline
               boardTypes={boardTypes}
-              climbCount={playlist.climbCount}
+              // The list's own count, which the meta description and share card
+              // print too. `climbCount` also counts drafts and hidden spray climbs.
+              climbCount={initialClimbs?.totalCount ?? playlist.climbCount}
               gradeSummary={gradeSummary}
               locale={locale}
             />

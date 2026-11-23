@@ -1,9 +1,10 @@
 import React from 'react';
-import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { resolvePlaylistGradeBand, type PlaylistGradeBandSummary } from '@/app/lib/playlist-grade-band';
 import styles from '@/app/components/ui/page-container.module.css';
+
+const SPRAY_BOARD_TYPE = 'spray';
 
 /**
  * The boards a playlist spans: its own board first, then each other board its
@@ -37,26 +38,42 @@ type PlaylistSublineProps = {
 export default function PlaylistSubline({ boardTypes, climbCount, gradeSummary, locale }: PlaylistSublineProps) {
   const { t } = useTranslation('playlists');
   const [playlistBoardType] = boardTypes;
-  const boardLabels = boardTypes.map(boardTypeLabel);
-  const kind =
-    boardLabels.length > 1
-      ? t('detail.subline.multiBoardPlaylist', {
-          boards: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(boardLabels),
-        })
-      : t('detail.subline.boardPlaylist', { board: boardLabels[0] });
+  let kind: string;
+  if (boardTypes.length > 1) {
+    // A spray wall is not a brand, so its name is translated, unlike the board names.
+    const boardLabels = boardTypes.map((boardType) =>
+      boardType === SPRAY_BOARD_TYPE ? t('detail.subline.sprayWall') : boardTypeLabel(boardType),
+    );
+    kind = t('detail.subline.multiBoardPlaylist', {
+      boards: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(boardLabels),
+    });
+  } else if (playlistBoardType === SPRAY_BOARD_TYPE) {
+    kind = t('detail.subline.sprayWallPlaylist');
+  } else {
+    kind = t('detail.subline.boardPlaylist', { board: boardTypeLabel(playlistBoardType) });
+  }
   const band = resolvePlaylistGradeBand(playlistBoardType, gradeSummary);
   let bandText: string | null = null;
   if (band) {
     bandText = band.low === band.high ? band.low : t('detail.subline.gradeBand', { low: band.low, high: band.high });
   }
 
+  // A plain <p>, not Typography: a MUI variant class ties a CSS-module class on
+  // specificity and wins on injection order, which reset this line's size and gap.
+  // The spaces between parts are for text and screen readers; the flex row
+  // drops whitespace, and the dots are drawn in CSS.
   return (
-    <Typography component="p" className={styles.heroSubline}>
+    <p className={styles.heroSubline}>
       <span className={styles.heroSublineParts}>
-        <span className={styles.heroKind}>{kind}</span>
-        <span>{t('detail.climbCount', { count: climbCount })}</span>
-        {bandText ? <span>{bandText}</span> : null}
+        <span className={styles.heroKind}>{kind}</span>{' '}
+        <span className={styles.heroFact}>{t('detail.climbCount', { count: climbCount })}</span>
+        {bandText ? (
+          <>
+            {' '}
+            <span className={styles.heroFact}>{bandText}</span>
+          </>
+        ) : null}
       </span>
-    </Typography>
+    </p>
   );
 }

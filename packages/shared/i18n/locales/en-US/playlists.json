@@ -244,6 +244,8 @@
     "openInApp": "Climb this in the app",
     "subline": {
       "boardPlaylist": "{{board}} playlist",
+      "sprayWallPlaylist": "Spraywall playlist",
+      "sprayWall": "Spraywall",
       "multiBoardPlaylist": "{{boards}} playlist",
       "gradeBand": "{{low}} to {{high}}"
     },

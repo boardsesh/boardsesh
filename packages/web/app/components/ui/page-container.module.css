@@ -45,11 +45,13 @@
   margin-top: var(--spacing-4);
 }
 
-/* "Kilter playlist · 12 climbs · V0 to V8". Each part keeps its words together
-   and the line breaks between parts, so a grade never splits from its V.
-   Every part draws its dot in front of it, and the parts row starts one dot
-   to the left of the clipped line, so a part that opens a line (the first, or
-   one that wrapped) has its dot cut off instead of leading with "·". */
+/* "Kilter playlist · 12 climbs · V0 to V8". The count and the band keep their
+   words together, so a grade never splits from its V; the board name may wrap,
+   since "Playlist für Kilter und Tension" can be wider than a phone's title
+   column. Every part draws its dot in front of it, and the parts row starts one
+   dot to the left of the clipped line, so a part that opens a line (the first,
+   or one that wrapped) has its dot cut off instead of leading with "·". Only
+   that dot is ever clipped: no part is wider than the line. */
 .heroSubline {
   --subline-separator: 1.25em;
   margin: var(--spacing-2) 0 0;
@@ -66,20 +68,28 @@
   margin-left: calc(-1 * var(--subline-separator));
 }
 
+/* The dot lives in the part's own left padding, so a board name that wraps
+   starts its second line at the text edge, not under the clipped dot. */
 .heroSublineParts > span {
-  white-space: nowrap;
+  position: relative;
+  padding-left: var(--subline-separator);
 }
 
 .heroSublineParts > span::before {
   content: '·';
-  display: inline-block;
+  position: absolute;
+  left: 0;
   width: var(--subline-separator);
   text-align: center;
-  color: var(--neutral-400);
+  color: var(--neutral-500);
 }
 
 .heroKind {
   color: var(--neutral-500);
+}
+
+.heroFact {
+  white-space: nowrap;
 }
 
 .heroMeta {
@@ -97,7 +107,9 @@
   gap: var(--spacing-1);
 }
 
-.heroDescription {
+/* Doubled on purpose: it sits on a MUI Typography, whose single variant class
+   would otherwise tie it and win on injection order (see page-shell.module.css). */
+.heroDescription.heroDescription {
   margin-top: var(--spacing-3);
   color: var(--neutral-600);
   font-size: var(--font-size-sm);

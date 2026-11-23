@@ -244,6 +244,8 @@
     "openInApp": "在应用中攀爬此线路集",
     "subline": {
       "boardPlaylist": "{{board}} 线路集",
+      "sprayWallPlaylist": "喷点墙线路集",
+      "sprayWall": "喷点墙",
       "multiBoardPlaylist": "{{boards}} 线路集",
       "gradeBand": "{{low}} 至 {{high}}"
     },

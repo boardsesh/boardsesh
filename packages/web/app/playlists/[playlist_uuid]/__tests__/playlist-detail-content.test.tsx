@@ -202,26 +202,39 @@ describe('PlaylistDetailContent subline', () => {
   it('names the board, counts the climbs and prints the grade band', () => {
     const { container } = renderDetail(mockPlaylist, { gradeSummary: { p10Difficulty: 10, p90Difficulty: 24 } });
 
-    expect(sublineText(container)).toBe('Kilter playlist12 climbsV0 to V8');
+    // Spaces between the parts, so a screen reader and a crawler don't get "playlist12 climbsV0".
+    expect(sublineText(container)).toBe('Kilter playlist 12 climbs V0 to V8');
   });
 
   it('leaves the band out when the playlist has no grade summary', () => {
     const { container } = renderDetail(mockPlaylist, { gradeSummary: null });
 
-    expect(sublineText(container)).toBe('Kilter playlist12 climbs');
+    expect(sublineText(container)).toBe('Kilter playlist 12 climbs');
   });
 
   it('prints one grade, not "V8 to V8", when both ends of the band match', () => {
     const { container } = renderDetail(mockPlaylist, { gradeSummary: { p10Difficulty: 24, p90Difficulty: 25 } });
 
-    expect(sublineText(container)).toBe('Kilter playlist12 climbsV8');
+    expect(sublineText(container)).toBe('Kilter playlist 12 climbs V8');
   });
 
   it('says "1 climb" for a single climb', () => {
     const { container } = renderDetail({ ...mockPlaylist, climbCount: 1 });
 
-    expect(sublineText(container)).toContain('1 climb');
-    expect(sublineText(container)).not.toContain('1 climbs');
+    expect(sublineText(container)).toBe('Kilter playlist 1 climb');
+  });
+
+  it('counts the climbs the list shows, not drafts or hidden climbs', () => {
+    // `climbCount` is 12 but only 2 climbs are visible: the meta description and share card say 2 too.
+    const { container } = renderDetail(mockPlaylist, { initialClimbs: firstPage([{ uuid: 'a' }, { uuid: 'b' }]) });
+
+    expect(sublineText(container)).toBe('Kilter playlist 2 climbs');
+  });
+
+  it('calls a spray wall playlist by the translated wall name, not a board brand', () => {
+    const { container } = renderDetail({ ...mockPlaylist, boardType: 'spray' });
+
+    expect(sublineText(container)).toBe('Spraywall playlist 12 climbs');
   });
 
   it('names every board a mixed playlist spans, its own board first', () => {
