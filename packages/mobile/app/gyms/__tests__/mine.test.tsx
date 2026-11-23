@@ -185,11 +185,11 @@ describe('MyGymsScreen', () => {
     expect(routerMock.push).toHaveBeenCalledWith('/gyms');
   });
 
-  it('lists gyms and opens the editor when a row is tapped', () => {
+  it("lists gyms and opens the gym's page when a row is tapped", () => {
     state.myGyms = { data: { gyms: [makeGym({})] }, isLoading: false, isError: false };
     const { getByRole } = render(<MyGymsScreen />);
     fireEvent.click(getByRole('button', { name: 'Movement' }));
-    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'g1' } });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'g1' } });
   });
 
   it('hands off to the web manage console and dismisses the kiosk hint', () => {

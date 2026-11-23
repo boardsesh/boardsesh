@@ -20,12 +20,14 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { OfflineState } from '../../src/components/OfflineState';
 import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import { MyGymRow } from '../../src/components/gym-directory/MyGymRow';
+import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { spacing, borderRadius } from '../../src/theme/tokens';
 
 /**
  * "My gyms" — the owner's home for the gyms they run, reached from the More tab.
- * Lists the gyms from the `myGyms` query; each row taps through to the existing
- * gym editor and offers a hand-off to the web kiosk/TV manage console. Empty state
+ * Lists the gyms from the `myGyms` query; each row taps through to the gym's page
+ * (its staff tools lead to the editor) and offers a hand-off to the web kiosk/TV
+ * manage console. Empty state
  * routes to the wall finder, where claiming a gym lives.
  *
  * A plain pushed route (not a modal): it's a destination with its own header, and
@@ -68,7 +70,7 @@ export default function MyGymsScreen() {
   const openGym = useCallback(
     (gym: Gym) => {
       hapticSelection();
-      router.push({ pathname: '/gyms/edit', params: { gymUuid: gym.uuid } });
+      router.push(gymPageHref(gym.uuid));
     },
     [router],
   );

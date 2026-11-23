@@ -280,6 +280,32 @@ describe('GymListPanel', () => {
     expect(onClaimGym).toHaveBeenCalledWith(claimableGym);
   });
 
+  it("offers See gym inside an expanded row, before the claim, and opens that gym's page", () => {
+    const onOpenGym = vi.fn();
+    const onClaimGym = vi.fn();
+    const { getAllByRole, getByText } = render(
+      <GymListPanel
+        data={makeExpandedClaimData()}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        onClaimGym={onClaimGym}
+        onOpenGym={onOpenGym}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    // The gym header, See gym, then the claim action.
+    const buttons = getAllByRole('button');
+    expect(buttons).toHaveLength(3);
+    expect(getByText('mobile.gyms.seeGym')).toBeTruthy();
+    fireEvent.click(buttons[1]);
+    expect(onOpenGym).toHaveBeenCalledWith(claimableGym);
+    expect(onClaimGym).not.toHaveBeenCalled();
+  });
+
   it('does not render a claim action when no onClaimGym handler is supplied', () => {
     const { getAllByRole } = render(
       <GymListPanel

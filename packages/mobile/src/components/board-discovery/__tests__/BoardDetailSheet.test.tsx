@@ -19,6 +19,8 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { BoardDetailSheet } from '../BoardDetailSheet';
 const relistMutate = vi.hoisted(() => vi.fn());
 const showToast = vi.hoisted(() => vi.fn());
+const routerPush = vi.hoisted(() => vi.fn());
+const focusEffects = vi.hoisted(() => ({ latest: null as (() => void) | null }));
 const state = vi.hoisted(() => ({
   directoryReports: true,
   canReport: true,
@@ -31,7 +33,13 @@ const state = vi.hoisted(() => ({
   gymArgs: [] as (string | null)[],
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: routerPush }),
+  // The picker regaining focus after the gym page pops; the test calls it by hand.
+  useFocusEffect: (effect: () => void) => {
+    focusEffects.latest = effect;
+  },
+}));
 vi.mock('react-native', () => ({
   View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   Pressable: ({
@@ -137,6 +145,8 @@ beforeEach(() => {
   state.directoryReports = true;
   relistMutate.mockReset();
   showToast.mockReset();
+  routerPush.mockClear();
+  focusEffects.latest = null;
   state.canReport = true;
   state.profileId = 'viewer-1';
   state.viewerUserId = 'viewer-1';
@@ -357,5 +367,41 @@ describe('BoardDetailSheet home board share row', () => {
     const screen = render(<BoardDetailSheet board={{ ...homeBoard, isPublic: true }} visible {...props} />);
     fireEvent.click(screen.getByLabelText('mobile.boardDetail.share.shareLink'));
     expect(screen.getByTestId('home-share-target').textContent).toBe('plain:Garage board');
+  });
+});
+
+describe('BoardDetailSheet At {gym} row', () => {
+  const gymBoard = {
+    ...homeBoard,
+    uuid: 'gym-board',
+    ownerId: 'someone',
+    isPublic: true,
+    gymUuid: 'gym-uuid-1',
+    gymName: 'Crux',
+  } as unknown as UserBoard;
+
+  it('opens the gym page in the picker stack, then brings the sheet back on return', () => {
+    const onClose = vi.fn();
+    const screen = render(
+      <BoardDetailSheet board={gymBoard} visible onClose={onClose} onSetActive={vi.fn()} returnTo="/(tabs)/discover" />,
+    );
+    fireEvent.click(screen.getByLabelText('mobile.boardDetail.atGym'));
+    expect(routerPush).toHaveBeenCalledWith({
+      pathname: '/boards/gym/[gym]',
+      params: { gym: 'gym-uuid-1', returnTo: '/(tabs)/discover' },
+    });
+    // Suspended: the sheet is closed, but its board is kept and nobody was told it closed.
+    expect(screen.queryByLabelText('mobile.boardDetail.atGym')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => focusEffects.latest?.());
+    expect(screen.getByLabelText('mobile.boardDetail.atGym')).toBeTruthy();
+  });
+
+  it('draws no row for a board with no gym the viewer can see', () => {
+    const screen = render(
+      <BoardDetailSheet board={{ ...gymBoard, gymName: null }} visible onClose={vi.fn()} onSetActive={vi.fn()} />,
+    );
+    expect(screen.queryByLabelText('mobile.boardDetail.atGym')).toBeNull();
   });
 });
