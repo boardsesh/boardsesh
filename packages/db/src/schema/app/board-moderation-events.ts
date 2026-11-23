@@ -4,14 +4,16 @@ import { gyms } from './gyms';
 import { userBoards } from './boards';
 
 /**
- * What happened to a board at someone else's hand.
+ * What happened to a board at someone else's hand, plus the creator's own gym
+ * link changes.
  *
  * - `removed_from_gym`: the board was taken off a gym's listing. The board stays
- *   with its creator.
+ *   with its creator. By `board_owner`, the creator unlinked it themselves.
  * - `deleted`: the board was soft-deleted by someone other than its creator.
  * - `edited_by_staff`: someone other than the creator changed the board.
  * - `relinked`: gym staff put a board they had removed back on their listing,
  *   which lifts the hold a staff removal places on the creator's own re-link.
+ *   By `board_owner`, the creator linked it to a gym themselves.
  */
 export const boardModerationActionEnum = pgEnum('board_moderation_action', [
   'removed_from_gym',
@@ -44,17 +46,24 @@ export type BoardModerationEventDetails = {
 
 /**
  * Append-only record of staff and admin actions on boards
- * (docs/product/gym-board-governance.md, decision 1).
+ * (docs/product/gym-board-governance.md, decision 1), and of the creator's own
+ * gym link changes (`board_owner`).
  *
- * Read by two rules:
+ * Read by these rules:
  * - A creator may not self-link a board back to a gym whose staff removed it.
- *   The latest `removed_from_gym` / `relinked` row for the (board, gym) pair
- *   decides: a staff removal holds the board off that gym until staff relink it.
+ *   The latest `removed_from_gym` / `relinked` row for the (board, gym) pair,
+ *   by `id`, decides: a staff removal holds the board off that gym until staff
+ *   relink it.
  * - The gym's "boards near your gym" list skips boards held off the same way.
+ * - Staff may re-list a board they removed only while its creator has written
+ *   no `removed_from_gym` / `relinked` row for it since.
+ * - An admin may not clear the sync freeze on a board whose latest such row is a
+ *   staff removal.
  *
  * Rows are written in the same transaction as the change they describe and are
- * never updated. The board cascade means an account deletion takes its boards'
- * history with it; a deleted gym or actor leaves the row with a null pointer.
+ * never updated. Account deletion soft-deletes a user's boards and hands them to
+ * SYSTEM, so their events stay; only a hard delete of the board row cascades.
+ * A hard-deleted gym or actor leaves the row with a null pointer.
  */
 export const boardModerationEvents = pgTable(
   'board_moderation_events',

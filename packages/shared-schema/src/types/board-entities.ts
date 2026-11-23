@@ -68,7 +68,9 @@ export type UserBoard = {
   /**
    * Whether the viewer may take this board off its gym's listing: its owner
    * (`linkBoardToGym` with no gym) or anyone with edit access to that gym
-   * (`detachBoardFromGym`). Optional for the same reason as `canEdit`.
+   * (`detachBoardFromGym`). A synced (system-owned) board is deleted instead,
+   * so only a global admin may remove one. Optional for the same reason as
+   * `canEdit`.
    */
   canRemoveFromGym?: boolean;
   /**

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
+import { rowsFromResult } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -12,7 +13,9 @@ import {
   socialGymStrayBoardQueries,
   type StrayBoardResult,
 } from '../graphql/resolvers/social/gym-stray-boards';
+import { socialLocationSyncFreezeMutations } from '../graphql/resolvers/social/location-sync-freezes';
 import { resetAllRateLimits } from '../utils/rate-limiter';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 /**
  * The gym and board power model (docs/product/gym-board-governance.md, decision 1):
@@ -165,13 +168,35 @@ describe('detachBoardFromGym — Remove from gym', () => {
     expect((await boardRow(climberBoard.id)).gymId).toBeNull();
   });
 
-  it('freezes a detached synced board so the hourly location sync cannot put it back', async () => {
+  it.each([GYM_OWNER, GYM_ADMIN, GYM_EDITOR, KILTER_LEADER])(
+    'refuses %s removing a synced board, which is deleted instead',
+    async (userId) => {
+      // Removed, it would be a frozen pin with no gym that the stray list hides
+      // and only a global admin could delete.
+      const removal = detach(gym.uuid, systemBoard.uuid, userId);
+      await expect(removal).rejects.toThrow(
+        'This board comes from public board data. Delete it instead, or report it.',
+      );
+      await expect(removal).rejects.toSatisfy(
+        (error: unknown) => error instanceof GraphQLError && error.extensions.code === 'SYSTEM_BOARD_DELETE_INSTEAD',
+      );
+      const untouched = await boardRow(systemBoard.id);
+      expect(untouched.gymId).toBe(gym.id);
+      expect(untouched.syncFrozenAt).toBeNull();
+      expect(await eventsFor(systemBoard.id)).toEqual([]);
+    },
+  );
+
+  it('lets a global admin remove a synced board, frozen so the hourly location sync cannot put it back', async () => {
     // The sync's board upsert skips a frozen row entirely, gym link included:
     // packages/location-sync/src/upsert.freeze.integration.test.ts proves that half.
-    await detach(gym.uuid, systemBoard.uuid, GYM_ADMIN);
+    await detach(gym.uuid, systemBoard.uuid, GLOBAL_ADMIN);
     const removed = await boardRow(systemBoard.id);
     expect(removed.gymId).toBeNull();
     expect(removed.syncFrozenAt).toBeInstanceOf(Date);
+    expect(await eventsFor(systemBoard.id)).toEqual([
+      expect.objectContaining({ actorUserId: GLOBAL_ADMIN, actorRole: 'global_admin', action: 'removed_from_gym' }),
+    ]);
   });
 
   it('places no hold when the creator removes their own board', async () => {
@@ -213,7 +238,7 @@ describe('putting a removed board back', () => {
 
   it('does not offer a removed synced board under boards near your gym', async () => {
     const nearbyUnlinked = await insertBoard(SYSTEM_OWNER, null);
-    await detach(gym.uuid, systemBoard.uuid, GYM_ADMIN);
+    await detach(gym.uuid, systemBoard.uuid, GLOBAL_ADMIN);
 
     const strays = (await strayBoardsForGym(gym.uuid, GYM_OWNER)).map((stray) => stray.uuid);
     expect(strays).toContain(nearbyUnlinked.uuid);
@@ -227,6 +252,33 @@ describe('putting a removed board back', () => {
 
     await expect(attach(gym.uuid, climberBoard.uuid, GYM_ADMIN)).rejects.toThrow(/not a stray candidate/);
     expect((await boardRow(climberBoard.id)).gymId).toBe(otherGym.id);
+  });
+
+  it('will not re-list a removed board whose location its creator has hidden since', async () => {
+    await detach(gym.uuid, climberBoard.uuid, GYM_EDITOR);
+    await db.update(dbSchema.userBoards).set({ hideLocation: true }).where(eq(dbSchema.userBoards.id, climberBoard.id));
+
+    await expect(attach(gym.uuid, climberBoard.uuid, GYM_ADMIN)).rejects.toThrow(/not a stray candidate/);
+    expect((await boardRow(climberBoard.id)).gymId).toBeNull();
+  });
+
+  it('will not re-list a removed board its creator has linked and unlinked since', async () => {
+    await detach(gym.uuid, climberBoard.uuid, GYM_EDITOR);
+    const otherGym = await insertGym(OUTSIDER, 'Other gym');
+    await linkBoardToGym(climberBoard.uuid, otherGym.uuid, CREATOR);
+    await linkBoardToGym(climberBoard.uuid, null, CREATOR);
+    // The creator's own link changes are on the record, and place no hold.
+    expect((await eventsFor(climberBoard.id)).map((event) => [event.action, event.actorRole, event.gymId])).toEqual([
+      ['removed_from_gym', 'gym_editor', gym.id],
+      ['relinked', 'board_owner', otherGym.id],
+      ['removed_from_gym', 'board_owner', otherGym.id],
+    ]);
+
+    await expect(attach(gym.uuid, climberBoard.uuid, GYM_ADMIN)).rejects.toThrow(/not a stray candidate/);
+    expect((await boardRow(climberBoard.id)).gymId).toBeNull();
+    // Still held off this gym, and free to go back to the other one.
+    await expect(linkBoardToGym(climberBoard.uuid, gym.uuid, CREATOR)).rejects.toThrow(/Ask them to re-list it/);
+    await expect(linkBoardToGym(climberBoard.uuid, otherGym.uuid, CREATOR)).resolves.toBe(true);
   });
 
   it('lets a gym admin link their own removed board back through the staff path, recorded as a relink', async () => {
@@ -247,10 +299,11 @@ describe('UserBoard.canDelete and canRemoveFromGym', () => {
   // [viewer, climber's board, synced board]
   const cases: Array<[string, Flags, Flags]> = [
     [CREATOR, flags(true, true), flags(false, false)],
-    [GYM_OWNER, flags(false, true), flags(true, true)],
-    [GYM_ADMIN, flags(false, true), flags(true, true)],
-    [GYM_EDITOR, flags(false, true), flags(false, true)],
-    [KILTER_LEADER, flags(false, true), flags(false, true)],
+    // A synced board is deleted, never removed: only a global admin removes one.
+    [GYM_OWNER, flags(false, true), flags(true, false)],
+    [GYM_ADMIN, flags(false, true), flags(true, false)],
+    [GYM_EDITOR, flags(false, true), flags(false, false)],
+    [KILTER_LEADER, flags(false, true), flags(false, false)],
     [TENSION_LEADER, flags(false, false), flags(false, false)],
     [GLOBAL_ADMIN, flags(true, true), flags(true, true)],
     [OUTSIDER, flags(false, false), flags(false, false)],
@@ -297,6 +350,84 @@ describe('UserBoard.canDelete and canRemoveFromGym', () => {
       authCtx(KILTER_LEADER),
     );
     expect(asKilterLeader).toMatchObject(flags(false, false));
+  });
+});
+
+describe('the re-link hold under a concurrent removal', () => {
+  it("refuses the creator's link when a staff removal commits between the gate and the write", async () => {
+    // The creator re-saves their board's gym while a gym editor removes it. The
+    // gate reads the board before the removal commits; the write must not.
+    const holdingPid = createValueBarrier<number>();
+    const releaseRemoval = createBarrier();
+    const removal = db.transaction(async (tx) => {
+      const [backend] = rowsFromResult<{ pid: number }>(await tx.execute(sql`SELECT pg_backend_pid() AS pid`));
+      await tx
+        .update(dbSchema.userBoards)
+        .set({ gymId: null, syncFrozenAt: new Date() })
+        .where(eq(dbSchema.userBoards.id, climberBoard.id));
+      await tx.insert(dbSchema.boardModerationEvents).values({
+        boardId: climberBoard.id,
+        gymId: gym.id,
+        actorUserId: GYM_EDITOR,
+        actorRole: 'gym_editor',
+        action: 'removed_from_gym',
+        details: { mutation: 'detachBoardFromGym' },
+      });
+      holdingPid.release(backend.pid);
+      await releaseRemoval.promise;
+    });
+    handleLater(removal);
+    const blockerPid = await holdingPid.promise;
+    const relink = linkBoardToGym(climberBoard.uuid, gym.uuid, CREATOR);
+    handleLater(relink);
+    try {
+      await vi.waitFor(
+        async () => {
+          const [activity] = rowsFromResult<{ blocked: boolean }>(
+            await db.execute(sql`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE ${blockerPid} = ANY(pg_blocking_pids(pid)) AND wait_event_type = 'Lock'
+              ) AS blocked
+            `),
+          );
+          expect(activity.blocked).toBe(true);
+        },
+        { timeout: 5000, interval: 20 },
+      );
+    } finally {
+      releaseRemoval.release();
+      await removal;
+    }
+    await expect(relink).rejects.toThrow("This gym's staff took this board off their listing. Ask them to re-list it.");
+    expect((await boardRow(climberBoard.id)).gymId).toBeNull();
+    expect((await eventsFor(climberBoard.id)).map((event) => event.action)).toEqual(['removed_from_gym']);
+  });
+});
+
+describe('clearing the sync freeze on a removed board', () => {
+  it('is refused while the latest removal holds it off a gym', async () => {
+    // Staff can no longer remove a synced board; a global admin still can, and
+    // older rows exist. The freeze is what keeps the sync from relinking it.
+    await detach(gym.uuid, systemBoard.uuid, GLOBAL_ADMIN);
+    const frozen = await boardRow(systemBoard.id);
+    const unfreeze = socialLocationSyncFreezeMutations.clearLocationSyncFreeze(
+      null,
+      {
+        input: {
+          entityType: 'BOARD',
+          entityUuid: systemBoard.uuid,
+          expectedSyncFrozenAt: frozen.syncFrozenAt!.toISOString(),
+          reason: 'The wall is back on the gym map upstream',
+        },
+      },
+      authCtx(GLOBAL_ADMIN),
+    );
+    await expect(unfreeze).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof GraphQLError && error.extensions.code === 'LOCATION_SYNC_BOARD_REMOVED_BY_GYM',
+    );
+    expect((await boardRow(systemBoard.id)).syncFrozenAt).toEqual(frozen.syncFrozenAt);
   });
 });
 

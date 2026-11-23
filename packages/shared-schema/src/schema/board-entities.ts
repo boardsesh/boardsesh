@@ -163,7 +163,9 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     the board is linked to a gym and the viewer is its owner (call linkBoardToGym
     with gymUuid null) or can edit that gym: its owner, a gym admin or editor, or a
     community admin/leader covering it (call detachBoardFromGym). Gym staff use this
-    instead of deleting a climber's board. False when signed out.
+    instead of deleting a climber's board. A synced (system-owned) board is deleted,
+    not removed: false for it unless the viewer is a global admin. False when
+    signed out.
     """
     canRemoveFromGym: Boolean!
     "Whether the current viewer has pinned this board to the front of their board list (false when unauthenticated)"

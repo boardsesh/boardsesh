@@ -356,15 +356,20 @@ function viewerMayDeleteBoard(
 /**
  * Whether the viewer can take this board off its gym's listing: its creator
  * (with `linkBoardToGym`, gym null) or anyone who passes `requireGymEditAccess`
- * for the board's gym (with `detachBoardFromGym`).
+ * for the board's gym (with `detachBoardFromGym`). A synced (SYSTEM) board is
+ * deleted, not removed, so only a global admin may remove one; the rule
+ * `detachBoardFromGym` enforces.
  */
 function viewerMayRemoveBoardFromGym(
   board: BoardPermissionFacts,
   viewerId: string,
   authority: ViewerGymAuthority,
+  viewerRoles: readonly CommunityRoleScope[],
 ): boolean {
   if (board.deletedAt != null || board.gymId == null) return false;
-  return board.ownerId === viewerId || authority.editableGymIds.has(board.gymId);
+  if (board.ownerId === viewerId) return true;
+  if (!authority.editableGymIds.has(board.gymId)) return false;
+  return board.ownerId !== SYSTEM_BOARD_OWNER_ID || rolesGrantAdmin(viewerRoles, null);
 }
 
 /** The viewer's relationship to each live gym among a set of board links. */
@@ -693,13 +698,16 @@ async function enrichBoard(
       (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
       (board.gymId != null && gymAuthority.managedGymIds.has(board.gymId))
     : false;
-  // Every caller gated this row on `canAccessResource`, so the delete gate's
-  // read check holds already.
-  const canDelete = authenticatedUserId
-    ? viewerMayDeleteBoard(board, authenticatedUserId, gymAuthority, viewerRoles)
-    : false;
+  // The delete gate's read check is `canAccessResource`. Callers let this
+  // viewer read the row through `canAccessBoard`, which also admits a member of
+  // a live session on a home wall, so a non-owner the rule admits (gym staff on
+  // a synced board, a global admin) takes that check too: one query, only then.
+  const canDelete =
+    authenticatedUserId != null &&
+    viewerMayDeleteBoard(board, authenticatedUserId, gymAuthority, viewerRoles) &&
+    (board.ownerId === authenticatedUserId || (await canAccessResource('board', board.uuid, authenticatedUserId)));
   const canRemoveFromGym = authenticatedUserId
-    ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority)
+    ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority, viewerRoles)
     : false;
 
   const sprayImport =
@@ -941,7 +949,7 @@ export async function enrichBoards(
           ? viewerMayDeleteBoard(board, authenticatedUserId, gymAuthority, viewerRoles)
           : false;
       const canRemoveFromGym = authenticatedUserId
-        ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority)
+        ? viewerMayRemoveBoardFromGym(board, authenticatedUserId, gymAuthority, viewerRoles)
         : false;
 
       return {

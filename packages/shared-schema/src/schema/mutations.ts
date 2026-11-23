@@ -645,7 +645,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     the board must currently be listed at it. Gym staff's tool for a climber's
     board: clears gym_id and freezes the board against the location sync,
     leaving the board with its owner. A removal by staff stops the owner
-    self-linking it back to this gym. See UserBoard.canRemoveFromGym.
+    self-linking it back to this gym. A synced (system-owned) board is refused
+    with SYSTEM_BOARD_DELETE_INSTEAD unless the caller is a global admin: the
+    gym's owner or admin deletes it instead. See UserBoard.canRemoveFromGym.
     """
     detachBoardFromGym(input: DetachBoardFromGymInput!): Boolean!
 

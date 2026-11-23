@@ -47,10 +47,11 @@ import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 import { gymLocationFilter } from './gym-discovery-filters';
 import { publicGymSitemap } from './gym-sitemap';
 import type { GymListingState } from '@boardsesh/shared-schema';
+import type { BoardModerationActorRole } from '@boardsesh/db/schema';
 import {
   boardHeldOffGymError,
   isBoardHeldOffGym,
-  recordBoardModerationEvent,
+  recordOwnerGymLinkChange,
   viewerGymManagerRole,
 } from './board-moderation-events';
 
@@ -1273,7 +1274,30 @@ export const socialGymMutations = {
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+        await db.transaction(async (tx) => {
+          const [lockedBoard] = await tx
+            .select({ gymId: dbSchema.userBoards.gymId })
+            .from(dbSchema.userBoards)
+            .where(
+              and(
+                eq(dbSchema.userBoards.id, board.id),
+                eq(dbSchema.userBoards.ownerId, userId),
+                isNull(dbSchema.userBoards.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          if (!lockedBoard) return;
+          await tx.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+          // The creator moving their own board, on the record for a staff re-list.
+          await recordOwnerGymLinkChange(tx, {
+            boardId: board.id,
+            actorUserId: userId,
+            fromGymId: lockedBoard.gymId,
+            toGymId: gym.id,
+            mutation: 'createGym',
+          });
+        });
       }
     }
 
@@ -1657,38 +1681,53 @@ export const socialGymMutations = {
       throw new Error('Not authorized to modify this board');
     }
 
-    if (validatedInput.gymUuid) {
-      const gym = await requireBoardGymLinkAccess({
-        ctx,
-        gymUuid: validatedInput.gymUuid,
-        userId,
-        boardOwnerId: board.ownerId,
-        boardId: board.id,
-        boardLatitude: board.latitude,
-        boardLongitude: board.longitude,
-      });
+    // The gate runs first, outside the lock, for its plain errors and rate
+    // limits. Unlinking is always the board owner's own call and has none.
+    const gym = validatedInput.gymUuid
+      ? await requireBoardGymLinkAccess({
+          ctx,
+          gymUuid: validatedInput.gymUuid,
+          userId,
+          boardOwnerId: board.ownerId,
+          boardId: board.id,
+          boardLatitude: board.latitude,
+          boardLongitude: board.longitude,
+        })
+      : null;
+    const nextGymId = gym?.id ?? null;
+
+    await db.transaction(async (tx) => {
+      // Decided again under the board's row lock, which `detachBoardFromGym`
+      // also takes. A staff removal committing between the gate and this write
+      // would otherwise be overwritten, hold and all.
+      const [lockedBoard] = await tx
+        .select({ ownerId: dbSchema.userBoards.ownerId, gymId: dbSchema.userBoards.gymId })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!lockedBoard) throw new Error('Board not found');
+      if (lockedBoard.ownerId !== userId) throw new Error('Not authorized to modify this board');
+      if (lockedBoard.gymId === nextGymId) return;
 
       // A held board only gets past the gate on the gym's own staff path, so
       // this link is staff putting it back: it lifts the hold, on the record.
-      const liftsHold = board.gymId !== gym.id && (await isBoardHeldOffGym(board.id, gym.id));
-      await db.transaction(async (tx) => {
-        await tx.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
-        if (!liftsHold) return;
-        const actorRole = await viewerGymManagerRole(gym.id, userId, tx);
-        if (!actorRole) throw boardHeldOffGymError();
-        await recordBoardModerationEvent(tx, {
-          boardId: board.id,
-          gymId: gym.id,
-          actorUserId: userId,
-          actorRole,
-          action: 'relinked',
-          details: { mutation: 'linkBoardToGym' },
-        });
+      let linkActorRole: BoardModerationActorRole | undefined;
+      if (nextGymId != null && (await isBoardHeldOffGym(board.id, nextGymId, tx))) {
+        const managerRole = await viewerGymManagerRole(nextGymId, userId, tx);
+        if (!managerRole) throw boardHeldOffGymError();
+        linkActorRole = managerRole;
+      }
+      await tx.update(dbSchema.userBoards).set({ gymId: nextGymId }).where(eq(dbSchema.userBoards.id, board.id));
+      await recordOwnerGymLinkChange(tx, {
+        boardId: board.id,
+        actorUserId: userId,
+        fromGymId: lockedBoard.gymId,
+        toGymId: nextGymId,
+        mutation: 'linkBoardToGym',
+        linkActorRole,
       });
-    } else {
-      // Unlink from gym — always the board owner's own call.
-      await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
-    }
+    });
 
     return true;
   },

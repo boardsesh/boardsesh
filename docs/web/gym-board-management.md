@@ -6,7 +6,9 @@ listing belongs to the gym.
 
 - **Remove from gym** is the staff tool for a climber's board. The gym's owner,
   admins and editors, and a community admin or leader covering the gym, can take
-  any board off the gym's listing. The board stays with its creator.
+  a climber's board off the gym's listing. The board stays with its creator.
+  A synced (SYSTEM) board can't be removed, except by a global admin: the gym's
+  owner or admin deletes it instead.
 - **Delete** is for the board's creator; for the gym's owner and admins on a
   synced (SYSTEM) board at their gym; and for a global admin on any board. Gym
   staff can no longer delete a climber's board (they could from #8007 until
@@ -56,14 +58,22 @@ receive no deletion event.
 board must be listed there. It clears `gym_id` and sets `sync_frozen_at`, so the
 hourly location sync cannot write a synced board's gym link back.
 
+A synced (SYSTEM) board is refused with `SYSTEM_BOARD_DELETE_INSTEAD` and "This
+board comes from public board data. Delete it instead, or report it.", unless
+the caller is a global admin. Removed, it would be a frozen pin with no gym that
+"boards near your gym" hides and only a global admin could delete.
+`UserBoard.canRemoveFromGym` is false for it on the same terms.
+
 A removal by anyone but the board's creator holds the board off that gym: the
 creator's `linkBoardToGym` (and `updateSprayWall` with a gym) to the same gym is
 refused with `BOARD_REMOVED_BY_GYM` and "This gym's staff took this board off
 their listing. Ask them to re-list it." The board also stops appearing under
 "boards near your gym" (`strayBoardsForGym`). Staff lift the hold by putting
-the board back: `attachBoardToGym` with its uuid, while it is still unlinked,
-or, when the staff member owns the board, `linkBoardToGym` on the gym's staff
-path.
+the board back: `attachBoardToGym` with its uuid, or, when the staff member owns
+the board, `linkBoardToGym` on the gym's staff path. The uuid re-list works only
+while the board is unlinked, its location is not hidden, and its creator has not
+linked or unlinked it anywhere since the removal. The creator's link is checked
+again under the board's row lock, so a removal that lands while it waits wins.
 
 ### The record
 
@@ -72,8 +82,9 @@ same transaction as the change: `removed_from_gym`, `deleted` (by anyone but the
 creator), `edited_by_staff` (`updateBoard`, `adminUpdateBoard` and the spray-wall
 edits a climber sees: details, look, commit, publish and discard of a draft, each
 with the changed fields or the mutation name) and `relinked`. Each row keeps the
-role the actor used. The latest `removed_from_gym` or `relinked` row for a board
-and gym decides the hold.
+role the actor used. The creator's own gym link changes are recorded too, as
+`board_owner` rows, so a re-list can see them. The latest `removed_from_gym` or
+`relinked` row for a board and gym, by `id`, decides the hold.
 
 ## Checks
 

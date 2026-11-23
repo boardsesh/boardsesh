@@ -143,6 +143,20 @@ describe('a session member on a home wall', () => {
     );
   });
 
+  it("offers a global admin in the session no Delete, since the delete gate's read check does not count it", async () => {
+    // `canAccessBoard` lets the member read the wall; `requireBoardDeleteAccess`
+    // reads with `canAccessResource`, which does not. `canDelete` follows the gate.
+    await sessionOn('private-home-wall');
+    await db.insert(schema.communityRoles).values({ userId: MEMBER, role: 'admin', boardType: null });
+    try {
+      const read = await boardBySlug('private-home-wall', MEMBER);
+      expect(read?.uuid).toBe(boardUuid('private-home-wall'));
+      expect(read?.canDelete).toBe(false);
+    } finally {
+      await db.delete(schema.communityRoles).where(eq(schema.communityRoles.userId, MEMBER));
+    }
+  });
+
   it('loses the wall when the session ends', async () => {
     await sessionOn('private-home-wall');
     await endSession();
