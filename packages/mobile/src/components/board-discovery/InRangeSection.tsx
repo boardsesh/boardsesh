@@ -68,6 +68,8 @@ export type InRangeSectionProps = {
   ) => void;
   /** The At {gym} rows that are the climber's own or followed boards: the only ones with a menu. */
   atGymMenuKeys?: ReadonlySet<string>;
+  /** "See gym" on the At {gym} shelf: the gym's page. Absent draws no action. */
+  onSeeGym?: (gymUuid: string) => void;
 };
 
 /** The notices that are one quiet line rather than a card. */
@@ -119,6 +121,7 @@ export function InRangeSection({
   atGymMenuCapabilities,
   onAtGymMenuAction,
   atGymMenuKeys,
+  onSeeGym,
 }: InRangeSectionProps) {
   const { t } = useTranslation('boards');
   const { notice, content, unnamed, scanning, heardNothing } = view;
@@ -179,7 +182,19 @@ export function InRangeSection({
         </ShelfSection>
       ) : null}
       {content.kind === 'at_gym' ? (
-        <ShelfSection title={t('mobile.inRange.atGym', { gym: content.gymName })} trailing={spinner}>
+        <ShelfSection
+          title={t('mobile.inRange.atGym', { gym: content.gymName })}
+          action={
+            onSeeGym
+              ? {
+                  label: t('mobile.gyms.seeGym'),
+                  accessibilityLabel: t('mobile.gyms.seeGymAria', { gym: content.gymName }),
+                  onPress: () => onSeeGym(content.gymUuid),
+                }
+              : undefined
+          }
+          trailing={spinner}
+        >
           <BoardRowList
             // Keyed by the gym, so Show all closes when the top moves to another gym.
             key={content.gymUuid}

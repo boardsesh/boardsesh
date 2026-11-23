@@ -95,8 +95,30 @@ vi.mock('../../ActivityIndicator', () => ({
 // The Velvet pieces as plain markup: a shelf is a heading and its content.
 vi.mock('../../ShelfHeader', () => ({
   SHELF_SECTION_GAP: 28,
-  ShelfSection: ({ title, trailing, children }: Children & { title: string; trailing?: ReactNode }) =>
-    createElement('section', null, createElement('h2', null, title), trailing, children),
+  ShelfSection: ({
+    title,
+    action,
+    trailing,
+    children,
+  }: Children & {
+    title: string;
+    action?: { label: string; onPress: () => void; accessibilityLabel?: string };
+    trailing?: ReactNode;
+  }) =>
+    createElement(
+      'section',
+      null,
+      createElement('h2', null, title),
+      action
+        ? createElement(
+            'button',
+            { type: 'button', onClick: action.onPress, 'aria-label': action.accessibilityLabel ?? action.label },
+            action.label,
+          )
+        : null,
+      trailing,
+      children,
+    ),
 }));
 vi.mock('../../EmptyState', () => ({
   EmptyState: ({ title, actions }: { title: string; actions?: ReactNode }) =>
@@ -403,6 +425,29 @@ describe('InRangeSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Crux Tension, 12 x 12' }));
     // With its place in the list as drawn.
     expect(handlers.onPickBoard).toHaveBeenCalledExactlyOnceWith(AT_CRUX.rows[1], 1);
+  });
+
+  it("offers See gym on At {gym} only when the picker can open the gym's page", () => {
+    const onSeeGym = vi.fn();
+    const { rerender } = renderSlot(AT_CRUX);
+    expect(screen.queryByRole('button', { name: 'See Crux' })).toBeNull();
+    rerender(
+      <InRangeSection
+        view={{
+          notice: null,
+          content: AT_CRUX,
+          unnamed: null,
+          scanning: false,
+          heardNothing: false,
+          loudestBoardKey: null,
+        }}
+        BoardArt={BoardArt}
+        onSeeGym={onSeeGym}
+        {...handlers}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'See Crux' }));
+    expect(onSeeGym).toHaveBeenCalledExactlyOnceWith('gym-crux');
   });
 
   it('puts the spinner by At {gym} while the scan listens, and nowhere else', () => {

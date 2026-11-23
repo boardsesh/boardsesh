@@ -27,6 +27,7 @@ import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../src/components/gym-directory/GymSearchField';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
+import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
 import { buildGymListRows, filterBoardsByChips } from '../../src/components/gym-directory/gym-list-rows';
 import {
@@ -393,6 +394,17 @@ export default function GymDiscovery() {
     if (claimTargetGym) claimSheetRef.current?.present();
   }, [claimTargetGym]);
 
+  // "See gym" on an expanded row: the gym's own page, on this same root stack.
+  // It carries the return tab, so a board picked there lands where a pick on
+  // the map would.
+  const onOpenGym = useCallback(
+    (gym: Gym) => {
+      hapticSelection();
+      router.push(gymPageHref(gym.uuid, 'root', returnTo));
+    },
+    [router, returnTo],
+  );
+
   const onClaimSheetClosed = useCallback(() => setClaimTargetGym(null), []);
 
   // Tap/expand a gym row: toggle its boards, select it, and recenter the map on it
@@ -652,6 +664,7 @@ export default function GymDiscovery() {
         onEditGym={onEditGym}
         onEditBoard={onEditBoard}
         onClaimGym={onClaimGym}
+        onOpenGym={onOpenGym}
         noBoardsLabel={t('mobile.gyms.noBoards')}
         searchSlot={searchField}
         placeCaption={placeCaption}

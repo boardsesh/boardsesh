@@ -1008,6 +1008,11 @@ per sheet so an account change resets each draft.
   `HoldRoleSheet` presents above the modal, like the player's sub-sheets, and the BLE device
   picker is hosted inside the route (`DevicePickerSheetHost registerExternal`). Not
   `fullScreenModal` (rule 2): the route is under `NativeTabs` on iPhone.
+- **Gym page** (`/gyms/[gym]`) — a destination (notifications and the claim approval open it)
+  that hosts its own sheets (claim, report) → pushed route. Registered twice: on the root stack,
+  and as a one-line re-export at `app/boards/gym/[gym].tsx` so the board picker pushes it inside
+  its own modal stack. `gymPageHref(gymUuid, stack)` picks the copy. The board detail sheet's
+  "At {gym}" row suspends, pushes the picker's copy and re-presents on return (rule 1).
 - **Player (now-playing)** — immersive full-screen, hosts 5–6 sub-sheets that must stack above
   it → `transparentModal` + opaque backing route. The exception that proves rule 1.
 - **Boards picker / share-beta / join** — self-contained flows from a tab → `modal` card.
