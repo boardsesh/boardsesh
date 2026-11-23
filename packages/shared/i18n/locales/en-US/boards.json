@@ -461,7 +461,8 @@
       "claimCta": "Claim this gym",
       "claimCtaSignedOut": "Log in and claim it",
       "claimPending": "Your claim is under review. We'll email you either way, usually within a few days.",
-      "claimDenied": "We couldn't confirm you run {{gym}}. Reply to our email if we got it wrong, or try again.",
+      "claimDenied": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong, or try again.",
+      "claimDeniedClosed": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong.",
       "claimRetry": "Try again",
       "notFound": "We couldn't find that gym",
       "report": "Report a problem"
@@ -519,6 +520,7 @@
       "done": "Done",
       "claimAction": "Claim this gym",
       "errorGeneric": "Something went wrong. Try again.",
+      "errorRunByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "switchToAdmin": "No work email? Ask our team to review",
       "switchToDomain": "Verify with a work email instead",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "Verify with a work email instead",
     "errors": {
       "generic": "Something went wrong. Try again.",
+      "runByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "tokenUnavailable": "We couldn't confirm you're logged in. Reload the page and try again."
     },
     "domain": {

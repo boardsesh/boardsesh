@@ -461,7 +461,8 @@
       "claimCta": "认领这家岩馆",
       "claimCtaSignedOut": "登录并认领",
       "claimPending": "你的认领正在审核中。无论结果如何，我们都会发邮件告诉你，通常在几天内。",
-      "claimDenied": "我们无法确认你经营 {{gym}}。如果我们弄错了，请回复我们的邮件，或者再试一次。",
+      "claimDenied": "你对 {{gym}} 的认领没有通过。如果我们弄错了，请回复我们的邮件，或者再试一次。",
+      "claimDeniedClosed": "你对 {{gym}} 的认领没有通过。如果我们弄错了，请回复我们的邮件。",
       "claimRetry": "再试一次",
       "notFound": "找不到这家岩馆",
       "report": "报告问题"
@@ -519,6 +520,7 @@
       "done": "完成",
       "claimAction": "认领这家岩馆",
       "errorGeneric": "出了点问题，请重试。",
+      "errorRunByStaff": "这家岩馆由其工作人员运营。如果有误，请报告问题，我们的团队会查看。",
       "switchToAdmin": "没有工作邮箱？请团队人工审核",
       "switchToDomain": "改用工作邮箱验证",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "改用工作邮箱验证",
     "errors": {
       "generic": "出了点问题，请重试。",
+      "runByStaff": "这家岩馆由其工作人员运营。如果有误，请报告问题，我们的团队会查看。",
       "tokenUnavailable": "无法确认你的登录状态，请刷新页面后重试。"
     },
     "domain": {

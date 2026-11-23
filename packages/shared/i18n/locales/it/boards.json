@@ -461,7 +461,8 @@
       "claimCta": "Rivendica questa palestra",
       "claimCtaSignedOut": "Accedi e rivendicala",
       "claimPending": "La tua richiesta è in revisione. Ti scriveremo via email in ogni caso, di solito entro pochi giorni.",
-      "claimDenied": "Non siamo riusciti a confermare che gestisci {{gym}}. Rispondi alla nostra email se ci siamo sbagliati, oppure riprova.",
+      "claimDenied": "La tua richiesta per {{gym}} non è andata a buon fine. Rispondi alla nostra email se ci siamo sbagliati, oppure riprova.",
+      "claimDeniedClosed": "La tua richiesta per {{gym}} non è andata a buon fine. Rispondi alla nostra email se ci siamo sbagliati.",
       "claimRetry": "Riprova",
       "notFound": "Non abbiamo trovato questa palestra",
       "report": "Segnala un problema"
@@ -519,6 +520,7 @@
       "done": "Fatto",
       "claimAction": "Rivendica questa palestra",
       "errorGeneric": "Qualcosa è andato storto. Riprova.",
+      "errorRunByStaff": "Questa palestra è gestita dal suo staff. Se non è così, segnala un problema e il nostro team controllerà.",
       "switchToAdmin": "Niente email di lavoro? Chiedi al nostro team di controllare",
       "switchToDomain": "Verifica invece con un'email di lavoro",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "Verifica invece con un'email di lavoro",
     "errors": {
       "generic": "Qualcosa è andato storto. Riprova.",
+      "runByStaff": "Questa palestra è gestita dal suo staff. Se non è così, segnala un problema e il nostro team controllerà.",
       "tokenUnavailable": "Impossibile confermare che hai effettuato l'accesso. Ricarica la pagina e riprova."
     },
     "domain": {

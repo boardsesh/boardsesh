@@ -461,7 +461,8 @@
       "claimCta": "Reclamar este rocódromo",
       "claimCtaSignedOut": "Inicia sesión y reclámalo",
       "claimPending": "Tu solicitud está en revisión. Te escribiremos por correo con la respuesta, normalmente en unos días.",
-      "claimDenied": "No pudimos confirmar que gestionas {{gym}}. Responde a nuestro correo si nos equivocamos, o inténtalo de nuevo.",
+      "claimDenied": "Tu solicitud para {{gym}} no salió adelante. Responde a nuestro correo si nos equivocamos, o inténtalo de nuevo.",
+      "claimDeniedClosed": "Tu solicitud para {{gym}} no salió adelante. Responde a nuestro correo si nos equivocamos.",
       "claimRetry": "Volver a intentarlo",
       "notFound": "No encontramos ese rocódromo",
       "report": "Informar de un problema"
@@ -519,6 +520,7 @@
       "done": "Listo",
       "claimAction": "Reclamar este rocódromo",
       "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+      "errorRunByStaff": "Este rocódromo lo gestiona su personal. Si no es así, informa de un problema y nuestro equipo lo revisará.",
       "switchToAdmin": "¿No tienes un correo de trabajo? Solicita una revisión",
       "switchToDomain": "Verificar con un correo de trabajo",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "Verificar con un correo de trabajo",
     "errors": {
       "generic": "Algo salió mal. Inténtalo de nuevo.",
+      "runByStaff": "Este rocódromo lo gestiona su personal. Si no es así, informa de un problema y nuestro equipo lo revisará.",
       "tokenUnavailable": "No hemos podido confirmar tu sesión. Recarga la página e inténtalo de nuevo."
     },
     "domain": {

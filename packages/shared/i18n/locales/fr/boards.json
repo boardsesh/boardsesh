@@ -461,7 +461,8 @@
       "claimCta": "Revendiquer cette salle",
       "claimCtaSignedOut": "Connecte-toi pour la revendiquer",
       "claimPending": "Ta demande est en cours d'examen. On t'écrit par e-mail dans tous les cas, en général sous quelques jours.",
-      "claimDenied": "Nous n'avons pas pu confirmer que tu gères {{gym}}. Réponds à notre e-mail si nous nous sommes trompés, ou réessaie.",
+      "claimDenied": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés, ou réessaie.",
+      "claimDeniedClosed": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés.",
       "claimRetry": "Réessayer",
       "notFound": "Salle introuvable",
       "report": "Signaler un problème"
@@ -519,6 +520,7 @@
       "done": "Terminé",
       "claimAction": "Revendiquer cette salle",
       "errorGeneric": "Une erreur est survenue. Réessaie.",
+      "errorRunByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "switchToAdmin": "Pas d'e-mail professionnel ? Demande une vérification",
       "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
       "generic": "Une erreur est survenue. Réessayez.",
+      "runByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {

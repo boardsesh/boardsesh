@@ -461,7 +461,8 @@
       "claimCta": "Diese Halle beanspruchen",
       "claimCtaSignedOut": "Anmelden und beanspruchen",
       "claimPending": "Dein Anspruch wird geprüft. Wir schreiben dir so oder so per E-Mail, meist innerhalb weniger Tage.",
-      "claimDenied": "Wir konnten nicht bestätigen, dass du {{gym}} betreibst. Antworte auf unsere E-Mail, falls wir uns geirrt haben, oder versuch es noch einmal.",
+      "claimDenied": "Dein Anspruch auf {{gym}} ist nicht durchgegangen. Antworte auf unsere E-Mail, falls wir uns geirrt haben, oder versuch es noch einmal.",
+      "claimDeniedClosed": "Dein Anspruch auf {{gym}} ist nicht durchgegangen. Antworte auf unsere E-Mail, falls wir uns geirrt haben.",
       "claimRetry": "Noch einmal versuchen",
       "notFound": "Diese Halle haben wir nicht gefunden",
       "report": "Problem melden"
@@ -519,6 +520,7 @@
       "done": "Fertig",
       "claimAction": "Diese Halle beanspruchen",
       "errorGeneric": "Da ging etwas schief. Versuch es nochmal.",
+      "errorRunByStaff": "Diese Halle wird von ihrem Team betreut. Falls das nicht stimmt, melde ein Problem und unser Team schaut es sich an.",
       "switchToAdmin": "Keine Arbeits-E-Mail? Lass unser Team prüfen",
       "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
       "domain": {
@@ -916,6 +918,7 @@
     "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
     "errors": {
       "generic": "Da ging etwas schief. Versuch es nochmal.",
+      "runByStaff": "Diese Halle wird von ihrem Team betreut. Falls das nicht stimmt, melde ein Problem und unser Team schaut es sich an.",
       "tokenUnavailable": "Wir konnten deine Anmeldung nicht bestätigen. Lade die Seite neu und versuch es nochmal."
     },
     "domain": {
