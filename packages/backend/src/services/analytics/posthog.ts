@@ -69,7 +69,18 @@ export type BackendAnalyticsEvent =
   // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their
   // own pack is the signal (a pack that is fetched twenty times is a pack
   // someone is having trouble with, or sharing).
-  | 'Build Plans Pack Downloaded';
+  | 'Build Plans Pack Downloaded'
+  // Directory reports (docs/product/directory-reports.md). Counts of what
+  // happened to boards and gym listings, never who: no board, gym or account
+  // id travels. `Board Report Submitted` {targetKind, reason, status, routedTo};
+  // `Board Report Resolved` {targetKind, reason, outcome, resolvedBy, hoursOpen},
+  // whose share resolved without an admin is the launch metric;
+  // `Board Removed From Gym` {by} and `Board Deleted` {by}, where `by` is
+  // creator | gym_staff | moderator | admin.
+  | 'Board Report Submitted'
+  | 'Board Report Resolved'
+  | 'Board Removed From Gym'
+  | 'Board Deleted';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

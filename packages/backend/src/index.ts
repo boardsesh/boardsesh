@@ -22,6 +22,8 @@ import { startBatchSchedules } from './services/batch-schedules';
 import { db } from './db/client';
 import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
 import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
+import { startDirectoryReportSweep } from './services/directory-report-sweep';
+import { startDirectoryReportsFlagRefresh } from './services/directory-reports-flag';
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
 import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPartnerConnectionNotices } from './services/partner-connection-notices';
@@ -90,6 +92,14 @@ async function main() {
   await startClimbPopularityRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[ClimbPopularity] Could not register the refresh job', { error });
   });
+  // Not fatal: without the sweep, reports wait for the next replica that
+  // registers it: no reminders, no hand-off to the admin queue, no digest.
+  await startDirectoryReportSweep(jobQueue).catch((error: unknown) => {
+    logger.error('[DirectoryReports] Could not register the sweep job', { error });
+  });
+  // Keeps the `directory-reports` flag's cached answer warm for the reads
+  // inside transactions (services/directory-reports-flag.ts).
+  startDirectoryReportsFlagRefresh();
   // Not fatal: without the job, summaries still follow every climb added or
   // removed through the app; only upstream grade drift and synced circuits wait.
   await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {
