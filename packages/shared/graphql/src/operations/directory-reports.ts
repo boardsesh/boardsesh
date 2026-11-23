@@ -11,9 +11,11 @@ import type {
 } from '@boardsesh/shared-schema';
 
 // Report a problem with a board or a gym listing (docs/product/directory-reports.md).
-// The mobile app sends these (PR 4 of #8043), and the grouped notification feed
-// selects DIRECTORY_NOTICE_FIELDS, so it ships only once the backend that serves
-// them is in production: an unknown field fails the whole query.
+// The mobile app sends these (PR 4 of #8043) and www selects them (the report
+// dialog, Manage gym → Boards, /admin/board-reports). The grouped notification
+// feed selects DIRECTORY_NOTICE_FIELDS, so a client that selects them ships
+// only once the backend that serves them is in production: an unknown field
+// fails the whole query.
 
 /** Every `DirectoryReport` field. Interpolated, not a fragment, like the other shared field sets. */
 export const DIRECTORY_REPORT_FIELDS = `
