@@ -19,7 +19,6 @@ import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
 import {
   extractDomain,
-  isClaimableDomain,
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
   GYM_CLAIM_SUPPORT_EMAIL,
@@ -39,6 +38,14 @@ type ClaimGymDialogProps = {
   gymUuid: string;
   gymName: string;
   website?: string | null;
+  /**
+   * The server's `Gym.canClaimByDomain` / `SimilarGym.canClaimByDomain`: the
+   * website is a real domain the gym's OWNER put on the listing, so a work
+   * email there proves the claim. The website alone can't say who put it
+   * there, and a synced gym's website came from public data: without this the
+   * dialog opened the email form for claims the server then refused.
+   */
+  canClaimByDomain: boolean;
   open: boolean;
   onClose: () => void;
 };
@@ -50,13 +57,20 @@ function graphqlErrorMessage(error: unknown): string | null {
   return response?.errors?.[0]?.message ?? null;
 }
 
-export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClose }: ClaimGymDialogProps) {
+export default function ClaimGymDialog({
+  gymUuid,
+  gymName,
+  website,
+  canClaimByDomain,
+  open,
+  onClose,
+}: ClaimGymDialogProps) {
   const { t } = useTranslation('boards');
   const { token, isLoading: tokenLoading } = useWsAuthToken();
   const router = useRouter();
   const queryClient = useQueryClient();
   const domain = extractDomain(website);
-  const canUseDomain = isClaimableDomain(website);
+  const canUseDomain = canClaimByDomain && domain !== null;
 
   const [mode, setMode] = useState<Mode>(canUseDomain ? 'domain' : 'admin');
   const [email, setEmail] = useState('');
@@ -163,7 +177,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
       >
         <CheckCircleOutlined color="success" sx={{ fontSize: 40 }} />
         <DialogContentText>{t('claimGym.approved.body', { gym: gymName })}</DialogContentText>
-        <MuiButton component={LocaleLink} href={`/gym/${gymUuid}/manage`} variant="contained" sx={{ mt: 1 }}>
+        <MuiButton component={LocaleLink} href={`/gym/${gymUuid}/manage?tab=boards`} variant="contained" sx={{ mt: 1 }}>
           {t('claimGym.approved.manageCta')}
         </MuiButton>
       </Box>

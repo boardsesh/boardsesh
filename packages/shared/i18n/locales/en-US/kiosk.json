@@ -202,8 +202,8 @@
           "body": "Add your logo and colors"
         },
         "boards": {
-          "title": "Link your boards",
-          "body": "Connect the walls in your gym"
+          "title": "Check your boards",
+          "body": "Fix or remove any that aren't on your walls"
         },
         "members": {
           "title": "Invite your crew",
@@ -312,21 +312,14 @@
     },
     "boards": {
       "heading": "Boards at this gym",
-      "description": "Link the boards you own so they show up on your gym page and kiosks.",
+      "description": "Climbers and public board data put these boards here. Fix any that are wrong, and remove the ones that aren't on your walls.",
       "addBoard": "Add a board",
       "empty": "No boards linked yet. Add one to get started.",
       "loadError": "Couldn't load this gym's boards.",
-      "unlink": "Unlink",
-      "onlyOwnerCanUnlink": "Only the board's owner can unlink it",
-      "readOnlyHint": "Only the gym owner or an admin can link boards.",
-      "unlinkTitle": "Unlink this board?",
-      "unlinkBody": "\"{{name}}\" stops showing on this gym's page and kiosks. You can re-link it anytime.",
-      "unlinkConfirm": "Unlink",
+      "readOnlyHint": "The owner and admins add their own boards and delete boards. You can remove boards that aren't on your walls and add ones near your gym.",
       "cancel": "Cancel",
       "linked": "Board linked.",
       "linkFailed": "Couldn't link the board.",
-      "unlinked": "Board unlinked.",
-      "unlinkFailed": "Couldn't unlink the board.",
       "visibility": {
         "public": "Public",
         "unlisted": "Unlisted",
@@ -342,8 +335,8 @@
         "close": "Close"
       },
       "strays": {
-        "heading": "Boards that might be yours",
-        "description": "These sit at your gym or drifted off a merged listing. Add the ones that belong here.",
+        "heading": "Boards near your gym",
+        "description": "These are within 150 m of your gym, or came from a merged listing. Add the ones on your walls.",
         "reasonMerged": "Was on a merged listing",
         "reasonNearby": "{{meters}} m away",
         "reasonNearbyGeneric": "Right nearby",
@@ -446,8 +439,8 @@
           "body": "Add your logo and brand colors"
         },
         "boards": {
-          "title": "Link your boards",
-          "body": "Connect the walls in your gym"
+          "title": "Check your boards",
+          "body": "Fix or remove any that aren't on your walls"
         },
         "members": {
           "title": "Invite your crew",

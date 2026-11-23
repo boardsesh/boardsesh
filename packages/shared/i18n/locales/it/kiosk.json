@@ -202,8 +202,8 @@
           "body": "Aggiungi logo e colori"
         },
         "boards": {
-          "title": "Collega i tuoi pannelli",
-          "body": "Collega i pannelli della tua palestra"
+          "title": "Controlla i tuoi pannelli",
+          "body": "Correggi o togli quelli che non sono sulle tue pareti"
         },
         "members": {
           "title": "Invita la tua crew",
@@ -312,23 +312,16 @@
     },
     "boards": {
       "heading": "Pannelli in questa palestra",
-      "description": "Collega i pannelli che possiedi così compaiono sulla pagina della tua palestra e sui kiosk.",
+      "description": "Questi pannelli li hanno aggiunti climber e dati pubblici sui pannelli. Correggi quelli sbagliati e togli quelli che non sono sulle tue pareti.",
       "back": "Tutti i pannelli",
       "editLoadError": "Impossibile caricare questo pannello per modificarlo.",
       "addBoard": "Aggiungi un pannello",
       "empty": "Ancora nessun pannello collegato. Aggiungine uno per iniziare.",
       "loadError": "Impossibile caricare i pannelli di questa palestra.",
-      "unlink": "Scollega",
-      "onlyOwnerCanUnlink": "Solo il proprietario del pannello può scollegarlo",
-      "readOnlyHint": "Solo il proprietario della palestra o un admin può collegare i pannelli.",
-      "unlinkTitle": "Scollegare questo pannello?",
-      "unlinkBody": "\"{{name}}\" non compare più sulla pagina e sui kiosk di questa palestra. Puoi ricollegarlo quando vuoi.",
-      "unlinkConfirm": "Scollega",
+      "readOnlyHint": "Il proprietario e gli admin aggiungono i propri pannelli ed eliminano i pannelli. Tu puoi togliere quelli che non sono sulle tue pareti e aggiungere quelli vicino alla tua palestra.",
       "cancel": "Annulla",
       "linked": "Pannello collegato.",
       "linkFailed": "Impossibile collegare il pannello.",
-      "unlinked": "Pannello scollegato.",
-      "unlinkFailed": "Impossibile scollegare il pannello.",
       "visibility": {
         "public": "Pubblico",
         "unlisted": "Non in elenco",
@@ -344,8 +337,8 @@
         "close": "Chiudi"
       },
       "strays": {
-        "heading": "Pannelli che potrebbero essere tuoi",
-        "description": "Si trovano nella tua palestra o si sono staccati da una scheda unita. Aggiungi quelli che appartengono qui.",
+        "heading": "Pannelli vicino alla tua palestra",
+        "description": "Sono a meno di 150 m dalla tua palestra o arrivano da una scheda unita. Aggiungi quelli sulle tue pareti.",
         "reasonMerged": "Era su una scheda unita",
         "reasonNearby": "a {{meters}} m",
         "reasonNearbyGeneric": "Proprio vicino",
@@ -446,8 +439,8 @@
           "body": "Aggiungi logo e colori del brand"
         },
         "boards": {
-          "title": "Collega i tuoi pannelli",
-          "body": "Collega i pannelli della tua palestra"
+          "title": "Controlla i tuoi pannelli",
+          "body": "Correggi o togli quelli che non sono sulle tue pareti"
         },
         "members": {
           "title": "Invita la tua crew",
