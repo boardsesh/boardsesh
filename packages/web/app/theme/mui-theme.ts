@@ -90,10 +90,15 @@ const sharedComponents: Components<Theme> = {
         },
       },
       // Outlined PRIMARY is the grey secondary action: the label ink (#EDEDED, 4.5:1
-      // or more on every surface step) on a transparent pill with the opaque
+      // or more on every surface step) on a transparent button with the opaque
       // `--control-border` edge, which stays put on hover (the wash carries hover).
       // A page spends its violet on the one filled action, links and text actions.
-      // Set the v7 variant vars plus a direct fallback, like containedPrimary.
+      // MUI's default outlined edge is the foreground violet at 50% alpha, which
+      // drifted from `brandCtaOutlinedSx` (the consent banner's Allow / No thanks
+      // and the gym search button wore one edge, the brand buttons another), so
+      // the edge is pinned here too. Set the v7 variant vars plus a direct
+      // fallback, like containedPrimary. Keep ONE `outlinedPrimary` key: a second
+      // one later in this object silently replaces this whole block.
       outlinedPrimary: {
         '--variant-outlinedColor': 'var(--neutral-900)',
         '--variant-outlinedBorder': 'var(--control-border)',
@@ -118,13 +123,6 @@ const sharedComponents: Components<Theme> = {
           backgroundColor: theme.palette.primaryFill.dark,
         },
       }),
-      // MUI's default outlined edge is the foreground violet at 50% alpha, which
-      // drifted from `brandCtaOutlinedSx` (the consent banner's Allow / No thanks
-      // and the gym search button wore one edge, the brand buttons another).
-      // `--control-border` is the opaque token for an interactive edge.
-      outlinedPrimary: {
-        borderColor: 'var(--control-border)',
-      },
       sizeMedium: {
         height: 40,
         padding: `0 ${themeTokens.spacing[4]}px`,

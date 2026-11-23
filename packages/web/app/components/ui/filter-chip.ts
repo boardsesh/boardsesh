@@ -19,8 +19,9 @@ const SELECTED_CHECK_SELECTOR = `& [${SELECTED_CHECK_ATTRIBUTE}]` as const;
 /**
  * The board-facet filter chip. One recipe, because there were three.
  *
- * Shaped like the app's filter chips: 8px corners (a pill is an action; a filter
- * is not), a 44px target, and two states spelled out.
+ * A full pill: on www buttons are 10px rounded rectangles and chips keep the round
+ * end, which is what marks a tag or filter rather than an action (#8041). A 44px
+ * target, and two states spelled out.
  *
  * - **Rest**: transparent, one `--control-border` edge, the label ink
  *   (`--neutral-900`) at weight 500. The chip's fill is the page, so the border is
@@ -52,7 +53,7 @@ export function filterChipSx({ selected = false }: FilterChipOptions = {}) {
   const edge = selected ? 'var(--semantic-selected)' : 'var(--control-border)';
   const hoverGround = selected ? 'var(--semantic-selected-hover)' : 'var(--semantic-hover)';
   return {
-    borderRadius: `${themeTokens.borderRadius.md}px`,
+    borderRadius: `${themeTokens.borderRadius.full}px`,
     height: 'auto',
     minHeight: 44,
     fontWeight: themeTokens.typography.fontWeight.medium,

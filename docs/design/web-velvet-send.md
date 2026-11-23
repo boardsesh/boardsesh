@@ -71,7 +71,7 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
     pill with the `#EDEDED` label (weight 600 in the recipe), the `--control-border` edge and the
     `--semantic-button-hover` layer on hover. Only a primary `variant="text"` button lifts to violet
     on hover.
-  - Filter chips: `filterChipSx`, 8px corners, 44px tall. Rest is transparent with the
+  - Filter chips: `filterChipSx`, full pills (buttons are 10px, see below), 44px tall. Rest is transparent with the
     `--control-border` edge and `#EDEDED` ink at weight 500. Selected is `--semantic-selected` with
     `--semantic-on-selected` ink and a leading `SelectedCheck` (`components/ui/selected-check.tsx`);
     no ring. The check is `aria-hidden`; the control announces the state, and which attribute

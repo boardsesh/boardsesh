@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { filterChipSx, SELECTED_CHECK_ATTRIBUTE } from '../filter-chip';
+import { themeTokens } from '@/app/theme/theme-config';
 
 /**
  * The chip row shipped in three places and the copies had drifted in the way
@@ -67,10 +68,11 @@ describe('filterChipSx', () => {
     expect(selected['&.Mui-focusVisible']).toEqual({ backgroundColor: 'var(--semantic-selected)' });
   });
 
-  it('keeps both states on the 44px target with 8px filter corners, not a pill', () => {
+  it('keeps both states on the 44px target as full pills, unlike 10px buttons', () => {
     for (const recipe of [unselected, selected]) {
       expect(recipe.minHeight).toBe(44);
-      expect(recipe.borderRadius).toBe('8px');
+      expect(recipe.borderRadius).toBe(`${themeTokens.borderRadius.full}px`);
+      expect(recipe.borderRadius).not.toBe(`${themeTokens.borderRadius.button}px`);
     }
   });
 });
