@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import type { Locale } from '@/app/lib/i18n/config';
+import { resolvePlaylistGradeBand } from '@/app/lib/playlist-grade-band';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata, createPageMetadata } from './metadata';
 import { getPlaylistOgSummary, type PlaylistOgSummary } from './dynamic-og-data';
@@ -18,19 +18,6 @@ const MIN_OWNER_DESCRIPTION_CHARS = 30;
 
 type PlaylistTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
 
-/**
- * The V-grade band the card prints as its hero (`V5–V9`), or null when the list
- * has too few graded climbs for one. Same percentiles, same scale.
- */
-function resolveGradeBand(playlist: PlaylistOgSummary): { low: string; high: string } | null {
-  const { gradeSummary } = playlist;
-  if (!gradeSummary) return null;
-  const grades = getBoulderGradesForBoard(playlist.boardType);
-  const low = grades.find((grade) => grade.difficulty_id === gradeSummary.p10Difficulty);
-  const high = grades.find((grade) => grade.difficulty_id === gradeSummary.p90Difficulty);
-  return low && high ? { low: low.v_grade, high: high.v_grade } : null;
-}
-
 /** What a chat app shows above the card. The creator's name stays off both lines, as it does on the card. */
 function buildPlaylistShareCopy(
   playlist: PlaylistOgSummary,
@@ -38,7 +25,8 @@ function buildPlaylistShareCopy(
   t: PlaylistTranslate,
 ): { ogTitle: string; ogDescription: string } {
   const board = boardTypeLabel(playlist.boardType);
-  const band = resolveGradeBand(playlist);
+  // The V-grade band the card prints as its hero (`V5–V9`). Same percentiles, same scale.
+  const band = resolvePlaylistGradeBand(playlist.boardType, playlist.gradeSummary);
   const count = playlist.climbCount;
 
   let ogTitle: string;

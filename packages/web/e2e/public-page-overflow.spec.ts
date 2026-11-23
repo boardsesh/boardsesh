@@ -169,6 +169,18 @@ async function expectReadablePrimaryHover(page: Page, testInfo: TestInfo, target
   await page.mouse.move(0, 0);
 }
 
+/** A filled brand button keeps its own fill on hover; only its label's contrast is held to 4.5:1. */
+async function expectReadableFilledHover(page: Page, testInfo: TestInfo, target: Locator, label: string) {
+  await expect(target).toHaveCount(1);
+  await target.hover();
+  const audit = await expectPublicReading(page, testInfo, label, target);
+  expect(
+    hasReadableTargetText(audit),
+    `${label}: the hovered label must resolve at 4.5:1 or better; ${JSON.stringify(audit.targetText)}`,
+  ).toBe(true);
+  await page.mouse.move(0, 0);
+}
+
 async function expectKeyboardTarget(page: Page, link: Locator) {
   await link.scrollIntoViewIfNeeded();
   const rectangle = await link.boundingBox();
@@ -201,12 +213,25 @@ for (const width of [390, 1440]) {
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'list');
     await expectReadablePrimaryHover(page, testInfo, page.locator('main a[rel="next"]'), 'list-next-hover');
-    await expectReadablePrimaryHover(
-      page,
-      testInfo,
-      page.locator('main a[href*="play.google.com"]').first(),
-      'plain-store-hover',
-    );
+    if (width === 1440) {
+      // A laptop's store buttons are the outlined pair in the QR card.
+      await expectReadablePrimaryHover(
+        page,
+        testInfo,
+        page.locator('main a[href*="play.google.com"]:visible').first(),
+        'plain-store-hover',
+      );
+    } else {
+      // A phone's one store button is the filled "Get the free app". Wait for
+      // the browser to pick its store, so the hovered anchor stays the shown one.
+      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
+      await expectReadableFilledHover(
+        page,
+        testInfo,
+        page.locator('main [data-cta="mobile-install"] a:visible'),
+        'store-first-hover',
+      );
+    }
     const footer = page.getByTestId('site-footer');
     await expectReadablePrimaryHover(
       page,
@@ -262,21 +287,39 @@ for (const width of [390, 1440]) {
     await expect(page.locator('main dl')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expectPublicReading(page, testInfo, 'setter');
+    // A phone's store pair is the filled brand one; from md the QR card's
+    // outlined pair takes its place, so hover whichever one is shown.
     await expectReadablePrimaryHover(
       page,
       testInfo,
-      page.locator('main a[href*="play.google.com"]').first(),
-      'brand-store-hover',
+      page.locator('main a[href*="play.google.com"]:visible').first(),
+      width === 1440 ? 'setter-qr-store-hover' : 'brand-store-hover',
     );
+    if (width === 1440) {
+      await expect(page.locator('main').getByRole('img', { name: /^QR code that opens/ })).toBeVisible();
+      // One store block per screen: the QR card's pair, not the phone's as well.
+      await expect(page.locator('main a[href*="apps.apple.com"]:visible')).toHaveCount(1);
+    }
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
 
-    if (width === 390) {
-      await page.goto('/playlists', { waitUntil: 'domcontentloaded' });
-      const playlist = page.locator('main a[href^="/playlists/"]').first();
-      await expect(playlist).toBeVisible();
-      await playlist.click();
-      await expect(page.locator('main h1')).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    // Discover lists public playlists only, so the first one has a QR code to show.
+    await page.goto('/playlists', { waitUntil: 'domcontentloaded' });
+    const playlist = page.locator('main a[href^="/playlists/"]').first();
+    await expect(playlist).toBeVisible();
+    await playlist.click();
+    await expect(page.locator('main h1')).toBeVisible();
+    const playlistQr = page.locator('main').getByRole('img', { name: /^QR code that opens/ });
+    const playlistHandoff = page.locator('main [data-cta="handoff"]');
+    await expect(playlistHandoff).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expectPublicReading(page, testInfo, 'playlist');
+    if (width === 1440) {
+      await expect(playlistQr).toBeVisible();
+      await expect(page.locator('main [data-cta="mobile-install"]')).toBeHidden();
+      await expectReadableFilledHover(page, testInfo, playlistHandoff, 'playlist-handoff-hover');
+    } else {
+      await expect(playlistQr).toBeHidden();
+      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
     }
   });
 }

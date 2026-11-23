@@ -29,6 +29,18 @@
     "setter": {
       "title": "Boulder von {{name}}",
       "description": "Boulder von {{name}} auf Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} Boulder von {{name}} auf {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} Boulder von {{name}} auf {{boards}}",
+      "titlePage": "Boulder von {{name}} — Seite {{page}}",
+      "titleWithClimbsPage_one": "{{climbs}} Boulder von {{name}} auf {{boards}} — Seite {{page}}",
+      "titleWithClimbsPage_other": "{{climbs}} Boulder von {{name}} auf {{boards}} — Seite {{page}}",
+      "descriptionCtaSingle": "Beleuchte ihn mit Boardsesh an deinem Board.",
+      "boardSprayWall": "Spraywall",
+      "descriptionSetCount_one": "{{name}} hat {{climbs}} Boulder auf {{boards}} geschraubt.",
+      "descriptionSetCount_other": "{{name}} hat {{climbs}} Boulder auf {{boards}} geschraubt.",
+      "descriptionSends_one": "Bisher {{sends}} Begehung.",
+      "descriptionSends_other": "Bisher {{sends}} Begehungen.",
+      "descriptionCta": "Such dir einen aus und beleuchte ihn mit Boardsesh an deinem Board.",
       "fallbackTitle": "Routenbauer*in-Profil",
       "fallbackDescription": "Routenbauer*in-Profil und Boulder auf Boardsesh ansehen",
       "ogAlt": "Routenbauer*in-Profil von {{name}}",
@@ -176,11 +188,20 @@
     "shareFailed": "Teilen fehlgeschlagen",
     "follower_one": "Follower",
     "follower_other": "Follower",
-    "climb_one": "Boulder",
-    "climb_other": "Boulder",
     "seoHeading": "Boulder von {{name}}",
-    "seoSummary_one": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
-    "seoSummary_other": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
+    "stats": {
+      "climbs_one": "{{climbs}} Boulder auf {{boards}}",
+      "climbs_other": "{{climbs}} Boulder auf {{boards}}",
+      "sends_one": "eine Begehung",
+      "sends_other": "{{sends}} Begehungen",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "Am häufigsten getoppt",
+      "meta_one": "{{sends}} Begehung · {{angle}}°",
+      "meta_other": "{{sends}} Begehungen · {{angle}}°",
+      "artAlt": "{{climbName}} beleuchtet am {{board}} bei {{angle}}°"
+    },
     "climbsHeading": "Alle Boulder von {{name}}",
     "empty": "Keine Boulder auf dieser Seite.",
     "browseBoard": "Alle Boulder am {{boardName}} Board ansehen",
@@ -191,6 +212,10 @@
       "next": "Mehr Boulder",
       "pageLabel": "Seite {{page}}"
     },
-    "installHelper": "Hol dir die kostenlose App und klettere die Boulder von {{name}} auf deinem Board."
+    "installHelper": "Hol dir die kostenlose App und klettere die Boulder von {{name}} auf deinem Board.",
+    "qr": {
+      "title": "Scanne den Code, um diese Boulder auf deinem Handy zu öffnen",
+      "imageLabel": "QR-Code, der die Boulder von {{name}} auf deinem Handy öffnet"
+    }
   }
 }

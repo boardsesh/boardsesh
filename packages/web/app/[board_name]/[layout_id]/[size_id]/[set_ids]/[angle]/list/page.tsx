@@ -8,7 +8,7 @@ import { parseRouteParams } from '@/app/lib/url-utils.server';
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
-import { formatBoardDisplayName } from '@/app/lib/string-utils';
+import { boardConfigForSearch } from '@/app/lib/seo/climb-display';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import {
   isFrontDoorPageOutOfRange,
@@ -25,7 +25,6 @@ export async function generateMetadata(props: {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
 
   const { t, locale } = await getServerTranslation('climbs');
-  const boardName = formatBoardDisplayName(params.board_name);
 
   try {
     // Resolve the request's slugs to ids and build the canonical from THOSE,
@@ -42,7 +41,11 @@ export async function generateMetadata(props: {
     // the same request, so this resolution is free.
     const { parsedParams } = await parseRouteParams(params);
     const angle = parsedParams.angle;
-    const cleanPath = buildCanonicalClimbListUrl(getBoardImageDetailsForBoard(parsedParams), angle);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
+    const cleanPath = buildCanonicalClimbListUrl(boardDetails, angle);
+    // Layout and size from the static catalogue, so every Kilter configuration
+    // at 40° stops sharing one title.
+    const boardName = boardConfigForSearch(boardDetails);
 
     // Self-canonical for the unfiltered case. This page used to return a bare
     // `{}` rather than claim one, because `/b/{slug}/{angle}/list` was also

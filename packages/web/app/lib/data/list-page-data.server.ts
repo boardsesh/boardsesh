@@ -11,7 +11,10 @@ export type FrontDoorListPage = {
   boardDetails: BoardImageDetails;
   climbs: Climb[];
   hasMore: boolean;
-  /** Pre-resolved overlay URL for the first climb so the page can `<link rel="preload">` it. */
+  /**
+   * The first climb's full board render (and any board-photo layers), so the
+   * page can `<link rel="preload">` its hero, the LCP image.
+   */
   preloadUrls: string[];
 };
 
@@ -65,8 +68,11 @@ export async function fetchFrontDoorListPage(
     throw error;
   }
 
+  // The full render, not the row thumbnail: the list's hero is the first
+  // climb's board (`StaticListFrontDoor`), drawn from the same URL that climb's
+  // own page uses, so the CDN has usually rendered it already.
   const firstClimb = searchResponse.climbs[0];
-  const preloadUrls = buildOverlayPreloadUrls(boardDetails, firstClimb?.frames, true);
+  const preloadUrls = buildOverlayPreloadUrls(boardDetails, firstClimb?.frames, false);
 
   return { boardDetails, climbs: searchResponse.climbs, hasMore: searchResponse.hasMore, preloadUrls };
 }

@@ -26,7 +26,7 @@
   "metadata": {
     "list": {
       "title": "{{boardName}} climbs at {{angle}}°",
-      "description": "Browse climbs on {{boardName}} at {{angle}}°",
+      "description": "The most-sent climbs on {{boardName}} at {{angle}}°. Pick one and light it on your board with Boardsesh.",
       "fallbackTitle": "Climbs",
       "fallbackDescription": "Browse climbs",
       "paginatedTitle": "{{boardName}} Climbs at {{angle}}° — Page {{page}}",
@@ -35,7 +35,16 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} {{boardName}} climb at {{angle}}°",
-      "description": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}. {{ascents}} sends, rated {{quality}} of 5. Light it on your board with Boardsesh.",
+      "descriptionLead": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}.",
+      "descriptionLeadNoSetter": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} is a climb on {{layoutName}} at {{angle}}°, set by {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} is a climb on {{layoutName}} at {{angle}}°.",
+      "descriptionSendsRated_one": "{{ascents}} send, rated {{quality}} of 5.",
+      "descriptionSendsRated_other": "{{ascents}} sends, rated {{quality}} of 5.",
+      "descriptionSends_one": "{{ascents}} send.",
+      "descriptionSends_other": "{{ascents}} sends.",
+      "descriptionRated": "Rated {{quality}} of 5.",
+      "descriptionCta": "Light it on your board with Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
       "fallbackTitle": "Climb",
       "fallbackDescription": "View climb details and beta videos"
@@ -47,17 +56,31 @@
       "heading": "{{boardName}} climbs at {{angle}}°",
       "intro": "Every climb set on this {{boardName}} configuration at {{angle}}°, most-climbed first. Tap any of them for the board render, the grade at every angle and the beta.",
       "empty": "No climbs on this board yet.",
-      "cta": "Climb this board",
+      "cta": {
+        "getAppHelper": "Light any of these on your {{board}}.",
+        "openInBrowser": "Open in your browser",
+        "openInBrowserMobile": "Or open the list in your browser"
+      },
       "pagination": {
         "aria": "Pagination",
         "previous": "Previous page",
         "next": "Next page",
         "pageLabel": "Page {{page}}"
       },
-      "install": {
-        "helper": "No app yet? Get it and light these climbs on your board."
+      "climbsHeading": "Most-climbed at {{angle}}°",
+      "stage": {
+        "caption": "First on the list: {{climb}}",
+        "captionLaterPage": "First on this page: {{climb}}"
       },
-      "climbsHeading": "Most-climbed at {{angle}}°"
+      "qr": {
+        "title": "Scan to open this list on your phone",
+        "imageLabel": "QR code that opens {{boardName}} climbs at {{angle}}° on your phone"
+      },
+      "angles": {
+        "label": "Same board, other angles",
+        "stop": "{{angle}}°",
+        "linkAria": "{{angle}}°, {{boardName}} climbs"
+      }
     }
   },
   "header": {},

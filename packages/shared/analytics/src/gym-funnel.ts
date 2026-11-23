@@ -122,7 +122,9 @@ export type GymClaimResultStatus = 'email_sent' | 'approved' | 'admin_review' | 
  * `desktop` is not printed: it is the code a climb page shows beside its
  * "Open in your browser" button on a laptop, so a climber can carry the climb
  * to their phone. It encodes the climb page itself, which counts the scan as
- * `Climb QR Scanned` (climb-qr-events.ts).
+ * `Climb QR Scanned` (climb-qr-events.ts). A board's climb list, a setter's
+ * page and a public playlist show the same code, each encoding itself, which
+ * count it as `List QR Scanned`, `Setter QR Scanned` and `Playlist QR Scanned`.
  *
  * One vocabulary and one parser for every event: a code printed today has to
  * keep parsing whichever page it is pointed at later.
@@ -370,7 +372,9 @@ export function gymDirectorySearched(
 // Printed QR codes point at a normal Boardsesh URL with two extra params:
 // `?src=qr&medium=<poster|kiosk|board|desktop>`. The landing surface reads them,
 // fires its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned`
-// on a board page, `Climb QR Scanned` on a climb page), then rewrites the URL
+// on a board page, `Climb QR Scanned` on a climb page, and `List QR Scanned`,
+// `Setter QR Scanned` or `Playlist QR Scanned` for the desktop code on a board
+// list, a setter page or a playlist), then rewrites the URL
 // without them so a shared or bookmarked link doesn't re-attribute someone
 // else's visit to a poster.
 

@@ -7,6 +7,9 @@ import {
   gymQrAttributionQuery,
   gymQrUrl,
   gymRedirectAttributionQuery,
+  listQrUrl,
+  playlistQrUrl,
+  setterQrUrl,
 } from '../gym-attribution';
 
 describe('gymQrUrl', () => {
@@ -73,6 +76,44 @@ describe('climbQrUrl', () => {
     const scanned = new URL(climbQrUrl('/b/main-kilter/40/view/abc-the-climb', 'fr'));
 
     expect(scanned.pathname).toBe('/fr/b/main-kilter/40/view/abc-the-climb');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('listQrUrl', () => {
+  it('encodes the board list itself with the desktop pair, on either tree', () => {
+    expect(listQrUrl('/kilter/original/12x12-square/screw_bolt/40/list', 'en-US')).toBe(
+      `${SITE_URL}/kilter/original/12x12-square/screw_bolt/40/list?src=qr&medium=desktop`,
+    );
+    expect(listQrUrl('/b/main-kilter/40/list', 'en-US')).toBe(
+      `${SITE_URL}/b/main-kilter/40/list?src=qr&medium=desktop`,
+    );
+  });
+
+  it("keeps the reader's language and parses back as a desktop scan", () => {
+    const scanned = new URL(listQrUrl('/b/main-kilter/40/list', 'es'));
+
+    expect(scanned.pathname).toBe('/es/b/main-kilter/40/list');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('setterQrUrl', () => {
+  it("encodes the setter's page with the desktop pair, in the reader's language", () => {
+    expect(setterQrUrl('/setter/jimmy%20webb', 'en-US')).toBe(`${SITE_URL}/setter/jimmy%20webb?src=qr&medium=desktop`);
+    const scanned = new URL(setterQrUrl('/setter/jimmy%20webb', 'de'));
+
+    expect(scanned.pathname).toBe('/de/setter/jimmy%20webb');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('playlistQrUrl', () => {
+  it("encodes the playlist's own page with the desktop pair, in the reader's language", () => {
+    expect(playlistQrUrl('5d3b1c7e-2a4f', 'en-US')).toBe(`${SITE_URL}/playlists/5d3b1c7e-2a4f?src=qr&medium=desktop`);
+    const scanned = new URL(playlistQrUrl('5d3b1c7e-2a4f', 'fr'));
+
+    expect(scanned.pathname).toBe('/fr/playlists/5d3b1c7e-2a4f');
     expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
   });
 });

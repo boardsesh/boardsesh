@@ -1,111 +1,118 @@
-/* Playlist View Page Styles */
-
-.pageContainer {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 16px;
-  padding-top: calc(var(--global-header-height) + var(--spacing-4));
-  min-height: 100vh;
-  background-color: var(--neutral-50);
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* Actions section - white card container */
-.actionsSection {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background-color: var(--semantic-surface);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: var(--shadow-sm);
-}
+/* Playlist detail page (/playlists/[uuid]) */
 
 /* Main content wrapper */
 .contentWrapper {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 
-/* Hero Card Section */
-.heroSection {
-  background-color: var(--semantic-surface);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: var(--shadow-sm);
-  position: relative;
+/* Hero: the cover beside the title, then the details and the hand-off.
+   On a phone the details run full width under the cover and title. */
+.hero {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'cover title'
+    'cover body';
+  column-gap: var(--spacing-8);
+  align-items: start;
+  margin-bottom: var(--spacing-8);
 }
 
-.heroContent {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.heroSquare {
-  width: 100px;
-  height: 100px;
-  border-radius: 12px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.heroCover {
+  grid-area: cover;
   overflow: hidden;
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
-    inset 1px 0 0 rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius-xl);
 }
 
-.heroSquareIcon {
-  font-size: 40px;
-  color: rgba(255, 255, 255, 0.9);
+/* The icon tile an empty playlist keeps instead of a cover. */
+.heroSquare {
+  display: flex;
+  width: 100%;
+  aspect-ratio: 1;
 }
 
-.heroSquareEmoji {
-  font-size: 40px;
-  line-height: 1;
-}
-
-.heroInfo {
-  flex: 1;
+.heroTitle {
+  grid-area: title;
   min-width: 0;
 }
 
-.heroName {
-  margin: 0 0 4px 0 !important;
-  font-weight: 600 !important;
-  word-break: break-word;
-  padding-right: 32px;
+.heroBody {
+  grid-area: body;
+  min-width: 0;
+  margin-top: var(--spacing-4);
 }
 
-.heroNameWithShare {
-  padding-right: 88px;
+/* "Kilter playlist · 12 climbs · V0 to V8". The count and the band keep their
+   words together, so a grade never splits from its V; the board name may wrap,
+   since "Playlist für Kilter und Tension" can be wider than a phone's title
+   column. Every part draws its dot in front of it, and the parts row starts one
+   dot to the left of the clipped line, so a part that opens a line (the first,
+   or one that wrapped) has its dot cut off instead of leading with "·". Only
+   that dot is ever clipped: no part is wider than the line. */
+.heroSubline {
+  --subline-separator: 1.25em;
+  margin: var(--spacing-2) 0 0;
+  overflow: hidden;
+  color: var(--neutral-800);
+  font-size: var(--font-size-lg);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroSublineParts {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: calc(-1 * var(--subline-separator));
+}
+
+/* The dot lives in the part's own left padding, so a board name that wraps
+   starts its second line at the text edge, not under the clipped dot. */
+.heroSublineParts > span {
+  position: relative;
+  padding-left: var(--subline-separator);
+}
+
+.heroSublineParts > span::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  width: var(--subline-separator);
+  text-align: center;
+  color: var(--neutral-500);
+}
+
+.heroKind {
+  color: var(--neutral-500);
+}
+
+.heroFact {
+  white-space: nowrap;
 }
 
 .heroMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-3);
   color: var(--neutral-500);
-  font-size: 13px;
-  margin-bottom: 8px;
+  font-size: var(--font-size-sm);
 }
 
 .heroMetaItem {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-1);
 }
 
-.heroDescription {
+/* Doubled on purpose: it sits on a MUI Typography, whose single variant class
+   would otherwise tie it and win on injection order (see page-shell.module.css). */
+.heroDescription.heroDescription {
+  margin-top: var(--spacing-3);
   color: var(--neutral-600);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -172,228 +179,58 @@
   margin-bottom: 20px;
 }
 
-/* Mobile adjustments */
-@media (max-width: 767px) {
-  .pageContainer {
-    padding: 12px;
-  }
-
-  .actionsSection {
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-  }
-
-  .heroSection {
-    padding: 16px;
-    border-radius: 8px;
-  }
-
-  .heroSquare {
-    width: 80px;
-    height: 80px;
-    border-radius: 8px;
-  }
-
-  .heroSquareIcon {
-    font-size: 32px;
-  }
-
-  .heroSquareEmoji {
-    font-size: 32px;
-  }
-
-  .heroContent {
-    gap: 12px;
-  }
-
-  .contentWrapper {
-    gap: 12px;
-  }
-}
-
 /* Climbs section */
 .climbsSection {
   background-color: var(--semantic-surface);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
   box-shadow: var(--shadow-sm);
-}
-
-.climbsSectionHeader {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--neutral-200);
-}
-
-.climbsSectionTitle {
-  font-size: 16px;
-  color: var(--neutral-900);
-}
-
-/* Desktop layout */
-@media (min-width: 992px) {
-  .pageContainer {
-    padding: 24px;
-  }
-
-  .actionsSection {
-    padding: 20px;
-  }
-
-  .heroSection {
-    padding: 24px;
-  }
-
-  .heroSquare {
-    width: 120px;
-    height: 120px;
-  }
-
-  .heroSquareIcon {
-    font-size: 48px;
-  }
-
-  .heroSquareEmoji {
-    font-size: 48px;
-  }
-
-  .contentWrapper {
-    gap: 24px;
-  }
-
-  .climbsSection {
-    padding: 24px;
-  }
-}
-
-/* Mobile adjustments for climbs section */
-@media (max-width: 767px) {
-  .climbsSection {
-    padding: 16px;
-    border-radius: 8px;
-  }
-
-  .climbsSectionHeader {
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-  }
-
-  .climbsSectionTitle {
-    font-size: 14px;
-  }
 }
 
 /* Discussion section */
 .discussionSection {
   background-color: var(--semantic-surface);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
   box-shadow: var(--shadow-sm);
 }
 
-@media (max-width: 767px) {
+/* Same breakpoint as PageShell, whose frame this page sits in. */
+@media (max-width: 760px) {
+  .contentWrapper {
+    gap: 12px;
+  }
+
+  .hero {
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      'cover title'
+      'body body';
+    column-gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+  }
+
+  .heroCover {
+    border-radius: var(--border-radius-lg);
+  }
+
+  .heroTitle {
+    align-self: center;
+  }
+
+  .heroBody {
+    margin-top: var(--spacing-5);
+  }
+
+  .heroSubline {
+    --subline-separator: 1em;
+    font-size: var(--font-size-base);
+  }
+
+  .climbsSection,
   .discussionSection {
     padding: 16px;
     border-radius: 8px;
-  }
-}
-
-@media (min-width: 992px) {
-  .discussionSection {
-    padding: 24px;
-  }
-}
-
-/* Shared max-width token; also referenced by the FAB right-offset in library-page-content.tsx */
-:global(:root) {
-  --library-page-max-width: 800px;
-}
-
-.libraryPageContainer {
-  padding: 16px;
-  min-height: 100vh;
-  background-color: var(--neutral-50);
-  max-width: var(--library-page-max-width);
-  margin: 0 auto;
-  padding-bottom: 96px;
-}
-
-/* Section Title */
-.sectionTitle {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--neutral-900);
-  margin-bottom: 12px;
-}
-
-/* Card Grid */
-.cardGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 24px;
-}
-
-/* Placeholder to prevent CLS while auth status resolves.
-   Height matches .signInBanner: padding-top + content + padding-bottom. */
-.signInBannerPlaceholder {
-  height: calc(var(--spacing-4) * 2 + var(--spacing-10));
-  margin-bottom: var(--spacing-5);
-}
-
-/* Sign-in Banner (compact, non-blocking) */
-.signInBanner {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  padding: var(--spacing-4);
-  background-color: var(--semantic-surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: var(--spacing-5);
-}
-
-.signInBannerText {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Empty/Loading/Error States */
-.emptyContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  text-align: center;
-  background-color: var(--semantic-surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-}
-
-.emptyIcon {
-  font-size: 48px;
-  color: var(--neutral-300);
-  margin-bottom: 16px;
-}
-
-/* Mobile */
-@media (max-width: 767px) {
-  .libraryPageContainer {
-    padding: 12px;
-    padding-bottom: 96px;
-  }
-}
-
-/* Desktop */
-@media (min-width: 768px) {
-  .libraryPageContainer {
-    padding: 24px;
-    padding-bottom: 96px;
-  }
-
-  .cardGrid {
-    grid-template-columns: repeat(4, 1fr);
   }
 }

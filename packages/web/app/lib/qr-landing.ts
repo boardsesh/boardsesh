@@ -1,13 +1,20 @@
 // Which code a board page or a climb page was reached through, read in the
 // browser (#4415).
 //
-// Two kinds of landing share this module:
+// Five kinds of landing share this module:
 //
 //  - **board**: a board QR encodes `/b/{slug}?src=qr&medium=…` (`kiosk` or
 //    `board`), and the `/b/{slug}` hop carries the pair onto
 //    `/b/{slug}/{angle}/list`.
 //  - **climb**: the code beside "Open in your browser" on a laptop encodes the
 //    climb page itself, `…/view/{climb}?src=qr&medium=desktop`.
+//  - **list**: the same laptop code on a board's climb list encodes the list,
+//    `…/{angle}/list?src=qr&medium=desktop`. On `/b/{slug}/{angle}/list` it
+//    shares the page with the board codes; each kind reads only its own
+//    mediums, so one scan is never both.
+//  - **setter** and **playlist**: the same laptop code on a setter's page
+//    (`/setter/{name}?src=qr&medium=desktop`) and on a public playlist
+//    (`/playlists/{uuid}?src=qr&medium=desktop`).
 //
 // Both pages are stored at the edge with a shared `s-maxage`, so their HTML
 // cannot say whether THIS visit came off a code: the medium is read here, from
@@ -18,8 +25,9 @@
 // and the store buttons, whose link id says `.board` or `.desktop` after a scan.
 // So the first read REMEMBERS the landing for the page it was made on, and every
 // later read on that page gets the same answer after the strip. The parsers are
-// `parseBoardQrLanding` and `parseClimbQrLanding` (`@boardsesh/analytics`): the
-// gym funnel's strict one, narrowed to the mediums each kind of code prints, so
+// `parseBoardQrLanding` and `parseClimbQrLanding` (`@boardsesh/analytics`; a
+// list's laptop code prints the climb code's `desktop`): the gym funnel's
+// strict one, narrowed to the mediums each kind of code prints, so
 // `medium=poster` on a board page is not a scan. Nothing here restates the
 // vocabulary.
 
@@ -31,11 +39,16 @@ import {
   type GymQrSearchParams,
 } from '@boardsesh/analytics';
 
-/** Which kind of page a code lands on. */
-export type QrLandingKind = 'board' | 'climb';
+/** Which kind of code a page is landed on through. */
+export type QrLandingKind = 'board' | 'climb' | 'list' | 'setter' | 'playlist';
 
 /** A landing with the medium its kind of code prints. */
-export type QrLanding = { kind: 'board'; medium: BoardQrMedium } | { kind: 'climb'; medium: ClimbQrMedium };
+export type QrLanding =
+  | { kind: 'board'; medium: BoardQrMedium }
+  | { kind: 'climb'; medium: ClimbQrMedium }
+  | { kind: 'list'; medium: ClimbQrMedium }
+  | { kind: 'setter'; medium: ClimbQrMedium }
+  | { kind: 'playlist'; medium: ClimbQrMedium };
 
 /** Any medium a landing can carry, for a store link's id. */
 export type QrLandingMedium = QrLanding['medium'];
@@ -67,8 +80,10 @@ function parseLanding(kind: QrLandingKind, params: GymQrSearchParams): QrLanding
     const boardLanding = parseBoardQrLanding(params);
     return boardLanding ? { kind, medium: boardLanding.medium } : null;
   }
-  const climbLanding = parseClimbQrLanding(params);
-  return climbLanding ? { kind, medium: climbLanding.medium } : null;
+  // A board list's, a setter's and a playlist's laptop code is the climb page's
+  // code pointed at that page.
+  const desktopLanding = parseClimbQrLanding(params);
+  return desktopLanding ? { kind, medium: desktopLanding.medium } : null;
 }
 
 /**

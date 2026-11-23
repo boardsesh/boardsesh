@@ -14,17 +14,17 @@ const lineSx = {
   margin: 0,
   color: 'var(--neutral-700)',
   fontSize: themeTokens.typography.fontSize.base,
+  lineHeight: themeTokens.typography.lineHeight.normal,
   fontVariantNumeric: 'tabular-nums',
 };
 
 // Amber is the "lit" colour: a hold lit on the wall. The icon is decoration and
-// carries no words, so it is not text the contrast audit measures.
+// carries no words, so it is not text the contrast audit measures. One line of
+// the text is 16px at 1.5, 24px tall, so a 24px icon sits on the first line.
 const iconSx = {
   flex: 'none',
-  width: 22,
-  height: 22,
-  // One line of 16px text is ~24px tall; this centres the bulb on the first line.
-  marginTop: '1px',
+  width: themeTokens.spacing[6],
+  height: themeTokens.spacing[6],
   color: 'var(--color-amber)',
 };
 

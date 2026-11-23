@@ -9,7 +9,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 import { formatFirstAscentDate, formatQualityAverage } from './climb-facts-format';
-import { normalizedQuality } from './normalized-quality';
+import { normalizedQuality } from '@/app/lib/climb-quality';
 
 type ClimbFactsProps = {
   climb: Climb;

@@ -1,6 +1,12 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import { DEFAULT_GRADE_COLOR, formatFontGrade, formatVGrade, getGradeColor } from '@/app/lib/grade-colors';
+import {
+  DEFAULT_GRADE_COLOR,
+  formatFontGrade,
+  formatVGrade,
+  getGradeColor,
+  getReadableGradeInk,
+} from '@/app/lib/grade-colors';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type GradeTileProps = {
@@ -66,47 +72,12 @@ const fontGradeSx = {
   lineHeight: 1,
 };
 
-/** The two inks a tile can print in: the brand's dark ink and white. */
-const TILE_INKS = [themeTokens.colors.onAccent, themeTokens.colors.onPrimary] as const;
-
-function linearChannel(channel: number): number {
-  const srgb = channel / 255;
-  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-}
-
-/** WCAG 2 relative luminance of a `#RRGGBB` colour. */
-function relativeLuminance(hexColor: string): number {
-  const hex = hexColor.replace('#', '');
-  const [red, green, blue] = [0, 2, 4].map((offset) => linearChannel(parseInt(hex.slice(offset, offset + 2), 16)));
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
-/** WCAG 2 contrast ratio between two `#RRGGBB` colours, 1 to 21. */
-export function contrastRatio(firstColor: string, secondColor: string): number {
-  const [lighter, darker] = [relativeLuminance(firstColor), relativeLuminance(secondColor)].sort(
-    (first, second) => second - first,
-  );
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-/**
- * The ink with the higher WCAG contrast on a grade colour.
- *
- * Not the shared `getGradeTextColor`, whose brightness (YIQ) cut-off mobile
- * also uses: on V5's red it picks white at 3.84:1. Measured contrast picks the
- * brand's dark ink there (4.82:1), and every V-grade colour gets an ink at
- * 4.5:1 or better.
- */
-export function gradeTileInk(gradeColor: string): string {
-  return TILE_INKS.reduce((bestInk, ink) =>
-    contrastRatio(ink, gradeColor) > contrastRatio(bestInk, gradeColor) ? ink : bestInk,
-  );
-}
-
 /**
  * The grade as a coloured tile beside the climb name, in the same grade
  * colours the app uses: V-grade large, Font grade under it. The `compact` chip
- * is the same colour and ink at row height.
+ * is the same colour and ink at row height. The ink is `getReadableGradeInk`,
+ * black or white by measured contrast, the same one the list rows' grade chips
+ * use, so every V-grade colour prints at 4.5:1 or better.
  *
  * `aria-hidden` because the `<h1>` already says the grade in words (a visually
  * hidden ", V5 (6c)"), so a screen reader hears it once. A caller of the
@@ -121,7 +92,11 @@ export default function GradeTile({ difficulty, boardName, size = 'hero' }: Grad
   const gradeColor = getGradeColor(difficulty) ?? DEFAULT_GRADE_COLOR;
   if (size === 'compact') {
     return (
-      <Box component="span" aria-hidden sx={{ ...compactTileSx, bgcolor: gradeColor, color: gradeTileInk(gradeColor) }}>
+      <Box
+        component="span"
+        aria-hidden
+        sx={{ ...compactTileSx, bgcolor: gradeColor, color: getReadableGradeInk(gradeColor) }}
+      >
         {vGrade}
       </Box>
     );
@@ -130,7 +105,7 @@ export default function GradeTile({ difficulty, boardName, size = 'hero' }: Grad
   const fontGrade = formatFontGrade(difficulty);
 
   return (
-    <Box component="span" aria-hidden sx={{ ...tileSx, bgcolor: gradeColor, color: gradeTileInk(gradeColor) }}>
+    <Box component="span" aria-hidden sx={{ ...tileSx, bgcolor: gradeColor, color: getReadableGradeInk(gradeColor) }}>
       <Box component="span" sx={vGradeSx}>
         {vGrade}
       </Box>

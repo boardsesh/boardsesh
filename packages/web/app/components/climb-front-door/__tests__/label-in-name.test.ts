@@ -29,6 +29,11 @@ describe.each(CATALOGS)('climb page store labels in %s', (_locale, catalog) => {
     expect(cta.getAppAriaAndroid.startsWith(cta.getApp)).toBe(true);
   });
 
+  it('start each board-list angle link label with its visible angle', () => {
+    const { angles } = catalog.list.frontDoor;
+    expect(angles.linkAria.startsWith(angles.stop)).toBe(true);
+  });
+
   it('start the sticky bar labels with its button text', () => {
     expect(stickyBar.ctaAriaIos.startsWith(stickyBar.cta)).toBe(true);
     expect(stickyBar.ctaAriaAndroid.startsWith(stickyBar.cta)).toBe(true);

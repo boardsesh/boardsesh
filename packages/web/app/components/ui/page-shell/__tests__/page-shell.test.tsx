@@ -43,6 +43,26 @@ describe('PageShell', () => {
     expect(full.textContent).toContain('Boardsesh');
     expect(full.querySelector('a[href="/"]')).toBeTruthy();
   });
+
+  it('puts a media picture beside the title and keeps the title the only h1, in the header', () => {
+    const { container } = render(
+      <PageShell
+        title="Climbs set by Marco"
+        lead="41 climbs on Kilter"
+        media={<span data-testid="avatar">M</span>}
+        headerActions={<button type="button">Follow</button>}
+      >
+        <p>body</p>
+      </PageShell>,
+    );
+
+    const header = container.querySelector('header');
+    expect(header?.querySelector('[data-testid="avatar"]')).toBeTruthy();
+    expect(header?.querySelector('button')?.textContent).toBe('Follow');
+    expect(container.querySelectorAll('h1')).toHaveLength(1);
+    // Reading order: picture, title, lead, actions.
+    expect(header?.textContent).toBe('MClimbs set by Marco41 climbs on KilterFollow');
+  });
 });
 
 describe('PageSection', () => {

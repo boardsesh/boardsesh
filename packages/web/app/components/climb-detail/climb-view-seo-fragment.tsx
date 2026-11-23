@@ -6,7 +6,7 @@ import { visuallyHidden } from '@mui/utils';
 import GradeTile from '@/app/components/climb-front-door/grade-tile';
 import { formatQualityAverage } from '@/app/components/climb-front-door/climb-facts-format';
 import { frontDoorTitleSx } from '@/app/components/climb-front-door/front-door-heading-sx';
-import { normalizedQuality } from '@/app/components/climb-front-door/normalized-quality';
+import { normalizedQuality } from '@/app/lib/climb-quality';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { getServerTranslation } from '@/app/lib/i18n/server';

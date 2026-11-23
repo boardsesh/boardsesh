@@ -7,6 +7,7 @@ import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/da
 import { getRedirectStatusCodeFromError, getURLFromRedirectError } from 'next/dist/client/components/redirect';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
+import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 
 /**
  * The climb front door's acceptance suite — the vitest form of #4369's curl
@@ -218,6 +219,12 @@ const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
   rating_count: '12',
 };
 
+/** `buildClimbSearchDescription` through the key-printing `t` above: lead, sends with rating, call to action. */
+const JSON_LD_LEAD =
+  'metadata.view.descriptionLead(climbName=Test Climb,grade=V5,layoutName=Kilter Board Original,angle=40,setter=setter-person)';
+const JSON_LD_DESCRIPTION = `${JSON_LD_LEAD} metadata.view.descriptionSendsRated(count=12,ascents=12,quality=4.2) metadata.view.descriptionCta`;
+const UNRATED_JSON_LD_DESCRIPTION = `${JSON_LD_LEAD} metadata.view.descriptionSends(count=12,ascents=12) metadata.view.descriptionCta`;
+
 function jsonLdPayloads(html: string): Record<string, unknown>[] {
   return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
@@ -399,25 +406,57 @@ describe('climb front door server HTML', () => {
   it('describes a climb from its normalized current-angle quality and ascents', async () => {
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
-    expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
-    );
+    expect(creativeWork.description).toBe(JSON_LD_DESCRIPTION);
   });
 
-  it('omits the description when the current angle has no quality instead of inventing 0/5', async () => {
+  it('carries the meta description verbatim, so the two can never disagree', async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve(PARAMS),
+    });
+
+    expect(creativeWork.description).toBe(metadata.description);
+  });
+
+  it("links the JSON-LD author to the setter's page and pictures the climb with its share card", async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve(PARAMS),
+    });
+    const [ogImage] = (metadata.openGraph?.images ?? []) as Array<{ url: string }>;
+
+    expect(creativeWork.author).toEqual({
+      '@type': 'Person',
+      name: 'setter-person',
+      url: 'https://www.boardsesh.com/setter/setter-person',
+    });
+    // The card `og:image` names, not the holds render the page draws.
+    expect(creativeWork.image).toBe(ogImage.url);
+    expect(String(creativeWork.image)).not.toContain('variant=overlay');
+    expect(vi.mocked(buildOgBoardRenderUrl)).toHaveBeenCalledWith(
+      expect.objectContaining({ board_name: 'kilter', layout_id: 1, size_id: 7 }),
+      'p1r12',
+      expect.objectContaining({ angle: 40, name: 'Test Climb', setter: 'setter-person' }),
+    );
+    expect(creativeWork).not.toHaveProperty('aggregateRating');
+  });
+
+  it('states no rating when the current angle has no quality, instead of inventing 0/5', async () => {
     vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
       { ...CURRENT_ANGLE_STATS, quality_average: null, rating_count: '0' },
     ]);
 
-    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+    expect(creativeWorkPayload(await renderFrontDoor()).description).toBe(UNRATED_JSON_LD_DESCRIPTION);
   });
 
-  it('omits the description when current-angle quality is not normalized to five stars', async () => {
+  it('states no rating when current-angle quality is not normalized to five stars', async () => {
     vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
       { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
     ]);
 
-    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+    expect(creativeWorkPayload(await renderFrontDoor()).description).toBe(UNRATED_JSON_LD_DESCRIPTION);
   });
 });
 
@@ -470,9 +509,7 @@ describe('setter notes on the climb front door', () => {
     climbRow.description = 'Match the rail, then a big move to the jug.';
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
-    expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
-    );
+    expect(creativeWork.description).toBe(JSON_LD_DESCRIPTION);
   });
 });
 

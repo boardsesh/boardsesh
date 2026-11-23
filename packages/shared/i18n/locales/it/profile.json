@@ -29,6 +29,18 @@
     "setter": {
       "title": "Blocchi tracciati da {{name}}",
       "description": "Blocchi creati da {{name}} su Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} blocco tracciato da {{name}} su {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} blocchi tracciati da {{name}} su {{boards}}",
+      "titlePage": "Blocchi tracciati da {{name}} — Pagina {{page}}",
+      "titleWithClimbsPage_one": "{{climbs}} blocco tracciato da {{name}} su {{boards}} — Pagina {{page}}",
+      "titleWithClimbsPage_other": "{{climbs}} blocchi tracciati da {{name}} su {{boards}} — Pagina {{page}}",
+      "descriptionCtaSingle": "Illuminalo in parete con Boardsesh.",
+      "boardSprayWall": "Spraywall",
+      "descriptionSetCount_one": "{{name}} ha tracciato {{climbs}} blocco su {{boards}}.",
+      "descriptionSetCount_other": "{{name}} ha tracciato {{climbs}} blocchi su {{boards}}.",
+      "descriptionSends_one": "{{sends}} ripetizione finora.",
+      "descriptionSends_other": "{{sends}} ripetizioni finora.",
+      "descriptionCta": "Scegline uno e illuminalo in parete con Boardsesh.",
       "fallbackTitle": "Profilo del tracciatore",
       "fallbackDescription": "Guarda il profilo e i blocchi del tracciatore su Boardsesh",
       "ogAlt": "Il profilo da tracciatore di {{name}}",
@@ -176,11 +188,20 @@
     "shareFailed": "Condivisione non riuscita",
     "follower_one": "follower",
     "follower_other": "follower",
-    "climb_one": "blocco",
-    "climb_other": "blocchi",
     "seoHeading": "Blocchi tracciati da {{name}}",
-    "seoSummary_one": "{{name}} ha tracciato {{formattedCount}} blocco su {{boards}}.",
-    "seoSummary_other": "{{name}} ha tracciato {{formattedCount}} blocchi su {{boards}}.",
+    "stats": {
+      "climbs_one": "{{climbs}} blocco su {{boards}}",
+      "climbs_other": "{{climbs}} blocchi su {{boards}}",
+      "sends_one": "una ripetizione",
+      "sends_other": "{{sends}} ripetizioni",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "I più ripetuti",
+      "meta_one": "{{sends}} ripetizione · {{angle}}°",
+      "meta_other": "{{sends}} ripetizioni · {{angle}}°",
+      "artAlt": "{{climbName}} illuminato sul pannello {{board}} a {{angle}}°"
+    },
     "climbsHeading": "Tutti i blocchi di {{name}}",
     "empty": "Nessun blocco in questa pagina.",
     "browseBoard": "Guarda tutti i blocchi su {{boardName}}",
@@ -191,6 +212,10 @@
       "next": "Altri blocchi",
       "pageLabel": "Pagina {{page}}"
     },
-    "installHelper": "Scarica l’app gratuita e scala i blocchi di {{name}} sul tuo pannello."
+    "installHelper": "Scarica l’app gratuita e scala i blocchi di {{name}} sul tuo pannello.",
+    "qr": {
+      "title": "Inquadra il codice per aprire questi blocchi sul telefono",
+      "imageLabel": "Codice QR che apre i blocchi di {{name}} sul telefono"
+    }
   }
 }

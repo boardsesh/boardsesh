@@ -29,6 +29,18 @@
     "setter": {
       "title": "Bloques de {{name}}",
       "description": "Bloques creados por {{name}} en Boardsesh",
+      "titleWithClimbs_one": "{{climbs}} bloque de {{name}} en {{boards}}",
+      "titleWithClimbs_other": "{{climbs}} bloques de {{name}} en {{boards}}",
+      "titlePage": "Bloques de {{name}} — Página {{page}}",
+      "titleWithClimbsPage_one": "{{climbs}} bloque de {{name}} en {{boards}} — Página {{page}}",
+      "titleWithClimbsPage_other": "{{climbs}} bloques de {{name}} en {{boards}} — Página {{page}}",
+      "descriptionCtaSingle": "Ilumínalo en tu plafón con Boardsesh.",
+      "boardSprayWall": "Spraywall",
+      "descriptionSetCount_one": "{{name}} ha abierto {{climbs}} bloque en {{boards}}.",
+      "descriptionSetCount_other": "{{name}} ha abierto {{climbs}} bloques en {{boards}}.",
+      "descriptionSends_one": "{{sends}} encadene hasta ahora.",
+      "descriptionSends_other": "{{sends}} encadenes hasta ahora.",
+      "descriptionCta": "Elige uno e ilumínalo en tu plafón con Boardsesh.",
       "fallbackTitle": "Perfil de aperturista",
       "fallbackDescription": "Mira el perfil del aperturista y sus bloques en Boardsesh",
       "ogAlt": "Perfil de aperturista de {{name}}",
@@ -176,11 +188,20 @@
     "shareFailed": "No se pudo compartir",
     "follower_one": "seguidor",
     "follower_other": "seguidores",
-    "climb_one": "bloque",
-    "climb_other": "bloques",
     "seoHeading": "Bloques abiertos por {{name}}",
-    "seoSummary_one": "{{name}} ha creado {{formattedCount}} bloque en {{boards}}.",
-    "seoSummary_other": "{{name}} ha creado {{formattedCount}} bloques en {{boards}}.",
+    "stats": {
+      "climbs_one": "{{climbs}} bloque en {{boards}}",
+      "climbs_other": "{{climbs}} bloques en {{boards}}",
+      "sends_one": "con un encadene",
+      "sends_other": "con {{sends}} encadenes",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "Los más encadenados",
+      "meta_one": "{{sends}} encadene · {{angle}}°",
+      "meta_other": "{{sends}} encadenes · {{angle}}°",
+      "artAlt": "{{climbName}} iluminado en el plafón {{board}} a {{angle}}°"
+    },
     "climbsHeading": "Todos los bloques de {{name}}",
     "empty": "No hay bloques en esta página.",
     "browseBoard": "Ver todos los bloques del plafón {{boardName}}",
@@ -191,6 +212,10 @@
       "next": "Más bloques",
       "pageLabel": "Página {{page}}"
     },
-    "installHelper": "Descarga la app gratis y escala los bloques de {{name}} en tu plafón."
+    "installHelper": "Descarga la app gratis y escala los bloques de {{name}} en tu plafón.",
+    "qr": {
+      "title": "Escanea para abrir estos bloques en tu móvil",
+      "imageLabel": "Código QR que abre los bloques de {{name}} en tu móvil"
+    }
   }
 }

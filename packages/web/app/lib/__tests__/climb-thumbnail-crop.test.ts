@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { getClimbThumbnailCrop, getClimbThumbnailCropPlacement } from '../climb-thumbnail-crop';
+import { getClimbCoverPlacement, getClimbThumbnailCrop, getClimbThumbnailCropPlacement } from '../climb-thumbnail-crop';
 
 const board = {
   board_name: 'kilter' as const,
@@ -65,4 +65,42 @@ it.each([false, true])('keeps a padded bottom-edge hold in the slot with valid C
   expect(centreX).toBeLessThanOrEqual(1);
   expect(centreY).toBeGreaterThanOrEqual(0);
   expect(centreY).toBeLessThanOrEqual(1);
+});
+
+describe('playlist cover placement', () => {
+  const percent = (value: string) => parseFloat(value);
+
+  it('fits the whole board, centred, when there is no crop', () => {
+    const square = getClimbCoverPlacement(null, 100, 100, false, 1);
+    expect([square.left, square.top, square.width].map(percent)).toEqual([0, 0, 100]);
+
+    // A tall board in a square cell: full height, centred across.
+    const tall = getClimbCoverPlacement(undefined, 100, 200, false, 1);
+    expect([tall.left, tall.top, tall.width].map(percent)).toEqual([25, 0, 50]);
+
+    // A square board in a tall half-tile cell: full width, centred down.
+    const halfTile = getClimbCoverPlacement(null, 100, 100, false, 0.5);
+    expect([halfTile.left, halfTile.top, halfTile.width].map(percent)).toEqual([0, 25, 100]);
+  });
+
+  it('zooms a central crop to fill the cell, centred on it', () => {
+    const placement = getClimbCoverPlacement({ x: 0.4, y: 0.4, width: 0.2, height: 0.2 }, 100, 100, false, 1);
+    expect(percent(placement.width)).toBeCloseTo(500);
+    expect(percent(placement.left)).toBeCloseTo(-200);
+    expect(percent(placement.top)).toBeCloseTo(-200);
+  });
+
+  it('slides an edge crop back so the art covers the cell instead of leaving a strip', () => {
+    // Centring this top-edge crop alone would leave a quarter of the cell empty above the board.
+    const placement = getClimbCoverPlacement({ x: 0, y: 0, width: 0.5, height: 0.25 }, 100, 100, false, 1);
+    expect(percent(placement.width)).toBeCloseTo(200);
+    expect(percent(placement.left)).toBeCloseTo(0);
+    expect(percent(placement.top)).toBeCloseTo(0);
+  });
+
+  it('places a mirrored climb’s crop where the flipped art draws it', () => {
+    const crop = { x: 0.1, y: 0.4, width: 0.2, height: 0.2 };
+    expect(percent(getClimbCoverPlacement(crop, 100, 100, false, 1).left)).toBeCloseTo(-50);
+    expect(percent(getClimbCoverPlacement(crop, 100, 100, true, 1).left)).toBeCloseTo(-350);
+  });
 });

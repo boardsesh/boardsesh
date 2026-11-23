@@ -9,6 +9,9 @@ const sentry = vi.hoisted(() => ({
 vi.mock('@sentry/nextjs', () => sentry);
 vi.mock('@boardsesh/db/client/config', () => ({ markWebDatabaseUrlProcess: () => {} }));
 vi.mock('../sentry.server.config', () => ({}));
+vi.mock('../sentry.edge.config', () => ({}));
+const errorResponseCdnCache = vi.hoisted(() => ({ installErrorResponseCdnCacheGuard: vi.fn(() => true) }));
+vi.mock('../app/lib/error-response-cdn-cache.server', () => errorResponseCdnCache);
 vi.mock('../app/lib/auth/canonical-auth-url', () => ({
   applyCanonicalAuthUrl: () => {},
   diagnoseCanonicalOrigin: () => ({ level: 'ok', message: '' }),
@@ -37,6 +40,21 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   sentry.captureException.mockClear();
+});
+
+describe('register: error responses and the CDN cache', () => {
+  it('guards error responses against a shared-cache TTL before serving', async () => {
+    errorResponseCdnCache.installErrorResponseCdnCacheGuard.mockClear();
+    await register();
+    expect(errorResponseCdnCache.installErrorResponseCdnCacheGuard).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the edge runtime alone', async () => {
+    errorResponseCdnCache.installErrorResponseCdnCacheGuard.mockClear();
+    vi.stubEnv('NEXT_RUNTIME', 'edge');
+    await register();
+    expect(errorResponseCdnCache.installErrorResponseCdnCacheGuard).not.toHaveBeenCalled();
+  });
 });
 
 describe('register: AUTH_BROWSER_SESSION_MODE at boot', () => {

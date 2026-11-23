@@ -113,10 +113,14 @@ export {
   type BoardQrScannedProps,
   type BoardQrPayload,
 } from './board-qr-events';
-// Climb QR scans: the code beside "Open in your browser" on a laptop. Same
-// contract as the board scans above; names no climb.
+// Climb, board-list, setter and playlist QR scans: the code a public page shows
+// on a laptop. Same contract as the board scans above; names no climb, board,
+// setter or playlist.
 export {
   climbQrScanned,
+  listQrScanned,
+  setterQrScanned,
+  playlistQrScanned,
   parseClimbQrLanding,
   CLIMB_QR_MEDIUMS,
   type ClimbQrMedium,

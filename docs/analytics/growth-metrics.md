@@ -106,9 +106,9 @@ observations labelled separately.
 
 A PostHog event says who sent it through two properties: `$lib` (which SDK) and
 `environment` (which build). Neither one is enough alone. `environment =
-production` covers native, www and backend events at once, and one www event
-(`Climb Handoff Clicked`) sets `environment = production-web` by hand. So every
-population filters on both.
+production` covers native, www and backend events at once, and two www events
+(`Climb Handoff Clicked`, `Playlist Handoff Clicked`) set `environment =
+production-web` by hand. So every population filters on both.
 
 | Population         | Filter                                                           | Notes                                                                                                                                  |
 | ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -461,6 +461,24 @@ excluded.
 
 Baseline from the 2026-09-20 audit (2026-08-23 to 2026-09-19 UTC): search to
 send 1,808/2,361 (76.6%); queue adoption 323/2,361 (13.7%).
+
+### www hand-offs to the app
+
+Two www buttons send a reader to the same page on app.boardsesh.com. Both are
+real links: the click handler only adds the event, and a same-tab click waits
+up to 250 ms for it to send before leaving.
+
+| Event | Where | Properties | Arrival event |
+| --- | --- | --- | --- |
+| `Climb Handoff Clicked` | Climb and board-list pages ("Climb this") | `environment: production-web`, `surface` (`climb_front_door`, `list_front_door`), `tree`, `boardName`, `layoutId`, `angle`, `climbUuid`, `locale`, `campaign: front_door` | `Board Route Handoff` |
+| `Playlist Handoff Clicked` | `/playlists/{uuid}` ("Open in your browser"; on a phone the text link "Or open the playlist in your browser" under the store button) | `environment: production-web`, `surface: playlist_front_door`, `boardName` (the playlist's board), `layoutId` (null for a synced circuit), `isPublic`, `playlistUuid` (public playlists only), `locale`, `campaign: front_door` | None |
+
+The playlist hand-off opens the app's `/discover/{uuid}`, which fires no
+arrival event, so it has no completion rate. That is why it is its own event
+and not a third `surface` on `Climb Handoff Clicked`: in there it would lower
+the climb hand-off's `Board Route Handoff` ÷ `Climb Handoff Clicked` rate with
+clicks that can never arrive. It first fires with the deploy of the playlist
+page redesign; there is no earlier playlist hand-off data.
 
 ### Connect release watch (2.7)
 
@@ -1253,7 +1271,7 @@ an Instagram bio).
 `utm_campaign`, `utm_content`, `utm_term`, `gclid` (Google Ads), `fbclid` (Meta) and `rdt_cid` (Reddit Ads) off the landing URL, and
 `analytics.ts` sends whichever were present as plain event properties on
 `$pageview` and on every `track()` event (`App Install Click`, `Climb Handoff
-Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
+Clicked`, `Playlist Handoff Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
 from those; we do not set it ourselves.
 
 **Break www traffic down by the session property `$entry_utm_source` or by the
@@ -1480,6 +1498,8 @@ finished the period shown as final. Mark the current, unfinished period.
 | #8026 web deploy (fill in the date when it ships) | The climb page's second hand-off and store block (the copy under the facts) goes. `Climb Handoff Clicked` with `surface = 'climb_front_door'` and `App Install Click` with `placement = 'climb-view'` keep their names and properties but lose the clicks that block took, so both step down from this date. It is a layout change, not lost interest; read climb-page click-through across it as a new series |
 | #8032 web deploy (fill in the date when it ships) | On a phone the climb page's filled button becomes the store ("Get the free app", one store per phone) and the hand-off to the browser app drops to a text link, so `App Install Click` with `placement = 'climb-view'` should step up and `Climb Handoff Clicked` with `surface = 'climb_front_door'` step down from phones. On a laptop the hand-off stays the filled button and a QR code carries the climb to a phone; the store buttons beside the code send `placement = 'climb-qr-card'` (link id `climb-qr-card`), so `climb-view` stays the phone's button. `Climb QR Scanned` starts (`medium = 'desktop'`, one per landing, after consent), and store clicks after a scan carry `qrMedium = 'desktop'` and the link id `climb-view.desktop` (`utm_medium=qr`). Android and non-Safari iOS phones get a sticky install bar once the hero button scrolls away: `App Install Click` with `placement = 'sticky-bar'` starts on climb pages (link id `sticky-bar`, or `sticky-bar.desktop` after a scan). Read climb-page installs as the sum of `climb-view`, `sticky-bar` and `climb-qr-card`, and compare four weeks before and after: there is too little traffic for an A/B test |
 | Climb page app module web deploy (seo-pages/a5, fill in the date when it ships) | A climb page gains "What you get in the app" near its end, with its own store pair: `App Install Click` with `placement = 'climb-app-module'` starts (link id `climb-app-module`, or `climb-app-module.desktop` after a scan). Read climb-page installs as the sum of `climb-view`, `climb-qr-card`, `sticky-bar` and `climb-app-module`. The comments section no longer loads for signed-out readers until they tap Show comments, so comment and vote queries from climb pages drop; that is the change, not an outage |
+| Board-list hero web deploy (B4, fill in the date when it ships) | On a phone the board list's filled button becomes the store ("Get the free app") and the hand-off to the browser app drops to a text link; the second hand-off and store block at the end of the list goes. Expect `App Install Click` with `placement = 'climb-list'` to step up and `Climb Handoff Clicked` with `surface = 'list_front_door'` to step down from phones. On a laptop a QR code carries the list to a phone; the store buttons beside it send `placement = 'climb-list-qr-card'`, so `climb-list` stays the phone's button. `List QR Scanned` starts (`medium = 'desktop'`), and on the config-tuple list store clicks after a scan carry the link id `climb-list.desktop`. Read board-list installs as the sum of `climb-list` and `climb-list-qr-card`. The list's preload moves from the first row's thumbnail to the first climb's full board render, the new hero |
+| Setter, playlist and list integration web deploy (B5, fill in the date when it ships) | On a laptop a setter page and a public playlist show a QR code that carries the page to a phone. `Setter QR Scanned` and `Playlist QR Scanned` start (`medium = 'desktop'`), and store clicks after a scan carry the link ids `setter.desktop` and `playlist.desktop`. The QR cards' store buttons send `placement = 'setter-qr-card'` and `'playlist-qr-card'`. From md the setter page's own store pair (`placement = 'setter'`) is replaced by the card, so `setter` clicks become phone-only and step down. On a phone the playlist's filled button becomes the store ("Get the free app", `placement = 'playlist'`) and the hand-off drops to a text link, so `App Install Click` with `placement = 'playlist'` should step up from phones and `Playlist Handoff Clicked` step down; on a laptop the hand-off stays the filled button. Read setter installs as `setter` + `setter-qr-card` and playlist installs as `playlist` + `playlist-qr-card` |
 
 None of these repairs past data. Annotate them; do not backfill.
 

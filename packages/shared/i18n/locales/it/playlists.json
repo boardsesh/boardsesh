@@ -241,7 +241,22 @@
     },
     "climbCount_one": "{{count}} blocco",
     "climbCount_other": "{{count}} blocchi",
-    "openInApp": "Scalala nell'app",
+    "cta": {
+      "getAppHelper": "Illumina questi blocchi in parete, uno dopo l’altro.",
+      "openInBrowser": "Apri nel browser",
+      "openInBrowserMobile": "Oppure apri la playlist nel browser"
+    },
+    "qr": {
+      "title": "Inquadra il codice per aprire questa playlist sul telefono",
+      "imageLabel": "Codice QR che apre {{name}} sul telefono"
+    },
+    "subline": {
+      "boardPlaylist": "Playlist {{board}}",
+      "sprayWallPlaylist": "Playlist Spraywall",
+      "sprayWall": "Spraywall",
+      "multiBoardPlaylist": "Playlist {{boards}}",
+      "gradeBand": "da {{low}} a {{high}}"
+    },
     "followerCount_one": "{{count}} follower",
     "followerCount_other": "{{count}} follower",
     "followFailed": "Impossibile aggiornare il follow della playlist",

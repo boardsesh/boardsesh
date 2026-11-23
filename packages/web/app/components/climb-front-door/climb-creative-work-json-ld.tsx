@@ -1,9 +1,12 @@
 import React from 'react';
 import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
+import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import { isRoutableSetterUsername } from '@/app/lib/seo/setter-username';
+import type { BoardImageDetails } from '@/app/lib/board-image-details';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
-import { BEST_QUALITY, normalizedQuality, WORST_QUALITY } from './normalized-quality';
 
 type ClimbCreativeWorkJsonLdProps = {
   climb: Climb;
@@ -11,32 +14,15 @@ type ClimbCreativeWorkJsonLdProps = {
   climbName: string;
   /** The page's CANONICAL path, not the hand-off path. */
   canonicalClimbUrl: string;
-  /** Board-render overlay path, or null when the climb has no frames. */
-  overlayUrl: string | null;
-  /** Stats for the angle being viewed, or undefined when the row is missing. */
-  currentAngleStats: ClimbStatsForAngle | undefined;
-  /** Already-translated description, or null when the facts to fill it are missing. */
-  description: string | null;
+  /** The board the page draws the climb on, which the share card draws too. */
+  boardDetails: BoardImageDetails;
+  /** The angle the canonical names, and so the angle the share card names. */
+  canonicalAngle: number;
+  /** Every angle's stats, for the grade the share card prints at `canonicalAngle`. */
+  angleStats: ClimbStatsForAngle[];
+  /** The page's meta description, from `buildClimbSearchDescription`. */
+  description: string;
 };
-
-/**
- * `aggregateRating`, or nothing at all. The conditions live in
- * `normalizedQuality`, shared with the star in the page heading: a climb that
- * fails any of them ships without a rating. Omitting is free; publishing a
- * wrong one is a manual action.
- */
-function buildAggregateRating(stats: ClimbStatsForAngle | undefined): Record<string, unknown> | null {
-  const quality = normalizedQuality(stats);
-  if (!quality) return null;
-
-  return {
-    '@type': 'AggregateRating',
-    ratingValue: Math.round(quality.average * 100) / 100,
-    ratingCount: quality.ratingCount,
-    bestRating: BEST_QUALITY,
-    worstRating: WORST_QUALITY,
-  };
-}
 
 /** ISO-ish timestamp or nothing — an unparseable string is worse than no field. */
 function validDate(value: string | null | undefined): string | null {
@@ -47,20 +33,36 @@ function validDate(value: string | null | undefined): string | null {
 
 /**
  * `CreativeWork` for one climb. A boulder problem is a designed artefact, not a
- * product or a place, and it has an author (the setter), a creation date and —
- * where the data honestly supports it — a rating.
+ * product or a place, and it has an author (the setter) and a creation date.
+ *
+ * No `aggregateRating`, on purpose. Google shows review snippets for a fixed
+ * list of types (Product, Book, Course, SoftwareApplication and a few more) and
+ * CreativeWork is not on it, so the field bought nothing. Worse, its count
+ * blended in Aurora's upstream ratings, and Google's review rules forbid
+ * aggregating ratings collected on another site.
  */
 export default function ClimbCreativeWorkJsonLd({
   climb,
   climbName,
   canonicalClimbUrl,
-  overlayUrl,
-  currentAngleStats,
+  boardDetails,
+  canonicalAngle,
+  angleStats,
   description,
 }: ClimbCreativeWorkJsonLdProps) {
-  const aggregateRating = buildAggregateRating(currentAngleStats);
   const setter = climb.setter_username?.trim();
   const dateCreated = validDate(climb.published_at ?? climb.created_at);
+  // The share card `generateMetadata` puts in `og:image`, built from the same
+  // identity at the same canonical angle: one stable URL per climb, cached for
+  // a year, where the bare holds render changed with every renderer version. A
+  // climb with no frames gets no image, because the card endpoint rejects it.
+  const imageUrl = climb.frames
+    ? buildOgBoardRenderUrl(
+        boardDetails,
+        climb.frames,
+        buildOgClimbCardIdentity(climb, boardDetails.board_name, canonicalAngle, angleStats),
+      )
+    : null;
 
   const data: Record<string, unknown> = {
     '@context': 'https://schema.org',
@@ -72,13 +74,26 @@ export default function ClimbCreativeWorkJsonLd({
     // advertise an address the canonical beside it disowns. Same rule as
     // `front-door-breadcrumb.tsx`, which sits on these very pages.
     url: absoluteUrl(canonicalClimbUrl),
-    ...(description ? { description } : {}),
-    // Preserve Railway's absolute image URL; the URL constructor also keeps the
-    // same-origin compatibility path valid in local development and old HTML.
-    ...(overlayUrl ? { image: new URL(overlayUrl, SITE_URL).toString() } : {}),
-    ...(setter ? { author: { '@type': 'Person', name: setter } } : {}),
+    description,
+    // Keeps the backend's absolute card URL; the URL constructor also resolves
+    // the same-origin fallback path when no backend origin is configured.
+    ...(imageUrl ? { image: new URL(imageUrl, SITE_URL).toString() } : {}),
+    // The setter page the front door's setter link opens, locale-free for the
+    // same reason as `url`, and the same address `SetterJsonLd` names the person
+    // by. Only for a name the setter sitemap would submit too: a padded name or
+    // one with `/` names a URL a crawler cannot reach.
+    ...(setter
+      ? {
+          author: {
+            '@type': 'Person',
+            name: setter,
+            ...(isRoutableSetterUsername(climb.setter_username)
+              ? { url: absoluteUrl(`/setter/${encodeURIComponent(setter)}`) }
+              : {}),
+          },
+        }
+      : {}),
     ...(dateCreated ? { dateCreated } : {}),
-    ...(aggregateRating ? { aggregateRating } : {}),
   };
 
   return <JsonLd data={data} />;

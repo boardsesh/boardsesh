@@ -1,7 +1,9 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vite-plus/test';
+import { afterEach, describe, it, expect, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
+import { cleanup, render } from '@testing-library/react';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
+import { V_GRADE_COLORS } from '@/app/lib/grade-colors';
 import StaticClimbRow from '../static-climb-row';
 
 /**
@@ -74,5 +76,58 @@ describe('StaticClimbRow server HTML', () => {
     const html = rowHtml(makeClimb({ difficulty: '6a' }));
     expect(html).toContain('6a');
     expect(html).not.toContain('MuiSkeleton');
+  });
+});
+
+describe('StaticClimbRow as a card', () => {
+  // `#FF5026` as a computed style reports it.
+  const V4_RGB = `rgb(${[1, 3, 5].map((offset) => parseInt(V_GRADE_COLORS.V4.slice(offset, offset + 2), 16)).join(', ')})`;
+
+  function cardHtml(props: { showSetter?: boolean; showAngle?: boolean } = {}) {
+    return renderToString(
+      <StaticClimbRow
+        climb={makeClimb()}
+        boardDetails={makeBoardDetails()}
+        pathname="/setter/setter_joe"
+        variant="card"
+        {...props}
+      />,
+    );
+  }
+
+  /** The grade's element in a client render, where emotion's styles are live to read back. */
+  function gradeElement(variant: 'list' | 'card') {
+    const { getByText } = render(
+      <StaticClimbRow climb={makeClimb()} boardDetails={makeBoardDetails()} pathname="/setter/x" variant={variant} />,
+    );
+    return getByText('V4+');
+  }
+
+  afterEach(cleanup);
+
+  it('puts the grade on a chip in its grade colour, still in the server HTML', () => {
+    const html = cardHtml();
+    expect(html).toContain('>V4+</span>');
+    expect(html).not.toContain('MuiSkeleton');
+
+    expect(getComputedStyle(gradeElement('card')).backgroundColor).toBe(V4_RGB);
+  });
+
+  it('keeps the plain row drawing the grade as coloured text, with no chip', () => {
+    const style = getComputedStyle(gradeElement('list'));
+
+    expect(style.backgroundColor).not.toBe(V4_RGB);
+    expect(style.color).not.toBe('');
+  });
+
+  it("drops the setter's name on a page that is already theirs, and can name the angle instead", () => {
+    const html = cardHtml({ showSetter: false, showAngle: true });
+
+    expect(html).not.toContain('setter_joe');
+    expect(html).toContain('40°');
+  });
+
+  it('keeps one anchor per row', () => {
+    expect(cardHtml().match(/<a\s/g) ?? []).toHaveLength(1);
   });
 });

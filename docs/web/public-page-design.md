@@ -94,9 +94,18 @@ Every store button has its own placement, which is also its store link id
 (`app/lib/app-install-event.ts`): `climb-view` (the phone's hero button),
 `climb-qr-card` (the desktop QR card), `sticky-bar` and `climb-app-module`.
 
+Board lists, setter pages and playlists follow the same pattern with their own
+placements: `climb-list` / `climb-list-qr-card`, `setter` / `setter-qr-card`
+and `playlist` / `playlist-qr-card`. The playlist page builds its hero from the
+same parts (`front-door-cta-parts.tsx`) and takes the QR card as a slot the
+server renders, so `qrcode.react` stays out of the client bundle. A private
+playlist gets no QR card.
+
 The desktop QR code encodes the page the reader is on plus
-`?src=qr&medium=desktop` (`climbQrUrl` in `app/lib/gym-attribution.ts`). The
-phone that scans it fires `Climb QR Scanned` once per landing, after consent
+`?src=qr&medium=desktop` (`climbQrUrl` in `app/lib/gym-attribution.ts`, and
+`listQrUrl`, `setterQrUrl`, `playlistQrUrl` for the other pages). The phone
+that scans it fires `Climb QR Scanned` (or the list, setter or playlist
+sibling) once per landing, after consent
 (`qr-landing-tracker.tsx`), and a store click after a scan carries
 `qrMedium = 'desktop'` and the link id `<placement>.desktop`. The server never
 reads those parameters, so the cached HTML stays the same. Event contracts:
