@@ -17,6 +17,7 @@ import { selectEffectiveOffline, useConnectivityField } from '../../lib/connecti
 import { WEB_BASE_URL } from '../../lib/env';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
+import { GYM_BOARDS_QUERY_KEY } from '../../lib/graphql/query-keys';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { buildGymManageUrl } from '../../lib/gym-manage-url';
 import { hapticSelection } from '../../lib/haptics';
@@ -273,6 +274,9 @@ function GymPageContent({
     void queryClient.invalidateQueries({ queryKey: gymPendingClaimQueryKey(gym.slug ?? null) });
     void queryClient.invalidateQueries({ queryKey: ['gym', gym.uuid] });
     void queryClient.invalidateQueries({ queryKey: ['gymBySlug'] });
+    // The board roster's actions depend on the viewer's role, so a claim that
+    // just approved must not keep showing the climber-level ones.
+    void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
   }, [queryClient, gym.slug, gym.uuid]);
 
   // --- actions ---
