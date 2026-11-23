@@ -76,12 +76,17 @@ no mobile counterpart. They live in their own module.
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
 | `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
 | `gymSlug`      | The slug of the gym page the scan landed on                                              |
-| `cta`          | `follow`, `kiosk`, `website`, `report-duplicate`                                         |
+| `cta`          | `follow`, `kiosk`, `website`, `report-duplicate`, `report-problem` (see below)           |
 | `tab`          | `overview`, `kiosks`, `insights`, `branding`, `profile`, `boards`, `members`, `comments` |
 | `boardTypes`   | A **sorted, comma-joined string**, e.g. `kilter,tension`. Empty selection is `''`        |
 | `queryLength`  | A number. The search text itself never leaves the browser                                |
 | `hasGeo`       | A boolean, and only ever a boolean                                                       |
 | `resultsCount` | A number                                                                                 |
+
+`report-problem` is Report a problem on the gym page: the gym's own button or a
+board row's flag. It replaces `report-duplicate` while the `directory-reports`
+flag is on (docs/product/directory-reports.md); with the flag off the page still
+shows Report a duplicate, so both values can appear.
 
 `GymManageTabName` restates `VALID_TABS` from
 `app/gym/[gym_slug]/manage/manage-gym-content.tsx`. It is restated rather than
