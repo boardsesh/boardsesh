@@ -38,8 +38,9 @@ export function isBoardRoutePath(pathname: string | null | undefined): boolean {
  * as a board model, and the route 404s rather than 500ing its way through a
  * catalogue lookup that has nothing to find.
  *
- * Whether www grows a public spray-wall surface at all is SW-16's (#5449)
- * decision; until then this is the whole of the answer.
+ * Public spray climbs render at `/b/{slug}/{angle}/view/{climb}`. The static
+ * `/spray/.../view/{climb}` compatibility handler redirects older numeric
+ * links there without opening the catalogue parser to spray walls.
  */
 const BOARDS_WITHOUT_DEEP_ROUTE = new Set<string>(['spray']);
 

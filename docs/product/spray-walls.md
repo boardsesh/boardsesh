@@ -4605,10 +4605,16 @@ property rather than a catalogue:
    open a wall in the app; it is not consent to be crawled. SW-16 (#5449) decides
    whether public walls get an indexing story of their own.
 
-The config-tuple tree stays closed: `boardHasDeepConfigRoute` in
-`packages/web/app/lib/board-route-paths.ts` 404s `/spray/...`, because a wall
-has no layout, size or set NAMES to slug. What www does serve is the wall's
-climbs at `/b/{slug}`, which is the next section.
+The catalogue config-tuple tree stays closed: `boardHasDeepConfigRoute` in
+`packages/web/app/lib/board-route-paths.ts` refuses spray params, because a wall
+has no layout, size or set NAMES to slug. Public climbs render at `/b/{slug}`.
+Older numeric climb links, including links from beta cards, have a static
+`/spray/{layout}/{size}/1/{angle}/view/{climb}` compatibility handler outside
+that tree. It resolves the wall anonymously through `sprayWallByLayout` and
+returns an uncached 307 to its `/b/{slug}` climb page, preserving the locale,
+climb segment and query parameters. Unlisted walls still require the matching
+`?wall=` capability; private or hidden walls still return 404. Backend failures
+return 503. The handler is `noindex, follow` and stays out of the sitemap.
 
 ## The wall on the web (SW-16)
 
@@ -4768,7 +4774,8 @@ The app's Share button on a wall climb hands out the same URL this page lives at
 `/b/{slug}/{angle}/view/{name-slug}-{uuid}`, built by `buildSprayClimbSharePath`
 (`packages/mobile/src/lib/spray/spray-share.ts`) with the climb segment www's
 `constructBoardSlugViewUrl` emits. It used to share the numeric
-`/spray/{layout}/{size}/1/{angle}/view/...` path, which www 404s by design. The
+`/spray/{layout}/{size}/1/{angle}/view/...` path, which the compatibility handler
+now redirects to the wall's `/b/` climb page. The
 slug, the angle and the two visibility flags come off the registered wall
 (`RegisteredSprayWall.share`, filled by the loader from `sprayWallRenderData`'s
 `wall.board`), so the share costs no request.
