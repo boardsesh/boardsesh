@@ -1716,6 +1716,7 @@
     "keepReplyPlaceholder": "Wir haben es letzte Woche neu geschraubt. Die App passt jetzt zur Wand.",
     "keepSend": "Senden",
     "fixedToast": "Gespeichert. Wir sagen den Kletterer*innen Bescheid, die es gemeldet haben.",
+    "savedToast": "Gespeichert.",
     "keptToast": "Meldung geschlossen. Wir geben deine Notiz weiter.",
     "keepError": "Das hat nicht geklappt. Versuch es erneut.",
     "keepPartial_one": "{{count}} von {{total}} Meldungen geschlossen. Der Rest hat nicht geklappt. Versuch es erneut.",

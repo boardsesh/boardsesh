@@ -1716,6 +1716,7 @@
     "keepReplyPlaceholder": "Lo reseteamos la semana pasada. La app ya coincide con el muro.",
     "keepSend": "Enviar",
     "fixedToast": "Guardado. Avisaremos a los escaladores que lo marcaron.",
+    "savedToast": "Guardado.",
     "keptToast": "Denuncia cerrada. Les pasaremos tu nota.",
     "keepError": "No se pudo enviar. Inténtalo de nuevo.",
     "keepPartial_one": "Se cerró {{count}} de {{total}} denuncias. Las demás no se enviaron. Inténtalo de nuevo.",

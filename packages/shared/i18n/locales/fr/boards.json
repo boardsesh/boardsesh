@@ -1716,6 +1716,7 @@
     "keepReplyPlaceholder": "On l'a refaite la semaine dernière. L'appli correspond au mur maintenant.",
     "keepSend": "Envoyer",
     "fixedToast": "Enregistré. On prévient les grimpeurs qui l'ont signalée.",
+    "savedToast": "Enregistré.",
     "keptToast": "Signalement fermé. On transmet ta note.",
     "keepError": "Ça n'est pas passé. Réessaie.",
     "keepPartial_one": "{{count}} signalement sur {{total}} a été fermé. Les autres ne sont pas passés. Réessaie.",

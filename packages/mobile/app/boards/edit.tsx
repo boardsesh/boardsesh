@@ -47,6 +47,8 @@ import { SprayWallLedSection } from '../../src/components/spray-wall/SprayWallLe
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
 import { WhoCanEditBoard } from '../../src/components/report-problem/WhoCanEdit';
+import { waitingReports } from '../../src/components/report-problem/report-review-model';
+import { useBoardReports } from '../../src/lib/graphql/hooks/use-directory-reports';
 import { useToast } from '../../src/providers/toast-provider';
 
 export default function EditBoard() {
@@ -109,6 +111,10 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // closes the report server-side, so the toast says the reporters hear.
   const { fromReport } = useLocalSearchParams<{ fromReport?: string }>();
   const { showToast } = useToast();
+  // The reports waiting before the save, to tell afterwards whether the save
+  // closed any: the server only closes `wrong_setup` reports, and only when a
+  // setup field changed.
+  const { data: reportsBeforeSave, refetch: refetchReports } = useBoardReports(board.uuid, fromReport === '1');
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
 
@@ -356,7 +362,15 @@ function EditBoardForm({ board }: { board: UserBoard }) {
           setSubmitting(false);
           return;
         }
-        if (fromReport === '1') showToast(t('reportReview.fixedToast'), 'success');
+        if (fromReport === '1') {
+          const waitingBefore = reportsBeforeSave ? waitingReports(reportsBeforeSave).length : null;
+          let reportsClosed = false;
+          if (waitingBefore !== null) {
+            const { data: reportsAfterSave } = await refetchReports();
+            reportsClosed = !!reportsAfterSave && waitingReports(reportsAfterSave).length < waitingBefore;
+          }
+          showToast(t(reportsClosed ? 'reportReview.fixedToast' : 'reportReview.savedToast'), 'success');
+        }
         router.back();
         // Navigated away on success — leave `submitting` set (unmounting).
       } catch (error) {
@@ -438,6 +452,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       backgroundChanged,
       saveBackground,
       fromReport,
+      reportsBeforeSave,
+      refetchReports,
       showToast,
     ],
   );

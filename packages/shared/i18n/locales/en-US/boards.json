@@ -1716,6 +1716,7 @@
     "keepReplyPlaceholder": "We reset it last week. The app matches the wall now.",
     "keepSend": "Send",
     "fixedToast": "Saved. We'll tell the climbers who flagged it.",
+    "savedToast": "Saved.",
     "keptToast": "Report closed. We'll pass your note on.",
     "keepError": "That didn't go through. Try again.",
     "keepPartial_one": "{{count}} of {{total}} reports closed. The rest didn't go through. Try again.",

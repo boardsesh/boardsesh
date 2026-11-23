@@ -28,6 +28,9 @@ const updateSprayWallMock = vi.hoisted(() => vi.fn());
 const pushMock = vi.hoisted(() => vi.fn());
 const confirmResetMock = vi.hoisted(() => vi.fn());
 const trackSprayMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
+const reportsAfterSave = vi.hoisted(() => ({ list: [] as { status: string }[] }));
+const routeParams = vi.hoisted(() => ({ fromReport: undefined as string | undefined }));
 const picker = vi.hoisted(() => ({ props: null as null | { onRetakePhoto?: () => void } }));
 const background = vi.hoisted(() => ({
   changed: false,
@@ -87,7 +90,7 @@ const strippedDuplicate = duplicateError({ code: 'BOARD_DUPLICATE_CONFIG' });
 
 vi.mock('expo-router', () => ({
   useRouter: () => ({ back: backMock, push: pushMock }),
-  useLocalSearchParams: () => ({ boardUuid: 'board-uuid' }),
+  useLocalSearchParams: () => ({ boardUuid: 'board-uuid', fromReport: routeParams.fromReport }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -186,7 +189,7 @@ vi.mock('../../../src/components/Text', () => ({
 }));
 vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/components/report-problem/WhoCanEdit', () => ({ WhoCanEditBoard: () => null }));
-vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../../src/components/Button', () => ({ Button: () => null }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../src/providers/theme-provider', () => ({
@@ -242,6 +245,8 @@ function alertButtons(): AlertButton[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  routeParams.fromReport = undefined;
+  reportsAfterSave.list = [];
   state.boardGymUuid = null;
   state.selectedGym = null;
   state.activeBoardUuid = null;
@@ -263,6 +268,26 @@ beforeEach(() => {
 });
 
 describe('EditBoard', () => {
+  it('tells the reporters only when the save closed a report', async () => {
+    routeParams.fromReport = '1';
+    reportsAfterSave.list = [{ status: 'open' }];
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(showToastMock).toHaveBeenCalledWith('reportReview.fixedToast', 'success');
+  });
+
+  it('falls back to the plain saved toast when no report closed', async () => {
+    routeParams.fromReport = '1';
+    reportsAfterSave.list = [{ status: 'open' }, { status: 'open' }];
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(showToastMock).toHaveBeenCalledWith('reportReview.savedToast', 'success');
+  });
+
   it('passes the board on file so an unchanged config is left out of the input', async () => {
     render(createElement(EditBoard));
     fireEvent.click(screen.getByText('submit'));
@@ -718,6 +743,15 @@ describe('EditBoard — reset wall with a new photo', () => {
 });
 
 // This suite exercises the existing flow before the server privacy rollout.
+vi.mock('../../../src/lib/graphql/hooks/use-directory-reports', () => ({
+  useBoardReports: () => ({
+    data: [{ status: 'open' }, { status: 'open' }],
+    refetch: async () => ({ data: reportsAfterSave.list }),
+  }),
+}));
+vi.mock('../../../src/components/report-problem/report-review-model', () => ({
+  waitingReports: (reports: { status: string }[]) => reports.filter((report) => report.status === 'open'),
+}));
 vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
 vi.mock('../../../src/components/privacy/PublicationAudiencePicker', () => ({
   PublicationAudiencePicker: () => null,
