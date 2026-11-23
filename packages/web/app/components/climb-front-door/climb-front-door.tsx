@@ -162,7 +162,7 @@ export default async function ClimbFrontDoor({
       : null;
 
   return (
-    <main className={styles.page}>
+    <Box component="main" className={styles.page}>
       <FrontDoorBreadcrumb
         boardName={formatBoardDisplayName(boardDetails.board_name)}
         angle={angle}
@@ -182,18 +182,18 @@ export default async function ClimbFrontDoor({
         />
       )}
 
-      <div className={styles.hero}>
-        <div className={styles.title}>
+      <Box className={styles.hero}>
+        <Box className={styles.title}>
           <ClimbViewSeoFragment
             climb={climb}
             boardDetails={boardDetails}
             angle={angle}
             currentAngleStats={currentAngleStats}
           />
-        </div>
+        </Box>
 
         {overlayUrl ? (
-          <div className={styles.stage}>
+          <Box className={styles.stage}>
             <ClimbBoardStage
               backgroundUrls={backgroundUrls}
               overlayUrl={overlayUrl}
@@ -208,10 +208,10 @@ export default async function ClimbFrontDoor({
             >
               <HoldLegend board={boardDetails.board_name} frames={climb.frames} />
             </ClimbBoardStage>
-          </div>
+          </Box>
         ) : null}
 
-        <div className={styles.cta}>
+        <Box className={styles.cta}>
           <ClimbHandoffCta
             pathname={handoffPath}
             label={t('frontDoor.cta.climbThis')}
@@ -231,9 +231,9 @@ export default async function ClimbFrontDoor({
               labels={storeButtonLabels}
             />
           </ClimbHandoffCta>
-        </div>
+        </Box>
 
-        <div className={styles.details}>
+        <Box className={styles.details}>
           <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
 
           {setterNotes ? (
@@ -277,8 +277,8 @@ export default async function ClimbFrontDoor({
               </Typography>
             )}
           </Box>
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       <Box component="section" sx={sectionSx}>
         <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
@@ -319,6 +319,6 @@ export default async function ClimbFrontDoor({
           boardName={boardDetails.board_name}
         />
       </Box>
-    </main>
+    </Box>
   );
 }

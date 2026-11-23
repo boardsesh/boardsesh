@@ -53,7 +53,7 @@ export default function ClimbBoardStage({
   children,
 }: ClimbBoardStageProps) {
   return (
-    <div className={styles.stage}>
+    <Box className={styles.stage}>
       {/* The frame is the dark field the render is drawn for, so the board reads
           as one wall rather than a picture on a card. */}
       <Box component="figure" className={styles.frame} sx={{ bgcolor: BOARD_FIELD_COLORS.dark }}>
@@ -100,6 +100,6 @@ export default function ClimbBoardStage({
         </Box>
       </Box>
       {children}
-    </div>
+    </Box>
   );
 }
