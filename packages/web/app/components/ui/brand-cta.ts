@@ -7,8 +7,8 @@ import { themeTokens } from '@/app/theme/theme-config';
  * `marketing-header.tsx`, `site-footer.tsx`, `help-content.tsx` and
  * `home-page-content.tsx` each carried their own near-identical `*_SX` object.
  * They differed only in horizontal padding — and they had already drifted: only
- * the header set `flexShrink`. The button casts no glow: on the Graphite page the
- * one filled violet is enough to mark the page's primary action.
+ * the header set `flexShrink`. By default the button casts no glow; `glow` adds
+ * one, in the fill's own violet, for the one hero button on a page.
  *
  * Colour comes from the scheme-aware CSS vars, not `themeTokens.colors.*`, so
  * the fill and its hover stay in one place: `--color-primary-fill` is the FILLED
@@ -20,6 +20,13 @@ export type BrandCtaSize = 'small' | 'medium' | 'large';
 export type BrandCtaOptions = {
   /** `small` in dense chrome, `medium` inline, `large` for a page's one hero. */
   size?: BrandCtaSize;
+  /**
+   * The violet glow under the button (`--shadow-primary-glow`), a step brighter
+   * on hover. The same violet as the fill (`--color-primary-fill`, #7855FF), so
+   * it reads as the button's own light. For the one hero button on a page, not
+   * for every filled button: two glowing buttons cancel each other out.
+   */
+  glow?: boolean;
 };
 
 /**
@@ -56,16 +63,18 @@ const SIZE_SX = {
  * make the result unspreadable and force a cast at every call site that merges
  * into it. `satisfies` keeps the key checking without widening.
  */
-export function brandCtaSx({ size = 'medium' }: BrandCtaOptions = {}) {
+export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = {}) {
   return {
     borderRadius: `${themeTokens.borderRadius.button}px`,
     textTransform: 'none',
     fontWeight: themeTokens.typography.fontWeight.semibold,
     backgroundColor: 'var(--color-primary-fill)',
     color: 'var(--color-on-primary)',
+    ...(glow ? { boxShadow: 'var(--shadow-primary-glow)' } : {}),
     ...SIZE_SX[size],
     '&:hover': {
       backgroundColor: 'var(--color-primary-fill-hover)',
+      ...(glow ? { boxShadow: 'var(--shadow-primary-glow-hover)' } : {}),
       // The shared StartClimbingButton lifts on hover; the brand button does not.
       transform: 'none',
     },
