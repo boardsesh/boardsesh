@@ -14,6 +14,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Improved
 
+- Climbing in Spanish or French? Grades now show in Font by default. You can switch back to V-grades in settings. ([#8088](https://github.com/boardsesh/boardsesh/pull/8088))
 - Find public spray walls by name, town or nearby location on the website. ([#8050](https://github.com/boardsesh/boardsesh/pull/8050))
 
 ### Fixed

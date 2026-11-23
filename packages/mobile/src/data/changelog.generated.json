@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-23T16:26:28.397Z",
+  "generatedAt": "2026-11-23T19:43:43.296Z",
   "entries": [
+    {
+      "prNumber": 8088,
+      "category": "improved",
+      "title": "Climbing in Spanish or French? Grades now show in Font by default. You can switch back to V-grades in settings.",
+      "mergedAt": "2026-11-23T19:38:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8088"
+    },
     {
       "prNumber": 8057,
       "category": "fixed",
