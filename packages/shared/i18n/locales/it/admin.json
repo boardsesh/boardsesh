@@ -278,6 +278,7 @@
     "retry": "Riprova",
     "approve": "Approva",
     "deny": "Rifiuta",
+    "claimantHistory": "Account: {{days}} giorni · Diario: {{ticks}} · Palestre gestite: {{gyms}}",
     "method": {
       "domain": "Dominio",
       "admin": "Revisione"

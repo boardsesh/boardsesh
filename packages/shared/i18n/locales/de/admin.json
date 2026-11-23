@@ -316,6 +316,7 @@
     "retry": "Nochmal versuchen",
     "approve": "Annehmen",
     "deny": "Ablehnen",
+    "claimantHistory": "Konto: {{days}} Tage · Logbuch: {{ticks}} · Betreute Hallen: {{gyms}}",
     "method": {
       "domain": "Domain",
       "admin": "Prüfung"

@@ -316,6 +316,7 @@
     "retry": "Réessayer",
     "approve": "Approuver",
     "deny": "Refuser",
+    "claimantHistory": "Compte : {{days}} jours · Carnet : {{ticks}} · Salles gérées : {{gyms}}",
     "method": {
       "domain": "Domaine",
       "admin": "Vérification"

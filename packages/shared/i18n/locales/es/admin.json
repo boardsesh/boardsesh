@@ -316,6 +316,7 @@
     "retry": "Reintentar",
     "approve": "Aprobar",
     "deny": "Rechazar",
+    "claimantHistory": "Cuenta: {{days}} días · Registro: {{ticks}} · Rocódromos que gestiona: {{gyms}}",
     "method": {
       "domain": "Dominio",
       "admin": "Revisión"
