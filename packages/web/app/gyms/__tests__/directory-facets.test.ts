@@ -381,3 +381,17 @@ describe('Codex review follow-ups', () => {
     expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', {}))).toBe(false);
   });
 });
+
+describe('claim mode', () => {
+  it('reads only the exact ?claim=1, and leaves it off otherwise', () => {
+    expect(parseDirectoryQuery('all', { claim: '1' }).claimMode).toBe(true);
+    expect(parseDirectoryQuery('all', { claim: ['1', '1'] }).claimMode).toBeUndefined();
+    expect(parseDirectoryQuery('all', {}).claimMode).toBeUndefined();
+  });
+
+  it('keeps claim mode through a page turn and a facet switch', () => {
+    const query = parseDirectoryQuery('all', { claim: '1', q: 'crux' });
+    expect(buildDirectoryHref('all', query, 2)).toBe('/gyms?q=crux&page=2&claim=1');
+    expect(buildFacetSwitchHref('kilter', query)).toBe('/gyms/kilter?q=crux&claim=1');
+  });
+});

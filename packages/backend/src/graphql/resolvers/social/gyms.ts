@@ -278,7 +278,9 @@ export function gymListingState(ownerId: string, ownerHoldsClaimOrHandover: bool
 /**
  * Whether the gym's current owner holds an approved claim on it or received it
  * through an admin reassignment: two EXISTS probes, folded into enrichGym's
- * owner query so the directory pays no extra round trip per gym.
+ * owner query so the directory pays no extra round trip per gym. Its correlated
+ * twin, for a query over many gyms, is `ownerHoldsClaimOrHandoverColumn` in
+ * gym-run-by-staff.ts. Change both together.
  */
 function ownerHoldsClaimOrHandoverSql(gym: Pick<typeof dbSchema.gyms.$inferSelect, 'id' | 'uuid' | 'ownerId'>) {
   const approvedClaim = db
@@ -443,12 +445,17 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // Grantable (write-access grants) by owner/gym-admin or a covering community
   // admin/leader — NOT plain editors. Mirrors requireGymGrantAccess.
   const canGrantAccess = isOwner || memberRow?.role === 'admin' || hasCommunityAccess;
+  // Viewer-independent like isClaimed, so anonymous SSR can show it too.
+  const listingState = gymListingState(gym.ownerId, ownerInfo?.holdsClaimOrHandover === true);
+
   // A signed-in viewer who has no edit access can start a claim. Owners, gym
   // admins/editors, and covering community leaders are excluded — they can
   // already edit the gym, so the self-service claim path isn't for them (and the
-  // domain path would reject them anyway).
+  // domain path would reject them anyway). Nobody can claim a gym its staff run:
+  // a dispute goes through Report a problem, and requestGymClaim refuses it.
   const canClaim =
     !!authenticatedUserId &&
+    listingState !== 'RUN_BY_GYM' &&
     !isOwner &&
     memberRow?.role !== 'admin' &&
     memberRow?.role !== 'editor' &&
@@ -468,9 +475,6 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // anonymous SSR. requestGymClaim still enforces the same website conditions
   // and separately checks the viewer's access before accepting any claim.
   const canClaimByDomain = computeCanClaimByDomain(gym);
-
-  // Viewer-independent like isClaimed, so anonymous SSR can show it too.
-  const listingState = gymListingState(gym.ownerId, ownerInfo?.holdsClaimOrHandover === true);
 
   return {
     uuid: gym.uuid,

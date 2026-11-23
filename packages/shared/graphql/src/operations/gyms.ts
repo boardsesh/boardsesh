@@ -22,6 +22,7 @@ import type {
   RevertGymClaimInput,
   RevertGymClaimResult,
   PendingGymClaimsInput,
+  AutoApprovedGymClaimsInput,
   GymClaimConnection,
   FindSimilarGymsInput,
   SimilarGym,
@@ -188,6 +189,7 @@ export const SEARCH_GYMS_DIRECTORY = gql`
         latitude
         longitude
         isClaimed
+        listingState
         boardSummaries {
           boardType
           angle
@@ -556,6 +558,20 @@ export const PENDING_GYM_CLAIMS = gql`
   }
 `;
 
+/** Claims that approved themselves, for the admin's Revert list (and the digest's `?revert=` link). */
+export const AUTO_APPROVED_GYM_CLAIMS = gql`
+  query AutoApprovedGymClaims($input: AutoApprovedGymClaimsInput) {
+    autoApprovedGymClaims(input: $input) {
+      claims {
+        ${GYM_CLAIM_FIELDS}
+        approvedAt
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
 // ============================================
 // Gym Duplicate Review Admin Queue
 // ============================================
@@ -714,7 +730,7 @@ export type SearchGymsQueryResponse = {
  */
 export type GymDirectoryCard = Pick<
   Gym,
-  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'isClaimed'
+  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'isClaimed' | 'listingState'
 > & {
   boardSummaries: GymBoardSummary[];
 };
@@ -934,6 +950,14 @@ export type PendingGymClaimsQueryVariables = {
 
 export type PendingGymClaimsQueryResponse = {
   pendingGymClaims: GymClaimConnection;
+};
+
+export type AutoApprovedGymClaimsQueryVariables = {
+  input?: AutoApprovedGymClaimsInput;
+};
+
+export type AutoApprovedGymClaimsQueryResponse = {
+  autoApprovedGymClaims: GymClaimConnection;
 };
 
 export type DuplicateGymClustersQueryVariables = {

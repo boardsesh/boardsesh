@@ -129,6 +129,13 @@
       "disabled": "Aprobación automática desactivada.",
       "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
       "loadFailed": "No se pudieron cargar los ajustes de rocódromos."
+    },
+    "dailyCap": {
+      "label": "Límite diario",
+      "description": "Cuántas reclamaciones pueden aprobarse solas en 24 horas, sumando todas las cuentas. Pasado el límite, esperan revisión. Con 0, todas van a revisión.",
+      "save": "Guardar límite",
+      "invalid": "Escribe un número entero de 0 a 1000.",
+      "saved": "Límite diario guardado."
     }
   },
   "nav": {
@@ -335,7 +342,36 @@
       "date": "Fecha",
       "actions": "Acciones"
     },
-    "loadMore": "Cargar más"
+    "loadMore": "Cargar más",
+    "autoApproved": {
+      "heading": "Reclamaciones aprobadas solas",
+      "intro": "Cada una se quedó con un rocódromo sin reclamar sin pasar por revisión. Revertir devuelve el rocódromo a los datos públicos de plafones.",
+      "empty": "Todavía no se ha aprobado sola ninguna reclamación.",
+      "error": "No se pudieron cargar estas reclamaciones. Inténtalo de nuevo.",
+      "approvedOn": "Aprobada el {{date}}",
+      "reverted": "Revertida",
+      "revert": "Revertir",
+      "revertAria": "Revertir la reclamación de {{claimant}} sobre {{gym}}"
+    },
+    "revert": {
+      "title": "¿Revertir la reclamación de {{claimant}} sobre {{gym}}?",
+      "body": "{{gym}} vuelve a estar sin reclamar. {{claimant}} y quien se haya añadido como miembro o editor desde la reclamación pierden el acceso, la sincronización de ubicaciones vuelve a ocuparse de la ficha y avisamos a {{claimant}} por correo.",
+      "notUndone": "Los cambios en los plafones, los kioscos y la descripción, el horario y la foto del rocódromo se quedan como están. Corrígelos a mano.",
+      "reasonLabel": "Motivo (opcional)",
+      "confirm": "Revertir reclamación",
+      "cancel": "Cancelar",
+      "done": "{{gym}} vuelve a estar sin reclamar.",
+      "missing": "La reclamación {{claimId}} no se aprobó sola, o ya no existe. Para devolver un rocódromo, usa Cambiar la propiedad de un rocódromo más abajo.",
+      "alreadyReverted": "La reclamación {{claimId}} ya se revirtió.",
+      "errors": {
+        "notFound": "Esa reclamación o su rocódromo ya no existen.",
+        "notApproved": "Esta reclamación ya no está aprobada, así que no hay nada que revertir.",
+        "notTransferred": "Esta reclamación nunca movió el rocódromo, así que revertir no tiene nada que deshacer. Usa Cambiar la propiedad de un rocódromo más abajo.",
+        "ownerChanged": "El rocódromo cambió de manos después de esta reclamación. Usa Cambiar la propiedad de un rocódromo más abajo.",
+        "priorOwner": "Esta reclamación le quitó el rocódromo a una persona, no a los datos públicos de plafones. Usa Cambiar la propiedad de un rocódromo más abajo para devolverlo.",
+        "failed": "No se pudo revertir la reclamación. Inténtalo de nuevo."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Cambiar la propiedad de un rocódromo",

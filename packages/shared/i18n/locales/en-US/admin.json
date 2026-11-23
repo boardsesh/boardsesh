@@ -305,6 +305,13 @@
       "disabled": "Auto-approval is off.",
       "saveFailed": "Couldn't save that. Try again.",
       "loadFailed": "Couldn't load gym settings."
+    },
+    "dailyCap": {
+      "label": "Daily limit",
+      "description": "How many claims can approve themselves in 24 hours, across every account. Past it, claims wait for review. 0 sends every claim to review.",
+      "save": "Save limit",
+      "invalid": "Enter a whole number from 0 to 1000.",
+      "saved": "Daily limit saved."
     }
   },
   "gymClaims": {
@@ -335,7 +342,36 @@
       "date": "Date",
       "actions": "Actions"
     },
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "autoApproved": {
+      "heading": "Claims that approved themselves",
+      "intro": "Each took an unclaimed gym without a review. Revert hands the gym back to public board data.",
+      "empty": "No claims have approved themselves yet.",
+      "error": "Couldn't load these claims. Try again.",
+      "approvedOn": "Approved {{date}}",
+      "reverted": "Reverted",
+      "revert": "Revert",
+      "revertAria": "Revert {{claimant}}'s claim on {{gym}}"
+    },
+    "revert": {
+      "title": "Revert {{claimant}}'s claim on {{gym}}?",
+      "body": "{{gym}} goes back to unclaimed. {{claimant}} and anyone added as a member or editor since the claim lose access, the location sync looks after the listing again, and we email {{claimant}} to say so.",
+      "notUndone": "Board changes, kiosks and the gym's description, hours and photo stay as they are. Fix those by hand.",
+      "reasonLabel": "Reason (optional)",
+      "confirm": "Revert claim",
+      "cancel": "Cancel",
+      "done": "{{gym}} is unclaimed again.",
+      "missing": "Claim {{claimId}} isn't one that approved itself, or it's gone. To hand a gym back, use Move gym ownership below.",
+      "alreadyReverted": "Claim {{claimId}} was already reverted.",
+      "errors": {
+        "notFound": "That claim or its gym is gone.",
+        "notApproved": "This claim isn't approved any more, so there's nothing to revert.",
+        "notTransferred": "This claim never moved the gym, so revert has nothing to undo. Use Move gym ownership below.",
+        "ownerChanged": "The gym changed hands after this claim. Use Move gym ownership below.",
+        "priorOwner": "This claim took the gym from a person, not from public board data. Use Move gym ownership below to give it back.",
+        "failed": "Couldn't revert the claim. Try again."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Move gym ownership",

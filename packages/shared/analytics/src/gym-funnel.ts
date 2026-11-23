@@ -80,8 +80,32 @@ export type GymClaimViewerState = 'signed-in' | 'signed-out';
  *                      NOT in #4374's list; added because the call site is real
  *                      and folding it into the directory would mix "browsing
  *                      the directory" with "about to create a duplicate".
+ *  - `gym-page-header` — "Run this gym? Claim it" in the run-by line under the
+ *                      gym page's H1 (packages/web/app/gym/[gym_slug]/gym-run-by-line.tsx).
+ *                      Its own value, not `gym-page`: the call-out and the line
+ *                      sit on the same page, and the point of the line is to
+ *                      learn whether a claim offer in the first screen is found.
+ *  - `directory-result` — the Claim this gym button a result card carries in
+ *                      the directory's claim mode (`/gyms?claim=1`). Per gym,
+ *                      so `gymUuid` is set. Not the retired `directory-card`,
+ *                      which counted a prompt on every row of every visit.
+ *  - `manage-lock`   — Claim this gym on the manage page's "you can't edit this
+ *                      gym" state (packages/web/app/gym/[gym_slug]/manage/manage-no-access-actions.tsx).
+ *  - `app-gym-list`  — Claim this gym on an expanded row of the app's gym map list.
+ *  - `app-gym-page`  — the claim card and "Run this gym? Claim it" on the app's gym page.
+ *
+ * The two `app-` values are the only ones the app fires; every other one is www.
  */
-export type GymClaimPlacement = 'gym-page' | 'preview-sheet' | 'directory-footer' | 'similar-gyms';
+export type GymClaimPlacement =
+  | 'gym-page'
+  | 'preview-sheet'
+  | 'directory-footer'
+  | 'similar-gyms'
+  | 'gym-page-header'
+  | 'directory-result'
+  | 'manage-lock'
+  | 'app-gym-list'
+  | 'app-gym-page';
 
 /**
  * Which proof path the claimant submitted. Mirrors the `GymClaimMethod` GraphQL

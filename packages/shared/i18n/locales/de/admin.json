@@ -305,6 +305,13 @@
       "disabled": "Automatische Bestätigung ist aus.",
       "saveFailed": "Konnte nicht gespeichert werden. Versuch es nochmal.",
       "loadFailed": "Hallen-Einstellungen konnten nicht geladen werden."
+    },
+    "dailyCap": {
+      "label": "Tageslimit",
+      "description": "Wie viele Ansprüche sich in 24 Stunden über alle Konten hinweg selbst bestätigen dürfen. Darüber hinaus warten sie auf eine Prüfung. Bei 0 geht jeder Anspruch in die Prüfung.",
+      "save": "Limit speichern",
+      "invalid": "Gib eine ganze Zahl von 0 bis 1000 ein.",
+      "saved": "Tageslimit gespeichert."
     }
   },
   "gymClaims": {
@@ -335,7 +342,36 @@
       "date": "Datum",
       "actions": "Aktionen"
     },
-    "loadMore": "Mehr laden"
+    "loadMore": "Mehr laden",
+    "autoApproved": {
+      "heading": "Automatisch bestätigte Ansprüche",
+      "intro": "Jeder hat eine nicht beanspruchte Halle ohne Prüfung übernommen. Zurücknehmen gibt die Halle an die öffentlichen Board-Daten zurück.",
+      "empty": "Bisher wurde kein Anspruch automatisch bestätigt.",
+      "error": "Diese Ansprüche konnten nicht geladen werden. Versuch es noch einmal.",
+      "approvedOn": "Bestätigt am {{date}}",
+      "reverted": "Zurückgenommen",
+      "revert": "Zurücknehmen",
+      "revertAria": "Anspruch von {{claimant}} auf {{gym}} zurücknehmen"
+    },
+    "revert": {
+      "title": "Anspruch von {{claimant}} auf {{gym}} zurücknehmen?",
+      "body": "{{gym}} ist danach wieder nicht beansprucht. {{claimant}} und alle, die seit dem Anspruch als Mitglied oder Redakteur*in hinzugekommen sind, verlieren den Zugang, die Standort-Synchronisierung pflegt den Eintrag wieder, und wir schreiben {{claimant}} eine E-Mail.",
+      "notUndone": "Änderungen an Boards, Kiosks sowie Beschreibung, Öffnungszeiten und Foto der Halle bleiben, wie sie sind. Korrigiere sie von Hand.",
+      "reasonLabel": "Grund (optional)",
+      "confirm": "Anspruch zurücknehmen",
+      "cancel": "Abbrechen",
+      "done": "{{gym}} ist wieder nicht beansprucht.",
+      "missing": "Anspruch {{claimId}} wurde nicht automatisch bestätigt oder existiert nicht mehr. Um eine Halle zurückzugeben, nutze unten Hallen-Besitz übertragen.",
+      "alreadyReverted": "Anspruch {{claimId}} wurde schon zurückgenommen.",
+      "errors": {
+        "notFound": "Dieser Anspruch oder seine Halle existiert nicht mehr.",
+        "notApproved": "Dieser Anspruch ist nicht mehr bestätigt, es gibt also nichts zurückzunehmen.",
+        "notTransferred": "Dieser Anspruch hat die Halle nie übertragen, es gibt also nichts zurückzunehmen. Nutze unten Hallen-Besitz übertragen.",
+        "ownerChanged": "Die Halle hat nach diesem Anspruch den Besitzer gewechselt. Nutze unten Hallen-Besitz übertragen.",
+        "priorOwner": "Dieser Anspruch hat die Halle einer Person abgenommen, nicht den öffentlichen Board-Daten. Nutze unten Hallen-Besitz übertragen, um sie zurückzugeben.",
+        "failed": "Der Anspruch konnte nicht zurückgenommen werden. Versuch es noch einmal."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Hallen-Besitz übertragen",

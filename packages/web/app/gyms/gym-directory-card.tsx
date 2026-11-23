@@ -3,18 +3,30 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
 import NearMeOutlined from '@mui/icons-material/NearMeOutlined';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
+import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
+import { gymClaimCtaClicked, type GymClaimViewerState } from '@boardsesh/analytics';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { Locale } from '@/app/lib/i18n/config';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
-import { boardChips, cardLocation, distanceChipKm, numberFormatFor, roundDistanceKm } from './directory-card-model';
+import {
+  boardChips,
+  cardClaimHref,
+  cardListingState,
+  cardLocation,
+  distanceChipKm,
+  numberFormatFor,
+  roundDistanceKm,
+} from './directory-card-model';
 import styles from './gym-directory-card.module.css';
 
 type GymDirectoryCardProps = {
@@ -26,6 +38,11 @@ type GymDirectoryCardProps = {
   origin: { latitude: number; longitude: number } | null;
   /** Formats the distance for the active locale. */
   locale: Locale;
+  /**
+   * Claim mode (`/gyms?claim=1`): who is looking, settled on the server from
+   * the session. A card on a gym nobody runs yet then carries Claim this gym.
+   */
+  claim?: { viewerState: GymClaimViewerState };
 };
 
 /**
@@ -33,25 +50,37 @@ type GymDirectoryCardProps = {
  *
  * The card renders only schema-real fields: name, board chips, and a location
  * line WHEN THERE IS ONE. No photo, no description, no hours, no "verified"
- * treatment. Claim badges report who maintains a listing; sparse and unclaimed
+ * treatment. The listing chip reports who runs a listing; sparse and unclaimed
  * listings retain the same divided row.
  *
- * No claim prompt on the row any more. It was repeated on every unclaimed gym,
- * which is most of them — the directory now carries ONE prompt under the list
- * (`gym-directory-claim-link.tsx`).
+ * No claim prompt on the row in ordinary browsing. It was repeated on every
+ * unclaimed gym, which is most of them, so the directory carries ONE prompt
+ * under the list (`gym-directory-claim-link.tsx`). That prompt, and the for-gyms
+ * and footer links, open claim mode (`?claim=1`), where a gym nobody runs yet
+ * carries its own Claim this gym button: by then the visitor has said they are
+ * looking for their gym.
  *
  * A CLIENT component, though it is still server-rendered into the first HTML
  * response like every other one: near-me results are fetched in the browser, so
  * one card has to render on both sides. The alternative was a second card
  * component for near-me that would drift from this one within a release.
  */
-export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCardProps) {
+export default function GymDirectoryCard({ gym, origin, locale, claim }: GymDirectoryCardProps) {
   const { t } = useTranslation('gyms');
   // Shared across the 24 cards on the page rather than constructed per card.
   const formatNumber = numberFormatFor(locale);
   const location = cardLocation(gym, origin);
   const distanceKm = distanceChipKm(gym, origin, location);
   const chips = boardChips(gym.boardSummaries);
+  const listingState = cardListingState(gym);
+  const isRunByGym = listingState === 'RUN_BY_GYM';
+  const listingLabel = isRunByGym
+    ? t('card.claimed')
+    : listingState === 'CLIMBER_LISTED'
+      ? t('card.climberListed')
+      : t('card.unclaimed');
+  // A gym its staff run is never offered: a dispute is a report from its page.
+  const claimHref = claim && !isRunByGym && gym.slug ? cardClaimHref(gym.slug, claim.viewerState, locale) : null;
 
   return (
     <Box component="li" className={styles.row}>
@@ -77,24 +106,24 @@ export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCa
           </MuiLink>
         </Typography>
 
-        {/* "Claimed" earns the chip: it has a fill, an icon, and it reports a
-            state somebody acted to reach. "Unclaimed" is the absence of that,
-            and a bordered pill around it drew a control nobody can press — so
-            it keeps the label and drops the box. */}
-        {gym.isClaimed && (
-          <Chip
-            size="small"
-            icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
-            label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
-            sx={{
-              alignSelf: 'flex-start',
-              backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
-              color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
-              border: gym.isClaimed ? '1px solid var(--separator)' : 'none',
-              '& .MuiChip-icon': { color: 'inherit' },
-            }}
-          />
-        )}
+        {/* Who runs the listing, in the three states the gym page uses.
+            "Run by the gym" earns the filled chip: it reports a state somebody
+            acted to reach. The other two are the absence of that, and a
+            bordered pill around them would draw a control nobody can press, so
+            they keep the label and drop the box. */}
+        <Chip
+          size="small"
+          icon={isRunByGym ? <CheckCircleOutline /> : undefined}
+          label={listingLabel}
+          sx={{
+            alignSelf: 'flex-start',
+            backgroundColor: isRunByGym ? 'var(--color-success-bg)' : 'transparent',
+            color: isRunByGym ? 'var(--color-success)' : 'var(--neutral-500)',
+            border: isRunByGym ? '1px solid var(--separator)' : 'none',
+            '& .MuiChip-icon': { color: 'inherit' },
+            '& .MuiChip-label': isRunByGym ? {} : { px: 0 },
+          }}
+        />
       </Box>
 
       {location && (
@@ -146,6 +175,31 @@ export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCa
               />
             ))}
           </Box>
+        )}
+        {/* Claim mode only: the person came to find their own gym, so the
+            card they find it on goes straight to the claim (sign-in first
+            when signed out), not to a page with a second button. */}
+        {claimHref && claim && (
+          <Button
+            component={LocaleLink}
+            href={claimHref}
+            variant="outlined"
+            size="small"
+            startIcon={<VerifiedUserOutlined />}
+            aria-label={t('card.claimCtaAria', { gym: gym.name })}
+            onClick={() =>
+              trackGymFunnelEvent(
+                gymClaimCtaClicked({
+                  placement: 'directory-result',
+                  viewerState: claim.viewerState,
+                  gymUuid: gym.uuid,
+                }),
+              )
+            }
+            sx={{ textTransform: 'none', minHeight: 44 }}
+          >
+            {t('card.claimCta')}
+          </Button>
         )}
       </Box>
     </Box>

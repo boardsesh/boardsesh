@@ -20,6 +20,7 @@ import { spacing, borderRadius, shadows } from '../../theme/tokens';
 import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture';
 import { findRowIndex, type GymListRow } from './gym-list-rows';
 import { GymShareButton } from './GymShareButton';
+import { GymListingPill } from '../gym-page/GymListingPill';
 
 export type GymListPanelHandle = {
   /** Scroll the row carrying this key into view (for a marker tap). */
@@ -317,6 +318,12 @@ const GymRow = memo(function GymRow({
                 {gym.boardTypes.map(formatBoardDisplayName).join(' · ')}
               </Text>
             ) : null}
+            {/* Who runs it, so a gym's staff can spot a listing that's theirs to claim. */}
+            {gym.listingState ? (
+              <View style={styles.listingPill}>
+                <GymListingPill listingState={gym.listingState} testID="gym-list-listing-pill" />
+              </View>
+            ) : null}
           </View>
           {gym.canEdit ? <EditButton onPress={handleEdit} label={t('mobile.gyms.editGym')} /> : null}
           <Icon name={expanded ? 'minus' : 'add'} size={20} color={systemColors.tertiaryLabel} />
@@ -349,8 +356,9 @@ const GymRow = memo(function GymRow({
 
       {/* The claim entry for the person a claim is FOR — a real gym owner with no
           Boardsesh rights yet (canClaim true, canEdit false). Only inside the
-          expanded row so it never clutters the collapsed finder list. */}
-      {expanded && gym.canClaim && onClaimGym ? (
+          expanded row so it never clutters the collapsed finder list. Never on a
+          gym its staff run: nobody can claim one, and the server says so too. */}
+      {expanded && gym.canClaim && gym.listingState !== 'RUN_BY_GYM' && onClaimGym ? (
         <ClaimRow onPress={handleClaim} label={t('mobile.gymClaim.claimAction')} />
       ) : null}
     </View>
@@ -596,6 +604,10 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+  },
+  listingPill: {
+    flexDirection: 'row',
+    marginTop: spacing[1],
   },
   boardRow: {
     flexDirection: 'row',

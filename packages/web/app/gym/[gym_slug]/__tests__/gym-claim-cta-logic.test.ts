@@ -3,6 +3,7 @@ import {
   CLAIM_PARAM,
   CLAIM_PARAM_VALUE,
   buildClaimReturnPath,
+  gymListingStateOf,
   resolveClaimCtaVariant,
   resolveClaimSurface,
   shouldAutoOpenClaimDialog,
@@ -10,59 +11,69 @@ import {
 
 describe('resolveClaimCtaVariant', () => {
   describe('signed in', () => {
-    it('offers the claim to a viewer the backend says may claim an unclaimed gym', () => {
-      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true, gymIsClaimed: false })).toBe(
-        'signed-in',
-      );
-    });
+    it.each(['UNCLAIMED', 'CLIMBER_LISTED'] as const)(
+      'offers the claim to a viewer the backend says may claim a %s gym',
+      (listingState) => {
+        expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true, listingState })).toBe(
+          'signed-in',
+        );
+      },
+    );
 
-    it('still offers it on a gym someone else already owns', () => {
-      // A signed-in non-member asking for a claimed gym is a deliberate path —
-      // the backend routes it to admin review. `isClaimed` narrows the
-      // anonymous arm only.
-      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true, gymIsClaimed: true })).toBe(
-        'signed-in',
-      );
-    });
-
-    it.each([true, false])('hides it from a viewer who already covers the gym (claimed: %s)', (gymIsClaimed) => {
-      // Owners, gym admins/editors and covering community leaders all come back
-      // `canClaim: false` from the resolver — the gating this PR must not widen.
-      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: true, gymIsClaimed })).toBe('hidden');
-    });
+    it.each(['UNCLAIMED', 'CLIMBER_LISTED'] as const)(
+      'hides it from a viewer who already covers a %s gym',
+      (listingState) => {
+        // Owners, gym admins/editors and covering community leaders all come back
+        // `canClaim: false` from the resolver.
+        expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: true, listingState })).toBe('hidden');
+      },
+    );
   });
 
   describe('signed out', () => {
-    it('shows the anonymous arm on an unclaimed gym', () => {
-      // The whole point: `canClaim` is false for every anonymous request, so
-      // reading it alone would hide the CTA from the gym owner who just googled
-      // their own gym.
-      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, gymIsClaimed: false })).toBe(
-        'signed-out',
-      );
+    it('shows the anonymous arm on a gym nobody has claimed', () => {
+      // `canClaim` is false for every anonymous request, so reading it alone
+      // would hide the CTA from the gym owner who just googled their own gym.
+      expect(
+        resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, listingState: 'UNCLAIMED' }),
+      ).toBe('signed-out');
     });
 
-    it('hides the anonymous arm once the gym has a real owner', () => {
-      // "Is this your gym?" directly under the displayed name of the person who
-      // already runs it reads as a mistake.
-      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, gymIsClaimed: true })).toBe(
-        'hidden',
-      );
+    it('shows it on a gym a climber added too: the staff still have to claim that one', () => {
+      // Before listingState this gym read as claimed and the anonymous arm hid.
+      expect(
+        resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, listingState: 'CLIMBER_LISTED' }),
+      ).toBe('signed-out');
     });
 
     it('still takes the anonymous arm if canClaim ever arrives without a session', () => {
-      // Unreachable through the resolver, but with no session there is no
-      // signed-in viewer whose dialog could be opened.
-      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, gymIsClaimed: false })).toBe(
+      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, listingState: 'UNCLAIMED' })).toBe(
         'signed-out',
       );
     });
+  });
 
-    it('keeps the claimed gate ahead of that, too', () => {
-      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, gymIsClaimed: true })).toBe(
-        'hidden',
-      );
+  describe('run by the gym', () => {
+    it.each([
+      [true, true],
+      [false, true],
+      [false, false],
+      [true, false],
+    ])('hides the claim for everyone (canClaim %s, session %s)', (serverCanClaim, serverHasSession) => {
+      // Its staff are named on the page; a dispute is a report to our team.
+      expect(resolveClaimCtaVariant({ serverCanClaim, serverHasSession, listingState: 'RUN_BY_GYM' })).toBe('hidden');
     });
+  });
+});
+
+describe('gymListingStateOf', () => {
+  it('reads the server answer when there is one', () => {
+    expect(gymListingStateOf({ listingState: 'CLIMBER_LISTED', isClaimed: true })).toBe('CLIMBER_LISTED');
+  });
+
+  it('falls back to the two-state reading for a backend without it, erring on run by the gym', () => {
+    expect(gymListingStateOf({ listingState: null, isClaimed: true })).toBe('RUN_BY_GYM');
+    expect(gymListingStateOf({ isClaimed: false })).toBe('UNCLAIMED');
   });
 });
 

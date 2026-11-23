@@ -50,17 +50,17 @@ function usePillLabel(pill: GymRunByPill): string {
   const { t } = useTranslation('boards');
   switch (pill) {
     case 'runByGym':
-      return t('mobile.gymPage.pillRunByGym');
+      return t('runBy.pillRunByGym');
     case 'climberListed':
-      return t('mobile.gymPage.pillClimberListed');
+      return t('runBy.pillClimberListed');
     case 'unclaimed':
-      return t('mobile.gymPage.pillUnclaimed');
+      return t('runBy.pillUnclaimed');
     case 'youOwner':
-      return t('mobile.gymPage.pillYouOwner');
+      return t('runBy.pillYouOwner');
     case 'youAdmin':
-      return t('mobile.gymPage.pillYouAdmin');
+      return t('runBy.pillYouAdmin');
     case 'youEditor':
-      return t('mobile.gymPage.pillYouEditor');
+      return t('runBy.pillYouEditor');
   }
 }
 
@@ -68,11 +68,11 @@ function useRunByLine(line: GymRunByLine, gymName: string): string | null {
   const { t } = useTranslation('boards');
   switch (line.kind) {
     case 'staff':
-      return t('mobile.gymPage.lineStaff', { gym: gymName });
+      return t('runBy.lineStaff', { gym: gymName });
     case 'climber':
-      return line.name ? t('mobile.gymPage.lineClimber', { name: line.name }) : t('mobile.gymPage.lineClimberHidden');
+      return line.name ? t('runBy.lineClimber', { name: line.name }) : t('runBy.lineClimberHidden');
     case 'unclaimed':
-      return t('mobile.gymPage.lineUnclaimed');
+      return t('runBy.lineUnclaimed');
     case 'none':
       return null;
   }
@@ -133,7 +133,7 @@ export const GymPageTopBlock = memo(function GymPageTopBlock({
         {model.inlineClaim ? (
           <View style={styles.inlineClaim}>
             <TextAction
-              label={t('mobile.gymPage.claimInline')}
+              label={t('runBy.claimInline')}
               onPress={model.claimCard === 'signIn' ? actions.onSignIn : actions.onClaim}
               reach="down"
               testID="gym-page-claim-inline"
@@ -489,9 +489,11 @@ export const GymInfoSection = memo(function GymInfoSection({
 /** "Run this gym?" for anyone who can claim it; the pending note once they have. */
 export const GymClaimCardBlock = memo(function GymClaimCardBlock({
   card,
+  gymName,
   actions,
 }: {
   card: Exclude<GymClaimCard, 'hidden'>;
+  gymName: string;
   actions: GymPageActions;
 }) {
   const { t } = useTranslation('boards');
@@ -499,7 +501,28 @@ export const GymClaimCardBlock = memo(function GymClaimCardBlock({
   return (
     <View style={[styles.gutter, styles.sectionEnd]} testID="gym-page-claim-card">
       <Card>
-        {card === 'pending' ? (
+        {card === 'denied' || card === 'deniedClosed' ? (
+          <View style={styles.claim} testID="gym-page-claim-denied">
+            <View style={styles.pending}>
+              <Icon name="info" size={20} color={systemColors.secondaryLabel} />
+              <Text variant="subheadline" tone="secondary" style={styles.pendingText}>
+                {/* One card for a denial, an expiry and a revert. Without Try again
+                    (the gym can't be claimed now), the copy doesn't offer it either. */}
+                {card === 'denied'
+                  ? t('mobile.gymPage.claimDenied', { gym: gymName })
+                  : t('mobile.gymPage.claimDeniedClosed', { gym: gymName })}
+              </Text>
+            </View>
+            {card === 'denied' ? (
+              <Button
+                title={t('mobile.gymPage.claimRetry')}
+                variant="tonal"
+                onPress={actions.onClaim}
+                style={styles.claimButton}
+              />
+            ) : null}
+          </View>
+        ) : card === 'pending' ? (
           <View style={styles.pending}>
             <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
             <Text variant="subheadline" tone="secondary" style={styles.pendingText}>

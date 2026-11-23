@@ -55,9 +55,11 @@ import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
+import GymClaimCalloutMirror from './gym-claim-callout';
 import GymClaimParamCleanup from './gym-claim-param-cleanup';
 import GymClaimPendingNotice from './gym-claim-pending-notice';
-import { CLAIM_PARAM, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
+import GymRunByLine from './gym-run-by-line';
+import { CLAIM_PARAM, gymListingStateOf, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { GymReportProblemHost, ReportBoardButton, ReportGymButton, type GymReportBoard } from './gym-report-problem';
@@ -401,15 +403,16 @@ export default async function GymPage(props: GymRouteProps) {
   // hand-edited param, a crawler-mangled URL — parses to null and mounts nothing.
   const qrLanding = parseGymQrLanding(searchParams);
 
-  // Which arm of the claim call-out to render — `hidden` for a signed-in viewer
-  // who already covers this gym (owner, admin/editor, community leader), the
-  // anonymous arm for everyone with no session.
-  // One derivation, on the server: the island is handed the answer as
-  // `viewerState` and never recomputes it.
+  // Which arm of the claim call-out to render — `hidden` on a gym its staff
+  // run and for a signed-in viewer who already covers this gym (owner,
+  // admin/editor, community leader), the anonymous arm for everyone with no
+  // session. One derivation, on the server: the islands are handed the answer
+  // as `viewerState` and never recompute it.
+  const listingState = gymListingStateOf(gym);
   const claimCtaVariant = resolveClaimCtaVariant({
     serverCanClaim: gym.canClaim,
     serverHasSession: Boolean(token),
-    gymIsClaimed: gym.isClaimed,
+    listingState,
   });
   const claimParam = searchParams[CLAIM_PARAM];
   // A viewer with a claim already in flight gets the review notice instead of
@@ -422,6 +425,12 @@ export default async function GymPage(props: GymRouteProps) {
     gymIsPublic: gym.isPublic,
     hasPendingClaim: pendingClaim !== null,
   });
+  const runByLabel =
+    listingState === 'RUN_BY_GYM'
+      ? tBoards('runBy.pillRunByGym')
+      : listingState === 'CLIMBER_LISTED'
+        ? tBoards('runBy.pillClimberListed')
+        : tBoards('runBy.pillUnclaimed');
 
   // Report a problem (docs/product/directory-reports.md): only while the server
   // takes reports, and not for staff, who fix things from Manage gym instead.
@@ -486,6 +495,13 @@ export default async function GymPage(props: GymRouteProps) {
       <PageShell
         width="wide"
         title={gym.name}
+        headerActions={
+          <GymRunByLine
+            listingState={listingState}
+            label={runByLabel}
+            claim={claimSurface.kind === 'cta' ? { gymUuid: gym.uuid, label: tBoards('runBy.claimInline') } : null}
+          />
+        }
         breadcrumb={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <MuiLink component={LocaleLink} href="/" underline="hover" sx={quietLinkSx}>
@@ -598,6 +614,17 @@ export default async function GymPage(props: GymRouteProps) {
               )}
               {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
             </Box>
+
+            {/* The call-out's phone copy: above the boards below 960px, where the
+                details column would put it under the boards and the install
+                block. Its button asks the details copy to start the claim. */}
+            {claimSurface.kind === 'cta' && (
+              <GymClaimCalloutMirror
+                gymUuid={gym.uuid}
+                viewerState={claimSurface.viewerState}
+                className={styles.claimPhone}
+              />
+            )}
 
             <Box component="section" className={styles.boards} sx={{ mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
@@ -859,6 +886,7 @@ export default async function GymPage(props: GymRouteProps) {
                 canClaimByDomain={gym.canClaimByDomain}
                 viewerState={claimSurface.viewerState}
                 claimParam={claimParam}
+                className={styles.claimDesktop}
               />
             ) : (
               /* No call-out to clear the return-from-auth param, so clear it here:

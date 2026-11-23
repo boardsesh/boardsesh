@@ -1120,6 +1120,55 @@ describe('the review queue shows who is claiming', () => {
   });
 });
 
+describe("the admin's list of claims that approved themselves", () => {
+  type Listed = { claims: Array<Record<string, unknown>>; totalCount: number; hasMore: boolean };
+  const list = (input: Record<string, unknown> = {}, userId = GLOBAL_ADMIN) =>
+    socialGymClaimQueries.autoApprovedGymClaims(null, { input }, authCtx(userId)) as Promise<Listed>;
+
+  it('lists auto-approvals newest first, keeps reverted ones, and leaves out hand approvals', async () => {
+    const first = await autoApprovedGym(CLAIMANT, 'First Gym');
+    await ageApproval(first.claim.id, 2);
+    const second = await autoApprovedGym(OTHER_CLAIMANT, 'Second Gym');
+    const byHand = await insertGym(SYSTEM_OWNER, 'Hand Gym');
+    await insertPendingClaim(byHand.id, CREATOR);
+    const pending = await claimFor(byHand.id, CREATOR);
+    await socialGymClaimMutations.reviewGymClaim(
+      null,
+      { input: { claimId: String(pending.id), decision: 'approve' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    await socialGymClaimRevertMutations.revertGymClaim(
+      null,
+      { input: { claimId: String(first.claim.id) } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    const listed = await list();
+    expect(listed.totalCount).toBe(2);
+    expect(listed.claims.map((claim) => [claim.gymName, claim.status])).toEqual([
+      ['Second Gym', 'approved'],
+      ['First Gym', 'revoked'],
+    ]);
+    expect(listed.claims[0]).toMatchObject({ id: String(second.claim.id), claimantAccountAgeDays: 60 });
+    expect(typeof listed.claims[0].approvedAt).toBe('string');
+  });
+
+  it("narrows to the digest link's claim, and answers empty for one that didn't approve itself", async () => {
+    const { claim } = await autoApprovedGym();
+    await autoApprovedGym(OTHER_CLAIMANT, 'Other Gym');
+    const queued = await insertGym(SYSTEM_OWNER, 'Queued Gym');
+    await insertPendingClaim(queued.id, CREATOR);
+    const pending = await claimFor(queued.id, CREATOR);
+
+    expect((await list({ claimId: String(claim.id) })).claims.map((row) => row.id)).toEqual([String(claim.id)]);
+    expect(await list({ claimId: String(pending.id) })).toEqual({ claims: [], totalCount: 0, hasMore: false });
+  });
+
+  it('is for global admins only', async () => {
+    await expect(list({}, CLAIMANT)).rejects.toThrow();
+  });
+});
+
 // ============================================================================
 // Verify link errors
 // ============================================================================

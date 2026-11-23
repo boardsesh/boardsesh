@@ -113,15 +113,19 @@
     "home": "Vuelve a Boardsesh"
   },
   "card": {
-    "claimed": "Gestionado por el rocódromo",
+    "claimed": "Lo gestiona el rocódromo",
+    "climberListed": "Añadido por un escalador",
     "unclaimed": "Sin reclamar",
+    "claimCta": "Reclamar este rocódromo",
+    "claimCtaAria": "Reclamar {{gym}}",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km"
   },
   "claim": {
-    "body": "¿Es tuyo este rocódromo? Reclámalo y decides qué plafones, horarios y enlaces ven aquí los escaladores.",
+    "body": "¿Gestionas uno de estos rocódromos? Reclámalo para corregir sus plafones, horarios y enlaces.",
     "action": "Busca tu rocódromo",
-    "topAction": "¿Gestionas uno de estos muros? Busca y reclama su ficha gratis."
+    "topAction": "¿Gestionas uno de estos rocódromos? Búscalo y reclámalo. Es gratis.",
+    "modeHint": "Busca tu rocódromo y reclámalo desde su ficha."
   },
   "nearMe": {
     "cta": "Usar mi ubicación",

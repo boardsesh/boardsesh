@@ -202,6 +202,8 @@ export default function GymPlaceSearch({
       {!directory &&
         facet === 'all' &&
         query.boardTypes.map((boardType) => <input key={boardType} type="hidden" name="boardType" value={boardType} />)}
+      {/* Claim mode survives a search: the results keep their Claim buttons. */}
+      {!directory && query.claimMode && <input type="hidden" name="claim" value="1" />}
       {keepOrigin && (
         <>
           <input type="hidden" name="lat" value={String(query.latitude)} />

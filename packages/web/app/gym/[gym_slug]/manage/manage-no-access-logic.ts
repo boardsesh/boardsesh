@@ -26,3 +26,13 @@ export function gymListingRunner(gym: Pick<Gym, 'listingState' | 'ownerDisplayNa
 export function gymPageHref(gym: Pick<Gym, 'slug'>): string {
   return gym.slug ? `/gym/${encodeURIComponent(gym.slug)}` : '/gyms';
 }
+
+/**
+ * Whether the lock state may offer this viewer the claim: the server's
+ * `canClaim`, and never on a gym its staff run (`RUN_BY_GYM`), which nobody can
+ * claim (docs/product/gym-board-governance.md, PR 7). The server already says
+ * no there; this keeps the button off for a backend that doesn't yet.
+ */
+export function gymClaimOpenToViewer(gym: Pick<Gym, 'canClaim' | 'listingState'>): boolean {
+  return gym.canClaim && gym.listingState !== 'RUN_BY_GYM';
+}

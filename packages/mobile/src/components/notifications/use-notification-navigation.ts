@@ -54,7 +54,8 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * - `gym_claim_approved` opens the gym's page, where the new staff start.
  * - The directory notices (Report a problem, staff actions on boards) open the
  *   board picker on the board's review or detail sheet, the gym's edit screen,
- *   or, with nothing left to open, a short explanation (`directoryNoticeRoute`).
+ *   the gym's page on a denied claim (with the claim offered again), or, with
+ *   nothing left to open, a short explanation (`directoryNoticeRoute`).
  *   With the `directory-reports` flag off they still open the board, on its
  *   plain detail sheet: no review sheet and no "Ask {{gym}} to list it again".
  * - everything climb-bearing opens the climb.
@@ -182,6 +183,9 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
             return;
           case 'gym_edit':
             router.push({ pathname: '/gyms/edit', params: { gymUuid: route.gymUuid } });
+            return;
+          case 'gym_claim_denied':
+            router.push(gymPageHref(route.gymUuid, 'root', undefined, { claimDenied: true }));
             return;
           case 'explain':
             explainDirectoryNotice(route, translateRef.current);

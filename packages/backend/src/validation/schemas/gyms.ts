@@ -206,6 +206,16 @@ export const PendingGymClaimsInputSchema = z.object({
 });
 
 /**
+ * Claims that approved themselves (admin). `claimId` narrows it to the one the
+ * daily digest's revert link names.
+ */
+export const AutoApprovedGymClaimsInputSchema = z.object({
+  limit: z.number().int().min(1).max(50).optional().default(20),
+  offset: z.number().int().min(0).optional().default(0),
+  claimId: z.coerce.number().int().positive().nullish(),
+});
+
+/**
  * Add gym member input validation schema
  */
 export const AddGymMemberInputSchema = z.object({

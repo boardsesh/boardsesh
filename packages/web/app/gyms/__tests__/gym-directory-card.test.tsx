@@ -32,6 +32,7 @@ function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardDat
     latitude: null,
     longitude: null,
     isClaimed: false,
+    listingState: 'UNCLAIMED',
     boardSummaries: [],
     ...overrides,
   };
@@ -42,8 +43,11 @@ function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardDat
 async function renderCard(props: {
   gym?: Partial<GymDirectoryCardData>;
   origin?: { latitude: number; longitude: number } | null;
+  claim?: { viewerState: 'signed-in' | 'signed-out' };
 }) {
-  return render(<GymDirectoryCard gym={gym(props.gym)} origin={props.origin ?? null} locale="en-US" />);
+  return render(
+    <GymDirectoryCard gym={gym(props.gym)} origin={props.origin ?? null} locale="en-US" claim={props.claim} />,
+  );
 }
 
 beforeEach(() => {
@@ -56,14 +60,18 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryCard', () => {
-  it('labels a claimed gym', async () => {
-    await renderCard({ gym: { isClaimed: true } });
-    expect(screen.getByText('Run by this gym')).toBeTruthy();
+  it.each([
+    ['RUN_BY_GYM', 'Run by the gym'],
+    ['CLIMBER_LISTED', 'Added by a climber'],
+    ['UNCLAIMED', 'Not claimed yet'],
+  ] as const)('says who runs a %s gym: %s', async (listingState, label) => {
+    await renderCard({ gym: { isClaimed: listingState !== 'UNCLAIMED', listingState } });
+    expect(screen.getByText(label)).toBeTruthy();
   });
 
-  it('does not label an unclaimed gym as a defect', async () => {
-    await renderCard({});
-    expect(screen.queryByText('Unclaimed')).toBeNull();
+  it('no longer calls a gym a climber added "run by" it', async () => {
+    await renderCard({ gym: { isClaimed: true, listingState: 'CLIMBER_LISTED' } });
+    expect(screen.queryByText('Run by the gym')).toBeNull();
   });
 
   it('links the gym name with a real href a crawler can follow', async () => {
@@ -131,6 +139,32 @@ describe('GymDirectoryCard', () => {
     // of 24 gyms asked "Is this your gym?" 24 times.
     await renderCard({ gym: { isClaimed: false } });
     expect(screen.queryByText(/Is this your gym\?/)).toBeNull();
+  });
+
+  it('offers Claim this gym on a gym nobody runs, in claim mode only', async () => {
+    await renderCard({ gym: { listingState: 'CLIMBER_LISTED', isClaimed: true }, claim: { viewerState: 'signed-in' } });
+    const claim = screen.getByRole('link', { name: 'Claim Boulderwelt München Ost' });
+    expect(claim.getAttribute('href')).toBe('/gym/boulderwelt-muenchen-ost?claim=1');
+
+    claim.click();
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym Claim CTA Clicked',
+      properties: { placement: 'directory-result', viewerState: 'signed-in', gymUuid: 'gym-1' },
+    });
+  });
+
+  it('sends a signed-out visitor through log-in, back to the open claim', async () => {
+    await renderCard({ claim: { viewerState: 'signed-out' } });
+    expect(screen.getByRole('link', { name: 'Claim Boulderwelt München Ost' }).getAttribute('href')).toBe(
+      `/auth/login?callbackUrl=${encodeURIComponent('/gym/boulderwelt-muenchen-ost?claim=1')}`,
+    );
+  });
+
+  it('never offers a claim on a gym its staff run, or outside claim mode', async () => {
+    await renderCard({ gym: { listingState: 'RUN_BY_GYM', isClaimed: true }, claim: { viewerState: 'signed-in' } });
+    expect(screen.queryByText('Claim this gym')).toBeNull();
+    await renderCard({});
+    expect(screen.queryByText('Claim this gym')).toBeNull();
   });
 
   it('renders the same card claimed or not, apart from the badge', async () => {

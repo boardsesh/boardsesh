@@ -152,7 +152,7 @@
       "hoursPlaceholder": "Lun-Ven 10h-22h, Sam-Dim 9h-20h"
     },
     "manage": {
-      "ownedHeader": "Tes boards",
+      "ownedHeader": "Ajoutées par toi",
       "followingHeader": "Abonnements",
       "deleteConfirm": "Supprimer",
       "cancel": "Annuler",
@@ -248,7 +248,7 @@
       "nearbyMap": "Carte",
       "allowLocation": "Autoriser la localisation",
       "locationBanner": "La localisation est désactivée. Active-la pour voir les boards près de toi.",
-      "manage": "Gérer",
+      "manage": "Tout voir",
       "nearbyAllAbove": "Aucune autre board à moins de 20 km",
       "yourBoardsAllAbove": "Toutes tes boards sont plus haut"
     },
@@ -344,7 +344,7 @@
       "aria": "Ajouter une board",
       "setUp": "Configurer une board",
       "sprayWall": "Ajouter un Spraywall",
-      "findGym": "Trouver la board d'une salle"
+      "findGym": "Trouver une salle"
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",
@@ -427,17 +427,6 @@
       "seeGymAria": "Voir {{gym}}"
     },
     "gymPage": {
-      "pillRunByGym": "Gérée par la salle",
-      "pillClimberListed": "Ajoutée par un grimpeur",
-      "pillUnclaimed": "Pas encore revendiquée",
-      "pillYouOwner": "Tu gères cette salle",
-      "pillYouAdmin": "Tu es admin ici",
-      "pillYouEditor": "Tu es éditeur ici",
-      "lineStaff": "L'équipe de {{gym}} tient cette page à jour.",
-      "lineClimber": "{{name}} a ajouté cette salle. Son équipe peut la revendiquer.",
-      "lineClimberHidden": "Un grimpeur a ajouté cette salle. Son équipe peut la revendiquer.",
-      "lineUnclaimed": "Issue de données publiques. Personne ne la gère encore sur Boardsesh.",
-      "claimInline": "Tu gères cette salle ? Revendique-la",
       "addressHint": "S'ouvre dans Plans",
       "boardsTitle": "Boards",
       "emptyBoardsTitle": "Aucune board ici pour l'instant",
@@ -472,12 +461,15 @@
       "claimCta": "Revendiquer cette salle",
       "claimCtaSignedOut": "Connecte-toi pour la revendiquer",
       "claimPending": "Ta demande est en cours d'examen. On t'écrit par e-mail dans tous les cas, en général sous quelques jours.",
+      "claimDenied": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés, ou réessaie.",
+      "claimDeniedClosed": "Ta demande pour {{gym}} n'a pas abouti. Réponds à notre e-mail si nous nous sommes trompés.",
+      "claimRetry": "Réessayer",
       "notFound": "Salle introuvable",
       "report": "Signaler un problème"
     },
     "myGyms": {
-      "moreRowTitle": "Mes salles",
-      "screenTitle": "Mes salles",
+      "moreRowTitle": "Salles que tu gères",
+      "screenTitle": "Salles que tu gères",
       "loadError": "Impossible de charger tes salles. Réessaie.",
       "retry": "Réessayer",
       "emptyTitle": "Pas encore de salle",
@@ -528,6 +520,7 @@
       "done": "Terminé",
       "claimAction": "Revendiquer cette salle",
       "errorGeneric": "Une erreur est survenue. Réessaie.",
+      "errorRunByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "switchToAdmin": "Pas d'e-mail professionnel ? Demande une vérification",
       "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
       "domain": {
@@ -549,8 +542,7 @@
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
-        "manageCta": "Vérifie tes boards",
-        "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
+        "manageCta": "Vérifie tes boards"
       },
       "protections": {
         "syncFreeze": "Une fois la salle à toi, tes modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
@@ -926,6 +918,7 @@
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
       "generic": "Une erreur est survenue. Réessayez.",
+      "runByStaff": "Cette salle est gérée par son équipe. Si c'est une erreur, signale un problème et notre équipe y jettera un œil.",
       "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {
@@ -1822,5 +1815,18 @@
     "goBack": "Retour",
     "rule": "Qui l'a ajoutée peut la modifier. Une fois la salle revendiquée, son équipe aussi. Tout le monde peut signaler un problème.",
     "backToGym": "Retour à {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Gérée par la salle",
+    "pillClimberListed": "Ajoutée par un grimpeur",
+    "pillUnclaimed": "Pas encore revendiquée",
+    "pillYouOwner": "Tu gères cette salle",
+    "pillYouAdmin": "Tu es admin ici",
+    "pillYouEditor": "Tu es éditeur ici",
+    "lineStaff": "L'équipe de {{gym}} tient cette page à jour.",
+    "lineClimber": "{{name}} a ajouté cette salle. Son équipe peut la revendiquer.",
+    "lineClimberHidden": "Un grimpeur a ajouté cette salle. Son équipe peut la revendiquer.",
+    "lineUnclaimed": "Issue de données publiques. Personne ne la gère encore sur Boardsesh.",
+    "claimInline": "Tu gères cette salle ? Revendique-la"
   }
 }

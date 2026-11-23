@@ -139,6 +139,34 @@ describe('deriveGymPageViewModel: claiming', () => {
     expect(model.inlineClaim).toBe(false);
   });
 
+  it('opens on the denial card, with the claim offered again, from a denied-claim notice', () => {
+    const model = deriveGymPageViewModel(gym({ canClaim: true, listingState: 'UNCLAIMED' }), CLIMBER, null, {
+      claimDenied: true,
+    });
+    expect(model.claimCard).toBe('denied');
+    expect(model.inlineClaim).toBe(false);
+  });
+
+  it('says the claim was denied without a retry once the gym is no longer claimable', () => {
+    const runByGym = gym({ listingState: 'RUN_BY_GYM', canClaim: true });
+    expect(deriveGymPageViewModel(runByGym, CLIMBER, null, { claimDenied: true }).claimCard).toBe('deniedClosed');
+    expect(deriveGymPageViewModel(gym({ canClaim: false }), CLIMBER, null, { claimDenied: true }).claimCard).toBe(
+      'deniedClosed',
+    );
+  });
+
+  it('lets a claim filed since the denial, staff rights, or no session win over the denial', () => {
+    expect(deriveGymPageViewModel(gym({ canClaim: true }), CLIMBER, PENDING, { claimDenied: true }).claimCard).toBe(
+      'pending',
+    );
+    const staff = gym({ myRole: 'admin', canEdit: true, listingState: 'RUN_BY_GYM' });
+    expect(deriveGymPageViewModel(staff, CLIMBER, null, { claimDenied: true }).claimCard).toBe('hidden');
+    expect(deriveGymPageViewModel(gym(), SIGNED_OUT, null, { claimDenied: true }).claimCard).toBe('signIn');
+    expect(deriveGymPageViewModel(gym({ isPublic: false }), CLIMBER, null, { claimDenied: true }).claimCard).toBe(
+      'hidden',
+    );
+  });
+
   it('only asks for a pending claim where a claim card could show', () => {
     expect(shouldLoadPendingClaim(gym(), CLIMBER)).toBe(true);
     expect(shouldLoadPendingClaim(gym(), SIGNED_OUT)).toBe(false);
@@ -214,6 +242,13 @@ describe('buildGymPageItems', () => {
     expect(items.map((item) => item.kind)).toEqual(['top', 'start', 'boardsHeader', 'board', 'staff', 'info']);
     expect(items[3]).toMatchObject({ kind: 'board', position: 'only', key: 'board:a' });
     expect(boardsHeaderIndex(items)).toBe(2);
+  });
+
+  it('puts a claim denial straight under the top block, where the climber lands', () => {
+    const model = deriveGymPageViewModel(gym({ canClaim: true }), CLIMBER, null, { claimDenied: true });
+    const items = buildGymPageItems({ model, boards, boardsState: 'ready', canReport: false });
+    expect(items.map((item) => item.kind)).toEqual(['top', 'claim', 'boardsHeader', 'board', 'board', 'board']);
+    expect(items[1]).toMatchObject({ kind: 'claim', card: 'denied' });
   });
 
   it('puts Report a problem last, only once the seam is wired', () => {

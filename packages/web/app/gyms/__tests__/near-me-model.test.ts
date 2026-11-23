@@ -23,6 +23,7 @@ function gym(overrides: Partial<GymDirectoryCard> = {}): GymDirectoryCard {
     latitude: null,
     longitude: null,
     isClaimed: false,
+    listingState: 'UNCLAIMED',
     boardSummaries: [],
     ...overrides,
   };

@@ -4,7 +4,9 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '@mui/material/Button';
 import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
+import { gymClaimCtaClicked } from '@boardsesh/analytics';
 import ClaimGymDialog from '@/app/components/gym-entity/claim-gym-dialog';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import type { ReportGymSubject } from '@/app/components/directory-reports/report-problem-logic';
 import { GymReportProblemHost, ReportGymButton, type GymReportBoard } from '../gym-report-problem';
 
@@ -34,7 +36,13 @@ export default function ManageNoAccessActions({ gym, reportsEnabled }: ManageNoA
           <Button
             variant="contained"
             startIcon={<VerifiedUserOutlined />}
-            onClick={() => setClaimOpen(true)}
+            onClick={() => {
+              // Signed in: the manage route sends everyone else to log in first.
+              trackGymFunnelEvent(
+                gymClaimCtaClicked({ placement: 'manage-lock', viewerState: 'signed-in', gymUuid: gym.uuid }),
+              );
+              setClaimOpen(true);
+            }}
             sx={{ textTransform: 'none', minHeight: 44 }}
           >
             {t('gymPage.claimCta')}

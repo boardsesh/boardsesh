@@ -48,7 +48,7 @@
     "newClimbsSyncedSetter": "{{setter}} ha tracciato nuovi blocchi",
     "newClimbsSynced": "{{actor}} ha tracciato nuovi blocchi",
     "gymClaimApproved": "Ora gestisci {{gym}}",
-    "gymClaimApprovedGeneric": "Ora sei tu il gestore: la tua richiesta per la palestra è andata a buon fine",
+    "gymClaimApprovedGeneric": "La tua richiesta per la palestra è andata a buon fine. Ora la gestisci tu.",
     "default": "Hai una nuova notifica",
     "sprayWallReady": "{{wall}} è pronta da controllare.",
     "sprayWallReadyGeneric": "La foto della tua Spraywall è pronta da controllare.",

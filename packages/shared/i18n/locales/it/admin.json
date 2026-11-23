@@ -267,6 +267,13 @@
       "disabled": "Approvazione automatica disattivata.",
       "saveFailed": "Impossibile salvare. Riprova.",
       "loadFailed": "Impossibile caricare le impostazioni delle palestre."
+    },
+    "dailyCap": {
+      "label": "Limite giornaliero",
+      "description": "Quante richieste possono approvarsi da sole in 24 ore, sommando tutti gli account. Oltre il limite aspettano la revisione. Con 0 vanno tutte in revisione.",
+      "save": "Salva limite",
+      "invalid": "Inserisci un numero intero da 0 a 1000.",
+      "saved": "Limite giornaliero salvato."
     }
   },
   "gymClaims": {
@@ -297,7 +304,36 @@
       "date": "Data",
       "actions": "Azioni"
     },
-    "loadMore": "Carica altre"
+    "loadMore": "Carica altre",
+    "autoApproved": {
+      "heading": "Richieste approvate in automatico",
+      "intro": "Ognuna ha preso una palestra non rivendicata senza revisione. Annulla restituisce la palestra ai dati pubblici dei pannelli.",
+      "empty": "Nessuna richiesta si è ancora approvata da sola.",
+      "error": "Impossibile caricare queste richieste. Riprova.",
+      "approvedOn": "Approvata il {{date}}",
+      "reverted": "Annullata",
+      "revert": "Annulla",
+      "revertAria": "Annulla la richiesta di {{claimant}} per {{gym}}"
+    },
+    "revert": {
+      "title": "Annullare la richiesta di {{claimant}} per {{gym}}?",
+      "body": "{{gym}} torna non rivendicata. {{claimant}} e chi è stato aggiunto come membro o editor dopo la richiesta perdono l'accesso, la sincronizzazione delle sedi torna a occuparsi della scheda e avvisiamo {{claimant}} via email.",
+      "notUndone": "Le modifiche ai pannelli, i kiosk e la descrizione, gli orari e la foto della palestra restano come sono. Sistemali a mano.",
+      "reasonLabel": "Motivo (facoltativo)",
+      "confirm": "Annulla richiesta",
+      "cancel": "Chiudi",
+      "done": "{{gym}} è di nuovo non rivendicata.",
+      "missing": "La richiesta {{claimId}} non si è approvata da sola, oppure non esiste più. Per restituire una palestra, usa Sposta la proprietà della palestra qui sotto.",
+      "alreadyReverted": "La richiesta {{claimId}} è già stata annullata.",
+      "errors": {
+        "notFound": "Quella richiesta o la sua palestra non esiste più.",
+        "notApproved": "Questa richiesta non è più approvata, quindi non c’è niente da annullare.",
+        "notTransferred": "Questa richiesta non ha mai spostato la palestra, quindi non c’è niente da annullare. Usa Sposta la proprietà della palestra qui sotto.",
+        "ownerChanged": "La palestra ha cambiato proprietario dopo questa richiesta. Usa Sposta la proprietà della palestra qui sotto.",
+        "priorOwner": "Questa richiesta ha tolto la palestra a una persona, non ai dati pubblici dei pannelli. Usa Sposta la proprietà della palestra qui sotto per restituirla.",
+        "failed": "Impossibile annullare la richiesta. Riprova."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Sposta la proprietà della palestra",

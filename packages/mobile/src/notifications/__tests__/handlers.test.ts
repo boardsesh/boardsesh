@@ -243,4 +243,13 @@ describe('native import notification handlers', () => {
     expect(resolveNotificationRoute(notification({ type: 'gym_claim_approved', gymUuid: '../settings' }))).toBeNull();
     expect(resolveNotificationRoute(notification({ type: 'gym_claim_approved' }))).toBeNull();
   });
+
+  it("opens the gym's page on the denial card for a denied claim", async () => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    expect(resolveNotificationRoute(notification({ type: 'gym_claim_denied', gymUuid: wallUuid }))).toEqual({
+      path: '/gyms/[gym]',
+      params: { gym: wallUuid, claim: 'denied' },
+    });
+    expect(resolveNotificationRoute(notification({ type: 'gym_claim_denied', gymUuid: '../settings' }))).toBeNull();
+  });
 });

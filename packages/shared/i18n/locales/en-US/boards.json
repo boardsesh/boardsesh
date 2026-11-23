@@ -152,7 +152,7 @@
       "hoursPlaceholder": "Mon-Fri 10-22, Sat-Sun 9-20"
     },
     "manage": {
-      "ownedHeader": "Your boards",
+      "ownedHeader": "Added by you",
       "followingHeader": "Following",
       "deleteConfirm": "Delete",
       "cancel": "Cancel",
@@ -248,7 +248,7 @@
       "nearbyMap": "Map",
       "allowLocation": "Allow location",
       "locationBanner": "Location is off. Turn it on to see boards near you.",
-      "manage": "Manage",
+      "manage": "See all",
       "nearbyAllAbove": "No other boards within 20 km",
       "yourBoardsAllAbove": "All your boards are listed above"
     },
@@ -344,7 +344,7 @@
       "aria": "Add a board",
       "setUp": "Set up a board",
       "sprayWall": "Add a Spraywall",
-      "findGym": "Find a gym board"
+      "findGym": "Find a gym"
     },
     "boardDetail": {
       "setActive": "Set as active board",
@@ -427,17 +427,6 @@
       "seeGymAria": "See {{gym}}"
     },
     "gymPage": {
-      "pillRunByGym": "Run by the gym",
-      "pillClimberListed": "Added by a climber",
-      "pillUnclaimed": "Not claimed yet",
-      "pillYouOwner": "You run this gym",
-      "pillYouAdmin": "You're an admin here",
-      "pillYouEditor": "You're an editor here",
-      "lineStaff": "{{gym}} staff keep this page up to date.",
-      "lineClimber": "{{name}} added this gym. Staff can claim it.",
-      "lineClimberHidden": "A climber added this gym. Staff can claim it.",
-      "lineUnclaimed": "Listed from public board data. Nobody runs it on Boardsesh yet.",
-      "claimInline": "Run this gym? Claim it",
       "addressHint": "Opens in Maps",
       "boardsTitle": "Boards",
       "emptyBoardsTitle": "No boards here yet",
@@ -472,12 +461,15 @@
       "claimCta": "Claim this gym",
       "claimCtaSignedOut": "Log in and claim it",
       "claimPending": "Your claim is under review. We'll email you either way, usually within a few days.",
+      "claimDenied": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong, or try again.",
+      "claimDeniedClosed": "Your claim for {{gym}} didn't go through. Reply to our email if we got it wrong.",
+      "claimRetry": "Try again",
       "notFound": "We couldn't find that gym",
       "report": "Report a problem"
     },
     "myGyms": {
-      "moreRowTitle": "My gyms",
-      "screenTitle": "My gyms",
+      "moreRowTitle": "Gyms you run",
+      "screenTitle": "Gyms you run",
       "loadError": "We couldn't load your gyms. Try again.",
       "retry": "Try again",
       "emptyTitle": "No gyms yet",
@@ -528,6 +520,7 @@
       "done": "Done",
       "claimAction": "Claim this gym",
       "errorGeneric": "Something went wrong. Try again.",
+      "errorRunByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "switchToAdmin": "No work email? Ask our team to review",
       "switchToDomain": "Verify with a work email instead",
       "domain": {
@@ -549,8 +542,7 @@
       },
       "approved": {
         "sent": "{{gym}} is yours to manage.",
-        "manageCta": "Check your boards",
-        "manageError": "Couldn't open gym setup. Try it in a browser."
+        "manageCta": "Check your boards"
       },
       "protections": {
         "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
@@ -926,6 +918,7 @@
     "switchToDomain": "Verify with a work email instead",
     "errors": {
       "generic": "Something went wrong. Try again.",
+      "runByStaff": "This gym is run by its staff. If that's wrong, report a problem and our team will look.",
       "tokenUnavailable": "We couldn't confirm you're logged in. Reload the page and try again."
     },
     "domain": {
@@ -1822,5 +1815,18 @@
     "goBack": "Go back",
     "rule": "Whoever added it can change it. Once a gym is claimed, its staff can too. Everyone else can report a problem.",
     "backToGym": "Back to {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Run by the gym",
+    "pillClimberListed": "Added by a climber",
+    "pillUnclaimed": "Not claimed yet",
+    "pillYouOwner": "You run this gym",
+    "pillYouAdmin": "You're an admin here",
+    "pillYouEditor": "You're an editor here",
+    "lineStaff": "{{gym}} staff keep this page up to date.",
+    "lineClimber": "{{name}} added this gym. Staff can claim it.",
+    "lineClimberHidden": "A climber added this gym. Staff can claim it.",
+    "lineUnclaimed": "Listed from public board data. Nobody runs it on Boardsesh yet.",
+    "claimInline": "Run this gym? Claim it"
   }
 }

@@ -267,6 +267,37 @@ describe('findSimilarGyms — matching tiers', () => {
     expect(byUuid.get(freeProvider.uuid)!.canClaimByDomain).toBe(false);
   });
 
+  it('offers no claim on a gym its staff run (RUN_BY_GYM), and keeps it on one a climber added', async () => {
+    const runByStaff = await insertGym({
+      ownerId: OTHER,
+      name: 'Boulder Bar',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+    await db.execute(sql`
+      INSERT INTO gym_claims (gym_id, claimant_user_id, method, status, created_at, updated_at)
+      VALUES (${runByStaff.id}, ${OTHER}, 'admin', 'approved', now(), now())
+    `);
+    const climberListed = await insertGym({
+      ownerId: OTHER,
+      name: 'Boulder Bar',
+      latitude: LAT_120M,
+      longitude: BASE.longitude,
+    });
+
+    const byUuid = new Map(
+      (
+        await findSimilarGyms(
+          { name: 'Boulder Bar', latitude: BASE.latitude, longitude: BASE.longitude },
+          authCtx(QUERIER),
+        )
+      ).map((gym) => [gym.uuid, gym]),
+    );
+
+    expect(byUuid.get(runByStaff.uuid)!.isClaimable).toBe(false);
+    expect(byUuid.get(climberListed.uuid)!.isClaimable).toBe(true);
+  });
+
   it("never enumerates another user's private gym, but includes the viewer's own private gym", async () => {
     // Another user's PRIVATE gym 60 m away — must NOT leak (name/address/distance).
     await insertGym({

@@ -321,6 +321,31 @@ describe('directory notice navigation', () => {
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-1' } });
   });
 
+  it("opens the gym's page on the denial card when we couldn't confirm a claim", () => {
+    tap(
+      makeNotification({
+        type: 'gym_claim_denied',
+        entityType: 'gym',
+        entityId: 'gym-1',
+        directoryNotice: { ...directoryNotice, targetKind: 'gym', boardUuid: null, boardName: null },
+      }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms/[gym]',
+      params: { gym: 'gym-1', claim: 'denied' },
+    });
+    expect(explainDirectoryNotice).not.toHaveBeenCalled();
+  });
+
+  it('explains a claim denial that lost its gym', () => {
+    tap(makeNotification({ type: 'gym_claim_denied', gymName: 'Crux' }));
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(explainDirectoryNotice).toHaveBeenCalledWith(
+      { kind: 'explain', explanation: 'claim_denied', name: 'Crux' },
+      expect.any(Function),
+    );
+  });
+
   it('marks a gym report outcome read without opening anything', () => {
     tap(makeNotification({ type: 'gym_report_resolved', entityType: 'gym', entityId: 'gym-1' }));
     expect(markGroupMutate).toHaveBeenCalled();

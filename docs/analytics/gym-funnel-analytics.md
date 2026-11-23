@@ -58,7 +58,7 @@ no mobile counterpart. They live in their own module.
 
 | Event                    | Properties                                            | Fired by                                                                                                                                                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Gym Claim CTA Clicked`  | `placement`, `viewerState`, `gymUuid`                 | Every claim entry point: the gym-page call-out (`app/gym/[gym_slug]/gym-claim-cta.tsx`), the gym preview sheet (`app/components/gym-entity/gym-detail.tsx`), the directory's closing claim prompt (`app/gyms/gym-directory-claim-link.tsx`), and the create-gym duplicate list (`app/components/gym-entity/similar-gym-suggestions.tsx`) |
+| `Gym Claim CTA Clicked`  | `placement`, `viewerState`, `gymUuid`                 | Every claim entry point: the gym-page call-out (`app/gym/[gym_slug]/gym-claim-cta.tsx`, and its phone copy above the boards), "Run this gym? Claim it" under the gym page's H1 (`gym-run-by-claim-link.tsx`), the gym preview sheet (`app/components/gym-entity/gym-detail.tsx`), the directory's closing claim prompt (`app/gyms/gym-directory-claim-link.tsx`), a result card's Claim this gym in claim mode (`app/gyms/gym-directory-card.tsx`), the manage page's lock state (`manage/manage-no-access-actions.tsx`), the create-gym duplicate list (`app/components/gym-entity/similar-gym-suggestions.tsx`), and in the app the gym map's expanded row (`app/gyms/index.tsx`) and the gym page (`GymPageScreen.tsx`) |
 | `Gym Claim Submitted`    | `method`, `gymUuid`                                   | `ClaimGymDialog` on submit, before the mutation resolves                                                                                                                                                                                                                     |
 | `Gym Claim Result`       | `status`, `gymUuid`                                   | `ClaimGymDialog` once the mutation settles, success or failure                                                                                                                                                                                                               |
 | `Gym QR Scanned`         | `medium`, `gymSlug`                                   | The QR landing tracker on `/gym/[gym_slug]`, once, after `parseGymQrLanding` matches                                                                                                                                                                                         |
@@ -70,8 +70,8 @@ no mobile counterpart. They live in their own module.
 
 | Property       | Values                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------- |
-| `placement`    | `gym-page`, `preview-sheet`, `directory-footer`, `similar-gyms`                          |
-| `viewerState`  | `signed-in`, `signed-out` — only the gym page can fire `signed-out`, see below           |
+| `placement`    | `gym-page`, `gym-page-header`, `preview-sheet`, `directory-footer`, `directory-result`, `manage-lock`, `similar-gyms`, `app-gym-list`, `app-gym-page` (see below) |
+| `viewerState`  | `signed-in`, `signed-out` — only the gym page, a claim-mode directory card and the app's gym page can fire `signed-out`, see below |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
 | `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
@@ -93,7 +93,7 @@ shows Report a duplicate, so both values can appear.
 imported because a shared package must never depend on `packages/web`; adding a
 tab there without adding it here is a compile error at the call site.
 
-### `viewerState: signed-out` is gym-page-only AND unclaimed-gym-only
+### `viewerState: signed-out` comes from gyms nobody runs, mostly on the gym page
 
 **Read this before using `Gym Claim CTA Clicked` to answer H4** ("does a visible
 self-serve claim CTA convert unclaimed gyms"). Since #3672 the gym page shows
@@ -106,20 +106,23 @@ but on a narrower population than "public gyms":
   gym — the resolver's `canClaim = !!authenticatedUserId && …` is false for
   owners, gym admins/editors and covering community leaders
   (`packages/backend/src/graphql/resolvers/social/gyms.ts`).
-- **The anonymous arm additionally requires `gym.isClaimed === false`.** An
-  anonymous visitor to a gym that already has a real owner sees nothing, so a
-  claimed gym contributes zero `signed-out` events no matter how much anonymous
-  traffic it takes. The signed-in arm is not gated this way: asking for a gym
-  someone else owns is a deliberate path that routes to admin review.
+- **Both arms require a gym its staff don't run.** Since #8043 the call-out
+  switches on `gym.listingState`: `RUN_BY_GYM` (an approved claim or an admin
+  handover) hides it from everyone, signed in or not, and an ownership dispute
+  goes through Report a problem. `UNCLAIMED` and `CLIMBER_LISTED` show it. Until
+  2026-11-23 the anonymous arm read `gym.isClaimed`, which was true for a gym a
+  climber added, so those gyms sent no `signed-out` events before that date and
+  do after it.
 - The anonymous arm sends the owner through the auth modal with a
   `callbackUrl` back to `/gym/<slug>?claim=1`, so the claim intent survives an
   OAuth round-trip and the dialog re-opens on return.
 
-**The `signed-out` denominator is anonymous pageviews of _unclaimed_ public
-gyms, not of all gym pages.** Dividing `signed-out` claim clicks by total gym
-pageviews understates the conversion rate by whatever share of traffic lands on
-claimed gyms — which is the well-run, heavily-visited end of the directory.
-Restrict both sides of the ratio to unclaimed gyms before quoting a number.
+**The `signed-out` denominator is anonymous pageviews of public gyms their
+staff don't run, not of all gym pages.** Dividing `signed-out` claim clicks by
+total gym pageviews understates the conversion rate by whatever share of traffic
+lands on gyms run by their staff — the well-run, heavily-visited end of the
+directory. Restrict both sides of the ratio to those gyms before quoting a
+number.
 
 The other two entry points won't fire it, so an unsplit `signed-out` share
 under-reads:
@@ -134,7 +137,10 @@ is `false` while the token is in flight — their render gates make that race
 unreachable in practice, so treat their `signed-out` count as noise if one ever
 appears rather than as a signal.
 
-**Filter on `placement = 'gym-page'` before reading the `viewerState` split.**
+`directory-result` and `app-gym-page` fire `signed-out` too, but each only after
+the visitor chose to look for their gym (claim mode) or opened a gym in the app.
+
+**Filter on `placement in ('gym-page', 'gym-page-header')` before reading the `viewerState` split.**
 Across all placements the denominator includes two surfaces that effectively
 never report `signed-out`, which drags the anonymous share toward 0 for reasons
 that have nothing to do with how signed-out climbers behave.
@@ -569,6 +575,43 @@ inside the create-gym flow, shown to someone who is about to add a gym that may
 already exist. Folding it into the directory placement would merge "browsing the
 directory" with "about to create a duplicate", which are opposite intents and
 the two most interesting rows to tell apart.
+
+### Claim placements added with the claim discovery work (#8043, PR 7)
+
+Five values joined `GymClaimPlacement` on 2026-11-23. Each counts a new door, so
+none of them is an alias of an older value and none should be summed into one:
+
+- **`gym-page-header`**: "Run this gym? Claim it" in the run-by line under the
+  gym page's H1. It opens the same dialog as the call-out, but it sits in the
+  first screen on a phone, so `gym-page` vs `gym-page-header` is the read on
+  whether a claim offer up top is found. The call-out's phone copy (above the
+  boards below 960px) still counts as `gym-page`: it is the same call-out moved,
+  not a new offer.
+- **`directory-result`**: Claim this gym on a result card, shown only in claim
+  mode (`/gyms?claim=1`, which the footer prompt, the for-gyms page and the site
+  footer open). One per gym, so `gymUuid` is set. It is not the retired
+  `directory-card`: that one counted a prompt on every row of every visit.
+- **`manage-lock`**: Claim this gym on `/gym/{slug}/manage` for a signed-in
+  climber who can't edit the gym. Always `signed-in`: the route sends everyone
+  else to log in first.
+- **`app-gym-list`** and **`app-gym-page`**: the first claim events the app
+  sends. They go through the same builder (`gymClaimCtaClicked`), so app and www
+  claims read in one breakdown. `app-gym-list` is always `signed-in` (the row
+  only offers a claim on `canClaim`); `app-gym-page` sends `signed-out` when the
+  card's button opens log-in. The app sends no `Gym Claim Submitted` or `Gym
+  Claim Result` yet, so an app funnel ends at the click.
+
+Two behaviour changes move these numbers too. A gym a climber added
+(`listingState = CLIMBER_LISTED`) now offers the claim to signed-out visitors,
+where before it counted as claimed and showed nothing, so `signed-out` clicks
+come from a wider set of gyms than the section above describes. And a gym its
+staff run (`RUN_BY_GYM`) offers no claim to anyone, signed in or not.
+
+`Gym Claim Path Clicked` (`website-journey-events.ts`, the home page's and
+/for-gyms' "Claim your gym" links) reading zero over the 90 days to 2026-11-23
+is its age, not a fault: it shipped in #7883 on 2026-11-19. Both call sites are
+same-origin links whose click handler calls `track()` before the soft
+navigation. Read it again after a few weeks of traffic.
 
 ## The gym-page install CTA (#4374 AC2)
 

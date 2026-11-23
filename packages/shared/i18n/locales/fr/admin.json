@@ -305,6 +305,13 @@
       "disabled": "Approbation automatique désactivée.",
       "saveFailed": "Enregistrement impossible. Réessayez.",
       "loadFailed": "Impossible de charger les paramètres des salles."
+    },
+    "dailyCap": {
+      "label": "Limite quotidienne",
+      "description": "Combien de revendications peuvent s'approuver automatiquement en 24 heures, tous comptes confondus. Au-delà, elles attendent une vérification. Avec 0, toutes passent en vérification.",
+      "save": "Enregistrer la limite",
+      "invalid": "Saisissez un nombre entier entre 0 et 1000.",
+      "saved": "Limite quotidienne enregistrée."
     }
   },
   "gymClaims": {
@@ -335,7 +342,36 @@
       "date": "Date",
       "actions": "Actions"
     },
-    "loadMore": "Charger plus"
+    "loadMore": "Charger plus",
+    "autoApproved": {
+      "heading": "Revendications approuvées automatiquement",
+      "intro": "Chacune a pris une salle non revendiquée sans vérification. Annuler rend la salle aux données publiques des boards.",
+      "empty": "Aucune revendication ne s'est encore approuvée automatiquement.",
+      "error": "Impossible de charger ces revendications. Réessayez.",
+      "approvedOn": "Approuvée le {{date}}",
+      "reverted": "Annulée",
+      "revert": "Annuler",
+      "revertAria": "Annuler la revendication de {{claimant}} sur {{gym}}"
+    },
+    "revert": {
+      "title": "Annuler la revendication de {{claimant}} sur {{gym}} ?",
+      "body": "{{gym}} redevient non revendiquée. {{claimant}} et les personnes ajoutées comme membres ou éditeurs depuis la revendication perdent l'accès, la synchronisation des lieux reprend la fiche, et nous prévenons {{claimant}} par e-mail.",
+      "notUndone": "Les modifications des boards, les bornes et la description, les horaires et la photo de la salle restent tels quels. Corrigez-les à la main.",
+      "reasonLabel": "Motif (facultatif)",
+      "confirm": "Annuler la revendication",
+      "cancel": "Fermer",
+      "done": "{{gym}} est de nouveau non revendiquée.",
+      "missing": "La revendication {{claimId}} ne s'est pas approuvée automatiquement, ou elle n'existe plus. Pour rendre une salle, utilisez Changer le propriétaire d’une salle plus bas.",
+      "alreadyReverted": "La revendication {{claimId}} a déjà été annulée.",
+      "errors": {
+        "notFound": "Cette revendication ou sa salle n'existe plus.",
+        "notApproved": "Cette revendication n'est plus approuvée, il n'y a donc rien à annuler.",
+        "notTransferred": "Cette revendication n'a jamais transféré la salle, il n'y a donc rien à annuler. Utilisez Changer le propriétaire d’une salle plus bas.",
+        "ownerChanged": "La salle a changé de mains après cette revendication. Utilisez Changer le propriétaire d’une salle plus bas.",
+        "priorOwner": "Cette revendication a pris la salle à une personne, pas aux données publiques des boards. Utilisez Changer le propriétaire d’une salle plus bas pour la lui rendre.",
+        "failed": "Impossible d'annuler la revendication. Réessayez."
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "Changer le propriétaire d’une salle",

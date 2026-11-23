@@ -1,10 +1,11 @@
-import { and, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { BoardModerationActorRole } from '@boardsesh/db/schema';
 import type { DirectoryReportResolverRole, GymListingState } from '@boardsesh/directory-moderation';
 import { db } from '../../../../db/client';
 import { SYSTEM_BOARD_OWNER_ID } from '../../board-presence/shared';
 import { gymListingState } from '../gyms';
+import { ownerHoldsClaimOrHandoverColumn } from '../gym-run-by-staff';
 import type { ModerationExecutor } from '../board-moderation-events';
 
 // ============================================
@@ -22,36 +23,6 @@ export const WAITING_STATUSES = ['open', 'escalated'] as const satisfies readonl
 
 export function isSystemOwner(ownerId: string): boolean {
   return ownerId === SYSTEM_BOARD_OWNER_ID;
-}
-
-/**
- * Correlated twin of `ownerHoldsClaimOrHandoverSql` in gyms.ts, for a list of
- * gyms in one query: the gym's current owner holds an approved claim on it, or
- * received it in an admin handover. Change both together.
- */
-function ownerHoldsClaimOrHandoverColumn() {
-  return sql<boolean>`(${exists(
-    db
-      .select({ one: sql`1` })
-      .from(dbSchema.gymClaims)
-      .where(
-        and(
-          eq(dbSchema.gymClaims.gymId, dbSchema.gyms.id),
-          eq(dbSchema.gymClaims.claimantUserId, dbSchema.gyms.ownerId),
-          eq(dbSchema.gymClaims.status, 'approved'),
-        ),
-      ),
-  )} OR ${exists(
-    db
-      .select({ one: sql`1` })
-      .from(dbSchema.gymOwnerReassignments)
-      .where(
-        and(
-          eq(dbSchema.gymOwnerReassignments.gymUuid, dbSchema.gyms.uuid),
-          eq(dbSchema.gymOwnerReassignments.newOwnerId, dbSchema.gyms.ownerId),
-        ),
-      ),
-  )})`;
 }
 
 export type GymFacts = {

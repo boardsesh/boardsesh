@@ -307,6 +307,8 @@ export type GymClaim = {
   claimantTickCount?: number | null;
   /** Admin queue only: other live gyms the claimant owns or admins. */
   claimantGymsHeld?: number | null;
+  /** Auto-approved list only: when the claim took the gym. */
+  approvedAt?: string | null;
 };
 
 export type GymClaimConnection = {
@@ -335,6 +337,13 @@ export type RevertGymClaimResult = {
 export type PendingGymClaimsInput = {
   limit?: number;
   offset?: number;
+};
+
+export type AutoApprovedGymClaimsInput = {
+  limit?: number;
+  offset?: number;
+  /** Only this claim: the daily digest's revert link. */
+  claimId?: string | null;
 };
 
 export type AddGymMemberInput = {

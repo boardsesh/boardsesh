@@ -313,6 +313,23 @@ describe('GymPageScreen', () => {
     expect(screen.getByTestId('claim-sheet')).toBeTruthy();
   });
 
+  it('counts a claim tap in the claim funnel, as the app gym page', () => {
+    render(<GymPageScreen />);
+    fireEvent.click(screen.getByText('claim-inline'));
+    expect(trackMock).toHaveBeenCalledWith('Gym Claim CTA Clicked', {
+      placement: 'app-gym-page',
+      viewerState: 'signed-in',
+      gymUuid: makeGym().uuid,
+    });
+  });
+
+  it('opens on the denial card, right under the top block, from a denied-claim notice', () => {
+    state.params = { gym: 'gym-uuid-1', claim: 'denied' };
+    state.gymQuery = { ...state.gymQuery, data: makeGym({ canClaim: true }) };
+    render(<GymPageScreen />);
+    expect(kinds().slice(0, 2)).toEqual(['block-top', 'block-claim-denied']);
+  });
+
   it('sends a signed-out visitor to log in before a claim', () => {
     state.isAuthenticated = false;
     render(<GymPageScreen />);
