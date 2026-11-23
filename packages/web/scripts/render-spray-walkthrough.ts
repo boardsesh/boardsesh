@@ -8,6 +8,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../app/theme/theme-config';
+import { SHOWCASE_STAGE_DARK } from './showcase-stage';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const STAGE_DIR = resolve(REPO_ROOT, 'marketing/spray-walkthrough');
@@ -88,7 +89,7 @@ function extractTake(take: EditTake, reExtract: boolean): { dir: string; count: 
 
 function writeTokens(): void {
   const tokens: Record<string, string> = {
-    'stage-dark': themeTokens.semantic.background,
+    'stage-dark': SHOWCASE_STAGE_DARK,
     'ink-dark': marketingSurfaces.dark.label,
     'sub-dark': marketingSurfaces.dark.secondaryLabel,
     'accent-dark': marketingSurfaces.dark.accent,

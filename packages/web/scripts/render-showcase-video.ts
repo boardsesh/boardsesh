@@ -55,7 +55,7 @@ import {
   type HoldStateInfo,
 } from '@boardsesh/board-constants';
 import { brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
-import { themeTokens } from '../app/theme/theme-config';
+import { SHOWCASE_STAGE_DARK } from './showcase-stage';
 import {
   showcaseVariantWorkDirs,
   SHOWCASE_FPS,
@@ -484,7 +484,7 @@ function roleColor(name: HoldStateInfo['name'], fallback: string): string {
 
 function writeTokens(): void {
   const tokens: Record<string, string> = {
-    'stage-dark': themeTokens.semantic.background,
+    'stage-dark': SHOWCASE_STAGE_DARK,
     'stage-light': '#F4F1FB',
     'ink-dark': marketingSurfaces.dark.label,
     'ink-light': marketingSurfaces.light.label,
@@ -853,7 +853,7 @@ function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: bo
     lightRoles: SHOWCASE_LIGHT_ROLE_COLORS,
     copy: prepared.copy,
     grades: gradeColors(),
-    palette: { stageDark: themeTokens.semantic.background, stageLight: '#F4F1FB' },
+    palette: { stageDark: SHOWCASE_STAGE_DARK, stageLight: '#F4F1FB' },
     markUrl: pathToFileURL(MARK_PATH).href,
   };
 }
