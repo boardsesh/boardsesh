@@ -532,6 +532,76 @@ export function parseFramesToHoldRows(board: BoardName, frames: string | null | 
 }
 
 /**
+ * The roles a hold legend counts, in the order a climber reads a climb: where
+ * the hands start, the holds in between, the finish, then the feet.
+ */
+export const HOLD_LEGEND_ROLES = ['STARTING', 'HAND', 'FINISH', 'FOOT'] as const;
+export type HoldLegendRole = (typeof HOLD_LEGEND_ROLES)[number];
+
+/** One legend entry: how many holds the climb lights in a role and colour. */
+export type HoldRoleSummary = { role: HoldLegendRole; count: number; color: HoldColor };
+
+const HOLD_LEGEND_ROLE_SET: ReadonlySet<string> = new Set(HOLD_LEGEND_ROLES);
+
+function isHoldLegendRole(state: string): state is HoldLegendRole {
+  return HOLD_LEGEND_ROLE_SET.has(state);
+}
+
+/**
+ * The role code each hold ends up with in a static render: the union of every
+ * frame's lit set, the last frame to light a hold choosing its code. The same
+ * walk as `accumulateFramesToMaps` + `flattenFramesToUnion`, kept at the code
+ * level because two codes can share a role and still draw in different colours.
+ */
+function unionRoleCodes(frames: string): Map<number, HoldCode> {
+  const union = new Map<number, HoldCode>();
+  let litCodes = new Map<number, HoldCode>();
+  for (const [index, segment] of parseFramesSegments(frames).entries()) {
+    // An absolute frame restates the whole lit set, so nothing carries over.
+    if (segment.absolute && index > 0) litCodes = new Map();
+    for (const token of tokeniseFrameDelta(segment.body)) {
+      if (token.kind === 'off') litCodes.delete(token.holdId);
+      else litCodes.set(token.holdId, token.roleCode);
+    }
+    for (const [holdId, roleCode] of litCodes) union.set(holdId, roleCode);
+  }
+  return union;
+}
+
+/**
+ * How many holds a climb lights in each role and colour, for a legend beside
+ * its render.
+ *
+ * Counts the same snapshot a static render draws (a hold lit in any frame, the
+ * last frame's code winning), so the legend and the picture next to it never
+ * disagree on a multi-frame climb. That is the one place it differs from
+ * `parseFramesToHoldRows`, whose first-wins rule mirrors a database quirk
+ * rather than anything a climber sees.
+ *
+ * Holds group by the role AND the Aura colour `HOLD_STATE_MAP` gives their own
+ * code, never by role alone: Kilter's Tycho colour-mode codes (36-41) are all
+ * HAND but each draws in its own colour, so they get one entry per colour
+ * rather than being counted under the cyan hand swatch. Entries come back in
+ * `HOLD_LEGEND_ROLES` order, colours in the order the climb first uses them.
+ * Unknown codes and roles outside the legend (AUX) are not counted.
+ */
+export function summarizeHoldRoles(board: BoardName, frames: string | null | undefined): HoldRoleSummary[] {
+  if (!frames) return [];
+  const entries = new Map<string, HoldRoleSummary>();
+  for (const roleCode of unionRoleCodes(frames).values()) {
+    const stateInfo = HOLD_STATE_MAP[board]?.[roleCode];
+    if (!stateInfo || !isHoldLegendRole(stateInfo.name)) continue;
+    const color = getHoldDisplayColor(stateInfo, 'aura');
+    const key = `${stateInfo.name}:${color}`;
+    const entry = entries.get(key);
+    if (entry) entry.count += 1;
+    else entries.set(key, { role: stateInfo.name, count: 1, color });
+  }
+  const summaries = [...entries.values()];
+  return HOLD_LEGEND_ROLES.flatMap((role) => summaries.filter((summary) => summary.role === role));
+}
+
+/**
  * Convert a frames string into a map of frame index → lit-state snapshot.
  * Each frame maps hold IDs to their state, color, and display color.
  *

@@ -1,0 +1,65 @@
+/*
+ * The board render as the climb page's hero: the homepage hero glow behind it,
+ * the board on its own frame, the hold legend under it.
+ */
+
+.stage {
+  position: relative;
+  isolation: isolate;
+}
+
+/* The homepage `.heroPreview::before` glow. The horizontal inset stays inside
+   the page gutter at every width, so the glow never widens the page. */
+.stage::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -6% -5% 4%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--color-primary-fill) 30%, transparent),
+    color-mix(in srgb, var(--color-primary-fill) 10%, transparent) 48%,
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
+.frame {
+  margin: 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+}
+
+/*
+ * The photo and holds layers stack in one grid cell (grid rather than absolute
+ * positioning: absolutely positioned images in an aspect-ratio box hit iOS 18
+ * WebKit bugs). Each image is `width: 100%; height: auto` with its width and
+ * height attributes, so its box is reserved before it loads.
+ *
+ * The art's HEIGHT is capped so the whole board and its legend fit on screen below
+ * the header and breadcrumb (1440x900 on a laptop; a portrait tablet would
+ * otherwise get a board taller than the window), by capping its width at that
+ * height times the board's aspect ratio. Width rather than height, so the
+ * images keep `height: auto` and the box they reserve before loading. 200px is
+ * what sits above and below the art in the desktop stage column: page padding,
+ * breadcrumb, frame padding and the legend. The 320px floor keeps the board
+ * readable on a phone held sideways.
+ */
+.art {
+  --stage-art-max-height: max(320px, calc(100svh - var(--global-header-height) - 200px));
+  display: grid;
+  max-width: min(100%, calc(var(--board-aspect-ratio) * var(--stage-art-max-height)));
+  margin-inline: auto;
+}
+
+.art > img {
+  grid-area: 1 / 1;
+}
+
+@media (min-width: 900px) {
+  .frame {
+    padding: var(--spacing-6);
+  }
+}

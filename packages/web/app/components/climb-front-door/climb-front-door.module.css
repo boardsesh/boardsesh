@@ -1,0 +1,100 @@
+/*
+ * The climb page layout. The DOM order is the phone order: breadcrumb, title,
+ * board, call to action, details, then the full-width bands. From md (900px,
+ * MUI's breakpoint) the hero becomes two columns: the board sticky on the
+ * left, the title, call to action and details reading down the right. The
+ * full-width bands sit below the hero, where the board lets go.
+ *
+ * The hero is its own grid, not rows of one page-wide grid, because Chromium
+ * bounds a sticky grid item by its grid CONTAINER rather than its grid area: in
+ * one big grid the board would stick until the end of the page and slide over
+ * the full-width bands.
+ */
+
+.page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--page-wide);
+  margin: 0 auto;
+  padding-block: var(--spacing-4);
+  padding-inline: var(--page-gutter);
+  /* `clip`, not `hidden`: it makes no scroll container, so the sticky board
+     still sticks to the viewport. */
+  overflow-x: clip;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'title'
+    'stage'
+    'cta'
+    'details';
+}
+
+.title,
+.stage,
+.cta,
+.details {
+  min-width: 0;
+}
+
+.title {
+  grid-area: title;
+}
+
+.stage {
+  grid-area: stage;
+  margin-top: var(--spacing-5);
+}
+
+.cta {
+  grid-area: cta;
+  margin-top: var(--spacing-4);
+}
+
+.details {
+  grid-area: details;
+}
+
+@media (min-width: 900px) {
+  .hero {
+    /* The text column never drops under 360px: at 900px the board column
+       gives way (down to about 420px) instead of squeezing the name into a
+       sliver. From about 1100px the board gets its full 560px. */
+    grid-template-columns: minmax(0, 560px) minmax(360px, 1fr);
+    /* The details row takes whatever height the board column needs beyond the
+       title and call to action, so those two stay compact at the top. */
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      'stage title'
+      'stage cta'
+      'stage details';
+    column-gap: calc(var(--spacing-12) + var(--spacing-2));
+    align-items: start;
+  }
+
+  .title,
+  .stage {
+    margin-top: var(--spacing-4);
+  }
+
+  .stage {
+    position: sticky;
+    top: calc(var(--global-header-height) + var(--spacing-4));
+    align-self: start;
+  }
+
+  .cta {
+    margin-top: var(--spacing-6);
+  }
+
+  /* index.css sizes every `main h1.MuiTypography-root` at 44px. Here the name
+     shares a 360px+ column with the grade tile, so it scales with the window
+     instead: 32px at 900px wide, 44px from about 1440px. */
+  .title :global(h1.MuiTypography-root) {
+    font-size: clamp(32px, calc(2.2vw + 12px), 44px);
+  }
+}

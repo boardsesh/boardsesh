@@ -38,11 +38,7 @@
       "description": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。已有 {{ascents}} 次完攀，评分 {{quality}}/5。使用 Boardsesh 在训练板上点亮。",
       "imageAlt": "{{climbName}}，{{boardName}} 训练板上的 {{grade}} 线路",
       "fallbackTitle": "线路",
-      "fallbackDescription": "查看线路详情与攀爬方法视频",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "{{angle}}° 下的 {{layoutName}} 线路",
-      "seoSetterSuffix": "，由 {{setter}} 设定",
-      "seoAscentsSuffix": "。已记录 {{ascents}} 次完攀"
+      "fallbackDescription": "查看线路详情与攀爬方法视频"
     }
   },
   "list": {
@@ -952,7 +948,25 @@
       "board": "{{boardName}}",
       "list": "{{angle}}° 下的线路"
     },
+    "hero": {
+      "gradeForSearch": "，{{grade}}",
+      "unnamedClimb": "未命名的 {{board}} 线路",
+      "qualityAria": "评分 {{quality}}/5",
+      "setBy": "由 {{setter}} 设定",
+      "boardAtAngle": "{{angle}}° 下的 {{board}}"
+    },
     "boardImageAlt": "{{climbName}} 在 {{angle}}° 的 {{boardName}} {{layoutName}} 上亮起",
+    "legend": {
+      "aria": "这条线路的岩点",
+      "start_one": "{{formattedCount}} 个起步点",
+      "start_other": "{{formattedCount}} 个起步点",
+      "hand_one": "{{formattedCount}} 个手点",
+      "hand_other": "{{formattedCount}} 个手点",
+      "finish_one": "{{formattedCount}} 个终点",
+      "finish_other": "{{formattedCount}} 个终点",
+      "foot_one": "{{formattedCount}} 个脚点",
+      "foot_other": "{{formattedCount}} 个脚点"
+    },
     "setterLink": "{{setter}} 的更多线路",
     "facts": {
       "grade": "难度",

@@ -38,11 +38,7 @@
       "description": "{{climbName}} es un {{grade}} en {{layoutName}} a {{angle}}°, de {{setter}}. {{ascents}} encadenes, valoración {{quality}} de 5. Ilumínalo en tu plafón con Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} en plafón {{boardName}}",
       "fallbackTitle": "Bloque",
-      "fallbackDescription": "Mira los detalles del bloque y vídeos de beta",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Bloque de {{layoutName}} a {{angle}}°",
-      "seoSetterSuffix": " creado por {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} encadenes registrados"
+      "fallbackDescription": "Mira los detalles del bloque y vídeos de beta"
     }
   },
   "list": {
@@ -952,7 +948,25 @@
       "board": "{{boardName}}",
       "list": "Bloques a {{angle}}°"
     },
+    "hero": {
+      "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "Bloque de {{board}} sin nombre",
+      "qualityAria": "Valoración de {{quality}} sobre 5",
+      "setBy": "creado por {{setter}}",
+      "boardAtAngle": "{{board}} a {{angle}}°"
+    },
     "boardImageAlt": "{{climbName}} iluminado en el plafón {{boardName}} {{layoutName}} a {{angle}}°",
+    "legend": {
+      "aria": "Presas de este bloque",
+      "start_one": "{{formattedCount}} de inicio",
+      "start_other": "{{formattedCount}} de inicio",
+      "hand_one": "{{formattedCount}} de mano",
+      "hand_other": "{{formattedCount}} de mano",
+      "finish_one": "{{formattedCount}} final",
+      "finish_other": "{{formattedCount}} finales",
+      "foot_one": "{{formattedCount}} de pie",
+      "foot_other": "{{formattedCount}} de pie"
+    },
     "setterLink": "Más bloques de {{setter}}",
     "facts": {
       "grade": "Grado",

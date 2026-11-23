@@ -38,11 +38,7 @@
       "description": "{{climbName}} è un {{grade}} su {{layoutName}} a {{angle}}°, tracciato da {{setter}}. {{ascents}} ripetizioni, valutazione {{quality}} su 5. Illuminalo sul tuo pannello con Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sul pannello {{boardName}}",
       "fallbackTitle": "Blocco",
-      "fallbackDescription": "Guarda i dettagli del blocco e i video della beta",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Blocco su {{layoutName}} a {{angle}}°",
-      "seoSetterSuffix": " tracciato da {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} ripetizioni registrate"
+      "fallbackDescription": "Guarda i dettagli del blocco e i video della beta"
     }
   },
   "list": {
@@ -952,7 +948,25 @@
       "board": "{{boardName}}",
       "list": "Blocchi a {{angle}}°"
     },
+    "hero": {
+      "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "Blocco {{board}} senza nome",
+      "qualityAria": "Valutazione {{quality}} su 5",
+      "setBy": "tracciato da {{setter}}",
+      "boardAtAngle": "{{board}} a {{angle}}°"
+    },
     "boardImageAlt": "{{climbName}} illuminato sul {{boardName}} {{layoutName}} a {{angle}}°",
+    "legend": {
+      "aria": "Prese di questo blocco",
+      "start_one": "{{formattedCount}} di partenza",
+      "start_other": "{{formattedCount}} di partenza",
+      "hand_one": "{{formattedCount}} appiglio",
+      "hand_other": "{{formattedCount}} appigli",
+      "finish_one": "{{formattedCount}} di arrivo",
+      "finish_other": "{{formattedCount}} di arrivo",
+      "foot_one": "{{formattedCount}} appoggio",
+      "foot_other": "{{formattedCount}} appoggi"
+    },
     "setterLink": "Altri blocchi di {{setter}}",
     "facts": {
       "grade": "Grado",

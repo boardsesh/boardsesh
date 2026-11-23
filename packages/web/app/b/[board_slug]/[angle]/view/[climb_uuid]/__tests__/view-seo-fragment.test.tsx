@@ -261,6 +261,60 @@ describe('climb front door server HTML', () => {
     expect(html).toMatch(/<img[^>]*height="1350"/);
   });
 
+  it('names the grade inside the <h1> and keeps the coloured tile out of the accessibility tree', async () => {
+    const html = await renderFrontDoor();
+    const heading = html.match(/<h1[\s>][\s\S]*?<\/h1>/)?.[0] ?? '';
+    expect(heading).toContain('Test Climb');
+    expect(heading).toContain('frontDoor.hero.gradeForSearch(grade=V5)');
+    expect(html).toMatch(/<span[^>]*aria-hidden="true"[^>]*><span[^>]*>V5<\/span><\/span>/);
+  });
+
+  it('loads the board image first: high fetch priority and never lazy', async () => {
+    const html = await renderFrontDoor();
+    const boardImage = html.match(/<img[^>]*\/api\/internal\/board-render[^>]*>/)?.[0] ?? '';
+    expect(boardImage).toMatch(/fetchPriority="high"|fetchpriority="high"/);
+    expect(boardImage).not.toMatch(/loading=/);
+  });
+
+  it('carries one hand-off link to the app', async () => {
+    const html = await renderFrontDoor();
+    expect(html.match(/href="https:\/\/app\.boardsesh\.com/g) ?? []).toHaveLength(1);
+  });
+
+  it('reads crumbs, title, board, call to action, then the details, in DOM order', async () => {
+    // The phone order. From md the CSS grid moves the board to a left column,
+    // but crawlers, screen readers and phones all get this sequence.
+    const html = await renderFrontDoor();
+    const positions = [
+      html.indexOf('aria-label="frontDoor.breadcrumb.aria"'),
+      html.indexOf('<h1'),
+      html.search(/<img[^>]*\/api\/internal\/board-render/),
+      html.indexOf('href="https://app.boardsesh.com'),
+      html.indexOf('<dl'),
+    ];
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((first, second) => first - second)).toEqual(positions);
+  });
+
+  it('prints the proof line from the current angle: sends, star and setter', async () => {
+    const html = await renderFrontDoor();
+    expect(html).toContain('sends(count=12,formattedCount=12)');
+    expect(html).toContain('frontDoor.hero.qualityAria(quality=4.2)');
+    expect(html).toContain('frontDoor.hero.boardAtAngle(board=Kilter Board Original,angle=40)');
+  });
+
+  it('agrees with the heading on quality: the facts list shows it only on the 1-5 scale', async () => {
+    expect(await renderFrontDoor()).toContain('frontDoor.facts.qualityValue(quality=4.2)');
+
+    // Aurora's raw 1-3 average: neither the star nor the facts list prints it.
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
+    ]);
+    const html = await renderFrontDoor();
+    expect(html).not.toContain('frontDoor.facts.qualityValue');
+    expect(html).not.toContain('frontDoor.hero.qualityAria');
+  });
+
   it('emits one board image for a board with no dark art', async () => {
     // Woods ships a `.dark.webp` sibling and gets a light/dark pair the theme picks between
     // (issue #4753). Every other board must keep its single image — pairing them would

@@ -38,11 +38,7 @@
       "description": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}. {{ascents}} Begehungen, Bewertung {{quality}} von 5. Beleuchte ihn mit Boardsesh auf deinem Board.",
       "imageAlt": "{{climbName}} - {{grade}} auf dem {{boardName}} Board",
       "fallbackTitle": "Boulder",
-      "fallbackDescription": "Boulder-Details und Beta-Videos ansehen",
-      "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "Boulder auf {{layoutName}} bei {{angle}}°",
-      "seoSetterSuffix": " gebaut von {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} Begehungen erfasst"
+      "fallbackDescription": "Boulder-Details und Beta-Videos ansehen"
     }
   },
   "list": {
@@ -952,7 +948,25 @@
       "board": "{{boardName}}",
       "list": "Boulder bei {{angle}}°"
     },
+    "hero": {
+      "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "{{board}}-Boulder ohne Namen",
+      "qualityAria": "Bewertet mit {{quality}} von 5",
+      "setBy": "geschraubt von {{setter}}",
+      "boardAtAngle": "{{board}} bei {{angle}}°"
+    },
     "boardImageAlt": "{{climbName}} beleuchtet am {{boardName}} {{layoutName}} bei {{angle}}°",
+    "legend": {
+      "aria": "Griffe dieses Boulders",
+      "start_one": "{{formattedCount}} Start",
+      "start_other": "{{formattedCount}} Start",
+      "hand_one": "{{formattedCount}} Hand",
+      "hand_other": "{{formattedCount}} Hand",
+      "finish_one": "{{formattedCount}} Top",
+      "finish_other": "{{formattedCount}} Top",
+      "foot_one": "{{formattedCount}} Fuß",
+      "foot_other": "{{formattedCount}} Fuß"
+    },
     "setterLink": "Mehr Boulder von {{setter}}",
     "facts": {
       "grade": "Grad",
