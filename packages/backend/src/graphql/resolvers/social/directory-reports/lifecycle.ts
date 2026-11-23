@@ -3,6 +3,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import type { BoardModerationActorRole, DirectoryReport, NewBoardModerationEvent } from '@boardsesh/db/schema';
 import type { DirectoryReportOutcome, DirectoryReportResolverRole } from '@boardsesh/directory-moderation';
 import { db } from '../../../../db/client';
+import { afterCommit } from '../../../../db/after-commit';
 import { captureBackendEvent } from '../../../../services/analytics/posthog';
 import { viewerGymManagerRole, communityActorRole } from '../board-moderation-events';
 import { getUserCommunityRoles } from '../roles';
@@ -31,12 +32,18 @@ import { sendDirectoryNotices, type PendingDirectoryNotice } from './notices';
 // | The board comes off a gym (staff or its creator)   | the board's reports at that gym | removed  |
 // | The board is deleted                               | every report on the board       | deleted  |
 // | Staff put a removed board back on their gym        | `relist_request` for that gym   | fixed    |
+// | `updateGym` changes the name, address or contacts  | `wrong_details` on the gym      | fixed    |
 // | The merge tool folds the board into another        | every report on the board       | merged   |
 // | `resolveDirectoryReport`                            | that report                     | its outcome |
 //
 // A timer-only edit (`updateBoard { boardUuid, timerName }`) changes no setup
 // field, so it closes nothing. Every close tells the reporters, and every staff
 // action on a climber's board tells its creator (notices.ts).
+//
+// The analytics events here are queued with `afterCommit` and sent once the
+// action's transaction commits, so an action that rolls back counts nothing.
+// Every transaction that reaches these hooks is opened with
+// `transactionWithAfterCommit`.
 
 /** `updateBoard` fields whose change fixes a "set up wrong" report. */
 export const REPORT_FIXING_BOARD_FIELDS: ReadonlySet<string> = new Set([
@@ -49,6 +56,20 @@ export const REPORT_FIXING_BOARD_FIELDS: ReadonlySet<string> = new Set([
   'locationName',
   'latitude',
   'longitude',
+]);
+
+/**
+ * `updateGym` fields whose change fixes a "wrong address or details" gym report:
+ * name, address, coordinates, website, phone and opening hours.
+ */
+export const REPORT_FIXING_GYM_FIELDS: ReadonlySet<string> = new Set([
+  'name',
+  'address',
+  'latitude',
+  'longitude',
+  'website',
+  'contactPhone',
+  'hours',
 ]);
 
 /** Spray wall mutations that are themselves a setup change: a new photo or hold set goes live. */
@@ -65,6 +86,8 @@ export type ReportResolution = {
 /**
  * Close every waiting report `where` selects, tell its reporters, and count it.
  * Reports already closed are left as they are, so every caller is idempotent.
+ * The count waits for the commit: open the caller's transaction with
+ * `transactionWithAfterCommit` (db/after-commit.ts).
  */
 export async function resolveWaitingReports(
   executor: DirectoryExecutor,
@@ -85,17 +108,20 @@ export async function resolveWaitingReports(
     .returning();
   if (resolved.length === 0) return [];
 
-  for (const report of resolved) {
-    captureBackendEvent('Board Report Resolved', {
-      properties: {
-        targetKind: report.targetKind,
-        reason: report.reason,
-        outcome: resolution.outcome,
-        resolvedBy: resolution.role,
-        hoursOpen: Math.round(((now.getTime() - report.createdAt.getTime()) / 3_600_000) * 10) / 10,
-      },
-    });
-  }
+  // Counted once the close commits, so a rolled-back action counts nothing.
+  afterCommit(executor, () => {
+    for (const report of resolved) {
+      captureBackendEvent('Board Report Resolved', {
+        properties: {
+          targetKind: report.targetKind,
+          reason: report.reason,
+          outcome: resolution.outcome,
+          resolvedBy: resolution.role,
+          hoursOpen: Math.round(((now.getTime() - report.createdAt.getTime()) / 3_600_000) * 10) / 10,
+        },
+      });
+    }
+  });
   await notifyReporters(executor, resolved, resolution.resolvedBy);
   return resolved;
 }
@@ -220,6 +246,35 @@ export async function onBoardEdited(
 }
 
 /**
+ * An edit to a gym's details (`updateGym`), in its transaction. One that
+ * changes a field in `REPORT_FIXING_GYM_FIELDS` closes the gym's "wrong address
+ * or details" reports as fixed. `changedFields` are the fields whose value
+ * actually changed; `actorRole` is the role the editor used
+ * (`resolveGymEditActorRole`): staff close it as gym staff, a community or
+ * global admin as admin.
+ */
+export async function onGymDetailsEdited(
+  executor: DirectoryExecutor,
+  input: {
+    gymId: number;
+    actorUserId: string;
+    actorRole: BoardModerationActorRole;
+    changedFields: readonly string[];
+  },
+): Promise<void> {
+  if (!input.changedFields.some((field) => REPORT_FIXING_GYM_FIELDS.has(field))) return;
+  await resolveWaitingReports(
+    executor,
+    and(
+      eq(dbSchema.directoryReports.targetKind, 'gym'),
+      eq(dbSchema.directoryReports.gymId, input.gymId),
+      eq(dbSchema.directoryReports.reason, 'wrong_details'),
+    )!,
+    { outcome: 'fixed', resolvedBy: input.actorUserId, role: resolverRoleForActor(input.actorRole) },
+  );
+}
+
+/**
  * A board was soft-deleted, by its creator or anyone else, in the caller's
  * transaction. Closes every report on it as deleted, tells the creator when
  * someone else deleted it, and counts the delete.
@@ -233,7 +288,9 @@ export async function onBoardDeleted(
   },
 ): Promise<void> {
   const { board, actorUserId, actorRole } = input;
-  captureBackendEvent('Board Deleted', { properties: { by: analyticsActorFor(actorRole) } });
+  afterCommit(executor, () =>
+    captureBackendEvent('Board Deleted', { properties: { by: analyticsActorFor(actorRole) } }),
+  );
   await resolveWaitingReports(executor, eq(dbSchema.directoryReports.boardId, board.id), {
     outcome: 'deleted',
     resolvedBy: actorUserId,
@@ -278,7 +335,9 @@ export async function onBoardModerationEvent(
   const target = { kind: 'board' as const, boardId: board.id, boardUuid: board.uuid, ownerId: board.ownerId };
 
   if (event.action === 'removed_from_gym') {
-    captureBackendEvent('Board Removed From Gym', { properties: { by: analyticsActorFor(event.actorRole) } });
+    afterCommit(executor, () =>
+      captureBackendEvent('Board Removed From Gym', { properties: { by: analyticsActorFor(event.actorRole) } }),
+    );
     if (event.gymId != null) {
       await resolveWaitingReports(
         executor,
@@ -337,6 +396,8 @@ export async function onBoardModerationEvent(
  * folded into `survivorBoardId`: every waiting report on the merged board, and
  * every "listed twice" report on the survivor that named the merged board,
  * closes as merged, and their reporters are told. Returns how many closed.
+ * Open that transaction with `transactionWithAfterCommit`, so the closes are
+ * counted once it commits.
  */
 export async function resolveReportsForMergedBoard(
   boardId: number,

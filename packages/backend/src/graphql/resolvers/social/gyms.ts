@@ -52,8 +52,11 @@ import {
   boardHeldOffGymError,
   isBoardHeldOffGym,
   recordOwnerGymLinkChange,
+  resolveGymEditActorRole,
   viewerGymManagerRole,
 } from './board-moderation-events';
+import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
 
 // ============================================
 // Helpers
@@ -1274,7 +1277,7 @@ export const socialGymMutations = {
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await db.transaction(async (tx) => {
+        await transactionWithAfterCommit(async (tx) => {
           const [lockedBoard] = await tx
             .select({ gymId: dbSchema.userBoards.gymId })
             .from(dbSchema.userBoards)
@@ -1400,7 +1403,29 @@ export const socialGymMutations = {
       updateValues.slug = validatedInput.slug;
     }
 
-    const [updated] = await db.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
+    // A change to the name, address, coordinates, website, phone or hours
+    // closes the gym's "wrong address or details" reports as fixed, in this
+    // transaction (docs/product/directory-reports.md). The manage form posts
+    // every field on every save, so only a value that actually changed counts:
+    // the row is read under its lock first and compared with what the update
+    // wrote.
+    const touchesReportedDetails = [...REPORT_FIXING_GYM_FIELDS].some(
+      (field) => validatedInput[field as keyof typeof validatedInput] !== undefined,
+    );
+    const updated = await transactionWithAfterCommit(async (tx) => {
+      const [before] = touchesReportedDetails
+        ? await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).limit(1).for('update')
+        : [];
+      const [row] = await tx.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
+      if (before && row) {
+        const previous: Record<string, unknown> = before;
+        const next: Record<string, unknown> = row;
+        const changedFields = [...REPORT_FIXING_GYM_FIELDS].filter((field) => previous[field] !== next[field]);
+        const actorRole = changedFields.length > 0 ? await resolveGymEditActorRole(gym, userId, tx) : null;
+        if (actorRole) await onGymDetailsEdited(tx, { gymId: gym.id, actorUserId: userId, actorRole, changedFields });
+      }
+      return row;
+    });
 
     // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
@@ -1696,7 +1721,7 @@ export const socialGymMutations = {
       : null;
     const nextGymId = gym?.id ?? null;
 
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // Decided again under the board's row lock, which `detachBoardFromGym`
       // also takes. A staff removal committing between the gate and this write
       // would otherwise be overwritten, hold and all.

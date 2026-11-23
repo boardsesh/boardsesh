@@ -25,6 +25,7 @@ import type { DirectoryReport } from '@boardsesh/db/schema';
 import { DIRECTORY_REPORT_SWEEP_QUEUE } from '@boardsesh/db/job-queue-schema';
 import { ESCALATE_AFTER_DAYS, REMINDER_AFTER_DAYS } from '@boardsesh/directory-moderation';
 import { db } from '../db/client';
+import { transactionWithAfterCommit } from '../db/after-commit';
 import { logger } from '../utils/logger';
 import { webPublicUrl } from '../utils/public-urls';
 import { ADMIN_DIGEST_MAX_ROWS, sendAdminDailyDigestEmail, type AdminDigestSection } from '../email/email-service';
@@ -89,7 +90,7 @@ async function closeReportsOnVanishedTargets(): Promise<number> {
       .where(and(waiting, condition))
       .limit(SWEEP_BATCH);
     if (due.length === 0) continue;
-    const resolved = await db.transaction((tx) =>
+    const resolved = await transactionWithAfterCommit((tx) =>
       resolveWaitingReports(
         tx,
         inArray(

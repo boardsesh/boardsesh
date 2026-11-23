@@ -173,10 +173,14 @@ export async function recordStaffBoardEdit(
 ): Promise<void> {
   const { actorUserId, board, mutation, fields } = input;
   // Any edit, the creator's included, may fix a "set up wrong" report.
-  await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole: input.actorRole });
-  if (board.ownerId === actorUserId) return;
-  if (fields !== undefined && fields.length === 0) return;
+  if (board.ownerId === actorUserId || (fields !== undefined && fields.length === 0)) {
+    await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole: input.actorRole });
+    return;
+  }
+  // The role first, before anything is written: one revoked since the edit gate
+  // refuses the edit here, and no report closes on it.
   const actorRole = input.actorRole ?? (await resolveBoardEditActorRole(actorUserId, board, executor));
+  await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole });
   const details: BoardModerationEventDetails = fields === undefined ? { mutation } : { mutation, fields };
   await recordBoardModerationEvent(executor, {
     boardId: board.id,
