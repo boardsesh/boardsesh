@@ -242,6 +242,11 @@
     "climbCount_one": "{{count}} bloque",
     "climbCount_other": "{{count}} bloques",
     "openInApp": "Escala esto en la app",
+    "subline": {
+      "boardPlaylist": "Playlist de {{board}}",
+      "multiBoardPlaylist": "Playlist de {{boards}}",
+      "gradeBand": "de {{low}} a {{high}}"
+    },
     "followerCount_one": "{{count}} seguidor",
     "followerCount_other": "{{count}} seguidores",
     "followFailed": "No se pudo actualizar el seguimiento",

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render as rtlRender, screen, fireEvent, type RenderOptions } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor, type RenderOptions } from '@testing-library/react';
 import React from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { APP_URL } from '@/app/lib/app-origin';
-import type { Playlist } from '@boardsesh/graphql/operations/playlists';
+import type { Playlist, PlaylistClimbsResult } from '@boardsesh/graphql/operations/playlists';
 import PlaylistDetailContent from '../playlist-detail-content';
 
 /**
@@ -106,9 +106,28 @@ function render(ui: React.ReactElement, options?: RenderOptions) {
   });
 }
 
-function renderDetail(playlist: Playlist = mockPlaylist) {
-  return render(<PlaylistDetailContent playlistUuid={playlist.uuid} initialPlaylist={playlist} initialMyBoards={[]} />);
+type DetailProps = React.ComponentProps<typeof PlaylistDetailContent>;
+
+function renderDetail(playlist: Playlist = mockPlaylist, props: Partial<DetailProps> = {}) {
+  return render(
+    <PlaylistDetailContent
+      playlistUuid={playlist.uuid}
+      locale="en-US"
+      initialPlaylist={playlist}
+      initialMyBoards={[]}
+      {...props}
+    />,
+  );
 }
+
+const firstPage = (climbs: Array<{ uuid: string; boardType?: string }>) =>
+  ({
+    climbs: climbs.map((climb) => ({ layoutId: 1, frames: 'p1r12', name: climb.uuid, ...climb })),
+    totalCount: climbs.length,
+    hasMore: false,
+  }) as unknown as PlaylistClimbsResult;
+
+const sublineText = (container: HTMLElement) => container.querySelector('h1 + p')?.textContent ?? '';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -145,6 +164,76 @@ describe('PlaylistDetailContent owner menu', () => {
     expect(screen.queryByText(tFromCatalog('playlists', 'detail.menu.edit'))).toBeNull();
     expect(screen.queryByText(/generate/i)).toBeNull();
   });
+
+  it.each([
+    ['a signed-in reader', 'viewer'],
+    ['a visitor', undefined],
+  ])('gives %s no ⋮ button: its only item is the owner’s Delete', async (_who, userRole) => {
+    const visitorPlaylist = { ...mockPlaylist, userRole } as Playlist;
+    mockExecuteGraphQL.mockResolvedValue({ playlist: visitorPlaylist });
+    renderDetail(visitorPlaylist);
+
+    // Let the client refetch settle, so the assertion covers the refreshed state too.
+    await waitFor(() => expect(mockExecuteGraphQL).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: tFromCatalog('playlists', 'detail.actions') })).toBeNull();
+    // Share stays: anyone can share a public playlist.
+    expect(screen.getByRole('button', { name: tFromCatalog('playlists', 'detail.share') })).toBeTruthy();
+  });
+});
+
+describe('PlaylistDetailContent cover', () => {
+  it('draws the first climbs’ art as the cover', () => {
+    renderDetail(mockPlaylist, {
+      initialClimbs: firstPage([{ uuid: 'a' }, { uuid: 'b' }, { uuid: 'c' }, { uuid: 'd' }]),
+    });
+
+    expect(screen.getByTestId('playlist-cover-mosaic')).toBeTruthy();
+    expect(screen.getAllByTestId('playlist-cover-cell')).toHaveLength(4);
+  });
+
+  it('keeps the icon tile for an empty playlist', () => {
+    renderDetail({ ...mockPlaylist, climbCount: 0 }, { initialClimbs: firstPage([]) });
+
+    expect(screen.queryByTestId('playlist-cover-mosaic')).toBeNull();
+  });
+});
+
+describe('PlaylistDetailContent subline', () => {
+  it('names the board, counts the climbs and prints the grade band', () => {
+    const { container } = renderDetail(mockPlaylist, { gradeSummary: { p10Difficulty: 10, p90Difficulty: 24 } });
+
+    expect(sublineText(container)).toBe('Kilter playlist12 climbsV0 to V8');
+  });
+
+  it('leaves the band out when the playlist has no grade summary', () => {
+    const { container } = renderDetail(mockPlaylist, { gradeSummary: null });
+
+    expect(sublineText(container)).toBe('Kilter playlist12 climbs');
+  });
+
+  it('prints one grade, not "V8 to V8", when both ends of the band match', () => {
+    const { container } = renderDetail(mockPlaylist, { gradeSummary: { p10Difficulty: 24, p90Difficulty: 25 } });
+
+    expect(sublineText(container)).toBe('Kilter playlist12 climbsV8');
+  });
+
+  it('says "1 climb" for a single climb', () => {
+    const { container } = renderDetail({ ...mockPlaylist, climbCount: 1 });
+
+    expect(sublineText(container)).toContain('1 climb');
+    expect(sublineText(container)).not.toContain('1 climbs');
+  });
+
+  it('names every board a mixed playlist spans, its own board first', () => {
+    const { container } = renderDetail(mockPlaylist, {
+      initialClimbs: firstPage([
+        { uuid: 'a', boardType: 'tension' },
+        { uuid: 'b', boardType: 'kilter' },
+      ]),
+    });
+
+    expect(sublineText(container)).toMatch(/^Kilter and Tension playlist/);
+  });
 });
 
 describe('PlaylistDetailContent surviving surfaces', () => {
@@ -161,6 +250,13 @@ describe('PlaylistDetailContent surviving surfaces', () => {
     expect(props).not.toHaveProperty('onClimbSelect');
     expect(props).not.toHaveProperty('selectedClimbUuid');
     expect(screen.getByTestId('multiboard-climb-list')).toBeTruthy();
+  });
+
+  it('ends a short list at its last row, with no empty band for a tab bar www does not have', () => {
+    mockAllClimbs = [{ uuid: 'climb-1', name: 'Test climb', angle: 40, boardType: 'kilter' }];
+    renderDetail();
+
+    expect(mockMultiboardProps.mock.calls[0]?.[0]).toMatchObject({ showBottomSpacer: false });
   });
 });
 

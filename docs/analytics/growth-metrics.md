@@ -106,9 +106,9 @@ observations labelled separately.
 
 A PostHog event says who sent it through two properties: `$lib` (which SDK) and
 `environment` (which build). Neither one is enough alone. `environment =
-production` covers native, www and backend events at once, and one www event
-(`Climb Handoff Clicked`) sets `environment = production-web` by hand. So every
-population filters on both.
+production` covers native, www and backend events at once, and two www events
+(`Climb Handoff Clicked`, `Playlist Handoff Clicked`) set `environment =
+production-web` by hand. So every population filters on both.
 
 | Population         | Filter                                                           | Notes                                                                                                                                  |
 | ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -461,6 +461,24 @@ excluded.
 
 Baseline from the 2026-09-20 audit (2026-08-23 to 2026-09-19 UTC): search to
 send 1,808/2,361 (76.6%); queue adoption 323/2,361 (13.7%).
+
+### www hand-offs to the app
+
+Two www buttons send a reader to the same page on app.boardsesh.com. Both are
+real links: the click handler only adds the event, and a same-tab click waits
+up to 250 ms for it to send before leaving.
+
+| Event | Where | Properties | Arrival event |
+| --- | --- | --- | --- |
+| `Climb Handoff Clicked` | Climb and board-list pages ("Climb this") | `environment: production-web`, `surface` (`climb_front_door`, `list_front_door`), `tree`, `boardName`, `layoutId`, `angle`, `climbUuid`, `locale`, `campaign: front_door` | `Board Route Handoff` |
+| `Playlist Handoff Clicked` | `/playlists/{uuid}` ("Climb this in the app") | `environment: production-web`, `surface: playlist_front_door`, `boardName` (the playlist's board), `layoutId` (null for a synced circuit), `isPublic`, `playlistUuid` (public playlists only), `locale`, `campaign: front_door` | None |
+
+The playlist hand-off opens the app's `/discover/{uuid}`, which fires no
+arrival event, so it has no completion rate. That is why it is its own event
+and not a third `surface` on `Climb Handoff Clicked`: in there it would lower
+the climb hand-off's `Board Route Handoff` ÷ `Climb Handoff Clicked` rate with
+clicks that can never arrive. It first fires with the deploy of the playlist
+page redesign; there is no earlier playlist hand-off data.
 
 ### Connect release watch (2.7)
 
@@ -1253,7 +1271,7 @@ an Instagram bio).
 `utm_campaign`, `utm_content`, `utm_term`, `gclid` (Google Ads), `fbclid` (Meta) and `rdt_cid` (Reddit Ads) off the landing URL, and
 `analytics.ts` sends whichever were present as plain event properties on
 `$pageview` and on every `track()` event (`App Install Click`, `Climb Handoff
-Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
+Clicked`, `Playlist Handoff Clicked`, the gym funnel). PostHog derives the session's `$entry_utm_source`
 from those; we do not set it ourselves.
 
 **Break www traffic down by the session property `$entry_utm_source` or by the

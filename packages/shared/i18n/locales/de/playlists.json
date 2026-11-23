@@ -242,6 +242,11 @@
     "climbCount_one": "{{count}} Boulder",
     "climbCount_other": "{{count}} Boulder",
     "openInApp": "Kletter das in der App",
+    "subline": {
+      "boardPlaylist": "{{board}}-Playlist",
+      "multiBoardPlaylist": "Playlist für {{boards}}",
+      "gradeBand": "{{low}} bis {{high}}"
+    },
     "followerCount_one": "{{count}} Follower",
     "followerCount_other": "{{count}} Follower",
     "followFailed": "Der Folgen-Status ließ sich nicht ändern",
