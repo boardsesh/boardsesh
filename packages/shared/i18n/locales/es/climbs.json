@@ -950,6 +950,7 @@
     },
     "hero": {
       "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "Bloque de {{board}} sin nombre",
       "qualityAria": "Valoración de {{quality}} sobre 5",
       "setBy": "creado por {{setter}}",
       "boardAtAngle": "{{board}} a {{angle}}°"

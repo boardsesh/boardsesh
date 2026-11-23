@@ -950,6 +950,7 @@
     },
     "hero": {
       "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "{{board}}-Boulder ohne Namen",
       "qualityAria": "Bewertet mit {{quality}} von 5",
       "setBy": "geschraubt von {{setter}}",
       "boardAtAngle": "{{board}} bei {{angle}}°"
@@ -957,14 +958,14 @@
     "boardImageAlt": "{{climbName}} beleuchtet am {{boardName}} {{layoutName}} bei {{angle}}°",
     "legend": {
       "aria": "Griffe dieses Boulders",
-      "start_one": "{{formattedCount}} Startgriff",
-      "start_other": "{{formattedCount}} Startgriffe",
-      "hand_one": "{{formattedCount}} Griff",
-      "hand_other": "{{formattedCount}} Griffe",
-      "finish_one": "{{formattedCount}} Topgriff",
-      "finish_other": "{{formattedCount}} Topgriffe",
-      "foot_one": "{{formattedCount}} Tritt",
-      "foot_other": "{{formattedCount}} Tritte"
+      "start_one": "{{formattedCount}} Start",
+      "start_other": "{{formattedCount}} Start",
+      "hand_one": "{{formattedCount}} Hand",
+      "hand_other": "{{formattedCount}} Hand",
+      "finish_one": "{{formattedCount}} Top",
+      "finish_other": "{{formattedCount}} Top",
+      "foot_one": "{{formattedCount}} Fuß",
+      "foot_other": "{{formattedCount}} Fuß"
     },
     "setterLink": "Mehr Boulder von {{setter}}",
     "facts": {

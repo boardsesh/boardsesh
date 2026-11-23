@@ -15,17 +15,18 @@ type HoldLegendProps = {
 const listSx = {
   display: 'flex',
   flexWrap: 'wrap' as const,
-  gap: { xs: '6px 14px', md: '6px 18px' },
+  rowGap: `${themeTokens.spacing[1]}px`,
+  columnGap: { xs: `${themeTokens.spacing[3]}px`, md: `${themeTokens.spacing[5]}px` },
   margin: 0,
   marginTop: `${themeTokens.spacing[3]}px`,
   paddingInline: `${themeTokens.spacing[1]}px`,
   listStyle: 'none',
-  fontSize: { xs: 13, md: themeTokens.typography.fontSize.sm },
+  fontSize: themeTokens.typography.fontSize.sm,
   color: 'var(--neutral-500)',
   '& b': { color: 'text.primary', fontWeight: themeTokens.typography.fontWeight.semibold },
 };
 
-const itemSx = { display: 'inline-flex', alignItems: 'center', gap: '7px' };
+const itemSx = { display: 'inline-flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px` };
 
 const COUNT_SLOT = 'count';
 
@@ -62,8 +63,10 @@ function roleLabel(t: TFunction, role: HoldLegendRole, count: number): string {
 
 /**
  * How many holds the climb lights in each role, under its board render. The
- * counts are the same union of frames the render draws, so the picture and the
- * legend agree. Renders nothing when the climb lights nothing it can count.
+ * counts are the same union of frames the render draws, and each entry's swatch
+ * is the colour its holds are drawn in, so the picture and the legend agree. A
+ * role drawn in two colours (Kilter's Tycho colour mode) gets two entries.
+ * Renders nothing when the climb lights nothing it can count.
  */
 export default async function HoldLegend({ board, frames }: HoldLegendProps) {
   const roles = summarizeHoldRoles(board, frames);
@@ -75,7 +78,7 @@ export default async function HoldLegend({ board, frames }: HoldLegendProps) {
   return (
     <Box component="ul" aria-label={t('frontDoor.legend.aria')} sx={listSx}>
       {roles.map(({ role, count, color }) => (
-        <Box component="li" key={role} sx={itemSx}>
+        <Box component="li" key={`${role}-${color}`} sx={itemSx}>
           <RoleShape role={role} color={color} />
           <span>{fillNodeSlot(roleLabel(t, role, count), COUNT_SLOT, <b>{numberFormat.format(count)}</b>)}</span>
         </Box>

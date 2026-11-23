@@ -10,7 +10,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { fillNodeSlot, nodeSlot } from '@/app/lib/i18n/node-slot';
-import { resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
@@ -29,7 +29,7 @@ type ClimbViewSeoFragmentProps = {
 const headerSx = {
   display: 'grid',
   gridTemplateColumns: 'minmax(0, 1fr) auto',
-  columnGap: { xs: '14px', md: `${themeTokens.spacing[6]}px` },
+  columnGap: { xs: `${themeTokens.spacing[3]}px`, md: `${themeTokens.spacing[6]}px` },
   alignItems: 'start',
 };
 
@@ -39,7 +39,8 @@ const headingSx = {
   gridRow: 1,
   alignSelf: { xs: 'center', md: 'start' },
   margin: 0,
-  overflowWrap: 'anywhere' as const,
+  // Breaks inside a word only when the word alone is wider than the column.
+  overflowWrap: 'break-word' as const,
 };
 
 const tileCellSx = { gridColumn: 2, gridRow: { xs: '1', md: '1 / span 3' }, display: 'flex' };
@@ -48,8 +49,8 @@ const lineSx = { gridColumn: { xs: '1 / -1', md: '1' }, margin: 0 };
 
 const proofSx = {
   ...lineSx,
-  marginTop: { xs: '10px', md: `${themeTokens.spacing[4]}px` },
-  fontSize: { xs: 15, md: 17 },
+  marginTop: { xs: `${themeTokens.spacing[3]}px`, md: `${themeTokens.spacing[4]}px` },
+  fontSize: { xs: themeTokens.typography.fontSize.base, md: themeTokens.typography.fontSize.lg },
   color: 'var(--neutral-800)',
   fontVariantNumeric: 'tabular-nums',
 };
@@ -61,12 +62,24 @@ const proofSeparatorSx = { color: 'var(--neutral-500)' };
 
 const starSx = { color: 'var(--color-amber)' };
 
-const setterLinkSx = { fontWeight: themeTokens.typography.fontWeight.semibold, overflowWrap: 'anywhere' as const };
+// A 44px tap target, like the facts list's setter link, that still sits in the
+// sentence at the line's own height: the negative block margins hand back
+// everything above one line (`1lh`), so the proof line doesn't grow.
+const setterLinkSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minWidth: 44,
+  minHeight: 44,
+  marginBlock: 'calc((1lh - 44px) / 2)',
+  maxWidth: '100%',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  overflowWrap: 'anywhere' as const,
+};
 
 const contextSx = {
   ...lineSx,
   marginTop: `${themeTokens.spacing[1]}px`,
-  fontSize: { xs: themeTokens.typography.fontSize.sm, md: 15 },
+  fontSize: { xs: themeTokens.typography.fontSize.sm, md: themeTokens.typography.fontSize.base },
   color: 'var(--neutral-500)',
 };
 
@@ -96,9 +109,11 @@ export default async function ClimbViewSeoFragment({
   currentAngleStats,
 }: ClimbViewSeoFragmentProps) {
   const { t, locale } = await getServerTranslation('climbs');
-  // Same fallback as `generateMetadata` and the breadcrumb, so an unnamed
-  // climb's heading names its board rather than opening on a bare grade.
-  const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
+  // An unnamed climb gets a translated "Unnamed Kilter climb" rather than
+  // opening on a bare grade. URLs and the breadcrumb keep
+  // `resolveClimbDisplayName`, which slugs need to stay stable.
+  const climbName =
+    climb.name?.trim() || t('frontDoor.hero.unnamedClimb', { board: formatBoardDisplayName(boardDetails.board_name) });
   const grade = climb.difficulty ? climbGradeForSearch(climb.difficulty) : '';
   const setter = climb.setter_username?.trim();
   // Typed as a number, but the row can carry Postgres's numeric string, and

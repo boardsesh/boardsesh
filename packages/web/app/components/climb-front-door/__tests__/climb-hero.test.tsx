@@ -2,8 +2,8 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
-import { getGradeColor, getGradeTextColor } from '@/app/lib/grade-colors';
-import GradeTile from '../grade-tile';
+import { getGradeColor } from '@/app/lib/grade-colors';
+import GradeTile, { gradeTileInk } from '../grade-tile';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 
@@ -104,9 +104,11 @@ describe('climb page heading', () => {
     expect(headingText(html)).toBe('Test ClimbfrontDoor.hero.gradeForSearch(grade=V5 (6c))');
   });
 
-  it('names an unnamed climb after its board instead of leading with the grade', async () => {
-    const html = await renderHero({ climb: { name: '' } });
-    expect(headingText(html)).toMatch(/^kilter Climb/);
+  it.each(['', '   '])('names an unnamed climb (%j) after its board, translated and capitalised', async (name) => {
+    const html = await renderHero({ climb: { name } });
+    expect(headingText(html)).toBe(
+      'frontDoor.hero.unnamedClimb(board=Kilter)frontDoor.hero.gradeForSearch(grade=V5 (6c))',
+    );
   });
 
   it('leaves the grade out of the heading for a climb without one', async () => {
@@ -123,7 +125,7 @@ describe('climb page heading', () => {
       sx: { bgcolor: string; color: string };
     }>;
     expect(tile.props.sx.bgcolor).toBe(getGradeColor('6c/V5'));
-    expect(tile.props.sx.color).toBe(getGradeTextColor(getGradeColor('6c/V5')));
+    expect(tile.props.sx.color).toBe(gradeTileInk(getGradeColor('6c/V5') ?? ''));
   });
 
   it('renders no tile for a climb with no V-grade', async () => {

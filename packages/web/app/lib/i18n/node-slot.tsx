@@ -15,16 +15,16 @@ export function nodeSlot(name: string): string {
 }
 
 /**
- * Put `node` where `nodeSlot(name)` landed in `translated`.
+ * Put `node` wherever `nodeSlot(name)` landed in `translated`, every time it
+ * landed: a translation is free to name the placeholder twice.
  *
  * A translation that dropped the placeholder still gets the node, after the
  * text, so a catalog slip can't silently delete a link. The catalog parity test
  * in `@boardsesh/i18n` fails such a translation first anyway.
  */
 export function fillNodeSlot(translated: string, name: string, node: React.ReactNode): React.ReactNode {
-  const slot = nodeSlot(name);
-  const slotIndex = translated.indexOf(slot);
-  if (slotIndex === -1) {
+  const textParts = translated.split(nodeSlot(name));
+  if (textParts.length === 1) {
     return (
       <>
         {translated} {node}
@@ -33,9 +33,13 @@ export function fillNodeSlot(translated: string, name: string, node: React.React
   }
   return (
     <>
-      {translated.slice(0, slotIndex)}
-      {node}
-      {translated.slice(slotIndex + slot.length)}
+      {textParts.map((textPart, index) => (
+        // The parts are positional and never reorder, so the index is the identity.
+        <React.Fragment key={index}>
+          {index > 0 ? node : null}
+          {textPart}
+        </React.Fragment>
+      ))}
     </>
   );
 }

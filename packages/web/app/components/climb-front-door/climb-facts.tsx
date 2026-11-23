@@ -7,12 +7,13 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
+import { normalizedQuality } from './normalized-quality';
 
 type ClimbFactsProps = {
   climb: Climb;
   boardDetails: BoardRouteIdentity;
   angle: number;
-  /** The row for the angle being viewed, when one exists — carries the FA. */
+  /** The row for the angle being viewed, when one exists — carries the FA and the quality. */
   currentAngleStats?: ClimbStatsForAngle;
 };
 
@@ -67,7 +68,10 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
   const { t, locale } = await getServerTranslation('climbs');
 
   const setter = climb.setter_username?.trim();
-  const quality = Number(climb.quality_average ?? 0);
+  // The same 1-5 rule as the heading's star and the structured data, so the
+  // page never shows an Aurora 1-3 average "out of 5" in one place and hides
+  // it in another.
+  const quality = normalizedQuality(currentAngleStats);
   const faUsername = currentAngleStats?.fa_username?.trim();
   const faDate = formatFirstAscentDate(currentAngleStats?.fa_at ?? null, locale);
   const boardLabel = climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name);
@@ -97,7 +101,13 @@ export default async function ClimbFacts({ climb, boardDetails, angle, currentAn
           {t('frontDoor.facts.quality')}
         </Box>
         <Box component="dd" sx={ddSx}>
-          {quality > 0 ? t('frontDoor.facts.qualityValue', { quality: quality.toFixed(1) }) : '—'}
+          {quality
+            ? t('frontDoor.facts.qualityValue', {
+                quality: new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
+                  quality.average,
+                ),
+              })
+            : '—'}
         </Box>
       </div>
 

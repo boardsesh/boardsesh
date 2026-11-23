@@ -950,6 +950,7 @@
     },
     "hero": {
       "gradeForSearch": "，{{grade}}",
+      "unnamedClimb": "未命名的 {{board}} 线路",
       "qualityAria": "评分 {{quality}}/5",
       "setBy": "由 {{setter}} 设定",
       "boardAtAngle": "{{angle}}° 下的 {{board}}"

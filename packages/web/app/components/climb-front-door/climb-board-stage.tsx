@@ -57,7 +57,7 @@ export default function ClimbBoardStage({
       {/* The frame is the dark field the render is drawn for, so the board reads
           as one wall rather than a picture on a card. */}
       <Box component="figure" className={styles.frame} sx={{ bgcolor: BOARD_FIELD_COLORS.dark }}>
-        {/* The ratio feeds the desktop height cap in the stylesheet. */}
+        {/* The ratio feeds the height cap in the stylesheet. */}
         <Box className={styles.art} sx={{ '--board-aspect-ratio': String(boardWidth / boardHeight) }}>
           {backgroundUrls.map((backgroundUrl) => (
             <React.Fragment key={backgroundUrl}>

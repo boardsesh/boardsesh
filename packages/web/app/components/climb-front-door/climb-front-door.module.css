@@ -61,7 +61,10 @@
 
 @media (min-width: 900px) {
   .hero {
-    grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+    /* The text column never drops under 360px: at 900px the board column
+       gives way (down to about 420px) instead of squeezing the name into a
+       sliver. From about 1100px the board gets its full 560px. */
+    grid-template-columns: minmax(0, 560px) minmax(360px, 1fr);
     /* The details row takes whatever height the board column needs beyond the
        title and call to action, so those two stay compact at the top. */
     grid-template-rows: auto auto 1fr;
@@ -86,5 +89,12 @@
 
   .cta {
     margin-top: var(--spacing-6);
+  }
+
+  /* index.css sizes every `main h1.MuiTypography-root` at 44px. Here the name
+     shares a 360px+ column with the grade tile, so it scales with the window
+     instead: 32px at 900px wide, 44px from about 1440px. */
+  .title :global(h1.MuiTypography-root) {
+    font-size: clamp(32px, calc(2.2vw + 12px), 44px);
   }
 }

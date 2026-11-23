@@ -303,6 +303,18 @@ describe('climb front door server HTML', () => {
     expect(html).toContain('frontDoor.hero.boardAtAngle(board=Kilter Board Original,angle=40)');
   });
 
+  it('agrees with the heading on quality: the facts list shows it only on the 1-5 scale', async () => {
+    expect(await renderFrontDoor()).toContain('frontDoor.facts.qualityValue(quality=4.2)');
+
+    // Aurora's raw 1-3 average: neither the star nor the facts list prints it.
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
+    ]);
+    const html = await renderFrontDoor();
+    expect(html).not.toContain('frontDoor.facts.qualityValue');
+    expect(html).not.toContain('frontDoor.hero.qualityAria');
+  });
+
   it('emits one board image for a board with no dark art', async () => {
     // Woods ships a `.dark.webp` sibling and gets a light/dark pair the theme picks between
     // (issue #4753). Every other board must keep its single image — pairing them would

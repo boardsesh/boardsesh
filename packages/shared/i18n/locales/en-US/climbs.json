@@ -950,6 +950,7 @@
     },
     "hero": {
       "gradeForSearch": ", {{grade}}",
+      "unnamedClimb": "Unnamed {{board}} climb",
       "qualityAria": "Rated {{quality}} out of 5",
       "setBy": "set by {{setter}}",
       "boardAtAngle": "{{board}} at {{angle}}°"
