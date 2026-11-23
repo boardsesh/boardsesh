@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '../config';
 
 const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'locales');
 
@@ -115,6 +116,9 @@ function loadStoreTexts(locale: Locale): CatalogEntry[] {
 // prose. Keep native/store conventions, literal controls and other locales intact.
 const ENGLISH_LITERAL_UI_KEYS = new Set(['help.spray.add.step1']);
 function isEnglishWebsiteCopy(entry: CatalogEntry, locale: string): boolean {
+  // Only English guide URLs are published. Other catalogs are identical copies
+  // for key parity, not localized product prose (asserted below).
+  if (entry.file === 'appGuides.json') return true;
   if (locale !== 'en-US') return false;
   if (entry.file === 'website.json') return true;
   if (entry.file === 'marketing.json') return !ENGLISH_LITERAL_UI_KEYS.has(entry.keyPath);
@@ -123,7 +127,12 @@ function isEnglishWebsiteCopy(entry: CatalogEntry, locale: string): boolean {
   return entry.file === 'climbs.json' && entry.keyPath.startsWith('spray.');
 }
 function hasWrongEnglishWebSpelling(entry: CatalogEntry): boolean {
-  return /\bspraywalls?\b|\bspray-walls?\b/i.test(entry.value);
+  // This guide quotes the actual native action before explaining it in prose.
+  const prose =
+    entry.file === 'appGuides.json' && entry.keyPath === 'pages.spray-wall-apps.workflow.reset.body'
+      ? entry.value.replace(/\bReset this Spraywall\b/, '')
+      : entry.value;
+  return /\bspraywalls?\b|\bspray-walls?\b/i.test(prose);
 }
 
 type TermRule = {
@@ -314,6 +323,29 @@ describe('spray wall term pins', () => {
 });
 
 describe('English website spray wall spelling', () => {
+  it('keeps unpublished app-guide catalogs identical to the English source', () => {
+    const english = JSON.parse(readFileSync(join(LOCALES_DIR, 'en-US', 'appGuides.json'), 'utf8'));
+    for (const locale of SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE)) {
+      expect(JSON.parse(readFileSync(join(LOCALES_DIR, locale, 'appGuides.json'), 'utf8'))).toEqual(english);
+    }
+  });
+
+  it('permits only the exact quoted reset action in the English guide', () => {
+    const fixture = {
+      file: 'appGuides.json',
+      keyPath: 'pages.spray-wall-apps.workflow.reset.body',
+      value: 'Choose Reset this Spraywall, then photograph your spray wall.',
+    };
+    expect(hasWrongEnglishWebSpelling(fixture)).toBe(false);
+    expect(hasWrongEnglishWebSpelling({ ...fixture, value: 'Choose Reset this Spraywalls.' })).toBe(true);
+    expect(hasWrongEnglishWebSpelling({ ...fixture, value: `${fixture.value} Your Spraywall remains.` })).toBe(true);
+    expect(hasWrongEnglishWebSpelling({ ...fixture, keyPath: 'pages.hub.intro' })).toBe(true);
+    const reset = loadStrings('en-US').find(
+      (entry) => entry.file === fixture.file && entry.keyPath === fixture.keyPath,
+    );
+    expect(reset?.value).toMatch(/\bReset this Spraywall\b/);
+  });
+
   it('keeps audited public prose in two words', () => {
     const offenders = loadStrings('en-US')
       .filter((entry) => isEnglishWebsiteCopy(entry, 'en-US'))
