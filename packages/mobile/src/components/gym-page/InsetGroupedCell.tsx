@@ -2,6 +2,7 @@ import { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { artRowTextStart, type ArtSize } from '../art-slot';
 import type { GroupedCellPosition } from './gym-page-view-model';
 
@@ -32,9 +33,10 @@ export const InsetGroupedCell = memo(function InsetGroupedCell({
   // The card's own surface: the elevated M3 card on Material, the grouped card elsewhere.
   const surfaceStyle = useMemo(
     () =>
-      variant === 'material'
-        ? { backgroundColor: m3.elevation.level1, borderColor: m3.outlineVariant }
-        : { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+      selectByVariant(variant, {
+        material: { backgroundColor: m3.elevation.level1, borderColor: m3.outlineVariant },
+        liquidGlass: { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+      }),
     [variant, m3.elevation.level1, m3.outlineVariant, systemColors.secondaryBackground, systemColors.separator],
   );
   const separatorStyle = useMemo(
