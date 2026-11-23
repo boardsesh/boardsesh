@@ -33,10 +33,13 @@
   align-items: center;
 }
 
+/* The current page: the label ink with a 2px foreground-violet underline. No
+   pill and no bar, so the header's one filled violet stays the page's CTA. */
 .nav a[aria-current='page'] {
   color: var(--neutral-900);
   text-decoration: underline;
   text-decoration-color: var(--color-primary);
+  text-decoration-thickness: 2px;
   text-underline-offset: 6px;
 }
 

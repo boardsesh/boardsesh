@@ -17,6 +17,25 @@ import { setOAuthPending } from '@/app/lib/oauth-pending-db';
 // Note: OAuth provider icons and button colors use brand-specific colors
 // per Google/Apple brand guidelines, not design system tokens
 
+/**
+ * The Apple button: a light fill with dark ink, per Apple's guidelines. It is an
+ * outlined Button, so the theme's hover rule for every non-contained button
+ * (`&:not(:disabled):not(.MuiButton-contained):hover`, the 8% state layer) would
+ * replace the light fill with a near-transparent wash and leave the dark label on
+ * the dark page, unreadable. The same selector here keeps a light ground on hover:
+ * one step down the label ramp, which the dark ink still reads on.
+ */
+export const APPLE_BUTTON_SX = {
+  backgroundColor: 'var(--neutral-900)',
+  color: 'var(--semantic-surface)',
+  borderColor: 'var(--neutral-900)',
+  '&:not(:disabled):not(.MuiButton-contained):hover': {
+    backgroundColor: 'var(--neutral-500)',
+    color: 'var(--semantic-surface)',
+    borderColor: 'var(--neutral-500)',
+  },
+} as const;
+
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16">
     <path
@@ -153,13 +172,6 @@ export default function SocialLoginButtons({
     return null;
   }
 
-  // Apple button needs custom colors per brand guidelines
-  const appleButtonStyles = {
-    backgroundColor: 'var(--neutral-900)',
-    color: 'var(--semantic-surface)',
-    borderColor: 'var(--neutral-900)',
-  };
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {showDivider && <Divider>{t('login.divider')}</Divider>}
@@ -185,7 +197,7 @@ export default function SocialLoginButtons({
           startIcon={<AppleIcon />}
           onClick={() => handleSocialSignIn('apple')}
           disabled={disabled || pending}
-          sx={appleButtonStyles}
+          sx={APPLE_BUTTON_SX}
         >
           {t('login.providers.apple')}
         </Button>

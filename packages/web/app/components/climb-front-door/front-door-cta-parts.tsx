@@ -70,8 +70,8 @@ const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large' });
 
 /**
  * The hover of a text button that looks filled. The theme gives every button
- * that is not `contained` a violet wash on hover (`mui-theme.ts`:
- * `:not(:disabled):not(.MuiButton-contained):hover`, and `.MuiButton-colorPrimary`
+ * that is not `contained` a hover wash (`mui-theme.ts`:
+ * `:not(:disabled):not(.MuiButton-contained):hover`, and `.MuiButton-textPrimary`
  * inside it for the text colour, specificity 0,5,0). This selector is 0,6,0, so
  * the fill wins whatever order the two rules land in.
  */

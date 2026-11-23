@@ -66,7 +66,7 @@ export default function HomePageContent({
           <MuiLink
             component={LocaleLink}
             href="/boards"
-            underline="hover"
+            underline="always"
             className={styles.heroEyebrow}
             sx={LINK_TARGET}
           >

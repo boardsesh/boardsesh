@@ -10,13 +10,16 @@ import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { PageCard } from '@/app/components/ui/page-shell';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import type { SupportCurrency, SupportPageOptions } from './support-links';
 import { trackSupportCta } from './support-analytics';
 import styles from './support.module.css';
 
 const MONTHLY_CTA_SX = brandCtaSx({ size: 'medium' });
 const ONCE_CTA_SX = brandCtaOutlinedSx({ size: 'medium' });
-const TOGGLE_SX = { textTransform: 'none', minHeight: 44, px: 2 } as const;
+// The theme draws both toggle states; the selected one also leads with a check,
+// its non-colour cue next to the tonal ground.
+const TOGGLE_SX = { textTransform: 'none', minHeight: 44, px: 2, gap: 0.5 } as const;
 
 type Cadence = 'monthly' | 'once';
 
@@ -71,9 +74,11 @@ export default function SupportChooser({ options, src }: SupportChooserProps) {
             }}
           >
             <ToggleButton value="monthly" sx={TOGGLE_SX}>
+              {cadence === 'monthly' && <SelectedCheck />}
               {t('support.chooser.monthly')}
             </ToggleButton>
             <ToggleButton value="once" sx={TOGGLE_SX}>
+              {cadence === 'once' && <SelectedCheck />}
               {t('support.chooser.once')}
             </ToggleButton>
           </ToggleButtonGroup>
@@ -90,6 +95,7 @@ export default function SupportChooser({ options, src }: SupportChooserProps) {
           >
             {options.currencies.map((code) => (
               <ToggleButton key={code} value={code} sx={TOGGLE_SX} data-testid={`support-currency-${code}`}>
+                {code === currency && <SelectedCheck />}
                 {currencyLabels[code]}
               </ToggleButton>
             ))}

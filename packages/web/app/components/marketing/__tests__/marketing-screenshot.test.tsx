@@ -65,6 +65,9 @@ describe('platform screenshot rendering', () => {
       'ios',
     );
     expect(screen.getByRole('button', { name: 'iOS' }).getAttribute('aria-pressed')).toBe('true');
+    // The check follows the selection: the non-colour cue next to the tonal ground.
+    expect(screen.getByRole('button', { name: 'iOS' }).querySelector('[data-selected-check]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Android' }).querySelector('[data-selected-check]')).toBeNull();
   });
 
   it('hides the desktop switch after detecting an iPad with a Macintosh user agent', () => {

@@ -8,9 +8,15 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection } from '@/app/components/ui/page-shell';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { fetchFacetCounts } from '@/app/gyms/directory-data';
 import { DIRECTORY_FACETS, FACET_BASE_PATHS } from '@/app/gyms/directory-facets';
 import { facetChipLabel } from '@/app/gyms/directory-copy';
+
+// The search is the only action in this home-page region, so it is the region's
+// one filled violet button; the facet chips and the directory link stay grey and
+// violet text respectively. 48px to sit level with the text field beside it.
+const SEARCH_SX = { ...brandCtaSx({ size: 'medium' }), minHeight: 48 };
 
 export default async function HomeGymSearch() {
   const [{ t, locale }, countsResult] = await Promise.all([getServerTranslation('marketing'), fetchFacetCounts()]);
@@ -41,7 +47,7 @@ export default async function HomeGymSearch() {
           placeholder={website('directorySearch')}
           sx={{ flex: '1 1 240px' }}
         />
-        <Button type="submit" variant="outlined" sx={{ minHeight: 48 }}>
+        <Button type="submit" variant="contained" sx={SEARCH_SX}>
           {website('directorySearch')}
         </Button>
       </Box>

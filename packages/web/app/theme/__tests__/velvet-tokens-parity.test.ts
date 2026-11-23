@@ -128,11 +128,6 @@ describe('index.css ↔ theme-config parity', () => {
     ['--home-accent-info-surface', themeTokens.colors.infoTint],
     ['--bs-text-brand-primary', themeTokens.text.brandPrimary],
     ['--bs-text-brand-muted', themeTokens.text.brandMuted],
-    ['--read-surface', themeTokens.read.surface],
-    ['--read-surface-raised', themeTokens.read.surfaceRaised],
-    ['--read-text', themeTokens.read.text],
-    ['--read-text-muted', themeTokens.read.textMuted],
-    ['--read-line', themeTokens.read.line],
   ];
 
   it.each(rows)('%s matches theme-config', (cssVar, value) => {
@@ -277,6 +272,60 @@ describe('MUI theme wires the foreground/fill split correctly', () => {
   });
 });
 
+/** A theme component's static `styleOverrides` slot, as a plain record for assertions. */
+function overrideSlot(component: string, slot: string): Record<string, unknown> {
+  const components = darkTheme.components as Record<string, { styleOverrides?: Record<string, unknown> } | undefined>;
+  const value = components[component]?.styleOverrides?.[slot];
+  if (typeof value !== 'object' || value === null) throw new Error(`${component}.${slot} is not a static override`);
+  return value as Record<string, unknown>;
+}
+
+describe('the theme spends violet on actions and state only', () => {
+  it('outlined primary buttons are the grey secondary: label ink and the control edge, on hover too', () => {
+    const outlined = overrideSlot('MuiButton', 'outlinedPrimary');
+    expect(outlined['--variant-outlinedColor']).toBe('var(--neutral-900)');
+    expect(outlined['--variant-outlinedBorder']).toBe('var(--control-border)');
+    expect(outlined.color).toBe('var(--neutral-900)');
+    expect(outlined.borderColor).toBe('var(--control-border)');
+    expect(outlined['@media (hover: hover)']).toEqual({
+      '&:hover': { '--variant-outlinedBorder': 'var(--control-border)' },
+    });
+  });
+
+  it('only a primary TEXT button (a text action) lifts its label to violet on hover', () => {
+    const hoverRule = overrideSlot('MuiButton', 'root')['&:not(:disabled):not(.MuiButton-contained):hover'] as Record<
+      string,
+      unknown
+    >;
+    expect(hoverRule['&.MuiButton-textPrimary']).toEqual({ color: 'var(--color-primary-hover)' });
+    expect(hoverRule).not.toHaveProperty('&.MuiButton-colorPrimary');
+  });
+
+  it('links are violet and always underlined, 3px below the baseline', () => {
+    expect(darkTheme.components?.MuiLink?.defaultProps?.underline).toBe('always');
+    expect(overrideSlot('MuiLink', 'root').textUnderlineOffset).toBe('3px');
+    expect(darkTheme.palette.primary.main).toBe(themeTokens.colors.primary);
+  });
+
+  it.each([
+    ['MuiToggleButton', '&.Mui-selected'],
+    ['MuiMenuItem', '&.Mui-selected, &.Mui-selected.Mui-focusVisible'],
+  ])('a selected %s is the tonal container with its own ink', (component, selector) => {
+    expect(overrideSlot(component, 'root')[selector]).toMatchObject({
+      color: 'var(--semantic-on-selected)',
+      backgroundColor: 'var(--semantic-selected)',
+    });
+  });
+
+  it('a resting toggle is a grey control, with its hover wash on pointer devices only', () => {
+    const toggle = overrideSlot('MuiToggleButton', 'root');
+    expect(toggle.color).toBe('var(--neutral-900)');
+    expect(toggle.borderColor).toBe('var(--control-border)');
+    expect(toggle['@media (hover: hover)']).toEqual({ '&:hover': { backgroundColor: 'var(--semantic-hover)' } });
+    expect(toggle).not.toHaveProperty('&:hover');
+  });
+});
+
 describe('Velvet typography ramp is pinned in px (the 16/14 coefficient does not inflate it)', () => {
   // Unpinned, MUI's coefficient (fontSize 16 / htmlFontSize 14) inflates every heading —
   // an unpinned h6 renders 22.86px. These assert the pinned px values survive theme build.
@@ -361,6 +410,19 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(themeTokens.semantic.onSelected, themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it.each([
+    ['background', themeTokens.semantic.background],
+    ['surface', themeTokens.semantic.surface],
+    ['surfaceElevated', themeTokens.semantic.surfaceElevated],
+    ['neutral[50]', themeTokens.neutral[50]],
+    ['neutral[100]', themeTokens.neutral[100]],
+    ['neutral[200]', themeTokens.neutral[200]],
+  ])('the grey secondary ink (outlined buttons, resting chips) clears AA on %s', (_name, ground) => {
+    // #EDEDED: 16.49:1 on the page down to 11.60:1 on neutral[200]. The outlined
+    // recipe and every resting chip and toggle draw their label in it.
+    expect(contrast(themeTokens.neutral[900], ground)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('secondary text clears AA on every surface step, up to neutral[200]', () => {
     // #B0B0B0: 8.90:1 on the page, 6.26:1 on containers.highest (the worst case).
     for (const ground of [
@@ -381,15 +443,18 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(themeTokens.neutral[400], themeTokens.neutral[200])).toBeLessThan(4.5);
   });
 
-  it.each(['surface', 'surfaceRaised'] as const)('every text colour on the help reading %s clears AA', (ground) => {
-    const backdrop = themeTokens.read[ground];
-    expect(contrast(themeTokens.read.text, backdrop)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(themeTokens.read.textMuted, backdrop)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(themeTokens.colors.primary, backdrop)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(themeTokens.colors.info, backdrop)).toBeGreaterThanOrEqual(4.5);
-    // Outlined controls on the reading surface use --control-border.
-    expect(contrast(themeTokens.semantic.controlBorder, backdrop)).toBeGreaterThanOrEqual(3);
-  });
+  it.each(['surface', 'surfaceRaised'] as const)(
+    'every text colour on the shared page tokens (/help %s) clears AA',
+    (ground) => {
+      const backdrop = ground === 'surface' ? themeTokens.semantic.background : themeTokens.semantic.surface;
+      expect(contrast(themeTokens.neutral[900], backdrop)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(themeTokens.neutral[500], backdrop)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(themeTokens.colors.primary, backdrop)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(themeTokens.colors.info, backdrop)).toBeGreaterThanOrEqual(4.5);
+      // Outlined controls on the reading surface use --control-border.
+      expect(contrast(themeTokens.semantic.controlBorder, backdrop)).toBeGreaterThanOrEqual(3);
+    },
+  );
 
   it.each([
     ['background', themeTokens.semantic.background],

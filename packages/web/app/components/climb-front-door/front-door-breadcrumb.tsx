@@ -6,6 +6,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
+import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorBreadcrumbProps = {
@@ -42,7 +43,9 @@ const listSx = {
 
 const separatorSx = { color: 'var(--neutral-500)' };
 
+// Grey crumbs that lift to the label ink with an underline on hover.
 const linkSx = {
+  ...quietLinkSx,
   display: 'inline-flex',
   alignItems: 'center',
   minWidth: 44,
@@ -97,7 +100,7 @@ export default async function FrontDoorBreadcrumb({
       {emitJsonLd ? <JsonLd data={breadcrumbJsonLd} /> : null}
       <Box component="ol" sx={listSx}>
         <li>
-          <MuiLink component={LocaleLink} href="/" underline="hover" color="inherit" sx={linkSx}>
+          <MuiLink component={LocaleLink} href="/" underline="hover" sx={linkSx}>
             {t('frontDoor.breadcrumb.home')}
           </MuiLink>
         </li>
@@ -111,7 +114,6 @@ export default async function FrontDoorBreadcrumb({
                 component={LocaleLink}
                 href={navigationBoardListUrl ?? boardListUrl}
                 underline="hover"
-                color="inherit"
                 sx={linkSx}
               >
                 {boardCrumbLabel}

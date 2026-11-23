@@ -43,12 +43,40 @@ describe('the board-type row', () => {
     expect(screen.queryByRole('link', { name: 'Spray wall' })).toBeNull();
   });
 
-  it('marks the selected board as pressed and links it back off', () => {
+  it('marks the selected board as current and links it back off', () => {
     renderFilters('all', { boardType: 'kilter' });
     const kilter = screen.getByRole('link', { name: 'Kilter' });
-    expect(kilter.getAttribute('aria-pressed')).toBe('true');
+    // A link carries aria-current, never aria-pressed (a button-only state).
+    expect(kilter.getAttribute('aria-current')).toBe('true');
+    expect(kilter.hasAttribute('aria-pressed')).toBe(false);
+    expect(screen.getByRole('link', { name: 'Tension' }).hasAttribute('aria-current')).toBe(false);
     // Toggling the only selected type off clears the filter rather than swapping it.
     expect(kilter.getAttribute('href')).toBe('/gyms');
+  });
+
+  it('gives only the selected board a check, hidden from assistive tech', () => {
+    // The tonal ground is 1.52:1 against the page, so the check is the non-colour
+    // cue; `aria-current` is what a screen reader hears, and the name stays "Kilter".
+    renderFilters('all', { boardType: 'kilter' });
+    const check = screen.getByRole('link', { name: 'Kilter' }).querySelector('[data-selected-check]');
+    expect(check).not.toBeNull();
+    expect(check?.getAttribute('aria-hidden')).toBe('true');
+    // MUI clones the Chip icon with its slot class, which carries the spacing.
+    expect(check?.classList.contains('MuiChip-icon')).toBe(true);
+    expect(screen.getByRole('link', { name: 'Tension' }).querySelector('[data-selected-check]')).toBeNull();
+  });
+});
+
+describe('the checkbox chips carry their own check', () => {
+  it('renders one hidden check per chip, next to the checkbox that announces the state', () => {
+    // The check follows `input:checked` in CSS, so every chip renders it and the
+    // recipe shows it only while checked.
+    renderFilters('all', { boardType: 'kilter' });
+    const angleChip = screen.getByText('40°').closest('label');
+    expect(angleChip?.querySelector('input[type="checkbox"]')).not.toBeNull();
+    const checks = angleChip?.querySelectorAll('[data-selected-check]');
+    expect(checks).toHaveLength(1);
+    expect(checks?.[0]?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 

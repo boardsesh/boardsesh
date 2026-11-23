@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import styles from './help-breadcrumb.module.css';
 
 /**
@@ -17,13 +18,13 @@ export default function HelpBreadcrumb({ current }: { current: string }) {
   const { t } = useTranslation('marketing');
   return (
     <Box component="nav" aria-label={t('help.nav.label')} className={styles.trail}>
-      <MuiLink component={LocaleLink} href="/" underline="hover" className={styles.crumb}>
+      <MuiLink component={LocaleLink} href="/" underline="hover" sx={quietLinkSx}>
         {t('help.nav.home')}
       </MuiLink>
       <Box component="span" aria-hidden="true" className={styles.divider}>
         ›
       </Box>
-      <MuiLink component={LocaleLink} href="/help" underline="hover" className={styles.crumb}>
+      <MuiLink component={LocaleLink} href="/help" underline="hover" sx={quietLinkSx}>
         {t('help.nav.help')}
       </MuiLink>
       <Box component="span" aria-hidden="true" className={styles.divider}>

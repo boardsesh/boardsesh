@@ -18,6 +18,7 @@ import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadat
 import { gymDirectoryIndexingEnabled } from '@/app/lib/seo/gym-directory-indexing';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageShell, StatePanel } from '@/app/components/ui/page-shell';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -373,7 +374,7 @@ function DirectoryBreadcrumb({
 }) {
   return (
     <Box component="nav" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-      <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+      <MuiLink component={LocaleLink} href="/" underline="hover" sx={quietLinkSx}>
         {homeLabel}
       </MuiLink>
       <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
@@ -384,12 +385,7 @@ function DirectoryBreadcrumb({
           {gymsLabel}
         </Box>
       ) : (
-        <MuiLink
-          component={LocaleLink}
-          href={FACET_BASE_PATHS.all}
-          underline="hover"
-          sx={{ color: 'var(--color-primary)' }}
-        >
+        <MuiLink component={LocaleLink} href={FACET_BASE_PATHS.all} underline="hover" sx={quietLinkSx}>
           {gymsLabel}
         </MuiLink>
       )}

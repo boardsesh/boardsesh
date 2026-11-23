@@ -136,7 +136,7 @@ export default function VerifyRequestContent() {
                 </>
               ) : (
                 <>
-                  <MailOutlined sx={{ fontSize: 48, color: 'var(--color-primary)', mx: 'auto' }} />
+                  <MailOutlined sx={{ fontSize: 48, color: 'var(--neutral-500)', mx: 'auto' }} />
                   <Typography variant="h3">{t('verifyRequest.title')}</Typography>
                   <Typography variant="body1" component="p" color="text.secondary">
                     {t('verifyRequest.description')}

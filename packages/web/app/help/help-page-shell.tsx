@@ -23,7 +23,7 @@ export type HelpPageShellProps = {
 
 /**
  * The frame every /help page sits in: a hero on the violet chrome, then the
- * guide's bands on the neutral reading surface (`--read-surface`).
+ * guide's bands on the page surface (`--semantic-background`).
  *
  * Help used the shared PageShell until the "Showcase" redesign. Its prose
  * measure and single column cannot hold a band that puts a phone beside the

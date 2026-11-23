@@ -62,6 +62,30 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
   (`hover`, `buttonHover`, `fillSubtle` / `fill` / `fillStrong`), and MUI `action.selected`
   (`selectedRow`) is the neutral fill: MUI paints it under every default filled `<Chip>`, a selected
   `PaginationItem` and the highlighted Autocomplete option, so it must never be violet.
+- **Where violet goes, and the recipes that keep it there.** Inline links and text actions
+  (`#9784FF`; MUI `Link` defaults to `underline="always"` with a 3px offset, because the underline,
+  not the hue, tells a link from body copy), ONE filled `#7855FF` CTA per region (`brandCtaSx`), the
+  focus ring, the tonal selected state, the current page's 2px underline in the header, on-states and
+  map pins. Everything else is grey:
+  - Secondary buttons: `brandCtaOutlinedSx` and MUI `variant="outlined"` primary are a transparent
+    pill with the `#EDEDED` label (weight 600 in the recipe), the `--control-border` edge and the
+    `--semantic-button-hover` layer on hover. Only a primary `variant="text"` button lifts to violet
+    on hover.
+  - Filter chips: `filterChipSx`, full pills (buttons are 10px, see below), 44px tall. Rest is transparent with the
+    `--control-border` edge and `#EDEDED` ink at weight 500. Selected is `--semantic-selected` with
+    `--semantic-on-selected` ink and a leading `SelectedCheck` (`components/ui/selected-check.tsx`);
+    no ring. The check is `aria-hidden`; the control announces the state, and which attribute
+    depends on what the element is: `aria-pressed` only on a real button (a toggle), `aria-current`
+    on a link (the board-type chips, the radius links once a place is picked, the current menu
+    locale), and a checkbox's own checked state on the narrower filter tiers.
+  - Toggles, segments, pagination and the current menu item: the theme gives `MuiToggleButton` and
+    `MuiMenuItem` the same tonal selected state, the gym directory pager draws it by hand, and the
+    public toggle groups (the gyms radius, the support cadence and currency, the iOS/Android preview
+    switch) and the language menu's current locale add the check. A toggle's hover wash is gated to
+    `(hover: hover)` so a tap on a phone does not leave it behind.
+  - Nav, footer and breadcrumb links: `#B0B0B0`, lifting to `#EDEDED` with an underline on hover
+    (`quietLinkSx` in `components/ui/quiet-link.ts` for breadcrumbs). The header's current page is
+    `#EDEDED` with a 2px `#9784FF` underline, never a pill or bar.
 - **Input fields.** The `--input-*` family in `index.css` (bg / bg-hover / bg-focused / text / placeholder
   / border / border-hover) is the source of truth for form fields; the MUI theme and the `.module.css`
   files both read it. Fields ride the raised Graphite surface (`semantic.inputSurface`, `#262626`), one
@@ -92,7 +116,7 @@ climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agn
 
 ## Public page frame
 
-Public pages share a 1136px content grid within the 1200px padded frame. Long copy uses a 720px reading measure aligned to the same left edge as the logo; compact screens use the shared 24px gutters (16px below 360px). PageShell owns page width and fixed-header clearance. Cards use surface and surfaceElevated, never the page root. Help and long-form reading surfaces may use the existing reading tokens (`--read-*`, due to fold into the Graphite ladder); marketing and directories use the background token.
+Public pages share a 1136px content grid within the 1200px padded frame. Long copy uses a 720px reading measure aligned to the same left edge as the logo; compact screens use the shared 24px gutters (16px below 360px). PageShell owns page width and fixed-header clearance. Cards use surface and surfaceElevated, never the page root. Help and long-form reading surfaces use the same page tokens as everything else (`--semantic-background`, `--semantic-surface`, `--neutral-900`, `--neutral-500`, `--neutral-200`); the separate `--read-*` set is gone.
 
 Display headings use the bundled Geist variable font through next/font/local. Its SIL Open Font License is adjacent to the font files. Body text retains the system font. H1 is 44px/32px, H2 30px/24px and the home Display is 64px/40px, with 1.1 heading line-height. Action controls keep at least 44px touch targets. Use the shared brand button recipes (`brandCtaSx`, `brandCtaOutlinedSx`); only the page's primary action is filled.
 

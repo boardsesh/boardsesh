@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { themeTokens } from '../theme-config';
 import { describe, expect, it } from 'vite-plus/test';
 
 function unreadableForegrounds(source: string): string[] {
@@ -31,5 +32,15 @@ describe('readable public foreground tokens', () => {
         unreadableForegrounds(readFileSync(filename, 'utf8')).map((foreground) => `${filename}: ${foreground}`),
       );
     expect(violations).toEqual([]);
+  });
+  it('keeps the retired /help reading tokens retired', () => {
+    const appRoot = [resolve(process.cwd(), 'packages/web/app'), resolve(process.cwd(), 'app')].find(existsSync);
+    if (!appRoot) throw new Error('Web app source not found');
+    expect(readFileSync(join(appRoot, 'components/index.css'), 'utf8')).not.toContain('--read-');
+    expect(Object.keys(themeTokens)).not.toContain('read');
+    const stragglers = sourceFiles(join(appRoot, 'help')).filter((filename) =>
+      readFileSync(filename, 'utf8').includes('--read-'),
+    );
+    expect(stragglers).toEqual([]);
   });
 });
