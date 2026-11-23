@@ -1,6 +1,6 @@
 {
   "boardsTitle": "你的训练板，也能用 Boardsesh",
-  "boardsLead": "找到你的训练板和布局，再找一面可以攀爬的岩壁。",
+  "boardsLead": "这些是你现在就能用的训练板。还有其他训练板？",
   "boardsDescription": "查看支持的攀爬训练板和布局，找到可以攀爬的岩馆。",
   "findGyms": "查找设有 {{board}} 的岩馆",
   "sprayLabel": "喷点墙",
@@ -49,5 +49,23 @@
   "previousLayouts": "上一个 {{board}} 布局",
   "nextLayouts": "下一个 {{board}} 布局",
   "boardLayoutAlt": "{{board}} 的 {{layout}} 岩点布局",
-  "sprayGalleryAlt": "布满岩点的喷点墙"
+  "sprayGalleryAlt": "布满岩点的喷点墙",
+  "boardsInvite": "告诉我们是哪一款",
+  "boardsAfterInvite": "，我们很乐意添加。",
+  "boardRequest": {
+    "title": "推荐训练板",
+    "private": "你的请求会私下发给 Boardsesh 团队。无需注册账号或提供邮箱。",
+    "board": "训练板或品牌名称",
+    "role": "我的身份",
+    "climber": "攀岩者",
+    "gym": "岩馆代表",
+    "maker": "训练板制造商",
+    "note": "补充说明（选填）",
+    "consent": "我同意 Boardsesh 就此请求通过邮件联系我。",
+    "email": "回复邮箱",
+    "send": "提交请求",
+    "sent": "谢谢，Boardsesh 团队已收到你的请求。",
+    "error": "未能提交请求，请重试。",
+    "rateLimited": "请求过多，请等一分钟后再试。"
+  }
 }

@@ -1,6 +1,6 @@
 {
   "boardsTitle": "Dein Board auf Boardsesh",
-  "boardsLead": "Finde dein Board und Layout und eine Halle zum Klettern.",
+  "boardsLead": "Auf diesen Boards kannst du heute klettern. Du nutzt ein anderes Board?",
   "boardsDescription": "Sieh dir die unterstützten Boards und Layouts an und finde Kletterhallen mit einem passenden Board.",
   "findGyms": "Finde eine Halle mit {{board}}",
   "sprayLabel": "Spraywall",
@@ -49,5 +49,23 @@
   "previousLayouts": "Vorherige {{board}}-Layouts",
   "nextLayouts": "Weitere {{board}}-Layouts",
   "boardLayoutAlt": "Griffanordnung {{layout}} am {{board}}",
-  "sprayGalleryAlt": "Spraywall mit Klettergriffen"
+  "sprayGalleryAlt": "Spraywall mit Klettergriffen",
+  "boardsInvite": "Sag uns, welches",
+  "boardsAfterInvite": ", und wir nehmen es gerne auf.",
+  "boardRequest": {
+    "title": "Board vorschlagen",
+    "private": "Deine Anfrage geht privat an das Boardsesh-Team. Du brauchst weder ein Konto noch eine E-Mail-Adresse.",
+    "board": "Board- oder Markenname",
+    "role": "Ich bin…",
+    "climber": "Kletterer*in",
+    "gym": "Vertreter*in einer Kletterhalle",
+    "maker": "Boardhersteller*in",
+    "note": "Weitere Angaben (optional)",
+    "consent": "Boardsesh darf mir zu dieser Anfrage eine E-Mail schreiben.",
+    "email": "E-Mail-Adresse für die Antwort",
+    "send": "Anfrage senden",
+    "sent": "Danke. Das Boardsesh-Team hat deine Anfrage erhalten.",
+    "error": "Deine Anfrage konnte nicht gesendet werden. Versuch es erneut.",
+    "rateLimited": "Zu viele Anfragen. Warte eine Minute und versuch es erneut."
+  }
 }

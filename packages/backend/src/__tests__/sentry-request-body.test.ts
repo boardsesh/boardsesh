@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as Sentry from '@sentry/node';
-import { CLOUDFLARE_ORIGIN_PROOF_HEADER, redactOriginProof } from '@boardsesh/consent/origin-proof';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from '@boardsesh/consent/origin-proof';
+import { privateFeedbackDiagnosticHooks } from '../lib/private-feedback-diagnostics';
 import { afterAll, describe, expect, it } from 'vite-plus/test';
 
 const secret = 'fixture-password-value';
@@ -20,9 +21,7 @@ describe('Sentry request bodies', () => {
       tracesSampleRate: 1,
       // The same option packages/backend/src/instrument.ts passes.
       integrations: [Sentry.requestDataIntegration({ include: { data: false } })],
-      beforeSend: redactOriginProof,
-      beforeSendTransaction: redactOriginProof,
-      beforeSendSpan: redactOriginProof,
+      ...privateFeedbackDiagnosticHooks,
       transport: () => ({
         send: async (envelope) => {
           for (const [, payload] of envelope[1] as unknown as Array<[unknown, Record<string, unknown>]>) {

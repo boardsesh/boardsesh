@@ -1,6 +1,6 @@
 {
   "boardsTitle": "Il tuo pannello, su Boardsesh",
-  "boardsLead": "Trova il tuo pannello e il layout, poi una parete su cui arrampicare.",
+  "boardsLead": "Ecco i pannelli su cui puoi scalare oggi. Ne usi un altro?",
   "boardsDescription": "Scopri i pannelli e i layout compatibili e trova palestre con una parete su cui arrampicare.",
   "findGyms": "Trova una palestra con {{board}}",
   "sprayLabel": "Spraywall",
@@ -49,5 +49,23 @@
   "previousLayouts": "Layout precedenti di {{board}}",
   "nextLayouts": "Layout successivi di {{board}}",
   "boardLayoutAlt": "Layout {{layout}} di {{board}}",
-  "sprayGalleryAlt": "Spraywall con prese"
+  "sprayGalleryAlt": "Spraywall con prese",
+  "boardsInvite": "Dicci quale",
+  "boardsAfterInvite": ", lo aggiungiamo volentieri.",
+  "boardRequest": {
+    "title": "Proponi un pannello",
+    "private": "La richiesta arriva in forma privata al team di Boardsesh. Puoi inviarla senza account né indirizzo email.",
+    "board": "Nome del pannello o della marca",
+    "role": "Chi sei?",
+    "climber": "Climber",
+    "gym": "Rappresentante di una palestra",
+    "maker": "Produttore di pannelli",
+    "note": "Altre informazioni (facoltative)",
+    "consent": "Boardsesh può scrivermi in merito a questa richiesta.",
+    "email": "Email per la risposta",
+    "send": "Invia la richiesta",
+    "sent": "Grazie. Il team di Boardsesh ha ricevuto la tua richiesta.",
+    "error": "Non è stato possibile inviare la richiesta. Riprova.",
+    "rateLimited": "Troppe richieste. Attendi un minuto e riprova."
+  }
 }

@@ -54,8 +54,8 @@
   "home": {
     "hero": {
       "title": "Votre session, bien organisée.",
-      "eyebrow": "Gratuit. Compatible avec des boards comme Kilter, Tension et MoonBoard.",
-      "subtitle": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe.",
+      "eyebrow": "Compatible avec Kilter, Tension, MoonBoard et tout Spraywall",
+      "subtitle": "Choisis un bloc, allume ses prises et partage la file d’attente avec ton groupe depuis vos téléphones. Tu utilises une autre board ?",
       "startClimbingAria": "Commencer à grimper dans l'appli",
       "startClimbingWeb": "Ouvrir dans votre navigateur",
       "ctaInstallIos": "App Store",
@@ -64,7 +64,8 @@
       "proof": "Ces 30 derniers jours, environ {{formattedClimbers}} grimpeurs ont utilisé Boardsesh pour allumer un bloc sur leur board {{formattedClimbs}} fois.",
       "tensionShotAlt": "Un bloc sur une board Tension dans Boardsesh",
       "moonboardShotAlt": "Un bloc sur une MoonBoard dans Boardsesh",
-      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board"
+      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
+      "boardsInvite": "On sera ravis de l’ajouter."
     },
     "cards": {},
     "gymCard": {
@@ -989,7 +990,8 @@
       "body1End": ".",
       "body2Start": "Boardsesh est open source. Vous pouvez voir exactement quelles données l'app collecte et comment elles sont traitées en lisant le code source sur ",
       "body2Link": "GitHub",
-      "body2End": "."
+      "body2End": ".",
+      "boardRequests": "Si tu proposes une board, son nom, ton rôle et les précisions éventuelles sont conservés dans notre boîte de réception privée. Si tu souhaites une réponse, nous gardons aussi l’adresse e-mail fournie à cet effet."
     },
     "choices": {
       "title": "Cookies et choix de confidentialité",

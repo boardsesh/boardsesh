@@ -1,4 +1,7 @@
 import type { AppFeedbackReport, ConnectionContext, FeedbackContextInput } from '@boardsesh/shared-schema';
+import { GraphQLError } from 'graphql';
+import { chargeBoardRequestAddress } from './board-request-limit';
+import { BoardRequestInputSchema } from '../../../validation/schemas/feedback';
 import { eq } from 'drizzle-orm';
 import { sendBugReportIssueEmail } from '@boardsesh/email';
 import { db } from '../../../db/client';
@@ -17,6 +20,35 @@ import { pubsub } from '../../../pubsub';
 import { enrichReleaseContext } from '../../../services/mobile-release-status';
 
 export const feedbackMutations = {
+  submitBoardRequest: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
+    await chargeBoardRequestAddress(ctx.trustedClientIp);
+    const parsed = BoardRequestInputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new GraphQLError('Invalid board request.', { extensions: { code: 'BAD_USER_INPUT' } });
+    }
+    const { boardName, role, note, email, contactConsent } = parsed.data;
+    // This private inbox has no GitHub mirror, release enrichment or outbound mail.
+    // Database driver errors can contain bound query parameters. Keep those out
+    // of GraphQL responses, logs and exception reporting.
+    try {
+      const [row] = await db
+        .insert(dbSchema.appFeedback)
+        .values({
+          source: 'board-request',
+          platform: 'web',
+          boardName,
+          comment: note || null,
+          contactConsent,
+          context: { boardRequest: email ? { role, email } : { role } },
+        })
+        .returning({ id: dbSchema.appFeedback.id });
+      if (row) return true;
+    } catch {
+      // Fall through to the same non-identifying error as an empty insert result.
+    }
+    throw new GraphQLError('Could not save board request.', { extensions: { code: 'BOARD_REQUEST_UNAVAILABLE' } });
+  },
+
   submitAppFeedback: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
     await applyRateLimit(ctx, 10, 'submitAppFeedback');
 
@@ -184,9 +216,9 @@ export const feedbackMutations = {
 function normalizeContext(input: FeedbackContextInput | null | undefined): FeedbackContext | null {
   if (!input) return null;
   const out: FeedbackContext = {};
-  for (const [k, v] of Object.entries(input) as Array<[keyof FeedbackContext, unknown]>) {
-    if (k !== 'releaseContext' && typeof v === 'string' && v.length > 0) {
-      out[k] = v;
+  for (const [field, text] of Object.entries(input) as Array<[keyof FeedbackContext, unknown]>) {
+    if (field !== 'releaseContext' && field !== 'boardRequest' && typeof text === 'string' && text.length > 0) {
+      out[field] = text;
     }
   }
   return Object.keys(out).length > 0 ? out : null;

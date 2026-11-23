@@ -393,6 +393,34 @@ describe('analytics wrapper', () => {
   });
 
   describe('inbound campaign (#6027)', () => {
+    it('captures only the private request role after consent and preserves normal attribution', async () => {
+      setWindowLocation(
+        'https://www.boardsesh.com/boards?utm_source=campaign&utm_medium=ad&utm_campaign=launch&utm_content=creative&utm_term=test&gclid=google&fbclid=meta&rdt_cid=reddit',
+      );
+      const consent = vi.spyOn(await import('../consent'), 'hasAnalyticsConsent').mockReturnValue(false);
+      try {
+        const analytics = await import('../analytics');
+        analytics.trackBoardRequestSubmitted('climber');
+        expect(mocks.posthog.capture).not.toHaveBeenCalled();
+        consent.mockReturnValue(true);
+        analytics.trackBoardRequestSubmitted('maker');
+        analytics.track('Normal journey', { role: 'climber' });
+        expect(mocks.posthog.capture).toHaveBeenCalledWith('Board Request Submitted', { role: 'maker' });
+        expect(mocks.posthog.capture).toHaveBeenCalledWith(
+          'Normal journey',
+          expect.objectContaining({
+            role: 'climber',
+            utm_source: 'campaign',
+            gclid: 'google',
+            fbclid: 'meta',
+            rdt_cid: 'reddit',
+          }),
+        );
+      } finally {
+        consent.mockRestore();
+      }
+    });
+
     it('puts the landing utm params and gclid on the pageview', async () => {
       setWindowLocation(
         'https://www.boardsesh.com/?utm_source=instagram&utm_medium=social&utm_campaign=spray-launch&utm_content=reel-1&utm_term=home+wall&gclid=Cj0KCQ',

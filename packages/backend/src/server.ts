@@ -1,4 +1,5 @@
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
+import { isPrivateFeedbackGet } from './lib/private-feedback-diagnostics';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertBrowserSessionModeConfiguration } from './auth/authority/browser-session-mode';
 import { assertAccountGuessLimitConfiguration } from './auth/password-guess-limit';
@@ -939,12 +940,16 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
           socketDestroyed: res.socket?.destroyed,
         })
       ) {
-        logger.info('Request aborted by client', { method: req.method, url: req.url });
+        logger.info('Request aborted by client', {
+          method: req.method,
+          url: isPrivateFeedbackGet(req.method, url) ? pathname : req.url,
+        });
         // An upstream reset carries the same codes, with the client still waiting.
         dropUnfinishedResponse(res);
         return;
       }
-      logger.error('Request handler error:', error);
+      if (isPrivateFeedbackGet(req.method, url)) logger.error('Private feedback HTTP request failed');
+      else logger.error('Request handler error:', error);
       if (res.headersSent) {
         dropUnfinishedResponse(res);
         return;

@@ -15,6 +15,7 @@ import { WebsiteJourneyLink } from '@/app/components/marketing/website-journey-l
 import { compatibilityBoardSelected } from '@boardsesh/analytics';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import BoardLayoutRail from './board-layout-rail';
+import BoardRequestForm from './board-request-form';
 import { getBoardGalleryLayouts } from './board-gallery';
 import styles from './boards-gallery.module.css';
 
@@ -31,7 +32,18 @@ export async function generateMetadata() {
 export default async function SupportedBoardsPage() {
   const [{ t, locale }, labels] = await Promise.all([getServerTranslation('website'), getStoreButtonLabels()]);
   return (
-    <PageShell title={t('boardsTitle')} lead={t('boardsLead')} width="wide">
+    <PageShell
+      title={t('boardsTitle')}
+      lead={
+        <>
+          {t('boardsLead')}
+          {locale === 'zh-CN' ? '' : ' '}
+          <MuiLink href="#request-board">{t('boardsInvite')}</MuiLink>
+          {t('boardsAfterInvite')}
+        </>
+      }
+      width="wide"
+    >
       <Box component="ul" role="list" className={styles.gallery}>
         {SUPPORTED_BOARDS.map((board) => {
           const layouts = board === 'spray' ? [] : getBoardGalleryLayouts(board);
@@ -118,6 +130,24 @@ export default async function SupportedBoardsPage() {
           );
         })}
       </Box>
+      <PageSection id="request-board" title={t('boardRequest.title')} lead={t('boardRequest.private')}>
+        <BoardRequestForm
+          labels={{
+            board: t('boardRequest.board'),
+            role: t('boardRequest.role'),
+            climber: t('boardRequest.climber'),
+            gym: t('boardRequest.gym'),
+            maker: t('boardRequest.maker'),
+            note: t('boardRequest.note'),
+            consent: t('boardRequest.consent'),
+            email: t('boardRequest.email'),
+            send: t('boardRequest.send'),
+            sent: t('boardRequest.sent'),
+            error: t('boardRequest.error'),
+            rateLimited: t('boardRequest.rateLimited'),
+          }}
+        />
+      </PageSection>
       <PageSection title={t('freeApp')}>
         <StoreInstallButtons placement="board-compat" labels={labels} align="start" />
         <MuiLink component={LocaleLink} href="/bring-your-logbook" className={styles.action}>

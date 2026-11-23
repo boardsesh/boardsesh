@@ -342,6 +342,42 @@ describe('WebSocket connection context client IP', () => {
       loggedErrors.mockRestore();
     }
   });
+  it('rejects private board requests before WebSocket parsing or resolver execution', async () => {
+    const privateNote = 'board-request-private-fixture';
+    const logged = vi.spyOn(logger, 'error');
+    const serverErrors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const document of [
+        {
+          query: 'mutation Board($input: BoardRequestInput!) { submitBoardRequest(input: $input) }',
+          variables: { input: { note: privateNote } },
+        },
+        { query: `mutation { submitBoardRequest(input: {note: "${privateNote}"` },
+      ]) {
+        const response = await sendBoardShareOperation(document);
+        expect(response).toContain('Board request could not be processed');
+        expect(response).not.toContain(privateNote);
+      }
+      expect(inspect([logged.mock.calls, serverErrors.mock.calls], { depth: 20 })).not.toContain(privateNote);
+    } finally {
+      logged.mockRestore();
+      serverErrors.mockRestore();
+    }
+  });
+  it('rejects private admin feedback search on WebSockets before document parsing', async () => {
+    const marker = 'private-admin-search-fixture';
+    const logged = vi.spyOn(logger, 'error');
+    try {
+      const response = await sendBoardShareOperation({
+        query: `query { adminAppFeedback(input: {search: "${marker}"`,
+      });
+      expect(response).toContain('Feedback reports could not be processed');
+      expect(response).not.toContain(marker);
+      expect(inspect(logged.mock.calls, { depth: 20 })).not.toContain(marker);
+    } finally {
+      logged.mockRestore();
+    }
+  });
   it.each([
     ['query', 'boardShareLinkPreview', '{ name }'],
     ['mutation', 'redeemBoardShareLink', '{ boardUuid slug }'],

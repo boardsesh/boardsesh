@@ -1,0 +1,46 @@
+[
+  {
+    "phase": "before",
+    "viewport": {
+      "width": 390,
+      "height": 664
+    },
+    "path": "/",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Board night, sorted."
+  },
+  {
+    "phase": "before",
+    "viewport": {
+      "width": 390,
+      "height": 664
+    },
+    "path": "/boards",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Boards Boardsesh works with"
+  },
+  {
+    "phase": "before",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "path": "/",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Board night, sorted."
+  },
+  {
+    "phase": "before",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "path": "/boards",
+    "status": 200,
+    "widthFit": true,
+    "h1": "Boards Boardsesh works with"
+  }
+]

@@ -78,7 +78,9 @@
       "ratings": "Bewertungen",
       "all": "Alle",
       "bug": "Bug",
-      "rating": "Bewertung"
+      "rating": "Bewertung",
+      "boardRequest": "Boardanfrage",
+      "boardRequests": "Boardanfragen"
     },
     "status": {
       "new": "Neu",
@@ -137,7 +139,8 @@
       "canaryYes": "Ja",
       "canaryNo": "Nein",
       "canaryUnknown": "Unbekannt",
-      "canaryCheckedAt": "Canary geprüft"
+      "canaryCheckedAt": "Canary geprüft",
+      "boardRequestRole": "Rolle"
     },
     "empty": "Kein Feedback passt zu diesen Filtern.",
     "error": "Das Feedback ließ sich nicht laden.",
@@ -169,6 +172,11 @@
       "reporter": "Konto-ID der meldenden Person",
       "needsReply": "Antwort ausstehend",
       "clearReporter": "Alle meldenden Personen anzeigen"
+    },
+    "boardRequestRoles": {
+      "climber": "Kletterer*in",
+      "gym": "Vertreter*in einer Kletterhalle",
+      "maker": "Boardhersteller*in"
     }
   },
   "retention": {

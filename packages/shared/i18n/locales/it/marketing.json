@@ -54,8 +54,8 @@
   "home": {
     "hero": {
       "title": "La tua sessione, ben organizzata.",
-      "eyebrow": "Gratis. Compatibile con pannelli come Kilter, Tension e MoonBoard.",
-      "subtitle": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo.",
+      "eyebrow": "Funziona con Kilter, Tension, MoonBoard e qualsiasi Spraywall",
+      "subtitle": "Trova un blocco, illuminalo in parete e gestisci la coda con il tuo gruppo dai vostri telefoni. Usi un altro pannello?",
       "startClimbingAria": "Inizia ad arrampicare nell'app",
       "startClimbingWeb": "Aprilo nel browser",
       "ctaInstallIos": "App Store",
@@ -64,7 +64,8 @@
       "proof": "Negli ultimi 30 giorni, circa {{formattedClimbers}} scalatori hanno usato Boardsesh per illuminare un blocco sul pannello {{formattedClimbs}} volte.",
       "tensionShotAlt": "Un blocco su un Tension Board in Boardsesh",
       "moonboardShotAlt": "Un blocco su una MoonBoard in Boardsesh",
-      "playShotAlt": "Un blocco aperto in Boardsesh con le prese illuminate sul pannello"
+      "playShotAlt": "Un blocco aperto in Boardsesh con le prese illuminate sul pannello",
+      "boardsInvite": "Lo aggiungiamo volentieri."
     },
     "cards": {},
     "gymCard": {
@@ -989,7 +990,8 @@
       "body1End": ".",
       "body2Start": "Boardsesh è open source. Puoi vedere esattamente quali dati raccoglie l'app e come vengono elaborati leggendo il codice sorgente su ",
       "body2Link": "GitHub",
-      "body2End": "."
+      "body2End": ".",
+      "boardRequests": "Se proponi un pannello, conserviamo il nome del pannello, il tuo ruolo e le eventuali note nella nostra casella privata. Se chiedi una risposta, conserviamo anche l’indirizzo email che ci fornisci per questa richiesta."
     },
     "choices": {
       "title": "Cookie e scelte sulla privacy",
