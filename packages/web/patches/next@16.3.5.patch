@@ -1,3 +1,29 @@
+diff --git a/dist/build/templates/app-page-runtime.js b/dist/build/templates/app-page-runtime.js
+index f1ab03f292340fe08b563990110ac0835d3415fb..ec36b1910a3b8e348a57f7e65cb3431f4e2b178d 100644
+--- a/dist/build/templates/app-page-runtime.js
++++ b/dist/build/templates/app-page-runtime.js
+@@ -595,7 +595,7 @@ function createAppPageEntrypoint({ tree, page, pathname, require: __next_app_req
+                         },
+                         waitUntil: ctx.waitUntil,
+                         onClose: (cb)=>{
+-                            res.on('close', cb);
++                            res.once('close', cb);
+                         },
+                         onAfterTaskError: ()=>{},
+                         onInstrumentationRequestError: (error, _request, errorContext, silenceLog)=>routeModule.onRequestError(req, error, errorContext, silenceLog, routerServerContext),
+diff --git a/dist/build/templates/app-route.js b/dist/build/templates/app-route.js
+index 7ee4a01f1e8268b47e2485fd1627fdedaf0bf8d2..9d4651b22bc7a214e2f0db22f22e11f6f57317fc 100644
+--- a/dist/build/templates/app-route.js
++++ b/dist/build/templates/app-route.js
+@@ -196,7 +196,7 @@ async function handler(req, res, ctx) {
+             staticPageGenerationTimeout: nextConfig.staticPageGenerationTimeout,
+             waitUntil: ctx.waitUntil,
+             onClose: (cb)=>{
+-                res.on('close', cb);
++                res.once('close', cb);
+             },
+             onAfterTaskError: undefined,
+             onInstrumentationRequestError: (error, _request, errorContext, silenceLog)=>routeModule.onRequestError(req, error, errorContext, silenceLog, routerServerContext)
 diff --git a/dist/compiled/next-server/server.runtime.prod.js b/dist/compiled/next-server/server.runtime.prod.js
 index a8485e4cfcede7dea36ed58f93cec99ad8e31c47..bd05307719fda2d9eda5ab327b1ca679fd198069 100644
 --- a/dist/compiled/next-server/server.runtime.prod.js
@@ -11,6 +37,32 @@ index a8485e4cfcede7dea36ed58f93cec99ad8e31c47..bd05307719fda2d9eda5ab327b1ca679
    
    export function middleware(request, event) {
      return NextResponse.redirect('/new-location')
+diff --git a/dist/esm/build/templates/app-page-runtime.js b/dist/esm/build/templates/app-page-runtime.js
+index 1970588724b6e4880f27a8be60ca32ae6437bc28..f9bc98e7122c6f70bc04f8baeb8e7abb84bdd3c7 100644
+--- a/dist/esm/build/templates/app-page-runtime.js
++++ b/dist/esm/build/templates/app-page-runtime.js
+@@ -610,7 +610,7 @@ export function createAppPageEntrypoint({ tree, page, pathname, require: __next_
+                         },
+                         waitUntil: ctx.waitUntil,
+                         onClose: (cb)=>{
+-                            res.on('close', cb);
++                            res.once('close', cb);
+                         },
+                         onAfterTaskError: ()=>{},
+                         onInstrumentationRequestError: (error, _request, errorContext, silenceLog)=>routeModule.onRequestError(req, error, errorContext, silenceLog, routerServerContext),
+diff --git a/dist/esm/build/templates/app-route.js b/dist/esm/build/templates/app-route.js
+index 96e2e5853b063ff30b109f105f7ea17867f2d6b0..4fdd685d195920d7be2906f892bdeae9c3d05280 100644
+--- a/dist/esm/build/templates/app-route.js
++++ b/dist/esm/build/templates/app-route.js
+@@ -159,7 +159,7 @@ export async function handler(req, res, ctx) {
+             staticPageGenerationTimeout: nextConfig.staticPageGenerationTimeout,
+             waitUntil: ctx.waitUntil,
+             onClose: (cb)=>{
+-                res.on('close', cb);
++                res.once('close', cb);
+             },
+             onAfterTaskError: undefined,
+             onInstrumentationRequestError: (error, _request, errorContext, silenceLog)=>routeModule.onRequestError(req, error, errorContext, silenceLog, routerServerContext)
 diff --git a/dist/esm/server/base-http/node.js b/dist/esm/server/base-http/node.js
 index fd7515f5f765c83e072193f0f989ae4999d13503..8e775d91db09972fd192d01d4e27d012ef32da6c 100644
 --- a/dist/esm/server/base-http/node.js
