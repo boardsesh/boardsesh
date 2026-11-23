@@ -73,6 +73,7 @@ import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
 import { placeQueries } from './social/places';
 import { gymActivityStatsMutations } from './social/gym-activity-stats';
+import { setterSitemapMutations } from './social/setter-sitemap';
 import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
@@ -229,6 +230,7 @@ export const resolvers = {
     ...adminBoardMutations,
     ...socialGymMutations,
     ...gymActivityStatsMutations,
+    ...setterSitemapMutations,
     ...socialGymStrayBoardMutations,
     ...socialGymKioskMutations,
     ...socialGymClaimMutations,

@@ -258,6 +258,17 @@ against the installed package before retiring the patch. Keep web-only patches
 under `packages/web/patches`; the mobile fingerprint hashes the root `patches`
 directory.
 
+The Flight stream helper also backports [Next's client-abort fix](https://github.com/vercel/next.js/pull/96715).
+It registers a one-shot close callback before React pipes into the destination,
+and aborts an unfinished render with the `ResponseAborted` cancellation reason.
+Next's existing error handler recognizes that reason and leaves genuine render
+errors reportable. The bundled runtimes create the same named error locally,
+because their existing `ResponseAborted` class lives in a separate closure;
+this avoids adding a dependency outside the standalone bundle. Both module
+formats and every bundled App Router runtime carry the fix. The installed-package
+regression test uses real React Flight rendering and loopback HTTP disconnects,
+and verifies that pending components stop rendering after cancellation.
+
 During the 2026-11-23 incident, Railway retained
 five `FATAL ERROR: ... JavaScript heap out of memory` messages. Node 22's unset
 heap setting resolved to approximately 1,956 MiB, and the pre-crash GC output

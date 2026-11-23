@@ -15,6 +15,7 @@ import { boardEntitiesTypeDefs } from './board-entities';
 import { gymsTypeDefs } from './gyms';
 import { gymKiosksTypeDefs } from './gym-kiosks';
 import { gymActivityStatsTypeDefs } from './gym-activity-stats';
+import { setterSitemapTypeDefs } from './setter-sitemap';
 import { notificationsTypeDefs } from './notifications';
 import { proposalsTypeDefs } from './proposals';
 import { socialTypeDefs } from './social';
@@ -72,6 +73,7 @@ export const typeDefs = [
   gymsTypeDefs,
   gymKiosksTypeDefs,
   gymActivityStatsTypeDefs,
+  setterSitemapTypeDefs,
   notificationsTypeDefs,
   proposalsTypeDefs,
   socialTypeDefs,

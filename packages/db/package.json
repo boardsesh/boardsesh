@@ -115,6 +115,11 @@
       "types": "./src/credential-writer-acl.ts",
       "import": "./src/credential-writer-acl.ts",
       "default": "./src/credential-writer-acl.ts"
+    },
+    "./queries/sitemap": {
+      "types": "./src/queries/sitemap/index.ts",
+      "import": "./src/queries/sitemap/index.ts",
+      "default": "./src/queries/sitemap/index.ts"
     }
   },
   "scripts": {
@@ -166,6 +171,7 @@
     "@boardsesh/board-look": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
+    "@boardsesh/play-view": "workspace:*",
     "@boardsesh/playlist-generator": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",

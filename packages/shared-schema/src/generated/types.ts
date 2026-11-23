@@ -5291,6 +5291,8 @@ export type Mutation = {
   redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
   refreshGymActivityStats: GymActivityStatsRefreshResult;
+  /** HTTP cron credentials only. Force bypasses freshness, never validation or locking. */
+  refreshSetterSitemapSummary: SetterSitemapSummaryRefreshResult;
   /**
    * Rebuild a pack from scratch: back to `queued` with the generation counter
    * bumped, the same licence id and the same output key, so the new zip replaces
@@ -6214,6 +6216,11 @@ export type MutationRedeemBoardShareLinkArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationRefreshGymActivityStatsArgs = {
+  force?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRefreshSetterSitemapSummaryArgs = {
   force?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -11543,6 +11550,17 @@ export type SetterSearchResult = {
   username: Scalars['String']['output'];
 };
 
+/** The persisted setters sitemap summary, or the previous summary when skipped. */
+export type SetterSitemapSummaryRefreshResult = {
+  __typename?: 'SetterSitemapSummaryRefreshResult';
+  computedAt?: Maybe<Scalars['String']['output']>;
+  itemCount?: Maybe<Scalars['Int']['output']>;
+  lastModified?: Maybe<Scalars['String']['output']>;
+  refreshed: Scalars['Boolean']['output'];
+  /** fresh or locked; null when the summary was refreshed. */
+  skipped?: Maybe<Scalars['String']['output']>;
+};
+
 /**
  * A setter username paired with the number of climbs they've authored
  * for a given board configuration. Angle-independent everywhere but Woods,
@@ -14410,6 +14428,7 @@ export type ResolversTypes = ResolversObject<{
   SetterProfile: ResolverTypeWrapper<SetterProfile>;
   SetterProfileInput: SetterProfileInput;
   SetterSearchResult: ResolverTypeWrapper<SetterSearchResult>;
+  SetterSitemapSummaryRefreshResult: ResolverTypeWrapper<SetterSitemapSummaryRefreshResult>;
   SetterStat: ResolverTypeWrapper<SetterStat>;
   SetterStatsInput: SetterStatsInput;
   SimilarClimb: ResolverTypeWrapper<SimilarClimb>;
@@ -14993,6 +15012,7 @@ export type ResolversParentTypes = ResolversObject<{
   SetterProfile: SetterProfile;
   SetterProfileInput: SetterProfileInput;
   SetterSearchResult: SetterSearchResult;
+  SetterSitemapSummaryRefreshResult: SetterSitemapSummaryRefreshResult;
   SetterStat: SetterStat;
   SetterStatsInput: SetterStatsInput;
   SimilarClimb: SimilarClimb;
@@ -18134,6 +18154,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRefreshGymActivityStatsArgs, 'force'>
   >;
+  refreshSetterSitemapSummary?: Resolver<
+    ResolversTypes['SetterSitemapSummaryRefreshResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRefreshSetterSitemapSummaryArgs, 'force'>
+  >;
   regenerateCncPack?: Resolver<
     ResolversTypes['CncOrder'],
     ParentType,
@@ -21250,6 +21276,19 @@ export type SetterSearchResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SetterSitemapSummaryRefreshResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SetterSitemapSummaryRefreshResult'] =
+    ResolversParentTypes['SetterSitemapSummaryRefreshResult'],
+> = ResolversObject<{
+  computedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  itemCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  lastModified?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  refreshed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  skipped?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SetterStatResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SetterStat'] = ResolversParentTypes['SetterStat'],
@@ -22539,6 +22578,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SetterClimbsConnection?: SetterClimbsConnectionResolvers<ContextType>;
   SetterProfile?: SetterProfileResolvers<ContextType>;
   SetterSearchResult?: SetterSearchResultResolvers<ContextType>;
+  SetterSitemapSummaryRefreshResult?: SetterSitemapSummaryRefreshResultResolvers<ContextType>;
   SetterStat?: SetterStatResolvers<ContextType>;
   SimilarClimb?: SimilarClimbResolvers<ContextType>;
   SimilarGym?: SimilarGymResolvers<ContextType>;

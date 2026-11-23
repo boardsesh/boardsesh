@@ -51,6 +51,11 @@ export type SitemapShard = {
    */
   expectsUrls: boolean;
   /**
+   * Warn when an otherwise valid build is empty. Defaults to true; disable
+   * only for surfaces deliberately withheld from the index.
+   */
+  warnWhenEmpty?: boolean;
+  /**
    * How this shard's items become `<url>` entries. Defaults to `all-locales`,
    * which is W-22's original behaviour and stays right for `static`: `/about`,
    * `/legal` and `/docs` are genuinely translated content, so each locale is its
@@ -93,13 +98,11 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
   {
     id: 'build-plans',
     path: '/sitemaps/build-plans.xml',
-    // Empty while the `cnc-packs` flag is off, which is the state this shard
-    // ships in: there is no shop to advertise until the manufacturing licence
-    // clears its legal review. That is a declared-empty shard like gyms and
-    // setters, not a builder that broke, so it must answer an empty
-    // `<urlset>` rather than 503. It starts publishing on the flag flip, with
-    // no deploy — see `build-plans-entries.ts`.
+    // Both public CNC routes remain noindex pending the manufacturing licence
+    // review, even when their access flag is enabled. Their intentionally empty
+    // shard answers an empty `<urlset>` and stays out of the index quietly.
     expectsUrls: false,
+    warnWhenEmpty: false,
     build: () => buildBuildPlansEntries(),
   },
 ];
@@ -830,7 +833,7 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
       return;
     }
     if (outcome.value === null) {
-      emptyShards.push(shard.id);
+      if (shard.warnWhenEmpty !== false) emptyShards.push(shard.id);
       return;
     }
     entries.push(outcome.value);
