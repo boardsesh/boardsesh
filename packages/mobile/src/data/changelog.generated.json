@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-23T09:02:33.210Z",
+  "generatedAt": "2026-11-23T09:55:48.877Z",
   "entries": [
+    {
+      "prNumber": 8018,
+      "category": "fixed",
+      "title": "Browse climbs and log sends with your mouse and keyboard.",
+      "mergedAt": "2026-11-23T09:39:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8018",
+      "body": "Browser forms open within reach, without dragging to expand them."
+    },
+    {
+      "prNumber": 8017,
+      "category": "fixed",
+      "title": "Find climbing venues in the gym directory without personal home walls in the results.",
+      "mergedAt": "2026-11-23T09:22:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8017"
+    },
+    {
+      "prNumber": 7906,
+      "category": "fixed",
+      "title": "Find your board by its real layout, then find a wall.",
+      "mergedAt": "2026-11-23T09:16:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7906"
+    },
     {
       "prNumber": 7831,
       "category": "fixed",

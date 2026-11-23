@@ -12,6 +12,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Browse climbs and log sends with your mouse and keyboard. ([#8018](https://github.com/boardsesh/boardsesh/pull/8018))
+  Browser forms open within reach, without dragging to expand them.
+- Find climbing venues in the gym directory without personal home walls in the results. ([#8017](https://github.com/boardsesh/boardsesh/pull/8017))
+- Find your board by its real layout, then find a wall. ([#7906](https://github.com/boardsesh/boardsesh/pull/7906))
 - Choose whether each partner workout block moves on after a fall or waits until you send. ([#7831](https://github.com/boardsesh/boardsesh/pull/7831))
 - Climb lists and climb pages on boardsesh.com no longer get stuck on "page not found" after a hiccup ([#8027](https://github.com/boardsesh/boardsesh/pull/8027))
 
