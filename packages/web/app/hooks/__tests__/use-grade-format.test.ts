@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useGradeFormat } from '../use-grade-format';
 
-const mockGetFormat = vi.fn().mockResolvedValue('v-grade' as 'v-grade' | 'font');
+const mockGetFormat = vi.fn().mockResolvedValue('v-grade' as 'v-grade' | 'font' | null);
+let mockLanguage = 'en-US';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ i18n: { language: mockLanguage } }),
+}));
 const mockSetFormat = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/app/lib/user-preferences-db', () => ({
@@ -18,6 +23,7 @@ vi.mock('@/app/lib/grade-colors', () => ({
 describe('useGradeFormat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLanguage = 'en-US';
     mockGetFormat.mockResolvedValue('v-grade');
     mockSetFormat.mockResolvedValue(undefined);
   });
@@ -153,6 +159,30 @@ describe('useGradeFormat', () => {
     });
 
     // Falls back to default v-grade
+    expect(result.current.gradeFormat).toBe('v-grade');
+  });
+
+  it('defaults Spanish and French pages to Font when nothing is picked', async () => {
+    mockGetFormat.mockResolvedValue(null);
+    mockLanguage = 'fr';
+
+    const { result } = renderHook(() => useGradeFormat());
+
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+    expect(result.current.gradeFormat).toBe('font');
+  });
+
+  it('keeps a picked V-grade on a Spanish page', async () => {
+    mockGetFormat.mockResolvedValue('v-grade');
+    mockLanguage = 'es';
+
+    const { result } = renderHook(() => useGradeFormat());
+
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
     expect(result.current.gradeFormat).toBe('v-grade');
   });
 });
