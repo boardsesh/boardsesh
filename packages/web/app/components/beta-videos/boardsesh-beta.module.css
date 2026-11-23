@@ -46,17 +46,6 @@
   cursor: pointer;
 }
 
-/* Sits inside .thumbnailWrapper, so it takes the elevated surface rather than
-   the same fill — the icon needs the step up to read. */
-.thumbnailPlaceholder {
-  width: 100%;
-  height: 100%;
-  background: var(--semantic-surface-elevated);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .thumbnailWrapper {
   position: relative;
   aspect-ratio: 9 / 16;
@@ -159,4 +148,144 @@
   min-height: 44px;
   padding: var(--spacing-3);
   color: var(--color-primary);
+}
+
+/* ---- Grid layout (the climb page) ----
+   Two cards a row from md. Below md the list becomes a snap scroller that runs
+   to the screen edges, so the next card peeks in and says "there is more". */
+.section[data-layout='grid'] {
+  padding: 0;
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-3);
+}
+
+.gridItem {
+  min-width: 0;
+}
+
+.gridCard {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The elevated surface keeps every label here at 4.5:1 or better (the violet
+   "Watch the beta" measures 4.84:1 on it). */
+.gridCard:hover {
+  background: var(--semantic-surface-elevated);
+}
+
+/* With no thumbnail this gradient is the whole frame: the play tile. */
+.gridThumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 9 / 14;
+  background: linear-gradient(160deg, var(--neutral-200), var(--neutral-50));
+}
+
+.playMark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--border-radius-full);
+  background: var(--overlay-dark);
+  color: var(--color-on-primary);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+}
+
+.gridText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+  padding: var(--spacing-4) var(--spacing-3) var(--spacing-3);
+}
+
+.gridHandle {
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gridPlatform {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+}
+
+.gridWatch {
+  margin-top: auto;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.gridSkeleton {
+  width: 100%;
+  height: 152px;
+}
+
+@media (min-width: 900px) {
+  .grid:not([data-expanded]) .gridItem[data-beyond-preview] {
+    display: none;
+  }
+}
+
+@media (max-width: 899.98px) {
+  .grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--separator) transparent;
+    /* Out to the screen edges through the page gutter, with the first card
+       still lined up with the text above. The block padding leaves room for
+       a focus ring the scroller would otherwise clip. */
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding: var(--spacing-1) var(--page-gutter);
+    scroll-padding-inline: var(--page-gutter);
+  }
+
+  .gridItem {
+    flex: 0 0 148px;
+    scroll-snap-align: start;
+  }
+
+  .gridCard {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .gridText {
+    padding: var(--spacing-2) var(--spacing-3) var(--spacing-3);
+  }
+
+  .gridWatch {
+    display: none;
+  }
+
+  .gridSkeleton {
+    height: 280px;
+  }
 }

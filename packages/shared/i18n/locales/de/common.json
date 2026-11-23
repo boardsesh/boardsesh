@@ -1223,7 +1223,9 @@
     "empty": "Noch keine Beta-Videos",
     "openClimb": "{{climb}} und seine Beta ansehen",
     "openVideo": "Beta von {{creator}} auf {{platform}} ansehen",
-    "watchOn": "Beta auf {{platform}} ansehen"
+    "watchOn": "Beta auf {{platform}} ansehen",
+    "watch": "Beta ansehen",
+    "showAll": "Alle {{total}} Videos zeigen"
   },
   "ascents": {
     "deleteTitle": "Begehung löschen",

@@ -969,32 +969,46 @@
     },
     "setterLink": "Más bloques de {{setter}}",
     "facts": {
-      "grade": "Grado",
       "setter": "Setter",
-      "ascents": "Encadenes",
-      "quality": "Calidad",
-      "angle": "Ángulo",
       "board": "Plafón",
       "firstAscent": "Primer encadene",
       "firstAscentUnknown": "Sin registrar",
       "unknown": "Desconocido",
       "angleValue": "{{angle}}°",
-      "qualityValue": "{{quality}} de 5",
-      "firstAscentValue": "{{setter}}, {{date}}"
+      "firstAscentValue": "{{setter}}, {{date}}",
+      "qualityAtAngle": "Calidad a {{angle}}°"
     },
     "setterNotes": {
       "heading": "Notas del setter"
     },
+    "about": {
+      "heading": "Sobre este bloque",
+      "intro": "{{climbName}} es un {{grade}} en el {{board}} a {{angle}}°.",
+      "introWithSetter": "{{climbName}} es un {{grade}} en el {{board}} a {{angle}}°, creado por {{setter}}.",
+      "introUngraded": "{{climbName}} es un bloque en el {{board}} a {{angle}}°.",
+      "introUngradedWithSetter": "{{climbName}} es un bloque en el {{board}} a {{angle}}°, creado por {{setter}}.",
+      "firstAscent": "{{climber}} hizo el primer encadene el {{date}}.",
+      "gradeRange": "Se escala como {{easiest}} a {{easiestAngle}}° y como {{hardest}} a {{hardestAngle}}°.",
+      "sendsHere_one": "{{formattedCount}} encadene registrado en este ángulo.",
+      "sendsHere_other": "{{formattedCount}} encadenes registrados en este ángulo."
+    },
     "angles": {
-      "heading": "El mismo bloque en otros ángulos",
-      "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — estás aquí",
-      "all": "Todos los ángulos"
+      "heading": "Grados en cada ángulo",
+      "colAngle": "Ángulo",
+      "colGrade": "Grado",
+      "colSends": "Encadenes",
+      "colQuality": "Calidad",
+      "thisPage": "esta página",
+      "notRated": "Sin valorar",
+      "total_one": "{{formattedCount}} encadene registrado en {{angleCount}} ángulos",
+      "total_other": "{{formattedCount}} encadenes registrados en {{angleCount}} ángulos"
     },
     "beta": {
       "heading": "Vídeos de beta",
       "empty": "Todavía nadie ha grabado beta.",
-      "unavailable": "La beta no cargó esta vez. Recarga la página para volver a intentarlo."
+      "unavailable": "La beta no cargó esta vez. Recarga la página para volver a intentarlo.",
+      "headingCount_one": "Beta · {{count}} vídeo",
+      "headingCount_other": "Beta · {{count}} vídeos"
     },
     "community": {
       "heading": "Comunidad"

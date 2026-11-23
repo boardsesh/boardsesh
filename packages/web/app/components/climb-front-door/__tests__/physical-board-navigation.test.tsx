@@ -3,12 +3,12 @@ import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { BoardDetails } from '@/app/lib/types';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import AngleCrossLinks from '../angle-cross-links';
+import AngleTable from '../angle-table';
 import FrontDoorBreadcrumb from '../front-door-breadcrumb';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: async () => ({ t: (key: string) => key }),
+  getServerTranslation: async () => ({ t: (key: string) => key, locale: 'en-US' }),
 }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
@@ -17,7 +17,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 describe('physical board front-door navigation', () => {
   it('keeps angle changes on the named board', async () => {
     const html = renderToString(
-      await AngleCrossLinks({
+      await AngleTable({
         boardDetails: { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] } as BoardDetails,
         boardSlug: 'gym #1',
         climbUuid: 'CLIMB123',
@@ -31,7 +31,7 @@ describe('physical board front-door navigation', () => {
     );
     expect(html).toContain('href="/b/gym%20%231/25/view/test-climb-CLIMB123"');
     expect(html).not.toContain('href="/b/gym%20%231/40/');
-    expect(html).toContain('aria-current="page"');
+    expect(html).toMatch(/<table[\s\S]*<tr[^>]*aria-current="page"[\s\S]*<\/table>/);
   });
 
   it('keeps the visible breadcrumb on the named board without changing canonical schema', async () => {

@@ -969,32 +969,46 @@
     },
     "setterLink": "Altri blocchi di {{setter}}",
     "facts": {
-      "grade": "Grado",
       "setter": "Tracciatore",
-      "ascents": "Ripetizioni",
-      "quality": "Qualità",
-      "angle": "Inclinazione",
       "board": "Pannello",
       "firstAscent": "Prima salita",
       "firstAscentUnknown": "Non registrata",
       "unknown": "Sconosciuto",
       "angleValue": "{{angle}}°",
-      "qualityValue": "{{quality}} su 5",
-      "firstAscentValue": "{{setter}}, {{date}}"
+      "firstAscentValue": "{{setter}}, {{date}}",
+      "qualityAtAngle": "Qualità a {{angle}}°"
     },
     "setterNotes": {
       "heading": "Note del tracciatore"
     },
+    "about": {
+      "heading": "Su questo blocco",
+      "intro": "{{climbName}} è un {{grade}} sul pannello {{board}} a {{angle}}°.",
+      "introWithSetter": "{{climbName}} è un {{grade}} sul pannello {{board}} a {{angle}}°, tracciato da {{setter}}.",
+      "introUngraded": "{{climbName}} è un blocco sul pannello {{board}} a {{angle}}°.",
+      "introUngradedWithSetter": "{{climbName}} è un blocco sul pannello {{board}} a {{angle}}°, tracciato da {{setter}}.",
+      "firstAscent": "{{climber}} ha fatto la prima salita il {{date}}.",
+      "gradeRange": "Vale {{easiest}} a {{easiestAngle}}° e {{hardest}} a {{hardestAngle}}°.",
+      "sendsHere_one": "{{formattedCount}} ripetizione registrata a questa inclinazione.",
+      "sendsHere_other": "{{formattedCount}} ripetizioni registrate a questa inclinazione."
+    },
     "angles": {
-      "heading": "Stesso blocco, altre inclinazioni",
-      "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — sei qui",
-      "all": "Tutte le inclinazioni"
+      "heading": "Gradi a ogni inclinazione",
+      "colAngle": "Inclinazione",
+      "colGrade": "Grado",
+      "colSends": "Ripetizioni",
+      "colQuality": "Qualità",
+      "thisPage": "questa pagina",
+      "notRated": "Non valutato",
+      "total_one": "{{formattedCount}} ripetizione registrata su {{angleCount}} inclinazioni",
+      "total_other": "{{formattedCount}} ripetizioni registrate su {{angleCount}} inclinazioni"
     },
     "beta": {
       "heading": "Video della beta",
       "empty": "Ancora nessuna beta filmata.",
-      "unavailable": "Questa volta la beta non si è caricata. Ricarica la pagina per riprovare."
+      "unavailable": "Questa volta la beta non si è caricata. Ricarica la pagina per riprovare.",
+      "headingCount_one": "Beta · {{count}} video",
+      "headingCount_other": "Beta · {{count}} video"
     },
     "community": {
       "heading": "Community"

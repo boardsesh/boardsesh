@@ -969,32 +969,46 @@
     },
     "setterLink": "More climbs from {{setter}}",
     "facts": {
-      "grade": "Grade",
       "setter": "Setter",
-      "ascents": "Sends",
-      "quality": "Quality",
-      "angle": "Angle",
       "board": "Board",
       "firstAscent": "First ascent",
       "firstAscentUnknown": "Not recorded",
       "unknown": "Unknown",
       "angleValue": "{{angle}}°",
-      "qualityValue": "{{quality}} out of 5",
-      "firstAscentValue": "{{setter}}, {{date}}"
+      "firstAscentValue": "{{setter}}, {{date}}",
+      "qualityAtAngle": "Quality at {{angle}}°"
     },
     "setterNotes": {
       "heading": "Setter's notes"
     },
+    "about": {
+      "heading": "About this climb",
+      "intro": "{{climbName}} is a {{grade}} on the {{board}} at {{angle}}°.",
+      "introWithSetter": "{{climbName}} is a {{grade}} on the {{board}} at {{angle}}°, set by {{setter}}.",
+      "introUngraded": "{{climbName}} is a climb on the {{board}} at {{angle}}°.",
+      "introUngradedWithSetter": "{{climbName}} is a climb on the {{board}} at {{angle}}°, set by {{setter}}.",
+      "firstAscent": "{{climber}} made the first ascent on {{date}}.",
+      "gradeRange": "It climbs as {{easiest}} at {{easiestAngle}}° and {{hardest}} at {{hardestAngle}}°.",
+      "sendsHere_one": "{{formattedCount}} send logged at this angle.",
+      "sendsHere_other": "{{formattedCount}} sends logged at this angle."
+    },
     "angles": {
-      "heading": "Same climb, other angles",
-      "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — you are here",
-      "all": "All angles"
+      "heading": "Grades at every angle",
+      "colAngle": "Angle",
+      "colGrade": "Grade",
+      "colSends": "Sends",
+      "colQuality": "Quality",
+      "thisPage": "this page",
+      "notRated": "Not rated",
+      "total_one": "{{formattedCount}} send logged across {{angleCount}} angles",
+      "total_other": "{{formattedCount}} sends logged across {{angleCount}} angles"
     },
     "beta": {
       "heading": "Beta videos",
       "empty": "No beta filmed yet.",
-      "unavailable": "Beta didn't load this time. Reload the page to try again."
+      "unavailable": "Beta didn't load this time. Reload the page to try again.",
+      "headingCount_one": "Beta · {{count}} video",
+      "headingCount_other": "Beta · {{count}} videos"
     },
     "community": {
       "heading": "Community"

@@ -71,8 +71,14 @@
   margin-top: var(--spacing-4);
 }
 
+/* The details column is a stack of sections (angle table, about, setter's
+   notes, beta) with one rhythm between them. */
 .details {
   grid-area: details;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-10);
+  margin-top: var(--spacing-10);
 }
 
 @media (min-width: 900px) {
@@ -105,6 +111,11 @@
 
   .cta {
     margin-top: var(--spacing-6);
+  }
+
+  .details {
+    gap: var(--spacing-12);
+    margin-top: var(--spacing-12);
   }
 
   /* index.css sizes every `main h1.MuiTypography-root` at 44px. Here the name

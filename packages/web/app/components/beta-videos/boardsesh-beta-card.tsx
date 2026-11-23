@@ -5,12 +5,12 @@ import { useTranslation } from 'react-i18next';
 import Instagram from '@mui/icons-material/Instagram';
 import { track } from '@/app/lib/analytics';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
-import { isInstagramUrl, isTikTokUrl } from '@/app/lib/beta-video-url';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { betaLinkPlatform } from './beta-link-platform';
 import TikTokIcon from './tiktok-icon';
 import styles from './boardsesh-beta.module.css';
 
-type BoardseshBetaCardSource = 'home' | 'drawer' | 'profile';
+export type BoardseshBetaCardSource = 'home' | 'drawer' | 'profile';
 
 type BoardseshBetaCardProps = {
   link: BetaLink;
@@ -55,16 +55,8 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
     if (image?.complete && image.naturalWidth === 0) setThumbnailFailed(true);
   }, []);
   const thumbnailSrc = !thumbnailFailed ? link.thumbnail : null;
-  const isTikTok = isTikTokUrl(link.link);
-  const isInstagram = !isTikTok && isInstagramUrl(link.link);
-  const PlatformIcon = isTikTok ? TikTokIcon : Instagram;
-  const displayPlatform = isTikTok ? 'TikTok' : 'Instagram';
-  let analyticsPlatform: 'TikTok' | 'Instagram' | 'Unknown' = 'Unknown';
-  if (isTikTok) {
-    analyticsPlatform = 'TikTok';
-  } else if (isInstagram) {
-    analyticsPlatform = 'Instagram';
-  }
+  const { displayPlatform, analyticsPlatform } = betaLinkPlatform(link.link);
+  const PlatformIcon = displayPlatform === 'TikTok' ? TikTokIcon : Instagram;
 
   const climbLabel = climbName?.trim() ? climbName : null;
   const climbHrefEffective = climbLabel && climbHref ? climbHref : null;
@@ -115,22 +107,16 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
             })
           }
         >
-          {thumbnailSrc ? (
-            <img
-              ref={checkThumbnail}
-              src={thumbnailSrc}
-              alt={`Beta by ${link.foreign_username || 'unknown'}`}
-              className={styles.thumbnail}
-              loading={priority ? 'eager' : 'lazy'}
-              fetchPriority={priority ? 'high' : undefined}
-              referrerPolicy="no-referrer"
-              onError={() => setThumbnailFailed(true)}
-            />
-          ) : (
-            <div className={styles.thumbnailPlaceholder}>
-              <PlatformIcon sx={{ fontSize: 28, color: 'var(--neutral-400)' }} />
-            </div>
-          )}
+          <img
+            ref={checkThumbnail}
+            src={thumbnailSrc}
+            alt={`Beta by ${link.foreign_username || 'unknown'}`}
+            className={styles.thumbnail}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : undefined}
+            referrerPolicy="no-referrer"
+            onError={() => setThumbnailFailed(true)}
+          />
           <span className={styles.platformBadge} aria-label={`From ${displayPlatform}`}>
             <PlatformIcon sx={{ fontSize: 12 }} />
           </span>

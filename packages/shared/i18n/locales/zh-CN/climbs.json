@@ -969,32 +969,46 @@
     },
     "setterLink": "{{setter}} 的更多线路",
     "facts": {
-      "grade": "难度",
       "setter": "定线员",
-      "ascents": "完攀",
-      "quality": "质量",
-      "angle": "角度",
       "board": "训练板",
       "firstAscent": "首次完攀",
       "firstAscentUnknown": "未记录",
       "unknown": "未知",
       "angleValue": "{{angle}}°",
-      "qualityValue": "{{quality}} 分，满分 5 分",
-      "firstAscentValue": "{{setter}}，{{date}}"
+      "firstAscentValue": "{{setter}}，{{date}}",
+      "qualityAtAngle": "{{angle}}° 时的质量"
     },
     "setterNotes": {
       "heading": "定线员备注"
     },
+    "about": {
+      "heading": "关于这条线路",
+      "intro": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条 {{grade}} 线路。",
+      "introWithSetter": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条 {{grade}} 线路，由 {{setter}} 设定。",
+      "introUngraded": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条线路。",
+      "introUngradedWithSetter": "{{climbName}} 是 {{board}} 上 {{angle}}° 的一条线路，由 {{setter}} 设定。",
+      "firstAscent": "{{climber}} 于 {{date}} 首次完攀。",
+      "gradeRange": "它在 {{easiestAngle}}° 时为 {{easiest}}，在 {{hardestAngle}}° 时为 {{hardest}}。",
+      "sendsHere_one": "此角度已记录 {{formattedCount}} 次完攀。",
+      "sendsHere_other": "此角度已记录 {{formattedCount}} 次完攀。"
+    },
     "angles": {
-      "heading": "同一线路，其他角度",
-      "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}}，当前位置",
-      "all": "所有角度"
+      "heading": "各角度难度",
+      "colAngle": "角度",
+      "colGrade": "难度",
+      "colSends": "完攀",
+      "colQuality": "质量",
+      "thisPage": "当前页面",
+      "notRated": "暂无评分",
+      "total_one": "{{angleCount}} 个角度共记录 {{formattedCount}} 次完攀",
+      "total_other": "{{angleCount}} 个角度共记录 {{formattedCount}} 次完攀"
     },
     "beta": {
       "heading": "攀爬方法视频",
       "empty": "还没有拍摄攀爬方法视频。",
-      "unavailable": "此次未能加载攀爬方法，请刷新页面重试。"
+      "unavailable": "此次未能加载攀爬方法，请刷新页面重试。",
+      "headingCount_one": "攀爬方法 · {{count}} 个视频",
+      "headingCount_other": "攀爬方法 · {{count}} 个视频"
     },
     "community": {
       "heading": "社区"
