@@ -305,6 +305,7 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS board_merge_reports, board_merge_requests, board_merge_audit CASCADE;
   DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
   DROP TABLE IF EXISTS logbook_session_changes;
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
