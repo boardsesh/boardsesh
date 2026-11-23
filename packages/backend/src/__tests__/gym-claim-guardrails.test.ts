@@ -28,6 +28,7 @@ import {
 import {
   applyGymClaim,
   expireStaleAdminClaims,
+  GYM_CLAIM_EXPIRY_STARTS_AT,
   hashClaimToken,
   socialGymClaimMutations,
   socialGymClaimQueries,
@@ -49,7 +50,7 @@ import { handleGymClaimVerify } from '../handlers/gym-claims';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 /**
- * Claim guardrails (docs/product/gym-claims.md): the four auto-approval guards
+ * Claim guardrails (docs/product/gym-claims.md): the five auto-approval guards
  * and the lock that keeps them true under concurrency, the 14-day probation,
  * revertGymClaim, the auto-approval digest section, the 30-day expiry of
  * admin-review claims, the claim notices, the review queue's claimant history
@@ -166,7 +167,8 @@ async function claimFor(gymId: number, claimantUserId: string) {
   return claim;
 }
 
-async function insertPendingClaim(gymId: number, claimantUserId: string, ageDays = 0, method = 'admin') {
+/** A pending claim filed `filed` days ago, or at that exact time. */
+async function insertPendingClaim(gymId: number, claimantUserId: string, filed: number | Date = 0, method = 'admin') {
   const [claim] = await db
     .insert(dbSchema.gymClaims)
     .values({
@@ -174,7 +176,7 @@ async function insertPendingClaim(gymId: number, claimantUserId: string, ageDays
       claimantUserId,
       method: method as 'admin' | 'domain',
       status: 'pending',
-      createdAt: new Date(Date.now() - ageDays * DAY_MS),
+      createdAt: filed instanceof Date ? filed : new Date(Date.now() - filed * DAY_MS),
     })
     .returning();
   return claim;
@@ -327,6 +329,40 @@ describe('auto-approval guards', () => {
     expect((await claimFor(gym.id, CLAIMANT)).status).toBe('pending');
   });
 
+  it('queues a claim on a gym with an admin or editor, the claimant included, and checks again under the lock', async () => {
+    const gym = await insertGym(SYSTEM_OWNER);
+    await db.insert(dbSchema.gymMembers).values({ gymId: gym.id, userId: LATE_MEMBER, role: 'member' });
+    const claim = await insertPendingClaim(gym.id, CLAIMANT);
+    // A plain member runs nothing.
+    expect(await firstFailedAutoApproveGuard(db, claim)).toBeNull();
+
+    for (const [userId, role] of [
+      [SECOND_ADMIN, 'admin'],
+      [LATE_EDITOR, 'editor'],
+      [CLAIMANT, 'editor'],
+    ] as const) {
+      await db.insert(dbSchema.gymMembers).values({ gymId: gym.id, userId, role });
+      expect(await firstFailedAutoApproveGuard(db, claim)).toBe('gym_has_staff');
+      await db
+        .delete(dbSchema.gymMembers)
+        .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)));
+    }
+
+    // Staff that arrive after the first check still stop the apply.
+    expect(await firstFailedAutoApproveGuard(db, claim)).toBeNull();
+    await db.insert(dbSchema.gymMembers).values({ gymId: gym.id, userId: LATE_EDITOR, role: 'editor' });
+    expect(await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_OWNER, autoApprove: true })).toEqual({
+      outcome: 'not_eligible',
+      guard: 'gym_has_staff',
+    });
+    expect(await tryAutoApproveAdminClaim(authCtx(CLAIMANT), gym, claim)).toEqual({
+      applied: null,
+      stoppedBy: 'gym_has_staff',
+    });
+    expect((await gymRow(gym.id)).ownerId).toBe(SYSTEM_OWNER);
+    expect((await claimFor(gym.id, CLAIMANT)).status).toBe('pending');
+  });
+
   it('queues claims past the daily cap, counting only the last 24 hours', async () => {
     await setSetting('gym_claim_auto_approve_daily_cap', '1');
     const { claim: first } = await autoApprovedGym(OTHER_CLAIMANT);
@@ -406,13 +442,14 @@ describe('probation after a claim approved itself', () => {
 
   beforeEach(async () => {
     const setup = await insertGym(SYSTEM_OWNER, 'Probation Gym');
-    // An admin from before the claim: probation binds them too.
-    await db.insert(dbSchema.gymMembers).values({ gymId: setup.id, userId: SECOND_ADMIN, role: 'admin' });
     await db.insert(dbSchema.gymMembers).values({ gymId: setup.id, userId: LATE_MEMBER, role: 'member' });
     systemBoard = await insertBoard(SYSTEM_OWNER, setup.id);
     expect(await requestClaim(CLAIMANT, setup.uuid)).toBe('approved');
     gym = await gymRow(setup.id);
     claimId = (await claimFor(gym.id, CLAIMANT)).id;
+    // A second admin (a gym with staff never approves itself, so they arrived
+    // after the claim): probation binds them too.
+    await db.insert(dbSchema.gymMembers).values({ gymId: setup.id, userId: SECOND_ADMIN, role: 'admin' });
   });
 
   it('refuses deleting the gym, with the date it opens', async () => {
@@ -450,7 +487,7 @@ describe('probation after a claim approved itself', () => {
     ).resolves.toBe(true);
   });
 
-  it('refuses removing members, for the owner and for an admin from before the claim', async () => {
+  it('refuses removing members, for the owner and for another admin', async () => {
     for (const actor of [CLAIMANT, SECOND_ADMIN]) {
       await expectCode(
         socialGymMutations.removeGymMember(null, { input: { gymUuid: gym.uuid, userId: LATE_MEMBER } }, authCtx(actor)),
@@ -458,6 +495,27 @@ describe('probation after a claim approved itself', () => {
       );
     }
     expect(await memberIds(gym.id)).toEqual([LATE_MEMBER, SECOND_ADMIN].sort());
+  });
+
+  it("refuses taking an editor's access away, but not granting it", async () => {
+    await expect(
+      socialGymMutations.grantGymWriteAccess(
+        null,
+        { input: { gymUuid: gym.uuid, userId: LATE_EDITOR } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toBe(true);
+    for (const actor of [CLAIMANT, SECOND_ADMIN]) {
+      await expectCode(
+        socialGymMutations.revokeGymWriteAccess(
+          null,
+          { input: { gymUuid: gym.uuid, userId: LATE_EDITOR } },
+          authCtx(actor),
+        ),
+        GYM_CLAIM_PROBATION_CODE,
+      );
+    }
+    expect(await memberIds(gym.id)).toContain(LATE_EDITOR);
   });
 
   it("refuses deleting the gym's synced boards, and canDelete says so in both reads", async () => {
@@ -540,9 +598,15 @@ describe('revertGymClaim', () => {
 
   it('hands the gym back to SYSTEM and undoes what the claimant set up', async () => {
     const gym = await insertGym(SYSTEM_OWNER, 'Upstream Name');
+    // An admin from before the claim: the gym has staff, so a person approves it.
     await db.insert(dbSchema.gymMembers).values({ gymId: gym.id, userId: SECOND_ADMIN, role: 'admin' });
-    expect(await requestClaim(CLAIMANT, gym.uuid)).toBe('approved');
+    expect(await requestClaim(CLAIMANT, gym.uuid)).toBe('admin_review');
     const claim = await claimFor(gym.id, CLAIMANT);
+    await socialGymClaimMutations.reviewGymClaim(
+      null,
+      { input: { claimId: String(claim.id), decision: 'approve' } },
+      authCtx(GLOBAL_ADMIN),
+    );
 
     // The claimant renames it (vouching a website) and brings people in.
     await socialGymMutations.updateGym(
@@ -574,7 +638,7 @@ describe('revertGymClaim', () => {
 
     const after = await gymRow(gym.id);
     expect(after).toMatchObject({ ownerId: SYSTEM_OWNER, syncFrozenAt: null, websiteVouchedByOwner: false });
-    expect(await claimFor(gym.id, CLAIMANT)).toMatchObject({ status: 'revoked', reviewedBy: null });
+    expect(await claimFor(gym.id, CLAIMANT)).toMatchObject({ status: 'revoked', reviewedBy: GLOBAL_ADMIN });
     // The admin from before the claim stays; everyone the claimant added goes.
     expect(await memberIds(gym.id)).toEqual([SECOND_ADMIN]);
 
@@ -596,10 +660,25 @@ describe('revertGymClaim', () => {
     await vi.waitFor(() => expect(sendGymClaimRevokedEmail).toHaveBeenCalledWith(`${CLAIMANT}@test.com`, 'Prank Name'));
   });
 
-  it('lets the location sync curate the gym again', async () => {
+  it('lets the location sync curate the gym again, revoking an older approved claim too', async () => {
     const gym = await insertGym(SYSTEM_OWNER, 'Upstream Name');
     const sourceKey = `kilter:gym-${gym.uuid}`;
     await db.insert(dbSchema.locationSyncGymSources).values({ sourceKey, gymId: gym.id });
+    // An approved claim from long ago that no longer owns anything. The sync
+    // reads any approved claim on a gym as owner-curated.
+    const tenDaysAgo = new Date(Date.now() - 10 * DAY_MS);
+    const [older] = await db
+      .insert(dbSchema.gymClaims)
+      .values({
+        gymId: gym.id,
+        claimantUserId: OTHER_CLAIMANT,
+        method: 'admin',
+        status: 'approved',
+        reviewedBy: GLOBAL_ADMIN,
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo,
+      })
+      .returning();
     expect(await requestClaim(CLAIMANT, gym.uuid)).toBe('approved');
     const claim = await claimFor(gym.id, CLAIMANT);
     await socialGymMutations.updateGym(null, { input: { gymUuid: gym.uuid, name: 'Prank Name' } }, authCtx(CLAIMANT));
@@ -626,6 +705,8 @@ describe('revertGymClaim', () => {
     expect((await gymRow(gym.id)).name).toBe('Prank Name');
 
     await revert(claim.id);
+    expect((await claimFor(gym.id, OTHER_CLAIMANT)).id).toBe(older.id);
+    expect((await claimFor(gym.id, OTHER_CLAIMANT)).status).toBe('revoked');
     await upsertPublicBoardLocations(db, [record('b')]);
     expect((await gymRow(gym.id)).name).toBe('Upstream Name');
   });
@@ -661,7 +742,51 @@ describe('revertGymClaim', () => {
     expect((await gymRow(gym.id)).ownerId).toBe(OTHER_CLAIMANT);
   });
 
-  it('keeps a real prior owner, kept on as admin by an approval, when that claim is reverted', async () => {
+  it('refuses once the gym was moved after the claim, even back to the claimant', async () => {
+    const { gym, claim } = await autoApprovedGym();
+    for (const [from, to] of [
+      [CLAIMANT, OTHER_CLAIMANT],
+      [OTHER_CLAIMANT, CLAIMANT],
+    ]) {
+      await socialGymOwnerReassignMutations.reassignGymOwner(
+        null,
+        {
+          input: { gymUuid: gym.uuid, expectedCurrentOwnerId: from, newOwnerId: to, reason: 'Handed over at the desk' },
+        },
+        authCtx(GLOBAL_ADMIN),
+      );
+    }
+    expect((await gymRow(gym.id)).ownerId).toBe(CLAIMANT);
+    await expectCode(revert(claim.id), GYM_CLAIM_REVERT_CODES.ownerChanged);
+    expect((await gymRow(gym.id)).ownerId).toBe(CLAIMANT);
+    expect((await claimFor(gym.id, CLAIMANT)).status).toBe('approved');
+  });
+
+  it('refuses after a later ownership decision, and a claim that moved nothing', async () => {
+    const { gym, claim } = await autoApprovedGym();
+    // A second claim by the owner, approved later: it moves nothing, but it is
+    // a later decision on the gym.
+    const second = await insertPendingClaim(gym.id, CLAIMANT);
+    await socialGymClaimMutations.reviewGymClaim(
+      null,
+      { input: { claimId: String(second.id), decision: 'approve' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    await expectCode(revert(claim.id), GYM_CLAIM_REVERT_CODES.ownerChanged);
+    await expectCode(revert(second.id), GYM_CLAIM_REVERT_CODES.notTransferred);
+    expect((await gymRow(gym.id)).ownerId).toBe(CLAIMANT);
+  });
+
+  it('refuses a claim with no record of moving the gym', async () => {
+    const { gym, claim } = await autoApprovedGym();
+    await db
+      .delete(dbSchema.gymClaimOwnershipDecisions)
+      .where(eq(dbSchema.gymClaimOwnershipDecisions.claimId, claim.id));
+    await expectCode(revert(claim.id), GYM_CLAIM_REVERT_CODES.notTransferred);
+    expect((await gymRow(gym.id)).ownerId).toBe(CLAIMANT);
+  });
+
+  it('refuses a claim that took the gym from a person, and one with no record of the owner before', async () => {
     const gym = await insertGym(CREATOR, 'Climber Listed');
     const claim = await insertPendingClaim(gym.id, CLAIMANT);
     await socialGymClaimMutations.reviewGymClaim(
@@ -669,10 +794,91 @@ describe('revertGymClaim', () => {
       { input: { claimId: String(claim.id), decision: 'approve' } },
       authCtx(GLOBAL_ADMIN),
     );
+    const error = await expectCode(revert(claim.id), GYM_CLAIM_REVERT_CODES.priorOwner);
+    expect(error.message).toContain('Move gym ownership');
+    expect((await gymRow(gym.id)).ownerId).toBe(CLAIMANT);
     expect(await memberIds(gym.id)).toEqual([CREATOR]);
-    await revert(claim.id);
-    expect(await memberIds(gym.id)).toEqual([CREATOR]);
+    expect((await claimFor(gym.id, CLAIMANT)).status).toBe('approved');
+
+    // A decision row from before the owner was recorded reads as unknown.
+    const { gym: synced, claim: autoClaim } = await autoApprovedGym(OTHER_CLAIMANT, 'Unrecorded');
+    await db
+      .update(dbSchema.gymClaimOwnershipDecisions)
+      .set({ previousOwnerId: null })
+      .where(eq(dbSchema.gymClaimOwnershipDecisions.claimId, autoClaim.id));
+    await expectCode(revert(autoClaim.id), GYM_CLAIM_REVERT_CODES.priorOwner);
+    expect((await gymRow(synced.id)).ownerId).toBe(OTHER_CLAIMANT);
+  });
+
+  it('still reverts when the in-app notice cannot be written', async () => {
+    const { gym, claim } = await autoApprovedGym();
+    await db.execute(sql`DROP TRIGGER IF EXISTS trg_test_reject_revert_notice ON notifications`);
+    await db.execute(sql`DROP FUNCTION IF EXISTS test_reject_revert_notice()`);
+    await db.execute(sql`
+      CREATE FUNCTION test_reject_revert_notice() RETURNS trigger
+      LANGUAGE plpgsql AS $reject$
+      BEGIN
+        RAISE EXCEPTION 'forced notice write failure';
+      END;
+      $reject$
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER trg_test_reject_revert_notice
+      BEFORE INSERT ON notifications
+      FOR EACH ROW EXECUTE FUNCTION test_reject_revert_notice()
+    `);
+    try {
+      await expect(revert(claim.id)).resolves.toMatchObject({ claimId: String(claim.id) });
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS trg_test_reject_revert_notice ON notifications`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS test_reject_revert_notice()`);
+    }
     expect((await gymRow(gym.id)).ownerId).toBe(SYSTEM_OWNER);
+    expect((await claimFor(gym.id, CLAIMANT)).status).toBe('revoked');
+    expect(await noticesFor(CLAIMANT, 'gym_claim_denied')).toEqual([]);
+  });
+
+  it("waits for the gym's lock before adding a member, so a revert can't miss one", async () => {
+    const { gym } = await autoApprovedGym();
+    // Stand in for a revert: hold the gym row lock, then hand the gym to SYSTEM.
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let lockTaken!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      lockTaken = resolve;
+    });
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).for('update');
+      lockTaken();
+      await released;
+      await tx.update(dbSchema.gyms).set({ ownerId: SYSTEM_OWNER }).where(eq(dbSchema.gyms.id, gym.id));
+    });
+    await locked;
+
+    // The claimant passes the gate before the "revert" commits.
+    const adding = socialGymMutations
+      .addGymMember(null, { input: { gymUuid: gym.uuid, userId: LATE_MEMBER, role: 'member' } }, authCtx(CLAIMANT))
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    try {
+      await vi.waitFor(async () => {
+        const result = await db.execute(sql`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+        `);
+        expect(Array.from(result as Iterable<{ waiting: number }>)[0].waiting).toBeGreaterThan(0);
+      });
+    } finally {
+      release();
+      await holder;
+    }
+
+    expect(await adding).toEqual(expect.objectContaining({ message: 'Not authorized: must be gym owner or admin' }));
+    expect(await memberIds(gym.id)).toEqual([]);
   });
 });
 
@@ -717,38 +923,47 @@ describe('the daily digest section for claims that approved themselves', () => {
 // ============================================================================
 
 describe('admin-review claims expire after 30 days', () => {
-  it('expires stale admin claims only, and tells the claimant', async () => {
+  const startsAt = new Date(GYM_CLAIM_EXPIRY_STARTS_AT).getTime();
+  /** A time `days` days after expiry began. */
+  const afterStart = (days: number) => new Date(startsAt + days * DAY_MS);
+
+  it('expires stale admin claims filed since expiry began, and tells the claimant', async () => {
+    const now = afterStart(40);
     const gym = await insertGym(SYSTEM_OWNER, 'Waiting Gym');
-    const stale = await insertPendingClaim(gym.id, CLAIMANT, 31);
-    const fresh = await insertPendingClaim(gym.id, OTHER_CLAIMANT, 29);
-    const staleDomain = await insertPendingClaim(gym.id, CREATOR, 31, 'domain');
+    const stale = await insertPendingClaim(gym.id, CLAIMANT, afterStart(1 / 24));
+    const fresh = await insertPendingClaim(gym.id, OTHER_CLAIMANT, new Date(now.getTime() - 29 * DAY_MS));
+    const staleDomain = await insertPendingClaim(gym.id, CREATOR, afterStart(1 / 24), 'domain');
+    // Filed before expiry began: left for a person, however old.
+    const backlog = await insertPendingClaim(gym.id, SECOND_CREATOR, afterStart(-1));
 
     const failures = { count: 0 };
-    expect(await expireStaleAdminClaims(new Date(), failures)).toBe(1);
+    expect(await expireStaleAdminClaims(now, failures)).toBe(1);
     expect(failures.count).toBe(0);
     const statusOf = async (id: number) =>
       (await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, id)))[0].status;
     expect(await statusOf(stale.id)).toBe('expired');
     expect(await statusOf(fresh.id)).toBe('pending');
     expect(await statusOf(staleDomain.id)).toBe('pending');
+    expect(await statusOf(backlog.id)).toBe('pending');
 
     expect(await noticesFor(CLAIMANT, 'gym_claim_denied')).toEqual([
       expect.objectContaining({ entityType: 'gym', entityId: gym.uuid }),
     ]);
     expect(await noticesFor(OTHER_CLAIMANT, 'gym_claim_denied')).toEqual([]);
+    expect(await noticesFor(SECOND_CREATOR, 'gym_claim_denied')).toEqual([]);
     await vi.waitFor(() =>
       expect(sendGymClaimExpiredEmail).toHaveBeenCalledWith(`${CLAIMANT}@test.com`, 'Waiting Gym'),
     );
     expect(sendGymClaimExpiredEmail).toHaveBeenCalledTimes(1);
 
     // Nothing is due twice.
-    expect(await expireStaleAdminClaims(new Date(), failures)).toBe(0);
+    expect(await expireStaleAdminClaims(now, failures)).toBe(0);
   });
 
   it('runs as a step of the hourly sweep', async () => {
     const gym = await insertGym(SYSTEM_OWNER);
-    await insertPendingClaim(gym.id, CLAIMANT, 40);
-    expect((await runDirectoryReportSweep()).claimsExpired).toBe(1);
+    await insertPendingClaim(gym.id, CLAIMANT, afterStart(1));
+    expect((await runDirectoryReportSweep(afterStart(40))).claimsExpired).toBe(1);
   });
 });
 

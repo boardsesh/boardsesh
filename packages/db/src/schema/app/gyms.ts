@@ -219,6 +219,12 @@ export const gymClaims = pgTable(
  * `gymUuid` is the gym identity at decision time, with no FK and no merge-time
  * rewrite. This keeps a transfer on a duplicate from becoming a transfer on the
  * canonical gym when claim rows are moved during a merge.
+ *
+ * `previousOwnerId` is who owned the gym just before the approval: the SYSTEM
+ * import user for an unclaimed listing. A claim admins may revert must have
+ * taken the gym from SYSTEM (docs/product/gym-claims.md, "Revert"). Null on rows
+ * written before it was recorded, which reads as unknown. Not a FK: an audit
+ * snapshot that outlives an account deletion, like `gym_owner_reassignments`.
  */
 export const gymClaimOwnershipDecisions = pgTable(
   'gym_claim_ownership_decisions',
@@ -229,6 +235,7 @@ export const gymClaimOwnershipDecisions = pgTable(
     gymUuid: text('gym_uuid').notNull(),
     didTransfer: boolean('did_transfer').notNull(),
     decidedAt: timestamp('decided_at').notNull(),
+    previousOwnerId: text('previous_owner_id'),
   },
   (table) => ({
     transferredHistoryIdx: index('gym_claim_ownership_decisions_transfer_history_idx')
