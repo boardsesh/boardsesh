@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, isNotNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { DirectoryReport as DirectoryReportRow } from '@boardsesh/db/schema';
 import { rolesGrantAdmin, type CommunityRoleScope } from '@boardsesh/community-roles';
@@ -11,7 +11,7 @@ import {
 } from '@boardsesh/directory-moderation';
 import type { DirectoryReport, DirectoryReportViewerRole } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
-import { canAccessResource } from '../../../../services/privacy';
+import { canAccessResource, resourceAccessCondition } from '../../../../services/privacy';
 import {
   loadBoardFacts,
   loadGymFacts,
@@ -270,6 +270,28 @@ export async function boardReportsFor(
 }
 
 /**
+ * SQL twin of the board read in `presentReports`, for staff: a gym report, or
+ * a board report on a live board the viewer can read (`canAccessResource`).
+ */
+function staffReadsTarget(viewerId: string): SQL {
+  return or(
+    eq(dbSchema.directoryReports.targetKind, 'gym'),
+    exists(
+      db
+        .select({ one: sql`1` })
+        .from(dbSchema.userBoards)
+        .where(
+          and(
+            eq(dbSchema.userBoards.id, dbSchema.directoryReports.boardId),
+            isNull(dbSchema.userBoards.deletedAt),
+            resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerId),
+          ),
+        ),
+    ),
+  )!;
+}
+
+/**
  * `myDirectoryReportsToReview`: reports about boards the viewer created and
  * reports routed to the staff of gyms they run. Waiting first, oldest first;
  * then, with `includeResolved`, those closed recently, newest first.
@@ -298,6 +320,9 @@ export async function reportsToReviewFor(
             inArray(dbSchema.directoryReports.gymIdAtReport, staffedGymIds),
             inArray(dbSchema.directoryReports.gymId, staffedGymIds),
           ),
+          // `presentReports` drops a board report on a board staff can't read;
+          // leave it out here too, before the limit, so it doesn't take a slot.
+          viewer.isAdmin ? undefined : staffReadsTarget(userId),
         )
       : undefined;
   const waiting = inArray(dbSchema.directoryReports.status, [...WAITING_STATUSES]);

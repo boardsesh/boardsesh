@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -17,7 +17,7 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../../share
 import { getUserCommunityRoles, requireAdmin } from '../roles';
 import { isSystemOwner, loadBoardFacts, loadGymFacts, WAITING_STATUSES } from './core';
 import { transactionWithAfterCommit } from '../../../../db/after-commit';
-import { resolveWaitingReports } from './lifecycle';
+import { notInAdminQueue, resolveWaitingReports } from './lifecycle';
 import {
   adminReportsPage,
   boardReportsFor,
@@ -72,6 +72,16 @@ function reportNotFound(): GraphQLError {
 
 function reportClosed(): GraphQLError {
   return new GraphQLError('This report is closed already.', { extensions: { code: 'REPORT_CLOSED' } });
+}
+
+/** A waiting report this viewer reads but may not close. */
+function cannotResolve(report: Parameters<typeof isInAdminQueue>[0]): GraphQLError {
+  return new GraphQLError(
+    isInAdminQueue(report)
+      ? 'The Boardsesh team is looking at this report; it closes when they do.'
+      : "Only the gym's owner or admins can close this report.",
+    { extensions: { code: 'FORBIDDEN' } },
+  );
 }
 
 export const directoryReportQueries = {
@@ -162,14 +172,7 @@ export const directoryReportMutations = {
       throw reportNotFound();
     }
     if (!(WAITING_STATUSES as readonly string[]).includes(report.status)) throw reportClosed();
-    if (!viewerCanResolve(report, role, viewer)) {
-      throw new GraphQLError(
-        isInAdminQueue(report)
-          ? 'The Boardsesh team is looking at this report; it closes when they do.'
-          : "Only the gym's owner or admins can close this report.",
-        { extensions: { code: 'FORBIDDEN' } },
-      );
-    }
+    if (!viewerCanResolve(report, role, viewer)) throw cannotResolve(report);
     if (validated.outcome !== 'kept' && !viewer.isAdmin) {
       throw new GraphQLError('Fix, remove or delete the board itself; the report closes when you do.', {
         extensions: { code: 'FORBIDDEN' },
@@ -177,15 +180,30 @@ export const directoryReportMutations = {
     }
     await assertOutcomeTaken(report, board, validated.outcome);
 
+    // The checks above read the report before this write, and the sweep can
+    // move it to the admin queue in between. The creator and staff close it only
+    // while the write still finds it out of that queue.
     const resolved = await transactionWithAfterCommit((tx) =>
-      resolveWaitingReports(tx, eq(dbSchema.directoryReports.id, report.id), {
-        outcome: validated.outcome,
-        resolvedBy: userId,
-        role: role === 'creator' ? 'creator' : role === 'gym_staff' ? 'gym_staff' : 'admin',
-        note: normalizeReportNote(validated.note),
-      }),
+      resolveWaitingReports(
+        tx,
+        and(eq(dbSchema.directoryReports.id, report.id), viewer.isAdmin ? undefined : notInAdminQueue())!,
+        {
+          outcome: validated.outcome,
+          resolvedBy: userId,
+          role: role === 'creator' ? 'creator' : role === 'gym_staff' ? 'gym_staff' : 'admin',
+          note: normalizeReportNote(validated.note),
+        },
+      ),
     );
-    if (resolved.length === 0) throw reportClosed();
+    if (resolved.length === 0) {
+      const [current] = await db
+        .select({ status: dbSchema.directoryReports.status, routedTo: dbSchema.directoryReports.routedTo })
+        .from(dbSchema.directoryReports)
+        .where(eq(dbSchema.directoryReports.id, report.id))
+        .limit(1);
+      if (current && (WAITING_STATUSES as readonly string[]).includes(current.status)) throw cannotResolve(current);
+      throw reportClosed();
+    }
     const [presented] = await presentReports(resolved, viewer);
     if (!presented) throw reportNotFound();
     return presented;

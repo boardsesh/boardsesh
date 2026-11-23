@@ -310,7 +310,7 @@ export async function onBoardDeleted(
 }
 
 /** SQL twin of `isInAdminQueue` (read.ts), negated: waiting reports neither routed to nor escalated to the admin queue. */
-function notInAdminQueue(): SQL {
+export function notInAdminQueue(): SQL {
   return and(
     ne(dbSchema.directoryReports.status, 'escalated'),
     sql`NOT ('admin' = ANY(${dbSchema.directoryReports.routedTo}))`,

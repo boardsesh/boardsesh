@@ -461,6 +461,46 @@ describe('reads: who sees a report, and reporter anonymity', () => {
   });
 });
 
+describe('myDirectoryReportsToReview: the page', () => {
+  const toReview = (viewer: string, first: number) =>
+    directoryReportQueries.myDirectoryReportsToReview(null, { first }, authCtx(viewer)) as Promise<DirectoryReport[]>;
+
+  it('reports on a board staff cannot read take no place on their page', async () => {
+    const privateBoard = await insertBoard(CREATOR, runGym.id, { isPublic: false });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: privateBoard.uuid,
+      ownerId: CREATOR,
+      audience: 'invite_only',
+    });
+    await db
+      .insert(dbSchema.resourceGrants)
+      .values({ kind: 'board', resourceId: privateBoard.uuid, userId: REPORTER_A, status: 'approved' });
+    const hidden = [
+      await reportBoard(REPORTER_A, { boardUuid: privateBoard.uuid, reason: 'gone' }),
+      await reportBoard(REPORTER_A, { boardUuid: privateBoard.uuid, reason: 'wrong_setup' }),
+    ];
+    // The oldest waiting reports, routed to the gym: they head the page's order.
+    for (const [index, { reportUuid }] of hidden.entries()) {
+      await db
+        .update(dbSchema.directoryReports)
+        .set({ createdAt: new Date(Date.now() - (5 - index) * 24 * 60 * 60 * 1000) })
+        .where(eq(dbSchema.directoryReports.uuid, reportUuid));
+      expect((await reportRow(reportUuid)).routedTo).toContain('gym_staff');
+    }
+    const readable = await reportBoard(REPORTER_B, { boardUuid: climberBoard.uuid, reason: 'gone' });
+
+    for (const staff of [GYM_OWNER, GYM_ADMIN, GYM_EDITOR]) {
+      expect((await toReview(staff, 1)).map((report) => report.uuid)).toEqual([readable.reportUuid]);
+    }
+    // The creator reads all three, oldest first.
+    expect((await toReview(CREATOR, 3)).map((report) => report.uuid)).toEqual([
+      ...hidden.map((report) => report.reportUuid),
+      readable.reportUuid,
+    ]);
+  });
+});
+
 describe('resolveDirectoryReport', () => {
   let reportUuid: string;
   beforeEach(async () => {
@@ -687,6 +727,47 @@ describe('the admin queue', () => {
     const wrongPlace = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
     await detach(runGym.uuid, climberBoard.uuid, GYM_ADMIN);
     expect(await reportRow(wrongPlace.reportUuid)).toMatchObject({ status: 'removed', resolvedByRole: 'gym_staff' });
+  });
+
+  it('a report the sweep escalates after the creator or staff are checked, and before the write, stays open', async () => {
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    for (const [closer, reason] of [
+      [CREATOR, 'gone'],
+      [GYM_ADMIN, 'wrong_setup'],
+    ] as const) {
+      const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason });
+      // Still open, but due: the next sweep moves it to the admin queue.
+      await db
+        .update(dbSchema.directoryReports)
+        .set({ createdAt: fifteenDaysAgo })
+        .where(eq(dbSchema.directoryReports.uuid, reportUuid));
+      // The resolver has read and authorized the open report; the sweep runs
+      // just before its write's transaction opens.
+      const realTransaction = db.transaction.bind(db);
+      const sweepFirst = vi.spyOn(db, 'transaction').mockImplementationOnce(async (work, config) => {
+        expect((await runDirectoryReportSweep()).escalated).toBe(1);
+        return realTransaction(work, config);
+      });
+      try {
+        await expect(resolveReport(closer, { reportUuid, outcome: 'kept' })).rejects.toThrow(
+          /team is looking at this report/,
+        );
+        expect(sweepFirst).toHaveBeenCalled();
+      } finally {
+        sweepFirst.mockRestore();
+      }
+      expect(await reportRow(reportUuid)).toMatchObject({ status: 'escalated', resolvedAt: null });
+      expect(await noticesFor(REPORTER_A, 'board_report_resolved')).toHaveLength(0);
+    }
+    // The team still closes it.
+    const [escalated] = await db
+      .select({ uuid: dbSchema.directoryReports.uuid })
+      .from(dbSchema.directoryReports)
+      .where(eq(dbSchema.directoryReports.reason, 'gone'));
+    expect(await resolveReport(GLOBAL_ADMIN, { reportUuid: escalated.uuid, outcome: 'kept' })).toMatchObject({
+      status: 'kept',
+      resolvedByRole: 'admin',
+    });
   });
 });
 
