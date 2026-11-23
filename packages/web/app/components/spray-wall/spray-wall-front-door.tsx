@@ -13,6 +13,7 @@ import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { resolveSprayWallDrawing, type SprayWallArtChoice } from '@/app/lib/spray/spray-climb-view';
 import type { SprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.server';
 import { themeTokens } from '@/app/theme/theme-config';
+import { frontDoorTitleSx } from '@/app/components/climb-front-door/front-door-heading-sx';
 
 type SprayWallFrontDoorProps = {
   wallData: SprayWallPageData;
@@ -101,7 +102,7 @@ export default async function SprayWallFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
-      <Typography variant="h1" sx={{ fontSize: '1.75rem', fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 }}>
+      <Typography variant="h1" sx={{ ...frontDoorTitleSx, fontSize: '1.75rem', mb: 1 }}>
         {wallName}
       </Typography>
 

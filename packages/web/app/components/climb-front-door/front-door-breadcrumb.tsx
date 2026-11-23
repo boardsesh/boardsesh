@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import { visuallyHidden } from '@mui/utils';
 import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -51,6 +52,16 @@ const linkSx = {
 };
 
 const currentCrumbSx = { color: 'text.primary', fontWeight: themeTokens.typography.fontWeight.medium };
+
+// Below md the climb crumb sits directly above an h1 that says the same thing,
+// so the leaf is hidden there: visually only, so a screen reader still hears
+// the `aria-current="page"` crumb. Its separator is decoration and goes
+// entirely. The JSON-LD keeps all three items at every width. The query is
+// MUI's `breakpoints.down('md')`, written out because a server component can't
+// hand an `sx` callback to a client component.
+const BELOW_MD_QUERY = '@media (max-width: 899.95px)';
+const separatorFromMdSx = { [BELOW_MD_QUERY]: { display: 'none' } };
+const leafVisuallyHiddenBelowMdSx = { [BELOW_MD_QUERY]: visuallyHidden };
 
 /**
  * Home → board list → this climb, or Home → board list on the `/list` page
@@ -106,10 +117,10 @@ export default async function FrontDoorBreadcrumb({
                 {boardCrumbLabel}
               </MuiLink>
             </li>
-            <Box component="li" aria-hidden sx={separatorSx}>
+            <Box component="li" aria-hidden sx={{ ...separatorSx, ...separatorFromMdSx }}>
               /
             </Box>
-            <Box component="li" aria-current="page" sx={currentCrumbSx}>
+            <Box component="li" aria-current="page" sx={{ ...currentCrumbSx, ...leafVisuallyHiddenBelowMdSx }}>
               {leaf.label}
             </Box>
           </>
