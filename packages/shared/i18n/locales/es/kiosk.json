@@ -213,7 +213,6 @@
     },
     "title": "Gestionar {{gymName}}",
     "backToGym": "Volver a la página del rocódromo",
-    "accessDenied": "No tienes permiso para gestionar este rocódromo.",
     "tabs": {
       "kiosks": "Kioscos",
       "branding": "Marca",

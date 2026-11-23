@@ -29,7 +29,8 @@
     "sprayWalls": "Dati di addestramento Spraywall",
     "boards": "Pannelli registrati",
     "buildPlans": "Ordini dei pacchetti di costruzione",
-    "partnerApps": "App partner"
+    "partnerApps": "App partner",
+    "boardReports": "Segnalazioni dei pannelli"
   },
   "feedback": {
     "title": "Segnalazioni di bug e feedback",
@@ -631,5 +632,80 @@
     "next": "Pagina successiva",
     "active": "Attiva",
     "suspended": "Sospesa"
+  },
+  "boardReports": {
+    "title": "Segnalazioni di pannelli e palestre",
+    "backToAdmin": "Torna all'admin",
+    "description": "Le segnalazioni che nessun altro può gestire e quelle ancora aperte dopo 14 giorni. Prima quelle arrivate direttamente a noi, poi le più vecchie.",
+    "filters": {
+      "status": "Stato",
+      "kind": "Mostra",
+      "kindAll": "Pannelli e palestre",
+      "kindBoard": "Pannelli",
+      "kindGym": "Palestre"
+    },
+    "status": {
+      "escalated": "Al nostro team",
+      "open": "A chi l'ha aggiunto o allo staff della palestra",
+      "fixed": "Corretta",
+      "removed": "Tolta",
+      "deleted": "Eliminata",
+      "kept": "Lasciata così",
+      "merged": "Unita"
+    },
+    "kind": {
+      "board": "Pannello",
+      "gym": "Palestra"
+    },
+    "chips": {
+      "sentToTeam": "Arrivata direttamente a noi",
+      "waited": "Aperta da 14 giorni"
+    },
+    "meta_one": "{{count}} persona · aperta {{age}}",
+    "meta_other": "{{count}} persone · aperta {{age}}",
+    "ageToday": "oggi",
+    "ageDays_one": "{{count}} giorno fa",
+    "ageDays_other": "{{count}} giorni fa",
+    "routedToLine": "Inviata a: {{recipients}}",
+    "routedTo": {
+      "creator": "chi l'ha aggiunto",
+      "gymStaff": "lo staff della palestra",
+      "admin": "il nostro team"
+    },
+    "duplicateOf": "Uguale a {{name}}",
+    "note": "{{name}}: {{note}}",
+    "reporterUnknown": "Account eliminato",
+    "closedOn": "Chiusa il {{date}}: {{outcome}}",
+    "actions": {
+      "deleteBoard": "Elimina il pannello",
+      "removeFromGym": "Togli dalla palestra",
+      "hideGym": "Nascondi la palestra dalla ricerca",
+      "keep": "Lascia così",
+      "mergeGyms": "Unisci in Palestre duplicate",
+      "openGym": "Apri Gestisci palestra"
+    },
+    "confirm": {
+      "deleteTitle": "Eliminare {{board}} per tutti?",
+      "deleteBody": "Sparisce per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari. La segnalazione si chiude come eliminata.",
+      "removeTitle": "Togliere {{board}} da {{gym}}?",
+      "removeBody": "Sparisce dalla pagina, dai kiosk e dalla mappa della palestra. Chi l'ha aggiunto lo tiene. La segnalazione si chiude come tolta.",
+      "hideTitle": "Nascondere {{gym}} dalla ricerca?",
+      "hideBody": "Non compare più nell'elenco delle palestre né nella ricerca. La sua pagina resta raggiungibile con il link. La segnalazione si chiude come tolta.",
+      "keepTitle": "Lasciarlo così?",
+      "keepBody": "La segnalazione si chiude e chi l'ha inviata saprà che è rimasto così.",
+      "keepNoteLabel": "Un messaggio per loro (facoltativo)",
+      "cancel": "Annulla"
+    },
+    "snackbar": {
+      "deleted": "Pannello eliminato. La segnalazione è chiusa.",
+      "removed": "Tolto dalla palestra. La segnalazione è chiusa.",
+      "hidden": "Palestra nascosta dalla ricerca. La segnalazione è chiusa.",
+      "kept": "Segnalazione chiusa.",
+      "failed": "Non è andata a buon fine. Riprova."
+    },
+    "empty": "Qui non c'è niente.",
+    "error": "Impossibile caricare le segnalazioni. Riprova.",
+    "retry": "Riprova",
+    "loadMore": "Carica altre"
   }
 }

@@ -1699,7 +1699,8 @@
       "goneHint": "Lo quitaron, lo cambiaron o el rocódromo cerró",
       "wrongPlace": "Rocódromo o lugar equivocado",
       "wrongPlaceHint": "Está en otro sitio, o es el muro de la casa de alguien",
-      "other": "Otra cosa"
+      "other": "Otra cosa",
+      "relistRequest": "Volver a ponerlo en el rocódromo"
     },
     "gymReasons": {
       "duplicate": "Aparece dos veces",
@@ -1743,7 +1744,21 @@
     "relistAsk": "Pedir a {{gym}} que lo vuelva a listar",
     "relistAskHint": "Su personal lo quitó del rocódromo. Les pediremos que lo vuelvan a poner.",
     "relistSent": "Pedido enviado. Te contaremos qué decide el personal de {{gym}}.",
-    "relistAlready": "Ya lo pediste. Te contaremos qué decide el personal de {{gym}}."
+    "relistAlready": "Ya lo pediste. Te contaremos qué decide el personal de {{gym}}.",
+    "duplicateGymSearch": "Encuentra el otro listado",
+    "gymSearchPlaceholder": "Nombre del rocódromo",
+    "noMatches": "Aún no hay coincidencias. Prueba con otro nombre.",
+    "cancel": "Cancelar",
+    "done": "Listo",
+    "retry": "Reintentar",
+    "loading": "Cargando",
+    "loadError": "No se pudo cargar este plafón. Inténtalo de nuevo.",
+    "signInTitle": "Inicia sesión para reportar un problema",
+    "signInBody": "Inicia sesión y te traemos de vuelta aquí.",
+    "boardListLink": "¿Algo mal con este plafón?",
+    "web": {
+      "noteRequiredLabel": "Cuéntales qué pasa (mínimo 10 caracteres)"
+    }
   },
   "reportReview": {
     "title": "Escaladores marcaron este plafón",
@@ -1775,7 +1790,15 @@
     "keepPartial_one": "Se cerró {{count}} de {{total}} denuncias. Las demás no se enviaron. Inténtalo de nuevo.",
     "keepPartial_other": "Se cerraron {{count}} de {{total}} denuncias. Las demás no se enviaron. Inténtalo de nuevo.",
     "statusPill": "Denunciado",
-    "open": "Ver denuncias"
+    "open": "Ver denuncias",
+    "review": "Revisar",
+    "duplicateOf": "El mismo plafón que {{board}}",
+    "inTeamQueue": "Nuestro equipo se está ocupando. Se cierra cuando decidan.",
+    "removeHint": "Desaparece de la página y los kioscos del rocódromo",
+    "keepFailed": "No se pudo cerrar el reporte. Inténtalo de nuevo.",
+    "empty": "Ya no hay nada abierto sobre este plafón.",
+    "back": "Atrás",
+    "close": "Cerrar"
   },
   "whoCanEdit": {
     "boardTitle": "No puedes editar este plafón",
@@ -1792,6 +1815,8 @@
     "claimHint": "Si trabajas aquí, reclámalo y la ficha será tuya.",
     "claimGym": "Reclamar {{gym}}",
     "claimThisGym": "Reclamar este rocódromo",
-    "goBack": "Volver"
+    "goBack": "Volver",
+    "rule": "Quien lo añadió puede cambiarlo. Cuando se reclama un rocódromo, su equipo también. Cualquier otra persona puede reportar un problema.",
+    "backToGym": "Volver a {{gym}}"
   }
 }

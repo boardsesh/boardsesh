@@ -1699,7 +1699,8 @@
       "goneHint": "Smontato, sostituito o la palestra ha chiuso",
       "wrongPlace": "Palestra o posto sbagliato",
       "wrongPlaceHint": "Sta da un'altra parte, oppure è la parete di casa di qualcuno",
-      "other": "Altro"
+      "other": "Altro",
+      "relistRequest": "Rimetterlo in palestra"
     },
     "gymReasons": {
       "duplicate": "Elencata due volte",
@@ -1743,7 +1744,21 @@
     "relistAsk": "Chiedi a {{gym}} di elencarlo di nuovo",
     "relistAskHint": "Il loro staff l'ha tolto dalla palestra. Chiederemo di rimetterlo.",
     "relistSent": "Richiesta inviata. Ti diciamo cosa decide lo staff di {{gym}}.",
-    "relistAlready": "Hai già chiesto. Ti diciamo cosa decide lo staff di {{gym}}."
+    "relistAlready": "Hai già chiesto. Ti diciamo cosa decide lo staff di {{gym}}.",
+    "duplicateGymSearch": "Trova l'altra scheda",
+    "gymSearchPlaceholder": "Nome della palestra",
+    "noMatches": "Ancora nessun risultato. Prova un altro nome.",
+    "cancel": "Annulla",
+    "done": "Fatto",
+    "retry": "Riprova",
+    "loading": "Caricamento",
+    "loadError": "Impossibile caricare questo pannello. Riprova.",
+    "signInTitle": "Accedi per segnalare un problema",
+    "signInBody": "Accedi e ti riportiamo subito qui.",
+    "boardListLink": "Qualcosa non va con questo pannello?",
+    "web": {
+      "noteRequiredLabel": "Spiega cosa non va (almeno 10 caratteri)"
+    }
   },
   "reportReview": {
     "title": "I climber hanno segnalato questo pannello",
@@ -1775,7 +1790,15 @@
     "keepPartial_one": "{{count}} segnalazione su {{total}} chiusa. Le altre non sono andate a buon fine. Riprova.",
     "keepPartial_other": "{{count}} segnalazioni su {{total}} chiuse. Le altre non sono andate a buon fine. Riprova.",
     "statusPill": "Segnalato",
-    "open": "Vedi segnalazioni"
+    "open": "Vedi segnalazioni",
+    "review": "Rivedi",
+    "duplicateOf": "Stesso pannello di {{board}}",
+    "inTeamQueue": "Ci sta pensando il nostro team. Si chiude quando decide.",
+    "removeHint": "Sparisce dalla pagina e dai kiosk della palestra",
+    "keepFailed": "Impossibile chiudere la segnalazione. Riprova.",
+    "empty": "Su questo pannello non c'è più niente di aperto.",
+    "back": "Indietro",
+    "close": "Chiudi"
   },
   "whoCanEdit": {
     "boardTitle": "Non puoi modificare questo pannello",
@@ -1792,6 +1815,8 @@
     "claimHint": "Se lavori qui, rivendicala e la scheda è tua.",
     "claimGym": "Rivendica {{gym}}",
     "claimThisGym": "Rivendica questa palestra",
-    "goBack": "Indietro"
+    "goBack": "Indietro",
+    "rule": "Chi l'ha aggiunta può modificarla. Quando una palestra viene rivendicata, può farlo anche il suo staff. Tutti gli altri possono segnalare un problema.",
+    "backToGym": "Torna a {{gym}}"
   }
 }

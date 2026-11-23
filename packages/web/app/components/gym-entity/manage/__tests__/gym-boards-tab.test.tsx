@@ -975,3 +975,101 @@ describe('VisibilityChip', () => {
     expect(screen.queryByText('Public')).toBeNull();
   });
 });
+
+describe('GymBoardsTab — reported boards', () => {
+  const quiet = makeBoard({ uuid: 'quiet', name: 'Quiet Board', gymUuid: GYM_UUID, openReportCount: 0 });
+  const flagged = makeBoard({
+    uuid: 'flagged',
+    name: 'Flagged Board',
+    ownerId: 'sam',
+    ownerDisplayName: 'Sam',
+    gymUuid: GYM_UUID,
+    canRemoveFromGym: true,
+    openReportCount: 1,
+  });
+  const waitingReport = {
+    uuid: 'report-1',
+    targetKind: 'board',
+    reason: 'wrong_setup',
+    status: 'open',
+    routedTo: ['creator', 'gym_staff'],
+    boardUuid: 'flagged',
+    boardName: 'Flagged Board',
+    gymUuid: GYM_UUID,
+    gymName: 'Test Gym',
+    reporterCount: 2,
+    notes: [
+      {
+        note: 'The holds are the 2020 set',
+        createdAt: '2026-11-01T10:00:00.000Z',
+        reporter: { userId: 'reporter-1', displayName: 'Ana' },
+      },
+    ],
+    createdAt: '2026-11-01T10:00:00.000Z',
+    escalatesAt: '2026-11-15T10:00:00.000Z',
+    viewerRole: 'gym_staff',
+    viewerIsReporter: false,
+    viewerCanResolve: true,
+  };
+
+  function stubReported() {
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('strayBoardsForGym')) return { strayBoardsForGym: [] };
+      if (document.includes('resolveDirectoryReport'))
+        return { resolveDirectoryReport: { ...waitingReport, status: 'kept' } };
+      if (document.includes('boardReports')) return { boardReports: [waitingReport] };
+      if (document.includes('gymBoards')) return { gymBoards: [quiet, flagged] };
+      if (document.includes('query GetGym(')) return { gym };
+      return { myBoards: { boards: [], totalCount: 0, hasMore: false } };
+    });
+  }
+
+  it('lists reported boards first, with a Reported chip', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    await screen.findByText('Flagged Board');
+    const rows = screen.getAllByRole('listitem').map((row) => row.textContent ?? '');
+    expect(rows[0]).toContain('Flagged Board');
+    expect(rows[0]).toContain('Reported');
+    expect(rows[1]).toContain('Quiet Board');
+    expect(rows[1]).not.toContain('Reported');
+  });
+
+  it('reviews the reasons and notes without names, and keeps the board with a note', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^review$/i }));
+
+    const review = await screen.findByRole('dialog');
+    await within(review).findByText('Set up wrong · 2 climbers');
+    expect(within(review).getByText('The holds are the 2020 set')).toBeTruthy();
+    expect(within(review).queryByText(/Ana/)).toBeNull();
+    expect(within(review).getByText('Remove from Test Gym')).toBeTruthy();
+
+    fireEvent.click(within(review).getByText("It's right as it is"));
+    fireEvent.change(within(review).getByLabelText('Tell them why (optional)'), {
+      target: { value: '  We reset it last week  ' },
+    });
+    fireEvent.click(within(review).getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('resolveDirectoryReport'), {
+        input: { reportUuid: 'report-1', outcome: 'kept', note: 'We reset it last week' },
+      }),
+    );
+    await waitFor(() =>
+      expect(mockShowMessage).toHaveBeenCalledWith("Report closed. We'll pass your note on.", 'success'),
+    );
+  });
+
+  it('hands Remove from gym to the tab’s own confirm', async () => {
+    stubReported();
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^review$/i }));
+    const review = await screen.findByRole('dialog');
+    fireEvent.click(await within(review).findByText('Remove from Test Gym'));
+
+    const confirmation = await screen.findByRole('dialog');
+    expect(within(confirmation).getByText('Remove Flagged Board from Test Gym?')).toBeTruthy();
+  });
+});

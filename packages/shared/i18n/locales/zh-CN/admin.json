@@ -29,7 +29,8 @@
     "sprayWalls": "喷点墙训练数据",
     "boards": "已注册训练板",
     "buildPlans": "建造图纸包订单",
-    "partnerApps": "合作应用"
+    "partnerApps": "合作应用",
+    "boardReports": "训练板报告"
   },
   "buildPlans": {
     "title": "建造图纸包订单",
@@ -631,5 +632,80 @@
     "next": "下一页",
     "active": "有效",
     "suspended": "已停用"
+  },
+  "boardReports": {
+    "title": "训练板和岩馆报告",
+    "backToAdmin": "返回管理面板",
+    "description": "其他人无法处理的报告，以及开启超过 14 天的报告。直接发给我们的排在前面，然后按时间从早到晚排列。",
+    "filters": {
+      "status": "状态",
+      "kind": "显示",
+      "kindAll": "训练板和岩馆",
+      "kindBoard": "训练板",
+      "kindGym": "岩馆"
+    },
+    "status": {
+      "escalated": "由我们的团队处理",
+      "open": "由添加者或岩馆工作人员处理",
+      "fixed": "已修正",
+      "removed": "已移除",
+      "deleted": "已删除",
+      "kept": "保持原样",
+      "merged": "已合并"
+    },
+    "kind": {
+      "board": "训练板",
+      "gym": "岩馆"
+    },
+    "chips": {
+      "sentToTeam": "直接发给我们",
+      "waited": "已开启 14 天"
+    },
+    "meta_one": "{{count}} 位攀岩者 · {{age}}开启",
+    "meta_other": "{{count}} 位攀岩者 · {{age}}开启",
+    "ageToday": "今天",
+    "ageDays_one": "{{count}} 天前",
+    "ageDays_other": "{{count}} 天前",
+    "routedToLine": "发送给：{{recipients}}",
+    "routedTo": {
+      "creator": "添加者",
+      "gymStaff": "岩馆工作人员",
+      "admin": "我们的团队"
+    },
+    "duplicateOf": "与 {{name}} 相同",
+    "note": "{{name}}：{{note}}",
+    "reporterUnknown": "已删除的账户",
+    "closedOn": "{{date}} 关闭：{{outcome}}",
+    "actions": {
+      "deleteBoard": "删除训练板",
+      "removeFromGym": "从岩馆移除",
+      "hideGym": "在搜索中隐藏岩馆",
+      "keep": "保持原样",
+      "mergeGyms": "在重复岩馆中合并",
+      "openGym": "打开岩馆管理"
+    },
+    "confirm": {
+      "deleteTitle": "要为所有人删除 {{board}} 吗？",
+      "deleteBody": "它会从所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。报告将以“已删除”关闭。",
+      "removeTitle": "要把 {{board}} 从 {{gym}} 移除吗？",
+      "removeBody": "它会从岩馆的页面、展示终端和地图上消失，添加者仍会保留它。报告将以“已移除”关闭。",
+      "hideTitle": "要在搜索中隐藏 {{gym}} 吗？",
+      "hideBody": "它将不再出现在岩馆目录和搜索中，持有链接的人仍可打开它的页面。报告将以“已移除”关闭。",
+      "keepTitle": "保持原样？",
+      "keepBody": "报告将关闭，提交报告的人会收到保持原样的通知。",
+      "keepNoteLabel": "给他们的说明（选填）",
+      "cancel": "取消"
+    },
+    "snackbar": {
+      "deleted": "训练板已删除，报告已关闭。",
+      "removed": "已从岩馆移除，报告已关闭。",
+      "hidden": "岩馆已在搜索中隐藏，报告已关闭。",
+      "kept": "报告已关闭。",
+      "failed": "操作未成功，请重试。"
+    },
+    "empty": "这里没有内容。",
+    "error": "无法加载报告，请重试。",
+    "retry": "重试",
+    "loadMore": "加载更多"
   }
 }
