@@ -47,16 +47,25 @@ function renderButton(overrides: Partial<React.ComponentProps<typeof PlaylistHan
       layoutId={1}
       isPublic
       locale="en-US"
-      label="Climb this in the app"
       {...overrides}
-    />,
+    >
+      Open in your browser
+    </PlaylistHandoffButton>,
   );
-  return screen.getByRole('link', { name: 'Climb this in the app' });
+  return screen.getByRole('link', { name: 'Open in your browser' });
 }
 
 describe('PlaylistHandoffButton', () => {
   it('is a real link to the playlist on the app origin', () => {
     expect(renderButton().getAttribute('href')).toBe(HREF);
+  });
+
+  it('is a text button whatever it looks like, so a phone keeps one filled button: the store', () => {
+    const link = renderButton({ ctaName: 'handoff' });
+
+    expect(link.classList.contains('MuiButton-text')).toBe(true);
+    expect(link.classList.contains('MuiButton-contained')).toBe(false);
+    expect(link.getAttribute('data-cta')).toBe('handoff');
   });
 
   it('sends Playlist Handoff Clicked, then navigates once the flush settles', async () => {

@@ -241,7 +241,15 @@
     },
     "climbCount_one": "{{count}} Boulder",
     "climbCount_other": "{{count}} Boulder",
-    "openInApp": "Kletter das in der App",
+    "cta": {
+      "getAppHelper": "Beleuchte diese Boulder am Board, einen nach dem anderen.",
+      "openInBrowser": "Im Browser öffnen",
+      "openInBrowserMobile": "Oder die Playlist im Browser öffnen"
+    },
+    "qr": {
+      "title": "Scanne den Code, um diese Playlist auf deinem Handy zu öffnen",
+      "imageLabel": "QR-Code, der {{name}} auf deinem Handy öffnet"
+    },
     "subline": {
       "boardPlaylist": "{{board}}-Playlist",
       "sprayWallPlaylist": "Spraywall-Playlist",

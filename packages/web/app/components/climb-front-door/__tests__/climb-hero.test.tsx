@@ -2,8 +2,8 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
-import { getGradeColor } from '@/app/lib/grade-colors';
-import GradeTile, { gradeTileInk } from '../grade-tile';
+import { getGradeColor, getReadableGradeInk } from '@/app/lib/grade-colors';
+import GradeTile from '../grade-tile';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 
@@ -125,7 +125,7 @@ describe('climb page heading', () => {
       sx: { bgcolor: string; color: string };
     }>;
     expect(tile.props.sx.bgcolor).toBe(getGradeColor('6c/V5'));
-    expect(tile.props.sx.color).toBe(gradeTileInk(getGradeColor('6c/V5') ?? ''));
+    expect(tile.props.sx.color).toBe(getReadableGradeInk(getGradeColor('6c/V5') ?? ''));
   });
 
   it('renders no tile for a climb with no V-grade', async () => {

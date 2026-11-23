@@ -98,6 +98,25 @@ export function listQrUrl(listPath: string, locale: Locale): string {
   return desktopQrUrl(listPath, locale);
 }
 
+/**
+ * The absolute URL a setter page's code encodes: page 1 of the setter's page,
+ * in the reader's language, with `?src=qr&medium=desktop`. `setterPath` is
+ * `/setter/{encoded name}`, no locale prefix, no query string.
+ * `QrLandingTracker` with `kind="setter"` counts the scan as `Setter QR Scanned`.
+ */
+export function setterQrUrl(setterPath: string, locale: Locale): string {
+  return desktopQrUrl(setterPath, locale);
+}
+
+/**
+ * The absolute URL a public playlist's code encodes: `/playlists/{uuid}` in
+ * the reader's language, with `?src=qr&medium=desktop`. `QrLandingTracker`
+ * with `kind="playlist"` counts the scan as `Playlist QR Scanned`.
+ */
+export function playlistQrUrl(playlistUuid: string, locale: Locale): string {
+  return desktopQrUrl(`/playlists/${encodeURIComponent(playlistUuid)}`, locale);
+}
+
 function desktopQrUrl(pagePath: string, locale: Locale): string {
   return absoluteUrl(buildGymQrHref(localeHref(pagePath, locale), 'desktop'));
 }

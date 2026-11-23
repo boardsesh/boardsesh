@@ -136,3 +136,20 @@ describe('captureQrLandingMedium on a board list', () => {
     expect(captureQrLandingMedium('board')).toBeNull();
   });
 });
+
+describe.each([
+  ['setter', '/setter/jimmy%20webb'],
+  ['playlist', '/playlists/5d3b1c7e-2a4f'],
+] as const)('captureQrLandingMedium on a %s page', (kind, pagePath) => {
+  it('reads its own desktop code', () => {
+    window.history.replaceState(null, '', `${pagePath}?src=qr&medium=desktop`);
+
+    expect(captureQrLanding(kind)).toEqual({ kind, medium: 'desktop' });
+  });
+
+  it('reads null for a printed code, which no setter or playlist page shows', () => {
+    window.history.replaceState(null, '', `${pagePath}?src=qr&medium=poster`);
+
+    expect(captureQrLandingMedium(kind)).toBeNull();
+  });
+});

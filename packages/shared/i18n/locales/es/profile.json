@@ -212,6 +212,10 @@
       "next": "Más bloques",
       "pageLabel": "Página {{page}}"
     },
-    "installHelper": "Descarga la app gratis y escala los bloques de {{name}} en tu plafón."
+    "installHelper": "Descarga la app gratis y escala los bloques de {{name}} en tu plafón.",
+    "qr": {
+      "title": "Escanea para abrir estos bloques en tu móvil",
+      "imageLabel": "Código QR que abre los bloques de {{name}} en tu móvil"
+    }
   }
 }

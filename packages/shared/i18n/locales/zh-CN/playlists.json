@@ -241,7 +241,15 @@
     },
     "climbCount_one": "{{count}} 条线路",
     "climbCount_other": "{{count}} 条线路",
-    "openInApp": "在应用中攀爬此线路集",
+    "cta": {
+      "getAppHelper": "在你的训练板上逐条点亮这些线路。",
+      "openInBrowser": "在浏览器中打开",
+      "openInBrowserMobile": "或在浏览器中打开此线路集"
+    },
+    "qr": {
+      "title": "扫码在手机上打开这个线路集",
+      "imageLabel": "在手机上打开 {{name}} 的二维码"
+    },
     "subline": {
       "boardPlaylist": "{{board}} 线路集",
       "sprayWallPlaylist": "喷点墙线路集",

@@ -330,3 +330,33 @@ describe('QrLandingTracker on a board list, for its laptop code', () => {
     expect(captureQrLandingMedium('list')).toBeNull();
   });
 });
+
+describe.each([
+  ['setter', '/setter/jimmy%20webb', 'Setter QR Scanned'],
+  ['playlist', '/playlists/5d3b1c7e-2a4f-4f0e-9d53-6f1a2b3c4d5e', 'Playlist QR Scanned'],
+] as const)('QrLandingTracker on a %s page, for its laptop code', (kind, pagePath, eventName) => {
+  it('reports the desktop code once under its own name and strips the pair', () => {
+    window.history.replaceState(null, '', `${pagePath}?src=qr&medium=desktop`);
+
+    const { rerender } = render(<QrLandingTracker kind={kind} boardType="kilter" />);
+    rerender(<QrLandingTracker kind={kind} boardType="kilter" />);
+    flushStrip();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith(eventName, { medium: 'desktop', surface: 'web', boardType: 'kilter' });
+    expect(window.location.search).toBe('');
+    expect(captureQrLandingMedium(kind)).toBe('desktop');
+  });
+
+  it.each(['?src=qr&medium=poster', '?src=qr&medium=board', '?src=qr&medium=kiosk'])(
+    'counts nothing for %s, which this page never prints',
+    (search) => {
+      window.history.replaceState(null, '', `${pagePath}${search}`);
+
+      render(<QrLandingTracker kind={kind} boardType="kilter" />);
+      flushStrip();
+
+      expect(track).not.toHaveBeenCalled();
+    },
+  );
+});

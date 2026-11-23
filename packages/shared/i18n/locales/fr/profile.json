@@ -212,6 +212,10 @@
       "next": "Plus de blocs",
       "pageLabel": "Page {{page}}"
     },
-    "installHelper": "Installe l’app gratuite et grimpe les blocs de {{name}} sur ta board."
+    "installHelper": "Installe l’app gratuite et grimpe les blocs de {{name}} sur ta board.",
+    "qr": {
+      "title": "Scanne pour ouvrir ces blocs sur ton téléphone",
+      "imageLabel": "QR code qui ouvre les blocs de {{name}} sur ton téléphone"
+    }
   }
 }

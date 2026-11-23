@@ -241,7 +241,15 @@
     },
     "climbCount_one": "{{count}} climb",
     "climbCount_other": "{{count}} climbs",
-    "openInApp": "Climb this in the app",
+    "cta": {
+      "getAppHelper": "Light these climbs on your board, one after another.",
+      "openInBrowser": "Open in your browser",
+      "openInBrowserMobile": "Or open the playlist in your browser"
+    },
+    "qr": {
+      "title": "Scan to open this playlist on your phone",
+      "imageLabel": "QR code that opens {{name}} on your phone"
+    },
     "subline": {
       "boardPlaylist": "{{board}} playlist",
       "sprayWallPlaylist": "Spraywall playlist",

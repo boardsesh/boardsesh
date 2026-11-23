@@ -120,15 +120,6 @@
   overflow: hidden;
 }
 
-/* The hand-off and the playlist's icon actions. Wraps rather than overlaps. */
-.heroActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-5);
-}
-
 /* Visibility badge */
 .visibilityBadge {
   display: inline-flex;

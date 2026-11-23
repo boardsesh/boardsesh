@@ -212,6 +212,10 @@
       "next": "更多线路",
       "pageLabel": "第 {{page}} 页"
     },
-    "installHelper": "免费下载应用，在你的训练板上攀爬 {{name}} 的线路。"
+    "installHelper": "免费下载应用，在你的训练板上攀爬 {{name}} 的线路。",
+    "qr": {
+      "title": "扫码在手机上打开这些线路",
+      "imageLabel": "在手机上打开 {{name}} 的线路的二维码"
+    }
   }
 }

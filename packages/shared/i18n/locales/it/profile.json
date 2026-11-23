@@ -212,6 +212,10 @@
       "next": "Altri blocchi",
       "pageLabel": "Pagina {{page}}"
     },
-    "installHelper": "Scarica l’app gratuita e scala i blocchi di {{name}} sul tuo pannello."
+    "installHelper": "Scarica l’app gratuita e scala i blocchi di {{name}} sul tuo pannello.",
+    "qr": {
+      "title": "Inquadra il codice per aprire questi blocchi sul telefono",
+      "imageLabel": "Codice QR che apre i blocchi di {{name}} sul telefono"
+    }
   }
 }

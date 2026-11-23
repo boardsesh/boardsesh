@@ -140,6 +140,16 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
+// What the root layout's provider gives a cold server render: no answer yet.
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
+}));
+// The real code is a wall of `<path>`; the URL it encodes is what is under test.
+vi.mock('qrcode.react', () => ({
+  QRCodeSVG: ({ value, 'aria-label': ariaLabel }: { value: string; 'aria-label'?: string }) => (
+    <svg data-qr-value={value} aria-label={ariaLabel} role="img" />
+  ),
+}));
 
 const pageModule = await import('../page');
 const SetterProfilePage = pageModule.default;
@@ -147,6 +157,7 @@ const { generateMetadata } = pageModule;
 const { absoluteUrl } = await import('@/app/lib/seo/base-url');
 const { buildCanonicalClimbListUrl } = await import('@/app/lib/url-utils');
 const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
+const { setterQrUrl } = await import('@/app/lib/gym-attribution');
 
 type StubClimb = {
   uuid: string;
@@ -441,6 +452,34 @@ describe('the setter front door hero, cards and rows', () => {
 
     expect(html).not.toMatch(/href="[^"]*\/list"/);
     expect(html).toContain('>Kilter<');
+  });
+});
+
+describe('the setter front door on a laptop', () => {
+  const FIVE_CLIMBS = ['a', 'b', 'c', 'd', 'e'].map((letter) => ({ uuid: letter.repeat(32), name: `Climb ${letter}` }));
+
+  it("shows a QR code that opens page one of this setter's climbs on a phone", async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+
+    const html = await render({ page: '2' }, 'jimmy webb');
+    const encoded = /data-qr-value="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
+
+    expect(html.match(/data-qr-value=/g) ?? []).toHaveLength(1);
+    expect(encoded).toBe(setterQrUrl('/setter/jimmy%20webb', 'en-US'));
+    expect(encoded).toContain('/setter/jimmy%20webb?src=qr&medium=desktop');
+    expect(html).toContain('setter.qr.title');
+    expect(html).toContain('aria-label="setter.qr.imageLabel:Marco"');
+  });
+
+  it("gives the QR card's store buttons their own link id, apart from the phone's", async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+
+    const html = await render();
+
+    expect(html).toContain('ct=setter-qr-card');
+    expect(html).toContain('ct=setter&amp;');
+    // One store pair per screen: the phone's and the laptop's, never both shown.
+    expect(html.match(/href="https:\/\/apps\.apple\.com/g) ?? []).toHaveLength(2);
   });
 });
 

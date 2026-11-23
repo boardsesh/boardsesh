@@ -395,7 +395,8 @@ export const SHARED_EVENTS = {
   // these properties, because the app route has to match the bare pathname.
   ClimbHandoffClicked: 'Climb Handoff Clicked',
   // The playlist page's sibling of `Climb Handoff Clicked`: a reader on
-  // www's /playlists/{uuid} taps "Climb this in the app". Props: {
+  // www's /playlists/{uuid} taps "Open in your browser" (on a phone, the text
+  // link under the store button). Props: {
   // environment: 'production-web', surface: 'playlist_front_door', boardName
   // (the playlist's board type), layoutId (null for a synced circuit),
   // isPublic, playlistUuid (public playlists only), locale, campaign:
@@ -1133,6 +1134,19 @@ export const SHARED_EVENTS = {
   // so `Climb QR Scanned` stays a count of climb pages. Only www fires it
   // (`surface: 'web'`).
   ListQrScanned: 'List QR Scanned',
+  // A setter page's QR code was scanned and the page loaded on the phone. The
+  // same desktop code, shown from md on `/setter/{name}` in place of the
+  // phone's store buttons (`/setter/{name}?src=qr&medium=desktop`). Props and
+  // parser are the climb event's: { medium: 'desktop', surface: 'web' | 'app',
+  // boardType } (the board most of the page's climbs sit on). Built by
+  // `setterQrScanned` (climb-qr-events.ts). Only www fires it.
+  SetterQrScanned: 'Setter QR Scanned',
+  // A public playlist's QR code was scanned and the playlist loaded on the
+  // phone. The same desktop code, under the playlist's "Open in your browser"
+  // from md (`/playlists/{uuid}?src=qr&medium=desktop`). Props and parser are
+  // the climb event's, `boardType` the playlist's board. Built by
+  // `playlistQrScanned` (climb-qr-events.ts). Only www fires it.
+  PlaylistQrScanned: 'Playlist QR Scanned',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

@@ -241,7 +241,15 @@
     },
     "climbCount_one": "{{count}} bloque",
     "climbCount_other": "{{count}} bloques",
-    "openInApp": "Escala esto en la app",
+    "cta": {
+      "getAppHelper": "Ilumina estos bloques en tu plafón, uno tras otro.",
+      "openInBrowser": "Ábrela en el navegador",
+      "openInBrowserMobile": "O abre la playlist en el navegador"
+    },
+    "qr": {
+      "title": "Escanea para abrir esta playlist en tu móvil",
+      "imageLabel": "Código QR que abre {{name}} en tu móvil"
+    },
     "subline": {
       "boardPlaylist": "Playlist de {{board}}",
       "sprayWallPlaylist": "Playlist de Spraywall",

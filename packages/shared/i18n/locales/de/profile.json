@@ -212,6 +212,10 @@
       "next": "Mehr Boulder",
       "pageLabel": "Seite {{page}}"
     },
-    "installHelper": "Hol dir die kostenlose App und klettere die Boulder von {{name}} auf deinem Board."
+    "installHelper": "Hol dir die kostenlose App und klettere die Boulder von {{name}} auf deinem Board.",
+    "qr": {
+      "title": "Scanne den Code, um diese Boulder auf deinem Handy zu öffnen",
+      "imageLabel": "QR-Code, der die Boulder von {{name}} auf deinem Handy öffnet"
+    }
   }
 }

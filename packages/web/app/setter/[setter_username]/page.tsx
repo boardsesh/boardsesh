@@ -6,7 +6,11 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import Image from 'next/image';
+import { boardTypeProperty } from '@boardsesh/analytics';
 import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
+import PhoneQrCard from '@/app/components/climb-front-door/phone-qr-card';
+import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
+import { setterQrUrl } from '@/app/lib/gym-attribution';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -74,6 +78,13 @@ const heroActionsSx = {
   gap: `${themeTokens.spacing[3]}px`,
   marginTop: `${themeTokens.spacing[4]}px`,
 };
+
+// A phone gets the store buttons; from md (900px), where the page is read on a
+// laptop, the QR card takes their place, with its own store pair. One store
+// block per screen, split by CSS alone, because the HTML is the same for every
+// reader.
+const phoneInstallSx = { display: { xs: 'block', md: 'none' } };
+const desktopQrSx = { display: { xs: 'none', md: 'block' }, width: '100%' };
 
 const boardsAndFollowSx = {
   display: 'flex',
@@ -378,7 +389,11 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
 
   const page = parseFrontDoorPage(resolvedSearchParams.page);
   const locale = await getLocale();
-  const { t } = await getServerTranslation('profile');
+  const [{ t }, { t: tClimbs }, storeButtonLabels] = await Promise.all([
+    getServerTranslation('profile'),
+    getServerTranslation('climbs'),
+    getStoreButtonLabels(),
+  ]);
 
   // The SAME resolution `generateMetadata` read, memoised for this request, so
   // the robots directive and the rendered links cannot describe different pages.
@@ -414,6 +429,8 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   });
 
   const basePath = `/setter/${encodeURIComponent(username)}`;
+  // The board most of this page's climbs sit on, for the scan event; never the setter.
+  const scanBoardType = boardTypeProperty(primaryBoardType ?? setterData.boardTypes[0]).boardType;
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'common', 'climbs', 'settings']}>
@@ -469,15 +486,33 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
               )}
               <SetterFollowIsland username={username} initialFollowerCount={setterData.followerCount} />
             </Box>
-            <FrontDoorInstall
-              placement="setter"
-              helperText={t('setter.installHelper', { name: setterData.displayName })}
-              labels={await getStoreButtonLabels()}
-              appearance="brand"
-            />
+            <Box sx={phoneInstallSx}>
+              <FrontDoorInstall
+                placement="setter"
+                helperText={t('setter.installHelper', { name: setterData.displayName })}
+                labels={storeButtonLabels}
+                appearance="brand"
+                qrLanding="setter"
+              />
+            </Box>
+            <Box sx={desktopQrSx}>
+              <PhoneQrCard
+                // Page 1, whatever page the laptop is on: the code is for
+                // carrying this setter to a phone, not this page of their list.
+                url={setterQrUrl(basePath, locale)}
+                title={t('setter.qr.title')}
+                body={tClimbs('frontDoor.qr.body')}
+                imageLabel={t('setter.qr.imageLabel', { name: setterData.displayName })}
+                placement="setter-qr-card"
+                storeLabels={storeButtonLabels}
+                qrLanding="setter"
+              />
+            </Box>
           </Box>
         }
       >
+        {/* A phone that scanned the laptop's QR code lands here: count it once. */}
+        <QrLandingTracker kind="setter" boardType={scanBoardType} />
         <SetterJsonLd
           username={username}
           displayName={setterData.displayName}

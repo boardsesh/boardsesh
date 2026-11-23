@@ -212,6 +212,10 @@
       "next": "More climbs",
       "pageLabel": "Page {{page}}"
     },
-    "installHelper": "Get the free app and climb {{name}}’s problems on your board."
+    "installHelper": "Get the free app and climb {{name}}’s problems on your board.",
+    "qr": {
+      "title": "Scan to open these climbs on your phone",
+      "imageLabel": "QR code that opens {{name}}’s climbs on your phone"
+    }
   }
 }

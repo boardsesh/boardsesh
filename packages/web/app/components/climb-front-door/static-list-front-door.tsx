@@ -13,7 +13,7 @@ import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { listQrUrl } from '@/app/lib/gym-attribution';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { fillNodeSlot, nodeSlot } from '@/app/lib/i18n/node-slot';
-import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
+import { boardConfigForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
@@ -179,9 +179,12 @@ export default async function StaticListFrontDoor({
     getStoreButtonLabels(),
   ]);
   const boardName = formatBoardDisplayName(boardDetails.board_name);
-  // "Kilter Board Original", not "Kilter": the heading names the layout a
-  // climber searches for, and every Kilter config at 40° would otherwise share it.
-  const boardLabel = climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name);
+  // "Kilter Board Original 12x12 with kickboard", not "Kilter": the heading,
+  // the intro, the helper and the QR label name the layout and size a climber
+  // searches for, the same words as the page's `<title>` (`boardConfigForSearch`
+  // in `generateMetadata`). Without the size every Kilter Original at 40° would
+  // share one heading.
+  const boardLabel = boardConfigForSearch(boardDetails);
   // The breadcrumb's leaf is this page's CANONICAL, which on `/b/{slug}` is the
   // config-tuple URL rather than the path the reader is on — same split
   // `ClimbFrontDoor` handles, same builder on both trees.
@@ -315,6 +318,12 @@ export default async function StaticListFrontDoor({
               boardSlug={boardSlug}
               boardDetails={toBoardImageDetails(boardDetails)}
               virtualize={false}
+              // The app's rows: rounded cards with the grade on a chip in its
+              // grade colour, as on the setter page.
+              rowVariant="card"
+              // The hero's board render is this page's LCP and takes the high
+              // priority; a row thumbnail asking for it too would compete.
+              prioritizeFirstRow={false}
               emptyState={
                 <Typography variant="body1" component="p" sx={emptyStateSx}>
                   {t('list.frontDoor.empty')}

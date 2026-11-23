@@ -197,8 +197,8 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
 
 ### Which code fires which event
 
-Five printed or on-screen codes share the param contract above, and they land
-on three kinds of page, so a scan is counted by one of four events:
+Seven printed or on-screen codes share the param contract above, and they land
+on six kinds of page, so a scan is counted by one of six events:
 
 | `medium` | Code | Lands on | Event |
 | --- | --- | --- | --- |
@@ -207,6 +207,8 @@ on three kinds of page, so a scan is counted by one of four events:
 | `board` | The board poster (`/poster/b/{slug}`, #4415): `boardQrUrl(slug, 'board')`, with an unlisted Spraywall's `wall=<uuid>` in front of the pair | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
 | `desktop` | The code beside "Open in your browser" on a climb page, shown from md (900px) only: `climbQrUrl(handoffPath, locale)`, the climb page itself in the reader's language | The same climb page, in either tree | `Climb QR Scanned` |
 | `desktop` | The same code on a board's climb list, shown from md only: `listQrUrl(basePath, locale)`, page 1 of the list the reader is on | The same list, in either tree | `List QR Scanned` |
+| `desktop` | The same code on a setter's page, shown from md only: `setterQrUrl('/setter/{name}', locale)`, page 1 of the setter's climbs | `/setter/{name}` | `Setter QR Scanned` |
+| `desktop` | The same code on a public playlist, shown from md only: `playlistQrUrl(uuid, locale)` | `/playlists/{uuid}` | `Playlist QR Scanned` |
 
 `Gym QR Scanned` stays poster-only: its tracker mounts on `/gym/[gym_slug]` and
 nowhere else, and it carries `gymSlug`. A `kiosk` or `board` row on it means
@@ -376,6 +378,30 @@ link id. Count those scans with `List QR Scanned` instead.
 As on the climb page, the QR card's own store buttons are a laptop's clicks
 and carry their own placement and link id, `climb-list-qr-card`, apart from
 the phone's `climb-list`.
+
+### `Setter QR Scanned` and `Playlist QR Scanned`: the desktop code on a setter page and a playlist
+
+A setter's page and a public playlist show the same laptop code, from md
+(900px) only, through the same `PhoneQrCard`. Each encodes its own page with
+`?src=qr&medium=desktop`: `setterQrUrl` gives page 1 of the setter's climbs,
+`playlistQrUrl` gives `/playlists/{uuid}` (both in `app/lib/gym-attribution.ts`).
+Same medium, same strict parser (`parseClimbQrLanding`) and the same three
+properties as `Climb QR Scanned`, built by `setterQrScanned` and
+`playlistQrScanned` in `packages/shared/analytics/src/climb-qr-events.ts`. Each
+has its own name so no page's count is inflated by another's.
+
+`QrLandingTracker` fires them: `kind="setter"` on the setter page, with
+`boardType` the board most of that page's climbs sit on, and `kind="playlist"`
+on a public playlist, with the playlist's board. A private playlist shows no
+code and mounts no tracker: its link opens nothing on a phone that is not
+signed in as the owner.
+
+The store buttons read the same kind, so a store click after a scan gives the
+link ids `setter.desktop` and `playlist.desktop`. On the setter page the
+phone's store pair (`setter`) shows below md only; from md the QR card's pair
+takes its place. The QR cards' own store buttons are a laptop's clicks and
+carry their own placements and link ids, `setter-qr-card` and
+`playlist-qr-card`.
 
 ### A scan only counts if the page loads: iOS and the association file
 

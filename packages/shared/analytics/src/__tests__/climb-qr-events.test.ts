@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CLIMB_QR_MEDIUMS, climbQrScanned, listQrScanned, parseClimbQrLanding } from '../climb-qr-events';
+import {
+  CLIMB_QR_MEDIUMS,
+  climbQrScanned,
+  listQrScanned,
+  parseClimbQrLanding,
+  playlistQrScanned,
+  setterQrScanned,
+} from '../climb-qr-events';
 import { BOARD_QR_MEDIUMS, parseBoardQrLanding } from '../board-qr-events';
 import { SHARED_EVENTS } from '../events';
 import { GYM_QR_MEDIUMS, buildGymQrHref, parseGymQrLanding } from '../gym-funnel';
@@ -46,6 +53,33 @@ describe('listQrScanned', () => {
 
   it('parses what the board list encodes', () => {
     const href = buildGymQrHref('/kilter/original/12x12-square/screw_bolt/40/list', 'desktop');
+    const params = Object.fromEntries(new URL(href, 'https://www.boardsesh.com').searchParams);
+
+    expect(parseClimbQrLanding(params)).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe.each([
+  ['setterQrScanned', setterQrScanned, SHARED_EVENTS.SetterQrScanned, 'Setter QR Scanned', '/setter/jimmy%20webb'],
+  ['playlistQrScanned', playlistQrScanned, SHARED_EVENTS.PlaylistQrScanned, 'Playlist QR Scanned', '/playlists/abc'],
+] as const)('%s', (_builderName, build, eventName, expectedName, pagePath) => {
+  it('names its own page apart from every other desktop code, with the same three properties', () => {
+    expect(build({ medium: 'desktop', surface: 'web', boardType: 'kilter' })).toEqual({
+      name: eventName,
+      properties: { medium: 'desktop', surface: 'web', boardType: 'kilter' },
+    });
+    expect(eventName).toBe(expectedName);
+    expect([SHARED_EVENTS.ClimbQrScanned, SHARED_EVENTS.ListQrScanned]).not.toContain(eventName);
+  });
+
+  it('carries nothing that names the page', () => {
+    const { properties } = build({ medium: 'desktop', surface: 'web', boardType: 'my-garage-board' });
+
+    expect(properties).toEqual({ medium: 'desktop', surface: 'web', boardType: null });
+  });
+
+  it('parses what the page encodes', () => {
+    const href = buildGymQrHref(pagePath, 'desktop');
     const params = Object.fromEntries(new URL(href, 'https://www.boardsesh.com').searchParams);
 
     expect(parseClimbQrLanding(params)).toEqual({ medium: 'desktop' });

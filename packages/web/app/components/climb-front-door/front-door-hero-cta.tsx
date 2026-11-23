@@ -1,16 +1,12 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import OpenInBrowserIcon from '@mui/icons-material/OpenInBrowser';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import type { QrLandingKind } from '@/app/lib/qr-landing';
-import { themeTokens } from '@/app/theme/theme-config';
 import { ClimbHandoffLink, type ClimbHandoffTarget } from './climb-handoff-cta';
-import MobileStorePrimary, { type MobileStorePrimaryLabels } from './mobile-store-primary';
+import { desktopBlockSx, HandoffLabels, handoffSx, heroCtaBlockSx, MobileInstallBlock } from './front-door-cta-parts';
+import type { MobileStorePrimaryLabels } from './mobile-store-primary';
 import PhoneQrCard from './phone-qr-card';
-import { STICKY_INSTALL_HIDE_ATTRIBUTE } from './sticky-install-markers';
 
 /** Every word the block shows, already translated by the server page. */
 export type FrontDoorHeroCtaLabels = {
@@ -39,68 +35,11 @@ type FrontDoorHeroCtaProps = {
   labels: FrontDoorHeroCtaLabels;
 };
 
-/** MUI's `md`, where the page turns into two columns. */
-const DESKTOP_MEDIA = '@media (min-width: 900px)';
-
-const blockSx = {
-  display: 'grid',
-  justifyItems: { xs: 'stretch', md: 'start' },
-  gap: { xs: `${themeTokens.spacing[2]}px`, md: `${themeTokens.spacing[4]}px` },
-};
-
-const mobileInstallSx = {
-  display: { xs: 'grid', md: 'none' },
-  gap: `${themeTokens.spacing[3]}px`,
-};
-
-const helperSx = {
-  margin: 0,
-  color: 'var(--neutral-700)',
-  fontSize: themeTokens.typography.fontSize.base,
-  textAlign: 'center',
-};
-
-const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large', glow: true });
-
-/**
- * The hover of a text button that looks filled. The theme gives every button
- * that is not `contained` a violet wash on hover (`mui-theme.ts`:
- * `:not(:disabled):not(.MuiButton-contained):hover`, and `.MuiButton-colorPrimary`
- * inside it for the text colour, specificity 0,5,0). This selector is 0,6,0, so
- * the fill wins whatever order the two rules land in.
- */
-const FILLED_TEXT_BUTTON_HOVER = '&.MuiButton-root.MuiButton-text.MuiButton-colorPrimary:not(:disabled):hover';
-
-/**
- * One anchor, two looks. Below md it is the quiet way out under the store
- * button: a centred text link, with the theme's text-button hover. From md it
- * is the filled button, the page's one primary action on a laptop, where the
- * browser app works. It stays `variant="text"` at every width, so the store
- * button is the only `contained` one on the page.
- */
-const handoffSx = {
-  justifySelf: { xs: 'center', md: 'start' },
-  minHeight: 44,
-  paddingInline: `${themeTokens.spacing[3]}px`,
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  fontSize: themeTokens.typography.fontSize.base,
-  color: 'var(--color-primary)',
-  [DESKTOP_MEDIA]: {
-    ...filledSx,
-    [FILLED_TEXT_BUTTON_HOVER]: { ...filledHoverSx, color: 'var(--color-on-primary)' },
-  },
-};
-
-const mobileOnlySx = { display: { xs: 'inline', md: 'none' } };
-const desktopOnlySx = { display: { xs: 'none', md: 'inline' } };
-const desktopIconSx = { display: { xs: 'none', md: 'inline-flex' }, marginRight: `${themeTokens.spacing[2]}px` };
-const desktopBlockSx = { display: { xs: 'none', md: 'block' }, width: '100%' };
-
 /**
  * A public page's one call to action, split by screen width with CSS alone.
  * The climb page (`ClimbHeroCta`) and the board list (`StaticListFrontDoor`)
- * share it; each passes its own words, placement and hand-off.
+ * share it; each passes its own words, placement and hand-off. The parts live
+ * in `front-door-cta-parts.tsx`, which the playlist page composes too.
  *
  * A phone reading these pages almost never has the app: a phone with it opens
  * climb links straight in the app, and a board list is mostly reached by
@@ -128,25 +67,16 @@ export default function FrontDoorHeroCta({
   labels,
 }: FrontDoorHeroCtaProps) {
   return (
-    <Box sx={blockSx}>
-      <Box sx={mobileInstallSx} data-cta="mobile-install" {...{ [STICKY_INSTALL_HIDE_ATTRIBUTE]: '' }}>
-        <MobileStorePrimary placement={placement} qrLanding={qrLanding} labels={labels.store} />
-        <Typography component="p" sx={helperSx}>
-          {labels.storeHelper}
-        </Typography>
-      </Box>
+    <Box sx={heroCtaBlockSx}>
+      <MobileInstallBlock
+        placement={placement}
+        qrLanding={qrLanding}
+        labels={labels.store}
+        helper={labels.storeHelper}
+      />
 
-      {/* No aria-label: the visible text at each width is the name (WCAG 2.5.3). */}
       <ClimbHandoffLink {...handoff} ctaName="handoff" sx={handoffSx}>
-        <Box component="span" sx={desktopIconSx}>
-          <OpenInBrowserIcon aria-hidden />
-        </Box>
-        <Box component="span" sx={mobileOnlySx}>
-          {labels.handoffMobile}
-        </Box>
-        <Box component="span" sx={desktopOnlySx}>
-          {labels.handoffDesktop}
-        </Box>
+        <HandoffLabels mobile={labels.handoffMobile} desktop={labels.handoffDesktop} />
       </ClimbHandoffLink>
 
       <Box sx={desktopBlockSx}>

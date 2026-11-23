@@ -5,6 +5,8 @@ import {
   boardQrScanned,
   climbQrScanned,
   listQrScanned,
+  playlistQrScanned,
+  setterQrScanned,
   stripGymQrParams,
   type AnalyticsBoardType,
 } from '@boardsesh/analytics';
@@ -15,14 +17,14 @@ import { captureQrLanding, type QrLanding, type QrLandingKind } from '@/app/lib/
 type QrLandingTrackerProps = {
   /**
    * Which code lands on this page: `board` on `/b/{slug}/{angle}/list` (a
-   * printed board poster or the kiosk's install code), `climb` on a climb page
-   * and `list` on a board's climb list (the code beside "Open in your browser"
-   * on a laptop).
+   * printed board poster or the kiosk's install code), `climb` on a climb page,
+   * `list` on a board's climb list, `setter` on a setter's page and `playlist`
+   * on a public playlist (the laptop code each of those pages shows from md).
    */
   kind: QrLandingKind;
   /**
    * The board's type, already narrowed to the nine (`boardTypeProperty`), or
-   * null. Never a slug, name or uuid: neither scan event names a board.
+   * null. Never a slug, name or uuid: no scan event names a board.
    */
   boardType: AnalyticsBoardType | null;
 };
@@ -48,6 +50,10 @@ function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
       return climbQrScanned({ medium: landing.medium, surface: 'web', boardType });
     case 'list':
       return listQrScanned({ medium: landing.medium, surface: 'web', boardType });
+    case 'setter':
+      return setterQrScanned({ medium: landing.medium, surface: 'web', boardType });
+    case 'playlist':
+      return playlistQrScanned({ medium: landing.medium, surface: 'web', boardType });
   }
 }
 
@@ -64,6 +70,9 @@ function scanEvent(landing: QrLanding, boardType: AnalyticsBoardType | null) {
  *  - `list`: mounted on the catalogue board list in both route trees, the same
  *    laptop code pointed at the list. Fires `List QR Scanned`. On `/b` it sits
  *    beside the `board` tracker; each reads only its own mediums.
+ *  - `setter` and `playlist`: mounted on a setter's page and on a public
+ *    playlist, the same laptop code pointed at that page. Fire
+ *    `Setter QR Scanned` and `Playlist QR Scanned`.
  *
  * Unlike `GymQrLandingTracker`, the medium is read here in the browser and not
  * passed by the server: these pages' HTML is shared at the edge, so it cannot

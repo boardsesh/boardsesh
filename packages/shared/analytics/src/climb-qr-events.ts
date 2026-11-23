@@ -1,8 +1,9 @@
 // Climb QR scans: the code a climb page shows on a laptop, beside "Open in your
 // browser", so a climber can carry the climb to the phone in their pocket. A
-// board's climb list shows the same code for the same reason; its scan is the
-// separate `List QR Scanned` (`listQrScanned` below), so neither funnel counts
-// the other's page.
+// board's climb list, a setter's page and a playlist show the same code for the
+// same reason; each of their scans has its own name (`List QR Scanned`,
+// `Setter QR Scanned`, `Playlist QR Scanned`, built below), so no funnel counts
+// another page's scans.
 //
 // The same contract as board-qr-events.ts:
 //
@@ -96,6 +97,52 @@ export function listQrScanned(input: ClimbQrScannedInput): {
 } {
   return {
     name: SHARED_EVENTS.ListQrScanned,
+    properties: {
+      medium: input.medium,
+      surface: input.surface,
+      ...boardTypeProperty(input.boardType),
+    },
+  };
+}
+
+/**
+ * A setter page's code was scanned and the setter's page loaded on the phone.
+ * Once per landing.
+ *
+ * The laptop code beside a setter's store buttons, on `/setter/{name}`:
+ * `medium=desktop`, parsed by `parseClimbQrLanding`, the same three properties.
+ * `boardType` is the board most of the page's climbs sit on. Nothing names the
+ * setter; the page URL the SDK stamps on every event says whose page it was.
+ */
+export function setterQrScanned(input: ClimbQrScannedInput): {
+  name: typeof SHARED_EVENTS.SetterQrScanned;
+  properties: ClimbQrScannedProps;
+} {
+  return {
+    name: SHARED_EVENTS.SetterQrScanned,
+    properties: {
+      medium: input.medium,
+      surface: input.surface,
+      ...boardTypeProperty(input.boardType),
+    },
+  };
+}
+
+/**
+ * A public playlist's code was scanned and the playlist loaded on the phone.
+ * Once per landing.
+ *
+ * The laptop code under a playlist's "Open in your browser", on
+ * `/playlists/{uuid}`: `medium=desktop`, parsed by `parseClimbQrLanding`, the
+ * same three properties. `boardType` is the playlist's own board. Nothing names
+ * the playlist; the page URL says which one it was.
+ */
+export function playlistQrScanned(input: ClimbQrScannedInput): {
+  name: typeof SHARED_EVENTS.PlaylistQrScanned;
+  properties: ClimbQrScannedProps;
+} {
+  return {
+    name: SHARED_EVENTS.PlaylistQrScanned,
     properties: {
       medium: input.medium,
       surface: input.surface,

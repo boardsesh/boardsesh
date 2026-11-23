@@ -60,7 +60,6 @@ import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import type { PlaylistGradeBandSummary } from '@/app/lib/playlist-grade-band';
-import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import BackButton from '@/app/components/back-button';
 import CommentSection from '@/app/components/social/comment-section';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
@@ -71,7 +70,7 @@ import { ssrSeedMatchesQueryKey } from '@/app/lib/graphql/ssr-query-seed';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import styles from '@/app/components/ui/page-container.module.css';
 import shellStyles from '@/app/components/ui/page-shell/page-shell.module.css';
-import PlaylistHandoffButton from './playlist-handoff-button';
+import PlaylistHeroCta from './playlist-hero-cta';
 import PlaylistSubline, { playlistBoardTypes } from './playlist-subline';
 
 // Validate hex color format
@@ -99,6 +98,9 @@ const titleSx = {
   letterSpacing: '-0.025em',
   textWrap: 'balance',
 } as const;
+
+// The call to action's distance from the description or follow button above it.
+const heroCtaSx = { mt: `${themeTokens.spacing[5]}px` } as const;
 
 // Outlined circles beside the hand-off, the size of a comfortable tap.
 const heroIconButtonSx = {
@@ -129,6 +131,12 @@ type PlaylistDetailContentProps = {
   initialPlaylist?: Playlist | null;
   /** SSR-fetched first page of climbs to avoid first-load spinner. */
   initialClimbs?: PlaylistClimbsResult | null;
+  /**
+   * The laptop's QR card, server-rendered by the page so `qrcode.react` never
+   * reaches the client. Absent for a private playlist and when the server
+   * could not read the playlist.
+   */
+  qrCard?: React.ReactNode;
 };
 
 export default function PlaylistDetailContent({
@@ -142,10 +150,12 @@ export default function PlaylistDetailContent({
   initialMyBoards,
   initialPlaylist,
   initialClimbs,
+  qrCard,
 }: PlaylistDetailContentProps) {
   const router = useLocaleRouter();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('playlists');
+  const { t: tClimbs } = useTranslation('climbs');
   const { t: tMarketing } = useTranslation('marketing');
   const [playlist, setPlaylist] = useState<Playlist | null>(initialPlaylist ?? null);
   const [loading, setLoading] = useState(!initialPlaylist);
@@ -554,63 +564,72 @@ export default function PlaylistDetailContent({
               </Box>
             )}
 
-            {/* The hand-off and the playlist's own actions share one wrapping
-                row, so at phone width the icons drop below the button instead
-                of sitting on top of the meta line. */}
-            <div className={styles.heroActions}>
-              <PlaylistHandoffButton
+            <Box sx={heroCtaSx}>
+              <PlaylistHeroCta
                 playlistUuid={playlistUuid}
                 boardType={playlist.boardType}
                 layoutId={playlist.layoutId}
                 isPublic={playlist.isPublic}
                 locale={locale}
-                label={t('detail.openInApp')}
+                labels={{
+                  store: {
+                    install: tClimbs('frontDoor.cta.getApp'),
+                    update: tMarketing('home.hero.ctaUpdate'),
+                    installAria: {
+                      ios: tClimbs('frontDoor.cta.getAppAriaIos'),
+                      android: tClimbs('frontDoor.cta.getAppAriaAndroid'),
+                    },
+                  },
+                  storeHelper: t('detail.cta.getAppHelper'),
+                  // The playlist's own words: the climb page's "open it" names
+                  // a climb, which reads wrong where a playlist is feminine.
+                  handoffMobile: t('detail.cta.openInBrowserMobile'),
+                  handoffDesktop: t('detail.cta.openInBrowser'),
+                }}
+                qrCard={qrCard}
+                actions={
+                  <>
+                    {/* Pin toggle: any signed-in viewer can pin a playlist they can
+                        see (own private/public + others' public, gated server-side
+                        by verifyPlaylistAccess). Hidden for unauthenticated users. */}
+                    {token && (
+                      <IconButton
+                        color="primary"
+                        sx={heroIconButtonSx}
+                        onClick={handleTogglePin}
+                        aria-label={t(
+                          playlist.isPinnedByMe ? 'library.pin.unpinAriaLabel' : 'library.pin.pinAriaLabel',
+                        )}
+                      >
+                        {playlist.isPinnedByMe ? <PushPin /> : <PushPinOutlined />}
+                      </IconButton>
+                    )}
+                    {playlist.isPublic && (
+                      <IconButton
+                        color="primary"
+                        sx={heroIconButtonSx}
+                        onClick={handleShare}
+                        aria-label={t('detail.share')}
+                      >
+                        <IosShare />
+                      </IconButton>
+                    )}
+                    {/* Delete is the menu's only item and only the owner may use it,
+                        so nobody else gets a button that opens an empty menu. */}
+                    {isOwner && (
+                      <IconButton
+                        color="primary"
+                        sx={heroIconButtonSx}
+                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => setMenuAnchor(e.currentTarget)}
+                        aria-label={t('detail.actions')}
+                      >
+                        <MoreVertOutlined />
+                      </IconButton>
+                    )}
+                  </>
+                }
               />
-              {/* Pin toggle: any signed-in viewer can pin a playlist they can
-                  see (own private/public + others' public, gated server-side
-                  by verifyPlaylistAccess). Hidden for unauthenticated users. */}
-              {token && (
-                <IconButton
-                  color="primary"
-                  sx={heroIconButtonSx}
-                  onClick={handleTogglePin}
-                  aria-label={t(playlist.isPinnedByMe ? 'library.pin.unpinAriaLabel' : 'library.pin.pinAriaLabel')}
-                >
-                  {playlist.isPinnedByMe ? <PushPin /> : <PushPinOutlined />}
-                </IconButton>
-              )}
-              {playlist.isPublic && (
-                <IconButton color="primary" sx={heroIconButtonSx} onClick={handleShare} aria-label={t('detail.share')}>
-                  <IosShare />
-                </IconButton>
-              )}
-              {/* Delete is the menu's only item and only the owner may use it,
-                  so nobody else gets a button that opens an empty menu. */}
-              {isOwner && (
-                <IconButton
-                  color="primary"
-                  sx={heroIconButtonSx}
-                  onClick={(e: React.MouseEvent<HTMLButtonElement>) => setMenuAnchor(e.currentTarget)}
-                  aria-label={t('detail.actions')}
-                >
-                  <MoreVertOutlined />
-                </IconButton>
-              )}
-            </div>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              {t('detail.installHelper')}
-            </Typography>
-            <StoreInstallButtons
-              placement="playlist"
-              sharedHtml
-              align="start"
-              appearance="plain"
-              labels={{
-                ios: tMarketing('home.hero.ctaInstallIos'),
-                android: tMarketing('home.hero.ctaInstallAndroid'),
-                update: tMarketing('home.hero.ctaUpdate'),
-              }}
-            />
+            </Box>
           </div>
 
           {isOwner && (

@@ -1,5 +1,6 @@
 vi.mock('server-only', () => ({}));
 import React from 'react';
+import type { TFunction } from 'i18next';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import {
@@ -92,10 +93,33 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 // The list rows and the call to action are asserted elsewhere
 // (`front-door-install.test.tsx`), and both would drag client-side providers
 // into a node render. The stub keeps the props the page hands the CTA.
-vi.mock('@/app/components/climb-list/static-climb-list', () => ({ default: () => null }));
+const staticClimbListProps = vi.hoisted(() => vi.fn());
+vi.mock('@/app/components/climb-list/static-climb-list', () => ({
+  default: (props: Record<string, unknown>) => {
+    staticClimbListProps(props);
+    return null;
+  },
+}));
 vi.mock('@/app/components/climb-front-door/front-door-hero-cta', () => ({
-  default: ({ placement, qrLanding, qrUrl }: { placement: string; qrLanding?: string; qrUrl: string }) => (
-    <div data-testid="hero-cta" data-placement={placement} data-qr-landing={qrLanding} data-qr-url={qrUrl} />
+  default: ({
+    placement,
+    qrLanding,
+    qrUrl,
+    labels,
+  }: {
+    placement: string;
+    qrLanding?: string;
+    qrUrl: string;
+    labels: { storeHelper: string; qr: { imageLabel: string } };
+  }) => (
+    <div
+      data-testid="hero-cta"
+      data-placement={placement}
+      data-qr-landing={qrLanding}
+      data-qr-url={qrUrl}
+      data-store-helper={labels.storeHelper}
+      data-qr-image-label={labels.qr.imageLabel}
+    />
   ),
 }));
 vi.mock('@/app/components/climb-front-door/qr-landing-tracker', () => ({
@@ -117,6 +141,8 @@ const { listRailAngles } = await import('@/app/components/climb-front-door/list-
 const { cachedCommunityStats } = await import('@/app/lib/graphql/server-cached-client');
 const { listQrUrl } = await import('@/app/lib/gym-attribution');
 const { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } = await import('@/app/lib/url-utils');
+const { getServerTranslation } = await import('@/app/lib/i18n/server');
+const { boardConfigForSearch } = await import('@/app/lib/seo/climb-display');
 
 const boardDetails = {
   board_name: 'kilter',
@@ -389,5 +415,40 @@ describe('front door call to action', () => {
 
     expect(html).not.toContain('home.hero.proof');
     expect(html).toContain('list.frontDoor.heading');
+  });
+});
+
+describe('front door rows and names', () => {
+  it("draws the rows as the app's grade-chip cards and leaves the high fetch priority to the hero art", async () => {
+    staticClimbListProps.mockClear();
+    await renderList({ climbs: [FIRST_CLIMB, SECOND_CLIMB] });
+
+    expect(staticClimbListProps).toHaveBeenCalledTimes(1);
+    expect(staticClimbListProps.mock.calls[0]?.[0]).toMatchObject({
+      rowVariant: 'card',
+      prioritizeFirstRow: false,
+      virtualize: false,
+    });
+  });
+
+  it('names the layout and size in the heading, intro, helper and QR label, as the page title does', async () => {
+    const withBoardName = ((key: string, options?: { boardName?: string; board?: string }) =>
+      `${key}[${options?.boardName ?? options?.board ?? ''}]`) as unknown as TFunction;
+    vi.mocked(getServerTranslation).mockResolvedValueOnce({
+      t: withBoardName,
+      locale: 'en-US',
+    } as unknown as Awaited<ReturnType<typeof getServerTranslation>>);
+    const configName = boardConfigForSearch(boardDetails);
+
+    const page = parseHtml(await renderList({ climbs: [FIRST_CLIMB] }));
+    const cta = page.querySelector('[data-testid="hero-cta"]');
+
+    // The size makes it this configuration's name, not every Kilter Original's.
+    expect(configName).not.toBe('Kilter Board Original');
+    expect(configName.startsWith('Kilter Board Original ')).toBe(true);
+    expect(page.querySelector('h1')?.textContent).toBe(`list.frontDoor.heading[${configName}]`);
+    expect(page.body.textContent).toContain(`list.frontDoor.intro[${configName}]`);
+    expect(cta?.getAttribute('data-store-helper')).toBe(`list.frontDoor.cta.getAppHelper[${configName}]`);
+    expect(cta?.getAttribute('data-qr-image-label')).toBe(`list.frontDoor.qr.imageLabel[${configName}]`);
   });
 });

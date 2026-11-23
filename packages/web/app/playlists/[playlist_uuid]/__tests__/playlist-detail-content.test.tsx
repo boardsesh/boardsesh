@@ -135,22 +135,63 @@ beforeEach(() => {
   mockExecuteGraphQL.mockResolvedValue({ playlist: mockPlaylist });
 });
 
+const handoffOf = (container: HTMLElement) => container.querySelector('[data-cta="handoff"]');
+
 describe('PlaylistDetailContent app hand-off', () => {
   it('renders a playlist hand-off and an attributed fallback for each store', () => {
-    renderDetail();
+    const { container } = renderDetail();
 
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(3);
-    expect(links[0].getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
-    expect(links[0].textContent).toContain(tFromCatalog('playlists', 'detail.openInApp'));
+    // The phone's store button holds both stores in the HTML (CSS shows one per
+    // phone), then the hand-off: three anchors, whichever one a screen reader hears.
+    expect(container.querySelectorAll('a')).toHaveLength(3);
+    const handoff = handoffOf(container);
+    expect(handoff?.getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
+    expect(handoff?.textContent).toContain(tFromCatalog('playlists', 'detail.cta.openInBrowserMobile'));
+    expect(handoff?.textContent).toContain(tFromCatalog('playlists', 'detail.cta.openInBrowser'));
+    const storeHrefs = [...container.querySelectorAll('[data-cta="mobile-install"] a')].map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(storeHrefs).toHaveLength(2);
+    expect(storeHrefs[0]).toContain('apps.apple.com');
+    expect(storeHrefs[0]).toContain('ct=playlist');
+    expect(storeHrefs[1]).toContain('play.google.com');
+    expect(storeHrefs[1]).toContain('utm_content%3Dplaylist');
+  });
+
+  it('puts the store first on a phone: the one filled button, before the hand-off text link', () => {
+    const { container } = renderDetail();
+
+    const containedButtons = [...container.querySelectorAll('.MuiButton-contained')];
+    expect(containedButtons).toHaveLength(2);
+    for (const button of containedButtons) {
+      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
+    }
+    const mobileInstall = container.querySelector('[data-cta="mobile-install"]');
+    const handoff = handoffOf(container);
+    expect(mobileInstall && handoff && mobileInstall.compareDocumentPosition(handoff)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(handoff?.classList.contains('MuiButton-text')).toBe(true);
+    expect(mobileInstall?.textContent).toContain(tFromCatalog('playlists', 'detail.cta.getAppHelper'));
+  });
+
+  it('shows the QR card the server rendered, and nothing in its place when there is none', () => {
+    const { container, unmount } = renderDetail(mockPlaylist, {
+      qrCard: <div data-testid="phone-qr-card" />,
+    });
+
+    expect(screen.getByTestId('phone-qr-card')).toBeTruthy();
+    unmount();
+
+    renderDetail({ ...mockPlaylist, isPublic: false });
+    expect(screen.queryByTestId('phone-qr-card')).toBeNull();
+    expect(container.querySelector('[data-testid="phone-qr-card"]')).toBeNull();
   });
 
   it('links out for a private playlist too — the app resolves access, not this page', () => {
-    renderDetail({ ...mockPlaylist, isPublic: false });
+    const { container } = renderDetail({ ...mockPlaylist, isPublic: false });
 
-    expect(screen.getByRole('link', { name: tFromCatalog('playlists', 'detail.openInApp') }).getAttribute('href')).toBe(
-      `${APP_URL}/discover/playlist-uuid-1`,
-    );
+    expect(handoffOf(container)?.getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
   });
 });
 

@@ -8,6 +8,8 @@ import {
   gymQrUrl,
   gymRedirectAttributionQuery,
   listQrUrl,
+  playlistQrUrl,
+  setterQrUrl,
 } from '../gym-attribution';
 
 describe('gymQrUrl', () => {
@@ -92,6 +94,26 @@ describe('listQrUrl', () => {
     const scanned = new URL(listQrUrl('/b/main-kilter/40/list', 'es'));
 
     expect(scanned.pathname).toBe('/es/b/main-kilter/40/list');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('setterQrUrl', () => {
+  it("encodes the setter's page with the desktop pair, in the reader's language", () => {
+    expect(setterQrUrl('/setter/jimmy%20webb', 'en-US')).toBe(`${SITE_URL}/setter/jimmy%20webb?src=qr&medium=desktop`);
+    const scanned = new URL(setterQrUrl('/setter/jimmy%20webb', 'de'));
+
+    expect(scanned.pathname).toBe('/de/setter/jimmy%20webb');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
+  });
+});
+
+describe('playlistQrUrl', () => {
+  it("encodes the playlist's own page with the desktop pair, in the reader's language", () => {
+    expect(playlistQrUrl('5d3b1c7e-2a4f', 'en-US')).toBe(`${SITE_URL}/playlists/5d3b1c7e-2a4f?src=qr&medium=desktop`);
+    const scanned = new URL(playlistQrUrl('5d3b1c7e-2a4f', 'fr'));
+
+    expect(scanned.pathname).toBe('/fr/playlists/5d3b1c7e-2a4f');
     expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
   });
 });

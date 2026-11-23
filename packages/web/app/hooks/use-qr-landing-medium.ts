@@ -8,7 +8,8 @@ import { captureQrLandingMedium, type QrLandingKind, type QrLandingMedium } from
  * The medium of the code this page was reached through, for a store button's
  * link id or a line meant only for someone who scanned (#4415). `kind` says
  * which code can land here: `board` for a printed code on a board list, `list`
- * for a board list's laptop code, `climb` on a climb page.
+ * for a board list's laptop code, `climb` on a climb page, `setter` and
+ * `playlist` for those pages' laptop codes.
  *
  * `null` on the server AND on the hydration render, then the real value: the
  * page is shared at the edge, so its HTML has to be the same for a scan and a
