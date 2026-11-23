@@ -16,6 +16,7 @@ import {
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { getUserCommunityRoles, requireAdmin } from '../roles';
 import { isSystemOwner, loadBoardFacts, loadGymFacts, WAITING_STATUSES } from './core';
+import { transactionWithAfterCommit } from '../../../../db/after-commit';
 import { resolveWaitingReports } from './lifecycle';
 import {
   adminReportsPage,
@@ -172,7 +173,7 @@ export const directoryReportMutations = {
     }
     await assertOutcomeTaken(report, board, validated.outcome);
 
-    const resolved = await db.transaction((tx) =>
+    const resolved = await transactionWithAfterCommit((tx) =>
       resolveWaitingReports(tx, eq(dbSchema.directoryReports.id, report.id), {
         outcome: validated.outcome,
         resolvedBy: userId,

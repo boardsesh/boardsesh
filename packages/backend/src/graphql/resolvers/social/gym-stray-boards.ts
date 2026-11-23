@@ -11,6 +11,7 @@ import {
 import { executeRows } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
 import { logger } from '../../../utils/logger';
 import { canViewResourceLocation, resourceAccessCondition, resourceLocationCondition } from '../../../services/privacy';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -653,7 +654,7 @@ export const socialGymStrayBoardMutations = {
     // between the check and this write) can't be silently clobbered. `IS NOT
     // DISTINCT FROM` handles the unlinked (NULL) case; the ::bigint cast anchors
     // the bound param's type against the bigint column.
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // A re-list is decided again under the board's row lock: a creator's link
       // or a hidden location committing since the check above wins.
       if (
@@ -780,7 +781,7 @@ export const socialGymStrayBoardMutations = {
     const actorRole = board.ownerId === userId ? 'board_owner' : await resolveGymEditActorRole(gym, userId);
     if (!actorRole) throw new Error('Not authorized to edit this gym');
 
-    await db.transaction(async (tx) => {
+    await transactionWithAfterCommit(async (tx) => {
       // Compare-and-swap so a concurrent re-link isn't silently clobbered, nor a
       // board that changed hands (to SYSTEM, say) removed on the old owner's terms.
       const now = new Date();

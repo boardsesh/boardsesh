@@ -11,6 +11,11 @@ import {
   DIRECTORY_REPORT_TARGET_KINDS,
 } from '@boardsesh/directory-moderation';
 
+vi.mock('../services/analytics/posthog', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/analytics/posthog')>()),
+  captureBackendEvent: vi.fn(() => true),
+}));
+
 vi.mock('../email/email-service', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../email/email-service')>()),
   sendGymDuplicateReportAdminNotification: vi.fn(() => Promise.resolve()),
@@ -18,8 +23,12 @@ vi.mock('../email/email-service', async (importOriginal) => ({
 }));
 
 import { db } from '../db/client';
+import { transactionWithAfterCommit } from '../db/after-commit';
 import { sendAdminDailyDigestEmail } from '../email/email-service';
+import { captureBackendEvent } from '../services/analytics/posthog';
+import { recordBoardModerationEvent } from '../graphql/resolvers/social/board-moderation-events';
 import { socialBoardMutations, socialBoardQueries, updateBoardRecord } from '../graphql/resolvers/social/boards';
+import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { socialGymStrayBoardMutations } from '../graphql/resolvers/social/gym-stray-boards';
 import { socialGymReportMutations } from '../graphql/resolvers/social/gym-reports';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
@@ -163,6 +172,8 @@ beforeEach(async () => {
   resetGymDuplicateReportClaimsForTests();
   setFlag(true);
   vi.mocked(sendAdminDailyDigestEmail).mockClear();
+  vi.mocked(captureBackendEvent).mockClear();
+  vi.mocked(captureBackendEvent).mockImplementation(() => true);
   await db.execute(sql`
     TRUNCATE TABLE
       "directory_notification_context", "directory_report_reporters", "directory_reports", "admin_daily_digests",
@@ -501,10 +512,27 @@ describe('closing a report with the action itself', () => {
     expect(await noticesFor(REPORTER_A, 'board_report_resolved')).toHaveLength(1);
   });
 
-  it('the creator taking their own board off the gym closes them as removed, with no notice to themselves', async () => {
+  it('the creator unlinking their own board closes the reports filed at that gym as removed', async () => {
+    const gone = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    const wrongSetup = await reportBoard(REPORTER_B, { boardUuid: climberBoard.uuid, reason: 'wrong_setup' });
+    await socialGymMutations.linkBoardToGym(
+      null,
+      { input: { boardUuid: climberBoard.uuid, gymUuid: null } },
+      authCtx(CREATOR),
+    );
+    expect(await reportRow(gone.reportUuid)).toMatchObject({
+      status: 'removed',
+      resolvedBy: CREATOR,
+      resolvedByRole: 'creator',
+    });
+    expect((await reportRow(wrongSetup.reportUuid)).status).toBe('removed');
+    expect(await noticesFor(REPORTER_A, 'board_report_resolved')).toHaveLength(1);
+    expect(await noticesFor(REPORTER_B, 'board_report_resolved')).toHaveLength(1);
+    expect(await noticesFor(CREATOR, 'board_removed_from_gym')).toHaveLength(0);
+  });
+
+  it('the creator taking their own board off the gym as staff closes them as removed, with no notice to themselves', async () => {
     // A creator who is also gym staff removes their own board as `board_owner`.
-    // (An owner's plain unlink through linkBoardToGym is recorded the same way
-    // once the power-model PR's event recording is in.)
     await db.insert(dbSchema.gymMembers).values({ gymId: runGym.id, userId: CREATOR, role: 'editor' });
     const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'wrong_place' });
     await detach(runGym.uuid, climberBoard.uuid, CREATOR);
@@ -535,6 +563,38 @@ describe('closing a report with the action itself', () => {
       authCtx(CREATOR),
     )) as GroupedNotificationConnection;
     expect(feed.groups[0].directoryNotice).toMatchObject({ actorRole: 'moderator', recipientIsCreator: true });
+  });
+
+  it('counts a close only once the action commits; a rolled-back action counts nothing', async () => {
+    const { reportUuid } = await reportBoard(REPORTER_A, { boardUuid: climberBoard.uuid, reason: 'gone' });
+    const capturedEvents = () => vi.mocked(captureBackendEvent).mock.calls.map(([event]) => event);
+    vi.mocked(captureBackendEvent).mockClear();
+
+    await expect(
+      transactionWithAfterCommit(async (tx) => {
+        await recordBoardModerationEvent(tx, {
+          boardId: climberBoard.id,
+          gymId: runGym.id,
+          actorUserId: GYM_ADMIN,
+          actorRole: 'gym_admin',
+          action: 'removed_from_gym',
+          details: { mutation: 'detachBoardFromGym' },
+        });
+        throw new Error('rolled back');
+      }),
+    ).rejects.toThrow('rolled back');
+    expect((await reportRow(reportUuid)).status).toBe('open');
+    expect(capturedEvents()).toEqual([]);
+
+    // When the events go out, the close is already visible outside the transaction.
+    const statusWhenCounted: Array<Promise<string>> = [];
+    vi.mocked(captureBackendEvent).mockImplementation((event) => {
+      if (event === 'Board Report Resolved') statusWhenCounted.push(reportRow(reportUuid).then((row) => row.status));
+      return true;
+    });
+    await detach(runGym.uuid, climberBoard.uuid, GYM_ADMIN);
+    expect(capturedEvents()).toEqual(['Board Removed From Gym', 'Board Report Resolved']);
+    expect(await Promise.all(statusWhenCounted)).toEqual(['removed']);
   });
 
   it('the merge tool hook closes reports on the merged board and "listed twice" on the survivor', async () => {
@@ -602,6 +662,26 @@ describe('reportGym', () => {
     expect(filed.routedTo).toEqual(['gym_staff']);
     expect(await noticesFor(GYM_OWNER, 'gym_report_opened')).toHaveLength(1);
     expect(await noticesFor(GYM_EDITOR)).toHaveLength(0);
+  });
+
+  it('a change to the details fixes "wrong details"; a save that changes none of them does not', async () => {
+    const wrongDetails = await reportGym(REPORTER_A, { gymUuid: runGym.uuid, reason: 'wrong_details' });
+    const closed = await reportGym(REPORTER_B, { gymUuid: runGym.uuid, reason: 'closed' });
+    const updateGym = (userId: string, input: Record<string, unknown>) =>
+      socialGymMutations.updateGym(null, { input: { gymUuid: runGym.uuid, ...input } }, authCtx(userId));
+
+    // The manage form posts every field; an unchanged name and a new description fix nothing.
+    await updateGym(GYM_EDITOR, { name: 'Crux', description: 'Bouldering since 2019' });
+    expect((await reportRow(wrongDetails.reportUuid)).status).toBe('open');
+
+    await updateGym(GYM_EDITOR, { name: 'Crux', address: '1 Crux Lane' });
+    expect(await reportRow(wrongDetails.reportUuid)).toMatchObject({
+      status: 'fixed',
+      resolvedBy: GYM_EDITOR,
+      resolvedByRole: 'gym_staff',
+    });
+    expect(await noticesFor(REPORTER_A, 'gym_report_resolved')).toHaveLength(1);
+    expect((await reportRow(closed.reportUuid)).status).toBe('escalated');
   });
 
   it('a closure goes to the admin queue', async () => {

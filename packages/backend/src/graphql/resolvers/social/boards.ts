@@ -64,6 +64,7 @@ import {
   type ModerationExecutor,
 } from './board-moderation-events';
 import { onBoardDeleted } from './directory-reports/lifecycle';
+import { transactionWithAfterCommit } from '../../../db/after-commit';
 import { loadBoardReportFlags } from './directory-reports/read';
 import {
   SYSTEM_BOARD_OWNER_ID,
@@ -2252,7 +2253,7 @@ export async function updateBoardRecord(
   // kiosk tombstone below.
   let kioskAudienceChanged = false;
   try {
-    const updatedRows = await db.transaction(async (tx) => {
+    const updatedRows = await transactionWithAfterCommit(async (tx) => {
       kioskAudienceChanged = false;
       // Serialize partial edits to the same board before deriving the final
       // serial+config tuple. Without this row lock, a serial-only edit could
@@ -3050,7 +3051,7 @@ export const socialBoardMutations = {
         ctx,
       );
     } else {
-      await db.transaction(async (tx) => {
+      await transactionWithAfterCommit(async (tx) => {
         const [currentBoard] = await tx
           .select()
           .from(dbSchema.userBoards)
