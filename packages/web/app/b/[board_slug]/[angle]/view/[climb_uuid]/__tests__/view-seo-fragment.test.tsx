@@ -215,6 +215,12 @@ const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
   rating_count: '12',
 };
 
+/** `buildClimbSearchDescription` through the key-printing `t` above: lead, sends with rating, call to action. */
+const JSON_LD_LEAD =
+  'metadata.view.descriptionLead(climbName=Test Climb,grade=V5,layoutName=Kilter Board Original,angle=40,setter=setter-person)';
+const JSON_LD_DESCRIPTION = `${JSON_LD_LEAD} metadata.view.descriptionSendsRated(count=12,ascents=12,quality=4.2) metadata.view.descriptionCta`;
+const UNRATED_JSON_LD_DESCRIPTION = `${JSON_LD_LEAD} metadata.view.descriptionSends(count=12,ascents=12) metadata.view.descriptionCta`;
+
 function jsonLdPayloads(html: string): Record<string, unknown>[] {
   return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
@@ -330,9 +336,17 @@ describe('climb front door server HTML', () => {
   it('describes a climb from its normalized current-angle quality and ascents', async () => {
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
-    expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
-    );
+    expect(creativeWork.description).toBe(JSON_LD_DESCRIPTION);
+  });
+
+  it('carries the meta description verbatim, so the two can never disagree', async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve(PARAMS),
+    });
+
+    expect(creativeWork.description).toBe(metadata.description);
   });
 
   it("links the JSON-LD author to the setter's page and pictures the climb with its share card", async () => {
@@ -359,20 +373,20 @@ describe('climb front door server HTML', () => {
     expect(creativeWork).not.toHaveProperty('aggregateRating');
   });
 
-  it('omits the description when the current angle has no quality instead of inventing 0/5', async () => {
+  it('states no rating when the current angle has no quality, instead of inventing 0/5', async () => {
     vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
       { ...CURRENT_ANGLE_STATS, quality_average: null, rating_count: '0' },
     ]);
 
-    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+    expect(creativeWorkPayload(await renderFrontDoor()).description).toBe(UNRATED_JSON_LD_DESCRIPTION);
   });
 
-  it('omits the description when current-angle quality is not normalized to five stars', async () => {
+  it('states no rating when current-angle quality is not normalized to five stars', async () => {
     vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
       { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
     ]);
 
-    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+    expect(creativeWorkPayload(await renderFrontDoor()).description).toBe(UNRATED_JSON_LD_DESCRIPTION);
   });
 });
 
@@ -425,9 +439,7 @@ describe('setter notes on the climb front door', () => {
     climbRow.description = 'Match the rail, then a big move to the jug.';
     const creativeWork = creativeWorkPayload(await renderFrontDoor());
 
-    expect(creativeWork.description).toBe(
-      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.2,ascents=12,layoutName=Kilter Board Original,angle=40)',
-    );
+    expect(creativeWork.description).toBe(JSON_LD_DESCRIPTION);
   });
 });
 

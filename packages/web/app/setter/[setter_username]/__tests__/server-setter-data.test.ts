@@ -20,7 +20,21 @@ vi.mock('@/app/lib/db/db', () => ({
 }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
-const { buildSetterClimbsQuery, buildSetterProfileQuery, fetchSetterIdentity } = await import('../server-setter-data');
+const { buildSetterClimbsQuery, buildSetterProfileQuery, fetchSetterIdentity, orderSetterBoardTypes } =
+  await import('../server-setter-data');
+
+describe('orderSetterBoardTypes', () => {
+  it('puts the board with the most visible climbs first, and breaks ties alphabetically', () => {
+    expect(
+      orderSetterBoardTypes([
+        { boardType: 'kilter', climbCount: 3 },
+        { boardType: 'tension', climbCount: '41' },
+        { boardType: null, climbCount: 99 },
+        { boardType: 'decoy', climbCount: 3 },
+      ]),
+    ).toEqual(['tension', 'decoy', 'kilter']);
+  });
+});
 // From the module that owns it: a re-export hop only gives a grep two answers.
 const { SETTER_PAGE_SIZE } = await import('@/app/lib/seo/sitemap/setter-page-contract');
 const { buildTier2ClimbQuery } = await import('@/app/lib/seo/sitemap/climb-query');

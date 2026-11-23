@@ -497,7 +497,10 @@ describe('the setter front door, as a crawler reads its head', () => {
   });
 
   it('titles the search result with the climb count and boards, and describes the sends', async () => {
-    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
+    setterData.value = pageData([
+      { uuid: 'a'.repeat(32), name: 'Most Sent' },
+      { uuid: 'b'.repeat(32), name: 'Runner Up' },
+    ]);
     ogSummary.value = { displayName: 'Marco', totalAscents: 120, version: 'v1' };
 
     const metadata = await metadataFor();
@@ -510,21 +513,22 @@ describe('the setter front door, as a crawler reads its head', () => {
     );
   });
 
-  it('keeps the counts on a later page, from the page the head already read', async () => {
+  it('keeps the counts on a later page, from the page the head already read, and numbers it', async () => {
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
     ogSummary.value = { displayName: 'Marco', totalAscents: 120, version: 'v1' };
 
     const metadata = await metadataFor({ page: '2' });
 
-    expect(metadata.title).toEqual({ absolute: 'metadata.setter.titleWithClimbs:Marco | Boardsesh' });
+    // Page 2 is indexable with its own canonical, so it must not share page 1's title.
+    expect(metadata.title).toEqual({ absolute: 'metadata.setter.titleWithClimbsPage:Marco | Boardsesh' });
   });
 
-  it('leaves the sends out of the description for a setter nobody has sent yet', async () => {
+  it('leaves the sends out for a setter nobody has sent yet, and asks no one to "pick" from one climb', async () => {
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Fresh' }]);
 
     const metadata = await metadataFor();
 
-    expect(metadata.description).toBe('metadata.setter.descriptionSetCount:Marco metadata.setter.descriptionCta');
+    expect(metadata.description).toBe('metadata.setter.descriptionSetCount:Marco metadata.setter.descriptionCtaSingle');
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {

@@ -3,6 +3,7 @@ import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import { isRoutableSetterUsername } from '@/app/lib/seo/setter-username';
 import type { BoardImageDetails } from '@/app/lib/board-image-details';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
@@ -19,8 +20,8 @@ type ClimbCreativeWorkJsonLdProps = {
   canonicalAngle: number;
   /** Every angle's stats, for the grade the share card prints at `canonicalAngle`. */
   angleStats: ClimbStatsForAngle[];
-  /** Already-translated description, or null when the facts to fill it are missing. */
-  description: string | null;
+  /** The page's meta description, from `buildClimbSearchDescription`. */
+  description: string;
 };
 
 /** ISO-ish timestamp or nothing — an unparseable string is worse than no field. */
@@ -73,14 +74,24 @@ export default function ClimbCreativeWorkJsonLd({
     // advertise an address the canonical beside it disowns. Same rule as
     // `front-door-breadcrumb.tsx`, which sits on these very pages.
     url: absoluteUrl(canonicalClimbUrl),
-    ...(description ? { description } : {}),
+    description,
     // Keeps the backend's absolute card URL; the URL constructor also resolves
     // the same-origin fallback path when no backend origin is configured.
     ...(imageUrl ? { image: new URL(imageUrl, SITE_URL).toString() } : {}),
     // The setter page the front door's setter link opens, locale-free for the
-    // same reason as `url`, and the same address `SetterJsonLd` names the person by.
+    // same reason as `url`, and the same address `SetterJsonLd` names the person
+    // by. Only for a name the setter sitemap would submit too: a padded name or
+    // one with `/` names a URL a crawler cannot reach.
     ...(setter
-      ? { author: { '@type': 'Person', name: setter, url: absoluteUrl(`/setter/${encodeURIComponent(setter)}`) } }
+      ? {
+          author: {
+            '@type': 'Person',
+            name: setter,
+            ...(isRoutableSetterUsername(climb.setter_username)
+              ? { url: absoluteUrl(`/setter/${encodeURIComponent(setter)}`) }
+              : {}),
+          },
+        }
       : {}),
     ...(dateCreated ? { dateCreated } : {}),
   };

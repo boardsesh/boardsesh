@@ -35,9 +35,10 @@
     },
     "view": {
       "title": "{{climbName}}，{{angle}}° 下的 {{grade}} {{boardName}} 线路",
-      "description": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。已有 {{ascents}} 次完攀，评分 {{quality}}/5。使用 Boardsesh 在训练板上点亮。",
       "descriptionLead": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。",
       "descriptionLeadNoSetter": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路。",
+      "descriptionLeadUngraded": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的线路，由 {{setter}} 设定。",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的线路。",
       "descriptionSendsRated_one": "已有 {{ascents}} 次完攀，评分 {{quality}}/5。",
       "descriptionSendsRated_other": "已有 {{ascents}} 次完攀，评分 {{quality}}/5。",
       "descriptionSends_one": "已有 {{ascents}} 次完攀。",

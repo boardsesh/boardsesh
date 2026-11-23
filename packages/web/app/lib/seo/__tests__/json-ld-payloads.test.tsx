@@ -84,7 +84,6 @@ function creativeWork(
   overrides: {
     climb?: Climb;
     angleStats?: ClimbStatsForAngle[];
-    description?: string | null;
   } = {},
 ) {
   return payload(
@@ -95,7 +94,7 @@ function creativeWork(
       boardDetails={BOARD_DETAILS as unknown as BoardImageDetails}
       canonicalAngle={40}
       angleStats={overrides.angleStats ?? [stats()]}
-      description={overrides.description === undefined ? 'a climb' : overrides.description}
+      description="a climb"
     />,
   );
 }
@@ -123,13 +122,26 @@ describe('CreativeWork JSON-LD', () => {
   });
 
   it('encodes a setter name the same way the front door setter link does', () => {
-    const data = creativeWork({ climb: { ...climb(), setter_username: ' Jo & Ann/50% ' } as Climb });
+    const data = creativeWork({ climb: { ...climb(), setter_username: 'Jo & Ann 50%' } as Climb });
 
     expect(data.author).toEqual({
       '@type': 'Person',
-      name: 'Jo & Ann/50%',
-      url: `https://www.boardsesh.com/setter/${encodeURIComponent('Jo & Ann/50%')}`,
+      name: 'Jo & Ann 50%',
+      url: 'https://www.boardsesh.com/setter/Jo%20%26%20Ann%2050%25',
     });
+  });
+
+  it.each([
+    ' Jo & Ann ',
+    'Jo/Ann',
+    'Jo?Ann',
+    `Jo${String.fromCharCode(0x07)}Ann`,
+    `Jo${String.fromCharCode(0xa0)}Ann`,
+    '..',
+  ])('names the setter but links no page for %j, which the setter sitemap rejects too', (setterUsername) => {
+    const author = creativeWork({ climb: { ...climb(), setter_username: setterUsername } as Climb }).author;
+
+    expect(author).toEqual({ '@type': 'Person', name: setterUsername.trim() });
   });
 
   it("uses the climb's share card at the canonical angle, not the bare holds render", () => {
@@ -171,12 +183,10 @@ describe('CreativeWork JSON-LD', () => {
   it('omits fields it cannot source instead of inventing them', () => {
     const data = creativeWork({
       climb: { ...climb(), setter_username: '  ', created_at: 'not-a-date', published_at: null, frames: '' } as Climb,
-      description: null,
     });
 
     expect(data).not.toHaveProperty('author');
     expect(data).not.toHaveProperty('dateCreated');
-    expect(data).not.toHaveProperty('description');
     expect(data).not.toHaveProperty('image');
   });
 

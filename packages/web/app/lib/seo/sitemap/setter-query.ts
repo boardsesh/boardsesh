@@ -112,6 +112,9 @@ function groupPredicate(group: ClimbConfigGroup): SQL {
  * surrogate, and Postgres `text` in a UTF-8 database cannot hold one. The item
  * builder still checks — and refuses to cache when a check fires — because
  * "unreachable" is a claim about the database, not a guarantee from this file.
+ *
+ * `isRoutableSetterUsername` in `../setter-username.ts` is the same rule for
+ * code that links a setter page from outside the sitemap. Change both.
  */
 const routableUsername = sql`
   setter_username IS NOT NULL

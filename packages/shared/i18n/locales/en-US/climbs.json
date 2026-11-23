@@ -35,9 +35,10 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} {{boardName}} climb at {{angle}}°",
-      "description": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}. {{ascents}} sends, rated {{quality}} of 5. Light it on your board with Boardsesh.",
       "descriptionLead": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} is a climb on {{layoutName}} at {{angle}}°, set by {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} is a climb on {{layoutName}} at {{angle}}°.",
       "descriptionSendsRated_one": "{{ascents}} send, rated {{quality}} of 5.",
       "descriptionSendsRated_other": "{{ascents}} sends, rated {{quality}} of 5.",
       "descriptionSends_one": "{{ascents}} send.",

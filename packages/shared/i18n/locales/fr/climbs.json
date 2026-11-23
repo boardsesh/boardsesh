@@ -35,9 +35,10 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} sur {{boardName}} à {{angle}}°",
-      "description": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}. {{ascents}} croix, note de {{quality}} sur 5. Allume-le sur ta board avec Boardsesh.",
       "descriptionLead": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} est un bloc sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} est un bloc sur {{layoutName}} à {{angle}}°.",
       "descriptionSendsRated_one": "{{ascents}} croix, note de {{quality}} sur 5.",
       "descriptionSendsRated_other": "{{ascents}} croix, note de {{quality}} sur 5.",
       "descriptionSends_one": "{{ascents}} croix.",

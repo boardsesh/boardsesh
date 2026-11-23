@@ -35,9 +35,10 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} en {{boardName}} a {{angle}}°",
-      "description": "{{climbName}} es un {{grade}} en {{layoutName}} a {{angle}}°, de {{setter}}. {{ascents}} encadenes, valoración {{quality}} de 5. Ilumínalo en tu plafón con Boardsesh.",
       "descriptionLead": "{{climbName}} es un {{grade}} en {{layoutName}} a {{angle}}°, de {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} es un {{grade}} en {{layoutName}} a {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} es un bloque en {{layoutName}} a {{angle}}°, de {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} es un bloque en {{layoutName}} a {{angle}}°.",
       "descriptionSendsRated_one": "{{ascents}} encadene, valoración {{quality}} de 5.",
       "descriptionSendsRated_other": "{{ascents}} encadenes, valoración {{quality}} de 5.",
       "descriptionSends_one": "{{ascents}} encadene.",

@@ -162,12 +162,23 @@ describe('climb search description', () => {
     expect(await climbDescription({ ascents: 4171 }, 'de')).toContain('4.171 Begehungen, Bewertung 4,2 von 5.');
   });
 
+  it('calls an angle with no grade "a climb" instead of leaving a gap', async () => {
+    expect(await climbDescription({ grade: '', ascents: 0, angleStats: undefined })).toBe(
+      'Swooped is a climb on Kilter Board Original at 40°, set by BKBChicago. Light it on your board with Boardsesh.',
+    );
+    expect(await climbDescription({ grade: ' ', setter: null, ascents: 0, angleStats: undefined })).toBe(
+      'Swooped is a climb on Kilter Board Original at 40°. Light it on your board with Boardsesh.',
+    );
+  });
+
   it.each(LOCALES)('fills every placeholder and leaves no zero claims in %s', async (locale) => {
     const variants = await Promise.all([
       climbDescription({}, locale),
       climbDescription({ setter: null, ascents: 0, angleStats: undefined }, locale),
       climbDescription({ ascents: 0 }, locale),
       climbDescription({ ascents: 1, angleStats: undefined }, locale),
+      climbDescription({ grade: '' }, locale),
+      climbDescription({ grade: '', setter: null }, locale),
     ]);
 
     for (const description of variants) {
@@ -196,6 +207,7 @@ async function setterCopy(
     climbCount: 41,
     boardTypes: ['kilter'],
     totalAscents: 12345,
+    page: 1,
     ...overrides,
   });
 }
@@ -209,17 +221,31 @@ describe('setter search copy', () => {
     });
   });
 
-  it('lists every board the setter has climbs on', async () => {
-    const { title } = await setterCopy({ boardTypes: ['kilter', 'tension', 'moonboard'] });
-    expect(title).toBe('41 Kilter, Tension, and MoonBoard climbs set by BKBChicago');
+  it('lists every board the setter has climbs on, in the order it is given', async () => {
+    const { title } = await setterCopy({ boardTypes: ['tension', 'kilter', 'moonboard'] });
+    expect(title).toBe('41 Tension, Kilter, and MoonBoard climbs set by BKBChicago');
   });
 
-  it('uses the singular for one climb and one send', async () => {
+  it('uses the singular for one climb and one send, with nothing to "pick" from', async () => {
     expect(await setterCopy({ climbCount: 1, totalAscents: 1 })).toEqual({
       title: '1 Kilter climb set by BKBChicago',
-      description:
-        'BKBChicago has set 1 climb on Kilter. 1 send so far. Pick one and light it on your board with Boardsesh.',
+      description: 'BKBChicago has set 1 climb on Kilter. 1 send so far. Light it on your board with Boardsesh.',
     });
+  });
+
+  it('numbers the later pages, which are indexable too', async () => {
+    expect((await setterCopy({ page: 2 })).title).toBe('41 Kilter climbs set by BKBChicago — Page 2');
+    expect((await setterCopy({ page: 3, climbCount: null, boardTypes: [] })).title).toBe(
+      'Climbs set by BKBChicago — Page 3',
+    );
+  });
+
+  it.each([
+    ['en-US', '3 Kilter and Spraywall climbs set by BKBChicago'],
+    ['de', '3 Boulder von BKBChicago auf Kilter und Spraywall'],
+    ['zh-CN', 'BKBChicago 在 Kilter和喷点墙 上设置的 3 条线路'],
+  ] as const)('names a spray wall the way the %s glossary does', async (locale, title) => {
+    expect((await setterCopy({ climbCount: 3, boardTypes: ['kilter', 'spray'] }, locale)).title).toBe(title);
   });
 
   it('drops the sends sentence when nobody has sent a climb yet', async () => {
@@ -239,7 +265,8 @@ describe('setter search copy', () => {
   it.each(LOCALES)('fills every placeholder in %s', async (locale) => {
     const variants = await Promise.all([
       setterCopy({}, locale),
-      setterCopy({ climbCount: 1, totalAscents: 1, boardTypes: ['kilter', 'tension'] }, locale),
+      setterCopy({ climbCount: 1, totalAscents: 1, boardTypes: ['kilter', 'spray'] }, locale),
+      setterCopy({ page: 2 }, locale),
     ]);
 
     for (const { title, description } of variants) {

@@ -235,9 +235,11 @@ describe('legacy board list search copy', () => {
 
     // Every Kilter layout, size and set at 40° used to share "Kilter climbs at 40°".
     expect(metadata.title).toEqual({
-      absolute: 'metadata.list.title(boardName=Kilter Board Original 12x12,angle=40) | Boardsesh',
+      absolute: 'metadata.list.title(boardName=Kilter Board Original 12x12 with kickboard,angle=40) | Boardsesh',
     });
-    expect(metadata.description).toBe('metadata.list.description(boardName=Kilter Board Original 12x12,angle=40)');
+    expect(metadata.description).toBe(
+      'metadata.list.description(boardName=Kilter Board Original 12x12 with kickboard,angle=40)',
+    );
   });
 
   it('keeps the layout and size on a paginated title', async () => {
@@ -247,7 +249,8 @@ describe('legacy board list search copy', () => {
     });
 
     expect(metadata.title).toEqual({
-      absolute: 'metadata.list.paginatedTitle(boardName=Kilter Board Original 12x12,angle=40,page=2) | Boardsesh',
+      absolute:
+        'metadata.list.paginatedTitle(boardName=Kilter Board Original 12x12 with kickboard,angle=40,page=2) | Boardsesh',
     });
   });
 });

@@ -259,6 +259,7 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
       climbCount: pageView?.data.climbCount ?? null,
       boardTypes: pageView?.data.boardTypes ?? [],
       totalAscents: summary.totalAscents,
+      page,
     });
     const topClimb = firstPage?.data.climbs[0];
     // A setter with no visible climb returned above, which is the card's own gate.

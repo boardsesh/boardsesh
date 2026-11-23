@@ -91,9 +91,19 @@ export function buildClimbSearchDescription({
   const sends = new Intl.NumberFormat(locale).format(sendCount);
   const quality = rating === null ? null : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rating);
 
-  const lead = setterName
-    ? t('metadata.view.descriptionLead', { climbName, grade, layoutName, angle, setter: setterName })
-    : t('metadata.view.descriptionLeadNoSetter', { climbName, grade, layoutName, angle });
+  const gradeLabel = grade.trim();
+
+  // An angle with no stats row has no grade at all; "is  on" read as a typo.
+  let lead: string;
+  if (gradeLabel && setterName) {
+    lead = t('metadata.view.descriptionLead', { climbName, grade: gradeLabel, layoutName, angle, setter: setterName });
+  } else if (gradeLabel) {
+    lead = t('metadata.view.descriptionLeadNoSetter', { climbName, grade: gradeLabel, layoutName, angle });
+  } else if (setterName) {
+    lead = t('metadata.view.descriptionLeadUngraded', { climbName, layoutName, angle, setter: setterName });
+  } else {
+    lead = t('metadata.view.descriptionLeadUngradedNoSetter', { climbName, layoutName, angle });
+  }
 
   let stats: string | null = null;
   if (sendCount > 0 && quality !== null) {
@@ -113,11 +123,21 @@ type SetterSearchCopyInput = {
   name: string;
   /** Visible climbs, or null when the setter's page could not be read. */
   climbCount: number | null;
-  /** Board types the visible climbs are on. */
+  /** Board types the visible climbs are on, in the order the title names them. */
   boardTypes: readonly string[];
   /** Sends across the setter's climbs, from the same summary the share card uses. */
   totalAscents: number;
+  /** The `?page` being served. Pages past the first are indexable too, so each gets its own title. */
+  page: number;
 };
+
+/**
+ * A board type as the title names it. Brands are never translated, but a spray
+ * wall is a kind of wall rather than a brand, and the glossaries name it.
+ */
+function setterBoardLabel(boardType: string, t: TFunction): string {
+  return boardType === 'spray' ? t('metadata.setter.boardSprayWall') : boardTypeLabel(boardType);
+}
 
 /**
  * The setter page's search title and meta description:
@@ -134,27 +154,34 @@ export function buildSetterSearchCopy({
   climbCount,
   boardTypes,
   totalAscents,
+  page,
 }: SetterSearchCopyInput): { title: string; description: string } {
   if (!climbCount || boardTypes.length === 0) {
     return {
-      title: t('metadata.setter.title', { name }),
+      title: page > 1 ? t('metadata.setter.titlePage', { name, page }) : t('metadata.setter.title', { name }),
       description: t('metadata.setter.description', { name }),
     };
   }
 
   const numberFormat = new Intl.NumberFormat(locale);
-  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(boardTypes.map(boardTypeLabel));
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    boardTypes.map((boardType) => setterBoardLabel(boardType, t)),
+  );
   const climbs = numberFormat.format(climbCount);
 
   return {
-    title: t('metadata.setter.titleWithClimbs', { name, boards, count: climbCount, climbs }),
+    title:
+      page > 1
+        ? t('metadata.setter.titleWithClimbsPage', { name, boards, count: climbCount, climbs, page })
+        : t('metadata.setter.titleWithClimbs', { name, boards, count: climbCount, climbs }),
     description: joinDescriptionSentences(
       [
         t('metadata.setter.descriptionSetCount', { name, boards, count: climbCount, climbs }),
         totalAscents > 0
           ? t('metadata.setter.descriptionSends', { count: totalAscents, sends: numberFormat.format(totalAscents) })
           : null,
-        t('metadata.setter.descriptionCta'),
+        // "Pick one" needs more than one to pick from.
+        climbCount === 1 ? t('metadata.setter.descriptionCtaSingle') : t('metadata.setter.descriptionCta'),
       ],
       locale,
     ),
