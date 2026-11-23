@@ -3,6 +3,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
+import { boardTypeProperty } from '@boardsesh/analytics';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
@@ -10,7 +11,7 @@ import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list'
 import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
@@ -20,10 +21,12 @@ import AngleCrossLinks from './angle-cross-links';
 import ClimbBoardStage from './climb-board-stage';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
-import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
+import ClimbHeroCta from './climb-hero-cta';
+import type { HandoffTree } from './climb-handoff-cta';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
-import FrontDoorInstall from './front-door-install';
 import HoldLegend from './hold-legend';
+import QrLandingTracker from './qr-landing-tracker';
+import StickyInstallBar from './sticky-install-bar';
 import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
 import styles from './climb-front-door.module.css';
 
@@ -42,10 +45,10 @@ type ClimbFrontDoorProps = {
   similarClimbs: FrontDoorSection<SimilarClimb>;
   betaLinks: FrontDoorSection<BetaLink>;
   /**
-   * The pathname the "Climb this" CTA hands to the app — the URL the reader is
-   * actually on. Deliberately NOT the page's canonical: on `/b/{slug}` the
-   * canonical points into the config-tuple tree (A1) while the hand-off keeps
-   * the board context the reader arrived with.
+   * The pathname the hand-off opens in the browser app and the QR code carries
+   * to a phone — the URL the reader is actually on. Deliberately NOT the page's
+   * canonical: on `/b/{slug}` the canonical points into the config-tuple tree
+   * (A1) while the hand-off keeps the board context the reader arrived with.
    */
   handoffPath: string;
   tree: HandoffTree;
@@ -82,8 +85,9 @@ const emptySectionSx = { m: 0, color: 'var(--neutral-500)' };
 
 /**
  * The SSR climb page: everything a reader (or a crawler) needs about one climb,
- * with one primary action, open it in the app, and the store button under it
- * for a reader who does not have the app yet (#6027).
+ * with one primary action per screen (`ClimbHeroCta`): the store on a phone,
+ * which almost never has the app when it reads this page, and the browser app
+ * plus a QR code for the phone on a laptop.
  *
  * Three deliberate absences:
  *
@@ -117,10 +121,7 @@ export default async function ClimbFrontDoor({
   tree,
   noindex = false,
 }: ClimbFrontDoorProps) {
-  const [{ t, locale }, storeButtonLabels] = await Promise.all([
-    getServerTranslation('climbs'),
-    getStoreButtonLabels(),
-  ]);
+  const { t, locale } = await getServerTranslation('climbs');
 
   const boardListUrl = buildCanonicalClimbListUrl(boardDetails, angle);
   const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
@@ -163,6 +164,8 @@ export default async function ClimbFrontDoor({
 
   return (
     <Box component="main" className={styles.page}>
+      {/* A phone that scanned the desktop QR code lands here: count it once. */}
+      <QrLandingTracker kind="climb" boardType={boardTypeProperty(boardDetails.board_name).boardType} />
       <FrontDoorBreadcrumb
         boardName={formatBoardDisplayName(boardDetails.board_name)}
         angle={angle}
@@ -212,25 +215,16 @@ export default async function ClimbFrontDoor({
         ) : null}
 
         <Box className={styles.cta}>
-          <ClimbHandoffCta
-            pathname={handoffPath}
-            label={t('frontDoor.cta.climbThis')}
-            ariaLabel={t('frontDoor.cta.ariaLabel', { climbName })}
-            helperText={t('frontDoor.cta.helper')}
-            surface="climb_front_door"
-            tree={tree}
+          <ClimbHeroCta
+            climbName={climbName}
+            climbUuid={climb.uuid}
             boardName={boardDetails.board_name}
             layoutId={boardDetails.layout_id}
+            layoutName={boardDetails.layout_name}
             angle={angle}
-            climbUuid={climb.uuid}
-            locale={locale}
-          >
-            <FrontDoorInstall
-              placement="climb-view"
-              helperText={t('frontDoor.install.helper')}
-              labels={storeButtonLabels}
-            />
-          </ClimbHandoffCta>
+            handoffPath={handoffPath}
+            tree={tree}
+          />
         </Box>
 
         <Box className={styles.details}>
@@ -319,6 +313,18 @@ export default async function ClimbFrontDoor({
           boardName={boardDetails.board_name}
         />
       </Box>
+
+      {/* Last in `<main>`: its end marker is what tells the bar the content is over. */}
+      <StickyInstallBar
+        markUrl={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')}
+        qrLanding="climb"
+        labels={{
+          free: t('frontDoor.stickyBar.free'),
+          cta: t('frontDoor.stickyBar.cta'),
+          dismiss: t('frontDoor.stickyBar.dismiss'),
+          ctaAria: { ios: t('frontDoor.cta.getAppAriaIos'), android: t('frontDoor.cta.getAppAriaAndroid') },
+        }}
+      />
     </Box>
   );
 }

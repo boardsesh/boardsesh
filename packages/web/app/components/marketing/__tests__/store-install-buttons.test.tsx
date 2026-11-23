@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
-import { __resetBoardQrLandingForTests } from '@/app/lib/board-qr-landing';
+import { __resetQrLandingForTests } from '@/app/lib/qr-landing';
 import { buildStoreUrl } from '@/app/lib/store-links';
 
 const track = vi.hoisted(() => vi.fn());
@@ -35,7 +35,7 @@ describe('StoreInstallButtons', () => {
   beforeEach(() => {
     track.mockReset();
     __resetSessionInboundCampaignForTests();
-    __resetBoardQrLandingForTests();
+    __resetQrLandingForTests();
   });
 
   afterEach(() => {
@@ -142,11 +142,13 @@ describe('StoreInstallButtons', () => {
     expect(secondLink.className).toContain('MuiButton-outlined');
   });
 
-  describe('on a page a printed board code lands on', () => {
+  describe('on a page a code lands on', () => {
     it('names the scanned code in the link id and on the click (#4415)', async () => {
       setUserAgent(ANDROID_UA);
       window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board&wall=abc');
-      render(<StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />);
+      render(
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding="board" />,
+      );
 
       await waitFor(() =>
         expect(screen.getByRole('link', { name: 'Google Play' }).getAttribute('href')).toBe(
@@ -176,7 +178,9 @@ describe('StoreInstallButtons', () => {
     it('keeps the plain link id for a visit that did not come off a code', async () => {
       setUserAgent(ANDROID_UA);
       window.history.replaceState(null, '', '/b/garage-wall/40/list');
-      render(<StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />);
+      render(
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding="board" />,
+      );
 
       await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
       const playLink = screen.getByRole('link', { name: 'Google Play' });
@@ -198,11 +202,11 @@ describe('StoreInstallButtons', () => {
       );
     });
 
-    it('keeps the plain link id when a shared page turns the scan off explicitly', async () => {
+    it('keeps the plain link id when the page expects another kind of code', async () => {
       setUserAgent(ANDROID_UA);
       window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
       render(
-        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding={false} />,
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding="climb" />,
       );
 
       await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
@@ -214,11 +218,36 @@ describe('StoreInstallButtons', () => {
       expect(track.mock.calls[0]?.[1]).not.toHaveProperty('qrMedium');
     });
 
+    it('names the desktop code on a climb page a phone reached by scanning it', async () => {
+      setUserAgent(IPHONE_UA);
+      window.history.replaceState(null, '', '/b/the-kilter/40/view/abc-the-climb?src=qr&medium=desktop');
+      render(
+        <StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" sharedHtml qrLanding="climb" />,
+      );
+
+      await waitFor(() =>
+        expect(screen.getByRole('link', { name: 'App Store' }).getAttribute('href')).toBe(
+          buildStoreUrl('ios', { placement: 'climb-view', qrMedium: 'desktop' }),
+        ),
+      );
+      const appStoreLink = screen.getByRole('link', { name: 'App Store' });
+      expect(new URL(appStoreLink.getAttribute('href') ?? '').searchParams.get('ct')).toBe('climb-view.desktop');
+
+      fireEvent.click(appStoreLink);
+      expect(track).toHaveBeenCalledWith('App Install Click', {
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'climb-view',
+        mode: 'install',
+        qrMedium: 'desktop',
+      });
+    });
+
     it('renders the untagged link on the server, so the shared HTML is the same for a scan', () => {
       window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
 
       const html = renderToString(
-        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />,
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding="board" />,
       );
 
       expect(html).toContain('ct=spray-wall&amp;');

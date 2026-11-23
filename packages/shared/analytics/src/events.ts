@@ -1105,6 +1105,16 @@ export const SHARED_EVENTS = {
   // the value for the app's own landing, which is not built yet. The gym
   // poster's scan is the separate `Gym QR Scanned` on `/gym/{slug}`.
   BoardQrScanned: 'Board QR Scanned',
+  // A climb page's QR code was scanned and the climb page loaded on the phone.
+  // The code sits beside "Open in your browser" on a laptop and encodes the
+  // climb page itself with `?src=qr&medium=desktop`; the landing reads the
+  // pair, fires this once, and drops it from the address bar. Props:
+  // { medium: 'desktop', surface: 'web' | 'app', boardType } (`boardType` from
+  // `boardTypeProperty`). Built by `climbQrScanned` (climb-qr-events.ts).
+  // Nothing names the climb. Only www fires it today (`surface: 'web'`): a
+  // phone with the app opens climb links in the app, so this counts phones
+  // without it.
+  ClimbQrScanned: 'Climb QR Scanned',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

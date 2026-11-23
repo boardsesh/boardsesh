@@ -113,6 +113,18 @@ export {
   type BoardQrScannedProps,
   type BoardQrPayload,
 } from './board-qr-events';
+// Climb QR scans: the code beside "Open in your browser" on a laptop. Same
+// contract as the board scans above; names no climb.
+export {
+  climbQrScanned,
+  parseClimbQrLanding,
+  CLIMB_QR_MEDIUMS,
+  type ClimbQrMedium,
+  type ClimbQrLanding,
+  type ClimbQrSurface,
+  type ClimbQrScannedInput,
+  type ClimbQrScannedProps,
+} from './climb-qr-events';
 // Queue navigation (#6940): Next / Previous and queue-sheet opens. Mobile-only
 // call sites today; `Queue Navigation` is the name www fired before W-16.
 export {

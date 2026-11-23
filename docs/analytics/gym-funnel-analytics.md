@@ -74,7 +74,7 @@ no mobile counterpart. They live in their own module.
 | `viewerState`  | `signed-in`, `signed-out` — only the gym page can fire `signed-out`, see below           |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
-| `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
+| `medium`       | `poster`, `kiosk`, `board`, `desktop` — only `poster` can fire today, see below          |
 | `gymSlug`      | The slug of the gym page the scan landed on                                              |
 | `cta`          | `follow`, `kiosk`, `website`, `report-duplicate`                                         |
 | `tab`          | `overview`, `kiosks`, `insights`, `branding`, `profile`, `boards`, `members`, `comments` |
@@ -164,7 +164,7 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
 | `GYM_QR_SRC_PARAM`    | `'src'`                        |
 | `GYM_QR_MEDIUM_PARAM` | `'medium'`                     |
 | `GYM_QR_SRC_VALUE`    | `'qr'`                         |
-| `GYM_QR_MEDIUMS`      | `['poster', 'kiosk', 'board']` |
+| `GYM_QR_MEDIUMS`      | `['poster', 'kiosk', 'board', 'desktop']` |
 
 - `buildGymQrHref(path, medium)` builds the URL a QR encodes. Its output gets
   printed on laminated posters and stuck to walls, where a wrong href can't be
@@ -191,14 +191,15 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
 
 ### Which code fires which event
 
-Three printed or on-screen codes share the param contract above, and they land
-on two pages, so a scan is counted by one of two events:
+Four printed or on-screen codes share the param contract above, and they land
+on three kinds of page, so a scan is counted by one of three events:
 
 | `medium` | Code | Lands on | Event |
 | --- | --- | --- | --- |
 | `poster` | The gym poster (`/gym/{slug}/poster`) | `/gym/{slug}` | `Gym QR Scanned` |
 | `kiosk` | The kiosk screen's per-board install code (`app/components/kiosk/board-slot/board-install-qr.tsx`) | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
 | `board` | The board poster (`/poster/b/{slug}`, #4415): `boardQrUrl(slug, 'board')`, with an unlisted Spraywall's `wall=<uuid>` in front of the pair | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
+| `desktop` | The code beside "Open in your browser" on a climb page, shown from md (900px) only: `climbQrUrl(handoffPath, locale)`, the climb page itself in the reader's language | The same climb page, in either tree | `Climb QR Scanned` |
 
 `Gym QR Scanned` stays poster-only: its tracker mounts on `/gym/[gym_slug]` and
 nowhere else, and it carries `gymSlug`. A `kiosk` or `board` row on it means
@@ -220,13 +221,13 @@ payload is checked by the same test. The web SDK still stamps the page URL
 (`$current_url`, `$pathname`) on this event as on every other one, so the
 `?wall=` capability has to be scrubbed from it there, as it is for `$pageview`.
 
-`BoardQrLandingTracker` (`app/b/[board_slug]/[angle]/list/board-qr-landing-tracker.tsx`)
+`QrLandingTracker` with `kind="board"` (`app/components/climb-front-door/qr-landing-tracker.tsx`)
 fires it, on both branches of the list page: the Spraywall front door and the
 catalogue board list. Two ways it differs from the gym tracker:
 
 - **It reads the pair in the browser.** The list page's HTML is stored at the
   edge with a shared `s-maxage`, so the server cannot say whether this visit came
-  off a code. `captureBoardQrLandingMedium` (`app/lib/board-qr-landing.ts`) parses
+  off a code. `captureQrLanding('board')` (`app/lib/qr-landing.ts`) parses
   `window.location.search` with `parseBoardQrLanding`, the strict
   `parseGymQrLanding` narrowed to the board mediums, and remembers the answer
   for that page, so the store buttons can still read it after the strip.
@@ -292,6 +293,50 @@ browser and puts Home underneath. Only `wall` (a uuid) and `layout` (`photo`,
 `/b/...` is itself a www climbing surface that #4358 is deleting. When it goes,
 the kiosk and board codes need a new target; the params and the builders in
 `app/lib/gym-attribution.ts` survive that move unchanged.
+
+### `Climb QR Scanned`: the desktop code on a climb page
+
+A climb page on a laptop shows a QR code beside "Open in your browser", so a
+climber reading it at home can carry the climb to the phone they will hold at
+the wall. It encodes the page itself, `…/view/{climb}?src=qr&medium=desktop`
+(`climbQrUrl` in `app/lib/gym-attribution.ts`), from `handoffPath`: on
+`/b/{slug}` it keeps the board the reader arrived with, like the hand-off. The
+code is rendered on the server (`PhoneQrCard`, `qrcode.react`'s `QRCodeSVG`) and
+hidden below md with CSS, so it ships no JavaScript and every reader gets the
+same HTML.
+
+`Climb QR Scanned` is in `SHARED_EVENTS`, built by `climbQrScanned`
+(`packages/shared/analytics/src/climb-qr-events.ts`):
+
+| Property | Values |
+| --- | --- |
+| `medium` | `desktop`. A climb landing with any other medium counts nothing: `parseClimbQrLanding` (the strict parser, narrowed to `CLIMB_QR_MEDIUMS`) refuses it |
+| `surface` | `web` for the www page. `app` is reserved for the app's own landing, which is not built |
+| `boardType` | One of the nine board types or null, from `boardTypeProperty` |
+
+Nothing names the climb: no uuid, no name, no setter. The page URL the SDK
+stamps on every event already says which climb it was.
+
+`QrLandingTracker` with `kind="climb"` fires it, mounted on the climb page in
+both trees. It works like the board tracker above: it reads the pair in the
+browser (the climb page is stored at the edge for 24 hours), strips `src` and
+`medium` one task later, and counts once consent has settled, once per
+pathname. The server never reads the pair: the canonical, the JSON-LD and the
+HTML are the same with or without it, and `hasUserSpecificQueryParams`
+(`app/lib/list-page-cache.ts`) ignores both params, so a scanned URL is still
+CDN-cached.
+
+What it counts: phones **without** the app, plus phones that open links in
+their own browser. A phone with Boardsesh opens climb links straight in the app,
+which reads no pair today, so those scans count nothing. Read `Climb QR Scanned`
+as "a laptop reader sent the climb to a phone that needed the app", and read
+its installs against it.
+
+After a scan the climb page's store buttons (the phone's "Get the free app", the
+sticky install bar, and the QR card's own pair) add the medium: the link id
+becomes `climb-view.desktop` or `sticky-bar.desktop`, `utm_medium` becomes
+`qr`, and `App Install Click` carries `qrMedium: 'desktop'`. The hook is
+`useQrLandingMedium('climb')`.
 
 ### A scan only counts if the page loads: iOS and the association file
 

@@ -24,6 +24,17 @@
   overflow-x: clip;
 }
 
+/* Below md the sticky install bar (`sticky-install-bar.tsx`, 68px plus the
+   safe-area inset) can sit at the bottom of the screen. It leaves once the end
+   of this padding's content reaches it, and this space is what it leaves over:
+   empty, so the last line of the page is never under it. Reserved on every
+   phone, bar or not, so nothing moves when it appears. */
+@media (max-width: 899.98px) {
+  .page {
+    padding-bottom: calc(var(--spacing-4) + 68px + env(safe-area-inset-bottom));
+  }
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -12,6 +12,10 @@ import type { HandoffTree } from '../climb-handoff-cta';
  * #6027: a climb page and a climb list each ship a store link in their first
  * HTML, beside the hand-off, with their own link id.
  *
+ * On the climb page the store is the one filled button below md ("Get the free
+ * app", both stores stacked in one cell), and the hand-off is a text link there
+ * and the filled button from md, next to a QR code for the phone.
+ *
  * Rendered with `renderToString`, which is what a crawler and a reader with
  * JavaScript off get, and what the shared CDN cache stores. So the assertions
  * are on the server markup: a real anchor, the placement in the URL, and no
@@ -25,6 +29,18 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 
 vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation: vi.fn() }));
+
+// What the root layout's provider gives a cold server render: no answer yet.
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
+}));
+
+// The real code is a wall of `<path>`; the URL it encodes is what is under test.
+vi.mock('qrcode.react', () => ({
+  QRCodeSVG: ({ value, ...svgProps }: { value: string } & React.SVGProps<SVGSVGElement>) => (
+    <svg data-qr-value={value} role={svgProps.role} aria-label={svgProps['aria-label']} />
+  ),
+}));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
@@ -47,6 +63,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 }));
 
 const ClimbFrontDoor = (await import('../climb-front-door')).default;
+const { climbQrUrl } = await import('@/app/lib/gym-attribution');
 const StaticListFrontDoor = (await import('../static-list-front-door')).default;
 
 const BOARD_DETAILS = {
@@ -125,29 +142,73 @@ async function renderListPage(tree: HandoffTree): Promise<string> {
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
 
+/** The server HTML as a document, so the assertions can ask where a button sits. */
+function parseHtml(html: string): Document {
+  return new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
+}
+
 describe.each(TREES)('climb page store button, %s tree', (tree) => {
   it('ships a store link with the climb-view link id in the server HTML', async () => {
     const html = await renderClimbPage(tree);
 
     expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-view' })));
     expect(html).toContain('ct=climb-view');
-    expect(html).toContain('home.hero.ctaInstallIos');
-    expect(html).toContain('frontDoor.install.helper');
+    expect(html).toContain('frontDoor.cta.getApp');
+    expect(html).toContain('frontDoor.cta.getAppHelper');
   });
 
-  it('keeps the hand-off beside it, still pointing at the app', async () => {
+  it('puts both stores in the one mobile button, and the store first', async () => {
     const html = await renderClimbPage(tree);
+    const mobileInstall = parseHtml(html).querySelector('[data-cta="mobile-install"]');
+    const storeHrefs = [...(mobileInstall?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href'));
 
-    expect(html).toContain('frontDoor.cta.climbThis');
-    expect(html).toContain(`href="https://app.boardsesh.com${HANDOFF_PATHS[tree]}"`);
-    // The hand-off comes first: it is the page's primary action.
-    expect(html.indexOf('frontDoor.cta.climbThis')).toBeLessThan(html.indexOf('frontDoor.install.helper'));
+    expect(storeHrefs).toEqual([
+      buildStoreUrl('ios', { placement: 'climb-view' }),
+      buildStoreUrl('android', { placement: 'climb-view' }),
+    ]);
+    // The store comes first: on a phone it is the page's primary action.
+    expect(html.indexOf('data-cta="mobile-install"')).toBeLessThan(html.indexOf('data-cta="handoff"'));
   });
 
-  it('leaves the hand-off as the only filled button', async () => {
-    const html = await renderClimbPage(tree);
+  it('keeps the hand-off, still pointing at the app, with both of its labels', async () => {
+    const page = parseHtml(await renderClimbPage(tree));
+    const handoff = page.querySelector('[data-cta="handoff"]');
 
-    expect(html.match(/MuiButton-contained[\s"]/g) ?? []).toHaveLength(1);
+    expect(handoff?.getAttribute('href')).toBe(`https://app.boardsesh.com${HANDOFF_PATHS[tree]}`);
+    expect(handoff?.getAttribute('aria-label')).toBe('frontDoor.cta.openInBrowserAria');
+    expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowserMobile');
+    expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowser');
+  });
+
+  it('fills only the store buttons, inside the mobile block; the hand-off is not a contained button', async () => {
+    const page = parseHtml(await renderClimbPage(tree));
+    const containedButtons = [...page.querySelectorAll('.MuiButton-contained')];
+
+    expect(containedButtons).toHaveLength(2);
+    for (const button of containedButtons) {
+      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
+    }
+    expect(page.querySelector('[data-cta="handoff"]')?.classList.contains('MuiButton-contained')).toBe(false);
+  });
+
+  it('shows a QR code that opens this climb on a phone, from the page it is on', async () => {
+    const page = parseHtml(await renderClimbPage(tree));
+    const code = page.querySelector('svg[data-qr-value]');
+
+    expect(code?.getAttribute('data-qr-value')).toBe(climbQrUrl(HANDOFF_PATHS[tree], 'en-US'));
+    expect(code?.getAttribute('data-qr-value')).toContain('?src=qr&medium=desktop');
+    expect(code?.getAttribute('role')).toBe('img');
+    expect(code?.getAttribute('aria-label')).toBe('frontDoor.qr.imageLabel');
+    expect(page.body.textContent).toContain('frontDoor.qr.title');
+  });
+
+  it('ships no sticky install bar in the server HTML, only its end marker', async () => {
+    const page = parseHtml(await renderClimbPage(tree));
+
+    expect(page.querySelector('[data-testid="sticky-install-bar"]')).toBeNull();
+    expect(page.querySelectorAll('[data-sticky-install-end]')).toHaveLength(1);
+    expect(page.querySelector('main > :last-child')?.hasAttribute('data-sticky-install-end')).toBe(true);
+    expect(page.querySelector('[data-cta="mobile-install"]')?.hasAttribute('data-sticky-install-hide')).toBe(true);
   });
 });
 
@@ -208,6 +269,10 @@ describe('a cached front door', () => {
     expect(html).toContain(asAttribute(buildStoreUrl('android', { placement: 'climb-view' })));
     expect(html).toContain('home.hero.ctaInstallIos');
     expect(html).toContain('home.hero.ctaInstallAndroid');
+    // The mobile button's store is picked by CSS, then by the browser after
+    // mount: whoever populated the cache must not have picked it for everyone.
+    expect(html).not.toContain('data-store=');
+    expect(parseHtml(html).querySelectorAll('[data-cta="mobile-install"] [data-store-link]')).toHaveLength(2);
   });
 
   it('ships both stores on a cached list page too', async () => {

@@ -42,7 +42,7 @@ export function __resetReportedScansForTests(): void {
  * is marked reported only when it is sent.
  *
  * A scan whose page the climber left before consent settled is lost, and,
- * unlike `BoardQrLandingTracker`, coming back does not recover it. Deliberate:
+ * unlike `QrLandingTracker`, coming back does not recover it. Deliberate:
  * this tracker is mounted only when the SERVER saw the QR pair, and the return
  * visit's URL no longer carries it, so there is nothing mounted to count it.
  * Matching the board tracker would mean mounting on every gym page and
@@ -61,7 +61,7 @@ export default function GymQrLandingTracker({ gymSlug, medium }: GymQrLandingTra
     // to strip them. replaceState (not router.replace) keeps it a URL rewrite
     // with no re-render and no server round-trip.
     //
-    // One task later, like `useClaimParamStrip` and `BoardQrLandingTracker`: on
+    // One task later, like `useClaimParamStrip` and `QrLandingTracker`: on
     // the hydration commit this effect runs before Next has patched
     // `history.replaceState`, and a native call then leaves the router's own URL
     // holding the pair, to be written back by its next history update.

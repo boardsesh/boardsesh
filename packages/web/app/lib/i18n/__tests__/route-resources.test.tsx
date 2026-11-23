@@ -53,7 +53,7 @@ const TRANSLATION_KEYS = [
   'common:header.startClimbing',
   'auth:modal.title',
   'consent:privacyChoices',
-  'climbs:frontDoor.cta.climbThis',
+  'climbs:frontDoor.cta.getApp',
   'feed:activityFeed.signInPrompt',
 ] as const;
 

@@ -117,7 +117,7 @@ vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: (
 
 const { default: BoardSlugListPage, generateMetadata } = await import('../page');
 const { default: SprayWallListPage } = await import('../spray-wall-view');
-const { default: BoardQrLandingTracker } = await import('../board-qr-landing-tracker');
+const { default: QrLandingTracker } = await import('@/app/components/climb-front-door/qr-landing-tracker');
 const { default: StaticListFrontDoor } = await import('@/app/components/climb-front-door/static-list-front-door');
 
 /** The page's top-level elements: a fragment's children, or the one element. */
@@ -179,10 +179,10 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
 
   it("counts a scan of the wall's printed code, naming the board type and nothing else (#4415)", async () => {
     const element = await BoardSlugListPage(propsWith(WALL_UUID));
-    const tracker = topLevelElements(element).find((child) => child.type === BoardQrLandingTracker);
+    const tracker = topLevelElements(element).find((child) => child.type === QrLandingTracker);
 
     // The tracker gets no slug, no name and no uuid: `Board QR Scanned` names no wall.
-    expect(tracker?.props).toEqual({ boardType: 'spray' });
+    expect(tracker?.props).toEqual({ kind: 'board', boardType: 'spray' });
   });
 
   it('counts a scan on a catalogue board list too', async () => {
@@ -195,7 +195,10 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
     });
     const children = topLevelElements(element);
 
-    expect(children.find((child) => child.type === BoardQrLandingTracker)?.props).toEqual({ boardType: 'kilter' });
+    expect(children.find((child) => child.type === QrLandingTracker)?.props).toEqual({
+      kind: 'board',
+      boardType: 'kilter',
+    });
     expect(children.some((child) => child.type === StaticListFrontDoor)).toBe(true);
   });
 

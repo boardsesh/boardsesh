@@ -119,10 +119,15 @@ export type GymClaimResultStatus = 'email_sent' | 'approved' | 'admin_review' | 
  * That page counts them as `Board QR Scanned` (board-qr-events.ts), which names
  * no board and so has no `gymSlug`.
  *
- * One vocabulary and one parser for both events: a code printed today has to
+ * `desktop` is not printed: it is the code a climb page shows beside its
+ * "Open in your browser" button on a laptop, so a climber can carry the climb
+ * to their phone. It encodes the climb page itself, which counts the scan as
+ * `Climb QR Scanned` (climb-qr-events.ts).
+ *
+ * One vocabulary and one parser for every event: a code printed today has to
  * keep parsing whichever page it is pointed at later.
  */
-export const GYM_QR_MEDIUMS = ['poster', 'kiosk', 'board'] as const;
+export const GYM_QR_MEDIUMS = ['poster', 'kiosk', 'board', 'desktop'] as const;
 export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
 
 /**
@@ -363,10 +368,11 @@ export function gymDirectorySearched(
 // ---------------------------------------------------------------------------
 //
 // Printed QR codes point at a normal Boardsesh URL with two extra params:
-// `?src=qr&medium=<poster|kiosk|board>`. The landing surface reads them, fires
-// its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned` on a
-// board page), then rewrites the URL without them so a shared or bookmarked
-// link doesn't re-attribute someone else's visit to a poster.
+// `?src=qr&medium=<poster|kiosk|board|desktop>`. The landing surface reads them,
+// fires its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned`
+// on a board page, `Climb QR Scanned` on a climb page), then rewrites the URL
+// without them so a shared or bookmarked link doesn't re-attribute someone
+// else's visit to a poster.
 
 export const GYM_QR_SRC_PARAM = 'src';
 export const GYM_QR_MEDIUM_PARAM = 'medium';

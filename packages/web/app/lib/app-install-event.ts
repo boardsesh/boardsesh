@@ -40,6 +40,9 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *    share link and its printed QR land (#4415). After a scan the link id is
  *    `spray-wall.board`; nothing in it names the wall.
  *  - `gyms-directory`: `/gyms` and its three board pages.
+ *  - `sticky-bar`: the install strip at the bottom of a phone's climb page
+ *    (`StickyInstallBar`), on Android and on iOS browsers that show no Smart
+ *    App Banner.
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
  *  - `bring-your-logbook`: the Kilter and Tension import guide.

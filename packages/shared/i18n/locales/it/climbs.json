@@ -1004,12 +1004,23 @@
       "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…"
     },
     "cta": {
-      "climbThis": "Apri il blocco nell’app",
-      "ariaLabel": "Apri {{climbName}} nell'app Boardsesh",
-      "helper": "Lo apre nell’app, pronto da illuminare sul tuo pannello."
+      "getApp": "Scarica l’app gratis",
+      "getAppAriaIos": "Scarica gratis l’app Boardsesh dall’App Store",
+      "getAppAriaAndroid": "Scarica gratis l’app Boardsesh da Google Play",
+      "getAppHelper": "Illumina questo blocco sul tuo {{board}} e registra la ripetizione.",
+      "openInBrowser": "Apri nel browser",
+      "openInBrowserMobile": "Oppure aprilo nel browser",
+      "openInBrowserAria": "Apri {{climbName}} nell’app Boardsesh per browser"
     },
-    "install": {
-      "helper": "Non hai ancora l'app? Scaricala e illumina questo blocco sul tuo pannello."
+    "qr": {
+      "title": "Inquadra il codice per aprire questo blocco sul telefono",
+      "body": "Gratis su iPhone e Android.",
+      "imageLabel": "Codice QR che apre {{climbName}} sul telefono"
+    },
+    "stickyBar": {
+      "free": "Gratis",
+      "cta": "Scarica l’app",
+      "dismiss": "Nascondi questa barra"
     }
   },
   "spray": {

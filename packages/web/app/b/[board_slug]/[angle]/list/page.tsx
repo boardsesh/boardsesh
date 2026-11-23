@@ -26,7 +26,7 @@ import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray
 import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
 import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
 import { boardTypeProperty } from '@boardsesh/analytics';
-import BoardQrLandingTracker from './board-qr-landing-tracker';
+import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
@@ -179,12 +179,12 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   // fixed angle and no pagination — and before `getBoardImageDetailsForBoard`, which
   // has no catalogue row to resolve for a wall and throws.
   //
-  // Both branches mount `BoardQrLandingTracker`: this page is where a printed
+  // Both branches mount `QrLandingTracker`: this page is where a printed
   // board code lands after the `/b/{slug}` hop, so this is where a scan is counted.
   if (board.boardType === SPRAY_BOARD_TYPE) {
     return (
       <>
-        <BoardQrLandingTracker boardType={SPRAY_BOARD_TYPE} />
+        <QrLandingTracker kind="board" boardType={SPRAY_BOARD_TYPE} />
         <SprayWallListPage board={board} wallParam={searchParams[WALL_CAPABILITY_PARAM]} />
       </>
     );
@@ -204,7 +204,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
 
   return (
     <>
-      <BoardQrLandingTracker boardType={boardTypeProperty(board.boardType).boardType} />
+      <QrLandingTracker kind="board" boardType={boardTypeProperty(board.boardType).boardType} />
       {preloadUrls.map((preloadUrl) => (
         <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
       ))}
