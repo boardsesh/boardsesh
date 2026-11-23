@@ -1,0 +1,5714 @@
+[
+  {
+    "phase": "before",
+    "locale": "en-US",
+    "width": 390,
+    "path": "/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Boards Boardsesh works with",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 4072,
+    "mainWordCount": 511,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 503.375,
+        "bottom": 913.328125,
+        "height": 409.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter · 1",
+          "height": 44,
+          "width": 173.40625
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Used the old Kilter app? Upload your Aurora export file.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 971.328125,
+        "bottom": 1321.28125,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension · 0",
+          "height": 44,
+          "width": 191.8125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1379.28125,
+        "bottom": 1753.234375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard · 0",
+          "height": 44,
+          "width": 219.671875
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Import a MoonBoard CSV file in Connected apps. Nothing is written back to MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1811.234375,
+        "bottom": 2137.1875,
+        "height": 325.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy · 0",
+          "height": 44,
+          "width": 182.296875
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2195.1875,
+        "bottom": 2521.140625,
+        "height": 325.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone · 0",
+          "height": 44,
+          "width": 218.5
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2579.140625,
+        "bottom": 2905.09375,
+        "height": 325.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper · 0",
+          "height": 44,
+          "width": 229.4375
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 2963.09375,
+        "bottom": 3289.046875,
+        "height": 325.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL · 0",
+          "height": 44,
+          "width": 181.71875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3347.046875,
+        "bottom": 3625,
+        "height": 277.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods · 0",
+          "height": 44,
+          "width": 186.453125
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Account imports are not available for this board.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 3674,
+        "bottom": 3830,
+        "height": 156,
+        "left": 24,
+        "right": 366,
+        "heading": "Your spray wall, set and logged.",
+        "action": {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 17,
+          "width": 157.40625
+        },
+        "contrast": [
+          {
+            "text": "Your spray wall, set and logged.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "No lights needed: the holds show on your photo.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Set up your spray wall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "en-US",
+    "width": 1440,
+    "path": "/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Boards Boardsesh works with",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2313.203125,
+    "mainWordCount": 511,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 742.84375,
+        "height": 345.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/gyms/kilter",
+          "text": "Find a wall with Kilter · 1",
+          "height": 44,
+          "width": 173.40625
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Used the old Kilter app? Upload your Aurora export file.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 706.84375,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/gyms/tension",
+          "text": "Find a wall with Tension · 0",
+          "height": 44,
+          "width": 191.8125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 808.84375,
+        "bottom": 1142.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/gyms/moonboard",
+          "text": "Find a wall with MoonBoard · 0",
+          "height": 44,
+          "width": 219.671875
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Import a MoonBoard CSV file in Connected apps. Nothing is written back to MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 808.84375,
+        "bottom": 1118.296875,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/gyms?boardType=decoy",
+          "text": "Find a wall with Decoy · 0",
+          "height": 44,
+          "width": 182.296875
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/gyms?boardType=touchstone",
+          "text": "Find a wall with Touchstone · 0",
+          "height": 44,
+          "width": 218.5
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/gyms?boardType=grasshopper",
+          "text": "Find a wall with Grasshopper · 0",
+          "height": 44,
+          "width": 229.4375
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1583.75,
+        "bottom": 1893.203125,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/gyms?boardType=soill",
+          "text": "Find a wall with So iLL · 0",
+          "height": 44,
+          "width": 181.71875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Link an account where available in Connected apps, or upload an Aurora export file. Imports copy history into Boardsesh; nothing is written back.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1583.75,
+        "bottom": 1845.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/gyms?boardType=woods",
+          "text": "Find a wall with Woods · 0",
+          "height": 44,
+          "width": 186.453125
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Light climbs from the iOS or Android app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Account imports are not available for this board.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Find a wall with Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1946.203125,
+        "bottom": 2055.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "Your spray wall, set and logged.",
+        "action": {
+          "href": "/spraywalls",
+          "text": "Set up your spray wall",
+          "height": 17,
+          "width": 157.40625
+        },
+        "contrast": [
+          {
+            "text": "Your spray wall, set and logged.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "No lights needed: the holds show on your photo.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Set up your spray wall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "es",
+    "width": 390,
+    "path": "/es/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Plafones compatibles con Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 4396,
+    "mainWordCount": 552,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 503.375,
+        "bottom": 961.328125,
+        "height": 457.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/es/gyms/kilter",
+          "text": "Encuentra un rocódromo con Kilter · 1",
+          "height": 44,
+          "width": 270.375
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "¿Usabas la antigua app Kilter? Sube tu archivo de exportación Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 1019.328125,
+        "bottom": 1417.28125,
+        "height": 397.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/es/gyms/tension",
+          "text": "Encuentra un rocódromo con Tension · 0",
+          "height": 44,
+          "width": 288.78125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1475.28125,
+        "bottom": 1877.234375,
+        "height": 401.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/es/gyms/moonboard",
+          "text": "Encuentra un rocódromo con MoonBoard · 0",
+          "height": 48,
+          "width": 308
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importa un archivo CSV de MoonBoard en Apps conectadas. No se escribe nada en MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1935.234375,
+        "bottom": 2309.1875,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/es/gyms?boardType=decoy",
+          "text": "Encuentra un rocódromo con Decoy · 0",
+          "height": 44,
+          "width": 279.265625
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2367.1875,
+        "bottom": 2745.140625,
+        "height": 377.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/es/gyms?boardType=touchstone",
+          "text": "Encuentra un rocódromo con Touchstone · 0",
+          "height": 48,
+          "width": 308
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2803.140625,
+        "bottom": 3181.09375,
+        "height": 377.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/es/gyms?boardType=grasshopper",
+          "text": "Encuentra un rocódromo con Grasshopper · 0",
+          "height": 48,
+          "width": 308
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 3239.09375,
+        "bottom": 3613.046875,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/es/gyms?boardType=soill",
+          "text": "Encuentra un rocódromo con So iLL · 0",
+          "height": 44,
+          "width": 278.6875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3671.046875,
+        "bottom": 3973,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/es/gyms?boardType=woods",
+          "text": "Encuentra un rocódromo con Woods · 0",
+          "height": 44,
+          "width": 283.421875
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "La importación de cuentas no está disponible para este plafón.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 4022,
+        "bottom": 4154,
+        "height": 132,
+        "left": 24,
+        "right": 366,
+        "heading": "Tu Spraywall, con bloques y logbook.",
+        "action": {
+          "href": "/es/spraywalls",
+          "text": "Configura tu Spraywall",
+          "height": 17,
+          "width": 160.96875
+        },
+        "contrast": [
+          {
+            "text": "Tu Spraywall, con bloques y logbook.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Sin luces: las presas aparecen en tu foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configura tu Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "es",
+    "width": 1440,
+    "path": "/es/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Plafones compatibles con Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2313.203125,
+    "mainWordCount": 552,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 742.84375,
+        "height": 345.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/es/gyms/kilter",
+          "text": "Encuentra un rocódromo con Kilter · 1",
+          "height": 44,
+          "width": 270.375
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "¿Usabas la antigua app Kilter? Sube tu archivo de exportación Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 706.84375,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/es/gyms/tension",
+          "text": "Encuentra un rocódromo con Tension · 0",
+          "height": 44,
+          "width": 288.78125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 808.84375,
+        "bottom": 1142.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/es/gyms/moonboard",
+          "text": "Encuentra un rocódromo con MoonBoard · 0",
+          "height": 44,
+          "width": 316.640625
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importa un archivo CSV de MoonBoard en Apps conectadas. No se escribe nada en MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 808.84375,
+        "bottom": 1118.296875,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/es/gyms?boardType=decoy",
+          "text": "Encuentra un rocódromo con Decoy · 0",
+          "height": 44,
+          "width": 279.265625
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/es/gyms?boardType=touchstone",
+          "text": "Encuentra un rocódromo con Touchstone · 0",
+          "height": 44,
+          "width": 315.46875
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/es/gyms?boardType=grasshopper",
+          "text": "Encuentra un rocódromo con Grasshopper · 0",
+          "height": 44,
+          "width": 326.40625
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1583.75,
+        "bottom": 1893.203125,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/es/gyms?boardType=soill",
+          "text": "Encuentra un rocódromo con So iLL · 0",
+          "height": 44,
+          "width": 278.6875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vincula una cuenta cuando esté disponible en Apps conectadas o sube una exportación Aurora. El historial se copia a Boardsesh; no se escribe nada en la otra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1583.75,
+        "bottom": 1845.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/es/gyms?boardType=woods",
+          "text": "Encuentra un rocódromo con Woods · 0",
+          "height": 44,
+          "width": 283.421875
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ilumina bloques desde la app de iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "La importación de cuentas no está disponible para este plafón.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Encuentra un rocódromo con Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1946.203125,
+        "bottom": 2055.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "Tu Spraywall, con bloques y logbook.",
+        "action": {
+          "href": "/es/spraywalls",
+          "text": "Configura tu Spraywall",
+          "height": 17,
+          "width": 160.96875
+        },
+        "contrast": [
+          {
+            "text": "Tu Spraywall, con bloques y logbook.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Sin luces: las presas aparecen en tu foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configura tu Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "fr",
+    "width": 390,
+    "path": "/fr/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Les boards compatibles avec Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 4467.1875,
+    "mainWordCount": 538,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 562.5625,
+        "bottom": 1020.515625,
+        "height": 457.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/fr/gyms/kilter",
+          "text": "Trouver une salle avec Kilter · 1",
+          "height": 44,
+          "width": 225.296875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vous utilisiez l’ancienne app Kilter ? Importez votre export Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 1078.515625,
+        "bottom": 1476.46875,
+        "height": 397.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/fr/gyms/tension",
+          "text": "Trouver une salle avec Tension · 0",
+          "height": 44,
+          "width": 243.703125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1534.46875,
+        "bottom": 1932.421875,
+        "height": 397.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/fr/gyms/moonboard",
+          "text": "Trouver une salle avec MoonBoard · 0",
+          "height": 44,
+          "width": 271.5625
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importez un fichier CSV MoonBoard dans Apps connectées. Rien n’est écrit dans MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1990.421875,
+        "bottom": 2364.375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/fr/gyms?boardType=decoy",
+          "text": "Trouver une salle avec Decoy · 0",
+          "height": 44,
+          "width": 234.1875
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2422.375,
+        "bottom": 2796.328125,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/fr/gyms?boardType=touchstone",
+          "text": "Trouver une salle avec Touchstone · 0",
+          "height": 44,
+          "width": 270.390625
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2854.328125,
+        "bottom": 3228.28125,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/fr/gyms?boardType=grasshopper",
+          "text": "Trouver une salle avec Grasshopper · 0",
+          "height": 44,
+          "width": 281.328125
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 3286.28125,
+        "bottom": 3660.234375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/fr/gyms?boardType=soill",
+          "text": "Trouver une salle avec So iLL · 0",
+          "height": 44,
+          "width": 233.609375
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3718.234375,
+        "bottom": 4020.1875,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/fr/gyms?boardType=woods",
+          "text": "Trouver une salle avec Woods · 0",
+          "height": 44,
+          "width": 238.34375
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "L’import de compte n’est pas disponible pour ce board.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 4069.1875,
+        "bottom": 4225.1875,
+        "height": 156,
+        "left": 24,
+        "right": 366,
+        "heading": "Votre Spraywall, ses blocs et son carnet.",
+        "action": {
+          "href": "/fr/spraywalls",
+          "text": "Configurer votre Spraywall",
+          "height": 17,
+          "width": 188.53125
+        },
+        "contrast": [
+          {
+            "text": "Votre Spraywall, ses blocs et son carnet.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Pas de lumières nécessaires : les prises s’affichent sur votre photo.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configurer votre Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "fr",
+    "width": 1440,
+    "path": "/fr/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Les boards compatibles avec Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2313.203125,
+    "mainWordCount": 538,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 742.84375,
+        "height": 345.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/fr/gyms/kilter",
+          "text": "Trouver une salle avec Kilter · 1",
+          "height": 44,
+          "width": 225.296875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Vous utilisiez l’ancienne app Kilter ? Importez votre export Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 706.84375,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/fr/gyms/tension",
+          "text": "Trouver une salle avec Tension · 0",
+          "height": 44,
+          "width": 243.703125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 808.84375,
+        "bottom": 1142.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/fr/gyms/moonboard",
+          "text": "Trouver une salle avec MoonBoard · 0",
+          "height": 44,
+          "width": 271.5625
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importez un fichier CSV MoonBoard dans Apps connectées. Rien n’est écrit dans MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 808.84375,
+        "bottom": 1118.296875,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/fr/gyms?boardType=decoy",
+          "text": "Trouver une salle avec Decoy · 0",
+          "height": 44,
+          "width": 234.1875
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/fr/gyms?boardType=touchstone",
+          "text": "Trouver une salle avec Touchstone · 0",
+          "height": 44,
+          "width": 270.390625
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/fr/gyms?boardType=grasshopper",
+          "text": "Trouver une salle avec Grasshopper · 0",
+          "height": 44,
+          "width": 281.328125
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1583.75,
+        "bottom": 1893.203125,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/fr/gyms?boardType=soill",
+          "text": "Trouver une salle avec So iLL · 0",
+          "height": 44,
+          "width": 233.609375
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Liez un compte lorsque l’option est disponible dans Apps connectées, ou importez un export Aurora. L’historique est copié dans Boardsesh ; rien n’est écrit dans l’autre app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1583.75,
+        "bottom": 1845.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/fr/gyms?boardType=woods",
+          "text": "Trouver une salle avec Woods · 0",
+          "height": 44,
+          "width": 238.34375
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Allumez les blocs depuis l’app iOS ou Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "L’import de compte n’est pas disponible pour ce board.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trouver une salle avec Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1946.203125,
+        "bottom": 2055.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "Votre Spraywall, ses blocs et son carnet.",
+        "action": {
+          "href": "/fr/spraywalls",
+          "text": "Configurer votre Spraywall",
+          "height": 17,
+          "width": 188.53125
+        },
+        "contrast": [
+          {
+            "text": "Votre Spraywall, ses blocs et son carnet.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Pas de lumières nécessaires : les prises s’affichent sur votre photo.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configurer votre Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "de",
+    "width": 390,
+    "path": "/de/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Diese Boards unterstützt Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 4467.1875,
+    "mainWordCount": 480,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 562.5625,
+        "bottom": 1020.515625,
+        "height": 457.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/de/gyms/kilter",
+          "text": "Finde eine Halle mit Kilter · 1",
+          "height": 44,
+          "width": 205.421875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Du hast die alte Kilter-App benutzt? Importiere deine Aurora-Exportdatei.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 1078.515625,
+        "bottom": 1476.46875,
+        "height": 397.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/de/gyms/tension",
+          "text": "Finde eine Halle mit Tension · 0",
+          "height": 44,
+          "width": 223.828125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1534.46875,
+        "bottom": 1932.421875,
+        "height": 397.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/de/gyms/moonboard",
+          "text": "Finde eine Halle mit MoonBoard · 0",
+          "height": 44,
+          "width": 251.6875
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importiere eine MoonBoard-CSV unter Verbundene Apps. Nichts wird in MoonBoard zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1990.421875,
+        "bottom": 2364.375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/de/gyms?boardType=decoy",
+          "text": "Finde eine Halle mit Decoy · 0",
+          "height": 44,
+          "width": 214.328125
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2422.375,
+        "bottom": 2796.328125,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/de/gyms?boardType=touchstone",
+          "text": "Finde eine Halle mit Touchstone · 0",
+          "height": 44,
+          "width": 250.515625
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2854.328125,
+        "bottom": 3228.28125,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/de/gyms?boardType=grasshopper",
+          "text": "Finde eine Halle mit Grasshopper · 0",
+          "height": 44,
+          "width": 261.46875
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 3286.28125,
+        "bottom": 3660.234375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/de/gyms?boardType=soill",
+          "text": "Finde eine Halle mit So iLL · 0",
+          "height": 44,
+          "width": 213.75
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3718.234375,
+        "bottom": 4020.1875,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/de/gyms?boardType=woods",
+          "text": "Finde eine Halle mit Woods · 0",
+          "height": 44,
+          "width": 218.484375
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ein Kontoimport ist für dieses Board noch nicht verfügbar.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 4069.1875,
+        "bottom": 4225.1875,
+        "height": 156,
+        "left": 24,
+        "right": 366,
+        "heading": "Deine Spraywall: Boulder setzen und loggen.",
+        "action": {
+          "href": "/de/spraywalls",
+          "text": "Deine Spraywall einrichten",
+          "height": 17,
+          "width": 189.4375
+        },
+        "contrast": [
+          {
+            "text": "Deine Spraywall: Boulder setzen und loggen.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Keine LEDs nötig: Die Griffe erscheinen auf deinem Foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Deine Spraywall einrichten",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "de",
+    "width": 1440,
+    "path": "/de/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Diese Boards unterstützt Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2337.203125,
+    "mainWordCount": 480,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 766.84375,
+        "height": 369.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/de/gyms/kilter",
+          "text": "Finde eine Halle mit Kilter · 1",
+          "height": 44,
+          "width": 205.421875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Du hast die alte Kilter-App benutzt? Importiere deine Aurora-Exportdatei.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 706.84375,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/de/gyms/tension",
+          "text": "Finde eine Halle mit Tension · 0",
+          "height": 44,
+          "width": 223.828125
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 832.84375,
+        "bottom": 1166.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/de/gyms/moonboard",
+          "text": "Finde eine Halle mit MoonBoard · 0",
+          "height": 44,
+          "width": 251.6875
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importiere eine MoonBoard-CSV unter Verbundene Apps. Nichts wird in MoonBoard zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 832.84375,
+        "bottom": 1142.296875,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/de/gyms?boardType=decoy",
+          "text": "Finde eine Halle mit Decoy · 0",
+          "height": 44,
+          "width": 214.328125
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1232.296875,
+        "bottom": 1541.75,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/de/gyms?boardType=touchstone",
+          "text": "Finde eine Halle mit Touchstone · 0",
+          "height": 44,
+          "width": 250.515625
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1232.296875,
+        "bottom": 1541.75,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/de/gyms?boardType=grasshopper",
+          "text": "Finde eine Halle mit Grasshopper · 0",
+          "height": 44,
+          "width": 261.46875
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1607.75,
+        "bottom": 1917.203125,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/de/gyms?boardType=soill",
+          "text": "Finde eine Halle mit So iLL · 0",
+          "height": 44,
+          "width": 213.75
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Verknüpfe ein Konto, wenn die Option unter Verbundene Apps verfügbar ist, oder importiere einen Aurora-Export. Das Logbuch wird zu Boardsesh kopiert; nichts wird zurückgeschrieben.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1607.75,
+        "bottom": 1869.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/de/gyms?boardType=woods",
+          "text": "Finde eine Halle mit Woods · 0",
+          "height": 44,
+          "width": 218.484375
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Beleuchte Boulder über die iOS- oder Android-App.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Ein Kontoimport ist für dieses Board noch nicht verfügbar.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Finde eine Halle mit Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1970.203125,
+        "bottom": 2079.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "Deine Spraywall: Boulder setzen und loggen.",
+        "action": {
+          "href": "/de/spraywalls",
+          "text": "Deine Spraywall einrichten",
+          "height": 17,
+          "width": 189.4375
+        },
+        "contrast": [
+          {
+            "text": "Deine Spraywall: Boulder setzen und loggen.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Keine LEDs nötig: Die Griffe erscheinen auf deinem Foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Deine Spraywall einrichten",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "it",
+    "width": 390,
+    "path": "/it/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "I pannelli compatibili con Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 4168,
+    "mainWordCount": 507,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 479.375,
+        "bottom": 913.328125,
+        "height": 433.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/it/gyms/kilter",
+          "text": "Trova una palestra con Kilter · 1",
+          "height": 44,
+          "width": 227.078125
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Usavi la vecchia app Kilter? Carica il file di esportazione Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 971.328125,
+        "bottom": 1345.28125,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/it/gyms/tension",
+          "text": "Trova una palestra con Tension · 0",
+          "height": 44,
+          "width": 245.484375
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1403.28125,
+        "bottom": 1777.234375,
+        "height": 373.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/it/gyms/moonboard",
+          "text": "Trova una palestra con MoonBoard · 0",
+          "height": 44,
+          "width": 273.34375
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importa un file CSV MoonBoard in App collegate. Nulla viene scritto su MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1835.234375,
+        "bottom": 2185.1875,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/it/gyms?boardType=decoy",
+          "text": "Trova una palestra con Decoy · 0",
+          "height": 44,
+          "width": 235.984375
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2243.1875,
+        "bottom": 2593.140625,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/it/gyms?boardType=touchstone",
+          "text": "Trova una palestra con Touchstone · 0",
+          "height": 44,
+          "width": 272.171875
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2651.140625,
+        "bottom": 3001.09375,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/it/gyms?boardType=grasshopper",
+          "text": "Trova una palestra con Grasshopper · 0",
+          "height": 44,
+          "width": 283.125
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 3059.09375,
+        "bottom": 3409.046875,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/it/gyms?boardType=soill",
+          "text": "Trova una palestra con So iLL · 0",
+          "height": 44,
+          "width": 235.40625
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3467.046875,
+        "bottom": 3745,
+        "height": 277.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/it/gyms?boardType=woods",
+          "text": "Trova una palestra con Woods · 0",
+          "height": 44,
+          "width": 240.140625
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "L’importazione dell’account non è disponibile per questo pannello.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 3794,
+        "bottom": 3926,
+        "height": 132,
+        "left": 24,
+        "right": 366,
+        "heading": "La tua Spraywall, con blocchi e diario.",
+        "action": {
+          "href": "/it/spraywalls",
+          "text": "Configura la tua Spraywall",
+          "height": 17,
+          "width": 186.765625
+        },
+        "contrast": [
+          {
+            "text": "La tua Spraywall, con blocchi e diario.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Non servono luci: le prese appaiono sulla foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configura la tua Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "it",
+    "width": 1440,
+    "path": "/it/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "I pannelli compatibili con Boardsesh",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2313.203125,
+    "mainWordCount": 507,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 742.84375,
+        "height": 345.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/it/gyms/kilter",
+          "text": "Trova una palestra con Kilter · 1",
+          "height": 44,
+          "width": 227.078125
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Usavi la vecchia app Kilter? Carica il file di esportazione Aurora.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Kilter · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 706.84375,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/it/gyms/tension",
+          "text": "Trova una palestra con Tension · 0",
+          "height": 44,
+          "width": 245.484375
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Tension · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 808.84375,
+        "bottom": 1142.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/it/gyms/moonboard",
+          "text": "Trova una palestra con MoonBoard · 0",
+          "height": 44,
+          "width": 273.34375
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Importa un file CSV MoonBoard in App collegate. Nulla viene scritto su MoonBoard.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con MoonBoard · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 808.84375,
+        "bottom": 1118.296875,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/it/gyms?boardType=decoy",
+          "text": "Trova una palestra con Decoy · 0",
+          "height": 44,
+          "width": 235.984375
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Decoy · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/it/gyms?boardType=touchstone",
+          "text": "Trova una palestra con Touchstone · 0",
+          "height": 44,
+          "width": 272.171875
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Touchstone · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1208.296875,
+        "bottom": 1517.75,
+        "height": 309.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/it/gyms?boardType=grasshopper",
+          "text": "Trova una palestra con Grasshopper · 0",
+          "height": 44,
+          "width": 283.125
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Grasshopper · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1583.75,
+        "bottom": 1893.203125,
+        "height": 309.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/it/gyms?boardType=soill",
+          "text": "Trova una palestra con So iLL · 0",
+          "height": 44,
+          "width": 235.40625
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Collega un account quando disponibile in App collegate oppure carica un’esportazione Aurora. Il diario viene copiato in Boardsesh; nulla viene scritto nell’altra app.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con So iLL · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1583.75,
+        "bottom": 1845.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/it/gyms?boardType=woods",
+          "text": "Trova una palestra con Woods · 0",
+          "height": 44,
+          "width": 240.140625
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Illumina i blocchi dall’app iOS o Android.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "L’importazione dell’account non è disponibile per questo pannello.",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Trova una palestra con Woods · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1946.203125,
+        "bottom": 2055.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "La tua Spraywall, con blocchi e diario.",
+        "action": {
+          "href": "/it/spraywalls",
+          "text": "Configura la tua Spraywall",
+          "height": 17,
+          "width": 186.765625
+        },
+        "contrast": [
+          {
+            "text": "La tua Spraywall, con blocchi e diario.",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Non servono luci: le prese appaiono sulla foto.",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "Configura la tua Spraywall",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "zh-CN",
+    "width": 390,
+    "path": "/zh-CN/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Boardsesh 支持哪些训练板？",
+    "h1Count": 1,
+    "scrollWidth": 390,
+    "mainHeight": 3778,
+    "mainWordCount": 223,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 455.375,
+        "bottom": 841.328125,
+        "height": 385.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Kilter",
+        "action": {
+          "href": "/zh-CN/gyms/kilter",
+          "text": "查找设有 Kilter 的岩馆 · 1",
+          "height": 44,
+          "width": 180.46875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用过旧版 Kilter 应用？上传你从 Aurora 导出的文件。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Kilter 的岩馆 · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 899.328125,
+        "bottom": 1225.28125,
+        "height": 325.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Tension",
+        "action": {
+          "href": "/zh-CN/gyms/tension",
+          "text": "查找设有 Tension 的岩馆 · 0",
+          "height": 44,
+          "width": 199.171875
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Tension 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 1283.28125,
+        "bottom": 1633.234375,
+        "height": 349.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/zh-CN/gyms/moonboard",
+          "text": "查找设有 MoonBoard 的岩馆 · 0",
+          "height": 44,
+          "width": 226.734375
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中导入 MoonBoard CSV 文件。数据不会写回 MoonBoard。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 MoonBoard 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 1691.234375,
+        "bottom": 1993.1875,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Decoy",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=decoy",
+          "text": "查找设有 Decoy 的岩馆 · 0",
+          "height": 44,
+          "width": 189.375
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Decoy 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 2051.1875,
+        "bottom": 2353.140625,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=touchstone",
+          "text": "查找设有 Touchstone 的岩馆 · 0",
+          "height": 44,
+          "width": 225.859375
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Touchstone 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 2411.140625,
+        "bottom": 2713.09375,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=grasshopper",
+          "text": "查找设有 Grasshopper 的岩馆 · 0",
+          "height": 44,
+          "width": 236.515625
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Grasshopper 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 2771.09375,
+        "bottom": 3073.046875,
+        "height": 301.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "So iLL",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=soill",
+          "text": "查找设有 So iLL 的岩馆 · 0",
+          "height": 44,
+          "width": 188.796875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 So iLL 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 3131.046875,
+        "bottom": 3385,
+        "height": 253.953125,
+        "left": 41,
+        "right": 349,
+        "heading": "Woods",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=woods",
+          "text": "查找设有 Woods 的岩馆 · 0",
+          "height": 44,
+          "width": 193.53125
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "这款训练板不支持从账号导入记录。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Woods 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 3434,
+        "bottom": 3536,
+        "height": 102,
+        "left": 24,
+        "right": 366,
+        "heading": "在自己的喷点墙上定线、记攀爬",
+        "action": {
+          "href": "/zh-CN/spraywalls",
+          "text": "设置你的喷点墙",
+          "height": 17,
+          "width": 112
+        },
+        "contrast": [
+          {
+            "text": "在自己的喷点墙上定线、记攀爬",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "无需灯光，岩点直接显示在照片上。",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "设置你的喷点墙",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "locale": "zh-CN",
+    "width": 1440,
+    "path": "/zh-CN/boards",
+    "status": 200,
+    "pageErrors": [],
+    "h1": "Boardsesh 支持哪些训练板？",
+    "h1Count": 1,
+    "scrollWidth": 1440,
+    "mainHeight": 2241.203125,
+    "mainWordCount": 223,
+    "rows": [
+      {
+        "board": "kilter",
+        "top": 397.390625,
+        "bottom": 718.84375,
+        "height": 321.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Kilter",
+        "action": {
+          "href": "/zh-CN/gyms/kilter",
+          "text": "查找设有 Kilter 的岩馆 · 1",
+          "height": 44,
+          "width": 180.46875
+        },
+        "contrast": [
+          {
+            "text": "Kilter",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Kilter Board Original, Kilter Board Homewall",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用过旧版 Kilter 应用？上传你从 Aurora 导出的文件。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Kilter 的岩馆 · 1",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "tension",
+        "top": 397.390625,
+        "bottom": 682.84375,
+        "height": 285.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Tension",
+        "action": {
+          "href": "/zh-CN/gyms/tension",
+          "text": "查找设有 Tension 的岩馆 · 0",
+          "height": 44,
+          "width": 199.171875
+        },
+        "contrast": [
+          {
+            "text": "Tension",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original Layout, Tension Board 2 Mirror, Tension Board 2 Spray",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Tension 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "moonboard",
+        "top": 784.84375,
+        "bottom": 1118.296875,
+        "height": 333.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "MoonBoard",
+        "action": {
+          "href": "/zh-CN/gyms/moonboard",
+          "text": "查找设有 MoonBoard 的岩馆 · 0",
+          "height": 44,
+          "width": 226.734375
+        },
+        "contrast": [
+          {
+            "text": "MoonBoard",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "MoonBoard 2010, MoonBoard 2016, MoonBoard 2024, MoonBoard Masters 2017, MoonBoard Masters 2019, Mini MoonBoard 2020, Mini MoonBoard 2025",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中导入 MoonBoard CSV 文件。数据不会写回 MoonBoard。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 MoonBoard 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "decoy",
+        "top": 784.84375,
+        "bottom": 1070.296875,
+        "height": 285.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Decoy",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=decoy",
+          "text": "查找设有 Decoy 的岩馆 · 0",
+          "height": 44,
+          "width": 189.375
+        },
+        "contrast": [
+          {
+            "text": "Decoy",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Dungeon Trainer",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Decoy 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "touchstone",
+        "top": 1184.296875,
+        "bottom": 1469.75,
+        "height": 285.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "Touchstone",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=touchstone",
+          "text": "查找设有 Touchstone 的岩馆 · 0",
+          "height": 44,
+          "width": 225.859375
+        },
+        "contrast": [
+          {
+            "text": "Touchstone",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Winter 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Touchstone 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "grasshopper",
+        "top": 1184.296875,
+        "bottom": 1469.75,
+        "height": 285.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Grasshopper",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=grasshopper",
+          "text": "查找设有 Grasshopper 的岩馆 · 0",
+          "height": 44,
+          "width": 236.515625
+        },
+        "contrast": [
+          {
+            "text": "Grasshopper",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Grasshopper 2020",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Grasshopper 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "soill",
+        "top": 1535.75,
+        "bottom": 1821.203125,
+        "height": 285.453125,
+        "left": 173,
+        "right": 687,
+        "heading": "So iLL",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=soill",
+          "text": "查找设有 So iLL 的岩馆 · 0",
+          "height": 44,
+          "width": 188.796875
+        },
+        "contrast": [
+          {
+            "text": "So iLL",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Summer 2024",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "在“已连接应用”中关联支持导入的账号，或上传从 Aurora 导出的文件。导入会将历史记录复制到 Boardsesh，不会写回原应用。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 So iLL 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "woods",
+        "top": 1535.75,
+        "bottom": 1797.203125,
+        "height": 261.453125,
+        "left": 753,
+        "right": 1267,
+        "heading": "Woods",
+        "action": {
+          "href": "/zh-CN/gyms?boardType=woods",
+          "text": "查找设有 Woods 的岩馆 · 0",
+          "height": 44,
+          "width": 193.53125
+        },
+        "contrast": [
+          {
+            "text": "Woods",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "Original",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "用 iOS 或 Android 应用点亮线路。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "这款训练板不支持从账号导入记录。",
+            "ratio": 12.75291203959037,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [37, 27, 58]
+          },
+          {
+            "text": "查找设有 Woods 的岩馆 · 0",
+            "ratio": 5.445571513083594,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [37, 27, 58]
+          }
+        ]
+      },
+      {
+        "board": "spray",
+        "top": 1874.203125,
+        "bottom": 1983.703125,
+        "height": 109.5,
+        "left": 152,
+        "right": 1288,
+        "heading": "在自己的喷点墙上定线、记攀爬",
+        "action": {
+          "href": "/zh-CN/spraywalls",
+          "text": "设置你的喷点墙",
+          "height": 17,
+          "width": 112
+        },
+        "contrast": [
+          {
+            "text": "在自己的喷点墙上定线、记攀爬",
+            "ratio": 15.195723716808427,
+            "unresolved": false,
+            "foreground": [231, 226, 240],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "无需灯光，岩点直接显示在照片上。",
+            "ratio": 8.152695336839507,
+            "unresolved": false,
+            "foreground": [172, 165, 189],
+            "background": [17, 10, 32]
+          },
+          {
+            "text": "设置你的喷点墙",
+            "ratio": 6.488667053928703,
+            "unresolved": false,
+            "foreground": [151, 132, 255],
+            "background": [17, 10, 32]
+          }
+        ]
+      }
+    ]
+  }
+]
