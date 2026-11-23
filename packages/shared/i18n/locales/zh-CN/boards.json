@@ -153,19 +153,18 @@
     "manage": {
       "ownedHeader": "你的训练板",
       "followingHeader": "已关注",
-      "deleteTitle": "删除训练板？",
-      "deleteMessage": "要从你的训练板中移除“{{name}}”吗？此操作无法撤销。",
       "deleteConfirm": "删除",
       "cancel": "取消",
       "deleteError": "无法删除这块训练板，请重试。",
-      "unfollowError": "无法取消关注这块训练板，请重试。",
+      "unfollowError": "无法从你的训练板中移除这块训练板，请重试。",
       "deleteAria": "删除 {{name}}",
-      "unfollowTitle": "取消关注？",
-      "unfollowMessage": "“{{name}}”是你当前使用的训练板。取消关注会将其从你的训练板列表中移除，并清除当前选择。",
-      "unfollowConfirm": "取消关注",
+      "unfollowTitle": "要从你的训练板中移除吗？",
+      "unfollowMessage": "“{{name}}”是你当前使用的训练板。移除后会清除当前选择，其他攀岩者仍能看到它。",
+      "unfollowConfirm": "移除",
       "deleteWallTitle": "删除喷点墙？",
       "deleteWallMessage": "要删除“{{name}}”吗？它的照片和线路将无法再访问。此操作无法撤销。",
-      "deleteSuccess": "已删除“{{name}}”"
+      "deleteSuccess": "已删除“{{name}}”",
+      "unfollowRow": "从你的训练板中移除"
     },
     "emptyTitle": "还没有训练板",
     "emptySubtitle": "搜索训练板，开始攀爬",
@@ -473,8 +472,6 @@
     "gymClaim": {
       "title": "认领 {{gym}}",
       "done": "完成",
-      "sectionTitle": "这家岩馆归你所有？",
-      "sectionDescription": "认领后，可维护岩馆信息和训练板。",
       "claimAction": "认领这家岩馆",
       "errorGeneric": "出了点问题，请重试。",
       "switchToAdmin": "没有工作邮箱？请团队人工审核",
@@ -497,7 +494,7 @@
       },
       "approved": {
         "sent": "你现在可以管理 {{gym}}。",
-        "manageCta": "设置你的岩馆",
+        "manageCta": "查看你的训练板",
         "manageError": "无法打开岩馆设置，请尝试使用浏览器。"
       },
       "protections": {
@@ -593,7 +590,7 @@
       "noGymHintOffMap": "未公开时不会显示在地图上。",
       "addNew": "列表里没有我的岩馆",
       "empty": "附近没有岩馆",
-      "sharedEditHint": "这家岩馆的工作人员将可以编辑此训练板的详情。",
+      "sharedEditHint": "岩馆工作人员可以编辑这块训练板的详情，也可以把它从岩馆记录中移除。训练板仍归你所有。",
       "linkError": "无法关联该岩馆，它可能离训练板太远。其他更改已保存。"
     },
     "sprayShare": {
@@ -648,44 +645,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "未找到训练板",
-    "chips": {
-      "unlisted": "不公开列出",
-      "locationHidden": "位置已隐藏"
-    },
-    "tabs": {
-      "leaderboard": "排行榜",
-      "comments": "评论"
-    },
     "actions": {
-      "addToGym": "添加到岩馆",
       "edit": "编辑",
-      "delete": "删除"
-    },
-    "stats": {
-      "ascents": "次完攀",
-      "climbers": "位攀岩者",
-      "followers": "位关注者",
-      "comments": "条评论"
-    },
-    "delete": {
-      "title": "删除训练板",
-      "confirm": "要删除“{{name}}”吗？此操作无法撤销。",
-      "cancel": "取消",
       "delete": "删除"
     },
     "snackbar": {
       "deleted": "训练板已删除",
-      "deleteFailed": "删除训练板失败",
-      "linkedToGym": "训练板已关联岩馆",
-      "unlinkedFromGym": "训练板已取消关联岩馆",
-      "linkFailed": "训练板关联岩馆失败"
-    },
-    "comments": {
-      "title": "训练板讨论"
-    },
-    "follow": {
-      "entityLabel": "训练板"
+      "deleteFailed": "删除训练板失败"
     }
   },
   "boardForm": {
@@ -778,21 +744,6 @@
     "myLocation": "我的位置",
     "helpText": "点击地图设置训练板位置，或拖动标记调整"
   },
-  "boardLeaderboard": {
-    "empty": "这个时间段还没有活动。",
-    "period": {
-      "week": "周",
-      "month": "月",
-      "year": "年",
-      "all": "全部时间"
-    },
-    "columns": {
-      "climber": "攀岩者",
-      "sends": "完攀",
-      "flashes": "一次完攀",
-      "hardest": "最高难度"
-    }
-  },
   "boardPill": {
     "switchHint": "打开训练板切换器"
   },
@@ -837,12 +788,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "正在加载岩馆…",
-    "linkToGym": "关联岩馆",
-    "noGym": "无岩馆",
-    "createNew": "新建"
-  },
   "similarGyms": {
     "heading": "你的岩馆可能已经在这里了",
     "subtitle": "认领自己的岩馆进行管理，或在下方添加新的。",
@@ -854,16 +799,6 @@
     "createAnyway": "都不是？使用下方按钮添加你的岩馆。"
   },
   "gymEntity": {
-    "notFound": "未找到岩馆",
-    "tabs": {
-      "members": "成员",
-      "comments": "评论"
-    },
-    "actions": {
-      "edit": "编辑",
-      "delete": "删除",
-      "claim": "认领"
-    },
     "stats": {
       "boards": "块训练板",
       "members": "位成员",
@@ -877,16 +812,6 @@
       "followers_other": "位关注者",
       "comments_one": "条评论",
       "comments_other": "条评论"
-    },
-    "delete": {
-      "title": "删除岩馆",
-      "confirm": "要删除“{{name}}”吗？此操作无法撤销。",
-      "cancel": "取消",
-      "delete": "删除"
-    },
-    "snackbar": {
-      "deleted": "岩馆已删除",
-      "deleteFailed": "删除岩馆失败"
     },
     "comments": {
       "title": "岩馆讨论"
@@ -965,7 +890,7 @@
     },
     "approved": {
       "body": "{{gym}} 已归你管理，准备好后就可以开始设置。",
-      "manageCta": "设置你的岩馆"
+      "manageCta": "查看你的训练板"
     },
     "protections": {
       "syncFreeze": "认领后，你的修改会被保留。位置同步绝不会覆盖所有者设置的内容。",
@@ -977,7 +902,7 @@
     "success": {
       "title": "岩馆归你管理了",
       "body": "你现在是所有者了。维护岩馆信息和训练板，也可以邀请伙伴来帮忙。",
-      "setupCta": "设置你的岩馆"
+      "setupCta": "查看你的训练板"
     },
     "error": {
       "title": "该链接无效",
@@ -987,7 +912,8 @@
         "used": "此链接已被使用。",
         "superseded": "这家岩馆现已有其他所有者，此链接无法转移所有权。请从岩馆页面重新发起认领。",
         "serverError": "我们的服务出了点问题，请稍后重试。"
-      }
+      },
+      "backToGym": "返回 {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1600,32 @@
     "lightingUnavailable": "请启用 LED 并保存 WLED 地址。",
     "lightingRangeError": "布线使用了超出 WLED 配置范围的 LED 编号，请检查布线路径和跳过的 LED。",
     "lightingChasing": "逐行测试进行中…"
+  },
+  "gymBoards": {
+    "remove": "从岩馆移除",
+    "removeFromNamed": "从 {{gym}} 移除",
+    "removeTitle": "要把 {{board}} 从 {{gym}} 移除吗？",
+    "removeBodyOwn": "它会从 {{gym}} 的页面和展示终端上消失，但仍保留在你的训练板中。",
+    "removeBodyOther": "它会从你的岩馆页面和展示终端上消失。{{name}} 仍会保留这块训练板。",
+    "removeBodyOtherHidden": "它会从你的岩馆页面和展示终端上消失。添加它的攀岩者仍会保留这块训练板。",
+    "removeBodySynced": "它会从 {{gym}} 的页面和展示终端上消失。",
+    "removeConfirm": "移除",
+    "removed": "已从 {{gym}} 移除。",
+    "removeFailed": "无法移除这块训练板，请重试。",
+    "removeSyncedError": "这块训练板来自公开的训练板数据，无法移除。请改为删除。",
+    "removedByGymError": "这家岩馆的工作人员已将这块训练板从岩馆记录中移除。请联系他们重新添加。",
+    "deleteTitle": "要为所有人删除 {{board}} 吗？",
+    "deleteBodyOwn": "它会从你和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodyOther": "这块训练板由 {{name}} 添加。它会从对方和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodyOtherHidden": "这块训练板由一位攀岩者添加。它会从对方和所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteBodySynced": "它会从所有保存过它的攀岩者那里消失。已记录的完攀会保留在各自的攀爬记录中。",
+    "deleteConfirm": "删除训练板",
+    "cancel": "取消"
+  },
+  "boardOrigin": {
+    "addedBy": "由 {{name}} 添加",
+    "addedByYou": "由你添加",
+    "addedByHidden": "由一位攀岩者添加",
+    "synced": "来自公开的训练板数据"
   }
 }

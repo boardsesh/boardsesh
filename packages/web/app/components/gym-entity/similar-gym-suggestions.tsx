@@ -208,6 +208,7 @@ export default function SimilarGymSuggestions({ name, latitude, longitude }: Sim
           gymUuid={claimTarget.uuid}
           gymName={claimTarget.name}
           website={claimTarget.website}
+          canClaimByDomain={claimTarget.canClaimByDomain}
           open={claimTarget !== null}
           onClose={() => setClaimTarget(null)}
         />

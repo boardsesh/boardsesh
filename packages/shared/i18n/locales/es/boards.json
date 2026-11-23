@@ -153,19 +153,18 @@
     "manage": {
       "ownedHeader": "Tus plafones",
       "followingHeader": "Siguiendo",
-      "deleteTitle": "¿Eliminar plafón?",
-      "deleteMessage": "¿Quitar \"{{name}}\" de tus plafones? No se puede deshacer.",
       "deleteConfirm": "Eliminar",
       "cancel": "Cancelar",
       "deleteError": "No se pudo eliminar ese plafón. Inténtalo de nuevo.",
-      "unfollowError": "No se pudo dejar de seguir ese plafón. Inténtalo de nuevo.",
+      "unfollowError": "No se pudo quitar ese plafón de tus plafones. Inténtalo de nuevo.",
       "deleteAria": "Eliminar {{name}}",
-      "unfollowTitle": "¿Dejar de seguir?",
-      "unfollowMessage": "\"{{name}}\" es tu plafón activo. Al dejar de seguirlo, se quita de tus plafones y se borra la selección.",
-      "unfollowConfirm": "Dejar de seguir",
+      "unfollowTitle": "¿Quitar de tus plafones?",
+      "unfollowMessage": "\"{{name}}\" es tu plafón activo. Al quitarlo se borra la selección. Los demás lo siguen viendo.",
+      "unfollowConfirm": "Quitar",
       "deleteWallTitle": "¿Eliminar el Spraywall?",
       "deleteWallMessage": "¿Eliminar \"{{name}}\"? Sus fotos y bloques dejarán de estar disponibles. No se puede deshacer.",
-      "deleteSuccess": "\"{{name}}\" eliminado"
+      "deleteSuccess": "\"{{name}}\" eliminado",
+      "unfollowRow": "Quitar de tus plafones"
     },
     "emptyTitle": "Aún no tienes plafones",
     "emptySubtitle": "Busca un plafón para empezar",
@@ -473,8 +472,6 @@
     "gymClaim": {
       "title": "Reclamar {{gym}}",
       "done": "Listo",
-      "sectionTitle": "¿Es tuyo este rocódromo?",
-      "sectionDescription": "Reclámalo para mantener la ficha y los plafones al día.",
       "claimAction": "Reclamar este rocódromo",
       "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
       "switchToAdmin": "¿No tienes un correo de trabajo? Solicita una revisión",
@@ -497,7 +494,7 @@
       },
       "approved": {
         "sent": "{{gym}} ya es tuyo.",
-        "manageCta": "Configura tu rocódromo",
+        "manageCta": "Revisa tus plafones",
         "manageError": "No se pudo abrir la configuración del rocódromo. Ábrela en un navegador."
       },
       "protections": {
@@ -593,7 +590,7 @@
       "noGymHintOffMap": "No sale en el mapa mientras no sea público.",
       "addNew": "Mi rocódromo no aparece",
       "empty": "No hay rocódromos cerca",
-      "sharedEditHint": "El personal de este rocódromo podrá editar los datos de este plafón.",
+      "sharedEditHint": "El personal del rocódromo puede editar los datos de este plafón y quitarlo de su ficha. Sigue siendo tuyo.",
       "linkError": "No se pudo vincular ese rocódromo. Puede estar demasiado lejos de tu plafón. El resto de cambios sí se guardaron."
     },
     "sprayShare": {
@@ -648,44 +645,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Plafón no encontrado",
-    "chips": {
-      "unlisted": "No listado",
-      "locationHidden": "Ubicación oculta"
-    },
-    "tabs": {
-      "leaderboard": "Clasificación",
-      "comments": "Comentarios"
-    },
     "actions": {
-      "addToGym": "Añadir al rocódromo",
       "edit": "Editar",
-      "delete": "Eliminar"
-    },
-    "stats": {
-      "ascents": "ascensiones",
-      "climbers": "escaladores",
-      "followers": "seguidores",
-      "comments": "comentarios"
-    },
-    "delete": {
-      "title": "Eliminar plafón",
-      "confirm": "¿Eliminar \"{{name}}\"? No se puede deshacer.",
-      "cancel": "Cancelar",
       "delete": "Eliminar"
     },
     "snackbar": {
       "deleted": "Plafón eliminado",
-      "deleteFailed": "Error al eliminar el plafón",
-      "linkedToGym": "Plafón vinculado al rocódromo",
-      "unlinkedFromGym": "Plafón desvinculado del rocódromo",
-      "linkFailed": "Error al vincular el plafón al rocódromo"
-    },
-    "comments": {
-      "title": "Discusión del plafón"
-    },
-    "follow": {
-      "entityLabel": "plafón"
+      "deleteFailed": "Error al eliminar el plafón"
     }
   },
   "boardForm": {
@@ -778,21 +744,6 @@
     "myLocation": "Mi ubicación",
     "helpText": "Haz clic en el mapa para fijar la ubicación del plafón, o arrastra el marcador para ajustar"
   },
-  "boardLeaderboard": {
-    "empty": "Aún no hay actividad en este periodo.",
-    "period": {
-      "week": "Semana",
-      "month": "Mes",
-      "year": "Año",
-      "all": "Todo el tiempo"
-    },
-    "columns": {
-      "climber": "Escalador",
-      "sends": "Encadenes",
-      "flashes": "Flashes",
-      "hardest": "Más difícil"
-    }
-  },
   "boardPill": {
     "switchHint": "Abre el selector de plafones"
   },
@@ -837,12 +788,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Cargando rocódromos...",
-    "linkToGym": "Vincular a un rocódromo",
-    "noGym": "Sin rocódromo",
-    "createNew": "Crear nuevo"
-  },
   "similarGyms": {
     "heading": "Parece que tu rocódromo ya está aquí",
     "subtitle": "Reclama el tuyo para gestionarlo, o añade uno nuevo abajo.",
@@ -854,16 +799,6 @@
     "createAnyway": "¿Ninguno es el tuyo? Añade tu rocódromo con el botón de abajo."
   },
   "gymEntity": {
-    "notFound": "Rocódromo no encontrado",
-    "tabs": {
-      "members": "Miembros",
-      "comments": "Comentarios"
-    },
-    "actions": {
-      "edit": "Editar",
-      "delete": "Eliminar",
-      "claim": "Reclamar"
-    },
     "stats": {
       "boards": "plafones",
       "members": "miembros",
@@ -877,16 +812,6 @@
       "followers_other": "seguidores",
       "comments_one": "comentario",
       "comments_other": "comentarios"
-    },
-    "delete": {
-      "title": "Eliminar rocódromo",
-      "confirm": "¿Eliminar \"{{name}}\"? No se puede deshacer.",
-      "cancel": "Cancelar",
-      "delete": "Eliminar"
-    },
-    "snackbar": {
-      "deleted": "Rocódromo eliminado",
-      "deleteFailed": "Error al eliminar el rocódromo"
     },
     "comments": {
       "title": "Discusión del rocódromo"
@@ -965,7 +890,7 @@
     },
     "approved": {
       "body": "{{gym}} es tuyo. Configúralo cuando quieras.",
-      "manageCta": "Configura tu rocódromo"
+      "manageCta": "Revisa tus plafones"
     },
     "protections": {
       "syncFreeze": "Cuando sea tuyo, tus cambios se quedan: la sincronización de ubicaciones nunca sobrescribe lo que pone quien lo gestiona.",
@@ -977,7 +902,7 @@
     "success": {
       "title": "El rocódromo es tuyo",
       "body": "Ahora eres el propietario. Mantén la ficha y los plafones al día, e invita a tu grupo a ayudar.",
-      "setupCta": "Configura tu rocódromo"
+      "setupCta": "Revisa tus plafones"
     },
     "error": {
       "title": "Ese enlace no funcionó",
@@ -987,7 +912,8 @@
         "used": "Este enlace ya se ha usado.",
         "superseded": "Este rocódromo ya tiene otro propietario, así que este enlace no puede traspasarlo. Vuelve a iniciar la reclamación desde el rocódromo.",
         "serverError": "Algo salió mal por nuestra parte. Inténtalo de nuevo en un momento."
-      }
+      },
+      "backToGym": "Volver a {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1600,32 @@
     "lightingUnavailable": "Activa los LED y guarda una dirección WLED.",
     "lightingRangeError": "El cable usa números de LED fuera del rango configurado en WLED. Revisa el recorrido del cable y los LED omitidos.",
     "lightingChasing": "Prueba por filas en curso…"
+  },
+  "gymBoards": {
+    "remove": "Quitar del rocódromo",
+    "removeFromNamed": "Quitar de {{gym}}",
+    "removeTitle": "¿Quitar {{board}} de {{gym}}?",
+    "removeBodyOwn": "Desaparece de la página y los kioscos de {{gym}}. Sigue en tus plafones.",
+    "removeBodyOther": "Desaparece de la página y los kioscos de tu rocódromo. {{name}} lo sigue teniendo en sus plafones.",
+    "removeBodyOtherHidden": "Desaparece de la página y los kioscos de tu rocódromo. Quien lo añadió lo sigue teniendo en sus plafones.",
+    "removeBodySynced": "Desaparece de la página y los kioscos de {{gym}}.",
+    "removeConfirm": "Quitar",
+    "removed": "Quitado de {{gym}}.",
+    "removeFailed": "No se pudo quitar ese plafón. Inténtalo de nuevo.",
+    "removeSyncedError": "Este plafón viene de datos públicos de plafones, así que no se puede quitar. Elimínalo.",
+    "removedByGymError": "El personal de este rocódromo quitó este plafón de su ficha. Pídeles que lo vuelvan a poner.",
+    "deleteTitle": "¿Eliminar {{board}} para todos?",
+    "deleteBodyOwn": "Desaparece para ti y para todos los que lo guardaron. Los encadenes registrados se quedan en sus diarios.",
+    "deleteBodyOther": "{{name}} añadió este plafón. Desaparece para esa persona y para todos los que lo guardaron. Los encadenes registrados se quedan en sus diarios.",
+    "deleteBodyOtherHidden": "Lo añadió otra persona. Desaparece para ella y para todos los que lo guardaron. Los encadenes registrados se quedan en sus diarios.",
+    "deleteBodySynced": "Desaparece para todos los que lo guardaron. Los encadenes registrados se quedan en sus diarios.",
+    "deleteConfirm": "Eliminar plafón",
+    "cancel": "Cancelar"
+  },
+  "boardOrigin": {
+    "addedBy": "Añadido por {{name}}",
+    "addedByYou": "Añadido por ti",
+    "addedByHidden": "Añadido por otra persona",
+    "synced": "De datos públicos de plafones"
   }
 }

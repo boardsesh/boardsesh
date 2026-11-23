@@ -328,7 +328,11 @@ export default async function GymPage(props: GymRouteProps) {
     );
   }
 
-  const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
+  // Two plain awaits rather than one Promise.all: both resolve from the same
+  // cached request instance, and this shape is what the orphaned-key check
+  // can read, so the boards keys used below count as used.
+  const { t } = await getServerTranslation('kiosk');
+  const { t: tBoards } = await getServerTranslation('boards');
   const [kiosk, allBoards, gymSprayWalls, discoveryBoards] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
@@ -807,6 +811,7 @@ export default async function GymPage(props: GymRouteProps) {
                 gymName={gym.name}
                 gymSlug={gym_slug}
                 website={gym.website}
+                canClaimByDomain={gym.canClaimByDomain}
                 viewerState={claimSurface.viewerState}
                 claimParam={claimParam}
               />

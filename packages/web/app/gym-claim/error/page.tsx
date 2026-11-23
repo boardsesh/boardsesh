@@ -9,8 +9,30 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { fetchGymBySlug, isGymViewable } from '@/app/gym/[gym_slug]/fetch-gym-by-slug';
 
 export const dynamic = 'force-dynamic';
+
+// Same rule as the success page: a gym slug or UUID is lowercase alphanumerics
+// and hyphens, checked before it goes anywhere near a lookup or an href.
+const GYM_REF_PATTERN = /^[a-z0-9-]{1,120}$/;
+
+/**
+ * The gym a failed claim link was for, when the redirect names it (`?gym=`)
+ * and the gym is public. Anything else (no param, a malformed one, a private
+ * gym, a slow or failed lookup) leaves the page with its home link only: an
+ * error page must never fail itself.
+ */
+async function claimedGym(gymParam: string | undefined): Promise<{ name: string; href: string } | null> {
+  if (!gymParam || !GYM_REF_PATTERN.test(gymParam)) return null;
+  try {
+    const gym = await fetchGymBySlug(gymParam, undefined);
+    if (!isGymViewable(gym)) return null;
+    return { name: gym.name, href: `/gym/${gym.slug ?? gym.uuid}` };
+  } catch {
+    return null;
+  }
+}
 
 // Static-literal lookup: the i18n linter forbids t(variable)/t(template).
 function reasonMessage(t: (key: string) => string, reason: string | undefined): string {
@@ -38,10 +60,16 @@ export async function generateMetadata() {
   });
 }
 
-export default async function GymClaimErrorPage({ searchParams }: { searchParams: Promise<{ reason?: string }> }) {
+export default async function GymClaimErrorPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string; gym?: string }>;
+}) {
   const locale = await getLocale();
   const { t } = await getServerTranslation('boards');
-  const { reason } = await searchParams;
+  const { reason, gym: gymParam } = await searchParams;
+  // Most reasons say "start the claim again from the gym": link straight there.
+  const gym = await claimedGym(gymParam);
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'boards']}>
@@ -54,6 +82,11 @@ export default async function GymClaimErrorPage({ searchParams }: { searchParams
           <Typography variant="body1" color="text.secondary">
             {reasonMessage(t, reason)}
           </Typography>
+          {gym && (
+            <MuiLink component={LocaleLink} href={gym.href} underline="hover">
+              {t('claimLanding.error.backToGym', { gym: gym.name })}
+            </MuiLink>
+          )}
           <MuiLink component={LocaleLink} href="/" underline="hover">
             {t('claimLanding.backHome')}
           </MuiLink>
