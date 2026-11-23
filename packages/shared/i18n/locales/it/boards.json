@@ -1718,6 +1718,8 @@
     "fixedToast": "Salvato. Avvisiamo i climber che l'hanno segnalato.",
     "keptToast": "Segnalazione chiusa. Giriamo la tua nota.",
     "keepError": "Non è andata a buon fine. Riprova.",
+    "keepPartial_one": "{{count}} segnalazione su {{total}} chiusa. Le altre non sono andate a buon fine. Riprova.",
+    "keepPartial_other": "{{count}} segnalazioni su {{total}} chiuse. Le altre non sono andate a buon fine. Riprova.",
     "statusPill": "Segnalato",
     "open": "Vedi segnalazioni"
   },

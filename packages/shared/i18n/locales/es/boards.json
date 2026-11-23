@@ -1718,6 +1718,8 @@
     "fixedToast": "Guardado. Avisaremos a los escaladores que lo marcaron.",
     "keptToast": "Denuncia cerrada. Les pasaremos tu nota.",
     "keepError": "No se pudo enviar. Inténtalo de nuevo.",
+    "keepPartial_one": "Se cerró {{count}} de {{total}} denuncias. Las demás no se enviaron. Inténtalo de nuevo.",
+    "keepPartial_other": "Se cerraron {{count}} de {{total}} denuncias. Las demás no se enviaron. Inténtalo de nuevo.",
     "statusPill": "Denunciado",
     "open": "Ver denuncias"
   },

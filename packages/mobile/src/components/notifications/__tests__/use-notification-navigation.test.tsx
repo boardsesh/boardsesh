@@ -18,6 +18,7 @@ const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 const openCommentThread = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   moderationEnabled: true,
+  directoryReportsEnabled: true,
 }));
 
 vi.mock('expo-router', () => ({
@@ -34,6 +35,7 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useClimbModerationEnabled: () => state.moderationEnabled,
+  useDirectoryReportsEnabled: () => state.directoryReportsEnabled,
 }));
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
 const explainDirectoryNotice = vi.hoisted(() => vi.fn());
@@ -73,6 +75,7 @@ function tap(notification: GroupedNotification) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.directoryReportsEnabled = true;
 });
 
 describe('useNotificationNavigation proposal rows', () => {
@@ -264,8 +267,37 @@ describe('directory notice navigation', () => {
     );
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/boards',
-      params: { board: 'board-1', details: '1', relistGym: 'Crux' },
+      params: { board: 'board-1', details: '1', relistGymUuid: 'gym-1', relistGym: 'Crux' },
     });
+  });
+
+  it("never offers a relist after a moderator's removal, which the gym's staff can't undo", () => {
+    tap(
+      makeNotification({
+        type: 'board_removed_from_gym',
+        entityType: 'board',
+        entityId: 'board-1',
+        directoryNotice: { ...directoryNotice, actorRole: 'moderator' },
+      }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { board: 'board-1', details: '1' } });
+  });
+
+  it('opens the plain board, with no review sheet or relist, while the flag is off', () => {
+    state.directoryReportsEnabled = false;
+    tap(makeNotification({ type: 'board_report_opened', entityType: 'board', entityId: 'board-1', directoryNotice }));
+    tap(
+      makeNotification({
+        type: 'board_removed_from_gym',
+        entityType: 'board',
+        entityId: 'board-1',
+        directoryNotice: { ...directoryNotice, actorRole: 'gym_staff' },
+      }),
+    );
+    expect(routerMock.push.mock.calls).toEqual([
+      [{ pathname: '/boards', params: { board: 'board-1', details: '1' } }],
+      [{ pathname: '/boards', params: { board: 'board-1', details: '1' } }],
+    ]);
   });
 
   it('explains a deleted board instead of opening it', () => {

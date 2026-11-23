@@ -22,10 +22,10 @@ import {
   userBoardsToItems,
 } from '../../src/components/board-discovery/board-items';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
-import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
+import { BoardDetailSheet, type RelistGym } from '../../src/components/board-discovery/BoardDetailSheet';
 import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
 import { ReportReviewSheet, type ReportReviewAction } from '../../src/components/report-problem/ReportReviewSheet';
-import { useDirectoryReportsEnabled } from '../../src/providers/feature-flags-provider';
+import { useDirectoryReportsEnabled, useFeatureFlagsResolved } from '../../src/providers/feature-flags-provider';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { BoardRowList } from '../../src/components/board-discovery/BoardRowList';
 import { BoardSelectorView } from '../../src/components/board-discovery/BoardSelectorView';
@@ -204,6 +204,7 @@ export default function BoardSelection() {
     details: linkedDetailsParam,
     review: linkedReviewParam,
     relistGym: linkedRelistGymParam,
+    relistGymUuid: linkedRelistGymUuidParam,
   } = useLocalSearchParams<{
     returnTo?: string;
     source?: string;
@@ -211,13 +212,16 @@ export default function BoardSelection() {
     /**
      * A board to open on arrival, from a notification or the Climbs menu's
      * About this board: `details=1` opens its detail sheet, `review=1` its
-     * report review sheet. `relistGym` names the gym whose staff took the
-     * board off, for the detail sheet's "Ask {{gym}} to list it again".
+     * report review sheet (the detail sheet while the `directory-reports`
+     * flag is off). `relistGymUuid` is the gym whose staff took the board off,
+     * for the detail sheet's "Ask {{gym}} to list it again"; `relistGym` is
+     * the notice's name for it, shown until the gym loads.
      */
     board?: string;
     details?: string;
     review?: string;
     relistGym?: string;
+    relistGymUuid?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Arriving from the first-run framing screen: this is the activation flow, so
@@ -274,7 +278,7 @@ export default function BoardSelection() {
   const detailPick = useRef<PickerPick>({ pickSource: 'your_boards' });
   // The gym named by a "your board came off {{gym}}" notification, while its
   // detail sheet is open: the sheet offers to ask that gym to list it again.
-  const [detailRelistGym, setDetailRelistGym] = useState<string | null>(null);
+  const [detailRelistGym, setDetailRelistGym] = useState<RelistGym | null>(null);
   const closeBoardDetails = useCallback(() => {
     setDetailBoard(null);
     setDetailRelistGym(null);
@@ -294,21 +298,54 @@ export default function BoardSelection() {
   // A board this picker was opened on (a notification, About this board) that
   // may sit in none of its lists: a staff member's gym board, say. Board
   // actions picked in its sheets resolve it from here when no list has it.
-  const { data: linkedBoard } = useBoard(isAuthenticated && linkedBoardParam ? linkedBoardParam : null);
-  // Open the linked board's sheet once, when it has loaded.
+  //
+  // Read fresh on arrival (`staleTime: 0`): the cache can hold a copy from
+  // before the staff removal or report the notification is about, which would
+  // show the gym the board just left, hide "Ask {{gym}} to list it again", or
+  // offer review actions the viewer no longer has.
+  const { data: linkedBoard, isFetching: linkedBoardFetching } = useBoard(
+    isAuthenticated && linkedBoardParam ? linkedBoardParam : null,
+    { staleTime: 0 },
+  );
+  // Opening a sheet is a one-way step, so it waits for the flag bag to be final
+  // (`review=1` falls back to the detail sheet with the flag off) and for the
+  // arrival refetch to land. Offline, a refetch that can't run stops fetching
+  // and the cached copy opens.
+  const flagsResolved = useFeatureFlagsResolved();
+  // Open the linked board's sheet once.
   const linkedBoardOpened = useRef<string | null>(null);
   useEffect(() => {
-    if (!linkedBoard || linkedBoardOpened.current === linkedBoard.uuid) return;
-    if (linkedReviewParam === '1') {
+    if (!linkedBoard || linkedBoardFetching || !flagsResolved) return;
+    if (linkedBoardOpened.current === linkedBoard.uuid) return;
+    const wantsReview = linkedReviewParam === '1';
+    if (wantsReview && directoryReportsEnabled) {
       linkedBoardOpened.current = linkedBoard.uuid;
       setReviewBoard(linkedBoard);
-    } else if (linkedDetailsParam === '1') {
+    } else if (wantsReview || linkedDetailsParam === '1') {
       linkedBoardOpened.current = linkedBoard.uuid;
       detailPick.current = { pickSource: 'your_boards' };
-      setDetailRelistGym(linkedRelistGymParam ? linkedRelistGymParam : null);
+      setDetailRelistGym(
+        !wantsReview && linkedRelistGymUuidParam
+          ? { uuid: linkedRelistGymUuidParam, name: linkedRelistGymParam ? linkedRelistGymParam : null }
+          : null,
+      );
       setDetailBoard(linkedBoard);
     }
-  }, [linkedBoard, linkedReviewParam, linkedDetailsParam, linkedRelistGymParam]);
+  }, [
+    linkedBoard,
+    linkedBoardFetching,
+    flagsResolved,
+    directoryReportsEnabled,
+    linkedReviewParam,
+    linkedDetailsParam,
+    linkedRelistGymParam,
+    linkedRelistGymUuidParam,
+  ]);
+  // The open sheets show the linked board as it is now, not the copy they
+  // opened with: a later refetch (a report closed, the board moved) reaches
+  // them too.
+  const shownDetailBoard = detailBoard && linkedBoard?.uuid === detailBoard.uuid ? linkedBoard : detailBoard;
+  const shownReviewBoard = reviewBoard && linkedBoard?.uuid === reviewBoard.uuid ? linkedBoard : reviewBoard;
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
   // the menu without waiting for a refetch. Deliberately does NOT reorder: the
@@ -935,13 +972,15 @@ export default function BoardSelection() {
 
   // One `find` per pick — the shape `onSelectMyBoard` already uses — never per row.
   const runMyBoardAction = useCallback(
-    async (item: DiscoveryBoardItem, action: BoardCardManageAction) => {
+    async (item: DiscoveryBoardItem, action: BoardCardManageAction, knownBoard?: UserBoard) => {
       if (boardActionsInFlight.current.has(item.key)) return;
       boardActionsInFlight.current.add(item.key);
       try {
-        // Your boards first; then a gym board staff reached from Near you or a
+        // The board the caller already holds (the review sheet's); else Your
+        // boards first, then a gym board staff reached from Near you or a
         // report notification, which they need not follow.
         const board =
+          knownBoard ??
           myBoards.find((candidate) => candidate.uuid === item.key) ??
           nearby?.boards.find((candidate) => candidate.uuid === item.key) ??
           (linkedBoard?.uuid === item.key ? linkedBoard : undefined);
@@ -1122,7 +1161,8 @@ export default function BoardSelection() {
 
   // The review sheet's board actions. Fix opens the edit route (which tells the
   // climber their save closes the report); Remove and Delete run the same
-  // confirms and mutations as the card menu's rows.
+  // confirms and mutations as the card menu's rows, on the board the sheet
+  // showed: it need not sit in any list this picker loaded.
   const onReviewAction = useCallback(
     (action: ReportReviewAction, board: UserBoard) => {
       if (action === 'fix') {
@@ -1131,7 +1171,7 @@ export default function BoardSelection() {
       }
       const item = userBoardToItem(board, activeBoard?.uuid, undefined, currentUserId);
       if (!item) return;
-      void runMyBoardAction(item, action === 'remove' ? 'remove_from_gym' : 'delete');
+      void runMyBoardAction(item, action === 'remove' ? 'remove_from_gym' : 'delete', board);
     },
     [router, activeBoard?.uuid, currentUserId, runMyBoardAction],
   );
@@ -1673,18 +1713,18 @@ export default function BoardSelection() {
       overlays={
         <>
           <BoardDetailSheet
-            board={detailBoard}
-            visible={detailBoard !== null}
+            board={shownDetailBoard}
+            visible={shownDetailBoard !== null}
             onClose={closeBoardDetails}
             onSetActive={onSetActiveFromDetails}
             onReviewReports={directoryReportsEnabled ? openReviewFromDetails : undefined}
-            relistGymName={detailRelistGym}
+            relistGym={detailRelistGym}
           />
           {reportHost.sheet}
-          {reviewBoard ? (
+          {shownReviewBoard ? (
             <ReportReviewSheet
-              key={reviewBoard.uuid}
-              board={reviewBoard}
+              key={shownReviewBoard.uuid}
+              board={shownReviewBoard}
               viewerUserId={currentUserId ?? null}
               onClose={closeReview}
               onAction={onReviewAction}

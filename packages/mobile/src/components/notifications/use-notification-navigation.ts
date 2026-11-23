@@ -6,7 +6,7 @@ import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-sc
 import { useMarkGroupAsRead } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
+import { useClimbModerationEnabled, useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import { sprayImportRoute } from '../../lib/spray/spray-import-progress';
@@ -54,6 +54,8 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * - The directory notices (Report a problem, staff actions on boards) open the
  *   board picker on the board's review or detail sheet, the gym's edit screen,
  *   or, with nothing left to open, a short explanation (`directoryNoticeRoute`).
+ *   With the `directory-reports` flag off they still open the board, on its
+ *   plain detail sheet: no review sheet and no "Ask {{gym}} to list it again".
  * - everything climb-bearing opens the climb.
  *
  * Two rows are deliberately coarser than they look:
@@ -81,6 +83,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   const moderationEnabled = useClimbModerationEnabled();
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
   // The scalars this callback actually reads, rather than the board object, so
   // an unrelated field moving (name, followers, gym) can't churn the callback.
   const { data: activeBoard } = useActiveBoard();
@@ -167,10 +170,14 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
         if (!route) return;
         switch (route.kind) {
           case 'review':
-            router.push(reviewBoardReportsHref(route.boardUuid));
+            router.push(
+              directoryReportsEnabled ? reviewBoardReportsHref(route.boardUuid) : aboutBoardHref(route.boardUuid),
+            );
             return;
           case 'board':
-            router.push(aboutBoardHref(route.boardUuid, { relistGym: route.relistGym }));
+            router.push(
+              aboutBoardHref(route.boardUuid, { relistGym: directoryReportsEnabled ? route.relistGym : null }),
+            );
             return;
           case 'gym_edit':
             router.push({ pathname: '/gyms/edit', params: { gymUuid: route.gymUuid } });
@@ -288,6 +295,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       activeBoardSizeId,
       activeBoardSetIds,
       moderationEnabled,
+      directoryReportsEnabled,
       markGroupAsRead,
       openCommentThread,
       openPlayDrawer,
