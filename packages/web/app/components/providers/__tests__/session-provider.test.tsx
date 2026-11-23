@@ -1,8 +1,8 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { Session } from 'next-auth';
-import { useSession } from 'next-auth/react';
+import { SessionContext, useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import SessionProviderWrapper from '../session-provider';
+import SessionProviderWrapper, { useOptionalBrowserSession } from '../session-provider';
 import {
   beginWebSessionIntent,
   requestWebSessionRefresh,
@@ -120,6 +120,37 @@ function renderInitialSession() {
     </SessionProviderWrapper>,
   );
 }
+
+describe('optional browser session reads', () => {
+  function OptionalSessionState() {
+    const currentSession = useOptionalBrowserSession();
+    return <output>{currentSession?.status ?? 'no-provider'}</output>;
+  }
+
+  it('reads outside a provider without starting a session request', () => {
+    render(<OptionalSessionState />);
+    expect(screen.getByText('no-provider')).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['authenticated', 'unauthenticated'] as const)('reads an existing %s context without fetching', (status) => {
+    const update = vi.fn(async () => null);
+    const existingSession =
+      status === 'authenticated'
+        ? { status, data: session('climber', 'login'), update }
+        : { status, data: null, update };
+
+    render(
+      <SessionContext.Provider value={existingSession}>
+        <OptionalSessionState />
+      </SessionContext.Provider>,
+    );
+
+    expect(screen.getByText(status)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+});
 
 describe('initial session read recovery', () => {
   it.each([

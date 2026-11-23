@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
-import { SessionContext } from 'next-auth/react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import ChatBubbleOutlineRounded from '@mui/icons-material/ChatBubbleOutlineRounded';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { useOptionalBrowserSession } from '@/app/components/providers/session-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
 // Its own chunk, loaded on demand: nothing below it (comments, grade votes,
@@ -111,10 +111,8 @@ export default function DeferredClimbSocial({
   boardName,
   labels,
 }: DeferredClimbSocialProps) {
-  // The context rather than `useSession`, which throws outside a provider: the
-  // page's server render in a test, or anywhere the root layout is not above
-  // it, then reads as signed out, which is what the shared HTML says anyway.
-  const signedIn = useContext(SessionContext)?.status === 'authenticated';
+  // A missing provider reads as signed out, matching the shared server HTML.
+  const signedIn = useOptionalBrowserSession()?.status === 'authenticated';
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);

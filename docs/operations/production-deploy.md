@@ -227,6 +227,49 @@ Production-environment config this needs:
 | `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.               |
 | `RAILWAY_WEB_ORIGIN`     | var  | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected. |
 
+### Web heap budget and out-of-memory recovery
+
+The production web service has a 4,000,000,000-byte container limit and sets
+`NODE_OPTIONS=--max-old-space-size=2560` as a service variable. The value is in
+MiB and limits V8 old space; it does not limit the process's total memory.
+Keep room for young-generation memory, native allocations, buffers and the
+operating system. [Node's memory-limit guidance](https://nodejs.org/download/release/latest-v22.x/docs/api/cli.html#--max-old-space-sizesize-in-mib)
+describes that distinction. Reassess this value when changing the container
+budget; do not copy it into a smaller preview container.
+
+This is the mitigation applied during the 2026-11-23 incident. Railway retained
+five `FATAL ERROR: ... JavaScript heap out of memory` messages. Node 22's unset
+heap setting resolved to approximately 1,956 MiB, and the pre-crash GC output
+reported about 1,830 MiB still used. The container's peak RSS was about 2.55 GB,
+below its 4 GB limit. The explicit 2,560 MiB old-space limit adds heap headroom
+within the existing container budget. It does not establish why those objects
+remained live or prove that retained growth is fixed.
+
+For a repeat incident:
+
+1. Read the failed deployment's fatal line and GC output. Separate a V8 heap
+   failure from a container memory-limit kill and database-read timeouts.
+2. Check `NODE_OPTIONS`, the actual runtime heap limit, container memory usage
+   and HTTP error rate before changing a limit. A green `/api/health` alone
+   does not establish that database-backed pages work.
+3. After a variable change, follow its exact deployment ID to `SUCCESS` and
+   verify the live health response's deployment and release identities.
+4. Observe memory and 5xx responses under real traffic across the prior failure
+   interval. The observed restarts were roughly 18–20 minutes apart. Continued
+   growth needs allocation/retention investigation, rather than repeated limit
+   increases. Reverting this mitigation means restoring the previous, unset
+   `NODE_OPTIONS` value and verifying that deployment too.
+
+The same incident emitted `MaxListenersExceededWarning` for 11 `close` listeners
+on individual responses. A bounded runtime capture located the warning in
+Next's `httpxy.handleResponse → Readable.pipe → ServerResponse.once` proxy path.
+That stack identifies the threshold crossing; it does not prove responses
+remain reachable after they close. Do not globally increase listener limits or
+describe warning suppression as an OOM fix. Prefer a bounded warning stack and
+allocation sample; close any diagnostic inspector and remove temporary hooks
+afterwards. A near-limit full heap snapshot needs additional memory and can
+interrupt the service.
+
 ## Railway deploy identity and automatic recovery
 
 Both Railway services use `.github/actions/railway-redeploy`. Before changing
