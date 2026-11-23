@@ -218,7 +218,36 @@ it('labels partner rounds separately from native reps and sets', () => {
   expect(formatWorkoutStageParts(position, go, t).count).toBe(
     'mobile.session.workoutStageRoundCount(round=3,rounds=4,climb=2,climbs=4)',
   );
+  expect(formatWorkoutStageParts(position, go, t).accessibilityLabel).toBe(
+    'mobile.session.workoutStageTopBarRoundAria(stage=mobile.session.preGeneratorFourByFour,round=3,rounds=4,climb=2,climbs=4)',
+  );
   expect(formatWorkoutStagePositionWithGo(position, go, t)).toBe(
     'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,round=3,rounds=4,climb=2,climbs=4)',
   );
+});
+
+it('shows just the round for one-climb rounds and just the stage for one visit', () => {
+  const position = describeWorkoutRun(
+    { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['visit'] }] },
+    ['visit'],
+    'visit',
+  )?.current;
+  if (!position) throw new Error('expected position');
+  const go = { kind: 'round' as const, number: 3, total: 4, climb: 1, climbs: 1 };
+  expect(formatWorkoutStagePositionWithGo(position, go, t)).toBe(
+    'mobile.session.workoutStageRoundOnlyPosition(stage=mobile.session.preGeneratorFourByFour,round=3,rounds=4)',
+  );
+  expect(formatWorkoutStageParts(position, go, t)).toEqual({
+    stage: 'mobile.session.preGeneratorFourByFour',
+    count: 'mobile.session.workoutStageRoundOnlyCount(round=3,rounds=4)',
+    accessibilityLabel:
+      'mobile.session.workoutStageTopBarRoundOnlyAria(stage=mobile.session.preGeneratorFourByFour,round=3,rounds=4)',
+  });
+  const singleVisit = { ...go, number: 1, total: 1 };
+  expect(formatWorkoutStagePositionWithGo(position, singleVisit, t)).toBe('mobile.session.preGeneratorFourByFour');
+  expect(formatWorkoutStageParts(position, singleVisit, t)).toEqual({
+    stage: 'mobile.session.preGeneratorFourByFour',
+    count: '',
+    accessibilityLabel: 'mobile.session.workoutStageTopBarStageAria(stage=mobile.session.preGeneratorFourByFour)',
+  });
 });

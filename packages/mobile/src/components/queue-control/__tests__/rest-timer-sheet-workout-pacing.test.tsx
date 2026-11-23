@@ -219,6 +219,35 @@ describe('RestTimerSheet under a workout stage', () => {
     expect(getByText('mobile.restTimer.workoutPacingAdvanceSend')).toBeTruthy();
   });
 
+  it.each([1, 4])('names partner rounds and their separate rests with %s climb(s)', (climbCount) => {
+    paceWith({
+      ...LIMIT,
+      kind: 'fourByFour',
+      advanceOn: 'tick',
+      stagePacing: {
+        mode: 'afterTick',
+        restSeconds: 0,
+        advanceOn: 'round',
+        rounds: {
+          climbCount,
+          roundCount: 4,
+          restBetweenRoundsSeconds: 180,
+          positionByItemUuid: { l1: 0 },
+        },
+      },
+    });
+    const { getByText, queryByText } = renderSheet();
+    expect(
+      getByText(
+        climbCount === 1
+          ? 'mobile.restTimer.workoutPacingOneClimbRounds:mobile.session.preGeneratorFourByFour,4,3:00'
+          : 'mobile.restTimer.workoutPacingRounds:mobile.session.preGeneratorFourByFour,4,0:00,3:00',
+      ),
+    ).toBeTruthy();
+    expect(getByText('mobile.restTimer.workoutPacingAdvanceTick')).toBeTruthy();
+    expect(queryByText('mobile.restTimer.workoutPacingAdvanceSet')).toBeNull();
+  });
+
   it('names the interval of an on-the-minute block', () => {
     paceWith(ON_THE_MINUTE);
     const { getByText } = renderSheet();
