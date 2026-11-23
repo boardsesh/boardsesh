@@ -46,7 +46,10 @@ vi.mock('@/app/theme/theme-config', () => ({
   themeTokens: {
     spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
     colors: { primary: '#8C4A52' },
+    // `GradeChip` (the `gradeDisplay="chip"` grade) reads these two.
+    borderRadius: { md: 8 },
     typography: {
+      fontFamily: 'system-ui',
       fontSize: { xs: 12, sm: 14, base: 16, lg: 18, xl: 20, '2xl': 24 },
       fontWeight: { normal: 400, medium: 500, semibold: 600, bold: 700 },
     },
@@ -219,9 +222,20 @@ describe('ClimbTitle', () => {
       expect(screen.getByText('10 sends · 3.5★')).toBeTruthy();
     });
 
-    it('does not render angle even when showAngle is true', () => {
+    it('adds the angle to the byline when showAngle is set, for a list whose climbs sit at different angles', () => {
       render(<ClimbTitle climb={makeClimb()} gradePosition="right" showAngle />);
-      expect(screen.queryByText(/@ 40°/)).toBeNull();
+      expect(screen.getByText('10 sends · 3.5★ · 40°')).toBeTruthy();
+    });
+
+    it('leaves the angle out of the byline by default', () => {
+      render(<ClimbTitle climb={makeClimb()} gradePosition="right" />);
+      expect(screen.queryByText(/40°/)).toBeNull();
+    });
+
+    it('draws the grade as a chip in its grade colour when gradeDisplay is chip', () => {
+      render(<ClimbTitle climb={makeClimb({ difficulty: '6a/V0' })} gradePosition="right" gradeDisplay="chip" />);
+      // The real grade colour, not the softened text colour the hook returns.
+      expect(getComputedStyle(screen.getByText('V0')).backgroundColor).toBe('rgb(255, 212, 0)');
     });
 
     it('renders send count', () => {

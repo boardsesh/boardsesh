@@ -27,6 +27,8 @@ const ogSummary = vi.hoisted(() => ({
     version: string;
   } | null,
   calls: 0,
+  /** The username each call asked for: `cache()` dedupes the head's and the body's only if they match. */
+  usernames: [] as string[],
   /** Set to drive the head down its `catch`, the way a database blip would. */
   failure: null as Error | null,
 }));
@@ -100,8 +102,9 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 }));
 
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
-  getSetterOgSummary: async () => {
+  getSetterOgSummary: async (username: string) => {
     ogSummary.calls += 1;
+    ogSummary.usernames.push(username);
     readOrder.events.push('og:start');
     await Promise.resolve();
     readOrder.events.push('og:end');
@@ -142,6 +145,8 @@ const pageModule = await import('../page');
 const SetterProfilePage = pageModule.default;
 const { generateMetadata } = pageModule;
 const { absoluteUrl } = await import('@/app/lib/seo/base-url');
+const { buildCanonicalClimbListUrl } = await import('@/app/lib/url-utils');
+const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
 
 type StubClimb = {
   uuid: string;
@@ -245,6 +250,7 @@ beforeEach(() => {
   notFoundCalls.count = 0;
   ogSummary.value = { displayName: 'Marco', totalAscents: 0, version: 'v1' };
   ogSummary.calls = 0;
+  ogSummary.usernames = [];
   ogSummary.failure = null;
   serverLocale.value = 'en-US';
   readOrder.events = [];
@@ -303,6 +309,26 @@ describe('the setter front door, server-rendered', () => {
     })();
   });
 
+  it('still advertises exactly the URLs it links to when the most-sent cards repeat some of them', async () => {
+    // The art cards link the top three climbs a second time, at the SAME URL
+    // as their rows. The set of linked URLs is what has to match the ItemList.
+    setterData.value = pageData(
+      ['a', 'b', 'c', 'd', 'e'].map((letter) => ({ uuid: letter.repeat(32), name: `Climb ${letter}` })),
+    );
+
+    const html = await render();
+    const itemList = graphOf(html).find((node) => node['@type'] === 'ItemList') as
+      | { itemListElement?: { url: string }[] }
+      | undefined;
+    const listPaths = (itemList?.itemListElement ?? []).map((item) => new URL(item.url).pathname);
+    const anchorPaths = [...html.matchAll(/href="(\/kilter\/[^"]*\/view\/[^"]*)"/g)].map((match) => match[1]);
+
+    expect(listPaths).toHaveLength(5);
+    expect([...new Set(anchorPaths)]).toEqual(listPaths);
+    // Rows plus three cards, and every card URL is one of the rows'.
+    expect(anchorPaths).toHaveLength(8);
+  });
+
   it('404s instead of serving a 200 shell when the setter has no visible climb', async () => {
     // Three production states arrive here as the same null — a username nobody
     // ever set a climb under, a setter whose every climb is a draft, and one
@@ -329,6 +355,84 @@ describe('the setter front door, server-rendered', () => {
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
 
     await expect(render({ page: '5000' })).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+});
+
+describe('the setter front door hero, cards and rows', () => {
+  const FIVE_CLIMBS = ['a', 'b', 'c', 'd', 'e'].map((letter) => ({ uuid: letter.repeat(32), name: `Climb ${letter}` }));
+
+  it('reads the send total for the line under the name from the same summary the head reads', async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+    ogSummary.value = { displayName: 'Marco', totalAscents: 9860, version: 'v1' };
+
+    const [html] = await Promise.all([render(), metadataFor()]);
+
+    // The mocked `t` prints the key: the joined key only appears with a send count.
+    expect(html).toContain('setter.stats.joined');
+    // One argument for both callers, which is what lets `cache()` answer the
+    // second from the first in production: two requests' worth of GraphQL
+    // became one.
+    expect(ogSummary.usernames).toEqual(['marco', 'marco']);
+  });
+
+  it('names no send count when the summary has none, or when it fails', async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+
+    expect(await render()).not.toContain('setter.stats.joined');
+
+    ogSummary.failure = new Error('summary lookup failed');
+    const html = await render();
+    expect(html).toContain('setter.stats.climbs');
+    expect(html).not.toContain('setter.stats.joined');
+    expect(html.match(/<h1[\s>]/g) ?? []).toHaveLength(1);
+  });
+
+  it("draws page one's three most-sent climbs as lazy board art with reserved boxes", async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+
+    const html = await render();
+    // The row thumbnails are stubbed out in this file, so every <img> here is card art.
+    const images = html.match(/<img [^>]*>/g) ?? [];
+
+    expect(html).toContain('setter.mostSent.heading');
+    expect(images).toHaveLength(3);
+    for (const image of images) {
+      expect(image).toContain('loading="lazy"');
+      expect(image).toMatch(/width="\d+"/);
+      expect(image).toMatch(/height="\d+"/);
+      expect(image).toContain('frames=p1080r15');
+    }
+  });
+
+  it('draws no cards on a later page, or for a setter with three climbs', async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+    expect(await render({ page: '2' })).not.toContain('setter.mostSent.heading');
+
+    setterData.value = pageData(FIVE_CLIMBS.slice(0, 3));
+    expect(await render()).not.toContain('setter.mostSent.heading');
+  });
+
+  it("links the board chip to that board's climb list", async () => {
+    setterData.value = pageData(FIVE_CLIMBS);
+
+    const html = await render();
+    const listHref = buildCanonicalClimbListUrl(
+      getBoardImageDetailsForBoard({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] }),
+      40,
+    );
+
+    // The chip, and the "every climb on" link at the foot, name one URL.
+    expect(html.match(new RegExp(`href="${listHref}"`, 'g')) ?? []).toHaveLength(2);
+    expect(html).toContain('aria-label="setter.browseBoard"');
+  });
+
+  it('keeps the board as a plain label when no climb on the page has a canonical config', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Unlinkable', requiredSetIds: [1, 20, 26] }]);
+
+    const html = await render();
+
+    expect(html).not.toMatch(/href="[^"]*\/list"/);
+    expect(html).toContain('>Kilter<');
   });
 });
 

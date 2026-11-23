@@ -188,11 +188,20 @@
     "shareFailed": "Condivisione non riuscita",
     "follower_one": "follower",
     "follower_other": "follower",
-    "climb_one": "blocco",
-    "climb_other": "blocchi",
     "seoHeading": "Blocchi tracciati da {{name}}",
-    "seoSummary_one": "{{name}} ha tracciato {{formattedCount}} blocco su {{boards}}.",
-    "seoSummary_other": "{{name}} ha tracciato {{formattedCount}} blocchi su {{boards}}.",
+    "stats": {
+      "climbs_one": "{{climbs}} blocco su {{boards}}",
+      "climbs_other": "{{climbs}} blocchi su {{boards}}",
+      "sends_one": "una ripetizione",
+      "sends_other": "{{sends}} ripetizioni",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "I più ripetuti",
+      "meta_one": "{{sends}} ripetizione · {{angle}}°",
+      "meta_other": "{{sends}} ripetizioni · {{angle}}°",
+      "artAlt": "{{climbName}} illuminato sul {{board}} a {{angle}}°"
+    },
     "climbsHeading": "Tutti i blocchi di {{name}}",
     "empty": "Nessun blocco in questa pagina.",
     "browseBoard": "Guarda tutti i blocchi su {{boardName}}",

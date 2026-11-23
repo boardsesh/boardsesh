@@ -188,11 +188,20 @@
     "shareFailed": "Teilen fehlgeschlagen",
     "follower_one": "Follower",
     "follower_other": "Follower",
-    "climb_one": "Boulder",
-    "climb_other": "Boulder",
     "seoHeading": "Boulder von {{name}}",
-    "seoSummary_one": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
-    "seoSummary_other": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
+    "stats": {
+      "climbs_one": "{{climbs}} Boulder auf {{boards}}",
+      "climbs_other": "{{climbs}} Boulder auf {{boards}}",
+      "sends_one": "eine Begehung",
+      "sends_other": "{{sends}} Begehungen",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "Am häufigsten getoppt",
+      "meta_one": "{{sends}} Begehung · {{angle}}°",
+      "meta_other": "{{sends}} Begehungen · {{angle}}°",
+      "artAlt": "{{climbName}} beleuchtet am {{board}} bei {{angle}}°"
+    },
     "climbsHeading": "Alle Boulder von {{name}}",
     "empty": "Keine Boulder auf dieser Seite.",
     "browseBoard": "Alle Boulder am {{boardName}} Board ansehen",

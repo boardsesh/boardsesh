@@ -188,11 +188,20 @@
     "shareFailed": "Échec du partage",
     "follower_one": "abonné",
     "follower_other": "abonnés",
-    "climb_one": "bloc",
-    "climb_other": "blocs",
     "seoHeading": "Blocs ouverts par {{name}}",
-    "seoSummary_one": "{{name}} a ouvert {{formattedCount}} bloc sur {{boards}}.",
-    "seoSummary_other": "{{name}} a ouvert {{formattedCount}} blocs sur {{boards}}.",
+    "stats": {
+      "climbs_one": "{{climbs}} bloc sur {{boards}}",
+      "climbs_other": "{{climbs}} blocs sur {{boards}}",
+      "sends_one": "une croix",
+      "sends_other": "{{sends}} croix",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "Les plus enchaînés",
+      "meta_one": "{{sends}} croix · {{angle}}°",
+      "meta_other": "{{sends}} croix · {{angle}}°",
+      "artAlt": "{{climbName}} allumé sur la board {{board}} à {{angle}}°"
+    },
     "climbsHeading": "Tous les blocs de {{name}}",
     "empty": "Aucun bloc sur cette page.",
     "browseBoard": "Voir tous les blocs de la board {{boardName}}",

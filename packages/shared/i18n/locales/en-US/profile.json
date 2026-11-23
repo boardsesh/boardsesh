@@ -188,11 +188,20 @@
     "shareFailed": "Failed to share",
     "follower_one": "follower",
     "follower_other": "followers",
-    "climb_one": "climb",
-    "climb_other": "climbs",
     "seoHeading": "Climbs set by {{name}}",
-    "seoSummary_one": "{{name}} has set {{formattedCount}} climb on {{boards}}.",
-    "seoSummary_other": "{{name}} has set {{formattedCount}} climbs on {{boards}}.",
+    "stats": {
+      "climbs_one": "{{climbs}} climb on {{boards}}",
+      "climbs_other": "{{climbs}} climbs on {{boards}}",
+      "sends_one": "sent once",
+      "sends_other": "sent {{sends}} times",
+      "joined": "{{climbs}}, {{sends}}"
+    },
+    "mostSent": {
+      "heading": "Most sent",
+      "meta_one": "{{sends}} send · {{angle}}°",
+      "meta_other": "{{sends}} sends · {{angle}}°",
+      "artAlt": "{{climbName}} lit up on the {{board}} at {{angle}}°"
+    },
     "climbsHeading": "Every climb by {{name}}",
     "empty": "No climbs on this page.",
     "browseBoard": "See every climb on {{boardName}}",

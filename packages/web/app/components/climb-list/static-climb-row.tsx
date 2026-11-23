@@ -48,7 +48,18 @@ export type StaticClimbRowProps = {
   /** Viewer's ticks for the ascent badge. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
   fetchPriority?: 'high' | 'low' | 'auto';
+  /**
+   * `list` (default): a full-width row over a hairline. `card`: the app's row,
+   * a rounded card with the grade on a chip in its grade colour.
+   */
+  variant?: StaticClimbRowVariant;
+  /** Name the setter in the byline (default). Off on a page that is already one setter's. */
+  showSetter?: boolean;
+  /** Add the angle the row links to, for a list whose climbs sit at different angles. */
+  showAngle?: boolean;
 };
+
+export type StaticClimbRowVariant = 'list' | 'card';
 
 // The 72px/88px responsive preview determines the natural row height. The
 // virtual window keeps adjacent rows in normal flow until it can measure them.
@@ -78,6 +89,30 @@ const thumbnailSx = {
 
 const centerSx = { flex: 1, minWidth: 0 } as const;
 
+// The card's hover lives on the card itself, not on the anchor around it: the
+// anchor is a square box, and a square highlight behind a rounded card shows
+// its corners.
+const cardRowSx = {
+  ...rowSx,
+  borderBottom: 'none',
+  borderRadius: `${themeTokens.borderRadius.lg}px`,
+  backgroundColor: 'var(--semantic-surface)',
+} as const;
+
+const cardLinkSx = {
+  display: 'block',
+  color: 'inherit',
+  textDecoration: 'none',
+  borderRadius: `${themeTokens.borderRadius.lg}px`,
+  '&:hover > div': { backgroundColor: 'var(--semantic-surface-elevated)' },
+} as const;
+
+const cardUnlinkedSx = {
+  display: 'block',
+  color: 'inherit',
+  borderRadius: `${themeTokens.borderRadius.lg}px`,
+} as const;
+
 const StaticClimbRow = ({
   climb,
   boardDetails,
@@ -87,7 +122,11 @@ const StaticClimbRow = ({
   logbook,
   fetchPriority,
   thumbnailCrop,
+  variant = 'list',
+  showSetter = true,
+  showAngle = false,
 }: StaticClimbRowProps) => {
+  const isCard = variant === 'card';
   const href = useMemo(
     () =>
       unlinked
@@ -113,8 +152,12 @@ const StaticClimbRow = ({
   );
 
   const rowBody = (
-    <Box sx={rowSx}>
-      <Box sx={thumbnailSx} className={styles.thumbnail} data-testid="climb-thumbnail">
+    <Box sx={isCard ? cardRowSx : rowSx}>
+      <Box
+        sx={thumbnailSx}
+        className={isCard ? `${styles.thumbnail} ${styles.thumbnailCompact}` : styles.thumbnail}
+        data-testid="climb-thumbnail"
+      >
         <ClimbThumbnail
           boardDetails={boardDetails}
           currentClimb={climb}
@@ -141,7 +184,9 @@ const StaticClimbRow = ({
           climb={climb}
           gradePosition="right"
           ellipsis
-          showSetterInfo
+          showSetterInfo={showSetter}
+          showAngle={showAngle}
+          gradeDisplay={isCard ? 'chip' : 'text'}
           showGradeWhileLoading
           titleFontSize={themeTokens.typography.fontSize.xl}
           isNoMatch={!!climb.is_no_match}
@@ -153,7 +198,7 @@ const StaticClimbRow = ({
   // Null href means `unlinked` — checking it here rather than the flag is what
   // narrows `href` to a string for the anchor below.
   if (href === null) {
-    return <Box sx={unlinkedRowSx}>{rowBody}</Box>;
+    return <Box sx={isCard ? cardUnlinkedSx : unlinkedRowSx}>{rowBody}</Box>;
   }
 
   return (
@@ -161,7 +206,14 @@ const StaticClimbRow = ({
     // window at any moment, and the App Router default would fire a route
     // prefetch for every one of them on a page that already carries its own
     // data fetch.
-    <MuiLink component={LocaleLink} href={href} prefetch={false} underline="none" color="inherit" sx={rowLinkSx}>
+    <MuiLink
+      component={LocaleLink}
+      href={href}
+      prefetch={false}
+      underline="none"
+      color="inherit"
+      sx={isCard ? cardLinkSx : rowLinkSx}
+    >
       {rowBody}
     </MuiLink>
   );

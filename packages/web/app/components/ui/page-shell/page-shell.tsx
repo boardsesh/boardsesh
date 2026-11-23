@@ -21,6 +21,12 @@ export type PageShellProps = {
   headerAlign?: 'start' | 'center';
   headerClassName?: string;
   headerActions?: React.ReactNode;
+  /**
+   * A picture that belongs to the title, such as a person's avatar. It sits to
+   * the left of the title and lead. `headerActions` sit under the title, and
+   * below 760px they span the full width under the picture.
+   */
+  media?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -46,30 +52,46 @@ export default function PageShell({
   headerAlign = 'start',
   headerClassName: customHeaderClassName,
   headerActions,
+  media,
   children,
 }: PageShellProps) {
   const innerClassName = `${styles.inner} ${width === 'wide' ? styles.wide : styles.prose}`;
   const headerClassName = headerAlign === 'center' ? `${styles.header} ${styles.headerCenter}` : styles.header;
+  const titleBlock = (
+    <>
+      {eyebrow ? <Box className={styles.eyebrow}>{eyebrow}</Box> : null}
+      <Typography
+        variant={titleVariant === 'h1' ? 'h2' : 'h3'}
+        component="h1"
+        className={`${styles.title} ${titleVariant === 'h2' ? styles.titleCompact : ''}`}
+      >
+        {title}
+      </Typography>
+      {lead ? (
+        <Typography variant="body1" component="p" className={styles.lead}>
+          {lead}
+        </Typography>
+      ) : null}
+    </>
+  );
 
   return (
     <Box component="main" className={styles.pageShell}>
       <Box className={innerClassName}>
         <Box component="header" className={`${headerClassName} ${customHeaderClassName ?? ''}`}>
           {breadcrumb ? <Box className={styles.breadcrumb}>{breadcrumb}</Box> : null}
-          {eyebrow ? <Box className={styles.eyebrow}>{eyebrow}</Box> : null}
-          <Typography
-            variant={titleVariant === 'h1' ? 'h2' : 'h3'}
-            component="h1"
-            className={`${styles.title} ${titleVariant === 'h2' ? styles.titleCompact : ''}`}
-          >
-            {title}
-          </Typography>
-          {lead ? (
-            <Typography variant="body1" component="p" className={styles.lead}>
-              {lead}
-            </Typography>
-          ) : null}
-          {headerActions}
+          {media ? (
+            <Box className={styles.headerWithMedia}>
+              <Box className={styles.headerMedia}>{media}</Box>
+              <Box className={styles.headerTitleBlock}>{titleBlock}</Box>
+              {headerActions ? <Box className={styles.headerMediaActions}>{headerActions}</Box> : null}
+            </Box>
+          ) : (
+            <>
+              {titleBlock}
+              {headerActions}
+            </>
+          )}
         </Box>
         {children}
       </Box>

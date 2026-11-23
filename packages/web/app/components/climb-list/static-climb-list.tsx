@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { LogbookEntry } from '@boardsesh/board-react';
 import ErrorBoundary from '@/app/components/error-boundary';
-import StaticClimbRow from '@/app/components/climb-list/static-climb-row';
+import StaticClimbRow, { type StaticClimbRowVariant } from '@/app/components/climb-list/static-climb-row';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -93,6 +93,17 @@ export type StaticClimbListProps = {
   showBottomSpacer?: boolean;
   /** Extra content under a row, inside the measured wrapper but outside the link. */
   renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
+  /** `card` draws the app's rows: rounded cards, grade on a coloured chip. See `StaticClimbRow`. */
+  rowVariant?: StaticClimbRowVariant;
+  /** Name the setter on every row (default). A setter's own page turns it off. */
+  showSetter?: boolean;
+  /** Add each row's angle to its byline. */
+  showAngle?: boolean;
+  /**
+   * `2` lays card rows out two to a line from the md breakpoint up. Only the
+   * non-virtualized path reads it: the virtualizer measures one row per line.
+   */
+  columns?: 1 | 2;
 };
 
 const sentinelBoxSx = { minHeight: `${themeTokens.spacing[5]}px` };
@@ -104,6 +115,27 @@ const noMoreClimbsBoxSx = {
 };
 
 const noop = () => {};
+
+const plainRowsSx = { width: '100%', backgroundColor: 'inherit' } as const;
+
+// Card rows sit apart on the page ground instead of sharing hairlines.
+const cardRowsSx = {
+  ...plainRowsSx,
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr)',
+  gap: `${themeTokens.spacing[2]}px`,
+} as const;
+
+const twoColumnCardRowsSx = {
+  ...cardRowsSx,
+  gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' },
+  columnGap: { md: `${themeTokens.spacing[4]}px` },
+} as const;
+
+function plainRowsContainerSx(rowVariant: StaticClimbRowVariant, columns: 1 | 2) {
+  if (rowVariant !== 'card') return plainRowsSx;
+  return columns === 2 ? twoColumnCardRowsSx : cardRowsSx;
+}
 
 /** Row props every row shares, whichever path renders it. */
 type SharedRowProps = {
@@ -117,6 +149,9 @@ type SharedRowProps = {
   pathname: string;
   logbook?: readonly LogbookEntry[];
   renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
+  rowVariant: StaticClimbRowVariant;
+  showSetter: boolean;
+  showAngle: boolean;
 };
 
 export default function StaticClimbList({
@@ -138,6 +173,10 @@ export default function StaticClimbList({
   hideEndMessage = false,
   showBottomSpacer = false,
   renderItemExtra,
+  rowVariant = 'list',
+  showSetter = true,
+  showAngle = false,
+  columns = 1,
 }: StaticClimbListProps) {
   // Read once at list level: ClimbThumbnail takes the pathname as a prop
   // rather than each row paying for its own context lookup.
@@ -159,6 +198,9 @@ export default function StaticClimbList({
     pathname,
     logbook,
     renderItemExtra,
+    rowVariant,
+    showSetter,
+    showAngle,
   };
 
   return (
@@ -177,7 +219,7 @@ export default function StaticClimbList({
           {virtualize ? (
             <VirtualizedRows {...rowProps} hasMore={hasMore} isFetching={isFetching} onLoadMore={onLoadMore} />
           ) : (
-            <PlainRows {...rowProps} />
+            <PlainRows {...rowProps} columns={columns} />
           )}
         </ErrorBoundary>
       )}
@@ -215,9 +257,13 @@ function PlainRows({
   pathname,
   logbook,
   renderItemExtra,
-}: SharedRowProps) {
+  rowVariant,
+  showSetter,
+  showAngle,
+  columns,
+}: SharedRowProps & { columns: 1 | 2 }) {
   return (
-    <div style={{ width: '100%', backgroundColor: 'inherit' }}>
+    <Box sx={plainRowsContainerSx(rowVariant, columns)}>
       {climbs.map((climb, index) => {
         const rowKey = rowKeys?.[index] ?? climb.uuid;
         return (
@@ -239,12 +285,15 @@ function PlainRows({
               pathname={pathname}
               logbook={logbook}
               fetchPriority={index === 0 ? 'high' : undefined}
+              variant={rowVariant}
+              showSetter={showSetter}
+              showAngle={showAngle}
             />
             {renderItemExtra?.(climb, rowKey)}
           </div>
         );
       })}
-    </div>
+    </Box>
   );
 }
 
@@ -282,6 +331,9 @@ function VirtualizedRows({
   pathname,
   logbook,
   renderItemExtra,
+  rowVariant,
+  showSetter,
+  showAngle,
   hasMore,
   isFetching,
   onLoadMore,
@@ -368,6 +420,9 @@ function VirtualizedRows({
               pathname={pathname}
               logbook={logbook}
               fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
+              variant={rowVariant}
+              showSetter={showSetter}
+              showAngle={showAngle}
             />
             {renderItemExtra?.(climb, rowKey)}
           </div>
