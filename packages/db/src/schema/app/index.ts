@@ -5,6 +5,7 @@ export * from './gym-kiosks';
 export * from './gym-merge-audit';
 export * from './gym-owner-reassignments';
 export * from './boards';
+export * from './board-moderation-events';
 export * from './board-serials';
 export * from './sessions';
 export * from './favorites';

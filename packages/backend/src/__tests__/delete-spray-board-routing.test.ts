@@ -39,6 +39,11 @@ vi.mock('../services/privacy', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/privacy')>()),
   canAccessResource: vi.fn(async () => true),
 }));
+// No community roles: the delete gate's global-admin branch reads them.
+vi.mock('../graphql/resolvers/social/roles', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../graphql/resolvers/social/roles')>()),
+  getUserCommunityRoles: vi.fn(async () => []),
+}));
 vi.mock('../graphql/resolvers/board/spray-walls', () => ({
   sprayWallMutations: { deleteSprayWall: fixture.deleteWall },
 }));

@@ -2332,6 +2332,13 @@
       "when": 1795372348876,
       "tag": "0332_offline_write_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 333,
+      "version": "7",
+      "when": 1795428172077,
+      "tag": "0333_board_moderation_events",
+      "breakpoints": true
     }
   ]
 }

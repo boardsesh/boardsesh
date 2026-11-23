@@ -73,6 +73,18 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Who runs a gym listing. The same for every viewer.
+  """
+  enum GymListingState {
+    "Synced from an upstream board provider; nobody has claimed it yet."
+    UNCLAIMED
+    "Owned by a climber who did not claim it, usually by naming the gym while setting up a board."
+    CLIMBER_LISTED
+    "Owned through an approved claim or an admin handover: the gym runs it."
+    RUN_BY_GYM
+  }
+
+  """
   A physical gym location that can contain multiple boards.
   """
   type Gym {
@@ -148,6 +160,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     canClaim: Boolean!
     "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
     isClaimed: Boolean!
+    "Who runs this listing: not claimed yet, added by a climber, or run by the gym. Viewer-independent."
+    listingState: GymListingState!
     """
     Whether this gym's website can drive the self-service email claim: a real
     (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors

@@ -3988,6 +3988,8 @@ export type Gym = {
   isPublic: Scalars['Boolean']['output'];
   /** GPS latitude */
   latitude?: Maybe<Scalars['Float']['output']>;
+  /** Who runs this listing: not claimed yet, added by a climber, or run by the gym. Viewer-independent. */
+  listingState: GymListingState;
   /** Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo. */
   logoUrl?: Maybe<Scalars['String']['output']>;
   /** GPS longitude */
@@ -4218,6 +4220,15 @@ export type GymKioskBoard = {
   /** Public URL slug (userBoards.slug) — the kiosk's per-board install QR deep-links to /b/{slug}. */
   slug: Scalars['String']['output'];
 };
+
+/** Who runs a gym listing. The same for every viewer. */
+export type GymListingState =
+  /** Owned by a climber who did not claim it, usually by naming the gym while setting up a board. */
+  | 'CLIMBER_LISTED'
+  /** Owned through an approved claim or an admin handover: the gym runs it. */
+  | 'RUN_BY_GYM'
+  /** Synced from an upstream board provider; nobody has claimed it yet. */
+  | 'UNCLAIMED';
 
 /** A member of a gym. */
 export type GymMember = {
@@ -4903,7 +4914,8 @@ export type Mutation = {
    * Attach a stray board (surfaced by strayBoardsForGym) to a gym in one tap.
    * Re-points the board's gym_id to this gym. The caller need not own the board;
    * the gate is edit access to the target gym, and the board must be a genuine
-   * stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one).
+   * stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one),
+   * or a still-unlinked board this gym's staff removed, which this puts back.
    */
   attachBoardToGym: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
@@ -5034,7 +5046,12 @@ export type Mutation = {
   deleteAccount: Scalars['Boolean']['output'];
   /** Delete stored Aurora credentials for a board type. */
   deleteAuroraCredential: Scalars['Boolean']['output'];
-  /** Soft-delete a board as its owner or an owner/admin of its linked gym. */
+  /**
+   * Soft-delete a board. Allowed for its owner; for the owner or an admin of its
+   * linked gym on a synced (system-owned) board only; and for a global admin. A
+   * non-owner must also be able to read the board. Gym staff take a climber's
+   * board off their listing with detachBoardFromGym instead. See UserBoard.canDelete.
+   */
   deleteBoard: Scalars['Boolean']['output'];
   /**
    * Delete one of the current user's spray wall climbs, published or not, while
@@ -5072,15 +5089,20 @@ export type Mutation = {
   /**
    * Soft-delete a wall. The catalogue rows and every climb ever set on it stay
    * behind — a deleted wall stops being reachable, it does not un-set the climbs.
-   * Owner only.
+   * The same gate as deleteBoard: the wall's owner, the owner or an admin of its
+   * gym on a system-owned wall, or a global admin, who must be able to read it.
    */
   deleteSprayWall: Scalars['Boolean']['output'];
   /** Delete a tick (climb attempt record). Only the owner can delete. */
   deleteTick: Scalars['Boolean']['output'];
   /**
    * Remove a board from this gym's listing. Gated on edit access to the gym, and
-   * the board must currently be listed at it. Lets gym staff undo an unwanted
-   * self-link; clears gym_id only, leaving the board with its owner.
+   * the board must currently be listed at it. Gym staff's tool for a climber's
+   * board: clears gym_id and freezes the board against the location sync,
+   * leaving the board with its owner. A removal by staff stops the owner
+   * self-linking it back to this gym. A synced (system-owned) board is refused
+   * with SYSTEM_BOARD_DELETE_INSTEAD unless the caller is a global admin: the
+   * gym's owner or admin deletes it instead. See UserBoard.canRemoveFromGym.
    */
   detachBoardFromGym: Scalars['Boolean']['output'];
   /**
@@ -5192,7 +5214,9 @@ export type Mutation = {
    * Link or unlink a board you own to/from a gym. Unlinking is always yours to
    * do. Linking needs either owner/admin rights on the gym, or — so a climber can
    * list their board at the gym they actually climb at — a public gym within
-   * 150 m of the board's coordinates, subject to a per-caller cap.
+   * 150 m of the board's coordinates, subject to a per-caller cap. A board the
+   * gym's staff took off their listing can't be self-linked back to that gym
+   * (error code BOARD_REMOVED_BY_GYM) until the gym's staff put it back.
    */
   linkBoardToGym: Scalars['Boolean']['output'];
   /** Mark all notifications as read. */
@@ -13467,8 +13491,20 @@ export type UserBoard = {
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type (kilter, tension, moonboard) */
   boardType: Scalars['String']['output'];
+  /** Whether the current viewer may delete this board with deleteBoard: its owner; the owner or an admin of its linked gym, on a synced (system-owned) board only; or a global admin. False for a deleted board and when signed out. */
+  canDelete: Scalars['Boolean']['output'];
   /** Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym) */
   canEdit: Scalars['Boolean']['output'];
+  /**
+   * Whether the current viewer may take this board off its gym's listing. True when
+   * the board is linked to a gym and the viewer is its owner (call linkBoardToGym
+   * with gymUuid null) or can edit that gym: its owner, a gym admin or editor, or a
+   * community admin/leader covering it (call detachBoardFromGym). Gym staff use this
+   * instead of deleting a climber's board. A synced (system-owned) board is deleted,
+   * not removed: false for it unless the viewer is a global admin. False when
+   * signed out.
+   */
+  canRemoveFromGym: Scalars['Boolean']['output'];
   /** Number of comments */
   commentCount: Scalars['Int']['output'];
   /** When created */

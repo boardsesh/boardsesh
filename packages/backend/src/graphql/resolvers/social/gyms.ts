@@ -1,5 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, ne, and, count, isNull, isNotNull, notExists, sql, ilike, or, desc, inArray, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  ne,
+  and,
+  count,
+  exists,
+  isNull,
+  isNotNull,
+  notExists,
+  sql,
+  ilike,
+  or,
+  desc,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
@@ -31,6 +46,14 @@ import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 import { gymLocationFilter } from './gym-discovery-filters';
 import { publicGymSitemap } from './gym-sitemap';
+import type { GymListingState } from '@boardsesh/shared-schema';
+import type { BoardModerationActorRole } from '@boardsesh/db/schema';
+import {
+  boardHeldOffGymError,
+  isBoardHeldOffGym,
+  recordOwnerGymLinkChange,
+  viewerGymManagerRole,
+} from './board-moderation-events';
 
 // ============================================
 // Helpers
@@ -236,6 +259,47 @@ export async function resolveCanonicalGymBySlug(slug: string): Promise<GymRow | 
 export const GYM_BOARD_SUMMARY_ANGLES_PER_TYPE = 6;
 
 /**
+ * Who runs a gym listing, for every viewer alike (docs/product/gym-board-governance.md,
+ * decision 4):
+ * - UNCLAIMED: the SYSTEM import account owns it; nobody has claimed it.
+ * - RUN_BY_GYM: its owner got it through an approved claim or an admin handover.
+ * - CLIMBER_LISTED: a climber owns it some other way, usually by naming a gym
+ *   while setting up their board.
+ */
+export function gymListingState(ownerId: string, ownerHoldsClaimOrHandover: boolean): GymListingState {
+  if (ownerId === SYSTEM_BOARD_OWNER_ID) return 'UNCLAIMED';
+  return ownerHoldsClaimOrHandover ? 'RUN_BY_GYM' : 'CLIMBER_LISTED';
+}
+
+/**
+ * Whether the gym's current owner holds an approved claim on it or received it
+ * through an admin reassignment: two EXISTS probes, folded into enrichGym's
+ * owner query so the directory pays no extra round trip per gym.
+ */
+function ownerHoldsClaimOrHandoverSql(gym: Pick<typeof dbSchema.gyms.$inferSelect, 'id' | 'uuid' | 'ownerId'>) {
+  const approvedClaim = db
+    .select({ one: sql`1` })
+    .from(dbSchema.gymClaims)
+    .where(
+      and(
+        eq(dbSchema.gymClaims.gymId, gym.id),
+        eq(dbSchema.gymClaims.claimantUserId, gym.ownerId),
+        eq(dbSchema.gymClaims.status, 'approved'),
+      ),
+    );
+  const adminHandover = db
+    .select({ one: sql`1` })
+    .from(dbSchema.gymOwnerReassignments)
+    .where(
+      and(
+        eq(dbSchema.gymOwnerReassignments.gymUuid, gym.uuid),
+        eq(dbSchema.gymOwnerReassignments.newOwnerId, gym.ownerId),
+      ),
+    );
+  return sql<boolean>`(${exists(approvedClaim)} OR ${exists(adminHandover)})`;
+}
+
+/**
  * Enrich a gym row with computed fields (counts, follow status, membership).
  * Exported so the kiosk resolvers can attach the same branding-carrying `Gym`
  * payload (logo + colours) to a public kiosk without duplicating the enrichment.
@@ -252,13 +316,14 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     memberCheckResult,
     viewerRolesResult,
   ] = await Promise.all([
-    // Get owner profile
+    // Get owner profile, and whether they run the gym (listingState)
     db
       .select({
         name: dbSchema.users.name,
         image: dbSchema.users.image,
         displayName: dbSchema.userProfiles.displayName,
         avatarUrl: dbSchema.userProfiles.avatarUrl,
+        holdsClaimOrHandover: ownerHoldsClaimOrHandoverSql(gym),
       })
       .from(dbSchema.users)
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
@@ -400,6 +465,9 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // and separately checks the viewer's access before accepting any claim.
   const canClaimByDomain = computeCanClaimByDomain(gym);
 
+  // Viewer-independent like isClaimed, so anonymous SSR can show it too.
+  const listingState = gymListingState(gym.ownerId, ownerInfo?.holdsClaimOrHandover === true);
+
   return {
     uuid: gym.uuid,
     slug: gym.slug,
@@ -438,6 +506,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     canClaim,
     isClaimed,
     canClaimByDomain,
+    listingState,
   };
 }
 
@@ -586,6 +655,10 @@ export const MAX_BOARDS_PER_FOREIGN_GYM = 5;
  *
  * Note a real consequence to surface in the UI: linking hands the gym's admins
  * edit rights over the board (see `viewerCanAdminGym` → `requireBoardEditAccess`).
+ *
+ * An existing board (`boardId`) that the gym's staff took off their listing is
+ * held off it: its creator cannot self-link it back until staff relink it
+ * (`isBoardHeldOffGym`). The staff path above is how they do that.
  */
 export async function requireBoardGymLinkAccess(opts: {
   ctx: ConnectionContext;
@@ -593,10 +666,12 @@ export async function requireBoardGymLinkAccess(opts: {
   userId: string;
   // Stored board owner, or the authenticated creator when inserting a board.
   boardOwnerId: string;
+  // The board being linked; omitted while inserting one, which has no history.
+  boardId?: number;
   boardLatitude: number | null;
   boardLongitude: number | null;
 }): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { ctx, gymUuid, userId, boardOwnerId, boardLatitude, boardLongitude } = opts;
+  const { ctx, gymUuid, userId, boardOwnerId, boardId, boardLatitude, boardLongitude } = opts;
   const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
 
   // Staff keep the unconditional path — including for gyms or boards that have
@@ -617,6 +692,11 @@ export async function requireBoardGymLinkAccess(opts: {
   // Editing a wall through its current gym or a community role is not consent
   // to give another gym's staff edit rights. Only its owner can self-link it.
   if (boardOwnerId !== userId) throw new Error('Not authorized to link board to this gym');
+
+  // Staff took this board off this gym. Said plainly, before the rate limit and
+  // the proximity rules, so the creator learns who to ask rather than why a
+  // distance check failed.
+  if (boardId != null && (await isBoardHeldOffGym(boardId, gym.id))) throw boardHeldOffGymError();
 
   // The tight bucket belongs to the self-service path only. Charged here rather
   // than at the call site so a gym owner adding several boards to their OWN gym
@@ -1194,7 +1274,30 @@ export const socialGymMutations = {
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+        await db.transaction(async (tx) => {
+          const [lockedBoard] = await tx
+            .select({ gymId: dbSchema.userBoards.gymId })
+            .from(dbSchema.userBoards)
+            .where(
+              and(
+                eq(dbSchema.userBoards.id, board.id),
+                eq(dbSchema.userBoards.ownerId, userId),
+                isNull(dbSchema.userBoards.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          if (!lockedBoard) return;
+          await tx.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+          // The creator moving their own board, on the record for a staff re-list.
+          await recordOwnerGymLinkChange(tx, {
+            boardId: board.id,
+            actorUserId: userId,
+            fromGymId: lockedBoard.gymId,
+            toGymId: gym.id,
+            mutation: 'createGym',
+          });
+        });
       }
     }
 
@@ -1562,6 +1665,7 @@ export const socialGymMutations = {
       .select({
         id: dbSchema.userBoards.id,
         ownerId: dbSchema.userBoards.ownerId,
+        gymId: dbSchema.userBoards.gymId,
         latitude: dbSchema.userBoards.latitude,
         longitude: dbSchema.userBoards.longitude,
       })
@@ -1577,21 +1681,53 @@ export const socialGymMutations = {
       throw new Error('Not authorized to modify this board');
     }
 
-    if (validatedInput.gymUuid) {
-      const gym = await requireBoardGymLinkAccess({
-        ctx,
-        gymUuid: validatedInput.gymUuid,
-        userId,
-        boardOwnerId: board.ownerId,
-        boardLatitude: board.latitude,
-        boardLongitude: board.longitude,
-      });
+    // The gate runs first, outside the lock, for its plain errors and rate
+    // limits. Unlinking is always the board owner's own call and has none.
+    const gym = validatedInput.gymUuid
+      ? await requireBoardGymLinkAccess({
+          ctx,
+          gymUuid: validatedInput.gymUuid,
+          userId,
+          boardOwnerId: board.ownerId,
+          boardId: board.id,
+          boardLatitude: board.latitude,
+          boardLongitude: board.longitude,
+        })
+      : null;
+    const nextGymId = gym?.id ?? null;
 
-      await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
-    } else {
-      // Unlink from gym — always the board owner's own call.
-      await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
-    }
+    await db.transaction(async (tx) => {
+      // Decided again under the board's row lock, which `detachBoardFromGym`
+      // also takes. A staff removal committing between the gate and this write
+      // would otherwise be overwritten, hold and all.
+      const [lockedBoard] = await tx
+        .select({ ownerId: dbSchema.userBoards.ownerId, gymId: dbSchema.userBoards.gymId })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!lockedBoard) throw new Error('Board not found');
+      if (lockedBoard.ownerId !== userId) throw new Error('Not authorized to modify this board');
+      if (lockedBoard.gymId === nextGymId) return;
+
+      // A held board only gets past the gate on the gym's own staff path, so
+      // this link is staff putting it back: it lifts the hold, on the record.
+      let linkActorRole: BoardModerationActorRole | undefined;
+      if (nextGymId != null && (await isBoardHeldOffGym(board.id, nextGymId, tx))) {
+        const managerRole = await viewerGymManagerRole(nextGymId, userId, tx);
+        if (!managerRole) throw boardHeldOffGymError();
+        linkActorRole = managerRole;
+      }
+      await tx.update(dbSchema.userBoards).set({ gymId: nextGymId }).where(eq(dbSchema.userBoards.id, board.id));
+      await recordOwnerGymLinkChange(tx, {
+        boardId: board.id,
+        actorUserId: userId,
+        fromGymId: lockedBoard.gymId,
+        toGymId: nextGymId,
+        mutation: 'linkBoardToGym',
+        linkActorRole,
+      });
+    });
 
     return true;
   },

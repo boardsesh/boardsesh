@@ -11,8 +11,9 @@ import { resolveLocationSyncIntegrationConfig } from './integration-test-config'
 /**
  * Real-DB integration test proving the sync-freeze guards: once a human curates
  * a synced gym/board (setting sync_frozen_at), a subsequent location sync must
- * NOT overwrite its metadata — while still keeping the source alias and the
- * board→gym link current. An unfrozen synced row must still update normally.
+ * NOT overwrite it — the source alias stays current, and a frozen board keeps
+ * whatever gym link the human left it with, none included. An unfrozen synced
+ * row must still update normally.
  *
  * Local runs are opt-in and self-skip without an eligible DATABASE_URL. The
  * dedicated CI job sets REQUIRE_LOCATION_SYNC_INTEGRATION=1, which turns every
@@ -260,6 +261,45 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
         expect(Number(releasedBoard.latitude)).toBeCloseTo(-35.25, 5);
         expect(releasedBoard.deletedAt).toBeNull();
         expect(releasedBoard.syncFrozenAt).toBeNull();
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) {
+          throw error;
+        }
+      });
+  });
+
+  it('keeps a board that gym staff removed off the gym (detachBoardFromGym freezes it)', async () => {
+    const db = createDb();
+    const rollback = new Error('rollback detach fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = randomUUID();
+        const gymSourceKey = `tension:detach-gym-${fixtureId}`;
+        const boardSourceKey = `tension:detach-board-${fixtureId}`;
+        const gymUuid = gymUuidForSource(gymSourceKey);
+        const boardUuid = boardUuidForSource(boardSourceKey);
+
+        await upsertPublicBoardLocations(tx, [baseRecord({ sourceKey: boardSourceKey, gymSourceKey })]);
+        const syncedGym = await readGym(tx, gymUuid);
+        expect(Number((await readBoard(tx, boardUuid)).gymId)).toBe(Number(syncedGym.id));
+
+        // The exact write detachBoardFromGym makes: clear the link, freeze the row.
+        await tx.execute(sql`
+          UPDATE user_boards SET gym_id = NULL, sync_frozen_at = NOW(), updated_at = NOW()
+           WHERE uuid = ${boardUuid}
+        `);
+
+        // The hourly sync still reports the board at that gym.
+        await upsertPublicBoardLocations(tx, [baseRecord({ sourceKey: boardSourceKey, gymSourceKey })]);
+
+        const removedBoard = await readBoard(tx, boardUuid);
+        expect(removedBoard.gymId).toBeNull();
+        expect(removedBoard.syncFrozenAt).not.toBeNull();
+        expect(removedBoard.deletedAt).toBeNull();
 
         throw rollback;
       })
