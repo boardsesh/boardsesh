@@ -8,10 +8,18 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Get the app straight from the App Store and Google Play badges on boardsesh.com, and scan the QR code on the home page to get it on your phone. ([#8049](https://github.com/boardsesh/boardsesh/pull/8049))
+- Buttons on boardsesh.com have cleaner rounded corners. ([#8041](https://github.com/boardsesh/boardsesh/pull/8041))
 - Climb pages on the website are easier to read: a darker background, bolder titles and one clear button. ([#8026](https://github.com/boardsesh/boardsesh/pull/8026))
+
+### Improved
+
+- Find public spray walls by name, town or nearby location on the website. ([#8050](https://github.com/boardsesh/boardsesh/pull/8050))
 
 ### Fixed
 
+- Training-app 4x4 workouts show clearer round numbers and name your rest between rounds. ([#7839](https://github.com/boardsesh/boardsesh/pull/7839))
+- The climb on the wall now matches the other cards in Board options. ([#7935](https://github.com/boardsesh/boardsesh/pull/7935))
 - Browse climbs and log sends with your mouse and keyboard. ([#8018](https://github.com/boardsesh/boardsesh/pull/8018))
   Browser forms open within reach, without dragging to expand them.
 - Find climbing venues in the gym directory without personal home walls in the results. ([#8017](https://github.com/boardsesh/boardsesh/pull/8017))
