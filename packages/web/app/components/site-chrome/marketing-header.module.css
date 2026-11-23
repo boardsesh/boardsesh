@@ -169,11 +169,54 @@
   .phoneInstall.phoneInstall {
     display: inline-flex;
     margin-left: auto;
+    /* The global button list (index.css) plus the fade. Showing: visible at
+       once, then the fade in. */
+    transition:
+      opacity var(--motion-normal) var(--ease-standard),
+      visibility 0s,
+      background-color var(--motion-normal) var(--ease-standard),
+      border-color var(--motion-normal) var(--ease-standard),
+      color var(--motion-normal) var(--ease-standard);
   }
   .accountSlot {
     display: none;
   }
   .header {
     gap: var(--spacing-1);
+  }
+}
+
+/*
+ * The phone's "Get the app" steps aside while one of the page's own store badges
+ * is on screen (`HeaderPhoneInstall`, `useStoreBadgeOnScreen`). Hidden, not
+ * removed: `visibility: hidden` keeps the slot's width, so the header never
+ * shifts, and takes the link out of the tab order and the accessibility tree.
+ * Hiding fades out first, then turns visibility off.
+ *
+ * Two rules, not one selector list: a browser without `:has()` drops a whole
+ * list it cannot parse, and the hook's answer must still apply there.
+ */
+.phoneInstall.phoneInstall[data-store-badge-on-screen='yes'] {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--motion-normal) var(--ease-standard),
+    visibility 0s linear var(--motion-normal);
+}
+
+/* Before the hook has answered (server HTML, hydration, the first observer
+   report), guess from the markup: a badge in <main> hides the link. The home
+   page's hero badge is on screen at the top, so the link must never paint there
+   and then leave. A page whose only badge is far down shows it a beat late. */
+:root:has(main a[data-store-badge]) .phoneInstall.phoneInstall:not([data-store-badge-on-screen]) {
+  opacity: 0;
+  visibility: hidden;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phoneInstall.phoneInstall,
+  .phoneInstall.phoneInstall[data-store-badge-on-screen='yes'] {
+    transition: none;
   }
 }
