@@ -4586,6 +4586,8 @@ type GymClaim {
   claimantTickCount: Int
   "Admin queue only: how many other live gyms the claimant owns or is an admin of."
   claimantGymsHeld: Int
+  "Auto-approved list only: when the claim took the gym."
+  approvedAt: String
 }
 
 """
@@ -4650,6 +4652,18 @@ input PendingGymClaimsInput {
   limit: Int
   "Offset for pagination"
   offset: Int
+}
+
+"""
+Input for listing claims that approved themselves (admin only).
+"""
+input AutoApprovedGymClaimsInput {
+  "Max claims to return"
+  limit: Int
+  "Offset for pagination"
+  offset: Int
+  "Only this claim, for the daily digest's revert link. A claim that didn't approve itself comes back as an empty list."
+  claimId: ID
 }
 
 # ============================================
@@ -9385,6 +9399,12 @@ type Query {
   List pending gym ownership claims for the admin review queue (admin only).
   """
   pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!
+
+  """
+  Claims that approved themselves (admin only), newest first: approved ones
+  an admin can revert with revertGymClaim, and ones already reverted.
+  """
+  autoApprovedGymClaims(input: AutoApprovedGymClaimsInput): GymClaimConnection!
 
   """
   List submitted app feedback (bug reports + ratings) for the admin feedback

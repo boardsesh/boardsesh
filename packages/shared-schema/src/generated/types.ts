@@ -738,6 +738,16 @@ export type AuroraCredentialStatus = {
   username: Scalars['String']['output'];
 };
 
+/** Input for listing claims that approved themselves (admin only). */
+export type AutoApprovedGymClaimsInput = {
+  /** Only this claim, for the daily digest's revert link. A claim that didn't approve itself comes back as an empty list. */
+  claimId?: InputMaybe<Scalars['ID']['input']>;
+  /** Max claims to return */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
 /**
  * An external Instagram or TikTok beta link attached to a climb.
  * Thumbnail (when present) is served from our own S3 bucket.
@@ -4205,6 +4215,8 @@ export type GymBoardSummary = {
 /** A pending or resolved gym ownership claim (admin queue). */
 export type GymClaim = {
   __typename?: 'GymClaim';
+  /** Auto-approved list only: when the claim took the gym. */
+  approvedAt?: Maybe<Scalars['String']['output']>;
   /** Email address (domain path) */
   claimEmail?: Maybe<Scalars['String']['output']>;
   /** Admin queue only: days since the claimant's account was created. */
@@ -8133,6 +8145,11 @@ export type Query = {
    */
   authenticatedUserId: Scalars['ID']['output'];
   /**
+   * Claims that approved themselves (admin only), newest first: approved ones
+   * an admin can revert with revertGymClaim, and ones already reverted.
+   */
+  autoApprovedGymClaims: GymClaimConnection;
+  /**
    * Live preview metadata for a shared Instagram/TikTok URL, before it's
    * attached. Powers the mobile share flow: shows the post thumbnail/caption and
    * lets the client auto-match the climb from the caption. Best-effort — returns
@@ -9135,6 +9152,11 @@ export type QueryAppWorkoutArgs = {
 /** Root query type for all read operations. */
 export type QueryAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAutoApprovedGymClaimsArgs = {
+  input?: InputMaybe<AutoApprovedGymClaimsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -14294,6 +14316,7 @@ export type ResolversTypes = ResolversObject<{
   AttachBoardToGymInput: AttachBoardToGymInput;
   AuroraCredential: ResolverTypeWrapper<AuroraCredential>;
   AuroraCredentialStatus: ResolverTypeWrapper<AuroraCredentialStatus>;
+  AutoApprovedGymClaimsInput: AutoApprovedGymClaimsInput;
   BetaLink: ResolverTypeWrapper<BetaLink>;
   BetaLinkPreview: ResolverTypeWrapper<BetaLinkPreview>;
   BoardCandidate: ResolverTypeWrapper<BoardCandidate>;
@@ -14950,6 +14973,7 @@ export type ResolversParentTypes = ResolversObject<{
   AttachBoardToGymInput: AttachBoardToGymInput;
   AuroraCredential: AuroraCredential;
   AuroraCredentialStatus: AuroraCredentialStatus;
+  AutoApprovedGymClaimsInput: AutoApprovedGymClaimsInput;
   BetaLink: BetaLink;
   BetaLinkPreview: BetaLinkPreview;
   BoardCandidate: BoardCandidate;
@@ -17628,6 +17652,7 @@ export type GymClaimResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymClaim'] = ResolversParentTypes['GymClaim'],
 > = ResolversObject<{
+  approvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   claimEmail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   claimantAccountAgeDays?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   claimantAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -19947,6 +19972,12 @@ export type QueryResolvers<
   >;
   auroraCredentials?: Resolver<Array<ResolversTypes['AuroraCredentialStatus']>, ParentType, ContextType>;
   authenticatedUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  autoApprovedGymClaims?: Resolver<
+    ResolversTypes['GymClaimConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryAutoApprovedGymClaimsArgs>
+  >;
   betaLinkPreview?: Resolver<
     ResolversTypes['BetaLinkPreview'],
     ParentType,

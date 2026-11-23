@@ -11,13 +11,19 @@ import { requireAdmin } from './roles';
 import { gymClaimAutoApproveEnabled } from './community-settings';
 import { userCanEditGym } from './gyms';
 import { createGymManageAccessNotification } from './gym-notifications';
-import { firstFailedAutoApproveGuard, lockAutoApprovals, type AutoApproveGuard } from './gym-claim-guardrails';
+import {
+  autoApprovedClaimCondition,
+  firstFailedAutoApproveGuard,
+  lockAutoApprovals,
+  type AutoApproveGuard,
+} from './gym-claim-guardrails';
 import { sendDirectoryNotices, type PendingDirectoryNotice } from './directory-reports/notices';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 import {
   RequestGymClaimInputSchema,
   ReviewGymClaimInputSchema,
   PendingGymClaimsInputSchema,
+  AutoApprovedGymClaimsInputSchema,
 } from '../../../validation/schemas';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import {
@@ -956,6 +962,88 @@ export const socialGymClaimQueries = {
       claimEmail: row.claimEmail,
       message: row.message,
       createdAt: row.createdAt.toISOString(),
+      claimantAccountAgeDays: row.accountCreatedAt
+        ? Math.max(0, Math.floor((now - row.accountCreatedAt.getTime()) / DAY_MS))
+        : null,
+      claimantTickCount: history.tickCounts.get(row.claimantUserId) ?? 0,
+      claimantGymsHeld: history.gymsHeld.get(row.claimantUserId)?.size ?? 0,
+    }));
+
+    return { claims, totalCount, hasMore: offset + rows.length < totalCount };
+  },
+
+  /**
+   * Claims that approved themselves and moved their gym, newest first: the
+   * admin's revert list (docs/product/gym-claims.md). Reverted ones stay in it,
+   * marked `revoked`, so the daily digest's link to one still lands somewhere.
+   */
+  autoApprovedGymClaims: async (_: unknown, { input }: { input?: unknown }, ctx: ConnectionContext) => {
+    await requireAdmin(ctx);
+    const { limit, offset, claimId } = validateInput(AutoApprovedGymClaimsInputSchema, input || {}, 'input');
+
+    const autoApproved = and(
+      autoApprovedClaimCondition(['approved', 'revoked']),
+      eq(dbSchema.gymClaimOwnershipDecisions.didTransfer, true),
+      claimId ? eq(dbSchema.gymClaims.id, claimId) : undefined,
+    );
+
+    const [countResult] = await db
+      .select({ count: count() })
+      .from(dbSchema.gymClaims)
+      .innerJoin(
+        dbSchema.gymClaimOwnershipDecisions,
+        eq(dbSchema.gymClaimOwnershipDecisions.claimId, dbSchema.gymClaims.id),
+      )
+      .where(autoApproved);
+    const totalCount = Number(countResult?.count || 0);
+
+    const rows = await db
+      .select({
+        id: dbSchema.gymClaims.id,
+        gymUuid: dbSchema.gyms.uuid,
+        gymName: dbSchema.gyms.name,
+        claimantUserId: dbSchema.gymClaims.claimantUserId,
+        method: dbSchema.gymClaims.method,
+        status: dbSchema.gymClaims.status,
+        claimEmail: dbSchema.gymClaims.claimEmail,
+        message: dbSchema.gymClaims.message,
+        createdAt: dbSchema.gymClaims.createdAt,
+        approvedAt: dbSchema.gymClaimOwnershipDecisions.decidedAt,
+        displayName: dbSchema.userProfiles.displayName,
+        avatarUrl: dbSchema.userProfiles.avatarUrl,
+        userName: dbSchema.users.name,
+        userImage: dbSchema.users.image,
+        accountCreatedAt: dbSchema.users.createdAt,
+      })
+      .from(dbSchema.gymClaims)
+      .innerJoin(
+        dbSchema.gymClaimOwnershipDecisions,
+        eq(dbSchema.gymClaimOwnershipDecisions.claimId, dbSchema.gymClaims.id),
+      )
+      .innerJoin(dbSchema.gyms, eq(dbSchema.gymClaims.gymId, dbSchema.gyms.id))
+      .leftJoin(dbSchema.users, eq(dbSchema.gymClaims.claimantUserId, dbSchema.users.id))
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.gymClaims.claimantUserId, dbSchema.userProfiles.userId))
+      .where(autoApproved)
+      .orderBy(desc(dbSchema.gymClaimOwnershipDecisions.decidedAt), desc(dbSchema.gymClaims.id))
+      .limit(limit)
+      .offset(offset);
+
+    const history = await loadClaimantHistory([...new Set(rows.map((row) => row.claimantUserId))]);
+    const now = Date.now();
+
+    const claims = rows.map((row) => ({
+      id: String(row.id),
+      gymUuid: row.gymUuid,
+      gymName: row.gymName,
+      claimantUserId: row.claimantUserId,
+      claimantDisplayName: row.displayName || row.userName || undefined,
+      claimantAvatarUrl: row.avatarUrl || row.userImage || undefined,
+      method: row.method,
+      status: row.status,
+      claimEmail: row.claimEmail,
+      message: row.message,
+      createdAt: row.createdAt.toISOString(),
+      approvedAt: row.approvedAt.toISOString(),
       claimantAccountAgeDays: row.accountCreatedAt
         ? Math.max(0, Math.floor((now - row.accountCreatedAt.getTime()) / DAY_MS))
         : null,

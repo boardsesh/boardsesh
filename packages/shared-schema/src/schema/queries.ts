@@ -807,6 +807,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!
 
     """
+    Claims that approved themselves (admin only), newest first: approved ones
+    an admin can revert with revertGymClaim, and ones already reverted.
+    """
+    autoApprovedGymClaims(input: AutoApprovedGymClaimsInput): GymClaimConnection!
+
+    """
     List submitted app feedback (bug reports + ratings) for the admin feedback
     dashboard, enriched with the reporter's identity and triage state. Admin
     only. Supports filtering by type/status/platform and free-text search over

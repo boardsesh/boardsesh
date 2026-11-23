@@ -594,6 +594,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     claimantTickCount: Int
     "Admin queue only: how many other live gyms the claimant owns or is an admin of."
     claimantGymsHeld: Int
+    "Auto-approved list only: when the claim took the gym."
+    approvedAt: String
   }
 
   """
@@ -658,6 +660,18 @@ export const gymsTypeDefs = /* GraphQL */ `
     limit: Int
     "Offset for pagination"
     offset: Int
+  }
+
+  """
+  Input for listing claims that approved themselves (admin only).
+  """
+  input AutoApprovedGymClaimsInput {
+    "Max claims to return"
+    limit: Int
+    "Offset for pagination"
+    offset: Int
+    "Only this claim, for the daily digest's revert link. A claim that didn't approve itself comes back as an empty list."
+    claimId: ID
   }
 
   # ============================================
