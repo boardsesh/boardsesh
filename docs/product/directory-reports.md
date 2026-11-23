@@ -54,8 +54,10 @@ Reports are never deleted by the app. A board's go with the board row (an accoun
 
 1. Signed in, the `directory-reports` flag on, 5 per minute.
 2. The reporter must be able to read the target: the board by its uuid (`canAccessBoard` with the uuid as the link), the gym by the gym visibility rule. Anything else is "not found", so a report is never an oracle for which uuids exist.
-3. `INSERT ... ON CONFLICT DO NOTHING` on the partial unique index. The first reporter gets `created`; a later reporter on the same target and reason joins the waiting report (`added`); a second report from the same climber writes nothing (`already_reported`). `otherReporterCount` feeds "2 other climbers flagged this too".
-4. On `created`, the people it reaches get one `board_report_opened` / `gym_report_opened` notice each. Later reporters join quietly. A report routed to the admin queue is `escalated` from the start.
+3. In the filing transaction the board is read again under a share lock (`lockBoardFacts`). A delete or merge that committed since the checks makes it "not found"; a removal or move to another gym routes the report again against the board as it stands, so `gym_id_at_report` and `routed_to` never name a gym the board just left. The next delete or removal waits for the report to commit.
+4. A climber whose report on the same target and reason closed less than 7 days ago (`REPORT_REFILE_COOLDOWN_DAYS`) can't open it again: they get `already_reported` with that closed report, and nothing is written. Every new report notifies and pushes its people, so this stops a reporter who disagrees with an outcome from pushing the creator over and over. A report someone else opened since is joined as usual.
+5. `INSERT ... ON CONFLICT DO NOTHING` on the partial unique index. The first reporter gets `created`; a later reporter on the same target and reason joins the waiting report (`added`); a second report from the same climber writes nothing (`already_reported`). `otherReporterCount` feeds "2 other climbers flagged this too".
+6. On `created`, the people it reaches get one `board_report_opened` / `gym_report_opened` notice each. Later reporters join quietly. A report routed to the admin queue is `escalated` from the start.
 
 `reportGymDuplicate`, the older email-only path, also files a `duplicate` gym report, so reports from app builds before PR 4 reach the admin queue. Its email still goes out; the report is best effort, and is not gated on the flag (it reaches the admin queue only, and sends no notice while the flag is off).
 
@@ -63,11 +65,12 @@ Reports are never deleted by the app. A board's go with the board row (an accoun
 
 | Viewer | Reads | Closes |
 |---|---|---|
-| The board's creator | every report on their board, but their own relist requests | as `kept` |
-| Gym owner, admin | reports routed to `gym_staff` for their gym | as `kept` |
+| The board's creator | every report on their board, but their own relist requests | as `kept`, unless it is in the admin queue |
+| Gym owner, admin | reports routed to `gym_staff` for their gym | as `kept`, unless it is in the admin queue |
 | Gym editor | reports routed to `gym_staff` for their gym | no |
 | Global admin | everything | with any outcome |
 
+- **A report in the admin queue is the team's to close.** One routed to the admin queue when it opened (a synced board nobody runs, "wrong gym or place", which can be a home address) or escalated after 14 days is closed by a global admin only (`isInAdminQueue`). The creator and staff still read it, with `viewerCanResolve: false`; `resolveDirectoryReport` tells them "The Boardsesh team is looking at this report; it closes when they do."
 - **Reporters are anonymous** to the creator and staff: they read the reasons, the notes and a count, never names. `DirectoryReportNote.reporter` is null for everyone but global admins. Reporters read nothing back except the outcome notice and `UserBoard.viewerHasOpenReport`.
 - A board report also needs the board to be readable by the viewer: staff don't learn about a private board through its reports.
 - Closed reports stay in `boardReports` and `myDirectoryReportsToReview` for 30 days.
@@ -80,7 +83,7 @@ SDL: `packages/shared-schema/src/schema/directory-reports.ts`. Operation documen
 |---|---|---|
 | `reportBoard(input: { boardUuid, reason, duplicateOfBoardUuid?, note? })` | signed in, can read the board, flag on | `{ status: created \| added \| already_reported, reportUuid, routedTo, otherReporterCount }` |
 | `reportGym(input: { gymUuid, reason, duplicateOfGymUuid?, note? })` | signed in, can see the gym, flag on | same |
-| `resolveDirectoryReport(input: { reportUuid, outcome, note? })` | creator or gym owner/admin: `kept`; global admin: any outcome | the closed `DirectoryReport` |
+| `resolveDirectoryReport(input: { reportUuid, outcome, note? })` | creator or gym owner/admin: `kept`, on a report not in the admin queue; global admin: any outcome | the closed `DirectoryReport` |
 | `boardReports(boardUuid)` | creator, routed gym staff, global admins; `[]` for anyone else | waiting and recently closed reports, newest first |
 | `myDirectoryReportsToReview(includeResolved, first)` | signed in | reports on my boards and routed to gyms I staff: waiting first (oldest first), then closed (newest first) |
 | `adminDirectoryReports(status, targetKind, first, after)` | global admins | the admin queue; `status` defaults to `escalated` |
@@ -99,15 +102,18 @@ Most reports close on their own, in the same transaction as the action that sett
 | Action | Closes | As |
 |---|---|---|
 | `updateBoard` (and the spray wall commits) that changes setup, name, place or angle | `wrong_setup` on the board | `fixed` |
-| The board comes off a gym: staff `detachBoardFromGym`, a staff `updateSprayWall`, or the creator's own unlink | the board's reports filed at that gym (not relist requests) | `removed` |
+| The board comes off a gym: staff `detachBoardFromGym`, a staff `updateSprayWall`, or the creator's own unlink | the board's reports filed at that gym (not relist requests; for the creator's own unlink, not reports in the admin queue either) | `removed` |
 | `deleteBoard` / `deleteSprayWall`, by anyone | every report on the board | `deleted` |
 | Staff put a removed board back (`attachBoardToGym`, a staff link) | `relist_request` for that gym | `fixed` |
+| `updateGym` that changes the name, address, coordinates, website, phone or hours | `wrong_details` on that gym | `fixed` |
 | The board merge tool (below) | every report on the merged board, and "listed twice" reports on the survivor that named it | `merged` |
 | The hourly sweep finds the board or gym deleted or merged | every waiting report on it | `deleted` / `merged` |
 
 The fixing fields are `name`, `layoutId`, `sizeId`, `setIds`, `angle`, `isAngleAdjustable`, `locationName`, `latitude`, `longitude` (`REPORT_FIXING_BOARD_FIELDS`). A timer-only edit (`TimersSettingsScreen` sends `{ boardUuid, timerName }`) changes none of them, so it closes nothing.
 
-The removal, relink and staff-edit hooks run from `recordBoardModerationEvent` / `recordStaffBoardEdit` (`board-moderation-events.ts`), so every writer of a moderation event closes reports without a call of its own. The creator's own unlink (`linkBoardToGym` with no gym, an owner's `updateSprayWall`) closes them through the `board_owner` `removed_from_gym` event that `recordOwnerGymLinkChange` writes for every creator link change. Deletes call `onBoardDeleted` at both delete sites, because a creator's own delete records no event.
+The gym fields are `name`, `address`, `latitude`, `longitude`, `website`, `contactPhone`, `hours` (`REPORT_FIXING_GYM_FIELDS`). The manage form posts every field on every save, so `updateGym` reads the gym under its row lock first and only a value that actually changed counts. Anyone who passes the gym edit gate closes it: the owner, admins and editors as `gym_staff`, a community or global admin as `admin`.
+
+The removal, relink and staff-edit hooks run from `recordBoardModerationEvent` / `recordStaffBoardEdit` (`board-moderation-events.ts`), so every writer of a moderation event closes reports without a call of its own. The creator's own unlink (`linkBoardToGym` with no gym, an owner's `updateSprayWall`, an owner moving the board to another gym) closes them through the `board_owner` `removed_from_gym` event that `recordOwnerGymLinkChange` writes for every creator link change. It leaves reports in the admin queue open: taking a board off a gym does not move a home address. A staff removal is the gym's own call and closes those too. Deletes call `onBoardDeleted` at both delete sites, because a creator's own delete records no event. A staff edit resolves the staff member's role before any report closes, so an edit refused because the role was revoked closes nothing.
 
 Every close tells the reporters (`board_report_resolved` / `gym_report_resolved`) and is counted (`Board Report Resolved`).
 
@@ -118,14 +124,22 @@ The board merge tool is built separately. When it folds board A into board B, it
 ```ts
 // packages/backend/src/graphql/resolvers/social/directory-reports/index.ts
 import { resolveReportsForMergedBoard } from '../social/directory-reports';
-await resolveReportsForMergedBoard(mergedBoardId, survivorBoardId, tx);
+import { transactionWithAfterCommit } from '../../../db/after-commit';
+await transactionWithAfterCommit(async (tx) => {
+  // ...fold the board...
+  await resolveReportsForMergedBoard(mergedBoardId, survivorBoardId, tx);
+});
 ```
+
+Open the transaction with `transactionWithAfterCommit`, not `db.transaction`: the closes are counted once it commits (see Analytics).
 
 It returns how many reports closed. A "listed twice" report carries `duplicate_of_board_id`, which the tool can use to prefill its target; `DirectoryReport.duplicateOfBoardUuid` exposes it. Until the tool calls the hook, the sweep closes reports on a merged board (`user_boards.merged_into_board_uuid` set) within the hour.
 
 ## Notifications
 
-All in-app; only `board_report_opened` also goes out as a push (opt-in: only devices registered with `registerNotificationDevice`). The push rides the shared delivery worker (`notification-push-delivery`, the branch in `services/spray-detection-notifications.ts`), which rechecks the flag, that the report is still waiting and that the recipient can still read the board before every attempt.
+All in-app; only `board_report_opened` also goes out as a push (opt-in: only devices registered with `registerNotificationDevice`). The push rides the shared delivery worker (`notification-push-delivery`, the branch in `services/spray-detection-notifications.ts`), which rechecks the flag (awaiting PostHog when its cached answer is stale, so a cold cache never skips a delivery for good), that the report is still waiting and that the recipient can still read the board before every attempt.
+
+At most 10 report pushes reach one person in 24 hours (`DIRECTORY_REPORT_PUSHES_PER_DAY`, counting `board_report_opened` notices that were queued to a device, reminders included). Past that the notice still lands in the inbox, without a push. Two reports filed at the same moment can both see one below the cap, so it can be passed by one or two.
 
 | Type | To | When |
 |---|---|---|
@@ -142,19 +156,19 @@ Rules every notice follows (`directory-reports/notices.ts`):
 
 - **No actor.** The feed names a notification's actor, and for a report that is the reporter. Who acted is carried as a role instead (`directoryNotice.actorRole`: `gym_staff` or `moderator`; `resolvedByRole`).
 - **Only while the flag is on.**
-- **Never about a board the recipient cannot read.** The creator always can. The inbox applies the same rule at read time (`notificationPrivacyCondition`), with one addition: a notice about a board or gym deleted since keeps showing to the people it went to, who could read it when it was sent.
+- **Never about a board the recipient cannot read.** The creator always can. About a board that is deleted when the notice is written, only its creator and the reporters on the notice's report hear; gym staff and anyone else do not. The inbox applies the same rule at read time (`notificationPrivacyCondition`), with one addition: a notice about a board or gym deleted since keeps showing to the people it went to, who could read it when it was sent.
 - **Written in the action's transaction**, so a change that rolls back sends nothing. The live feed publish waits for the commit (it publishes the rows visible after 200 ms, then 2 s); a notice missed there shows on the next feed read.
 
 `directoryNotice` carries what a client needs to word the row: `targetKind`, board uuid, name and type, gym uuid and name, report uuid, `reason`, `outcome`, `resolvedByRole`, `resolutionNote` (kept only), `actorRole`, `isReminder`, `recipientIsCreator`. The copy keys are in `packages/shared/i18n/locales/*/notifications.json` (`items.boardReported*`, `items.boardReport*`, `items.board*ByStaff` / `*ByModerator`, `items.gymReport*`, and `push.boardReport*` / `push.boardRelist*`); the backend reads only the push copy.
 
 ## The sweep and the daily digest
 
-`directory-report-sweep` (pg-boss, `exclusive`, hourly at :47 UTC; `services/directory-report-sweep.ts`). Every step reads what is due, so a missed hour or a retry changes nothing twice:
+`directory-report-sweep` (pg-boss, `exclusive`, hourly at :47 UTC; `services/directory-report-sweep.ts`). Every step reads what is due, so a missed hour or a retry changes nothing twice. Each report is closed or reminded in its own transaction, and a failure is logged and counted (`failures`) without stopping the others; every step, the digest included, runs whatever happened in the one before:
 
 1. Waiting reports on a board or gym that has been deleted or merged close as `deleted` / `merged` (`auto`).
 2. `open` reports older than 14 days become `escalated` (`escalated_at` set). Admin-routed reports are escalated when they open.
 3. `open` reports older than 7 days with no reminder get one: a second `board_report_opened` / `gym_report_opened` with `isReminder`, to the same people as they stand now.
-4. Once a UTC day, from 08:00, the admin daily digest (`sendAdminDailyDigestEmail` in `email/email-service.ts`, to `ADMIN_EMAIL`): reports that reached the admin queue since the last digest and are still there (count, the first 20 with links to `/admin/board-reports?report=<uuid>`). No email when every section is empty. One replica sends: the day's `admin_daily_digests` row is claimed before the email goes out, and a failed send gives it back for the next hour.
+4. Once a UTC day, from 08:00, the admin daily digest (`sendAdminDailyDigestEmail` in `email/email-service.ts`, to `ADMIN_EMAIL`): reports that reached the admin queue since the last digest and are still there (count, the first 20 with links to `/admin/board-reports?report=<uuid>`). No email when every section is empty. One replica sends: the day's `admin_daily_digests` row is claimed before the email goes out. A digest that fails before or while sending gives the claim back for the next hour. One whose email went out keeps it even when recording `sent` fails, so the day's email never goes out twice; a claim left in `sending` (that, or a crash mid-send) holds its day and is cleared the next day, whose digest covers the window from the last finished one.
 
 The digest is built from `ADMIN_DIGEST_SECTION_PROVIDERS`. The claim guardrails PR fills `autoApprovedClaimsSection` (claims that approved themselves, each with a revert link); a provider returns `{ key, heading, total, rows, moreUrl, moreLabel }` or null.
 
@@ -167,8 +181,10 @@ A server flag in the backend (`services/directory-reports-flag.ts`), off by defa
 It is one switch for the whole service, not a per-account rollout: a report reaches people other than the reporter, and the old builds it must stay away from are theirs.
 
 1. `FEATURE_FLAG_OVERRIDES` naming it decides, in every environment: `directory-reports` turns it on, `directory-reports=false` is the kill switch. This is the lever for tests, a laptop and an emergency.
-2. Otherwise PostHog project 412845, flag `directory-reports`, evaluated for the fixed id `system:directory-reports` and cached 60 s. **Turn it on with a plain 100% release condition**: a condition on a person property or a cohort never matches that id.
-3. No PostHog key, a timeout, an error or a missing flag: off.
+2. Otherwise PostHog project 412845, flag `directory-reports`, evaluated for the fixed id `system:directory-reports` and cached 60 s. **Turn it on with a plain 100% release condition**: a condition on a person property or a cohort never matches that id. An answer that leaves the flag out (deleted, never created) is off at once.
+3. No PostHog key: off. No answer (a timeout, a non-2xx, an unreadable body, PostHog reporting errors while it evaluated): the last answer stands for one more interval, so one slow request does not flap it, then off until PostHog answers again.
+
+Boot awaits the first answer (at most 1.5 s) before the server and the workers start, so the first minute's notices and pushes don't read a cold cache as off.
 
 Turn it on once the mobile PR's copy and routes are in a production build (and the web PR's dialog is live), after this backend is deployed.
 
@@ -180,7 +196,7 @@ Backend events, anonymised by `captureBackendEvent` (no board, gym or account id
 - `Board Report Resolved` {targetKind, reason, outcome, resolvedBy: creator | gym_staff | admin | auto, hoursOpen}. The launch metric is the share resolved without `admin`.
 - `Board Removed From Gym` {by} and `Board Deleted` {by}, `by` being creator | gym_staff | moderator | admin.
 
-These are captured as the action runs, inside its transaction; one that rolls back afterwards still counts.
+They are sent once the action's transaction commits, so an action that rolls back counts nothing. The hooks queue them with `afterCommit` on the transaction handle, and every transaction that reaches the hooks is opened with `transactionWithAfterCommit` (`packages/backend/src/db/after-commit.ts`), which runs them after `db.transaction` resolves. A hook given `db` itself sends at once; one given a transaction opened with plain `db.transaction` also sends at once, before the commit, and logs a warning.
 
 ## Where it lives
 
@@ -188,4 +204,5 @@ These are captured as the action runs, inside its transaction; one that rolls ba
 - Tables: `packages/db/src/schema/app/directory-reports.ts`.
 - Resolvers: `packages/backend/src/graphql/resolvers/social/directory-reports/` (`submit.ts`, `read.ts`, `lifecycle.ts`, `notices.ts`, `core.ts`).
 - Sweep and digest: `packages/backend/src/services/directory-report-sweep.ts`; the email in `email/email-service.ts`.
-- Tests: `packages/backend/src/__tests__/directory-reports.test.ts`, `packages/shared/directory-moderation/src/__tests__/`.
+- Commit-time effects: `packages/backend/src/db/after-commit.ts`.
+- Tests: `packages/backend/src/__tests__/directory-reports.test.ts`, `packages/backend/src/__tests__/directory-reports-flag.test.ts`, `packages/shared/directory-moderation/src/__tests__/`.
