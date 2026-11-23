@@ -33,7 +33,8 @@ import {
 // - Gym staff: reports routed to `gym_staff` for a gym they own, administer or
 //   edit (the gym the board was at when reported, or the gym reported). Owners
 //   and admins may close them; editors read only.
-// - Global admins: everything.
+// - Global admins: everything. A report in the admin queue (routed there, or
+//   escalated) is closed by a global admin only; the creator and staff read it.
 //
 // Reporters are anonymous to everyone but global admins, who see who reported
 // each note. A board report also needs the board to be readable by the viewer:
@@ -65,14 +66,30 @@ export function viewerRoleFor(
   return null;
 }
 
-/** Whether this viewer may close this report (as kept; global admins with any outcome). */
+/**
+ * Whether a report is in the admin queue: routed there when it opened (a synced
+ * board nobody runs, "wrong gym or place", which can be a home address) or
+ * escalated since. Only a global admin closes such a report by hand; its creator
+ * and the gym's staff read it, and the creator's own unlink leaves it open.
+ */
+export function isInAdminQueue(report: Pick<DirectoryReportRow, 'routedTo' | 'status'>): boolean {
+  return report.status === 'escalated' || report.routedTo.includes('admin');
+}
+
+/**
+ * Whether this viewer may close this report: global admins any waiting report
+ * with any outcome; the creator and the gym's owner or admins, as kept, one that
+ * is not in the admin queue.
+ */
 export function viewerCanResolve(
-  report: Pick<DirectoryReportRow, 'targetKind' | 'gymId' | 'gymIdAtReport' | 'status'>,
+  report: Pick<DirectoryReportRow, 'targetKind' | 'gymId' | 'gymIdAtReport' | 'status' | 'routedTo'>,
   role: DirectoryReportViewerRole,
   viewer: ReportViewer,
 ): boolean {
   if (!isOpenDirectoryReportStatus(report.status)) return false;
-  if (viewer.isAdmin || role === 'creator') return true;
+  if (viewer.isAdmin) return true;
+  if (isInAdminQueue(report)) return false;
+  if (role === 'creator') return true;
   const gymId = reportGymId(report);
   return role === 'gym_staff' && gymId != null && viewer.staffing.managed.has(gymId);
 }

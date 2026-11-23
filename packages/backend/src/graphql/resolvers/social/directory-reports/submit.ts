@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, gt, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { DirectoryReport } from '@boardsesh/db/schema';
 import {
+  isBoardReportReason,
   normalizeReportNote,
+  REPORT_REFILE_COOLDOWN_DAYS,
   reportNoteProblem,
   routeBoardReport,
   routeGymReport,
@@ -23,6 +25,7 @@ import {
   gymManagerIds,
   isSystemOwner,
   loadGymFacts,
+  lockBoardFacts,
   WAITING_STATUSES,
   type BoardFacts,
   type DirectoryExecutor,
@@ -132,8 +135,8 @@ async function loadVisibleGym(gymUuid: string, viewerId: string): Promise<GymFac
  * latest staff removal, while that removal still holds it off and the gym is
  * live. Null when the board has no such removal.
  */
-async function relistGymFor(board: BoardFacts): Promise<GymFacts | null> {
-  const [latest] = await db
+async function relistGymFor(board: BoardFacts, executor: DirectoryExecutor = db): Promise<GymFacts | null> {
+  const [latest] = await executor
     .select({
       action: dbSchema.boardModerationEvents.action,
       actorRole: dbSchema.boardModerationEvents.actorRole,
@@ -151,9 +154,56 @@ async function relistGymFor(board: BoardFacts): Promise<GymFacts | null> {
   if (!latest || latest.action !== 'removed_from_gym' || latest.actorRole === 'board_owner' || latest.gymId == null) {
     return null;
   }
-  if (!(await isBoardHeldOffGym(board.id, latest.gymId))) return null;
-  const gym = (await loadGymFacts([latest.gymId])).get(latest.gymId);
+  if (!(await isBoardHeldOffGym(board.id, latest.gymId, executor))) return null;
+  const gym = (await loadGymFacts([latest.gymId], executor)).get(latest.gymId);
   return gym && gym.deletedAt === null ? gym : null;
+}
+
+/**
+ * Where a board report goes and the gym it concerns, for the board as it stands:
+ * its gym, or for `relist_request` the gym whose staff removed it. Throws the
+ * error the reporter should read when a relist request does not apply.
+ */
+async function routeBoard(
+  board: BoardFacts,
+  reporterId: string,
+  reason: BoardReportReason,
+  executor: DirectoryExecutor = db,
+): Promise<Pick<FileReportInput, 'gymIdAtReport' | 'routing'>> {
+  const viewerIsCreator = board.ownerId === reporterId;
+  const boardOwnedBySystem = isSystemOwner(board.ownerId);
+  if (reason === 'relist_request') {
+    if (!viewerIsCreator) {
+      throw new GraphQLError('Only the climber who added this board can ask for it to be listed again.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+    if (board.gymId != null) throw badInput('This board is on a gym already.');
+    const gym = await relistGymFor(board, executor);
+    if (!gym) throw badInput("This board wasn't taken off a gym by its staff.");
+    return {
+      gymIdAtReport: gym.id,
+      routing: routeBoardReport({
+        reason,
+        boardOwnedBySystem,
+        viewerIsCreator,
+        hasGym: true,
+        gymListingState: gym.listingState,
+      }),
+    };
+  }
+  const gym = board.gymId != null ? ((await loadGymFacts([board.gymId], executor)).get(board.gymId) ?? null) : null;
+  const liveGym = gym && gym.deletedAt === null ? gym : null;
+  return {
+    gymIdAtReport: liveGym?.id ?? null,
+    routing: routeBoardReport({
+      reason,
+      boardOwnedBySystem,
+      viewerIsCreator,
+      hasGym: liveGym !== null,
+      gymListingState: liveGym?.listingState ?? null,
+    }),
+  };
 }
 
 /** Validate a `reportBoard` call and route it. Throws the error the reporter should read. */
@@ -164,37 +214,9 @@ export async function prepareBoardReport(
   const board = await loadReadableBoard(input.boardUuid, reporterId);
   if (!board) throw boardNotFound();
   const note = checkedReportNote(input.reason, input.note);
-  const viewerIsCreator = board.ownerId === reporterId;
-
-  if (input.reason === 'relist_request') {
-    if (!viewerIsCreator) {
-      throw new GraphQLError('Only the climber who added this board can ask for it to be listed again.', {
-        extensions: { code: 'FORBIDDEN' },
-      });
-    }
-    if (board.gymId != null) throw badInput('This board is on a gym already.');
-    const gym = await relistGymFor(board);
-    if (!gym) throw badInput("This board wasn't taken off a gym by its staff.");
-    return {
-      reporterId,
-      target: { kind: 'board', board },
-      reason: input.reason,
-      gymIdAtReport: gym.id,
-      duplicateOfBoardId: null,
-      duplicateOfGymId: null,
-      note,
-      routing: routeBoardReport({
-        reason: input.reason,
-        boardOwnedBySystem: isSystemOwner(board.ownerId),
-        viewerIsCreator,
-        hasGym: true,
-        gymListingState: gym.listingState,
-      }),
-    };
-  }
 
   let duplicateOfBoardId: number | null = null;
-  if (input.duplicateOfBoardUuid) {
+  if (input.reason !== 'relist_request' && input.duplicateOfBoardUuid) {
     if (input.reason !== 'duplicate') throw badInput('Only a "listed twice" report names another board.');
     if (input.duplicateOfBoardUuid === board.uuid) throw badInput("A board can't be listed twice as itself.");
     const duplicate = await loadReadableBoard(input.duplicateOfBoardUuid, reporterId);
@@ -202,24 +224,91 @@ export async function prepareBoardReport(
     duplicateOfBoardId = duplicate.id;
   }
 
-  const gym = board.gymId != null ? ((await loadGymFacts([board.gymId])).get(board.gymId) ?? null) : null;
-  const liveGym = gym && gym.deletedAt === null ? gym : null;
   return {
     reporterId,
     target: { kind: 'board', board },
     reason: input.reason,
-    gymIdAtReport: liveGym?.id ?? null,
     duplicateOfBoardId,
     duplicateOfGymId: null,
     note,
-    routing: routeBoardReport({
-      reason: input.reason,
-      boardOwnedBySystem: isSystemOwner(board.ownerId),
-      viewerIsCreator,
-      hasGym: liveGym !== null,
-      gymListingState: liveGym?.listingState ?? null,
-    }),
+    ...(await routeBoard(board, reporterId, input.reason)),
   };
+}
+
+/**
+ * The board report as it stands inside the filing transaction. The checks in
+ * `prepareBoardReport` ran before it; the board is read again under a share
+ * lock, so a delete, removal or move that committed since is seen and the next
+ * one waits. A board deleted or merged since is not found, as it would be now;
+ * one whose gym or owner changed is routed again.
+ */
+async function boardReportUnderLock(input: FileReportInput, executor: DirectoryExecutor): Promise<FileReportInput> {
+  if (input.target.kind !== 'board') return input;
+  const prepared = input.target.board;
+  const board = await lockBoardFacts(prepared.id, executor);
+  if (!board || board.deletedAt !== null || board.mergedIntoBoardUuid !== null) throw boardNotFound();
+  if (board.gymId === prepared.gymId && board.ownerId === prepared.ownerId) return input;
+  if (!isBoardReportReason(input.reason)) return input;
+  return {
+    ...input,
+    target: { kind: 'board', board },
+    ...(await routeBoard(board, input.reporterId, input.reason, executor)),
+  };
+}
+
+/**
+ * A reporter whose report on this target and reason closed in the last
+ * `REPORT_REFILE_COOLDOWN_DAYS` days doesn't open it again: they get
+ * `already_reported` for the closed report and nothing is written. Each opening
+ * reaches its people with a notice and a push, so a reporter who disagrees with
+ * an outcome can't push the creator again and again. A report someone else has
+ * opened since is joined as usual (null here).
+ */
+async function refusedRefile(
+  executor: DirectoryExecutor,
+  input: FileReportInput,
+  targetCondition: SQL,
+): Promise<FiledReport | null> {
+  const since = new Date(Date.now() - REPORT_REFILE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+  const [closed] = await executor
+    .select()
+    .from(dbSchema.directoryReports)
+    .where(
+      and(
+        targetCondition,
+        eq(dbSchema.directoryReports.reason, input.reason),
+        notInArray(dbSchema.directoryReports.status, [...WAITING_STATUSES]),
+        gt(dbSchema.directoryReports.resolvedAt, since),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(dbSchema.directoryReportReporters)
+            .where(
+              and(
+                eq(dbSchema.directoryReportReporters.reportId, dbSchema.directoryReports.id),
+                eq(dbSchema.directoryReportReporters.reporterId, input.reporterId),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(desc(dbSchema.directoryReports.resolvedAt))
+    .limit(1);
+  if (!closed) return null;
+  const [waiting] = await executor
+    .select({ id: dbSchema.directoryReports.id })
+    .from(dbSchema.directoryReports)
+    .where(
+      and(
+        targetCondition,
+        eq(dbSchema.directoryReports.reason, input.reason),
+        inArray(dbSchema.directoryReports.status, [...WAITING_STATUSES]),
+      ),
+    )
+    .limit(1);
+  if (waiting) return null;
+  const reporterCount = await countReporters(executor, closed.id);
+  return { status: 'already_reported', report: closed, otherReporterCount: Math.max(0, reporterCount - 1) };
 }
 
 /** Validate a `reportGym` call and route it. Throws the error the reporter should read. */
@@ -291,8 +380,9 @@ async function countReporters(executor: DirectoryExecutor, reportId: number): Pr
  * transaction; the partial unique index decides a race between two first
  * reporters, and the loser joins the winner's report.
  */
-export async function fileReport(input: FileReportInput): Promise<FiledReport> {
+export async function fileReport(prepared: FileReportInput): Promise<FiledReport> {
   const filed = await db.transaction(async (tx) => {
+    const input = await boardReportUnderLock(prepared, tx);
     const targetColumns =
       input.target.kind === 'board'
         ? { boardId: input.target.board.id, gymId: null }
@@ -301,6 +391,9 @@ export async function fileReport(input: FileReportInput): Promise<FiledReport> {
       input.target.kind === 'board'
         ? eq(dbSchema.directoryReports.boardId, input.target.board.id)
         : eq(dbSchema.directoryReports.gymId, input.target.gym.id);
+
+    const refused = await refusedRefile(tx, input, targetCondition);
+    if (refused) return refused;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const now = new Date();

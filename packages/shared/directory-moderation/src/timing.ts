@@ -13,6 +13,13 @@ export const ESCALATE_AFTER_DAYS = 14;
 /** How long a closed report stays in the creator's and staff's reads. */
 export const RECENTLY_RESOLVED_DAYS = 30;
 
+/**
+ * Days after a climber's report closes that they can't open the same report
+ * (same board or gym, same reason) again. Each new report reaches its people
+ * with a notice and, for a board, a push.
+ */
+export const REPORT_REFILE_COOLDOWN_DAYS = 7;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function addDays(date: Date, days: number): Date {

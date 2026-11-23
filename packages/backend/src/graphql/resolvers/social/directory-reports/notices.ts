@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import { and, eq, exists, gt, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { BoardModerationActorRole } from '@boardsesh/db/schema';
@@ -14,7 +14,7 @@ import chinese from '@boardsesh/i18n/locales/zh-CN/notifications.json';
 import { db } from '../../../../db/client';
 import { pubsub } from '../../../../pubsub/index';
 import { canAccessResource } from '../../../../services/privacy';
-import { directoryReportsEnabledNow } from '../../../../services/directory-reports-flag';
+import { directoryReportsEnabledNow, isDirectoryReportsEnabled } from '../../../../services/directory-reports-flag';
 import { enqueueOn, getJobQueue } from '../../../../services/job-queue';
 import { NOTIFICATION_PUSH_QUEUE, NOTIFICATION_PUSH_RETRIES } from '../../../../services/notification-push-options';
 import { logger } from '../../../../utils/logger';
@@ -50,6 +50,8 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //   who could read it when they reported it.
 // - Written in the caller's transaction, so a change that rolls back sends
 //   nothing. The live feed publish happens once the rows are committed.
+// - At most `DIRECTORY_REPORT_PUSHES_PER_DAY` report pushes per person per 24
+//   hours; past that the notice is in-app only.
 //
 // The feed words a row from `directory_notification_context` (see
 // `enrichDirectoryNotices`). Its copy keys live in the `notifications`
@@ -110,15 +112,13 @@ export type PendingDirectoryNotice = {
 
 /**
  * Whether the recipient may hear about the target. A board: its creator, or
- * anyone who can read it, or (once deleted) the people the caller chose, who
- * are its creator and its reporters. A gym: anyone who can see it, or anyone
- * once it is deleted.
+ * anyone who can read it, or (once deleted) a reporter on the notice's report,
+ * who could read it when they reported it. Gym staff and anyone else hear
+ * nothing about a deleted board. A gym: anyone who can see it, or anyone once
+ * it is deleted.
  */
-async function recipientMayHear(
-  executor: DirectoryExecutor,
-  target: DirectoryNoticeTarget,
-  recipientId: string,
-): Promise<boolean> {
+async function recipientMayHear(executor: DirectoryExecutor, notice: PendingDirectoryNotice): Promise<boolean> {
+  const { target, recipientId } = notice;
   if (target.kind === 'board') {
     if (target.ownerId === recipientId) return true;
     const [board] = await executor
@@ -127,7 +127,20 @@ async function recipientMayHear(
       .where(eq(dbSchema.userBoards.id, target.boardId))
       .limit(1);
     if (!board) return false;
-    if (board.deletedAt) return true;
+    if (board.deletedAt) {
+      if (notice.reportId == null) return false;
+      const [reporter] = await executor
+        .select({ id: dbSchema.directoryReportReporters.id })
+        .from(dbSchema.directoryReportReporters)
+        .where(
+          and(
+            eq(dbSchema.directoryReportReporters.reportId, notice.reportId),
+            eq(dbSchema.directoryReportReporters.reporterId, recipientId),
+          ),
+        )
+        .limit(1);
+      return reporter !== undefined;
+    }
     return canAccessResource('board', target.boardUuid, recipientId, executor);
   }
   const [gym] = await executor
@@ -158,7 +171,7 @@ export async function sendDirectoryNotices(
     const key = `${notice.recipientId}:${notice.type}:${targetKey}:${notice.reportId ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (!(await recipientMayHear(executor, notice.target, notice.recipientId))) continue;
+    if (!(await recipientMayHear(executor, notice))) continue;
 
     const uuid = randomUUID();
     await executor.insert(dbSchema.notifications).values({
@@ -185,14 +198,46 @@ export async function sendDirectoryNotices(
 }
 
 /**
+ * At most this many report pushes reach one person in 24 hours. Past it, the
+ * notices still land in the inbox; only the push is left out. Two reports
+ * filed at the same moment can both see one below the cap, so it can be
+ * passed by one or two.
+ */
+export const DIRECTORY_REPORT_PUSHES_PER_DAY = 10;
+
+/** `board_report_opened` notices pushed to this person in the last 24 hours (to any device). */
+async function reportPushesInLastDay(executor: DirectoryExecutor, recipientId: string): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [row] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.notifications)
+    .where(
+      and(
+        eq(dbSchema.notifications.recipientId, recipientId),
+        eq(dbSchema.notifications.type, 'board_report_opened'),
+        gt(dbSchema.notifications.createdAt, since),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(dbSchema.notificationDeliveries)
+            .where(eq(dbSchema.notificationDeliveries.notificationUuid, dbSchema.notifications.uuid)),
+        ),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+/**
  * Queue a push to every live device of the recipient, in the caller's
  * transaction (the delivery worker in spray-detection-notifications.ts sends it
  * and rechecks the report first). Without a running job queue (a script, a
- * test) the notice stays in-app only.
+ * test) the notice stays in-app only, and so does one past the recipient's
+ * daily cap (`DIRECTORY_REPORT_PUSHES_PER_DAY`).
  */
 async function enqueuePush(executor: DirectoryExecutor, notificationUuid: string, recipientId: string): Promise<void> {
   const boss = getJobQueue();
   if (!boss) return;
+  if ((await reportPushesInLastDay(executor, recipientId)) >= DIRECTORY_REPORT_PUSHES_PER_DAY) return;
   const devices = await executor
     .select()
     .from(dbSchema.notificationDevices)
@@ -472,7 +517,9 @@ export async function directoryReportPushTarget(
   isReminder: boolean;
   isRelistRequest: boolean;
 } | null> {
-  if (!directoryReportsEnabledNow()) return null;
+  // Awaited, not read from the cache: a cold or stale cache reads as off, and
+  // an off answer marks the delivery skipped for good.
+  if (!(await isDirectoryReportsEnabled())) return null;
   const [row] = await executor
     .select({
       recipientId: dbSchema.notifications.recipientId,
