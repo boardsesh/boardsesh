@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../lib/i18n/config';
+import { setGradeFormatLocale } from '../lib/grade-format-preference';
 import { syncDocumentLanguage } from '../lib/i18n/document-language';
 import {
   getStoredLocaleOverride,
@@ -31,6 +32,8 @@ export function I18nProvider({ children, initialLocale, persistPreferences = tru
 
   useEffect(() => {
     syncDocumentLanguage(resolvedLanguage);
+    // Spanish and French climbers default to Font grades until they pick one.
+    setGradeFormatLocale(resolvedLanguage);
   }, [resolvedLanguage]);
 
   // Hydrate the persisted override and apply it before the first paint. The

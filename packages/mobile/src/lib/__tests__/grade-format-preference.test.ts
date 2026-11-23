@@ -78,4 +78,35 @@ describe('grade-format-preference', () => {
     asyncStorage.__setRaw('gradeDisplayFormat', JSON.stringify('both'));
     await expect(loadGradeDisplayFormat()).resolves.toBe('both');
   });
+
+  it('defaults Spanish and French climbers to Font grades', async () => {
+    const { loadGradeDisplayFormat, setGradeFormatLocale } = await import('../grade-format-preference');
+    setGradeFormatLocale('fr');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('font');
+  });
+
+  it('follows a language change while no grade format is picked', async () => {
+    const { loadGradeDisplayFormat, setGradeFormatLocale } = await import('../grade-format-preference');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('v-grade');
+    setGradeFormatLocale('es');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('font');
+    setGradeFormatLocale('de');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('v-grade');
+  });
+
+  it('keeps an explicit pick over the language default', async () => {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __setRaw: (key: string, value: string) => void;
+    };
+    asyncStorage.__setRaw('gradeDisplayFormat', JSON.stringify('v-grade'));
+
+    const { loadGradeDisplayFormat, setGradeFormatLocale, setGradeDisplayFormatPreference } =
+      await import('../grade-format-preference');
+    setGradeFormatLocale('fr');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('v-grade');
+
+    await setGradeDisplayFormatPreference('both');
+    setGradeFormatLocale('es');
+    await expect(loadGradeDisplayFormat()).resolves.toBe('both');
+  });
 });
