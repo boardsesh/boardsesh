@@ -72,13 +72,30 @@ A gym is in one of three states: **Run by the gym** (an approved claim or an adm
 
 ## Follow-ups
 
-- Revisit the community vote with report outcome data.
-- Ask the climber before auto-linking a board to a nearby gym, or tell them when it happens.
-- Stop scoped community leaders from changing a claimed gym's visibility, name or editors.
-- Let only the gym owner remove admins.
-- Hold domain claims against a real owner for review.
+Tracked under epic #8043.
+
+- Revisit the community vote with report outcome data (#8044).
+- Ask the climber before auto-linking a board to a nearby gym, or tell them when it happens (#8045).
+- Stop scoped community leaders from changing a claimed gym's visibility, name or editors (#8046).
+- Let only the gym owner remove admins (#8047).
+- Hold domain claims against a real owner for review (#8048).
 - Walls that disappear upstream open a report (#4966).
 - One row per physical MoonBoard at a gym (#7245).
+
+## Decision log
+
+Implementation calls made while building, recorded so they can be revisited.
+
+### PR 1: backend power model
+
+- A staff removal blocks the creator from re-linking the board to that gym. The block lifts when staff put it back, which writes a `relinked` event. A staff attach that lifts no block writes no event.
+- Staff can put a removed board back by its ID while it is unlinked. Without this, "ask them to re-list it" had no working path.
+- A creator who is also staff at the gym and removes their own board is recorded as `board_owner`, and no block is placed.
+- `updateSprayWall` with `gymUuid: null` by someone other than the owner counts as a staff removal.
+- Staff edits are recorded only when a field actually changes. Draft-only spray hold edits are not recorded; the commit or publish that makes them visible is.
+- Event context goes in a `details` jsonb column; `reason` holds only text a person typed.
+- The new `canDelete`, `canRemoveFromGym` and `listingState` fields are optional in the hand-written TypeScript types, so web and mobile fixtures don't change before the client PR.
+
 
 ## Where it lives
 
