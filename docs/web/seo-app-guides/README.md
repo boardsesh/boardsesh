@@ -17,7 +17,8 @@ layout directory; `/spraywalls` remains the setup page.
 - Product claims come from current code and linked primary sources. They do not
   imply a physical board was tested for this article. MoonBoard controller limits
   and one-way imports are explicit. An undocumented competitor feature is not
-  described as absent.
+  described as absent. The Kilter guide attributes dated climber reports about
+  import waits separately from Kilter's published estimate.
 - App Store ratings are an app-wide, storefront-specific snapshot with a count,
   date and direct source. They do not establish board-specific superiority. No
   imported `Review` or `AggregateRating` rich-result markup is emitted. Existing

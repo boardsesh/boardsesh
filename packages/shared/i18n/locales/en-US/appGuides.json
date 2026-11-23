@@ -40,7 +40,7 @@
       "title": "Kilter Board App Guide | Boardsesh",
       "description": "Use Boardsesh on Kilter Board Original or Homewall. Light climbs, share a queue, and import your current Kilter logbook or older Aurora export.",
       "heading": "Boardsesh for Kilter Board",
-      "intro": "Boardsesh is an independent alternative to the official Kilter Board app. Download it for iPhone or Android to find problems, light the board, share a queue with your crew and keep one logbook across boards.",
+      "intro": "Boardsesh is an independent alternative to the official Kilter Board app. Download it for iPhone or Android to find problems, light the board and share a queue. If you need your old JSON export, request it from Aurora first. Once you have the file, you can start importing your history right away.",
       "compatibility": "Boardsesh supports Kilter Board Original and Homewall. Match the wall size, installed hold sets and angle before you pick a climb. LED control requires a compatible Bluetooth controller.",
       "tradeoffs": "Use Boardsesh if you want a shared queue and a logbook across board brands. Use Kilter’s app to manage your Kilter profile, recover old setter credit or keep new activity in your Kilter account. Imports into Boardsesh run one way.",
       "screenshotAlt": "Boardsesh displaying a Kilter climb with the starting, middle and finishing holds marked",
@@ -54,8 +54,12 @@
           "body": "Connect from the app while you’re near the LEDs. Start a shared session so each climber can add their next problem from their own phone."
         },
         "import": {
-          "title": "Bring your Kilter history",
-          "body": "Open Settings → Connected apps. Link the current Kilter account to bring in sends, attempts, ratings and circuits. Boardsesh encrypts the account token it stores. For social-only sign-in or two-factor authentication, use Import on the Kilter (new) card. For the old Aurora app, upload its JSON export on the Kilter (Aurora) card."
+          "title": "Link your current Kilter account",
+          "body": "Open Settings → Connected apps. Link the current Kilter account to bring in sends, attempts, ratings and circuits. Boardsesh encrypts the account token it stores. For social-only sign-in or two-factor authentication, use Import on the Kilter (new) card."
+        },
+        "auroraImport": {
+          "title": "Bring your old Aurora export",
+          "body": "If you need the file, request it from Aurora. Once you have the JSON, open Settings → Connected apps, tap Import on the Kilter (Aurora) card and confirm the preview."
         }
       },
       "competitors": {
@@ -73,15 +77,22 @@
           "official": "Bluetooth lighting, a board map and shareable climbs."
         },
         "history": {
-          "label": "Keep your history",
-          "boardsesh": "Current Kilter account import or old Aurora JSON. New entries stay in Boardsesh.",
-          "official": "Log attempts and sends in Kilter. The Claim Data process accepts an old Aurora export."
+          "label": "Current Kilter account",
+          "boardsesh": "Link your current Kilter account to copy your history. New entries stay in Boardsesh.",
+          "official": "Log attempts and sends in your Kilter account."
+        },
+        "auroraImportTiming": {
+          "label": "Old Aurora import timing",
+          "boardsesh": "Once you have the Aurora JSON file, the import starts as soon as you confirm and shows live progress. There’s no claim approval step.",
+          "official": "Kilter’s Claim Data page says it processes files within 5–7 business days after upload. Climbers in an April 2026 Reddit thread reported waiting weeks."
         }
       },
       "sources": {
         "official": "Kilter’s current app and download links",
         "support": "Kilter support on Verified climbs, Bluetooth and old accounts",
-        "claim": "Kilter’s Claim Data instructions",
+        "claim": "Kilter’s Claim Data instructions and processing estimate",
+        "claimWaitReports": "April 2026 Reddit reports about Kilter claim waits",
+        "boardseshAuroraImport": "Boardsesh app source for Aurora file import and progress",
         "boardseshGallery": "Kilter layouts in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and Verified climb filter",
         "boardseshSessions": "Boardsesh shared session and queue guide",
