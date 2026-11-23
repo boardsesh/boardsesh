@@ -17,7 +17,7 @@
 
 .caption.caption {
   margin: var(--spacing-4) var(--spacing-1) 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: 15px;
   line-height: 1.5;
 }
@@ -27,7 +27,7 @@
 .hint.hint {
   margin-top: var(--spacing-1);
   padding-inline: var(--spacing-1);
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   line-height: 1.5;
 }
 

@@ -127,14 +127,6 @@
   --home-accent-spark-surface: rgba(62, 230, 193, 0.12);
   --home-accent-info-surface: rgba(255, 255, 255, 0.1);
 
-  /* Reading surface for the /help guides (mirrors `themeTokens.read`): aliases of
-     the Graphite page, card, label and secondary label. `--read-line` is
-     decorative only, like `--separator`. */
-  --read-surface: #0e0e0e;
-  --read-surface-raised: #1e1e1e;
-  --read-text: #ededed;
-  --read-text-muted: #b0b0b0;
-  --read-line: #2e2e2e;
 
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.12);

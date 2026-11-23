@@ -17,9 +17,9 @@
   grid-column: span 2;
   height: 460px;
   overflow: hidden;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: 28px;
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
   transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
@@ -41,7 +41,7 @@
 
 .tileTitle.tileTitle {
   margin: 0 0 10px;
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: 28px;
   font-weight: 700;
   line-height: 1.12;
@@ -67,16 +67,16 @@
   outline-offset: -2px;
 }
 
-/* --read-text-muted on --read-surface-raised: 7.1:1. */
+/* --neutral-500 on --semantic-surface: 7.1:1. */
 .tileBody.tileBody {
   max-width: 320px;
   margin: 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: 17px;
   line-height: 1.45;
 }
 
-/* --color-primary on --read-surface-raised: 5.9:1. */
+/* --color-primary on --semantic-surface: 5.9:1. */
 .tileGo {
   display: inline-block;
   margin-top: 14px;
@@ -103,7 +103,7 @@
   width: 230px;
   height: 380px;
   overflow: hidden;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-bottom: 0;
   border-radius: 30px 30px 0 0;
   box-shadow: 0 -10px 40px var(--overlay-light);
@@ -133,14 +133,14 @@
 
 .count {
   padding: 26px;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--spacing-5);
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
 }
 
 .countNumber.countNumber {
   margin: 0;
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: 56px;
   font-weight: 700;
   line-height: 1;
@@ -150,12 +150,12 @@
 
 /* Kilter's number is the one being explained, not the one to trust. 7.1:1. */
 .countNumberMuted.countNumberMuted {
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
 }
 
 .countLabel.countLabel {
   margin: 10px 0 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: 15px;
   line-height: 1.5;
 }
@@ -176,14 +176,14 @@
   flex-direction: column;
   align-items: flex-start;
   padding: 26px;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--spacing-5);
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
 }
 
 .askTitle.askTitle {
   margin: 0 0 var(--spacing-2);
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: var(--font-size-xl);
   font-weight: 700;
   line-height: 1.3;
@@ -191,7 +191,7 @@
 
 .askBody.askBody {
   margin: 0 0 14px;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: var(--font-size-base);
   line-height: 1.5;
 }

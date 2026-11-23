@@ -17,9 +17,9 @@
   align-items: center;
   column-gap: var(--spacing-10);
   padding: 28px var(--spacing-8);
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: 24px;
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
 }
 
 /* The crop: a box the shape of the button, with the whole capture positioned
@@ -54,7 +54,7 @@
   align-items: center;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
@@ -72,7 +72,7 @@
 
 .title.title {
   margin: 0 0 6px;
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: var(--font-size-2xl);
   font-weight: 700;
   line-height: 1.2;
@@ -81,7 +81,7 @@
 
 .body.body {
   margin: 0;
-  color: var(--read-text-muted);
+  color: var(--neutral-500);
   font-size: var(--font-size-base);
   line-height: 1.5;
 }
