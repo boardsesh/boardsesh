@@ -72,11 +72,13 @@ import {
   REVOKE_GYM_WRITE_ACCESS,
   REQUEST_GYM_CLAIM,
   LINK_BOARD_TO_GYM,
+  DETACH_BOARD_FROM_GYM,
   type SearchGymsQueryResponse,
   type GetGymQueryResponse,
   type GetMyGymsQueryResponse,
   type UpdateGymMutationResponse,
   type LinkBoardToGymMutationResponse,
+  type DetachBoardFromGymMutationResponse,
   type GetGymMembersQueryResponse,
   type GrantGymWriteAccessMutationResponse,
   type RevokeGymWriteAccessMutationResponse,
@@ -724,6 +726,33 @@ export function useLinkBoardToGym() {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Gym staff taking a board someone else added off their gym's listing. The
+ * board stays with its creator; the server also holds it off this gym, so the
+ * creator can't link it straight back. The board's own creator removes it with
+ * `useLinkBoardToGym` and a null gym instead. A synced board is refused with
+ * `SYSTEM_BOARD_DELETE_INSTEAD` (see `isSystemBoardDeleteInsteadError`).
+ */
+export function useDetachBoardFromGym() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { boardUuid: string; gymUuid: string }) => {
+      const response = await getHttpClient().request<DetachBoardFromGymMutationResponse>(DETACH_BOARD_FROM_GYM, {
+        input,
+      });
+      return response.detachBoardFromGym;
+    },
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['board', variables.boardUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
+      void queryClient.invalidateQueries({ queryKey: ['gym', variables.gymUuid] });
       void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
     },
   });

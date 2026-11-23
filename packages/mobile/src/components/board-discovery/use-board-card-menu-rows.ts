@@ -35,16 +35,34 @@ export function useBoardCardMenuRows(item: DiscoveryBoardItem, menu: BoardCardMe
   const isPinned = item.isPinned === true;
   const isImport = item.sprayImport != null;
   const isSprayWall = item.boardName === 'spray';
-  const { offlineState, isViewerOwner } = item;
+  const { offlineState, isViewerOwner, canEdit, canDelete, canRemoveFromGym, gymName } = item;
   const capabilities = menu?.capabilities;
   const labels = menu?.labels;
   const onMenuAction = menu?.onAction;
   const rows = useMemo<readonly BoardCardMenuRow[]>(() => {
     if (capabilities === undefined || labels === undefined) return NO_ROWS;
-    const entries = boardCardMenuEntries({ isPinned, offlineState, isViewerOwner, isImport }, capabilities);
+    const entries = boardCardMenuEntries(
+      { isPinned, offlineState, isViewerOwner, isImport, canEdit, canDelete, canRemoveFromGym, gymName },
+      capabilities,
+    );
     if (entries.length === 0) return NO_ROWS;
-    return entries.map((entry) => ({ ...entry, label: boardCardMenuLabel(entry.action, labels, isSprayWall) }));
-  }, [capabilities, labels, isPinned, offlineState, isViewerOwner, isImport, isSprayWall]);
+    return entries.map((entry) => ({
+      ...entry,
+      label: boardCardMenuLabel(entry.action, labels, isSprayWall, gymName),
+    }));
+  }, [
+    capabilities,
+    labels,
+    isPinned,
+    offlineState,
+    isViewerOwner,
+    isImport,
+    isSprayWall,
+    canEdit,
+    canDelete,
+    canRemoveFromGym,
+    gymName,
+  ]);
   const menuActions = useMemo<AppMenuAction[]>(
     () =>
       rows.map((row) => ({

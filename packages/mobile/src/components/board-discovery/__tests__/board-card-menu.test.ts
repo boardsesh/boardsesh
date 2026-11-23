@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOARD_CARD_MENU_SYSTEM_ICONS,
+  boardCardMenuAllows,
   boardCardMenuEntries,
   boardCardMenuLabel,
   type BoardCardMenuAction,
@@ -35,9 +36,39 @@ const NOTHING: BoardCardMenuCapabilities = {
   canManage: false,
 };
 
-const owned: BoardCardMenuItemState = { isPinned: false, offlineState: 'off', isViewerOwner: true, isImport: false };
-const followed: BoardCardMenuItemState = { ...owned, isViewerOwner: false };
-const unknownOwner: BoardCardMenuItemState = { ...owned, isViewerOwner: undefined };
+const owned: BoardCardMenuItemState = {
+  isPinned: false,
+  offlineState: 'off',
+  isViewerOwner: true,
+  isImport: false,
+  canEdit: true,
+  canDelete: true,
+  canRemoveFromGym: false,
+  gymName: null,
+};
+const followed: BoardCardMenuItemState = { ...owned, isViewerOwner: false, canEdit: false, canDelete: false };
+const unknownOwner: BoardCardMenuItemState = {
+  ...owned,
+  isViewerOwner: undefined,
+  canEdit: undefined,
+  canDelete: undefined,
+};
+// Your own board, listed at a gym: you can take it off the listing yourself.
+const ownedAtGym: BoardCardMenuItemState = { ...owned, canRemoveFromGym: true, gymName: 'Crux' };
+// A climber's board you follow, at the gym you run as an admin.
+const staffFollowed: BoardCardMenuItemState = { ...followed, canEdit: true, canRemoveFromGym: true, gymName: 'Crux' };
+// A gym editor: can take a board off the listing, can't edit or delete it.
+const editorFollowed: BoardCardMenuItemState = { ...followed, canRemoveFromGym: true, gymName: 'Crux' };
+// A synced board (public board data) you follow at the gym you run: staff delete it.
+const syncedAtYourGym: BoardCardMenuItemState = { ...followed, canEdit: true, canDelete: true, gymName: 'Crux' };
+// A board read before the server sent these flags: the old owner-only rule.
+const legacyOwned: BoardCardMenuItemState = {
+  ...owned,
+  canEdit: undefined,
+  canDelete: undefined,
+  canRemoveFromGym: undefined,
+};
+const legacyFollowed: BoardCardMenuItemState = { ...legacyOwned, isViewerOwner: false };
 const pinned: BoardCardMenuItemState = { ...owned, isPinned: true };
 const downloaded: BoardCardMenuItemState = { ...owned, offlineState: 'downloaded' };
 const downloading: BoardCardMenuItemState = { ...owned, offlineState: 'downloading' };
@@ -46,6 +77,10 @@ const nearbyBoard: BoardCardMenuItemState = {
   offlineState: undefined,
   isViewerOwner: undefined,
   isImport: false,
+  canEdit: undefined,
+  canDelete: undefined,
+  canRemoveFromGym: undefined,
+  gymName: undefined,
 };
 const importing: BoardCardMenuItemState = { ...owned, offlineState: undefined, isImport: true };
 
@@ -70,6 +105,55 @@ describe('boardCardMenuEntries', () => {
       ['climb_here', 'pin', 'details', 'edit', 'delete'],
     ],
     ['a Near you board', nearbyBoard, NEARBY, ['climb_here', 'details']],
+    [
+      'your own board at a gym',
+      ownedAtGym,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'edit', 'remove_from_gym', 'delete'],
+    ],
+    [
+      "a climber's board at the gym you run",
+      staffFollowed,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'edit', 'remove_from_gym', 'unfollow'],
+    ],
+    [
+      'a board at the gym you edit for',
+      editorFollowed,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'remove_from_gym', 'unfollow'],
+    ],
+    [
+      'a synced board at the gym you run',
+      syncedAtYourGym,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'edit', 'unfollow', 'delete'],
+    ],
+    // No gym to name: the row stays off rather than ask to remove it from "".
+    [
+      'a removable board whose gym privacy keeps back',
+      { ...staffFollowed, gymName: null },
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'edit', 'unfollow'],
+    ],
+    [
+      'your own board read before the flags existed',
+      legacyOwned,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'edit', 'delete'],
+    ],
+    [
+      'a followed board read before the flags existed',
+      legacyFollowed,
+      EVERYTHING,
+      ['climb_here', 'pin', 'download', 'details', 'unfollow'],
+    ],
+    [
+      "a climber's board at your gym during onboarding",
+      staffFollowed,
+      ONBOARDING,
+      ['climb_here', 'download', 'details'],
+    ],
     // An import's tap continues the import, and it has nothing to download or show.
     ['an unfinished spray wall import', importing, EVERYTHING, ['pin', 'edit', 'delete']],
   ])('offers the right rows for %s', (_case, item, capabilities, expected) => {
@@ -86,23 +170,56 @@ describe('boardCardMenuEntries', () => {
     expect(boardCardMenuEntries(item, capabilities)).toEqual([]);
   });
 
-  it('marks unfollow and delete destructive and opens a new group above them', () => {
-    const deleteRow = boardCardMenuEntries(owned, EVERYTHING).find((entry) => entry.action === 'delete');
-    const unfollowRow = boardCardMenuEntries(followed, EVERYTHING).find((entry) => entry.action === 'unfollow');
-    expect(deleteRow).toEqual({ action: 'delete', destructive: true, dividerBefore: true });
-    expect(unfollowRow).toEqual({ action: 'unfollow', destructive: true, dividerBefore: true });
+  it('tints only delete as destructive, and opens one new group above the first managing row', () => {
+    expect(boardCardMenuEntries(owned, EVERYTHING).find((entry) => entry.action === 'delete')).toEqual({
+      action: 'delete',
+      destructive: true,
+      dividerBefore: true,
+    });
+    // Removing from your boards only touches your list: red made it look like
+    // the delete climbers were looking for.
+    expect(boardCardMenuEntries(followed, EVERYTHING).find((entry) => entry.action === 'unfollow')).toEqual({
+      action: 'unfollow',
+      destructive: false,
+      dividerBefore: true,
+    });
+    const staffRows = boardCardMenuEntries(staffFollowed, EVERYTHING).filter((entry) =>
+      ['remove_from_gym', 'unfollow'].includes(entry.action),
+    );
+    expect(staffRows).toEqual([
+      { action: 'remove_from_gym', destructive: false, dividerBefore: true },
+      { action: 'unfollow', destructive: false, dividerBefore: false },
+    ]);
   });
 
-  it('keeps every other row plain, with no divider', () => {
+  it('keeps every row above the managing group plain, with no divider', () => {
     const plain = boardCardMenuEntries(owned, EVERYTHING).filter((entry) => entry.action !== 'delete');
     expect(plain.every((entry) => !entry.destructive && !entry.dividerBefore)).toBe(true);
   });
 
-  // Delete is owner-only on the server: a followed board must never reach it.
-  it('never offers delete or edit on a board the viewer does not own', () => {
+  // The server decides delete: a followed board the viewer can't delete never offers it.
+  it('never offers delete or edit when the server refuses them', () => {
     const actions = actionsOf(followed, EVERYTHING);
     expect(actions).not.toContain('delete');
     expect(actions).not.toContain('edit');
+    expect(actions).not.toContain('remove_from_gym');
+  });
+});
+
+describe('boardCardMenuAllows', () => {
+  it('reads the server flags, and the owner-only rule only for a board read before them', () => {
+    expect(boardCardMenuAllows(staffFollowed, 'edit')).toBe(true);
+    expect(boardCardMenuAllows(staffFollowed, 'delete')).toBe(false);
+    expect(boardCardMenuAllows(syncedAtYourGym, 'delete')).toBe(true);
+    expect(boardCardMenuAllows({ ...owned, canDelete: false }, 'delete')).toBe(false);
+    expect(boardCardMenuAllows(legacyOwned, 'delete')).toBe(true);
+    expect(boardCardMenuAllows(legacyOwned, 'remove_from_gym')).toBe(false);
+  });
+
+  it('offers unfollow only on a board the viewer follows and does not own', () => {
+    expect(boardCardMenuAllows(followed, 'unfollow')).toBe(true);
+    expect(boardCardMenuAllows(owned, 'unfollow')).toBe(false);
+    expect(boardCardMenuAllows(unknownOwner, 'unfollow')).toBe(false);
   });
 });
 
@@ -114,7 +231,9 @@ const LABELS: BoardCardMenuLabels = {
   details: 'Details',
   edit: 'Edit board',
   editWall: 'Edit Spraywall',
-  unfollow: 'Unfollow',
+  removeFromGym: 'Remove from gym',
+  removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
+  unfollow: 'Remove from your boards',
   delete: 'Delete',
 };
 
@@ -126,10 +245,16 @@ describe('boardCardMenuLabel', () => {
     ['download', 'Download for offline'],
     ['details', 'Details'],
     ['edit', 'Edit board'],
-    ['unfollow', 'Unfollow'],
+    ['unfollow', 'Remove from your boards'],
     ['delete', 'Delete'],
   ])('labels %s', (action, expected) => {
     expect(boardCardMenuLabel(action, LABELS, false)).toBe(expected);
+  });
+
+  it('names the gym a board comes off when it knows it', () => {
+    expect(boardCardMenuLabel('remove_from_gym', LABELS, false, 'Crux')).toBe('Remove from Crux');
+    expect(boardCardMenuLabel('remove_from_gym', LABELS, true, 'Crux')).toBe('Remove from Crux');
+    expect(boardCardMenuLabel('remove_from_gym', LABELS, false, null)).toBe('Remove from gym');
   });
 
   // A spray wall is never called a board in copy.
@@ -148,6 +273,7 @@ describe('BOARD_CARD_MENU_SYSTEM_ICONS', () => {
       'download',
       'details',
       'edit',
+      'remove_from_gym',
       'unfollow',
       'delete',
     ];
