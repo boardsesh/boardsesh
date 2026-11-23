@@ -316,6 +316,7 @@
     "retry": "重试",
     "approve": "批准",
     "deny": "拒绝",
+    "claimantHistory": "账号：{{days}} 天 · 日志：{{ticks}} · 管理的场馆：{{gyms}}",
     "method": {
       "domain": "域名",
       "admin": "人工审核"
