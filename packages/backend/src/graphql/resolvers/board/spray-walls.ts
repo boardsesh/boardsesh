@@ -52,10 +52,12 @@ import {
   requireBoardDeleteAccess,
   requireBoardEditAccess,
 } from '../social/boards';
+import type { BoardModerationActorRole } from '@boardsesh/db/schema';
 import {
   boardHeldOffGymError,
   isBoardHeldOffGym,
   recordBoardModerationEvent,
+  recordOwnerGymLinkChange,
   recordStaffBoardEdit,
   resolveBoardEditActorRole,
   viewerGymManagerRole,
@@ -3877,6 +3879,8 @@ async function lockResetFamilyForWrite(tx: SprayWriteTransaction, ownerId: strin
 
 /**
  * What `updateSprayWall` records about a wall it changed, in its transaction:
+ * - the owner moving their wall between gyms is a creator's link change
+ *   (`recordOwnerGymLinkChange`), which a staff re-list reads;
  * - a non-owner taking the wall off its gym is a staff removal, which holds the
  *   creator off self-linking it back (the `detachBoardFromGym` rule);
  * - a non-owner's other changes are a staff edit, naming the fields;
@@ -3889,12 +3893,28 @@ async function recordSprayWallBoardEvents(
     /** The board as it is under the lock, before `updates`. */
     board: typeof dbSchema.userBoards.$inferSelect;
     updates: Partial<typeof dbSchema.userBoards.$inferInsert>;
-    relinkLiftsHold: boolean;
+    /** The gym role a link that lifted a hold used, decided under the lock. Null otherwise. */
+    relinkActorRole: BoardModerationActorRole | null;
   },
 ): Promise<void> {
-  const { actorUserId, board, updates, relinkLiftsHold } = input;
-  const removesFromGym = updates.gymId === null && board.gymId != null;
-  if (removesFromGym && board.ownerId !== actorUserId) {
+  const { actorUserId, board, updates, relinkActorRole } = input;
+  const nextGymId = updates.gymId;
+  const movesGym = nextGymId !== undefined && nextGymId !== board.gymId;
+  if (board.ownerId === actorUserId) {
+    if (movesGym) {
+      await recordOwnerGymLinkChange(tx, {
+        boardId: board.id,
+        actorUserId,
+        fromGymId: board.gymId,
+        toGymId: nextGymId ?? null,
+        mutation: 'updateSprayWall',
+        linkActorRole: relinkActorRole ?? undefined,
+      });
+    }
+    return;
+  }
+  const removesFromGym = movesGym && nextGymId === null;
+  if (removesFromGym) {
     await recordBoardModerationEvent(tx, {
       boardId: board.id,
       gymId: board.gymId,
@@ -3910,14 +3930,12 @@ async function recordSprayWallBoardEvents(
     .map(([field]) => field)
     .sort();
   await recordStaffBoardEdit(tx, { actorUserId, board, mutation: 'updateSprayWall', fields: changedFields });
-  if (relinkLiftsHold && updates.gymId != null) {
-    const actorRole = await viewerGymManagerRole(updates.gymId, actorUserId, tx);
-    if (!actorRole) throw boardHeldOffGymError();
+  if (relinkActorRole && nextGymId != null) {
     await recordBoardModerationEvent(tx, {
       boardId: board.id,
-      gymId: updates.gymId,
+      gymId: nextGymId,
       actorUserId,
-      actorRole,
+      actorRole: relinkActorRole,
       action: 'relinked',
       details: { mutation: 'updateSprayWall' },
     });
@@ -4052,11 +4070,6 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       nextGymId = gym.id;
     }
   }
-  // A link back to a gym whose staff removed the wall got past the gate only on
-  // that gym's own staff path, so it lifts the hold: recorded under the lock.
-  const relinkLiftsHold =
-    nextGymId != null && nextGymId !== board.gymId && (await isBoardHeldOffGym(board.id, nextGymId));
-
   const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
   if (validated.name !== undefined) updates.name = validated.name;
   if (validated.description !== undefined) updates.description = validated.description;
@@ -4152,6 +4165,9 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         }
       }
 
+      // The board row is locked after the wall (account, wall, then board row):
+      // `detachBoardFromGym` and `linkBoardToGym` write under this row lock, so
+      // the gym link and its hold read below cannot change before the write.
       const [boardNow] = await tx
         .select({
           isPublic: dbSchema.userBoards.isPublic,
@@ -4163,7 +4179,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         })
         .from(dbSchema.userBoards)
         .where(eq(dbSchema.userBoards.id, board.id))
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       const [wallNow] = await tx
         .select({
@@ -4197,6 +4214,15 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         throw new GraphQLError('Only the climber who set this wall up can hide or show where it is', {
           extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
         });
+      }
+      // A link to a gym whose staff removed the wall got past the gate only on
+      // that gym's own staff path, so it lifts the hold. Decided here, against
+      // the locked row: a removal that committed after the gate holds the wall
+      // off, and a caller who is not that gym's owner or admin is refused.
+      let relinkActorRole: BoardModerationActorRole | null = null;
+      if (nextGymId != null && nextGymId !== boardNow.gymId && (await isBoardHeldOffGym(board.id, nextGymId, tx))) {
+        relinkActorRole = await viewerGymManagerRole(nextGymId, ctx.userId!, tx);
+        if (!relinkActorRole) throw boardHeldOffGymError();
       }
       let hasPolicy = false;
       let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = stagedVisibility;
@@ -4277,7 +4303,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         actorUserId: ctx.userId!,
         board: { ...board, ownerId: boardNow.ownerId, gymId: boardNow.gymId },
         updates,
-        relinkLiftsHold,
+        relinkActorRole,
       });
 
       if (losingPublic) {

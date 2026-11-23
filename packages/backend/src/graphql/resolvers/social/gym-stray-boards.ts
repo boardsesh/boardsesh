@@ -19,9 +19,11 @@ import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
 import {
   boardHeldOffGymCondition,
-  isBoardHeldOffGym,
+  isHeldBoardRelistable,
   recordBoardModerationEvent,
+  recordOwnerGymLinkChange,
   resolveGymEditActorRole,
+  type ModerationExecutor,
 } from './board-moderation-events';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { getUserCommunityRoles } from './roles';
@@ -541,25 +543,45 @@ type AttachTarget = Pick<StrayBoardCandidate, 'boardId' | 'currentGymId' | 'curr
   relistsHeldBoard?: boolean;
 };
 
+/** What gym staff read when they try to remove a synced board from their gym. */
+export const SYSTEM_BOARD_REMOVE_MESSAGE = 'This board comes from public board data. Delete it instead, or report it.';
+export const SYSTEM_BOARD_REMOVE_CODE = 'SYSTEM_BOARD_DELETE_INSTEAD';
+
 /**
- * A board this gym's staff removed and that nobody has linked since: live,
- * unlinked, and held off this gym. Staff may put it back by uuid even though
- * the stray list no longer offers it, whoever owns it, because it restores the
- * listing it had before their own removal.
+ * A board this gym's staff removed and may put back by uuid, though the stray
+ * list no longer offers it, whoever owns it: it restores the listing the board
+ * had before their own removal. Bounded so it never overrides the creator: the
+ * board is live and unlinked, its location is not hidden, and its creator has
+ * not linked or unlinked it anywhere since the removal (`isHeldBoardRelistable`).
+ * `attachBoardToGym` asks again under the board's row lock (`lockRow`) before
+ * it writes.
  */
-async function findHeldOffBoardToRelist(gym: GymRow, boardUuid: string): Promise<AttachTarget | undefined> {
-  const [board] = await db
-    .select({ id: dbSchema.userBoards.id })
+async function findRelistableHeldBoard(
+  gymId: number,
+  boardCondition: SQL,
+  executor: ModerationExecutor = db,
+  lockRow = false,
+): Promise<{ id: number; ownerId: string } | undefined> {
+  const query = executor
+    .select({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId })
     .from(dbSchema.userBoards)
     .where(
       and(
-        eq(dbSchema.userBoards.uuid, boardUuid),
+        boardCondition,
         isNull(dbSchema.userBoards.deletedAt),
         isNull(dbSchema.userBoards.gymId),
+        eq(dbSchema.userBoards.hideLocation, false),
       ),
     )
     .limit(1);
-  if (!board || !(await isBoardHeldOffGym(board.id, gym.id))) return undefined;
+  const [board] = lockRow ? await query.for('update') : await query;
+  if (!board || !(await isHeldBoardRelistable(board, gymId, executor))) return undefined;
+  return board;
+}
+
+async function findHeldOffBoardToRelist(gym: GymRow, boardUuid: string): Promise<AttachTarget | undefined> {
+  const board = await findRelistableHeldBoard(gym.id, eq(dbSchema.userBoards.uuid, boardUuid));
+  if (!board) return undefined;
   return { boardId: board.id, currentGymId: null, currentGymUuid: null, relistsHeldBoard: true };
 }
 
@@ -598,7 +620,8 @@ export const socialGymStrayBoardMutations = {
     // exact same candidate set as strayBoardsForGym, so gym-edit access can't be
     // used to pull an arbitrary board off another listing. The one addition is
     // a board this gym's staff removed and that is still unlinked: putting it
-    // back restores the listing it had, and lifts the creator's hold.
+    // back restores the listing it had, and lifts the creator's hold. Only while
+    // its location is shown and its creator has not moved it since.
     const candidates = await findStrayBoardCandidates(gym, userId);
     const target: AttachTarget | undefined =
       candidates.find((candidate) => candidate.uuid === validatedInput.boardUuid) ??
@@ -631,6 +654,16 @@ export const socialGymStrayBoardMutations = {
     // DISTINCT FROM` handles the unlinked (NULL) case; the ::bigint cast anchors
     // the bound param's type against the bigint column.
     await db.transaction(async (tx) => {
+      // A re-list is decided again under the board's row lock: a creator's link
+      // or a hidden location committing since the check above wins.
+      if (
+        target.relistsHeldBoard &&
+        !(await findRelistableHeldBoard(gym.id, eq(dbSchema.userBoards.id, target.boardId), tx, true))
+      ) {
+        throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
+          extensions: { code: 'CONFLICT' },
+        });
+      }
       const updated = await tx
         .update(dbSchema.userBoards)
         .set({
@@ -650,11 +683,21 @@ export const socialGymStrayBoardMutations = {
             sql`${dbSchema.userBoards.gymId} IS NOT DISTINCT FROM ${target.currentGymId}::bigint`,
           ),
         )
-        .returning({ id: dbSchema.userBoards.id });
+        .returning({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId });
 
       if (updated.length === 0) {
         throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
           extensions: { code: 'CONFLICT' },
+        });
+      }
+      if (!relistActorRole && updated[0].ownerId === userId) {
+        // Staff attaching their own board: a creator's link change, on the record.
+        await recordOwnerGymLinkChange(tx, {
+          boardId: target.boardId,
+          actorUserId: userId,
+          fromGymId: target.currentGymId,
+          toGymId: gym.id,
+          mutation: 'attachBoardToGym',
         });
       }
       if (relistActorRole) {
@@ -702,6 +745,11 @@ export const socialGymStrayBoardMutations = {
    * decision 1): it clears the link and freezes the board against the location
    * sync; the board itself stays its owner's. The removal is recorded, and a
    * removal by staff holds the creator off self-linking it back to this gym.
+   *
+   * Not for a synced (SYSTEM) board, except by a global admin: removed, it would
+   * be a frozen pin with no gym that the stray list hides and only a global
+   * admin could delete. The gym's owner or admin deletes it instead
+   * (`requireBoardDeleteAccess`).
    */
   detachBoardFromGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
@@ -722,6 +770,9 @@ export const socialGymStrayBoardMutations = {
         extensions: { code: 'BAD_USER_INPUT' },
       });
     }
+    if (board.ownerId === SYSTEM_BOARD_OWNER_ID && !rolesGrantAdmin(await getUserCommunityRoles(userId), null)) {
+      throw new GraphQLError(SYSTEM_BOARD_REMOVE_MESSAGE, { extensions: { code: SYSTEM_BOARD_REMOVE_CODE } });
+    }
 
     // The role used, read while the board still counts toward the gym's board
     // types (a covering community role may rest on this very board). A creator
@@ -730,7 +781,8 @@ export const socialGymStrayBoardMutations = {
     if (!actorRole) throw new Error('Not authorized to edit this gym');
 
     await db.transaction(async (tx) => {
-      // Compare-and-swap so a concurrent re-link isn't silently clobbered.
+      // Compare-and-swap so a concurrent re-link isn't silently clobbered, nor a
+      // board that changed hands (to SYSTEM, say) removed on the old owner's terms.
       const now = new Date();
       const updated = await tx
         .update(dbSchema.userBoards)
@@ -738,7 +790,14 @@ export const socialGymStrayBoardMutations = {
         // a synced board's gym link straight back (the board upsert is skipped
         // only for frozen rows), undoing the removal within the hour.
         .set({ gymId: null, syncFrozenAt: now, updatedAt: now })
-        .where(and(eq(dbSchema.userBoards.id, board.id), eq(dbSchema.userBoards.gymId, gym.id)))
+        .where(
+          and(
+            eq(dbSchema.userBoards.id, board.id),
+            eq(dbSchema.userBoards.gymId, gym.id),
+            eq(dbSchema.userBoards.ownerId, board.ownerId),
+            isNull(dbSchema.userBoards.deletedAt),
+          ),
+        )
         .returning({ id: dbSchema.userBoards.id });
 
       if (updated.length === 0) {

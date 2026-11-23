@@ -22,8 +22,9 @@ Decisions below were made by the founder on 2026-11-23, after an audit of every 
 
 A board belongs to the climber who made it. A gym listing belongs to the gym. Before this change, linking a board to a gym (`user_boards.gym_id`) meant both "shown at this gym" and "this gym's admins may delete it". Climbers' boards are often linked automatically, and nobody told them when a gym was claimed.
 
-- **Remove from gym** takes a board off the gym's page, kiosks and map pin, and leaves it with its creator. Gym owners, admins and editors can do it. It freezes the location sync on that board, so the hourly sync can't put it back. The creator can't link it back to the same gym; they can ask to be re-listed through Report a problem.
+- **Remove from gym** takes a climber's board off the gym's page, kiosks and map pin, and leaves it with its creator. Gym owners, admins and editors can do it. It freezes the location sync on that board, so the hourly sync can't put it back. The creator can't link it back to the same gym; they can ask to be re-listed through Report a problem.
 - **Delete** is for the board's creator, for gym owners and admins on synced (SYSTEM) boards at their gym, and for global admins on any board. Before this change, a gym owner or admin could delete any board at their gym (#8007).
+- **A synced board is deleted, never removed.** Gym staff can't remove a SYSTEM board from their gym; the gym's owner or admin deletes it, and anyone else reports it. Only a global admin can remove one.
 - **Merge into another board** will become the first staff action for duplicates once the board merge tool lands. It is built separately.
 - Delete is a soft delete. Logged ascents are never removed or reassigned by a remove or a delete.
 
@@ -95,6 +96,13 @@ Implementation calls made while building, recorded so they can be revisited.
 - Staff edits are recorded only when a field actually changes. Draft-only spray hold edits are not recorded; the commit or publish that makes them visible is.
 - Event context goes in a `details` jsonb column; `reason` holds only text a person typed.
 - The new `canDelete`, `canRemoveFromGym` and `listingState` fields are optional in the hand-written TypeScript types, so web and mobile fixtures don't change before the client PR.
+- **Synced boards are deleted, never removed.** `detachBoardFromGym` refuses a SYSTEM board with `SYSTEM_BOARD_DELETE_INSTEAD` ("This board comes from public board data. Delete it instead, or report it.") unless the caller is a global admin, and `canRemoveFromGym` is false for it. Removed, a synced board would be a frozen pin with no gym that the stray list hides and only a global admin could delete. Spray walls are never SYSTEM-owned while live, so `updateSprayWall` with `gymUuid: null` needs no such rule. Founder-delegated decision, 2026-11-23.
+- **Bounded staff re-list.** Staff put a removed board back by uuid only while it is unlinked, its location is not hidden (`hide_location = false`), and its creator has not linked or unlinked it anywhere since the removal. To see that, the creator's own gym link changes (`linkBoardToGym`, an owner's `updateSprayWall`, an own-board stray attach, `createGym` with a board) are recorded as `board_owner` rows: `removed_from_gym` for the old gym, `relinked` for the new one. They place no hold. This reused the two existing actions rather than adding enum values, which would have meant a migration.
+- **The hold is keyed to the gym row.** A gym merge, a spray-wall reset (new board id) or deleting and recreating the board or gym drops it. Accepted: each is rare, and a merge already moves the gym's boards on purpose.
+- **Hold events are ordered by `id`.** `created_at` is the transaction's start, so it can order a removal before the relink it followed. Every writer of a removal or relink holds the board's row lock when it inserts, and the creator's link (`linkBoardToGym`, `updateSprayWall`) is decided again under that lock.
+- **`listingState` counts any past admin handover to the current owner as `RUN_BY_GYM`**, even when ownership changed hands in between and came back another way. Accepted: an admin vetted that person for this gym at some point.
+- **An admin can't clear the sync freeze on a board whose latest removal or relink is a staff removal** (`LOCATION_SYNC_BOARD_REMOVED_BY_GYM`). Staff can't remove synced boards any more, so this guards older rows and a global admin's own removals.
+- **No `gym_id` or `actor_user_id` index on `board_moderation_events`.** Hard deletes of users and gyms are rare, so the `SET NULL` scans they cost are accepted. Migration 0333 stays as it is; a stacked PR builds on it.
 
 
 ## Where it lives

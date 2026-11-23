@@ -5100,7 +5100,9 @@ export type Mutation = {
    * the board must currently be listed at it. Gym staff's tool for a climber's
    * board: clears gym_id and freezes the board against the location sync,
    * leaving the board with its owner. A removal by staff stops the owner
-   * self-linking it back to this gym. See UserBoard.canRemoveFromGym.
+   * self-linking it back to this gym. A synced (system-owned) board is refused
+   * with SYSTEM_BOARD_DELETE_INSTEAD unless the caller is a global admin: the
+   * gym's owner or admin deletes it instead. See UserBoard.canRemoveFromGym.
    */
   detachBoardFromGym: Scalars['Boolean']['output'];
   /**
@@ -13485,7 +13487,9 @@ export type UserBoard = {
    * the board is linked to a gym and the viewer is its owner (call linkBoardToGym
    * with gymUuid null) or can edit that gym: its owner, a gym admin or editor, or a
    * community admin/leader covering it (call detachBoardFromGym). Gym staff use this
-   * instead of deleting a climber's board. False when signed out.
+   * instead of deleting a climber's board. A synced (system-owned) board is deleted,
+   * not removed: false for it unless the viewer is a global admin. False when
+   * signed out.
    */
   canRemoveFromGym: Scalars['Boolean']['output'];
   /** Number of comments */

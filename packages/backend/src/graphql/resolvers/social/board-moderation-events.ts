@@ -1,9 +1,10 @@
-import { and, desc, eq, inArray, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { rolesGrantAdmin, rolesGrantAdminOrLeader, type CommunityRoleScope } from '@boardsesh/community-roles';
 import * as dbSchema from '@boardsesh/db/schema';
 import type {
   BoardModerationActorRole,
+  BoardModerationEvent,
   BoardModerationEventDetails,
   NewBoardModerationEvent,
 } from '@boardsesh/db/schema';
@@ -15,8 +16,10 @@ import { getUserCommunityRoles } from './roles';
 // ============================================
 //
 // One append-only row per staff action on a board: removed from a gym, deleted,
-// edited, relinked (docs/product/gym-board-governance.md, decision 1). Every
-// writer records its event in the same transaction as the change.
+// edited, relinked (docs/product/gym-board-governance.md, decision 1). The
+// creator's own gym link changes are recorded too, as `board_owner`, so a staff
+// re-list can tell whether the creator moved the board after it was removed.
+// Every writer records its event in the same transaction as the change.
 //
 // A staff removal also places a HOLD: the board's creator cannot self-link it
 // back to that gym until gym staff relink it. "Staff" means any actor role but
@@ -187,8 +190,48 @@ export async function recordStaffBoardEdit(
 // decides. A removal by anyone but the creator holds the board off that gym; a
 // later relink by staff lifts the hold. `isBoardHeldOffGym` (one board) and
 // `boardHeldOffGymCondition` (SQL, for lists) are the same rule; change both.
+//
+// "Latest" is by `id`, never `created_at`: `created_at` is the transaction's
+// start, so a removal whose transaction began first but committed last would
+// sort before the relink it actually followed. Every writer of these two
+// actions inserts while it holds the board's row lock, so `id` order is the
+// order the changes happened in.
 
 const HOLD_ACTIONS = ['removed_from_gym', 'relinked'] as const;
+
+type HoldEvent = Pick<BoardModerationEvent, 'id' | 'action' | 'actorRole'>;
+
+const holdEventColumns = {
+  id: dbSchema.boardModerationEvents.id,
+  action: dbSchema.boardModerationEvents.action,
+  actorRole: dbSchema.boardModerationEvents.actorRole,
+};
+
+/** A removal that holds the creator off: by anyone but the creator. */
+function isStaffRemoval(event: HoldEvent | undefined): boolean {
+  return event?.action === 'removed_from_gym' && event.actorRole !== 'board_owner';
+}
+
+/** The latest removal or relink of this board, at one gym or (no gym given) at any. */
+async function latestHoldEvent(
+  boardId: number,
+  gymId: number | null,
+  executor: ModerationExecutor,
+): Promise<HoldEvent | undefined> {
+  const [latest] = await executor
+    .select(holdEventColumns)
+    .from(dbSchema.boardModerationEvents)
+    .where(
+      and(
+        eq(dbSchema.boardModerationEvents.boardId, boardId),
+        gymId == null ? undefined : eq(dbSchema.boardModerationEvents.gymId, gymId),
+        inArray(dbSchema.boardModerationEvents.action, [...HOLD_ACTIONS]),
+      ),
+    )
+    .orderBy(desc(dbSchema.boardModerationEvents.id))
+    .limit(1);
+  return latest;
+}
 
 /** Whether this board's creator is held off self-linking it to this gym. */
 export async function isBoardHeldOffGym(
@@ -196,22 +239,95 @@ export async function isBoardHeldOffGym(
   gymId: number,
   executor: ModerationExecutor = db,
 ): Promise<boolean> {
-  const [latest] = await executor
-    .select({
-      action: dbSchema.boardModerationEvents.action,
-      actorRole: dbSchema.boardModerationEvents.actorRole,
-    })
+  return isStaffRemoval(await latestHoldEvent(boardId, gymId, executor));
+}
+
+/**
+ * Whether the board's most recent removal or relink, at any gym, is a staff
+ * removal. `clearLocationSyncFreeze` refuses such a board: the freeze is what
+ * keeps the location sync from writing the removed link back.
+ */
+export async function isLatestHoldEventStaffRemoval(
+  boardId: number,
+  executor: ModerationExecutor = db,
+): Promise<boolean> {
+  return isStaffRemoval(await latestHoldEvent(boardId, null, executor));
+}
+
+/**
+ * Whether this gym's staff may put a board they removed back on their listing
+ * (`attachBoardToGym`'s re-list path): it is held off this gym, and its creator
+ * has not linked or unlinked it anywhere since that removal. Every link change
+ * a creator makes is on the record (`recordOwnerGymLinkChange`), so a later
+ * event by the creator is that move. The caller checks the rest of the rule:
+ * the board is live, unlinked, and its location is not hidden.
+ */
+export async function isHeldBoardRelistable(
+  board: { id: number; ownerId: string },
+  gymId: number,
+  executor: ModerationExecutor = db,
+): Promise<boolean> {
+  const removal = await latestHoldEvent(board.id, gymId, executor);
+  if (!removal || !isStaffRemoval(removal)) return false;
+  const [creatorMovedSince] = await executor
+    .select({ id: dbSchema.boardModerationEvents.id })
     .from(dbSchema.boardModerationEvents)
     .where(
       and(
-        eq(dbSchema.boardModerationEvents.boardId, boardId),
-        eq(dbSchema.boardModerationEvents.gymId, gymId),
+        eq(dbSchema.boardModerationEvents.boardId, board.id),
+        eq(dbSchema.boardModerationEvents.actorUserId, board.ownerId),
         inArray(dbSchema.boardModerationEvents.action, [...HOLD_ACTIONS]),
+        gt(dbSchema.boardModerationEvents.id, removal.id),
       ),
     )
-    .orderBy(desc(dbSchema.boardModerationEvents.createdAt), desc(dbSchema.boardModerationEvents.id))
     .limit(1);
-  return latest?.action === 'removed_from_gym' && latest.actorRole !== 'board_owner';
+  return !creatorMovedSince;
+}
+
+/**
+ * Record a creator moving their own board between gyms (`linkBoardToGym`, an
+ * owner's `updateSprayWall`, an own-board stray attach, `createGym`): off the old
+ * gym as `removed_from_gym` and onto the new one as `relinked`, both by the
+ * creator. Neither places a hold. They are what lets a staff re-list see that
+ * the creator moved the board after staff removed it (`isHeldBoardRelistable`).
+ *
+ * `linkActorRole` is for a link that lifted a hold: the creator is that gym's
+ * owner or admin, and the relink is recorded in that role. Nothing is recorded
+ * when the gym does not change.
+ */
+export async function recordOwnerGymLinkChange(
+  executor: ModerationExecutor,
+  input: {
+    boardId: number;
+    actorUserId: string;
+    fromGymId: number | null;
+    toGymId: number | null;
+    mutation: string;
+    linkActorRole?: BoardModerationActorRole;
+  },
+): Promise<void> {
+  const { boardId, actorUserId, fromGymId, toGymId, mutation } = input;
+  if (fromGymId === toGymId) return;
+  if (fromGymId != null) {
+    await recordBoardModerationEvent(executor, {
+      boardId,
+      gymId: fromGymId,
+      actorUserId,
+      actorRole: 'board_owner',
+      action: 'removed_from_gym',
+      details: { mutation },
+    });
+  }
+  if (toGymId != null) {
+    await recordBoardModerationEvent(executor, {
+      boardId,
+      gymId: toGymId,
+      actorUserId,
+      actorRole: input.linkActorRole ?? 'board_owner',
+      action: 'relinked',
+      details: { mutation },
+    });
+  }
 }
 
 /**
@@ -231,7 +347,7 @@ export function boardHeldOffGymCondition(boardIdColumn: SQLWrapper, gymId: numbe
         inArray(dbSchema.boardModerationEvents.action, [...HOLD_ACTIONS]),
       ),
     )
-    .orderBy(desc(dbSchema.boardModerationEvents.createdAt), desc(dbSchema.boardModerationEvents.id))
+    .orderBy(desc(dbSchema.boardModerationEvents.id))
     .limit(1);
   return sql<boolean>`COALESCE((${latestHoldEvent}), false)`;
 }
