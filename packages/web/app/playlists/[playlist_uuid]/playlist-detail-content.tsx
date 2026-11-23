@@ -133,8 +133,8 @@ type PlaylistDetailContentProps = {
   initialClimbs?: PlaylistClimbsResult | null;
   /**
    * The laptop's QR card, server-rendered by the page so `qrcode.react` never
-   * reaches the client. Absent for a private playlist and when the server
-   * could not read the playlist.
+   * reaches the client. Absent when the server read the playlist as private or
+   * could not read it, and shown only while the playlist on screen is public.
    */
   qrCard?: React.ReactNode;
 };
@@ -586,7 +586,9 @@ export default function PlaylistDetailContent({
                   handoffMobile: t('detail.cta.openInBrowserMobile'),
                   handoffDesktop: t('detail.cta.openInBrowser'),
                 }}
-                qrCard={qrCard}
+                // The live visibility, not the server's: a playlist read as
+                // private after the server rendered the card gets no code.
+                qrCard={playlist.isPublic ? qrCard : null}
                 actions={
                   <>
                     {/* Pin toggle: any signed-in viewer can pin a playlist they can

@@ -175,17 +175,24 @@ describe('PlaylistDetailContent app hand-off', () => {
     expect(mobileInstall?.textContent).toContain(tFromCatalog('playlists', 'detail.cta.getAppHelper'));
   });
 
-  it('shows the QR card the server rendered, and nothing in its place when there is none', () => {
-    const { container, unmount } = renderDetail(mockPlaylist, {
-      qrCard: <div data-testid="phone-qr-card" />,
-    });
+  it('shows the QR card the server rendered on a public playlist', () => {
+    renderDetail(mockPlaylist, { qrCard: <div data-testid="phone-qr-card" /> });
 
     expect(screen.getByTestId('phone-qr-card')).toBeTruthy();
-    unmount();
+  });
 
-    renderDetail({ ...mockPlaylist, isPublic: false });
+  it('shows no QR card on a private playlist, even when one was handed in', () => {
+    renderDetail({ ...mockPlaylist, isPublic: false }, { qrCard: <div data-testid="phone-qr-card" /> });
+
     expect(screen.queryByTestId('phone-qr-card')).toBeNull();
-    expect(container.querySelector('[data-testid="phone-qr-card"]')).toBeNull();
+  });
+
+  it('drops the QR card when the live playlist turns out private after the server rendered it', async () => {
+    mockExecuteGraphQL.mockResolvedValue({ playlist: { ...mockPlaylist, isPublic: false } });
+    renderDetail(mockPlaylist, { qrCard: <div data-testid="phone-qr-card" /> });
+    expect(screen.getByTestId('phone-qr-card')).toBeTruthy();
+
+    await waitFor(() => expect(screen.queryByTestId('phone-qr-card')).toBeNull());
   });
 
   it('links out for a private playlist too — the app resolves access, not this page', () => {

@@ -20,7 +20,7 @@ import type { BoardRouteIdentity } from '@/app/lib/types';
 import { formatQualityAverage, sendCount } from './climb-facts-format';
 import { frontDoorSectionHeadingSx } from './front-door-heading-sx';
 import GradeTile from './grade-tile';
-import { normalizedQuality } from './normalized-quality';
+import { normalizedQuality } from '@/app/lib/climb-quality';
 
 type AngleTableProps = {
   boardDetails: BoardRouteIdentity;

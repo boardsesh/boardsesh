@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import { normalizedQuality } from '@/app/components/climb-front-door/normalized-quality';
+import { normalizedQuality } from '@/app/lib/climb-quality';
 
 /**
  * Search-result copy for the climb and setter front doors.

@@ -297,16 +297,29 @@ for (const width of [390, 1440]) {
     );
     if (width === 1440) {
       await expect(page.locator('main').getByRole('img', { name: /^QR code that opens/ })).toBeVisible();
+      // One store block per screen: the QR card's pair, not the phone's as well.
+      await expect(page.locator('main a[href*="apps.apple.com"]:visible')).toHaveCount(1);
     }
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
 
-    if (width === 390) {
-      await page.goto('/playlists', { waitUntil: 'domcontentloaded' });
-      const playlist = page.locator('main a[href^="/playlists/"]').first();
-      await expect(playlist).toBeVisible();
-      await playlist.click();
-      await expect(page.locator('main h1')).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    // Discover lists public playlists only, so the first one has a QR code to show.
+    await page.goto('/playlists', { waitUntil: 'domcontentloaded' });
+    const playlist = page.locator('main a[href^="/playlists/"]').first();
+    await expect(playlist).toBeVisible();
+    await playlist.click();
+    await expect(page.locator('main h1')).toBeVisible();
+    const playlistQr = page.locator('main').getByRole('img', { name: /^QR code that opens/ });
+    const playlistHandoff = page.locator('main [data-cta="handoff"]');
+    await expect(playlistHandoff).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expectPublicReading(page, testInfo, 'playlist');
+    if (width === 1440) {
+      await expect(playlistQr).toBeVisible();
+      await expect(page.locator('main [data-cta="mobile-install"]')).toBeHidden();
+      await expectReadableFilledHover(page, testInfo, playlistHandoff, 'playlist-handoff-hover');
+    } else {
+      await expect(playlistQr).toBeHidden();
+      await expect(page.locator('main [data-cta="mobile-install"] [data-store]')).toHaveCount(1);
     }
   });
 }
