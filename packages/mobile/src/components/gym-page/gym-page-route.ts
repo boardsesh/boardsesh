@@ -1,0 +1,28 @@
+// Where the gym page lives, for every surface that opens it.
+//
+// The page is registered twice: `app/gyms/[gym].tsx` on the root stack (the gym
+// map, Gyms you run, notifications), and a one-line re-export at
+// `app/boards/gym/[gym].tsx` so the board picker pushes it inside its own modal
+// stack, with a back chevron to the picker. Pushing the root copy from inside
+// the picker would put it in a different navigator from the one the climber is
+// looking at (docs/mobile/mobile-sheets-vs-routes.md, the cross-navigator trap).
+
+/** Which stack the opener is standing in. */
+export type GymPageStack = 'root' | 'boards';
+
+export type GymPageHref = {
+  pathname: '/gyms/[gym]' | '/boards/gym/[gym]';
+  params: { gym: string; returnTo?: string };
+};
+
+/**
+ * The gym page for a gym uuid. `returnTo` is the tab a board picked on the page
+ * returns to; the board picker forwards its own so a pick lands where the picker
+ * was opened from. Absent, the page returns to Climbs.
+ */
+export function gymPageHref(gymUuid: string, stack: GymPageStack = 'root', returnTo?: string): GymPageHref {
+  return {
+    pathname: stack === 'boards' ? '/boards/gym/[gym]' : '/gyms/[gym]',
+    params: returnTo ? { gym: gymUuid, returnTo } : { gym: gymUuid },
+  };
+}
