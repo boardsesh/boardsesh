@@ -1,8 +1,9 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { useCallback, useMemo, useState, type RefObject } from 'react';
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -21,10 +22,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
-import { openValidatedUrl } from '../../lib/open-external-link';
-import { WEB_BASE_URL } from '../../lib/env';
-import { buildGymManageUrl } from '../../lib/gym-manage-url';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
+import { gymPageHref, gymPageStackForSegments } from '../gym-page/gym-page-route';
 
 type ClaimMode = 'domain' | 'admin';
 
@@ -34,6 +33,12 @@ type ClaimGymSheetProps = {
   /** Fired after the sheet fully dismisses. A host that mounts this per-target
    *  (the wall finder) clears its target here so the same gym can re-open later. */
   onClosed?: () => void;
+  /**
+   * "Check your boards" on an approved claim, run once the sheet has gone. The
+   * gym's own page passes one that scrolls to its boards; every other host
+   * leaves it out, and the sheet opens the gym's page in the stack it stands in.
+   */
+  onCheckBoards?: () => void;
 };
 
 /**
@@ -46,15 +51,17 @@ type ClaimGymSheetProps = {
  * INSIDE the sheet — toasts render behind a native modal sheet. The emailed
  * link is opened in the browser and handled by the backend, so the app does
  * nothing further after confirming an `email_sent`/`admin_review` claim. An
- * `approved` claim instead offers a "Manage gym" hand-off to the web setup
- * console's Boards tab, mirroring MyGymsScreen's kiosk hand-off and the web
- * claim dialog.
+ * `approved` claim instead offers "Check your boards", which opens the gym's
+ * page in the app: its boards with the staff actions, and Start here.
  */
-export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
+export function ClaimGymSheet({ sheetRef, gym, onClosed, onCheckBoards }: ClaimGymSheetProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const requestClaim = useRequestGymClaim();
+  const router = useRouter();
+  const segments = useSegments();
+  const { gym: routeGym } = useLocalSearchParams<{ gym?: string }>();
 
   const domain = useMemo(() => extractDomain(gym.website), [gym.website]);
   // The server says whether the website can prove a claim: a real domain the
@@ -69,9 +76,9 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ status: string; email?: string | null } | null>(null);
-  // Separate from `errorMessage` (pre-submission form validation) so resetting
-  // one never accidentally clears feedback that belongs to the other.
-  const [manageError, setManageError] = useState<string | null>(null);
+  // Set by "Check your boards"; read once the sheet has slid away, because a
+  // route pushed under a sheet still on screen lands behind it.
+  const checkBoardsAfterDismiss = useRef(false);
 
   const resetState = useCallback(() => {
     setMode(canUseDomain ? 'domain' : 'admin');
@@ -79,14 +86,23 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     setMessage('');
     setErrorMessage(null);
     setConfirmation(null);
-    setManageError(null);
     requestClaim.reset();
   }, [canUseDomain, requestClaim]);
 
+  const stack = gymPageStackForSegments(segments);
+  // Already on this gym's page (a report sheet's claim nudge there): the page
+  // refreshes into its staff view on its own, so pushing it again would stack a copy.
+  const onThisGymsPage =
+    segments[segments.length - 1] === '[gym]' && (routeGym === gym.uuid || (!!gym.slug && routeGym === gym.slug));
   const handleFullyDismissed = useCallback(() => {
+    const checkBoards = checkBoardsAfterDismiss.current;
+    checkBoardsAfterDismiss.current = false;
     resetState();
     onClosed?.();
-  }, [resetState, onClosed]);
+    if (!checkBoards) return;
+    if (onCheckBoards) onCheckBoards();
+    else if (!onThisGymsPage) router.push(gymPageHref(gym.uuid, stack));
+  }, [resetState, onClosed, onCheckBoards, onThisGymsPage, router, gym.uuid, stack]);
 
   const dismiss = useCallback(() => sheetRef.current?.dismiss(), [sheetRef]);
 
@@ -121,23 +137,10 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     setMode(next);
   }, []);
 
-  // Same web hand-off pattern as MyGymsScreen's manageKiosks: kiosk/setup
-  // management is web-only by design. `gym.uuid` is always present, so a
-  // slugless gym still reaches setup via its uuid.
-  const openManageGym = useCallback(async () => {
-    setManageError(null);
-    const slugOrUuid = gym.slug ?? gym.uuid;
-    const opened = await openValidatedUrl(buildGymManageUrl(slugOrUuid, 'boards'), (url) =>
-      url.startsWith(WEB_BASE_URL),
-    );
-    if (opened) {
-      dismiss();
-    } else {
-      // Inline, not a toast -- toasts render behind this native modal sheet
-      // (see the sheet-level doc comment above).
-      setManageError(t('mobile.gymClaim.approved.manageError'));
-    }
-  }, [gym.slug, gym.uuid, dismiss, t]);
+  const checkBoards = useCallback(() => {
+    checkBoardsAfterDismiss.current = true;
+    dismiss();
+  }, [dismiss]);
 
   // The same two promises the web dialog makes, in the same place: what taking
   // the listing protects, and where an ownership handover goes. Both form modes
@@ -206,16 +209,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
                 : t('mobile.gymClaim.admin.sent')}
           </Text>
           {confirmation.status === 'approved' ? (
-            <Button
-              title={t('mobile.gymClaim.approved.manageCta')}
-              onPress={() => void openManageGym()}
-              variant="filled"
-            />
-          ) : null}
-          {manageError ? (
-            <Text variant="footnote" color={brandColors.error} style={styles.errorText}>
-              {manageError}
-            </Text>
+            <Button title={t('mobile.gymClaim.approved.manageCta')} onPress={checkBoards} variant="filled" />
           ) : null}
         </View>
       ) : mode === 'domain' && canUseDomain && domain ? (
@@ -317,9 +311,6 @@ const createStyles = (textStyles: TypographyScale) =>
     multiline: {
       minHeight: 96,
       maxHeight: 200,
-    },
-    errorText: {
-      marginTop: -spacing[1],
     },
     protections: {
       gap: spacing[2],

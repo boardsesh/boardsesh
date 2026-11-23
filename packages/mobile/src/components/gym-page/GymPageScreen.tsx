@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQueryClient } from '@tanstack/react-query';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { gymClaimCtaClicked, SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Gym } from '@boardsesh/shared-schema';
 import { useStackScreenOptions } from '../../hooks/use-stack-screen-options';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -37,6 +37,7 @@ import { addBoardRoute } from '../board-discovery/add-board-route';
 import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCardView';
 import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
 import { gymBoardsToItems } from './gym-board-items';
+import { GYM_PAGE_CLAIM_DENIED } from './gym-page-route';
 import {
   boardsHeaderIndex,
   buildGymPageItems,
@@ -100,7 +101,11 @@ export default function GymPageScreen() {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const screenOptions = useStackScreenOptions();
-  const { gym: gymParam, returnTo } = useLocalSearchParams<{ gym?: string; returnTo?: string }>();
+  const {
+    gym: gymParam,
+    returnTo,
+    claim: claimParam,
+  } = useLocalSearchParams<{ gym?: string; returnTo?: string; claim?: string }>();
   const param = typeof gymParam === 'string' && gymParam.length > 0 ? gymParam : null;
 
   const gymQuery = useGymPageGym(param);
@@ -166,7 +171,13 @@ export default function GymPageScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       {header}
-      <GymPageContent key={gym.uuid} gym={gym} returnTo={returnTo} onRefreshGym={retry} />
+      <GymPageContent
+        key={gym.uuid}
+        gym={gym}
+        returnTo={returnTo}
+        claimDenied={claimParam === GYM_PAGE_CLAIM_DENIED}
+        onRefreshGym={retry}
+      />
     </View>
   );
 }
@@ -174,10 +185,13 @@ export default function GymPageScreen() {
 function GymPageContent({
   gym,
   returnTo,
+  claimDenied,
   onRefreshGym,
 }: {
   gym: Gym;
   returnTo: string | undefined;
+  /** Opened from a "we couldn't confirm you run it" notice. */
+  claimDenied: boolean;
   onRefreshGym: () => void;
 }) {
   const router = useRouter();
@@ -200,7 +214,10 @@ function GymPageContent({
 
   const pendingClaimQuery = useGymPendingClaim(gym.slug ?? null, shouldLoadPendingClaim(gym, viewer));
   const pendingClaim = pendingClaimQuery.data ?? null;
-  const model = useMemo(() => deriveGymPageViewModel(gym, viewer, pendingClaim), [gym, viewer, pendingClaim]);
+  const model = useMemo(
+    () => deriveGymPageViewModel(gym, viewer, pendingClaim, { claimDenied }),
+    [gym, viewer, pendingClaim, claimDenied],
+  );
 
   const reportAction = useGymReportAction(gym);
 
@@ -307,9 +324,23 @@ function GymPageContent({
     hapticSelection();
     router.push('/auth/login');
   }, [router]);
+  // Claim taps join the www claim funnel under their own placement.
   const claim = useCallback(() => {
     hapticSelection();
+    const event = gymClaimCtaClicked({ placement: 'app-gym-page', viewerState: 'signed-in', gymUuid: gym.uuid });
+    track(event.name, event.properties);
     setClaimOpen(true);
+  }, [gym.uuid]);
+  const claimSignIn = useCallback(() => {
+    const event = gymClaimCtaClicked({ placement: 'app-gym-page', viewerState: 'signed-out', gymUuid: gym.uuid });
+    track(event.name, event.properties);
+    signIn();
+  }, [gym.uuid, signIn]);
+  // "Check your boards" on a claim that came through here: the boards, which
+  // the gym read refreshes into the staff view.
+  const scrollToBoards = useCallback(() => {
+    const index = boardsHeaderIndex(itemsRef.current);
+    if (index >= 0) void listRef.current?.scrollToIndex({ index, animated: true });
   }, []);
   const mapsUrl = useMemo(() => gymMapsUrl(gym, MAPS_PLATFORM), [gym]);
 
@@ -317,12 +348,10 @@ function GymPageContent({
     () => ({
       onOpenAddress: () => void openExternal(mapsUrl, isGymPageExternalUrl),
       onClaim: claim,
-      onSignIn: signIn,
+      onSignIn: claimSignIn,
       onStartRow: (row: GymStartRow) => {
-        if (row === 'boards') {
-          const index = boardsHeaderIndex(itemsRef.current);
-          if (index >= 0) void listRef.current?.scrollToIndex({ index, animated: true });
-        } else if (row === 'hours') editGym();
+        if (row === 'boards') scrollToBoards();
+        else if (row === 'hours') editGym();
         else openManage('kiosks');
       },
       onStaffTool: (tool: GymStaffTool) => {
@@ -346,7 +375,8 @@ function GymPageContent({
       openExternal,
       mapsUrl,
       claim,
-      signIn,
+      claimSignIn,
+      scrollToBoards,
       editGym,
       openManage,
       gym.website,
@@ -415,7 +445,7 @@ function GymPageContent({
         case 'info':
           return <GymInfoSection gym={gym} rows={item.rows} actions={actions} />;
         case 'claim':
-          return <GymClaimCardBlock card={item.card} actions={actions} />;
+          return <GymClaimCardBlock card={item.card} gymName={gym.name} actions={actions} />;
         case 'report':
           return <GymReportSection actions={actions} />;
       }
@@ -442,7 +472,9 @@ function GymPageContent({
         onRefresh={onRefresh}
         testID="gym-page-list"
       />
-      {claimOpen ? <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} onClosed={onClaimClosed} /> : null}
+      {claimOpen ? (
+        <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} onClosed={onClaimClosed} onCheckBoards={scrollToBoards} />
+      ) : null}
       {reportAction?.sheet ?? null}
       {boardMenu.sheets ?? null}
     </>

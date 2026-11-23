@@ -69,6 +69,10 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, testID }: { label: string; testID?: string }) =>
+    createElement('span', { 'data-testid': testID }, label),
+}));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
@@ -236,6 +240,25 @@ describe('GymListPanel', () => {
     expect(getByText('1 Crag St')).toBeTruthy();
     // Board-type badges render from Gym.boardTypes.
     expect(getByText('Kilter · Tension')).toBeTruthy();
+  });
+
+  it('says who runs each gym on its row', () => {
+    const data = makeData().map((row) =>
+      row.kind === 'gym' ? { ...row, gym: { ...row.gym, listingState: 'CLIMBER_LISTED' } as Gym } : row,
+    );
+    const { getByTestId } = render(
+      <GymListPanel
+        data={data}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={null}
+      />,
+    );
+    expect(getByTestId('gym-list-listing-pill').textContent).toBe('runBy.pillClimberListed');
   });
 
   it('invokes onPressGym with the gym when its row is tapped', () => {

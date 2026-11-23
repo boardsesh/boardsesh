@@ -10,19 +10,37 @@
 /** Which stack the opener is standing in. */
 export type GymPageStack = 'root' | 'boards';
 
+/** `?claim=denied`: opened from a "we couldn't confirm you run it" notice. */
+export const GYM_PAGE_CLAIM_DENIED = 'denied';
+
 export type GymPageHref = {
   pathname: '/gyms/[gym]' | '/boards/gym/[gym]';
-  params: { gym: string; returnTo?: string };
+  params: { gym: string; returnTo?: string; claim?: typeof GYM_PAGE_CLAIM_DENIED };
 };
 
 /**
  * The gym page for a gym uuid. `returnTo` is the tab a board picked on the page
  * returns to; the board picker forwards its own so a pick lands where the picker
- * was opened from. Absent, the page returns to Climbs.
+ * was opened from. Absent, the page returns to Climbs. `claimDenied` opens the
+ * page on the claimant's denial card, with a way to try again.
  */
-export function gymPageHref(gymUuid: string, stack: GymPageStack = 'root', returnTo?: string): GymPageHref {
+export function gymPageHref(
+  gymUuid: string,
+  stack: GymPageStack = 'root',
+  returnTo?: string,
+  options: { claimDenied?: boolean } = {},
+): GymPageHref {
   return {
     pathname: stack === 'boards' ? '/boards/gym/[gym]' : '/gyms/[gym]',
-    params: returnTo ? { gym: gymUuid, returnTo } : { gym: gymUuid },
+    params: {
+      gym: gymUuid,
+      ...(returnTo ? { returnTo } : {}),
+      ...(options.claimDenied ? { claim: GYM_PAGE_CLAIM_DENIED } : {}),
+    },
   };
+}
+
+/** Which stack a route's segments stand in: the board picker's modal stack, or the root one. */
+export function gymPageStackForSegments(segments: readonly string[]): GymPageStack {
+  return segments[0] === 'boards' ? 'boards' : 'root';
 }

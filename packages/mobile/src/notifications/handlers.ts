@@ -76,6 +76,13 @@ export function resolveNotificationRoute(
         ? { path: '/gyms/[gym]', params: { gym: gymUuid } }
         : null;
     }
+    case 'gym_claim_denied': {
+      // The same page on the claimant's denial card, as the in-app row opens it.
+      const gymUuid: unknown = payload.gymUuid ?? payload.entityId;
+      return typeof gymUuid === 'string' && UUID_PATTERN.test(gymUuid)
+        ? { path: '/gyms/[gym]', params: { gym: gymUuid, claim: 'denied' } }
+        : null;
+    }
     default:
       return null;
   }

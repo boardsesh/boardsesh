@@ -46,9 +46,13 @@ export type GymRunByLine =
  * - `claim`: Run this gym? and the Claim this gym button.
  * - `signIn`: the same card for a signed-out viewer; the button logs in first.
  * - `pending`: the viewer's claim is with our team.
+ * - `denied`: the viewer came from a "we couldn't confirm" notice; the card says
+ *   so and offers the claim again.
+ * - `deniedClosed`: the same notice on a gym the viewer can no longer claim
+ *   (its staff run it now): the sentence, no button.
  * - `hidden`: staff, a gym already run by its staff, or a private gym.
  */
-export type GymClaimCard = 'claim' | 'signIn' | 'pending' | 'hidden';
+export type GymClaimCard = 'claim' | 'signIn' | 'pending' | 'denied' | 'deniedClosed' | 'hidden';
 
 /** "Start here" for staff who have just started running the gym. At most three rows. */
 export type GymStartRow = 'boards' | 'hours' | 'tv';
@@ -145,11 +149,18 @@ function claimCardFor(
   viewerRole: GymViewerRole,
   staffRole: GymStaffRole | null,
   pendingClaim: MyGymClaim | null,
+  claimDenied: boolean,
 ): GymClaimCard {
   if (staffRole !== null || viewerRole === 'moderator') return 'hidden';
-  if (gym.listingState === 'RUN_BY_GYM' || !gym.isPublic) return 'hidden';
+  if (!gym.isPublic) return 'hidden';
+  // The denial notice is the claimant's own: it means nothing signed out.
+  if (viewerRole !== 'signed_out') {
+    // A claim filed since the denial is the newer fact.
+    if (pendingClaim !== null) return gym.listingState === 'RUN_BY_GYM' ? 'hidden' : 'pending';
+    if (claimDenied) return gym.canClaim && gym.listingState !== 'RUN_BY_GYM' ? 'denied' : 'deniedClosed';
+  }
+  if (gym.listingState === 'RUN_BY_GYM') return 'hidden';
   if (viewerRole === 'signed_out') return 'signIn';
-  if (pendingClaim !== null) return 'pending';
   return gym.canClaim ? 'claim' : 'hidden';
 }
 
@@ -182,16 +193,24 @@ function infoFor(gym: GymPageGym): readonly GymInfoRow[] {
   return rows;
 }
 
+export type GymPageViewOptions = {
+  /** The page was opened from a `gym_claim_denied` notice (`?claim=denied`). */
+  claimDenied?: boolean;
+};
+
 export function deriveGymPageViewModel(
   gym: GymPageGym,
   viewer: GymPageViewer,
   pendingClaim: MyGymClaim | null = null,
+  options: GymPageViewOptions = {},
 ): GymPageViewModel {
   const viewerRole = gymViewerRole(gym, viewer);
   const staffRole = staffRoleOf(viewerRole);
   // A session still being restored reads as signed out; don't flash the log-in card.
   const claimCard: GymClaimCard =
-    viewer.authResolved === false ? 'hidden' : claimCardFor(gym, viewerRole, staffRole, pendingClaim);
+    viewer.authResolved === false
+      ? 'hidden'
+      : claimCardFor(gym, viewerRole, staffRole, pendingClaim, options.claimDenied === true);
   return {
     viewerRole,
     staffRole,
@@ -247,9 +266,15 @@ export type GymPageItemsInput<Board extends { key: string }> = {
   canReport: boolean;
 };
 
+/** A denial the climber just tapped through to reads first, not under every board. */
+function claimCardLeads(card: GymClaimCard): boolean {
+  return card === 'denied' || card === 'deniedClosed';
+}
+
 /**
  * The page's cells in order: the top block, Start here, Boards, staff tools,
- * info, the claim card, and Report a problem last, in its own group.
+ * info, the claim card, and Report a problem last, in its own group. A claim
+ * denial moves the card up under the top block: the climber came for it.
  *
  * Boards already on screen stay on screen through a refetch that fails, so a
  * board list with rows never turns into the error line.
@@ -261,6 +286,9 @@ export function buildGymPageItems<Board extends { key: string }>({
   canReport,
 }: GymPageItemsInput<Board>): GymPageItem<Board>[] {
   const items: GymPageItem<Board>[] = [{ kind: 'top', key: 'top' }];
+  const claimItem: GymPageItem<Board> | null =
+    model.claimCard === 'hidden' ? null : { kind: 'claim', key: 'claim', card: model.claimCard };
+  if (claimItem && claimCardLeads(model.claimCard)) items.push(claimItem);
   if (model.startHere.length > 0) items.push({ kind: 'start', key: 'start', rows: model.startHere });
 
   const showRows = boards.length > 0;
@@ -289,7 +317,7 @@ export function buildGymPageItems<Board extends { key: string }>({
 
   if (model.staffTools.length > 0) items.push({ kind: 'staff', key: 'staff', tools: model.staffTools });
   if (model.info.length > 0) items.push({ kind: 'info', key: 'info', rows: model.info });
-  if (model.claimCard !== 'hidden') items.push({ kind: 'claim', key: 'claim', card: model.claimCard });
+  if (claimItem && !claimCardLeads(model.claimCard)) items.push(claimItem);
   if (canReport) items.push({ kind: 'report', key: 'report' });
   return items;
 }

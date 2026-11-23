@@ -14,6 +14,8 @@ export type DirectoryNoticeRoute =
   | { kind: 'board'; boardUuid: string; relistGym: { uuid: string; name: string | null } | null }
   /** The gym's edit route: staff fix the details a climber flagged. */
   | { kind: 'gym_edit'; gymUuid: string }
+  /** The gym's page on the claimant's denial card, which offers the claim again. */
+  | { kind: 'gym_claim_denied'; gymUuid: string }
   /** Nothing to open: a short explanation instead. */
   | { kind: 'explain'; explanation: 'board_deleted' | 'claim_denied'; name: string | null };
 
@@ -72,7 +74,10 @@ export function directoryNoticeRoute(
     case 'gym_report_opened':
       return gymUuid ? { kind: 'gym_edit', gymUuid } : null;
     case 'gym_claim_denied':
-      return { kind: 'explain', explanation: 'claim_denied', name: gymName };
+      // A notice that lost its gym can only be explained.
+      return gymUuid
+        ? { kind: 'gym_claim_denied', gymUuid }
+        : { kind: 'explain', explanation: 'claim_denied', name: gymName };
     default:
       return null;
   }

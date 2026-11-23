@@ -5,6 +5,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
+import { gymClaimCtaClicked } from '@boardsesh/analytics';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useGymBoards } from '../../src/lib/graphql/hooks/use-gym-boards';
@@ -16,6 +17,7 @@ import { useRetainedQueryData } from '../../src/lib/use-retained-query-data';
 import { useTheme } from '../../src/providers/theme-provider';
 import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { hapticSelection } from '../../src/lib/haptics';
+import { track } from '../../src/lib/analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
@@ -387,6 +389,9 @@ export default function GymDiscovery() {
   // presents once the per-target sheet has mounted.
   const onClaimGym = useCallback((gym: Gym) => {
     hapticSelection();
+    // The row only offers it on `canClaim`, which needs an account.
+    const event = gymClaimCtaClicked({ placement: 'app-gym-list', viewerState: 'signed-in', gymUuid: gym.uuid });
+    track(event.name, event.properties);
     setClaimTargetGym(gym);
   }, []);
 
