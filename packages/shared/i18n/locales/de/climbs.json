@@ -25,17 +25,26 @@
   "sends_other": "{{formattedCount}} Begehungen",
   "metadata": {
     "list": {
-      "title": "{{boardName}}-Boulder bei {{angle}}°",
-      "description": "Stöber durch Boulder auf {{boardName}} bei {{angle}}°",
+      "title": "Boulder am {{boardName}} bei {{angle}}°",
+      "description": "Die Boulder mit den meisten Begehungen am {{boardName}} bei {{angle}}°. Such dir einen aus und beleuchte ihn mit Boardsesh an deinem Board.",
       "fallbackTitle": "Boulder",
       "fallbackDescription": "Boulder durchstöbern",
-      "paginatedTitle": "{{boardName}}-Boulder bei {{angle}}° — Seite {{page}}",
+      "paginatedTitle": "Boulder am {{boardName}} bei {{angle}}° — Seite {{page}}",
       "ogTitle": "Boulder an {{name}} bei {{angle}}°",
       "ogDescription": "Such dir einen aus, beleuchte ihn am Board und trag die Begehung ein."
     },
     "view": {
       "title": "{{climbName}}, {{grade}} auf {{boardName}} bei {{angle}}°",
-      "description": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}. {{ascents}} Begehungen, Bewertung {{quality}} von 5. Beleuchte ihn mit Boardsesh auf deinem Board.",
+      "descriptionLead": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}.",
+      "descriptionLeadNoSetter": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} ist ein Boulder auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} ist ein Boulder auf {{layoutName}} bei {{angle}}°.",
+      "descriptionSendsRated_one": "{{ascents}} Begehung, Bewertung {{quality}} von 5.",
+      "descriptionSendsRated_other": "{{ascents}} Begehungen, Bewertung {{quality}} von 5.",
+      "descriptionSends_one": "{{ascents}} Begehung.",
+      "descriptionSends_other": "{{ascents}} Begehungen.",
+      "descriptionRated": "Bewertung {{quality}} von 5.",
+      "descriptionCta": "Beleuchte ihn mit Boardsesh an deinem Board.",
       "imageAlt": "{{climbName}} - {{grade}} auf dem {{boardName}} Board",
       "fallbackTitle": "Boulder",
       "fallbackDescription": "Boulder-Details und Beta-Videos ansehen"

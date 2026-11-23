@@ -147,3 +147,46 @@ describe('an alias URL on the config-tuple tree', () => {
     );
   });
 });
+
+describe('the config-tuple climb description', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function describedAs() {
+    const [input] = vi.mocked(createBoardContentPageMetadata).mock.calls[0] as unknown as [{ description: string }];
+    return input.description;
+  }
+
+  it('rates the climb only from a normalised quality at the viewed angle', async () => {
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      {
+        angle: 40,
+        ascensionist_count: '12',
+        quality_average: '4.20',
+        difficulty_average: 20,
+        display_difficulty: 20,
+        fa_username: null,
+        fa_at: null,
+        difficulty: 'V5',
+        quality_normalized: true,
+        rating_count: '9',
+      },
+    ]);
+    await generateMetadata(props);
+
+    expect(describedAs()).toBe(
+      'metadata.view.descriptionLead metadata.view.descriptionSendsRated metadata.view.descriptionCta',
+    );
+  });
+
+  it('says nothing about quality when the angle has no stats, whatever the climb row carries', async () => {
+    // The row's own `quality_average` is '4.20' and unvetted: it used to print as
+    // the rating, and as "rated 0 of 5" when it was missing.
+    await generateMetadata(props);
+
+    expect(describedAs()).toBe(
+      'metadata.view.descriptionLead metadata.view.descriptionSends metadata.view.descriptionCta',
+    );
+  });
+});

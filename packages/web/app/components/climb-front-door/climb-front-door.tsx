@@ -14,6 +14,8 @@ import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardS
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
+import { buildClimbSearchDescription } from '@/app/lib/seo/search-description';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
@@ -160,7 +162,7 @@ export default async function ClimbFrontDoor({
   const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, climb.uuid, climbName);
   const isCanonicalAngle = angle === canonicalAngle;
   // Board photo layers (Woods only) and the holds render, split as `ClimbBoardStage`
-  // documents. The JSON-LD below keeps the overlay URL either way: a crawler has no theme.
+  // documents.
   const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, false);
   // The setter's own words about the climb — the one genuinely unique piece of
   // indexable prose on this page. User-written, so it renders verbatim (never
@@ -170,27 +172,19 @@ export default async function ClimbFrontDoor({
   const setterNotes = getDisplayDescription(climb.description);
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
-  // The same catalog string `generateMetadata` fills, but structured data omits
-  // it unless the current angle has an honest five-star quality value. A missing
-  // stats row must not become "Quality: 0/5", and an Aurora-scale 1-3 value must
-  // not be labelled `/5`. Schema.org treats `description` as optional.
-  const jsonLdDescription =
-    climb.difficulty &&
-    climb.setter_username &&
-    currentAngleStats?.quality_normalized === true &&
-    currentAngleStats.quality_average !== null
-      ? t('metadata.view.description', {
-          climbName,
-          grade: climb.difficulty,
-          setter: climb.setter_username,
-          quality: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
-            Number(currentAngleStats.quality_average),
-          ),
-          ascents: new Intl.NumberFormat(locale).format(Number(currentAngleStats.ascensionist_count)),
-          layoutName: boardDetails.layout_name || formatBoardDisplayName(boardDetails.board_name),
-          angle,
-        })
-      : null;
+  // The meta description `generateMetadata` builds, by the same rule: no rating
+  // unless the angle's quality is honest, no sends sentence at zero.
+  const jsonLdDescription = buildClimbSearchDescription({
+    t,
+    locale,
+    climbName,
+    grade: climbGradeForSearch(climb.difficulty || ''),
+    layoutName: climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name),
+    angle,
+    setter: climb.setter_username,
+    ascents: climb.ascensionist_count,
+    angleStats: currentAngleStats,
+  });
 
   return (
     <Box component="main" className={styles.page}>
@@ -209,8 +203,9 @@ export default async function ClimbFrontDoor({
           climb={climb}
           climbName={climbName}
           canonicalClimbUrl={canonicalClimbUrl}
-          overlayUrl={overlayUrl}
-          currentAngleStats={currentAngleStats}
+          boardDetails={boardDetails}
+          canonicalAngle={canonicalAngle}
+          angleStats={angleStats}
           description={jsonLdDescription}
         />
       )}

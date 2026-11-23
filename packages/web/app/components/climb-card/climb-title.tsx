@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 import ClimbIcons from './climb-icons';
+import GradeChip from './grade-chip';
 import MarqueeText from './marquee-text';
 import { themeTokens } from '@/app/theme/theme-config';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
@@ -66,6 +67,9 @@ export type ClimbTitleProps = {
    *  the HTML carries a grade, the single most-searched climb attribute. A reader who picked
    *  Font (or both) sees the V-grade for one frame before it swaps. */
   showGradeWhileLoading?: boolean;
+  /** How `gradePosition='right'` draws the grade: coloured text (default), or a chip
+   *  filled with the grade colour, the way the app's climb rows draw it. */
+  gradeDisplay?: 'text' | 'chip';
 };
 
 // --- Static sx objects hoisted to module scope (no reactive deps) ---
@@ -198,6 +202,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     subtitleOverride,
     isActive = false,
     showGradeWhileLoading = false,
+    gradeDisplay = 'text',
   }) => {
     const { t } = useTranslation('climbs');
     const { formatGrade, getGradeColor, loaded: gradeFormatLoaded } = useGradeFormat();
@@ -298,6 +303,8 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       largeGradeContent = (
         <Skeleton variant="rounded" width={nameFontSize * 2.2} height={nameFontSize} sx={{ flexShrink: 0 }} />
       );
+    } else if (formattedGrade && gradeDisplay === 'chip') {
+      largeGradeContent = <GradeChip label={formattedGrade} />;
     } else if (formattedGrade) {
       largeGradeContent = (
         <Typography variant="body2" component="span" sx={largeGradeSx}>
@@ -332,6 +339,9 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       }
       if (hasGrade) {
         subtitleParts.push(`${formatQuality(climb.quality_average!)}\u2605`);
+      }
+      if (showAngle && climb.angle !== undefined) {
+        subtitleParts.push(`${climb.angle}\u00b0`);
       }
       if (showSetterInfo && climb.setter_username) {
         subtitleParts.push(climb.setter_username);
@@ -453,7 +463,8 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
         prev.favorited === next.favorited &&
         prev.isNoMatch === next.isNoMatch &&
         prev.subtitleOverride === next.subtitleOverride &&
-        prev.isActive === next.isActive
+        prev.isActive === next.isActive &&
+        prev.gradeDisplay === next.gradeDisplay
       );
     }
 
@@ -493,7 +504,8 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       prev.favorited === next.favorited &&
       prev.isNoMatch === next.isNoMatch &&
       prev.subtitleOverride === next.subtitleOverride &&
-      prev.isActive === next.isActive
+      prev.isActive === next.isActive &&
+      prev.gradeDisplay === next.gradeDisplay
     );
   },
 );

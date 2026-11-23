@@ -1,7 +1,10 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbCreativeWorkJsonLd from '@/app/components/climb-front-door/climb-creative-work-json-ld';
+import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import type { BoardImageDetails } from '@/app/lib/board-image-details';
 import ClimbListJsonLd from '@/app/components/climb-front-door/climb-list-json-ld';
 import ProfileJsonLd from '@/app/profile/[user_id]/profile-json-ld';
 import SetterJsonLd from '@/app/setter/[setter_username]/setter-json-ld';
@@ -80,9 +83,7 @@ const CANONICAL = buildCanonicalClimbViewUrl(BOARD_DETAILS, 40, CLIMB_UUID, 'Tes
 function creativeWork(
   overrides: {
     climb?: Climb;
-    currentAngleStats?: ClimbStatsForAngle | undefined;
-    description?: string | null;
-    overlayUrl?: string | null;
+    angleStats?: ClimbStatsForAngle[];
   } = {},
 ) {
   return payload(
@@ -90,91 +91,112 @@ function creativeWork(
       climb={overrides.climb ?? climb()}
       climbName="Test Climb"
       canonicalClimbUrl={CANONICAL}
-      overlayUrl={overrides.overlayUrl === undefined ? '/api/internal/board-render?x=1' : overrides.overlayUrl}
-      currentAngleStats={'currentAngleStats' in overrides ? overrides.currentAngleStats : stats()}
-      description={overrides.description === undefined ? 'a climb' : overrides.description}
+      boardDetails={BOARD_DETAILS as unknown as BoardImageDetails}
+      canonicalAngle={40}
+      angleStats={overrides.angleStats ?? [stats()]}
+      description="a climb"
     />,
   );
 }
 
 describe('CreativeWork JSON-LD', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('names the page canonical, not the hand-off path', () => {
     const data = creativeWork();
 
     expect(data['@type']).toBe('CreativeWork');
     expect(data.url).toBe(absoluteUrl(CANONICAL));
     expect(data.name).toBe('Test Climb');
-    expect(data.author).toEqual({ '@type': 'Person', name: 'setterperson' });
-    expect(data.image).toBe('https://www.boardsesh.com/api/internal/board-render?x=1');
     expect(data.dateCreated).toBe('2025-02-03T04:05:06.000Z');
   });
 
-  it('preserves an absolute Railway board image URL', () => {
-    const data = creativeWork({ overlayUrl: 'https://ws.boardsesh.com/render/board?x=1' });
+  it("links the author to the setter's page, locale-free like the url beside it", () => {
+    expect(creativeWork().author).toEqual({
+      '@type': 'Person',
+      name: 'setterperson',
+      url: 'https://www.boardsesh.com/setter/setterperson',
+    });
+  });
 
-    expect(data.image).toBe('https://ws.boardsesh.com/render/board?x=1');
+  it('encodes a setter name the same way the front door setter link does', () => {
+    const data = creativeWork({ climb: { ...climb(), setter_username: 'Jo & Ann 50%' } as Climb });
+
+    expect(data.author).toEqual({
+      '@type': 'Person',
+      name: 'Jo & Ann 50%',
+      url: 'https://www.boardsesh.com/setter/Jo%20%26%20Ann%2050%25',
+    });
+  });
+
+  it.each([
+    ' Jo & Ann ',
+    'Jo/Ann',
+    'Jo?Ann',
+    `Jo${String.fromCharCode(0x07)}Ann`,
+    `Jo${String.fromCharCode(0xa0)}Ann`,
+    '..',
+  ])('names the setter but links no page for %j, which the setter sitemap rejects too', (setterUsername) => {
+    const author = creativeWork({ climb: { ...climb(), setter_username: setterUsername } as Climb }).author;
+
+    expect(author).toEqual({ '@type': 'Person', name: setterUsername.trim() });
+  });
+
+  it("uses the climb's share card at the canonical angle, not the bare holds render", () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+    const data = creativeWork();
+
+    // The very URL `generateMetadata` puts in `og:image`, from the same two builders.
+    expect(data.image).toBe(
+      buildOgBoardRenderUrl(BOARD_DETAILS, 'p1r12', buildOgClimbCardIdentity(climb(), 'kilter', 40, [stats()])),
+    );
+    const image = new URL(String(data.image));
+    expect(`${image.origin}${image.pathname}`).toBe('https://ws.boardsesh.com/og/climb');
+    expect(image.searchParams.get('angle')).toBe('40');
+    expect(image.searchParams.get('n')).toBe('Test Climb');
+    expect(image.searchParams.get('s')).toBe('setterperson');
+  });
+
+  it('prints the canonical angle grade on the card, not the requested angle grade', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+    // `climb.difficulty` is the grade at the angle being viewed; the card is
+    // keyed on the canonical angle and must print that angle's grade.
+    const data = creativeWork({
+      climb: { ...climb(), difficulty: 'V1' } as Climb,
+      angleStats: [stats({ angle: 40, display_difficulty: 18 })],
+    });
+
+    const cardGrade = new URL(String(data.image)).searchParams.get('g');
+    expect(cardGrade).not.toBe('V1');
+    expect(cardGrade).toBe(buildOgClimbCardIdentity(climb(), 'kilter', 40, [stats({ display_difficulty: 18 })]).grade);
+  });
+
+  it('resolves the same-origin card path when no backend origin is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+    const image = String(creativeWork().image);
+
+    expect(image.startsWith(`${SITE_URL}/`)).toBe(true);
   });
 
   it('omits fields it cannot source instead of inventing them', () => {
     const data = creativeWork({
-      climb: { ...climb(), setter_username: '  ', created_at: 'not-a-date', published_at: null } as Climb,
-      description: null,
-      overlayUrl: null,
+      climb: { ...climb(), setter_username: '  ', created_at: 'not-a-date', published_at: null, frames: '' } as Climb,
     });
 
     expect(data).not.toHaveProperty('author');
     expect(data).not.toHaveProperty('dateCreated');
-    expect(data).not.toHaveProperty('description');
     expect(data).not.toHaveProperty('image');
   });
 
-  it('emits aggregateRating when the average is normalised and the blend has a denominator', () => {
-    const data = creativeWork();
+  it('ships no aggregateRating, even for a normalised, well-rated climb', () => {
+    // Google shows no review snippet for CreativeWork, and the rating count
+    // blends in Aurora's upstream ratings, which its review rules forbid.
+    const data = creativeWork({ angleStats: [stats({ quality_average: '4.80', rating_count: '400' })] });
 
-    expect(data.aggregateRating).toEqual({
-      '@type': 'AggregateRating',
-      ratingValue: 4.2,
-      // The blend's own count — NOT ascensionist_count (42). Ascents are not ratings.
-      ratingCount: 17,
-      bestRating: 5,
-      worstRating: 1,
-    });
-  });
-
-  it('omits aggregateRating when quality_average is still on the raw 1-3 scale', () => {
-    // ~235k JSON-imported Kilter rows are unnormalized; publishing 2.4/5 for a
-    // climb rated 2.4/3 understates every one of them.
-    expect(creativeWork({ currentAngleStats: stats({ quality_normalized: false }) })).not.toHaveProperty(
-      'aggregateRating',
-    );
-  });
-
-  it('omits aggregateRating when there is no quality average at all', () => {
-    expect(creativeWork({ currentAngleStats: stats({ quality_average: null }) })).not.toHaveProperty('aggregateRating');
-  });
-
-  it('omits aggregateRating when the rating count is zero', () => {
-    expect(creativeWork({ currentAngleStats: stats({ rating_count: '0' }) })).not.toHaveProperty('aggregateRating');
-  });
-
-  it('omits aggregateRating when the angle has no stats row', () => {
-    expect(creativeWork({ currentAngleStats: undefined })).not.toHaveProperty('aggregateRating');
-  });
-
-  it('emits the rating count the blend actually has, upstream-only rows included', () => {
-    // The production shape, not a hand-picked split: Aurora supplied a quality,
-    // Boardsesh has no native ratings yet. `rating_count` is then the upstream
-    // ascent population Aurora averaged over — which IS its rating count, and is
-    // still not `ascensionist_count` (the blended total, 4,850 here). The claim
-    // this pins is narrow and true: the count is the quality blend's own
-    // denominator, never the ascent total.
-    const data = creativeWork({
-      climb: { ...climb(), ascensionist_count: 4850 } as Climb,
-      currentAngleStats: stats({ rating_count: '4800', ascensionist_count: '4850', quality_average: '3.10' }),
-    });
-
-    expect((data.aggregateRating as Record<string, unknown>).ratingCount).toBe(4800);
-    expect((data.aggregateRating as Record<string, unknown>).ratingCount).not.toBe(4850);
+    expect(data).not.toHaveProperty('aggregateRating');
+    expect(JSON.stringify(data)).not.toContain('AggregateRating');
   });
 
   it('names the same URL the page canonical does, on every locale', () => {

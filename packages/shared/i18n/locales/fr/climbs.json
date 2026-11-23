@@ -25,17 +25,26 @@
   "sends_other": "{{formattedCount}} croix",
   "metadata": {
     "list": {
-      "title": "Blocs {{boardName}} à {{angle}}°",
-      "description": "Parcourez les blocs sur {{boardName}} à {{angle}}°",
+      "title": "Blocs sur {{boardName}} à {{angle}}°",
+      "description": "Les blocs les plus enchaînés sur {{boardName}} à {{angle}}°. Choisis-en un et allume-le sur ta board avec Boardsesh.",
       "fallbackTitle": "Blocs",
       "fallbackDescription": "Parcourez les blocs",
-      "paginatedTitle": "Blocs {{boardName}} à {{angle}}° — Page {{page}}",
+      "paginatedTitle": "Blocs sur {{boardName}} à {{angle}}° — Page {{page}}",
       "ogTitle": "Blocs sur {{name}} à {{angle}}°",
       "ogDescription": "Choisis-en un, allume-le et fais la croix."
     },
     "view": {
       "title": "{{climbName}}, {{grade}} sur {{boardName}} à {{angle}}°",
-      "description": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}. {{ascents}} croix, note de {{quality}} sur 5. Allume-le sur ta board avec Boardsesh.",
+      "descriptionLead": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}.",
+      "descriptionLeadNoSetter": "{{climbName}} est un {{grade}} sur {{layoutName}} à {{angle}}°.",
+      "descriptionLeadUngraded": "{{climbName}} est un bloc sur {{layoutName}} à {{angle}}°, ouvert par {{setter}}.",
+      "descriptionLeadUngradedNoSetter": "{{climbName}} est un bloc sur {{layoutName}} à {{angle}}°.",
+      "descriptionSendsRated_one": "{{ascents}} croix, note de {{quality}} sur 5.",
+      "descriptionSendsRated_other": "{{ascents}} croix, note de {{quality}} sur 5.",
+      "descriptionSends_one": "{{ascents}} croix.",
+      "descriptionSends_other": "{{ascents}} croix.",
+      "descriptionRated": "Note de {{quality}} sur 5.",
+      "descriptionCta": "Allume-le sur ta board avec Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sur la board {{boardName}}",
       "fallbackTitle": "Bloc",
       "fallbackDescription": "Voir les détails du bloc et les vidéos de beta"

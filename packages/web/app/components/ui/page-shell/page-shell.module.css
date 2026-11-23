@@ -86,6 +86,42 @@
   color: var(--neutral-500);
 }
 
+/* The `media` slot: a picture beside the title (the setter page's avatar).
+   The picture spans the title and the actions on a wide screen; below 760px
+   the actions drop under both, so buttons get the full width. */
+.headerWithMedia {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'media title'
+    'media actions';
+  column-gap: var(--spacing-6);
+  align-items: center;
+}
+
+.headerMedia {
+  grid-area: media;
+}
+
+.headerTitleBlock {
+  grid-area: title;
+  min-width: 0;
+}
+
+.headerMediaActions {
+  grid-area: actions;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .headerWithMedia {
+    grid-template-areas:
+      'media title'
+      'actions actions';
+    column-gap: var(--spacing-4);
+  }
+}
+
 /* ---- sections ---- */
 
 .section {

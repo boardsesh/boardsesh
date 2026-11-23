@@ -6,7 +6,6 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import Image from 'next/image';
-import { PersonOutlined } from '@mui/icons-material';
 import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import BackButton from '@/app/components/back-button';
@@ -19,6 +18,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { getSetterOgSummary, type SetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
+import { buildSetterSearchCopy, joinDescriptionSentences } from '@/app/lib/seo/search-description';
 import {
   frontDoorPagePath,
   isFrontDoorPageOutOfRange,
@@ -28,14 +28,16 @@ import {
   resolveListPageIndexation,
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
-import { formatBoardDisplayName } from '@/app/lib/string-utils';
-import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import { getSetterPageView, setterPageHasCrawlableClimb, type SetterPageView } from './setter-page-view';
 import SetterFollowIsland from './setter-follow-island';
 import SetterJsonLd from './setter-json-ld';
-import { PageShell } from '@/app/components/ui/page-shell';
+import { PageSection, PageShell } from '@/app/components/ui/page-shell';
 import SetterShareButton from './setter-share-button';
+import SetterMostSent from './setter-most-sent';
+import { selectMostSentClimbs } from './setter-most-sent-picks';
+import { resolveSetterBoardLinks } from './setter-board-links';
+import { buildSetterStatsLine, setterBoardLabel } from './setter-stats-line';
 
 type SetterPageProps = {
   params: Promise<{ setter_username: string }>;
@@ -44,34 +46,65 @@ type SetterPageProps = {
 
 const actionsSx = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
 
-const heroSx = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: `${themeTokens.spacing[4]}px`,
-  margin: `${themeTokens.spacing[5]}px 0`,
-};
+// 104px beside a 44px heading, 68px beside the 32px one a phone gets.
+const AVATAR_SIZE = { xs: 68, md: 104 } as const;
 
 const avatarSx = {
   position: 'relative',
-  width: themeTokens.spacing[16],
-  height: themeTokens.spacing[16],
+  width: AVATAR_SIZE,
+  height: AVATAR_SIZE,
   borderRadius: '50%',
   overflow: 'hidden',
   flexShrink: 0,
-  backgroundColor: 'var(--color-primary-fill)',
+  backgroundColor: 'var(--semantic-surface-elevated)',
+  boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
+  display: 'grid',
+  placeItems: 'center',
+  color: 'var(--color-primary)',
+  fontFamily: 'var(--font-display), sans-serif',
+  fontSize: { xs: 30, md: 46 },
+  fontWeight: themeTokens.typography.fontWeight.bold,
+  letterSpacing: '-0.02em',
+};
+
+const heroActionsSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: `${themeTokens.spacing[3]}px`,
+  marginTop: `${themeTokens.spacing[4]}px`,
+};
+
+const boardsAndFollowSx = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
-};
-
-const metaSx = {
-  display: 'flex',
-  gap: `${themeTokens.spacing[3]}px`,
+  gap: `${themeTokens.spacing[2]}px`,
   flexWrap: 'wrap',
-  color: 'var(--neutral-500)',
 };
 
-const chipsSx = { display: 'flex', gap: `${themeTokens.spacing[2]}px`, flexWrap: 'wrap', my: 1 };
+// A board chip with no list to open is a label, so it takes the hairline, not
+// the control border. 44px tall either way, the same height as the filter
+// chips, so the linked and plain chips line up and a link is a full target.
+const boardChipSx = {
+  height: 44,
+  borderRadius: 'var(--border-radius-full)',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  borderColor: 'var(--separator)',
+};
+
+// One that opens the board's list looks like the control it is: violet label
+// on `--control-border`, the boundary every interactive outline uses, and a
+// 2px ring on keyboard focus rather than MUI's faint tint alone.
+const linkedBoardChipSx = {
+  ...boardChipSx,
+  borderColor: 'var(--control-border)',
+  color: 'var(--color-primary)',
+  '&:hover': { borderColor: 'var(--color-primary)' },
+  '&.Mui-focusVisible, &:focus-visible': {
+    outline: '2px solid var(--color-primary)',
+    outlineOffset: 2,
+  },
+};
 
 const navigationLinkSx = {
   display: 'inline-flex',
@@ -99,18 +132,32 @@ const relatedLinksSx = {
   '& > a': navigationLinkSx,
 };
 
+/**
+ * The setter's send total for the line under their name, or 0 when it is not
+ * known. The same `cache()` entry `generateMetadata` read, so the head and the
+ * body cost one request between them; a failure here costs the line its send
+ * count and nothing else.
+ */
+async function readSetterSendTotal(username: string): Promise<number> {
+  try {
+    return (await getSetterOgSummary(username))?.totalAscents ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Below this many sends the card's hero is the climb count, and so is the share title. */
 const SETTER_SENDS_HERO_MIN = 10;
 
 type SetterTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
 
 /**
- * Page one of the setter's climbs, most sent first: the climb the card lights.
- * Null when that read fails, which costs the share copy its climb and nothing else.
+ * One page of the setter's climbs, most sent first. Null when that read fails,
+ * which costs the head its counts and the card its climb, and nothing else.
  */
-async function readSetterFirstPage(username: string): Promise<SetterPageView | null> {
+async function readSetterPageView(username: string, page: number): Promise<SetterPageView | null> {
   try {
-    return await getSetterPageView(username, 1);
+    return await getSetterPageView(username, page);
   } catch {
     return null;
   }
@@ -147,7 +194,7 @@ function buildSetterShareCopy(
     ];
     return {
       ogTitle: t('metadata.setter.ogTitleSends', { name, sends }),
-      ogDescription: sentences.filter(Boolean).join(' '),
+      ogDescription: joinDescriptionSentences(sentences, locale),
     };
   }
 
@@ -164,7 +211,7 @@ function buildSetterShareCopy(
       climbCount === null
         ? t('metadata.setter.title', { name })
         : t('metadata.setter.ogTitleSetCount', { name, count: climbCount, climbs: numberFormat.format(climbCount) }),
-    ogDescription: sentences.filter(Boolean).join(' '),
+    ogDescription: joinDescriptionSentences(sentences, locale),
   };
 }
 
@@ -243,10 +290,23 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     }
 
     const displayName = summary.displayName;
-    // Page one is already read for this request (it is the page body's own
-    // read); a later page skips the climb rather than paying for a second read.
-    const firstPage = page === 1 ? await readSetterFirstPage(username) : null;
+    // This page's view is already read for this request: `setterPageHasCrawlableClimb`
+    // above read it, and the page body reads it again, all one `cache()` entry.
+    // The card's climb comes from page one only; a later page skips it rather
+    // than paying for a second read.
+    const pageView = await readSetterPageView(username, page);
+    const firstPage = page === 1 ? pageView : null;
     const { ogTitle, ogDescription } = buildSetterShareCopy(summary, firstPage, locale, t);
+    // The climb count and boards are the setter's own, the same on every page.
+    const { title, description } = buildSetterSearchCopy({
+      t,
+      locale,
+      name: displayName,
+      climbCount: pageView?.data.climbCount ?? null,
+      boardTypes: pageView?.data.boardTypes ?? [],
+      totalAscents: summary.totalAscents,
+      page,
+    });
     const topClimb = firstPage?.data.climbs[0];
     // A setter with no visible climb returned above, which is the card's own gate.
     const imageUrl = buildOgFamilyImageUrl(
@@ -269,8 +329,8 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     const linklessPage = !hasCrawlableClimb;
 
     return createBoardContentPageMetadata({
-      title: t('metadata.setter.title', { name: displayName }),
-      description: t('metadata.setter.description', { name: displayName }),
+      title,
+      description,
       path,
       locale,
       robots: robots ?? (linklessPage ? NOINDEX_FOLLOW : undefined),
@@ -322,7 +382,9 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
 
   // The SAME resolution `generateMetadata` read, memoised for this request, so
   // the robots directive and the rendered links cannot describe different pages.
-  const view = await getSetterPageView(username, page);
+  // The send total is the head's `getSetterOgSummary` call too, with the same
+  // argument, so `cache()` answers it without a second request.
+  const [view, totalAscents] = await Promise.all([getSetterPageView(username, page), readSetterSendTotal(username)]);
   // A real 404, not a 200 shell. `getSetterPageData` returns null only when the
   // setter has no publicly visible climb at all — the same rule the metadata
   // above noindexes on, so the two surfaces cannot disagree.
@@ -337,35 +399,82 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   if (page > 1 && setterData.climbs.length === 0) return notFound();
 
   const links = view.links;
-  const primaryGroup = links.primaryGroup;
-  const firstLinkedClimb = setterData.climbs.find((climb) => !links.unlinkedClimbUuids.has(climb.uuid));
-  // `fallbackBoardDetails` IS the primary group's board when there is a primary
-  // group, so this reuses the resolution the link builder already did rather
-  // than repeating it — and `getBoardImageDetailsForBoard` throws, which would take
-  // the whole page down for a related link.
-  const boardListPath =
-    primaryGroup && firstLinkedClimb && links.fallbackBoardDetails
-      ? buildCanonicalClimbListUrl(links.fallbackBoardDetails, firstLinkedClimb.angle)
-      : null;
+  const boardLinks = resolveSetterBoardLinks(setterData.boardTypes, setterData.climbs, links, (boardType) =>
+    setterBoardLabel(boardType, t),
+  );
+  // The related link at the foot names the board most of this page's linked
+  // climbs sit on, and goes where that board's chip goes.
+  const primaryBoardType = links.primaryGroup?.boardType;
+  const primaryBoardLink = boardLinks.find((boardLink) => boardLink.boardType === primaryBoardType && boardLink.href);
+  const mostSentPicks = selectMostSentClimbs({
+    climbs: setterData.climbs,
+    links,
+    page,
+    climbCount: setterData.climbCount,
+  });
 
   const basePath = `/setter/${encodeURIComponent(username)}`;
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'common', 'climbs', 'settings']}>
+      {/* `wide`: both widths share the 1200px frame, but `prose` caps each
+          direct child at 720px (`.prose > *`), and the art cards and the
+          two-column rows need the full frame. */}
       <PageShell
+        width="wide"
         title={t('setter.seoHeading', { name: setterData.displayName })}
-        lead={t('setter.seoSummary', {
-          count: setterData.climbCount,
-          formattedCount: new Intl.NumberFormat(locale).format(setterData.climbCount),
-          name: setterData.displayName,
-          boards: new Intl.ListFormat(locale, { type: 'conjunction' }).format(
-            setterData.boardTypes.map(boardTypeLabel),
-          ),
+        lead={buildSetterStatsLine({
+          t,
+          locale,
+          climbCount: setterData.climbCount,
+          boardTypes: setterData.boardTypes,
+          totalAscents,
         })}
         breadcrumb={
           <Box sx={actionsSx}>
             <BackButton fallbackUrl="/" />
             <SetterShareButton username={username} displayName={setterData.displayName} />
+          </Box>
+        }
+        media={
+          // Decorative: the name is the heading right beside it.
+          <Box sx={avatarSx} aria-hidden="true">
+            {setterData.avatarUrl ? (
+              <Image src={setterData.avatarUrl} alt="" fill sizes="104px" style={{ objectFit: 'cover' }} />
+            ) : (
+              // Whole characters, so a name that opens with an emoji keeps it.
+              Array.from(setterData.displayName)[0]?.toUpperCase()
+            )}
+          </Box>
+        }
+        headerActions={
+          <Box sx={heroActionsSx}>
+            <Box sx={boardsAndFollowSx}>
+              {boardLinks.map((boardLink) =>
+                boardLink.href ? (
+                  <Chip
+                    key={boardLink.boardType}
+                    clickable
+                    component={LocaleLink}
+                    href={boardLink.href}
+                    prefetch={false}
+                    aria-label={t('setter.browseBoard', { boardName: boardLink.label })}
+                    label={boardLink.label}
+                    variant="outlined"
+                    sx={linkedBoardChipSx}
+                  />
+                ) : (
+                  <Chip key={boardLink.boardType} label={boardLink.label} variant="outlined" sx={boardChipSx} />
+                ),
+              )}
+              <SetterFollowIsland username={username} initialFollowerCount={setterData.followerCount} />
+            </Box>
+            <FrontDoorInstall
+              placement="setter"
+              helperText={t('setter.installHelper', { name: setterData.displayName })}
+              labels={await getStoreButtonLabels()}
+              appearance="brand"
+            />
           </Box>
         }
       >
@@ -378,56 +487,34 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           page={page}
         />
 
-        <Box sx={heroSx}>
-          <Box sx={avatarSx}>
-            {setterData.avatarUrl ? (
-              <Image src={setterData.avatarUrl} alt={setterData.displayName} fill style={{ objectFit: 'cover' }} />
-            ) : (
-              <PersonOutlined />
-            )}
-          </Box>
-          <Box>
-            <Box sx={metaSx}>
-              <span>
-                {setterData.climbCount} {t('setter.climb', { count: setterData.climbCount })}
-              </span>
-            </Box>
-            <Box sx={chipsSx}>
-              {setterData.boardTypes.map((boardType) => (
-                <Chip key={boardType} label={formatBoardDisplayName(boardType)} size="small" variant="outlined" />
-              ))}
-            </Box>
-            <SetterFollowIsland username={username} initialFollowerCount={setterData.followerCount} />
-          </Box>
-        </Box>
+        <SetterMostSent picks={mostSentPicks} />
 
-        <FrontDoorInstall
-          placement="setter"
-          helperText={t('setter.installHelper', { name: setterData.displayName })}
-          labels={await getStoreButtonLabels()}
-          appearance="brand"
-        />
-
-        <Typography variant="h5" component="h2" sx={{ mt: 4 }}>
-          {t('setter.climbsHeading', { name: setterData.displayName })}
-        </Typography>
-
-        {links.fallbackBoardDetails ? (
-          <StaticClimbList
-            climbs={setterData.climbs}
-            thumbnailCropsByClimb={buildClimbThumbnailCrops(
-              setterData.climbs,
-              (climb) => links.boardDetailsByClimb[climb.uuid] ?? links.fallbackBoardDetails,
-            )}
-            boardDetails={links.fallbackBoardDetails}
-            boardDetailsByClimb={links.boardDetailsByClimb}
-            unlinkedClimbUuids={links.unlinkedClimbUuids}
-            virtualize={false}
-            emptyState={<Typography component="p">{t('setter.empty')}</Typography>}
-          />
-        ) : (
-          <Typography component="p">{t('setter.empty')}</Typography>
-        )}
+        <PageSection title={t('setter.climbsHeading', { name: setterData.displayName })}>
+          {links.fallbackBoardDetails ? (
+            <StaticClimbList
+              climbs={setterData.climbs}
+              thumbnailCropsByClimb={buildClimbThumbnailCrops(
+                setterData.climbs,
+                (climb) => links.boardDetailsByClimb[climb.uuid] ?? links.fallbackBoardDetails,
+              )}
+              boardDetails={links.fallbackBoardDetails}
+              boardDetailsByClimb={links.boardDetailsByClimb}
+              unlinkedClimbUuids={links.unlinkedClimbUuids}
+              virtualize={false}
+              rowVariant="card"
+              columns={2}
+              showSetter={false}
+              showAngle
+              // The first most-sent card is the page's largest image and sits
+              // in the first screen at 390px and 1440px; it takes the high
+              // priority the first row thumbnail would otherwise ask for.
+              prioritizeFirstRow={mostSentPicks.length === 0}
+              emptyState={<Typography component="p">{t('setter.empty')}</Typography>}
+            />
+          ) : (
+            <Typography component="p">{t('setter.empty')}</Typography>
+          )}
+        </PageSection>
 
         <Box component="nav" aria-label={t('setter.pagination.aria')} sx={paginationSx}>
           {page > 1 ? (
@@ -454,11 +541,11 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
         </Box>
 
         <Box sx={relatedLinksSx}>
-          {boardListPath && primaryGroup && (
-            <LocaleLink href={boardListPath}>
-              {t('setter.browseBoard', { boardName: formatBoardDisplayName(primaryGroup.boardType) })}
+          {primaryBoardLink?.href ? (
+            <LocaleLink href={primaryBoardLink.href}>
+              {t('setter.browseBoard', { boardName: primaryBoardLink.label })}
             </LocaleLink>
-          )}
+          ) : null}
           <LocaleLink href="/playlists">{t('setter.browsePlaylists')}</LocaleLink>
         </Box>
       </PageShell>

@@ -51,6 +51,7 @@ export type SetterPageData = {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  /** The boards the visible climbs are on, the board with the most of them first. */
   boardTypes: string[];
   /** Publicly visible climbs only — the same count the page 404s on when it is 0. */
   climbCount: number;
@@ -75,6 +76,22 @@ export function buildSetterProfileQuery(db: SerialPlanDb, username: string) {
     .from(boardClimbs)
     .where(visibleSetterClimbsWhere(username))
     .groupBy(boardClimbs.boardType);
+}
+
+/**
+ * The setter's boards, most visible climbs first, so "41 Kilter and Tension
+ * climbs" leads with the board they mostly set on. Ties read alphabetically.
+ */
+export function orderSetterBoardTypes(
+  rows: readonly { boardType: string | null; climbCount: number | string }[],
+): string[] {
+  return rows
+    .filter((row): row is { boardType: string; climbCount: number | string } => Boolean(row.boardType))
+    .toSorted(
+      (left, right) =>
+        Number(right.climbCount) - Number(left.climbCount) || left.boardType.localeCompare(right.boardType),
+    )
+    .map((row) => row.boardType);
 }
 
 /** The stats rows this climb could be linked at, aliased away from the outer join. */
@@ -289,10 +306,7 @@ export async function getSetterPageData(username: string, page: number): Promise
     displayName: identity.displayName,
     avatarUrl: identity.avatarUrl,
     followerCount: identity.followerCount,
-    boardTypes: boardTypeRows
-      .map((row) => row.boardType)
-      .filter((boardType): boardType is string => Boolean(boardType))
-      .sort(),
+    boardTypes: orderSetterBoardTypes(boardTypeRows),
     climbCount,
     climbs: (hasMore ? climbRows.slice(0, SETTER_PAGE_SIZE) : climbRows).map(toClimbRow),
     hasMore,
