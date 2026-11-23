@@ -85,7 +85,16 @@
     "gymReportKeptByStaff": "Le personnel de {{gym}} a vérifié la fiche et l'a laissée telle quelle",
     "gymReportKeptByTeam": "Notre équipe a vérifié la fiche de {{gym}} et l'a laissée telle quelle",
     "gymClaimedWithYourBoard": "La salle {{gym}} est maintenant gérée par son personnel, et ta board {{board}} y est listée",
-    "gymClaimDenied": "Nous n'avons pas pu confirmer que tu gères {{gym}}. Réponds à notre e-mail si nous nous sommes trompés."
+    "gymClaimDenied": "Nous n'avons pas pu confirmer que tu gères {{gym}}. Réponds à notre e-mail si nous nous sommes trompés.",
+    "boardReportOpenedGeneric": "Un grimpeur a signalé une board dont tu t'occupes",
+    "boardReportResolvedGeneric": "Une board que tu as signalée a été réglée",
+    "boardRemovedFromGymGeneric": "Une de tes boards a été retirée de la fiche d'une salle. Elle reste dans tes boards.",
+    "boardDeletedByStaffGeneric": "Une de tes boards a été supprimée. Tes croix enregistrées sont conservées.",
+    "boardEditedByStaffGeneric": "Une de tes boards a été mise à jour",
+    "gymReportOpenedGeneric": "Un grimpeur a signalé une salle que tu gères",
+    "gymReportResolvedGeneric": "Une fiche de salle que tu as signalée a été réglée",
+    "gymClaimedWithYourBoardGeneric": "Une salle où figure une de tes boards est maintenant gérée par son personnel",
+    "gymClaimDeniedGeneric": "Nous n'avons pas pu confirmer ta demande pour la salle. Réponds à notre e-mail si nous nous sommes trompés."
   },
   "followRequest": {
     "approve": "Approuver",

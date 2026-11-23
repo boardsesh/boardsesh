@@ -85,7 +85,16 @@
     "gymReportKeptByStaff": "El personal de {{gym}} revisó el listado y lo dejó como está",
     "gymReportKeptByTeam": "Nuestro equipo revisó {{gym}} y lo dejó como está",
     "gymClaimedWithYourBoard": "El personal de {{gym}} ya gestiona el rocódromo, y tu plafón {{board}} figura allí",
-    "gymClaimDenied": "No pudimos confirmar que gestionas {{gym}}. Responde a nuestro correo si nos equivocamos."
+    "gymClaimDenied": "No pudimos confirmar que gestionas {{gym}}. Responde a nuestro correo si nos equivocamos.",
+    "boardReportOpenedGeneric": "Un escalador señaló un plafón que gestionas",
+    "boardReportResolvedGeneric": "Se resolvió un plafón que reportaste",
+    "boardRemovedFromGymGeneric": "Uno de tus plafones salió del listado de un rocódromo. Sigue en tus plafones.",
+    "boardDeletedByStaffGeneric": "Se eliminó uno de tus plafones. Tus encadenes registrados se conservan.",
+    "boardEditedByStaffGeneric": "Se actualizó uno de tus plafones",
+    "gymReportOpenedGeneric": "Un escalador señaló un rocódromo que gestionas",
+    "gymReportResolvedGeneric": "Se resolvió un rocódromo que reportaste",
+    "gymClaimedWithYourBoardGeneric": "Un rocódromo con uno de tus plafones ya lo gestiona su personal",
+    "gymClaimDeniedGeneric": "No pudimos confirmar tu solicitud del rocódromo. Responde a nuestro correo si nos equivocamos."
   },
   "followRequest": {
     "approve": "Aprobar",

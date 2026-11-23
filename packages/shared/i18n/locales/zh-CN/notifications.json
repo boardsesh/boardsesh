@@ -85,7 +85,16 @@
     "gymReportKeptByStaff": "{{gym}} 的工作人员查看了岩馆资料，保留了原样",
     "gymReportKeptByTeam": "我们的团队查看了 {{gym}}，保留了原样",
     "gymClaimedWithYourBoard": "{{gym}} 现在由其工作人员管理，你的训练板 {{board}} 列在那里",
-    "gymClaimDenied": "我们无法确认你经营 {{gym}}。如果我们弄错了，请回复我们的邮件。"
+    "gymClaimDenied": "我们无法确认你经营 {{gym}}。如果我们弄错了，请回复我们的邮件。",
+    "boardReportOpenedGeneric": "有攀岩者标记了你负责的一块训练板",
+    "boardReportResolvedGeneric": "你举报的一块训练板已处理",
+    "boardRemovedFromGymGeneric": "你的一块训练板已从某个岩馆的列表中移出，它仍在你的训练板里。",
+    "boardDeletedByStaffGeneric": "你的一块训练板被删除了，你已记录的完攀会保留。",
+    "boardEditedByStaffGeneric": "你的一块训练板已更新",
+    "gymReportOpenedGeneric": "有攀岩者标记了你经营的岩馆",
+    "gymReportResolvedGeneric": "你举报的岩馆资料已处理",
+    "gymClaimedWithYourBoardGeneric": "列有你训练板的一家岩馆现在由其工作人员管理",
+    "gymClaimDeniedGeneric": "我们无法确认你对岩馆的认领。如果我们弄错了，请回复我们的邮件。"
   },
   "followRequest": {
     "approve": "同意",
