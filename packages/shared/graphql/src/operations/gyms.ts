@@ -329,11 +329,18 @@ export const GET_GYM_BOARDS_FOR_MANAGE = gql`
  * `layoutName` / `sizeName` / `sizeDescription` / `setNames` stay out on purpose:
  * `enrichBoards` hard-codes all four to null for every board it returns, so
  * asking for them buys a bigger response and nothing else.
+ *
+ * `openReportCount` and `viewerHasOpenReport` follow `canRemoveFromGym` as a
+ * pair, as in `BOARD_FIELDS`: the app's gym page draws the "Reported" pill and
+ * the report rows from them. Both are null for a viewer they don't concern, so
+ * they stay out of `GYM_BOARD_FIELDS` all the same.
  */
 export const GET_GYM_BOARDS_FOR_SWITCHER = gql`
   query GetGymBoardsForSwitcher($gymUuid: ID!) {
     gymBoards(gymUuid: $gymUuid) {
       ${GYM_BOARD_FIELDS}
+      openReportCount
+      viewerHasOpenReport
       hideLocation
       isOwned
       createdAt

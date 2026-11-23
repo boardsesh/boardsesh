@@ -31,8 +31,9 @@ const HOLD_ANCHOR_STYLE = { flex: 1, minWidth: 0 } as const;
 
 /**
  * One board on the gym page: a compact thumbnail, the board's name without the
- * gym in front, what it is ("Kilter Homewall · 12×12 · 40°"), "Yours" on the
- * climber's own boards, and the shared board menu on the ⋯ and on a hold. A
+ * gym in front, what it is ("Kilter Homewall · 12×12 · 40°"), "Reported" while
+ * a report waits on the viewer, else "Yours" on the climber's own boards, and
+ * the shared board menu on the ⋯ and on a hold. A
  * tap climbs on it. Drawn as its own list cell (`InsetGroupedCell`), so the
  * board list is virtualized like the rest of the page.
  */
@@ -46,10 +47,15 @@ export const GymBoardRow = memo(function GymBoardRow({ item, position, menu, onP
   const menuRef = useRef<AppMenuHandle | null>(null);
 
   const art = useMemo(() => <DiscoveryBoardArt item={item} size="compact" />, [item]);
-  const status = useMemo(
-    () => (item.isViewerOwner === true ? <StatusPill label={t('mobile.gymPage.yoursPill')} /> : undefined),
-    [item.isViewerOwner, t],
-  );
+  // Beside the title, never on the art. A report waiting on this viewer (they
+  // added the board or run the gym) outranks "Yours": it is the one to act on.
+  const hasWaitingReport = (item.openReportCount ?? 0) > 0;
+  const status = useMemo(() => {
+    if (hasWaitingReport) {
+      return <StatusPill label={t('reportReview.statusPill')} tone="warning" testID="gym-page-board-reported" />;
+    }
+    return item.isViewerOwner === true ? <StatusPill label={t('mobile.gymPage.yoursPill')} /> : undefined;
+  }, [hasWaitingReport, item.isViewerOwner, t]);
   const handlePress = useCallback(() => {
     hapticLight();
     onPress(item);

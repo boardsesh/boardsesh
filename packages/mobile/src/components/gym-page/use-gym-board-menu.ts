@@ -2,12 +2,16 @@
 // board menu (`boardCardMenuEntries`), so a row offers exactly what a picker card
 // offers for the same board. Staff get Remove from gym and Delete from the
 // server's flags; a climber gets Remove from your boards on a board they saved.
+// With the `directory-reports` flag on, a climber who can't fix a board gets
+// Report a problem (Reported once theirs waits), and the creator and staff get
+// See reports while a report waits on them (`useGymBoardReports` hosts both
+// sheets in the page's route).
 //
 // The confirms and mutations are the picker's (`runMyBoardAction` in
 // app/boards/index.tsx), with the same copy keys, so the two places that remove
 // a board from a gym say the same thing.
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,10 +19,13 @@ import { boardOriginFor, type UserBoard } from '@boardsesh/shared-schema';
 import type { BoardCardMenu, DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCardView';
 import {
   boardCardMenuAllows,
+  boardCardReportAction,
   type BoardCardManageAction,
   type BoardCardMenuAction,
   type BoardCardMenuCapabilities,
+  type BoardCardMenuItemState,
 } from '../board-discovery/board-card-menu';
+import type { ReportReviewAction } from '../report-problem/ReportReviewSheet';
 import { useBoardCardMenuLabels } from '../board-discovery/use-board-card-menu-labels';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
@@ -33,25 +40,45 @@ import {
 } from '../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../lib/haptics';
 import { useConfirm } from '../../providers/dialog-provider';
+import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useToast } from '../../providers/toast-provider';
 import { forgetOfflineBoard } from '../../settings';
+import { useGymBoardReports } from './use-gym-board-reports';
+
+/** The row's state as the menu read it, read again when a row runs. */
+function itemMenuState(item: DiscoveryBoardItem): BoardCardMenuItemState {
+  return {
+    isPinned: false,
+    offlineState: undefined,
+    isViewerOwner: item.isViewerOwner,
+    isImport: item.sprayImport != null,
+    canEdit: item.canEdit,
+    canDelete: item.canDelete,
+    canRemoveFromGym: item.canRemoveFromGym,
+    gymName: item.gymName,
+    openReportCount: item.openReportCount,
+    viewerHasOpenReport: item.viewerHasOpenReport,
+  };
+}
 
 /** The same rule the menu drew the row with, read again when the row runs. */
 function itemAllows(item: DiscoveryBoardItem, action: BoardCardManageAction): boolean {
-  return boardCardMenuAllows(
-    {
-      isPinned: false,
-      offlineState: undefined,
-      isViewerOwner: item.isViewerOwner,
-      isImport: item.sprayImport != null,
-      canEdit: item.canEdit,
-      canDelete: item.canDelete,
-      canRemoveFromGym: item.canRemoveFromGym,
-      gymName: item.gymName,
-    },
-    action,
-  );
+  return boardCardMenuAllows(itemMenuState(item), action);
+}
+
+/** A board the review sheet showed, as the menu would read it. It need not be a row on the page. */
+function boardMenuState(board: UserBoard, viewerId: string | undefined, gymName: string): BoardCardMenuItemState {
+  return {
+    isPinned: false,
+    offlineState: undefined,
+    isViewerOwner: viewerId === undefined ? undefined : board.ownerId === viewerId,
+    isImport: board.sprayImport != null,
+    canEdit: board.canEdit,
+    canDelete: board.canDelete,
+    canRemoveFromGym: board.canRemoveFromGym,
+    gymName: board.gymName ?? gymName,
+  };
 }
 
 export type GymBoardMenuOptions = {
@@ -61,7 +88,8 @@ export type GymBoardMenuOptions = {
   viewerId: string | undefined;
   /**
    * Managing rows (edit, remove, delete, unfollow) need an account the page
-   * resolved and a connection: every one of them is a network mutation.
+   * resolved and a connection: every one of them is a network mutation. Report
+   * a problem and See reports need the same, and the `directory-reports` flag.
    */
   canManage: boolean;
   returnTo: BoardReturnTo;
@@ -72,6 +100,8 @@ export type GymBoardMenu = {
   menu: BoardCardMenu;
   /** A tap on a row: climb on that board. */
   onPressBoard: (item: DiscoveryBoardItem) => void;
+  /** The report and review sheets the rows open. Mount in the gym page's route. */
+  sheets: ReactNode;
 };
 
 export function useGymBoardMenu({
@@ -261,26 +291,57 @@ export function useGymBoardMenu({
     [activeUuid, confirm, t, unfollowBoardAsync, clearSession, clearActiveBoard, queryClient, showToast],
   );
 
-  const runManageAction = useCallback(
-    async (item: DiscoveryBoardItem, action: BoardCardManageAction) => {
-      const board = boardsByUuid.get(item.key);
-      if (!board || inFlight.current.has(item.key) || !itemAllows(item, action)) return;
+  /** Runs a managing row on a board the caller already checked the row against. */
+  const runOnBoard = useCallback(
+    async (board: UserBoard, action: BoardCardManageAction) => {
+      if (inFlight.current.has(board.uuid)) return;
       if (action === 'edit') {
         hapticSelection();
         router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
         return;
       }
-      inFlight.current.add(item.key);
+      inFlight.current.add(board.uuid);
       try {
         if (action === 'remove_from_gym') await removeFromGym(board);
         else if (action === 'delete') await deleteBoard(board);
         else await unfollow(board);
       } finally {
-        inFlight.current.delete(item.key);
+        inFlight.current.delete(board.uuid);
       }
     },
-    [boardsByUuid, router, removeFromGym, deleteBoard, unfollow],
+    [router, removeFromGym, deleteBoard, unfollow],
   );
+
+  const runManageAction = useCallback(
+    async (item: DiscoveryBoardItem, action: BoardCardManageAction) => {
+      const board = boardsByUuid.get(item.key);
+      if (!board || !itemAllows(item, action)) return;
+      await runOnBoard(board, action);
+    },
+    [boardsByUuid, runOnBoard],
+  );
+
+  // The review sheet's board actions, the same as the picker's: Fix opens the
+  // edit route (whose save tells the climbers who flagged it), Remove and
+  // Delete run this page's confirms on the board the sheet showed.
+  const onReviewAction = useCallback(
+    (action: ReportReviewAction, board: UserBoard) => {
+      if (action === 'fix') {
+        hapticSelection();
+        router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid, fromReport: '1' } });
+        return;
+      }
+      if (!canManage) return;
+      const manageAction = action === 'remove' ? 'remove_from_gym' : 'delete';
+      if (!boardCardMenuAllows(boardMenuState(board, viewerId, gymName), manageAction)) return;
+      void runOnBoard(board, manageAction);
+    },
+    [router, canManage, viewerId, gymName, runOnBoard],
+  );
+
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
+  const canReport = directoryReportsEnabled && canManage;
+  const { openReport, openReview, sheets } = useGymBoardReports({ boards, viewerId, onReviewAction });
 
   const onAction = useCallback(
     (item: DiscoveryBoardItem, action: BoardCardMenuAction) => {
@@ -295,20 +356,36 @@ export function useGymBoardMenu({
           if (!canManage) return;
           void runManageAction(item, action);
           return;
-        default:
-          // Pin, download and details belong to the climber's own list and the
-          // picker; the page turns them off in its capabilities. A row added to
-          // the shared menu later (Report a problem) is wired here.
+        case 'report':
+        case 'review_reports': {
+          if (!canReport) return;
+          const board = boardsByUuid.get(item.key);
+          // Only the row the board offers now: a menu drawn before the report
+          // went in, or before the viewer became staff, runs nothing.
+          if (!board || boardCardReportAction(itemMenuState(item)) !== action) return;
+          if (action === 'report') openReport(board);
+          else openReview(board);
+          return;
+        }
+        case 'reported':
+          // A disabled row: it only says the climber's report is in.
+          return;
+        case 'pin':
+        case 'unpin':
+        case 'download':
+        case 'details':
+          // These belong to the climber's own list and the picker; the page
+          // turns them off in its capabilities.
           return;
       }
     },
-    [onPressBoard, canManage, runManageAction],
+    [onPressBoard, canManage, runManageAction, canReport, boardsByUuid, openReport, openReview],
   );
 
   const capabilities = useMemo<BoardCardMenuCapabilities>(
-    () => ({ canPin: false, canDownload: false, canOpenDetails: false, canManage }),
-    [canManage],
+    () => ({ canPin: false, canDownload: false, canOpenDetails: false, canManage, canReport }),
+    [canManage, canReport],
   );
   const menu = useMemo<BoardCardMenu>(() => ({ capabilities, labels, onAction }), [capabilities, labels, onAction]);
-  return { menu, onPressBoard };
+  return { menu, onPressBoard, sheets };
 }

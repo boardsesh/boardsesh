@@ -46,6 +46,24 @@ describe('gymBoardsToItems', () => {
     ]);
   });
 
+  it('puts boards with a waiting report first for staff, keeping the server order within each group', () => {
+    const boards = [
+      board({ uuid: 'a' }),
+      board({ uuid: 'b', openReportCount: 2 }),
+      board({ uuid: 'c', openReportCount: 0 }),
+      board({ uuid: 'd', openReportCount: 1 }),
+    ];
+    const staffOrder = gymBoardsToItems(boards, { gymName: 'Crux', reportedFirst: true }).map((item) => item.key);
+    expect(staffOrder).toEqual(['b', 'd', 'a', 'c']);
+    const climberOrder = gymBoardsToItems(boards, { gymName: 'Crux' }).map((item) => item.key);
+    expect(climberOrder).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('carries the report flags each row draws its pill and menu from', () => {
+    const [item] = gymBoardsToItems([board({ openReportCount: 3, viewerHasOpenReport: false })], { gymName: 'Crux' });
+    expect(item).toMatchObject({ openReportCount: 3, viewerHasOpenReport: false });
+  });
+
   it('claims nothing about ownership without a viewer id', () => {
     const items = gymBoardsToItems([board({ ownerId: 'viewer' })], { gymName: 'Crux' });
     expect(items[0]?.isViewerOwner).toBeUndefined();

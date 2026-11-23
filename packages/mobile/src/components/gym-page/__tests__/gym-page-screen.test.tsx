@@ -46,6 +46,8 @@ const state = vi.hoisted(() => ({
     refetch: vi.fn().mockResolvedValue(undefined),
   },
   offline: { isOffline: false, isBlocked: false, reason: null as string | null },
+  reportAction: null as { open: () => void; sheet: ReactNode } | null,
+  boardSheets: null as ReactNode,
 }));
 
 vi.mock('react-native', () => ({
@@ -183,8 +185,10 @@ vi.mock('../use-gym-page-data', () => ({
   useGymPendingClaim: () => ({ data: null, refetch: vi.fn().mockResolvedValue(undefined) }),
   gymPendingClaimQueryKey: (slug: string | null) => ['gymPendingClaim', slug],
 }));
-vi.mock('../use-gym-board-menu', () => ({ useGymBoardMenu: () => ({ menu: {}, onPressBoard: vi.fn() }) }));
-vi.mock('../use-gym-report-action', () => ({ useGymReportAction: () => null }));
+vi.mock('../use-gym-board-menu', () => ({
+  useGymBoardMenu: () => ({ menu: {}, onPressBoard: vi.fn(), sheets: state.boardSheets }),
+}));
+vi.mock('../use-gym-report-action', () => ({ useGymReportAction: () => state.reportAction }));
 
 import GymPageScreen from '../GymPageScreen';
 
@@ -239,6 +243,8 @@ beforeEach(() => {
   state.gymQuery = { ...state.gymQuery, data: makeGym(), status: 'success', isPending: false };
   state.boards = { ...state.boards, data: [makeBoard('b1', 'Crux - Kilter'), makeBoard('b2', 'Crux - Tension')] };
   state.offline = { isOffline: false, isBlocked: false, reason: null };
+  state.reportAction = null;
+  state.boardSheets = null;
   headerCapture.accessory = null;
 });
 
@@ -341,6 +347,55 @@ describe('GymPageScreen', () => {
 
     fireEvent.click(screen.getByText('start-boards'));
     expect(scrollToIndex).toHaveBeenCalledWith({ index: 2, animated: true });
+  });
+
+  it('offers Report a problem on the gym in the header and at the foot, with the sheet in this route', () => {
+    const open = vi.fn();
+    state.reportAction = { open, sheet: <div data-testid="gym-report-sheet" /> };
+    render(<GymPageScreen />);
+    expect(kinds()).toEqual([
+      'block-top',
+      'block-boards-header',
+      'board-b1',
+      'board-b2',
+      'block-claim-claim',
+      'block-report',
+    ]);
+    expect(screen.getByTestId('gym-report-sheet')).toBeTruthy();
+    expect((headerCapture.accessory?.props as { onReport?: () => void }).onReport).toBe(open);
+  });
+
+  it('gives staff Edit gym details, never Report a problem, in the header', () => {
+    state.reportAction = { open: vi.fn(), sheet: null };
+    state.gymQuery = {
+      ...state.gymQuery,
+      data: makeGym({ myRole: 'admin', canEdit: true, canClaim: false, listingState: 'RUN_BY_GYM' }),
+    };
+    render(<GymPageScreen />);
+    expect((headerCapture.accessory?.props as { onReport?: () => void }).onReport).toBeUndefined();
+  });
+
+  it("mounts the board rows' report and review sheets in this route", () => {
+    state.boardSheets = <div data-testid="board-report-sheets" />;
+    render(<GymPageScreen />);
+    expect(screen.getByTestId('board-report-sheets')).toBeTruthy();
+  });
+
+  it('puts boards with a waiting report first for staff, and keeps the order for a climber', () => {
+    state.boards = {
+      ...state.boards,
+      data: [makeBoard('b1', 'Crux - Kilter'), { ...makeBoard('b2', 'Crux - Tension'), openReportCount: 1 }],
+    };
+    const { unmount } = render(<GymPageScreen />);
+    expect(kinds().filter((kind) => kind.startsWith('board-'))).toEqual(['board-b1', 'board-b2']);
+    unmount();
+
+    state.gymQuery = {
+      ...state.gymQuery,
+      data: makeGym({ myRole: 'editor', canEdit: true, canClaim: false, listingState: 'RUN_BY_GYM' }),
+    };
+    render(<GymPageScreen />);
+    expect(kinds().filter((kind) => kind.startsWith('board-'))).toEqual(['board-b2', 'board-b1']);
   });
 
   it('shows a placeholder while the boards load and the empty state when there are none', () => {

@@ -360,6 +360,34 @@ describe('board report-flag replay compatibility', () => {
     expect(JSON.stringify(recorded)).toBe(bytes);
   });
 
+  it("answers null for both on the gym page's switcher roster, after the staff-action pair", () => {
+    const legacy = 'query GetGymBoardsForSwitcher { gymBoards { uuid hasLeds litByWallDevice canEdit hideLocation } }';
+    const current =
+      'query GetGymBoardsForSwitcher { gymBoards { uuid hasLeds litByWallDevice canEdit canDelete canRemoveFromGym openReportCount viewerHasOpenReport hideLocation } }';
+    const recorded = fixture('GetGymBoardsForSwitcher', legacy, {
+      gymBoards: [{ uuid: 'one', hasLeds: true, litByWallDevice: false, canEdit: false, hideLocation: false }],
+    });
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          gymBoards: [
+            {
+              uuid: 'one',
+              hasLeds: true,
+              litByWallDevice: false,
+              canEdit: false,
+              hideLocation: false,
+              canDelete: false,
+              canRemoveFromGym: false,
+              openReportCount: null,
+              viewerHasOpenReport: null,
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('refuses a recording that already holds either field, a lone copy, or any other change', () => {
     const legacy = 'query GetBoard { board { uuid canEdit isPinnedByMe canDelete canRemoveFromGym } }';
     const current =
