@@ -128,8 +128,6 @@ describe('index.css ↔ theme-config parity', () => {
     ['--home-accent-info-surface', themeTokens.colors.infoTint],
     ['--bs-text-brand-primary', themeTokens.text.brandPrimary],
     ['--bs-text-brand-muted', themeTokens.text.brandMuted],
-    ['--shadow-primary-glow', themeTokens.shadows.primaryGlow],
-    ['--shadow-primary-glow-hover', themeTokens.shadows.primaryGlowHover],
   ];
 
   it.each(rows)('%s matches theme-config', (cssVar, value) => {
@@ -144,14 +142,9 @@ describe('index.css ↔ theme-config parity', () => {
     expect(cssRules).not.toMatch(/@media\s*\(\s*prefers-color-scheme/);
   });
 
-  it('the CTA glow is the filled violet, and the mint one stays gone', () => {
-    // The glow is the button's own light: the same rgb as --color-primary-fill. A mint
-    // glow under a violet button read as a second colour.
-    const fill = themeTokens.colors.primaryFill.replace('#', '');
-    const fillRgb = [0, 2, 4].map((offset) => parseInt(fill.slice(offset, offset + 2), 16)).join(',');
-    for (const glow of [themeTokens.shadows.primaryGlow, themeTokens.shadows.primaryGlowHover]) {
-      expect(norm(glow)).toContain(`rgba(${fillRgb},`);
-    }
+  it('the mint CTA glow is gone from both sources', () => {
+    // It belonged to the violet page. A glow that comes back in one file only would be
+    // invisible to the rows above.
     expect(rootVars['--shadow-accent-glow']).toBeUndefined();
     expect(rootVars['--shadow-accent-glow-hover']).toBeUndefined();
     expect(Object.keys(themeTokens.shadows)).not.toContain('accentGlow');

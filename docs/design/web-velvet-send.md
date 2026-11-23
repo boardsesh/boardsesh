@@ -66,13 +66,7 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
   (`#9784FF`; MUI `Link` defaults to `underline="always"` with a 3px offset, because the underline,
   not the hue, tells a link from body copy), ONE filled `#7855FF` CTA per region (`brandCtaSx`), the
   focus ring, the tonal selected state, the current page's 2px underline in the header, on-states and
-  map pins. A page's one hero button may glow (`brandCtaSx({ glow: true })`): `--shadow-primary-glow`
-  (`0 6px 16px rgba(120, 85, 255, 0.5)`, `0 8px 20px … 0.6` on hover, mirrored as
-  `themeTokens.shadows.primaryGlow` / `primaryGlowHover`) is the fill's own `#7855FF`, tight and offset
-  down so it reads as the button's light rather than a blur (at 35% alpha it all but vanished on the
-  `#0E0E0E` page). Today that is the climb page's laptop
-  "Open in your browser" button. The old mint glow is gone and the parity test keeps it that way.
-  Everything else is grey:
+  map pins. Everything else is grey:
   - Secondary buttons: `brandCtaOutlinedSx` and MUI `variant="outlined"` primary are a transparent
     pill with the `#EDEDED` label (weight 600 in the recipe), the `--control-border` edge and the
     `--semantic-button-hover` layer on hover. Only a primary `variant="text"` button lifts to violet

@@ -66,8 +66,7 @@ export function MobileInstallBlock({ placement, qrLanding, labels, helper }: Mob
   );
 }
 
-// The laptop's one hero button, so it carries the violet glow.
-const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large', glow: true });
+const { '&:hover': filledHoverSx, ...filledSx } = brandCtaSx({ size: 'large' });
 
 /**
  * The hover of a text button that looks filled. The theme gives every button

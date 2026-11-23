@@ -117,14 +117,6 @@
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-  /* The glow under a page's one filled hero button (`brandCtaSx({ glow: true })`),
-     in the button's own fill (--color-primary-fill, #7855FF) so it reads as the
-     button's light on the near-black page rather than a second colour. Tight
-     and offset down: a wide, centred spread reads as a blur, and at 35% alpha
-     the glow all but vanished on #0E0E0E. Mirrors
-     `themeTokens.shadows.primaryGlow` / `primaryGlowHover`. */
-  --shadow-primary-glow: 0 6px 16px rgba(120, 85, 255, 0.5);
-  --shadow-primary-glow-hover: 0 8px 20px rgba(120, 85, 255, 0.6);
 
   /* Icon-chip tints for the homepage onboarding cards. THREE roles, by what the
      card does — this site (brand), the app (mint spark), community/help (info)
