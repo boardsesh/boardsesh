@@ -700,6 +700,7 @@
       "deleted": "Board gelöscht. Die Meldung ist geschlossen.",
       "removed": "Aus der Halle entfernt. Die Meldung ist geschlossen.",
       "hidden": "Halle in der Suche ausgeblendet. Die Meldung ist geschlossen.",
+      "hiddenStillOpen": "Halle in der Suche ausgeblendet, aber die Meldung ist noch offen. Versuch es erneut.",
       "kept": "Meldung geschlossen.",
       "failed": "Das hat nicht geklappt. Versuch es erneut."
     },

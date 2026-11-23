@@ -1798,7 +1798,10 @@
     "keepFailed": "Die Meldung konnte nicht geschlossen werden. Versuch es erneut.",
     "empty": "Zu diesem Board ist nichts mehr offen.",
     "back": "Zurück",
-    "close": "Schließen"
+    "close": "Schließen",
+    "web": {
+      "keepPartial": "{{closed}} von {{total}} Meldungen geschlossen. Versuch es für den Rest erneut."
+    }
   },
   "whoCanEdit": {
     "boardTitle": "Du kannst dieses Board nicht bearbeiten",

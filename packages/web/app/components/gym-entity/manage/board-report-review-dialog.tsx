@@ -126,6 +126,7 @@ export default function BoardReportReviewDialog({
     setKeeping(true);
     const client = createGraphQLHttpClient(token);
     const resolutionNote = normalizeReportNote(note);
+    let closed = 0;
     try {
       for (const reportUuid of keepable) {
         try {
@@ -137,14 +138,21 @@ export default function BoardReportReviewDialog({
           // Someone else closed it meanwhile: that report is done either way.
           if (!isDirectoryReportClosedError(error)) throw error;
         }
+        closed += 1;
       }
       showMessage(t('reportReview.keptToast'), 'success');
-      onResolved();
       onClose();
     } catch (error) {
       console.error('Failed to close board reports:', error);
-      showMessage(t('reportReview.keepFailed'), 'error');
+      showMessage(
+        closed > 0
+          ? t('reportReview.web.keepPartial', { closed, total: keepable.length })
+          : t('reportReview.keepFailed'),
+        'error',
+      );
     } finally {
+      // Some reports may have closed before a failure: refresh the chip and count either way.
+      onResolved();
       setKeeping(false);
     }
   };

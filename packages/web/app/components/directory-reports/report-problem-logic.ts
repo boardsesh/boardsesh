@@ -192,3 +192,18 @@ export function sentMessageFor(
 export function reportErrorKind(online: boolean): 'offline' | 'error' {
   return online ? 'error' : 'offline';
 }
+
+/**
+ * Whether the report dialog starts from a clean draft: when it opens, or when
+ * the target changes from one real target to another. A target that goes null
+ * (the page re-reading it, a token rotation) and comes back the same keeps the
+ * draft and any sent message.
+ */
+export function shouldResetReportDialog(
+  previous: { open: boolean; targetKey: string | null },
+  next: { open: boolean; targetKey: string | null },
+): boolean {
+  if (!next.open) return false;
+  if (!previous.open) return true;
+  return previous.targetKey !== null && next.targetKey !== null && previous.targetKey !== next.targetKey;
+}

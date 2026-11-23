@@ -700,6 +700,7 @@
       "deleted": "Pannello eliminato. La segnalazione è chiusa.",
       "removed": "Tolto dalla palestra. La segnalazione è chiusa.",
       "hidden": "Palestra nascosta dalla ricerca. La segnalazione è chiusa.",
+      "hiddenStillOpen": "Palestra nascosta dalla ricerca, ma la segnalazione è ancora aperta. Riprova.",
       "kept": "Segnalazione chiusa.",
       "failed": "Non è andata a buon fine. Riprova."
     },
