@@ -20,6 +20,8 @@ type GymClaimCtaProps = {
   gymName: string;
   gymSlug: string;
   website?: string | null;
+  /** The gym's `canClaimByDomain`: whether the dialog opens on the work-email form. */
+  canClaimByDomain: boolean;
   /**
    * Derived on the SERVER from the request's auth cookie and passed down, not
    * read here with `useSession()`. next-auth starts at `status: 'loading'` on
@@ -41,7 +43,15 @@ type GymClaimCtaProps = {
  * visitor — the gym owner who just googled their own gym — gets the call-out
  * server-rendered and crawlable instead of gated behind a session.
  */
-export default function GymClaimCta({ gymUuid, gymName, gymSlug, website, viewerState, claimParam }: GymClaimCtaProps) {
+export default function GymClaimCta({
+  gymUuid,
+  gymName,
+  gymSlug,
+  website,
+  canClaimByDomain,
+  viewerState,
+  claimParam,
+}: GymClaimCtaProps) {
   const { t } = useTranslation('kiosk');
   const { openAuthModal } = useAuthModal();
   const router = useRouter();
@@ -114,6 +124,7 @@ export default function GymClaimCta({ gymUuid, gymName, gymSlug, website, viewer
         gymUuid={gymUuid}
         gymName={gymName}
         website={website}
+        canClaimByDomain={canClaimByDomain}
         open={open}
         onClose={() => setOpen(false)}
       />

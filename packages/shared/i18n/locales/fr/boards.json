@@ -153,19 +153,18 @@
     "manage": {
       "ownedHeader": "Tes boards",
       "followingHeader": "Abonnements",
-      "deleteTitle": "Supprimer la board ?",
-      "deleteMessage": "Retirer \"{{name}}\" de tes boards ? C'est définitif.",
       "deleteConfirm": "Supprimer",
       "cancel": "Annuler",
       "deleteError": "Impossible de supprimer cette board. Réessaie.",
-      "unfollowError": "Impossible de te désabonner de cette board. Réessaie.",
+      "unfollowError": "Impossible de retirer cette board de tes boards. Réessaie.",
       "deleteAria": "Supprimer {{name}}",
-      "unfollowTitle": "Se désabonner ?",
-      "unfollowMessage": "« {{name}} » est ta board active. Te désabonner la retire de tes boards et efface la sélection.",
-      "unfollowConfirm": "Se désabonner",
+      "unfollowTitle": "Retirer de tes boards ?",
+      "unfollowMessage": "« {{name}} » est ta board active. La retirer efface la sélection. Les autres la voient toujours.",
+      "unfollowConfirm": "Retirer",
       "deleteWallTitle": "Supprimer le Spraywall ?",
       "deleteWallMessage": "Supprimer « {{name}} » ? Ses photos et ses blocs ne seront plus accessibles. C’est définitif.",
-      "deleteSuccess": "« {{name}} » supprimé"
+      "deleteSuccess": "« {{name}} » supprimé",
+      "unfollowRow": "Retirer de tes boards"
     },
     "emptyTitle": "Aucune board pour le moment",
     "emptySubtitle": "Cherche une board pour commencer",
@@ -473,8 +472,6 @@
     "gymClaim": {
       "title": "Revendiquer {{gym}}",
       "done": "Terminé",
-      "sectionTitle": "Cette salle est à toi ?",
-      "sectionDescription": "Revendique-la pour garder ses informations à jour.",
       "claimAction": "Revendiquer cette salle",
       "errorGeneric": "Une erreur est survenue. Réessaie.",
       "switchToAdmin": "Pas d'e-mail professionnel ? Demande une vérification",
@@ -497,7 +494,7 @@
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
-        "manageCta": "Configurer ta salle",
+        "manageCta": "Vérifie tes boards",
         "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
       },
       "protections": {
@@ -593,7 +590,7 @@
       "noGymHintOffMap": "Elle reste hors de la carte tant qu'elle n'est pas publique.",
       "addNew": "Ma salle n'est pas listée",
       "empty": "Aucune salle à proximité",
-      "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
+      "sharedEditHint": "L'équipe de la salle peut modifier les infos de cette board et la retirer de sa fiche. Elle reste à toi.",
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
     },
     "sprayShare": {
@@ -648,44 +645,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Board introuvable",
-    "chips": {
-      "unlisted": "Non répertorié",
-      "locationHidden": "Emplacement masqué"
-    },
-    "tabs": {
-      "leaderboard": "Classement",
-      "comments": "Commentaires"
-    },
     "actions": {
-      "addToGym": "Ajouter à la salle",
       "edit": "Modifier",
-      "delete": "Supprimer"
-    },
-    "stats": {
-      "ascents": "ascensions",
-      "climbers": "grimpeurs",
-      "followers": "abonnés",
-      "comments": "commentaires"
-    },
-    "delete": {
-      "title": "Supprimer la board",
-      "confirm": "Supprimer « {{name}} » ? Cette action est irréversible.",
-      "cancel": "Annuler",
       "delete": "Supprimer"
     },
     "snackbar": {
       "deleted": "Board supprimée",
-      "deleteFailed": "Échec de la suppression de la board",
-      "linkedToGym": "Board liée à la salle",
-      "unlinkedFromGym": "Board dissociée de la salle",
-      "linkFailed": "Échec de l'association de la board à la salle"
-    },
-    "comments": {
-      "title": "Discussion sur la board"
-    },
-    "follow": {
-      "entityLabel": "board"
+      "deleteFailed": "Échec de la suppression de la board"
     }
   },
   "boardForm": {
@@ -778,21 +744,6 @@
     "myLocation": "Ma position",
     "helpText": "Cliquez sur la carte pour placer votre board, ou déplacez le repère pour ajuster"
   },
-  "boardLeaderboard": {
-    "empty": "Pas encore d'activité pour cette période.",
-    "period": {
-      "week": "Semaine",
-      "month": "Mois",
-      "year": "Année",
-      "all": "Depuis toujours"
-    },
-    "columns": {
-      "climber": "Grimpeur",
-      "sends": "Croix",
-      "flashes": "Flashs",
-      "hardest": "Plus dur"
-    }
-  },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
   },
@@ -837,12 +788,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Chargement des salles...",
-    "linkToGym": "Associer à une salle",
-    "noGym": "Aucune salle",
-    "createNew": "Créer"
-  },
   "similarGyms": {
     "heading": "On dirait que votre salle est déjà là",
     "subtitle": "Revendiquez la vôtre pour la gérer, ou ajoutez-en une nouvelle ci-dessous.",
@@ -854,16 +799,6 @@
     "createAnyway": "Aucune ne correspond ? Ajoutez votre salle avec le bouton ci-dessous."
   },
   "gymEntity": {
-    "notFound": "Salle introuvable",
-    "tabs": {
-      "members": "Membres",
-      "comments": "Commentaires"
-    },
-    "actions": {
-      "edit": "Modifier",
-      "delete": "Supprimer",
-      "claim": "Revendiquer"
-    },
     "stats": {
       "boards": "boards",
       "members": "membres",
@@ -877,16 +812,6 @@
       "followers_other": "abonnés",
       "comments_one": "commentaire",
       "comments_other": "commentaires"
-    },
-    "delete": {
-      "title": "Supprimer la salle",
-      "confirm": "Supprimer « {{name}} » ? Cette action est irréversible.",
-      "cancel": "Annuler",
-      "delete": "Supprimer"
-    },
-    "snackbar": {
-      "deleted": "Salle supprimée",
-      "deleteFailed": "Échec de la suppression de la salle"
     },
     "comments": {
       "title": "Discussion sur la salle"
@@ -965,7 +890,7 @@
     },
     "approved": {
       "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
-      "manageCta": "Configurer votre salle"
+      "manageCta": "Vérifie tes boards"
     },
     "protections": {
       "syncFreeze": "Une fois la salle à vous, vos modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
@@ -977,7 +902,7 @@
     "success": {
       "title": "La salle est à vous",
       "body": "Vous en êtes maintenant le propriétaire. Gardez la fiche et les plafonds à jour, et invitez votre équipe à participer.",
-      "setupCta": "Configurez votre salle"
+      "setupCta": "Vérifie tes boards"
     },
     "error": {
       "title": "Ce lien n’a pas fonctionné",
@@ -987,7 +912,8 @@
         "used": "Ce lien a déjà été utilisé.",
         "superseded": "Cette salle a désormais un autre propriétaire, ce lien ne peut donc pas la transférer. Relancez la revendication depuis la salle.",
         "serverError": "Une erreur est survenue de notre côté. Réessayez dans un instant."
-      }
+      },
+      "backToGym": "Retour à {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1600,32 @@
     "lightingUnavailable": "Active les LED et enregistre une adresse WLED.",
     "lightingRangeError": "Le câble utilise des numéros de LED hors de la plage configurée dans WLED. Vérifie le trajet du câble et les LED sautées.",
     "lightingChasing": "Test par rangée en cours…"
+  },
+  "gymBoards": {
+    "remove": "Retirer de la salle",
+    "removeFromNamed": "Retirer de {{gym}}",
+    "removeTitle": "Retirer {{board}} de {{gym}} ?",
+    "removeBodyOwn": "Elle disparaît de la page et des bornes de {{gym}}. Elle reste dans tes boards.",
+    "removeBodyOther": "Elle disparaît de la page et des bornes de ta salle. {{name}} la garde dans ses boards.",
+    "removeBodyOtherHidden": "Elle disparaît de la page et des bornes de ta salle. La personne qui l'a ajoutée la garde dans ses boards.",
+    "removeBodySynced": "Elle disparaît de la page et des bornes de {{gym}}.",
+    "removeConfirm": "Retirer",
+    "removed": "Retirée de {{gym}}.",
+    "removeFailed": "Impossible de retirer cette board. Réessaie.",
+    "removeSyncedError": "Cette board vient de données publiques, elle ne peut donc pas être retirée. Supprime-la plutôt.",
+    "removedByGymError": "L'équipe de cette salle a retiré cette board de sa fiche. Demande-lui de la remettre.",
+    "deleteTitle": "Supprimer {{board}} pour tout le monde ?",
+    "deleteBodyOwn": "Elle disparaît pour toi et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodyOther": "{{name}} a ajouté cette board. Elle disparaît pour cette personne et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodyOtherHidden": "Quelqu'un d'autre a ajouté cette board. Elle disparaît pour cette personne et pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteBodySynced": "Elle disparaît pour chaque grimpeur ou grimpeuse qui l'a enregistrée. Les croix déjà faites restent dans les carnets.",
+    "deleteConfirm": "Supprimer la board",
+    "cancel": "Annuler"
+  },
+  "boardOrigin": {
+    "addedBy": "Ajoutée par {{name}}",
+    "addedByYou": "Ajoutée par toi",
+    "addedByHidden": "Ajoutée par quelqu'un d'autre",
+    "synced": "Issue de données publiques"
   }
 }

@@ -153,19 +153,18 @@
     "manage": {
       "ownedHeader": "I tuoi pannelli",
       "followingHeader": "Pannelli che segui",
-      "deleteTitle": "Eliminare il pannello?",
-      "deleteMessage": "Rimuovere \"{{name}}\" dai tuoi pannelli? L'operazione non si può annullare.",
       "deleteConfirm": "Elimina",
       "cancel": "Annulla",
       "deleteError": "Impossibile eliminare quel pannello. Riprova.",
-      "unfollowError": "Impossibile smettere di seguire quel pannello. Riprova.",
+      "unfollowError": "Impossibile togliere quel pannello dai tuoi pannelli. Riprova.",
       "deleteAria": "Elimina {{name}}",
-      "unfollowTitle": "Smettere di seguire?",
-      "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se smetti di seguirlo, sparisce dai tuoi pannelli e la selezione viene azzerata.",
-      "unfollowConfirm": "Smetti di seguire",
+      "unfollowTitle": "Togliere dai tuoi pannelli?",
+      "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se lo togli, la selezione viene azzerata. Gli altri continuano a vederlo.",
+      "unfollowConfirm": "Togli",
       "deleteWallTitle": "Eliminare la Spraywall?",
       "deleteWallMessage": "Eliminare \"{{name}}\"? Le sue foto e i suoi blocchi non saranno più disponibili. L'operazione non si può annullare.",
-      "deleteSuccess": "Hai eliminato \"{{name}}\""
+      "deleteSuccess": "Hai eliminato \"{{name}}\"",
+      "unfollowRow": "Togli dai tuoi pannelli"
     },
     "emptyTitle": "Ancora nessun pannello",
     "emptySubtitle": "Cerca un pannello per iniziare",
@@ -473,8 +472,6 @@
     "gymClaim": {
       "title": "Rivendica {{gym}}",
       "done": "Fatto",
-      "sectionTitle": "Questa palestra è tua?",
-      "sectionDescription": "Rivendicala per tenere aggiornati la scheda e i pannelli.",
       "claimAction": "Rivendica questa palestra",
       "errorGeneric": "Qualcosa è andato storto. Riprova.",
       "switchToAdmin": "Niente email di lavoro? Chiedi al nostro team di controllare",
@@ -497,7 +494,7 @@
       },
       "approved": {
         "sent": "Ora puoi gestire {{gym}}.",
-        "manageCta": "Configura la tua palestra",
+        "manageCta": "Controlla i tuoi pannelli",
         "manageError": "Impossibile aprire la configurazione della palestra. Provaci da un browser."
       },
       "protections": {
@@ -593,7 +590,7 @@
       "noGymHintOffMap": "Resta fuori dalla mappa finché non è pubblico.",
       "addNew": "La mia palestra non è in elenco",
       "empty": "Nessuna palestra vicina",
-      "sharedEditHint": "Lo staff di questa palestra potrà modificare i dettagli di questo pannello.",
+      "sharedEditHint": "Lo staff della palestra può modificare i dettagli di questo pannello e toglierlo dalla sua scheda. Resta tuo.",
       "linkError": "Impossibile collegare quella palestra. Potrebbe essere troppo lontana dal tuo pannello. Le altre modifiche sono state salvate."
     },
     "sprayShare": {
@@ -648,44 +645,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Pannello non trovato",
-    "chips": {
-      "unlisted": "Non in elenco",
-      "locationHidden": "Posizione nascosta"
-    },
-    "tabs": {
-      "leaderboard": "Classifica",
-      "comments": "Commenti"
-    },
     "actions": {
-      "addToGym": "Aggiungi a una palestra",
       "edit": "Modifica",
-      "delete": "Elimina"
-    },
-    "stats": {
-      "ascents": "salite",
-      "climbers": "climber",
-      "followers": "follower",
-      "comments": "commenti"
-    },
-    "delete": {
-      "title": "Elimina pannello",
-      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
-      "cancel": "Annulla",
       "delete": "Elimina"
     },
     "snackbar": {
       "deleted": "Pannello eliminato",
-      "deleteFailed": "Impossibile eliminare il pannello",
-      "linkedToGym": "Pannello collegato alla palestra",
-      "unlinkedFromGym": "Pannello scollegato dalla palestra",
-      "linkFailed": "Impossibile collegare il pannello alla palestra"
-    },
-    "comments": {
-      "title": "Discussione sul pannello"
-    },
-    "follow": {
-      "entityLabel": "pannello"
+      "deleteFailed": "Impossibile eliminare il pannello"
     }
   },
   "boardForm": {
@@ -778,21 +744,6 @@
     "myLocation": "La mia posizione",
     "helpText": "Clicca sulla mappa per impostare la posizione del tuo pannello, oppure trascina il segnaposto per regolarla"
   },
-  "boardLeaderboard": {
-    "empty": "Ancora nessuna attività in questo periodo.",
-    "period": {
-      "week": "Settimana",
-      "month": "Mese",
-      "year": "Anno",
-      "all": "Di sempre"
-    },
-    "columns": {
-      "climber": "Climber",
-      "sends": "Ripetizioni",
-      "flashes": "Flash",
-      "hardest": "Più duro"
-    }
-  },
   "boardPill": {
     "switchHint": "Apre il selettore dei pannelli"
   },
@@ -837,12 +788,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Caricamento delle palestre...",
-    "linkToGym": "Collega a una palestra",
-    "noGym": "Nessuna palestra",
-    "createNew": "Creane una nuova"
-  },
   "similarGyms": {
     "heading": "Sembra che la tua palestra sia già qui",
     "subtitle": "Rivendica la tua per gestirla, oppure aggiungine una nuova qui sotto.",
@@ -854,16 +799,6 @@
     "createAnyway": "Nessuna di queste? Aggiungi la tua palestra con il pulsante qui sotto."
   },
   "gymEntity": {
-    "notFound": "Palestra non trovata",
-    "tabs": {
-      "members": "Membri",
-      "comments": "Commenti"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "delete": "Elimina",
-      "claim": "Rivendica"
-    },
     "stats": {
       "boards": "pannelli",
       "members": "membri",
@@ -877,16 +812,6 @@
       "followers_other": "follower",
       "comments_one": "commento",
       "comments_other": "commenti"
-    },
-    "delete": {
-      "title": "Elimina palestra",
-      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
-      "cancel": "Annulla",
-      "delete": "Elimina"
-    },
-    "snackbar": {
-      "deleted": "Palestra eliminata",
-      "deleteFailed": "Impossibile eliminare la palestra"
     },
     "comments": {
       "title": "Discussione sulla palestra"
@@ -965,7 +890,7 @@
     },
     "approved": {
       "body": "{{gym}} è tua. Configurala quando vuoi.",
-      "manageCta": "Configura la tua palestra"
+      "manageCta": "Controlla i tuoi pannelli"
     },
     "protections": {
       "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
@@ -977,7 +902,7 @@
     "success": {
       "title": "La palestra è tua",
       "body": "Ora sei tu il proprietario. Tieni aggiornati la scheda e i pannelli, e invita la tua crew a darti una mano.",
-      "setupCta": "Configura la tua palestra"
+      "setupCta": "Controlla i tuoi pannelli"
     },
     "error": {
       "title": "Quel link non ha funzionato",
@@ -987,7 +912,8 @@
         "used": "Questo link è già stato usato.",
         "superseded": "Questa palestra ora ha un altro proprietario, quindi questo link non può passargliela. Ricomincia la richiesta dalla palestra.",
         "serverError": "Qualcosa è andato storto da parte nostra. Riprova tra un po'."
-      }
+      },
+      "backToGym": "Torna a {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1600,32 @@
     "lightingUnavailable": "Attiva i LED e salva un indirizzo WLED.",
     "lightingRangeError": "Il cavo usa numeri LED fuori dall’intervallo configurato in WLED. Controlla il percorso del cavo e i LED saltati.",
     "lightingChasing": "Prova per righe in corso…"
+  },
+  "gymBoards": {
+    "remove": "Togli dalla palestra",
+    "removeFromNamed": "Togli da {{gym}}",
+    "removeTitle": "Togliere {{board}} da {{gym}}?",
+    "removeBodyOwn": "Sparisce dalla pagina e dai kiosk di {{gym}}. Resta tra i tuoi pannelli.",
+    "removeBodyOther": "Sparisce dalla pagina e dai kiosk della tua palestra. {{name}} lo tiene tra i suoi pannelli.",
+    "removeBodyOtherHidden": "Sparisce dalla pagina e dai kiosk della tua palestra. Chi l'ha aggiunto lo tiene tra i suoi pannelli.",
+    "removeBodySynced": "Sparisce dalla pagina e dai kiosk di {{gym}}.",
+    "removeConfirm": "Togli",
+    "removed": "Tolto da {{gym}}.",
+    "removeFailed": "Impossibile togliere quel pannello. Riprova.",
+    "removeSyncedError": "Questo pannello arriva da dati pubblici, quindi non si può togliere. Eliminalo.",
+    "removedByGymError": "Lo staff di questa palestra ha tolto questo pannello dalla sua scheda. Chiedigli di rimetterlo.",
+    "deleteTitle": "Eliminare {{board}} per tutti?",
+    "deleteBodyOwn": "Sparisce per te e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodyOther": "{{name}} ha aggiunto questo pannello. Sparisce per questa persona e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodyOtherHidden": "L'ha aggiunto un altro climber. Sparisce per questa persona e per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteBodySynced": "Sparisce per chiunque l'abbia salvato. Le ripetizioni registrate restano nei diari.",
+    "deleteConfirm": "Elimina pannello",
+    "cancel": "Annulla"
+  },
+  "boardOrigin": {
+    "addedBy": "Aggiunto da {{name}}",
+    "addedByYou": "Aggiunto da te",
+    "addedByHidden": "Aggiunto da un altro climber",
+    "synced": "Da dati pubblici sui pannelli"
   }
 }

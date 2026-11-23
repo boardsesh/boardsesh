@@ -153,19 +153,18 @@
     "manage": {
       "ownedHeader": "Deine Boards",
       "followingHeader": "Du folgst",
-      "deleteTitle": "Board löschen?",
-      "deleteMessage": "„{{name}}“ aus deinen Boards entfernen? Das lässt sich nicht rückgängig machen.",
       "deleteConfirm": "Löschen",
       "cancel": "Abbrechen",
       "deleteError": "Dieses Board ließ sich nicht löschen. Versuch es nochmal.",
-      "unfollowError": "Das Folgen ließ sich nicht beenden. Versuch es nochmal.",
+      "unfollowError": "Das Board ließ sich nicht aus deinen Boards entfernen. Versuch es nochmal.",
       "deleteAria": "{{name}} löschen",
-      "unfollowTitle": "Nicht mehr folgen?",
-      "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
-      "unfollowConfirm": "Nicht mehr folgen",
+      "unfollowTitle": "Aus deinen Boards entfernen?",
+      "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du es entfernst, wird die Auswahl gelöscht. Für alle anderen bleibt es sichtbar.",
+      "unfollowConfirm": "Entfernen",
       "deleteWallTitle": "Spraywall löschen?",
       "deleteWallMessage": "„{{name}}“ löschen? Die Fotos und Boulder sind danach nicht mehr verfügbar. Das lässt sich nicht rückgängig machen.",
-      "deleteSuccess": "„{{name}}“ gelöscht"
+      "deleteSuccess": "„{{name}}“ gelöscht",
+      "unfollowRow": "Aus deinen Boards entfernen"
     },
     "emptyTitle": "Noch keine Boards",
     "emptySubtitle": "Such ein Board und leg los",
@@ -473,8 +472,6 @@
     "gymClaim": {
       "title": "{{gym}} beanspruchen",
       "done": "Fertig",
-      "sectionTitle": "Gehört dir diese Halle?",
-      "sectionDescription": "Beanspruche sie, damit Eintrag und Boards stimmen.",
       "claimAction": "Diese Halle beanspruchen",
       "errorGeneric": "Da ging etwas schief. Versuch es nochmal.",
       "switchToAdmin": "Keine Arbeits-E-Mail? Lass unser Team prüfen",
@@ -497,7 +494,7 @@
       },
       "approved": {
         "sent": "{{gym}} gehört jetzt dir.",
-        "manageCta": "Halle einrichten",
+        "manageCta": "Boards prüfen",
         "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
       },
       "protections": {
@@ -593,7 +590,7 @@
       "noGymHintOffMap": "Erscheint nicht auf der Karte, solange es nicht öffentlich ist.",
       "addNew": "Meine Halle fehlt in der Liste",
       "empty": "Keine Hallen in der Nähe",
-      "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
+      "sharedEditHint": "Das Team der Halle kann die Details dieses Boards bearbeiten und es aus seinem Eintrag nehmen. Es bleibt deins.",
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
     },
     "sprayShare": {
@@ -648,44 +645,13 @@
     }
   },
   "boardEntity": {
-    "notFound": "Board nicht gefunden",
-    "chips": {
-      "unlisted": "Nicht gelistet",
-      "locationHidden": "Standort verborgen"
-    },
-    "tabs": {
-      "leaderboard": "Rangliste",
-      "comments": "Kommentare"
-    },
     "actions": {
-      "addToGym": "Zur Halle hinzufügen",
       "edit": "Bearbeiten",
-      "delete": "Löschen"
-    },
-    "stats": {
-      "ascents": "Begehungen",
-      "climbers": "Kletterer*innen",
-      "followers": "Follower",
-      "comments": "Kommentare"
-    },
-    "delete": {
-      "title": "Board löschen",
-      "confirm": "„{{name}}“ löschen? Das lässt sich nicht rückgängig machen.",
-      "cancel": "Abbrechen",
       "delete": "Löschen"
     },
     "snackbar": {
       "deleted": "Board gelöscht",
-      "deleteFailed": "Board konnte nicht gelöscht werden",
-      "linkedToGym": "Board mit Halle verknüpft",
-      "unlinkedFromGym": "Board von Halle getrennt",
-      "linkFailed": "Board konnte nicht mit der Halle verknüpft werden"
-    },
-    "comments": {
-      "title": "Board-Diskussion"
-    },
-    "follow": {
-      "entityLabel": "Board"
+      "deleteFailed": "Board konnte nicht gelöscht werden"
     }
   },
   "boardForm": {
@@ -778,21 +744,6 @@
     "myLocation": "Mein Standort",
     "helpText": "Klick auf die Karte, um den Standort deines Boards zu setzen, oder zieh den Marker zurecht"
   },
-  "boardLeaderboard": {
-    "empty": "Für diesen Zeitraum noch keine Aktivität.",
-    "period": {
-      "week": "Woche",
-      "month": "Monat",
-      "year": "Jahr",
-      "all": "Gesamt"
-    },
-    "columns": {
-      "climber": "Kletterer*in",
-      "sends": "Begehungen",
-      "flashes": "Flashes",
-      "hardest": "Schwerste"
-    }
-  },
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
   },
@@ -837,12 +788,6 @@
       }
     }
   },
-  "gymSelector": {
-    "loading": "Hallen werden geladen...",
-    "linkToGym": "Mit einer Halle verknüpfen",
-    "noGym": "Keine Halle",
-    "createNew": "Neu anlegen"
-  },
   "similarGyms": {
     "heading": "Sieht aus, als wäre deine Halle schon hier",
     "subtitle": "Beanspruche deine, um sie zu verwalten, oder leg unten eine neue an.",
@@ -854,16 +799,6 @@
     "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an."
   },
   "gymEntity": {
-    "notFound": "Halle nicht gefunden",
-    "tabs": {
-      "members": "Mitglieder",
-      "comments": "Kommentare"
-    },
-    "actions": {
-      "edit": "Bearbeiten",
-      "delete": "Löschen",
-      "claim": "Beanspruchen"
-    },
     "stats": {
       "boards": "Boards",
       "members": "Mitglieder",
@@ -877,16 +812,6 @@
       "followers_other": "Follower",
       "comments_one": "Kommentar",
       "comments_other": "Kommentare"
-    },
-    "delete": {
-      "title": "Halle löschen",
-      "confirm": "„{{name}}“ löschen? Das lässt sich nicht rückgängig machen.",
-      "cancel": "Abbrechen",
-      "delete": "Löschen"
-    },
-    "snackbar": {
-      "deleted": "Halle gelöscht",
-      "deleteFailed": "Halle konnte nicht gelöscht werden"
     },
     "comments": {
       "title": "Hallen-Diskussion"
@@ -965,7 +890,7 @@
     },
     "approved": {
       "body": "{{gym}} gehört jetzt dir. Richte sie ein, wann du willst.",
-      "manageCta": "Halle einrichten"
+      "manageCta": "Boards prüfen"
     },
     "protections": {
       "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
@@ -977,7 +902,7 @@
     "success": {
       "title": "Die Halle gehört dir",
       "body": "Du bist jetzt Inhaber*in. Halt Eintrag und Boards aktuell und hol deine Crew dazu, damit sie mit anpackt.",
-      "setupCta": "Halle einrichten"
+      "setupCta": "Boards prüfen"
     },
     "error": {
       "title": "Der Link hat nicht funktioniert",
@@ -987,7 +912,8 @@
         "used": "Dieser Link wurde schon benutzt.",
         "superseded": "Diese Halle hat jetzt einen anderen Besitzer, dieser Link kann sie also nicht übertragen. Starte den Anspruch nochmal von der Halle aus.",
         "serverError": "Bei uns ging etwas schief. Versuch es gleich nochmal."
-      }
+      },
+      "backToGym": "Zurück zu {{gym}}"
     }
   },
   "reportDuplicate": {
@@ -1674,5 +1600,32 @@
     "lightingUnavailable": "Aktiviere LEDs und speichere eine WLED-Adresse.",
     "lightingRangeError": "Die Verkabelung verwendet LED-Nummern außerhalb des in WLED eingerichteten Bereichs. Prüfe den Kabelverlauf und die übersprungenen LEDs.",
     "lightingChasing": "Lauflicht läuft…"
+  },
+  "gymBoards": {
+    "remove": "Aus der Halle entfernen",
+    "removeFromNamed": "Aus {{gym}} entfernen",
+    "removeTitle": "{{board}} aus {{gym}} entfernen?",
+    "removeBodyOwn": "Es verschwindet von der Seite und den Kiosken von {{gym}}. In deinen Boards bleibt es.",
+    "removeBodyOther": "Es verschwindet von deiner Hallenseite und deinen Kiosken. {{name}} behält es in den eigenen Boards.",
+    "removeBodyOtherHidden": "Es verschwindet von deiner Hallenseite und deinen Kiosken. Wer es angelegt hat, behält es in den eigenen Boards.",
+    "removeBodySynced": "Es verschwindet von der Seite und den Kiosken von {{gym}}.",
+    "removeConfirm": "Entfernen",
+    "removed": "Aus {{gym}} entfernt.",
+    "removeFailed": "Das Board ließ sich nicht entfernen. Versuch es nochmal.",
+    "removeSyncedError": "Dieses Board stammt aus öffentlichen Board-Daten und lässt sich nicht entfernen. Lösch es stattdessen.",
+    "removedByGymError": "Das Team dieser Halle hat das Board aus seinem Eintrag genommen. Bitte das Team, es wieder einzutragen.",
+    "deleteTitle": "{{board}} für alle löschen?",
+    "deleteBodyOwn": "Es verschwindet für dich und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodyOther": "{{name}} hat dieses Board angelegt. Es verschwindet für diese Person und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodyOtherHidden": "Jemand anderes hat dieses Board angelegt. Es verschwindet für diese Person und alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteBodySynced": "Es verschwindet für alle, die es gespeichert haben. Eingetragene Begehungen bleiben in den Logbüchern.",
+    "deleteConfirm": "Board löschen",
+    "cancel": "Abbrechen"
+  },
+  "boardOrigin": {
+    "addedBy": "Angelegt von {{name}}",
+    "addedByYou": "Von dir angelegt",
+    "addedByHidden": "Von einer anderen Person angelegt",
+    "synced": "Aus öffentlichen Board-Daten"
   }
 }
