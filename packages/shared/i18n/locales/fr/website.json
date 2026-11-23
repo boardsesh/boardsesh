@@ -1,7 +1,7 @@
 {
   "boardsTitle": "Ta board, sur Boardsesh",
-  "boardsLead": "Trouvez votre board et sa configuration, puis une salle où grimper.",
-  "boardsDescription": "Consultez les boards et configurations compatibles et trouvez une salle où grimper.",
+  "boardsLead": "Explorez les blocs de votre configuration et trouvez une salle où grimper.",
+  "boardsDescription": "Découvrez les boards compatibles, explorez les blocs par configuration et trouvez une salle équipée de votre board.",
   "findGyms": "Trouver une salle avec {{board}}",
   "sprayLabel": "Spraywall",
   "sprayTitle": "Votre Spraywall, ses blocs et son carnet.",
@@ -49,6 +49,8 @@
   "previousLayouts": "Configurations précédentes de {{board}}",
   "nextLayouts": "Configurations suivantes de {{board}}",
   "boardLayoutAlt": "Disposition des prises {{layout}} sur {{board}}",
+  "browseLayoutClimbs": "Voir les blocs de {{layout}}",
+  "browseLayoutClimbsForBoard": "{{label}} sur la board {{board}}",
   "sprayGalleryAlt": "Spraywall avec ses prises",
   "sprayGalleryCaption": "Ajoutez votre propre Spraywall",
   "findSprayWall": "Trouver un Spraywall",

@@ -220,6 +220,7 @@ type Documents = {
   '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.RequestUserDataExportDocument;
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n': typeof types.GetUserDataExportDownloadDocument;
   '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n': typeof types.JoinRedirectSessionBoardPathDocument;
+  '\n  query FrontDoorNearbyClimbs($input: ClimbSearchInput!) {\n    searchClimbs(input: $input) {\n      climbs {\n        uuid\n        name\n        setter_username\n        frames\n        difficulty\n        quality_average\n        ascensionist_count\n        compatibleSizeIds\n      }\n    }\n  }\n': typeof types.FrontDoorNearbyClimbsDocument;
 };
 const documents: Documents = {
   '\n  query GetAuthenticatedUserId {\n    authenticatedUserId\n  }\n': types.GetAuthenticatedUserIdDocument,
@@ -627,6 +628,8 @@ const documents: Documents = {
     types.GetUserDataExportDownloadDocument,
   '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n':
     types.JoinRedirectSessionBoardPathDocument,
+  '\n  query FrontDoorNearbyClimbs($input: ClimbSearchInput!) {\n    searchClimbs(input: $input) {\n      climbs {\n        uuid\n        name\n        setter_username\n        frames\n        difficulty\n        quality_average\n        ascensionist_count\n        compatibleSizeIds\n      }\n    }\n  }\n':
+    types.FrontDoorNearbyClimbsDocument,
 };
 
 /**
@@ -1879,6 +1882,12 @@ export function graphql(
 export function graphql(
   source: '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n',
 ): (typeof documents)['\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query FrontDoorNearbyClimbs($input: ClimbSearchInput!) {\n    searchClimbs(input: $input) {\n      climbs {\n        uuid\n        name\n        setter_username\n        frames\n        difficulty\n        quality_average\n        ascensionist_count\n        compatibleSizeIds\n      }\n    }\n  }\n',
+): (typeof documents)['\n  query FrontDoorNearbyClimbs($input: ClimbSearchInput!) {\n    searchClimbs(input: $input) {\n      climbs {\n        uuid\n        name\n        setter_username\n        frames\n        difficulty\n        quality_average\n        ascensionist_count\n        compatibleSizeIds\n      }\n    }\n  }\n'];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

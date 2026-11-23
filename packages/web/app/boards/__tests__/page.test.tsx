@@ -2,8 +2,20 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
+import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
+import manifest from '../board-gallery-manifest.json';
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/db/db', () => ({
+  dbz: {
+    select: () => {
+      throw new Error('Gallery climb links must resolve through the static catalog');
+    },
+  },
+}));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async (namespace: string | readonly string[]) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),
@@ -11,7 +23,11 @@ vi.mock('@/app/lib/i18n/server', () => ({
   }),
 }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
+  default: ({ href, children, 'aria-label': ariaLabel }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} aria-label={ariaLabel}>
+      {children}
+    </a>
+  ),
 }));
 vi.mock('@/app/components/marketing/store-install-buttons', () => ({
   default: ({ placement }: { placement: string }) => (
@@ -48,12 +64,42 @@ describe('supported boards public entry', () => {
     }
     expect(document.querySelectorAll('ul[role="list"]')).toHaveLength(9);
     expect(document.querySelectorAll('ul[tabindex="0"]')).toHaveLength(3);
-    expect(document.querySelector('#kilter figcaption')?.textContent).toBe('Original');
-    expect([...document.querySelectorAll('#tension figcaption')].map((caption) => caption.textContent)).toEqual([
-      'Board 2 Mirror',
-      'Board 2 Spray',
-      'Original',
+  });
+
+  it('server-renders a crawlable link to the canonical list for every pictured layout', async () => {
+    const document = await renderPage();
+    expect([...document.querySelectorAll('#kilter figcaption a')].map((link) => link.textContent)).toEqual([
+      'Browse Original climbs',
+      'Browse Homewall climbs',
     ]);
+    expect(document.querySelector('#moonboard figcaption a')?.textContent).toBe('Browse Mini 2025 climbs');
+    expect(document.querySelector('#spray figcaption a')).toBeNull();
+    expect(document.querySelectorAll('figcaption a[href$="/list"]')).toHaveLength(manifest.layouts.length);
+
+    for (const image of manifest.layouts) {
+      const figure = document.querySelector(`img[src="${resolveStaticAssetUrl(image.src)}"]`)?.closest('figure');
+      const href = figure?.querySelector('figcaption a')?.getAttribute('href');
+      expect(href, image.layoutName).toBeTruthy();
+      if (!href) throw new Error(`Missing climb list for ${image.layoutName}`);
+      const [, boardName, layoutSlug, sizeSlug, setSlug, angle, surface] = href.split('/');
+      expect(surface).toBe('list');
+      const parsed = await parseBoardRouteParamsWithSlugs({
+        board_name: boardName,
+        layout_id: layoutSlug,
+        size_id: sizeSlug,
+        set_ids: setSlug,
+        angle,
+      });
+      expect(parsed).toMatchObject({
+        board_name: image.boardName,
+        layout_id: image.layoutId,
+        size_id: image.sizeId,
+        angle: 40,
+      });
+      expect(parsed.set_ids).toHaveLength(image.setIds.length);
+      expect(parsed.set_ids).toEqual(expect.arrayContaining(image.setIds));
+      expect(buildCanonicalClimbListUrl(getBoardImageDetailsForBoard(parsed), parsed.angle)).toBe(href);
+    }
   });
 
   it('names each board once in image descriptions while retaining layout generations', async () => {
@@ -61,6 +107,18 @@ describe('supported boards public entry', () => {
     expect(document.querySelector('#kilter img')?.getAttribute('alt')).toBe('Original on Kilter');
     expect(document.querySelector('#tension img')?.getAttribute('alt')).toBe('Board 2 Mirror on Tension');
     expect(document.querySelector('#moonboard img')?.getAttribute('alt')).toBe('Mini 2025 on MoonBoard');
+  });
+
+  it('gives the three Original layouts distinct accessible link names', async () => {
+    const document = await renderPage();
+    const links = [...document.querySelectorAll('figcaption a')].filter(
+      (link) => link.textContent === 'Browse Original climbs',
+    );
+    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
+      'Browse Original climbs on Kilter',
+      'Browse Original climbs on Tension',
+      'Browse Original climbs on Woods',
+    ]);
   });
 
   it('keeps crawlable useful actions and one global logbook link', async () => {

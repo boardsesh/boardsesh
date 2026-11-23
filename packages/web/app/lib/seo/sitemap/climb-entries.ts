@@ -1,5 +1,6 @@
 import { toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import { resolveCanonicalClimbConfig, type ClimbConfigCompatibility } from '@/app/lib/canonical-climb-config';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { constructBoardSlugViewUrl, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
@@ -16,13 +17,14 @@ import { isIndexableClimbConfig } from './indexable-boards';
 export type SitemapClimbConfig = PopularBoardConfig & { sprayWallSlug?: string };
 
 /**
- * The board configuration a climb's sitemap URL is built from.
+ * The board configuration used to select climbs for the sitemap.
  *
  * Size and set ids are NOT properties of a climb — `board_climbs` carries
  * `board_type`, `layout_id`, `compatible_size_ids[]` and `required_set_ids[]`,
  * and a climb renders on many configurations. The sitemap therefore has to
- * *choose* one per climb, and it chooses per `(board_type, layout_id)` group so
- * a climb's URL never depends on which query happened to reach it first.
+ * choose one per climb. A popular config per `(board_type, layout_id)` keeps
+ * tier-2 eligibility stable. The page and the shard resolve the URL tuple
+ * separately from the climb's own size and hold-set compatibility.
  */
 export type ClimbConfigGroup = {
   boardType: string;
@@ -38,7 +40,7 @@ export type ClimbConfigGroup = {
 };
 
 /** One tier-2 row: the climb, at the one angle the shard publishes. */
-export type ClimbSitemapRow = {
+export type ClimbSitemapRow = ClimbConfigCompatibility & {
   uuid: string;
   name: string | null;
   angle: number;
@@ -174,11 +176,9 @@ export function isResolvableGroup(group: ClimbConfigGroup): boolean {
  *     canonical carries the `-{board} Climb-` slug; a sitemap URL built from the
  *     raw null name would not, and Google would drop all of them as "alternate
  *     page with proper canonical".
- *  2. **Unresolvable means dropped, never a fallback.** `tryConstructSlugViewUrl`
- *     is the FIRST branch of `buildCanonicalClimbViewUrl`, so anything it
- *     resolves is byte-identical to the page's own canonical. The name-based and
- *     numeric fallbacks below it are URLs we cannot prove match, and submitting
- *     one is the own-goal this shard exists to avoid.
+ *  2. **The size and sets use `resolveCanonicalClimbConfig`**, also used by
+ *     `buildCanonicalClimbViewUrl`. If the climb has no catalogue config, the
+ *     eligible group supplies the tuple. We only submit readable URLs.
  *
  * Deliberately no `<changefreq>`/`<priority>`: Google ignores both, and they
  * cost ~55 bytes per URL — ~550 KB on a full 10,000-URL page, on top of the
@@ -194,8 +194,10 @@ export function climbRowsToItems(
   const items: SitemapItem[] = [];
   let dropped = 0;
 
+  const boardName = toBoardName(group.boardType);
   for (const row of rows) {
     const climbName = resolveClimbDisplayName(row.name, group.boardType);
+    const canonicalConfig = boardName ? resolveCanonicalClimbConfig(boardName, group.layoutId, row) : undefined;
     // A spray wall's climb lives at `/b/{slug}/{angle}/view/...`, which is the
     // same builder and the same resolved name the spray climb view page emits as
     // its own canonical, so the two are byte-identical. The config-tuple builder
@@ -206,8 +208,8 @@ export function climbRowsToItems(
       : tryConstructSlugViewUrl(
           group.boardType,
           group.layoutId,
-          group.sizeId,
-          group.setIds,
+          canonicalConfig?.sizeId ?? group.sizeId,
+          canonicalConfig?.setIds ?? group.setIds,
           row.angle,
           row.uuid,
           climbName,

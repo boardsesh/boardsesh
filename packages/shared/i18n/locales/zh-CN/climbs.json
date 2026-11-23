@@ -1069,6 +1069,8 @@
       "show": "查看评论"
     },
     "similar": {
+      "nearbyHeading": "更多 {{layout}} 在 {{angle}}° 时难度接近 {{grade}} 的线路",
+      "nearbyUnavailable": "这些线路加载失败。",
       "heading": "类似线路",
       "unavailable": "类似线路加载失败，正在重试…",
       "allAtAngle": "{{angle}}° 的所有 {{board}} 线路"

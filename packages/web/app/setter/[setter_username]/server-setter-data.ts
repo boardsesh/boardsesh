@@ -43,7 +43,7 @@ export type SetterClimbRow = Climb & {
   layoutId: number;
   boardType: string;
   compatibleSizeIds: number[];
-  requiredSetIds: number[];
+  requiredSetIds: number[] | null;
   updatedAt: Date;
 };
 
@@ -259,7 +259,7 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
       row.benchmarkDifficulty && row.benchmarkDifficulty > 0 ? row.benchmarkDifficulty.toString() : null,
     created_at: row.createdAt ?? null,
     compatibleSizeIds: row.compatibleSizeIds ?? [],
-    requiredSetIds: row.requiredSetIds ?? [],
+    requiredSetIds: row.requiredSetIds,
     updatedAt: row.updatedAt,
   };
 }

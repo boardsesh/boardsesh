@@ -1,7 +1,7 @@
 {
   "boardsTitle": "Il tuo pannello, su Boardsesh",
-  "boardsLead": "Trova il tuo pannello e il layout, poi una parete su cui arrampicare.",
-  "boardsDescription": "Scopri i pannelli e i layout compatibili e trova palestre con una parete su cui arrampicare.",
+  "boardsLead": "Esplora i blocchi del tuo layout e trova una parete su cui arrampicare.",
+  "boardsDescription": "Scopri i pannelli compatibili, esplora i blocchi per layout e trova palestre con il pannello che cerchi.",
   "findGyms": "Trova una palestra con {{board}}",
   "sprayLabel": "Spraywall",
   "sprayTitle": "La tua Spraywall, con blocchi e diario.",
@@ -49,6 +49,8 @@
   "previousLayouts": "Layout precedenti di {{board}}",
   "nextLayouts": "Layout successivi di {{board}}",
   "boardLayoutAlt": "Layout {{layout}} di {{board}}",
+  "browseLayoutClimbs": "Esplora i blocchi di {{layout}}",
+  "browseLayoutClimbsForBoard": "{{label}} sul pannello {{board}}",
   "sprayGalleryAlt": "Spraywall con prese",
   "sprayGalleryCaption": "Porta la tua Spraywall",
   "findSprayWall": "Trova una Spraywall",
