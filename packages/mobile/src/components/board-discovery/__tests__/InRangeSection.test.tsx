@@ -450,7 +450,13 @@ describe('InRangeSection', () => {
         }}
         BoardArt={BoardArt}
         {...handlers}
-        atGymMenuCapabilities={{ canPin: true, canDownload: true, canOpenDetails: true, canManage: true }}
+        atGymMenuCapabilities={{
+          canPin: true,
+          canDownload: true,
+          canOpenDetails: true,
+          canManage: true,
+          canReport: false,
+        }}
         onAtGymMenuAction={vi.fn()}
         atGymMenuKeys={new Set(['crux-kilter'])}
       />,

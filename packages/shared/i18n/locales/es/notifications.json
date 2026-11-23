@@ -117,5 +117,12 @@
     "boardReportReminderBody": "Corrígelo o déjalo como está antes de que nuestro equipo le eche un vistazo.",
     "boardRelistTitle": "¿Volver a poner {{board}} en {{gym}}?",
     "boardRelistBody": "El escalador que lo añadió pidió que se vuelva a listar."
+  },
+  "explain": {
+    "boardDeletedTitle": "Se eliminó {{board}}",
+    "boardDeletedBody": "Ya no está para ningún escalador que lo guardó. Tus encadenes registrados siguen en tu registro.",
+    "claimDeniedTitle": "No pudimos confirmar tu reclamación",
+    "claimDeniedBody": "No pudimos confirmar que gestionas {{gym}}. Responde a nuestro correo si nos equivocamos.",
+    "ok": "Entendido"
   }
 }

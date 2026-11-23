@@ -282,6 +282,7 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
+  useBoard: () => ({ data: undefined }),
   useGymBoards: (gymUuid: string | null) => {
     gymBoardsArgs.last = gymUuid;
     return { data: gymUuid ? state.gymRosters[gymUuid] : undefined };
@@ -387,6 +388,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useDirectoryReportsEnabled: () => false,
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
@@ -419,6 +421,10 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the
 // resolved per-card action are both assertable.
+vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
+  useReportProblemHost: () => ({ openReport: vi.fn(), sheet: null }),
+}));
+vi.mock('../../../src/components/report-problem/ReportReviewSheet', () => ({ ReportReviewSheet: () => null }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
   BoardDetailSheet: (props: DetailProps) => {
     detailProps.last = props;
@@ -606,6 +612,7 @@ describe('the card menu on Your boards', () => {
       canDownload: true,
       canOpenDetails: true,
       canManage: true,
+      canReport: false,
     });
     for (const action of ['climb_here', 'pin', 'details', 'edit', 'delete']) {
       expect(screen.getByRole('button', { name: `${action} Marco garage` })).toBeTruthy();
@@ -1253,6 +1260,7 @@ describe('where a pick came from', () => {
       canDownload: false,
       canOpenDetails: true,
       canManage: false,
+      canReport: false,
     });
     expect(screen.getByRole('button', { name: 'climb_here Crux Kilter' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'details Crux Kilter' })).toBeTruthy();

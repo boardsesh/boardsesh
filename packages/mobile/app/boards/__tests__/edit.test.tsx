@@ -185,6 +185,8 @@ vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
 vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
+vi.mock('../../../src/components/report-problem/WhoCanEdit', () => ({ WhoCanEditBoard: () => null }));
+vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../src/components/Button', () => ({ Button: () => null }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../src/providers/theme-provider', () => ({

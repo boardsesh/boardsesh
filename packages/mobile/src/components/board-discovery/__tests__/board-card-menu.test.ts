@@ -16,6 +16,7 @@ const EVERYTHING: BoardCardMenuCapabilities = {
   canDownload: true,
   canOpenDetails: true,
   canManage: true,
+  canReport: false,
 };
 // The picker opened from onboarding: no pins and no board management.
 const ONBOARDING: BoardCardMenuCapabilities = { ...EVERYTHING, canPin: false, canManage: false };
@@ -26,6 +27,7 @@ const NEARBY: BoardCardMenuCapabilities = {
   canDownload: false,
   canOpenDetails: true,
   canManage: false,
+  canReport: false,
 };
 // Offline downloads disabled (the Expo browser app, or the flag off).
 const NO_DOWNLOADS: BoardCardMenuCapabilities = { ...EVERYTHING, canDownload: false };
@@ -34,6 +36,7 @@ const NOTHING: BoardCardMenuCapabilities = {
   canDownload: false,
   canOpenDetails: false,
   canManage: false,
+  canReport: false,
 };
 
 const owned: BoardCardMenuItemState = {
@@ -175,6 +178,7 @@ describe('boardCardMenuEntries', () => {
       action: 'delete',
       destructive: true,
       dividerBefore: true,
+      disabled: false,
     });
     // Removing from your boards only touches your list: red made it look like
     // the delete climbers were looking for.
@@ -182,13 +186,14 @@ describe('boardCardMenuEntries', () => {
       action: 'unfollow',
       destructive: false,
       dividerBefore: true,
+      disabled: false,
     });
     const staffRows = boardCardMenuEntries(staffFollowed, EVERYTHING).filter((entry) =>
       ['remove_from_gym', 'unfollow'].includes(entry.action),
     );
     expect(staffRows).toEqual([
-      { action: 'remove_from_gym', destructive: false, dividerBefore: true },
-      { action: 'unfollow', destructive: false, dividerBefore: false },
+      { action: 'remove_from_gym', destructive: false, dividerBefore: true, disabled: false },
+      { action: 'unfollow', destructive: false, dividerBefore: false, disabled: false },
     ]);
   });
 
@@ -203,6 +208,63 @@ describe('boardCardMenuEntries', () => {
     expect(actions).not.toContain('delete');
     expect(actions).not.toContain('edit');
     expect(actions).not.toContain('remove_from_gym');
+  });
+});
+
+describe('Report a problem in the card menu', () => {
+  const REPORTING: BoardCardMenuCapabilities = { ...EVERYTHING, canReport: true };
+  const NEARBY_REPORTING: BoardCardMenuCapabilities = { ...NEARBY, canReport: true };
+
+  it('opens the trailing group with Report a problem on a board the viewer only follows', () => {
+    expect(actionsOf(followed, REPORTING)).toEqual(['climb_here', 'pin', 'download', 'details', 'report', 'unfollow']);
+    const report = boardCardMenuEntries(followed, REPORTING).find((entry) => entry.action === 'report');
+    expect(report).toEqual({ action: 'report', destructive: false, dividerBefore: true, disabled: false });
+  });
+
+  it("offers it on Near you, where every board is another climber's", () => {
+    expect(actionsOf(nearbyBoard, NEARBY_REPORTING)).toEqual(['climb_here', 'details', 'report']);
+  });
+
+  it("says Reported, disabled, once the viewer's own report is waiting", () => {
+    const entries = boardCardMenuEntries({ ...followed, viewerHasOpenReport: true }, REPORTING);
+    expect(entries.find((entry) => entry.action === 'reported')).toEqual({
+      action: 'reported',
+      destructive: false,
+      dividerBefore: true,
+      disabled: true,
+    });
+    expect(entries.some((entry) => entry.action === 'report')).toBe(false);
+  });
+
+  it('gives the creator and staff See reports instead, while a report waits on them', () => {
+    expect(actionsOf({ ...owned, openReportCount: 2 }, REPORTING)).toEqual([
+      'climb_here',
+      'pin',
+      'download',
+      'details',
+      'edit',
+      'review_reports',
+      'delete',
+    ]);
+    expect(actionsOf({ ...staffFollowed, openReportCount: 1 }, REPORTING)).toContain('review_reports');
+  });
+
+  it.each<[string, BoardCardMenuItemState]>([
+    ['the creator', owned],
+    ['staff who edit and remove it', staffFollowed],
+    ['an editor who only removes it', editorFollowed],
+    ['staff who delete a synced board', syncedAtYourGym],
+  ])('offers no report to %s, who can fix it', (_who, item) => {
+    const actions = actionsOf(item, REPORTING);
+    expect(actions).not.toContain('report');
+    expect(actions).not.toContain('reported');
+  });
+
+  it('offers nothing to report with the flag off, or on an unfinished import', () => {
+    expect(actionsOf(followed, EVERYTHING)).not.toContain('report');
+    expect(
+      actionsOf({ ...importing, isViewerOwner: false, canEdit: false, canDelete: false }, REPORTING),
+    ).not.toContain('report');
   });
 });
 
@@ -235,6 +297,9 @@ const LABELS: BoardCardMenuLabels = {
   removeFromNamedGym: (gymName) => `Remove from ${gymName}`,
   unfollow: 'Remove from your boards',
   delete: 'Delete',
+  reviewReports: 'See reports',
+  report: 'Report a problem',
+  reported: 'Reported',
 };
 
 describe('boardCardMenuLabel', () => {
@@ -247,6 +312,9 @@ describe('boardCardMenuLabel', () => {
     ['edit', 'Edit board'],
     ['unfollow', 'Remove from your boards'],
     ['delete', 'Delete'],
+    ['review_reports', 'See reports'],
+    ['report', 'Report a problem'],
+    ['reported', 'Reported'],
   ])('labels %s', (action, expected) => {
     expect(boardCardMenuLabel(action, LABELS, false)).toBe(expected);
   });
@@ -273,6 +341,9 @@ describe('BOARD_CARD_MENU_SYSTEM_ICONS', () => {
       'download',
       'details',
       'edit',
+      'review_reports',
+      'report',
+      'reported',
       'remove_from_gym',
       'unfollow',
       'delete',

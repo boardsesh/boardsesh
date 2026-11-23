@@ -40,6 +40,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetAngles',
   'GetBetaLinks',
   'GetBoardBySlug',
+  // Report a problem: only the report review sheet asks, behind a report notification or a menu row.
+  'GetBoardReports',
   'GetBoardsBySerialNumbers',
   'GetClimbLogs',
   'GetClimbLostHolds',

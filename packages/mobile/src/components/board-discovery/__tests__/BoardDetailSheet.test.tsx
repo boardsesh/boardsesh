@@ -17,7 +17,12 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { BoardDetailSheet } from '../BoardDetailSheet';
+const reportOpen = vi.hoisted(() => vi.fn());
+const relistMutate = vi.hoisted(() => vi.fn());
+const reportTargets = vi.hoisted(() => [] as unknown[]);
 const state = vi.hoisted(() => ({
+  reportAvailable: true,
+  directoryReports: true,
   canReport: true,
   profileId: 'viewer-1' as string | undefined,
   audience: undefined as string | undefined,
@@ -87,6 +92,21 @@ vi.mock('../../../lib/graphql/hooks/use-resource-privacy', () => ({
   },
 }));
 vi.mock('../../../lib/env', () => ({ WEB_BASE_URL: 'https://www.boardsesh.com' }));
+vi.mock('../../report-problem/use-report-problem', () => ({
+  useReportProblem: ({ target }: { target: unknown }) => {
+    reportTargets.push(target);
+    return target && state.reportAvailable
+      ? { open: reportOpen, sheet: createElement('div', { 'data-testid': 'report-sheet' }) }
+      : null;
+  },
+}));
+vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({
+  useReportBoard: () => ({ mutate: relistMutate }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useDirectoryReportsEnabled: () => state.directoryReports,
+}));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 const wall = {
   uuid: 'wall-a',
   name: 'Crew wall',
@@ -101,6 +121,11 @@ const wall = {
   followerCount: 0,
 } as unknown as UserBoard;
 beforeEach(() => {
+  state.reportAvailable = true;
+  state.directoryReports = true;
+  reportOpen.mockReset();
+  relistMutate.mockReset();
+  reportTargets.length = 0;
   state.canReport = true;
   state.profileId = 'viewer-1';
   state.audience = undefined;
@@ -129,6 +154,52 @@ describe('BoardDetailSheet moderation handoff', () => {
     state.canReport = true;
     screen.rerender(<BoardDetailSheet board={{ ...wall, boardType: 'kilter' }} visible {...props} />);
     expect(screen.queryByLabelText('sprayModeration.reportTitle')).toBeNull();
+  });
+});
+
+describe('BoardDetailSheet Report a problem', () => {
+  const catalogue = { ...wall, uuid: 'kilter-a', name: 'Crux Kilter', boardType: 'kilter' } as UserBoard;
+  const props = { onClose: vi.fn(), onSetActive: vi.fn() };
+
+  it('ends every catalogue board with Report a problem, and hosts its sheet', () => {
+    const screen = render(<BoardDetailSheet board={catalogue} visible {...props} />);
+    fireEvent.click(screen.getByLabelText('report.actionAria'));
+    expect(reportOpen).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('report-sheet')).toBeTruthy();
+    expect(reportTargets.at(-1)).toEqual({ kind: 'board', board: catalogue });
+  });
+
+  it('keeps a Spraywall on its own report, and says Reported once the climber reported', () => {
+    render(<BoardDetailSheet board={wall} visible {...props} />);
+    expect(reportTargets.at(-1)).toBeNull();
+    const screen = render(<BoardDetailSheet board={{ ...catalogue, viewerHasOpenReport: true }} visible {...props} />);
+    expect(screen.queryByLabelText('report.actionAria')).toBeNull();
+    expect(screen.getByText('report.reported')).toBeTruthy();
+  });
+
+  it('offers nothing when the viewer can fix the board or the flag is off', () => {
+    state.reportAvailable = false;
+    const screen = render(<BoardDetailSheet board={catalogue} visible {...props} />);
+    expect(screen.queryByLabelText('report.actionAria')).toBeNull();
+    expect(screen.queryByText('report.reported')).toBeNull();
+  });
+
+  it('opens the review for the creator or staff while a report waits on them', () => {
+    const onReviewReports = vi.fn();
+    const reported = { ...catalogue, openReportCount: 2 } as UserBoard;
+    const screen = render(<BoardDetailSheet board={reported} visible {...props} onReviewReports={onReviewReports} />);
+    fireEvent.click(screen.getByLabelText('reportReview.open'));
+    expect(onReviewReports).toHaveBeenCalledWith(reported);
+  });
+
+  it('asks the gym to list the board again from the removal notice', () => {
+    const removed = { ...catalogue, gymUuid: null } as UserBoard;
+    const screen = render(<BoardDetailSheet board={removed} visible {...props} relistGymName="Crux" />);
+    fireEvent.click(screen.getByLabelText('report.relistAsk'));
+    expect(relistMutate).toHaveBeenCalledWith(
+      { boardUuid: 'kilter-a', reason: 'relist_request' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
   });
 });
 
