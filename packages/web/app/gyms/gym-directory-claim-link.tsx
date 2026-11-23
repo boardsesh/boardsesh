@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { gymClaimCtaClicked, type GymClaimViewerState } from '@boardsesh/analytics';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 
@@ -16,6 +17,11 @@ type GymDirectoryClaimLinkProps = {
    * that beats the round-trip would report a signed-in climber as signed-out.
    */
   viewerState: GymClaimViewerState;
+  /**
+   * The directory in claim mode (`?claim=1`), at the search card: the same
+   * search, with Claim this gym on every result nobody runs yet.
+   */
+  href: string;
 };
 
 /**
@@ -26,12 +32,13 @@ type GymDirectoryClaimLinkProps = {
  * reading like a warning on a listing rather than an invitation to an owner.
  * Once per page says the same thing and says it to the same person.
  *
- * The link is an in-page jump to the search box, not a link to a gym: claiming
- * starts on a gym's own page, and one prompt under 24 gyms cannot know which
- * gym is yours. A real `<a href="#…">` rather than a scroll handler, so it
- * works with JS off and a middle-click still does something sensible.
+ * The link reloads this search in claim mode, landing on the search box: one
+ * prompt under 24 gyms cannot know which gym is yours, but once the visitor has
+ * said they are looking for theirs, each result can offer its own claim. A real
+ * `<a href>` rather than a handler, so it works with JS off and a middle-click
+ * still does something sensible.
  */
-export default function GymDirectoryClaimLink({ viewerState }: GymDirectoryClaimLinkProps) {
+export default function GymDirectoryClaimLink({ viewerState, href }: GymDirectoryClaimLinkProps) {
   const { t } = useTranslation('gyms');
 
   return (
@@ -40,7 +47,8 @@ export default function GymDirectoryClaimLink({ viewerState }: GymDirectoryClaim
         {t('claim.body')}
       </Typography>
       <MuiLink
-        href="#gym-directory-search"
+        component={LocaleLink}
+        href={href}
         // `always`, not `hover`: at rest this link was `--neutral-500` with no
         // underline, i.e. pixel-identical to the secondary sentence beside it.
         // Colour plus a permanent underline is what makes it a link without

@@ -6,10 +6,11 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
-import type { Gym } from '@boardsesh/shared-schema';
+import type { Gym, MyGymClaim } from '@boardsesh/shared-schema';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { themeTokens } from '@/app/theme/theme-config';
+import GymClaimPendingNotice from '../gym-claim-pending-notice';
 import ManageNoAccessActions from './manage-no-access-actions';
 import { gymListingRunner, gymPageHref } from './manage-no-access-logic';
 
@@ -18,11 +19,23 @@ import { gymListingRunner, gymPageHref } from './manage-no-access-logic';
  * it and what they can do instead, rather than a bare "no permission"
  * (docs/product/gym-board-governance.md, flow e). Claim this gym when the
  * listing is theirs to claim, Report a problem while the server takes reports,
- * and the way back to the gym's page.
+ * and the way back to the gym's page. A viewer whose claim is already in
+ * flight sees where it stands instead of a second Claim button.
  */
-export default async function ManageNoAccess({ gym, reportsEnabled }: { gym: Gym; reportsEnabled: boolean }) {
+export default async function ManageNoAccess({
+  gym,
+  reportsEnabled,
+  pendingClaim = null,
+}: {
+  gym: Gym;
+  reportsEnabled: boolean;
+  /** The viewer's own claim on this gym that hasn't been decided yet. */
+  pendingClaim?: MyGymClaim | null;
+}) {
   const { t } = await getServerTranslation('boards');
   const runner = gymListingRunner(gym);
+  // `canClaim` is a permission bit and stays true while a claim sits in the queue.
+  const canClaim = gym.canClaim && pendingClaim === null;
 
   return (
     <Box>
@@ -42,11 +55,12 @@ export default async function ManageNoAccess({ gym, reportsEnabled }: { gym: Gym
                 ? t('whoCanEdit.gymClimberHidden')
                 : t('whoCanEdit.gymUnclaimed')}
         </Typography>
-        {gym.canClaim && <Typography variant="body2">{t('whoCanEdit.claimHint')}</Typography>}
+        {canClaim && <Typography variant="body2">{t('whoCanEdit.claimHint')}</Typography>}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
           {t('whoCanEdit.rule')}
         </Typography>
       </Alert>
+      {pendingClaim && <GymClaimPendingNotice method={pendingClaim.method} />}
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
         <ManageNoAccessActions
           gym={{
@@ -54,7 +68,7 @@ export default async function ManageNoAccess({ gym, reportsEnabled }: { gym: Gym
             name: gym.name,
             slug: gym.slug ?? null,
             listingState: gym.listingState ?? null,
-            canClaim: gym.canClaim,
+            canClaim,
             latitude: gym.latitude,
             longitude: gym.longitude,
             website: gym.website ?? null,

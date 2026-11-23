@@ -121,3 +121,48 @@ describe('GymSettingsPanel', () => {
     await waitFor(() => expect(getSwitch().checked).toBe(false));
   });
 });
+
+describe('GymSettingsPanel: the daily limit', () => {
+  const capField = () => screen.getByRole('spinbutton', { name: 'Daily limit' }) as HTMLInputElement;
+  const saveButton = () => screen.getByRole('button', { name: 'Save limit' }) as HTMLButtonElement;
+
+  it("shows the backend's default of 10 while the setting is unset", async () => {
+    mockRequest.mockResolvedValueOnce({ communitySettings: [] });
+    renderPanel();
+    await waitFor(() => expect(capField().disabled).toBe(false));
+    expect(capField().value).toBe('10');
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('saves a new whole number as the setting', async () => {
+    mockRequest
+      .mockResolvedValueOnce({
+        communitySettings: [
+          { id: '2', scope: 'global', scopeKey: '', key: 'gym_claim_auto_approve_daily_cap', value: '4' },
+        ],
+      })
+      .mockResolvedValue({ communitySettings: [] });
+    renderPanel();
+    await waitFor(() => expect(capField().value).toBe('4'));
+
+    fireEvent.change(capField(), { target: { value: '2' } });
+    fireEvent.click(saveButton());
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(expect.anything(), {
+        input: { scope: 'global', scopeKey: '', key: 'gym_claim_auto_approve_daily_cap', value: '2' },
+      }),
+    );
+  });
+
+  it('refuses anything but a whole number from 0 to 1000', async () => {
+    mockRequest.mockResolvedValueOnce({ communitySettings: [] });
+    renderPanel();
+    await waitFor(() => expect(capField().disabled).toBe(false));
+
+    fireEvent.change(capField(), { target: { value: '1001' } });
+
+    expect(screen.getByText('Enter a whole number from 0 to 1000.')).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
+  });
+});

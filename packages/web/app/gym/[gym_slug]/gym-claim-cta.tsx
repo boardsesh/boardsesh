@@ -3,16 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
-import { gymClaimCtaClicked, type GymClaimViewerState } from '@boardsesh/analytics';
+import { gymClaimCtaClicked, type GymClaimPlacement, type GymClaimViewerState } from '@boardsesh/analytics';
 import ClaimGymDialog from '@/app/components/gym-entity/claim-gym-dialog';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
-import { themeTokens } from '@/app/theme/theme-config';
+import { GymClaimCalloutBox } from './gym-claim-callout';
 import { buildClaimReturnPath, shouldAutoOpenClaimDialog } from './gym-claim-cta-logic';
+import { useGymClaimRequests } from './gym-claim-request';
 import { useClaimParamStrip } from './use-claim-param-strip';
 
 type GymClaimCtaProps = {
@@ -35,6 +32,8 @@ type GymClaimCtaProps = {
   viewerState: GymClaimViewerState;
   /** The raw `?claim=` value, straight off the server's searchParams. */
   claimParam?: string | string[];
+  /** The call-out box's class: the page hides this copy below 960px, where a mirror sits above the boards. */
+  className?: string;
 };
 
 /**
@@ -42,6 +41,10 @@ type GymClaimCtaProps = {
  * page. Both arms render the same box and the same copy, so an anonymous
  * visitor — the gym owner who just googled their own gym — gets the call-out
  * server-rendered and crawlable instead of gated behind a session.
+ *
+ * It owns the page's one claim flow (the dialog and the sign-in hop). The
+ * call-out's phone copy and the run-by line under the H1 start it through
+ * `requestGymClaim`, each with its own `placement`.
  */
 export default function GymClaimCta({
   gymUuid,
@@ -51,6 +54,7 @@ export default function GymClaimCta({
   canClaimByDomain,
   viewerState,
   claimParam,
+  className,
 }: GymClaimCtaProps) {
   const { t } = useTranslation('kiosk');
   const { openAuthModal } = useAuthModal();
@@ -72,8 +76,8 @@ export default function GymClaimCta({
   // shared `?claim=1` link, and the param is just as stale for them.
   useClaimParamStrip(returningFromAuth);
 
-  const handleClick = () => {
-    trackGymFunnelEvent(gymClaimCtaClicked({ placement: 'gym-page', viewerState, gymUuid }));
+  const startClaim = (placement: GymClaimPlacement) => {
+    trackGymFunnelEvent(gymClaimCtaClicked({ placement, viewerState, gymUuid }));
 
     if (viewerState === 'signed-in') {
       setOpen(true);
@@ -97,29 +101,11 @@ export default function GymClaimCta({
     });
   };
 
+  useGymClaimRequests(gymUuid, startClaim);
+
   return (
-    <Box
-      sx={{
-        border: '1px solid var(--neutral-200)',
-        borderRadius: `${themeTokens.borderRadius.lg}px`,
-        p: 2.5,
-        mb: 3,
-      }}
-    >
-      <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
-        {t('gymPage.claimTitle')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>
-        {t('gymPage.claimBody')}
-      </Typography>
-      <Button
-        variant="contained"
-        startIcon={<VerifiedUserOutlined />}
-        onClick={handleClick}
-        sx={{ textTransform: 'none' }}
-      >
-        {viewerState === 'signed-in' ? t('gymPage.claimCta') : t('gymPage.claimCtaSignedOut')}
-      </Button>
+    <>
+      <GymClaimCalloutBox viewerState={viewerState} className={className} onClaim={() => startClaim('gym-page')} />
       <ClaimGymDialog
         gymUuid={gymUuid}
         gymName={gymName}
@@ -128,6 +114,6 @@ export default function GymClaimCta({
         open={open}
         onClose={() => setOpen(false)}
       />
-    </Box>
+    </>
   );
 }

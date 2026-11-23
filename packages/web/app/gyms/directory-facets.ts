@@ -114,6 +114,12 @@ export type DirectoryQuery = Omit<GymBoardFilter, 'boardTypes'> & {
   radiusKm: number | null;
   /** 1-based. */
   page: number;
+  /**
+   * `?claim=1`: someone came to find their own gym and claim it. Result cards
+   * carry a Claim this gym button, and the param rides every link and form on
+   * the page so a search or a page turn keeps it.
+   */
+  claimMode?: boolean;
 };
 
 function firstValue(raw: string | string[] | undefined): string | undefined {
@@ -198,6 +204,8 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
     longitude: hasValidOrigin ? roundCoordinate(longitude) : null,
     radiusKm,
     page,
+    // Only the exact scalar, like the gym page's `?claim=1`.
+    ...(searchParams.claim === '1' ? { claimMode: true } : {}),
   };
 }
 
@@ -229,6 +237,9 @@ export function buildDirectoryHref(facet: DirectoryFacet, query: DirectoryQuery,
   }
   if (page > 1) {
     params.set('page', String(page));
+  }
+  if (query.claimMode) {
+    params.set('claim', '1');
   }
 
   const search = params.toString();

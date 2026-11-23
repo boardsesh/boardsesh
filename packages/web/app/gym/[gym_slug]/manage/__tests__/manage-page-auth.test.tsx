@@ -26,6 +26,9 @@ vi.mock('@/app/lib/i18n/server', () => ({
 vi.mock('@/app/lib/seo/metadata', () => ({ createNoIndexMetadata: (metadata: unknown) => metadata }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: 'test-i18n' }));
 vi.mock('../manage-gym-content', () => ({ default: 'manage-gym-content' }));
+vi.mock('../manage-no-access', () => ({ default: 'manage-no-access' }));
+vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({ isDirectoryReportsEnabled: async () => true }));
+import { GET_GYM_PENDING_CLAIM } from '@boardsesh/graphql/operations';
 import ManageGymPage, { generateMetadata } from '../page';
 
 const privateGym = {
@@ -72,5 +75,43 @@ describe('gym management page and the signed-in editor', () => {
     await expect(generateMetadata(props())).rejects.toThrow('AUTHORITY_UNAVAILABLE');
     expect(control.redirect).not.toHaveBeenCalled();
     expect(control.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('the lock state for a climber who can claim the gym', () => {
+  const publicGym = { ...privateGym, isPublic: true, canEdit: false, canClaim: true };
+  const pending = { id: 'claim-1', method: 'admin', createdAt: '2026-11-20T10:00:00.000Z' };
+
+  function answer(myPendingClaim: unknown) {
+    control.query.mockImplementation(async (document: unknown) =>
+      document === GET_GYM_PENDING_CLAIM
+        ? { gymBySlug: { uuid: 'private-gym', myPendingClaim } }
+        : { gymBySlug: publicGym },
+    );
+  }
+
+  it('hands the lock state the claim already in flight', async () => {
+    answer(pending);
+    const page = await ManageGymPage(props());
+    const lockState = page.props.children.props.children;
+    expect(lockState.type).toBe('manage-no-access');
+    expect(lockState.props.pendingClaim).toEqual(pending);
+  });
+
+  it('hands it none when there is none, or when asking fails', async () => {
+    answer(null);
+    expect((await ManageGymPage(props())).props.children.props.children.props.pendingClaim).toBeNull();
+
+    control.query.mockImplementation(async (document: unknown) => {
+      if (document === GET_GYM_PENDING_CLAIM) throw new Error('Cannot query field myPendingClaim');
+      return { gymBySlug: publicGym };
+    });
+    expect((await ManageGymPage(props())).props.children.props.children.props.pendingClaim).toBeNull();
+  });
+
+  it("doesn't ask for a claim where the viewer has no Claim button", async () => {
+    control.query.mockResolvedValue({ gymBySlug: { ...publicGym, canClaim: false } });
+    await ManageGymPage(props());
+    expect(control.query.mock.calls.some(([document]) => document === GET_GYM_PENDING_CLAIM)).toBe(false);
   });
 });

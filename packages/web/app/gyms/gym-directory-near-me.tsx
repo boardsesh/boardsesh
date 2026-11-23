@@ -17,7 +17,7 @@ import {
   type SearchGymsDirectoryQueryResponse,
   type SearchGymsDirectoryQueryVariables,
 } from '@boardsesh/graphql/operations';
-import { gymDirectorySearched } from '@boardsesh/analytics';
+import { gymDirectorySearched, type GymClaimViewerState } from '@boardsesh/analytics';
 import { toGymBoardFilterInput, type GymBoardFilter } from '@boardsesh/gym-filters';
 import { useGeolocation } from '@/app/hooks/use-geolocation';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
@@ -78,6 +78,8 @@ type GymDirectoryNearMeProps = {
   browseShownCount: number;
   /** The server-rendered results block: heading, card grid, pagination. */
   children: React.ReactNode;
+  /** Claim mode (`?claim=1`): near-me cards carry Claim this gym too. */
+  claim?: { viewerState: GymClaimViewerState };
 };
 
 /**
@@ -119,6 +121,7 @@ export default function GymDirectoryNearMe({
   browsePinnedCount,
   browseShownCount,
   children,
+  claim,
 }: GymDirectoryNearMeProps) {
   const { t } = useTranslation('gyms');
 
@@ -449,6 +452,7 @@ export default function GymDirectoryNearMe({
         <Box sx={{ display: mapOpen ? 'none' : 'block', [WIDE_LAYOUT]: { display: 'block' } }}>
           {showingNearMeResults ? (
             <NearMeResults
+              claim={claim}
               gyms={nearMeGyms}
               totalCount={nearMeData.totalCount}
               origin={origin}
@@ -523,6 +527,7 @@ function fallbackBody(t: TranslateFn, reason: 'unsupported' | 'denied' | 'unavai
 }
 
 type NearMeResultsProps = {
+  claim?: { viewerState: GymClaimViewerState };
   gyms: SearchGymsDirectoryQueryResponse['searchGyms']['gyms'];
   /** Everything in range, which is not always what fits in one request. */
   totalCount: number;
@@ -531,7 +536,7 @@ type NearMeResultsProps = {
   locale: Locale;
 };
 
-function NearMeResults({ gyms, totalCount, origin, radiusKm, locale }: NearMeResultsProps) {
+function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, claim }: NearMeResultsProps) {
   const { t } = useTranslation('gyms');
   const formatNumber = numberFormatFor(locale);
   // The request is capped at the backend's 50 and near-me has no pagination, so
@@ -568,7 +573,7 @@ function NearMeResults({ gyms, totalCount, origin, radiusKm, locale }: NearMeRes
       ) : (
         <Box component="ul" sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 0, m: 0, p: 0 }}>
           {gyms.map((gym) => (
-            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
+            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} claim={claim} />
           ))}
         </Box>
       )}

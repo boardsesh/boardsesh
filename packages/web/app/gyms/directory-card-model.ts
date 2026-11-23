@@ -1,4 +1,5 @@
-import type { GymBoardSummary } from '@boardsesh/shared-schema';
+import type { GymClaimViewerState } from '@boardsesh/analytics';
+import type { GymBoardSummary, GymListingState } from '@boardsesh/shared-schema';
 import { CATALOGUE_BOARD_TYPES, isCatalogueBoardType } from '@boardsesh/board-constants';
 import { distanceKm } from './directory-facets';
 
@@ -137,4 +138,23 @@ export function numberFormatFor(locale: string): Intl.NumberFormat {
   const created = new Intl.NumberFormat(locale);
   numberFormatCache.set(locale, created);
   return created;
+}
+
+/**
+ * Who runs the listing, as the card's chip says it. A card from a backend that
+ * doesn't answer `listingState` falls back to the old reading, where any real
+ * owner reads as running it.
+ */
+export function cardListingState(gym: { listingState?: GymListingState | null; isClaimed: boolean }): GymListingState {
+  return gym.listingState ?? (gym.isClaimed ? 'RUN_BY_GYM' : 'UNCLAIMED');
+}
+
+/**
+ * Where a card's Claim this gym goes: the gym page with its claim dialog open
+ * (`?claim=1`, which the page's call-out reads). Signed out, through log-in
+ * first, which drops the visitor back there.
+ */
+export function cardClaimHref(gymSlug: string, viewerState: GymClaimViewerState): string {
+  const claimPath = `/gym/${encodeURIComponent(gymSlug)}?claim=1`;
+  return viewerState === 'signed-in' ? claimPath : `/auth/login?callbackUrl=${encodeURIComponent(claimPath)}`;
 }

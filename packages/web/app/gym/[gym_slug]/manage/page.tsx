@@ -2,12 +2,14 @@ import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import Container from '@mui/material/Container';
-import type { Gym } from '@boardsesh/shared-schema';
+import type { Gym, MyGymClaim } from '@boardsesh/shared-schema';
 import {
   GET_GYM,
   GET_GYM_BY_SLUG,
+  GET_GYM_PENDING_CLAIM,
   type GetGymQueryResponse,
   type GetGymBySlugQueryResponse,
+  type GetGymPendingClaimQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
@@ -59,6 +61,26 @@ const resolveManageGym = cache(async (slugOrUuid: string, token: string): Promis
   return null;
 });
 
+/**
+ * The viewer's own claim in flight, for the lock state: its own document and its
+ * own catch, as on the public gym page, so a backend that can't answer it costs
+ * the notice and nothing else. Only asked where a Claim button could show.
+ */
+async function fetchMyPendingClaim(gym: Gym, token: string): Promise<MyGymClaim | null> {
+  if (!gym.canClaim || !gym.slug) return null;
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymPendingClaimQueryResponse>(
+      GET_GYM_PENDING_CLAIM,
+      { slug: gym.slug },
+      token,
+    );
+    return response.gymBySlug?.myPendingClaim ?? null;
+  } catch (error) {
+    console.error('manage fetchMyPendingClaim failed:', error);
+    return null;
+  }
+}
+
 export async function generateMetadata(props: ManageGymRouteProps): Promise<Metadata> {
   const { gym_slug } = await props.params;
   const { t, locale } = await getServerTranslation('kiosk');
@@ -107,11 +129,14 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
 
   // Public gym, but this viewer can't manage it: who can, and what to do instead.
   if (!gym.canEdit) {
-    const reportsEnabled = await isDirectoryReportsEnabled();
+    const [reportsEnabled, pendingClaim] = await Promise.all([
+      isDirectoryReportsEnabled(),
+      fetchMyPendingClaim(gym, token),
+    ]);
     return (
       <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
         <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <ManageNoAccess gym={gym} reportsEnabled={reportsEnabled} />
+          <ManageNoAccess gym={gym} reportsEnabled={reportsEnabled} pendingClaim={pendingClaim} />
         </Container>
       </I18nProvider>
     );

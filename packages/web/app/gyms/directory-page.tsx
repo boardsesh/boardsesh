@@ -87,9 +87,12 @@ export async function generateGymDirectoryMetadata(
 export async function renderGymDirectory(facet: DirectoryFacet, props: DirectoryRouteProps) {
   const searchParams = await props.searchParams;
   const query = parseDirectoryQuery(facet, searchParams);
-  const focusSearch = searchParams.claim === '1';
-  const currentSearchHref = buildDirectoryHref(facet, query, 1);
-  const claimSearchHref = `${currentSearchHref}${currentSearchHref.includes('?') ? '&' : '?'}claim=1#gym-directory-query`;
+  // `?claim=1`: someone came to find their own gym. The search box takes focus
+  // and every result nobody runs yet carries a Claim this gym button.
+  const claimMode = query.claimMode === true;
+  // One anchor for every claim prompt: the search card, which clears the fixed
+  // header (the input inside it would sit under it).
+  const claimSearchHref = `${buildDirectoryHref(facet, { ...query, claimMode: true }, 1)}#gym-directory-search`;
 
   // Past the crawl-trap ceiling, before spending a query on it. A 404 rather
   // than a clamp: clamping serves a 200 whose URL and highlighted page disagree.
@@ -218,7 +221,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           searchForm={{
             facet,
             query,
-            focusSearch,
+            focusSearch: claimMode,
             children: (
               <GymDirectoryFilters facet={facet} query={query} t={t} facetCounts={facetCounts} locale={locale} />
             ),
@@ -232,6 +235,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           browsePins={toMapPins(pageResult.gyms)}
           browsePinnedCount={browseCoverage.pinned}
           browseShownCount={browseCoverage.total}
+          claim={claimMode ? { viewerState } : undefined}
         >
           <Typography
             variant="subtitle1"
@@ -243,6 +247,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               formattedCount: formatNumber(pageResult.totalCount),
             })}
           </Typography>
+          {claimMode && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: -1, mb: 1.5 }}>
+              {t('claim.modeHint')}
+            </Typography>
+          )}
 
           {pageResult.gyms.length === 0 ? (
             /* A legitimate 200 on page one, so it gets a designed answer rather
@@ -285,7 +294,13 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               }}
             >
               {pageResult.gyms.map((gym) => (
-                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
+                <GymDirectoryCard
+                  key={gym.uuid}
+                  gym={gym}
+                  origin={origin}
+                  locale={locale}
+                  claim={claimMode ? { viewerState } : undefined}
+                />
               ))}
             </Box>
           )}
@@ -305,7 +320,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             claim, and the search that found nothing is the thing to fix. */}
         {pageResult.gyms.length > 0 && (
           <Box component="section" sx={{ mt: 4 }}>
-            <GymDirectoryClaimLink viewerState={viewerState} />
+            <GymDirectoryClaimLink viewerState={viewerState} href={claimSearchHref} />
           </Box>
         )}
 
