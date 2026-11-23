@@ -377,6 +377,38 @@ describe('WorkoutRunCard', () => {
       expect(screen.getByTestId('workout-runner-rest').textContent).toBe('restLabelclockthenRep');
     });
 
+    it('labels a restored partner round rest without relabelling it as a set rest', () => {
+      const roundRun: WorkoutRun = {
+        stages: [
+          {
+            id: 'rounds',
+            kind: 'fourByFour',
+            itemUuids: ['a', 'b'],
+            pacing: {
+              mode: 'afterTick',
+              restSeconds: 0,
+              advanceOn: 'round',
+              rounds: {
+                climbCount: 4,
+                roundCount: 4,
+                restBetweenRoundsSeconds: 180,
+                positionByItemUuid: { a: 7, b: 8 },
+              },
+            },
+          },
+        ],
+      };
+      setWorkoutRun('session-1', roundRun);
+      armRestTimer('afterTick', 1000, 'session-1');
+      onTheWall('a', roundRun);
+      render(createElement(WorkoutRunCard));
+
+      act(() => logTick('a', 'attempt', roundRun));
+      const restLine = screen.getByTestId('workout-runner-rest');
+      expect(restLine.textContent).toBe('roundRestLabelclockthenNext');
+      expect(restLine.getAttribute('aria-label')).toBe('roundRestLabel. overrunAria:-12. thenNext');
+    });
+
     it('rests a limit climb after a fall and says the next try comes back to it', () => {
       setWorkoutRun('session-1', timedRun);
       armRestTimer('afterTick', 1000, 'session-1');

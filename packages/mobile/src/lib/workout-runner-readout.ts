@@ -132,6 +132,8 @@ export type WorkoutRunnerRest = {
   endsWorkout: boolean;
   /** Every rep of the current 4x4 set is logged, so this is the set rest. */
   closesSet: boolean;
+  /** The current visit ends a partner 4x4 round. Display only. */
+  closesRound: boolean;
   armed: boolean;
   /** Armed and frozen. */
   paused: boolean;
@@ -419,6 +421,7 @@ export function describeWorkoutRunner({
         drivesWall: canAdvanceQueue,
         endsWorkout: onTheMinute && onLastStaged,
         closesSet: stagePacing.closesSet,
+        closesRound: stagePacing.closesRound === true,
         armed: rest.armed,
         paused: rest.armed && !rest.isRunning,
         timing: rest.armed && rest.anchorMs !== null && (resting || (!done && onTheMinute && !rest.queueEnded)),

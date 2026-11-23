@@ -58,6 +58,11 @@ wide only). Each block becomes one **stage**. The code lives in
   Stored session plans flatten those dimensions into pacing and keep `position`
   on each item. Queue edits never renumber them. The stored item cap is 500;
   partner starts refuse insufficient capacity rather than shortening the plan.
+  The player reads "Climb 3 of 4 · Round 2 of 4", using the stored visit
+  positions even after queue edits. One-climb rounds show only the round;
+  one climb climbed once shows only the block name. The rest card names the
+  completed round, the run card labels its countdown "Round rest", and the
+  timer sheet shows the rests between climbs and between rounds.
 - **A 4x4 set is one climb done for every rep** (Marco, 2026-10-25; it replaced the round
   model, A B C D climbed once per round). A 4x4 plans one slot per set, one climb fills
   each slot, and Start queues each climb once under its own queue item. Its reps are the

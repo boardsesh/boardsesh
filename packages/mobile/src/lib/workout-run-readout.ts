@@ -139,8 +139,14 @@ export function formatWorkoutStagePositionWithGo(
   t: TranslateWorkoutStage,
 ): string {
   if (go?.kind === 'round') {
+    const stage = workoutStageName(position.kind, t);
+    if (go.climbs === 1) {
+      return go.total === 1
+        ? stage
+        : t('mobile.session.workoutStageRoundOnlyPosition', { stage, round: go.number, rounds: go.total });
+    }
     return t('mobile.session.workoutStageRoundPosition', {
-      stage: workoutStageName(position.kind, t),
+      stage,
       round: go.number,
       rounds: go.total,
       climb: go.climb,
@@ -180,11 +186,22 @@ export function formatWorkoutStageParts(
 ): { stage: string; count: string; accessibilityLabel: string } {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
   if (go?.kind === 'round') {
+    if (go.climbs === 1) {
+      if (go.total === 1) {
+        return { stage, count: '', accessibilityLabel: t('mobile.session.workoutStageTopBarStageAria', { stage }) };
+      }
+      const numbers = { round: go.number, rounds: go.total };
+      return {
+        stage,
+        count: t('mobile.session.workoutStageRoundOnlyCount', numbers),
+        accessibilityLabel: t('mobile.session.workoutStageTopBarRoundOnlyAria', { stage, ...numbers }),
+      };
+    }
     const numbers = { round: go.number, rounds: go.total, climb: go.climb, climbs: go.climbs };
     return {
       stage,
       count: t('mobile.session.workoutStageRoundCount', numbers),
-      accessibilityLabel: t('mobile.session.workoutStageRoundPosition', { stage, ...numbers }),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundAria', { stage, ...numbers }),
     };
   }
   if (go?.kind === 'rep') {

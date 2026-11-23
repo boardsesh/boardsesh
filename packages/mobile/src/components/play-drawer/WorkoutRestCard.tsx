@@ -213,6 +213,8 @@ export function restCardHeadingText(heading: WorkoutRestCardHeading, t: TFunctio
       return sameLine(t('mobile.workoutRunner.timerPausedLabel'));
     case 'setDone':
       return sameLine(t('mobile.workoutRunner.restCardSetDone', { set: heading.set }));
+    case 'roundDone':
+      return sameLine(t('mobile.workoutRunner.restCardRoundDone', { round: heading.round }));
     case 'stageDone': {
       const stage = workoutStageName(heading.stage, t, heading.isCoolDown);
       return {

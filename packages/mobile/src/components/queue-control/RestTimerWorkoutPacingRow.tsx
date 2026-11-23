@@ -85,6 +85,23 @@ function pacingSummary(stage: RestTimerStagePacing, stageName: string, t: Transl
         })
       : t('mobile.restTimer.workoutPacingSets', { stage: stageName, reps, setRest });
   }
+  if (stagePacing.advanceOn === 'round') {
+    const { rounds } = stagePacing;
+    const roundRest = formatRestLength(rounds.restBetweenRoundsSeconds);
+    if (rounds.climbCount === 1) {
+      return t('mobile.restTimer.workoutPacingOneClimbRounds', {
+        stage: stageName,
+        count: rounds.roundCount,
+        roundRest,
+      });
+    }
+    return t('mobile.restTimer.workoutPacingRounds', {
+      stage: stageName,
+      count: rounds.climbCount,
+      climbRest: formatRestLength(stagePacing.restSeconds),
+      roundRest,
+    });
+  }
   return t('mobile.restTimer.workoutPacingRest', {
     stage: stageName,
     rest: formatRestLength(stageRestSeconds(stagePacing, false)),

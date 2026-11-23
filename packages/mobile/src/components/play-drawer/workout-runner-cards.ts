@@ -31,6 +31,8 @@ export type WorkoutRestCardHeading =
   | { kind: 'paused' }
   /** A 4x4 set's every rep is logged. `set` is its number in the block. */
   | { kind: 'setDone'; set: number }
+  /** The last visit of a partner 4x4 round is logged. */
+  | { kind: 'roundDone'; round: number }
   /** The rest ends the block: Next lands on another stage. */
   | { kind: 'stageDone'; stage: WorkoutStageKind; isCoolDown: boolean };
 
@@ -107,6 +109,7 @@ export function resolveWorkoutRestCard({
       return { kind: 'stageDone', stage: position.kind, isCoolDown: position.isCoolDown === true };
     }
     if (rest.closesSet) return { kind: 'setDone', set: position.positionInStage };
+    if (rest.closesRound && current.go?.kind === 'round') return { kind: 'roundDone', round: current.go.number };
     return rest.mode === 'onTheMinute' ? { kind: 'nextBeat' } : { kind: 'rest' };
   })();
 

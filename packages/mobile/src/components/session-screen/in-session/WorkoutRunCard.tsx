@@ -387,7 +387,8 @@ function restLabel(rest: WorkoutRunnerRest, t: TranslateWorkoutStage): string {
   if (rest.mode === 'onTheMinute') {
     return rest.endsWorkout ? t('mobile.workoutRunner.workoutEndsLabel') : t('mobile.workoutRunner.nextBeatLabel');
   }
-  return rest.closesSet ? t('mobile.workoutRunner.setRestLabel') : t('mobile.workoutRunner.restLabel');
+  if (rest.closesSet) return t('mobile.workoutRunner.setRestLabel');
+  return rest.closesRound ? t('mobile.workoutRunner.roundRestLabel') : t('mobile.workoutRunner.restLabel');
 }
 
 /**
