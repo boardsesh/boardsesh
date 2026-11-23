@@ -107,6 +107,25 @@
   aspect-ratio: 490 / 570;
 }
 
+/* Two columns (761px up): the screenshot stack the other languages show in
+   place of the video is capped so it balances the copy beside it, the way the
+   video card caps itself (`home-showcase-video.module.css`). The copy is about
+   355px tall below 1100px and about 500px from 1100px, where the QR code card
+   joins it; each width keeps the taller iPhone stack plus the platform switch
+   within about 160px of the copy, so the title starts at most about 80px below
+   the stack's top. */
+@media (min-width: 761px) {
+  .heroPreview:not(.heroShowcase) {
+    max-width: 325px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .heroPreview:not(.heroShowcase) {
+    max-width: 420px;
+  }
+}
+
 .heroShowcase {
   display: flex;
   justify-content: center;

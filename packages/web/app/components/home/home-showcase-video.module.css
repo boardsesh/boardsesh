@@ -97,13 +97,21 @@
 }
 
 /* Desktop (761px and up, the complement of the phone breakpoint): the card sits
-   beside the hero copy, as wide as fits without outgrowing the viewport height
-   (header and 120px of breathing room). Below that the phone layout above holds:
-   the copy comes first and the card sits directly below at full content width,
-   without cropping the portrait composition. */
+   beside the hero copy, vertically centred against it, as wide as fits without
+   outgrowing the viewport height (header and 120px of breathing room). Below
+   that the phone layout above holds: the copy comes first and the card sits
+   directly below at full content width, without cropping the portrait
+   composition.
+
+   The card is also capped by HEIGHT, set against the copy beside it so the two
+   balance: a card much taller than the copy leaves an empty band above the
+   title. The copy is about 310px tall from 900px (355px at 761-899) and about
+   450px from 1100px, where the home hero adds the QR code card
+   (`home-page-content.module.css`). Each cap leaves the copy's top at most
+   about 80px below the card's. Still 9:16 by width, so nothing is cropped. */
 @media (min-width: 761px) {
   .figure {
-    width: min(400px, calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
+    width: min(calc(470px * 9 / 16), calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
     margin: 0;
   }
 
@@ -114,6 +122,12 @@
     height: 64px;
     margin: auto;
     transform: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .figure {
+    width: min(calc(600px * 9 / 16), calc((100dvh - var(--global-header-height) - 120px) * 9 / 16));
   }
 }
 

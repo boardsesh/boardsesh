@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
 
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import MarketingHeader from '../marketing-header';
 import { APP_URL } from '@/app/lib/app-origin';
+import { buildStoreUrl } from '@/app/lib/store-links';
+
+const mockTrackAppInstallClick = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/track-app-install-click', () => ({ trackAppInstallClick: mockTrackAppInstallClick }));
 
 /**
  * Successor to `global-header/__tests__/global-header.test.tsx`.
@@ -407,6 +412,96 @@ describe('MarketingHeader', () => {
 
       expect(screen.getByText('Sign in').closest('a')?.getAttribute('href')).toBe('/auth/login');
       expect(container.querySelector('a[href="/settings"]')).toBeNull();
+    });
+  });
+
+  // The phone's "Get the app" steps aside while the page's own store badge is on
+  // screen. The hook's own cases live in `use-store-badge-on-screen.test.tsx`;
+  // these pin what the header does with the answer.
+  describe("the phone's Get the app link", () => {
+    class FakeIntersectionObserver {
+      static latest: FakeIntersectionObserver | null = null;
+      constructor(readonly callback: IntersectionObserverCallback) {
+        FakeIntersectionObserver.latest = this;
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      report(target: Element, isIntersecting: boolean): void {
+        const box = isIntersecting ? { top: 400, bottom: 448, height: 48 } : { top: -200, bottom: -152, height: 48 };
+        const entry = { target, isIntersecting, boundingClientRect: box } as unknown as IntersectionObserverEntry;
+        act(() => this.callback([entry], this as unknown as IntersectionObserver));
+      }
+    }
+
+    beforeEach(() => {
+      mockPathname = '/';
+      vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function phoneInstallLink(): HTMLElement {
+      return screen.getByText('Get the app').closest('a') as HTMLElement;
+    }
+
+    it('says whether a store badge in <main> is on screen, for the CSS to hide it', () => {
+      render(
+        <>
+          <MarketingHeader />
+          <main>
+            <a data-store-badge="ios" href="https://apps.apple.com/">
+              hero badge
+            </a>
+          </main>
+        </>,
+      );
+      const badge = document.querySelector('main a[data-store-badge]') as Element;
+
+      FakeIntersectionObserver.latest?.report(badge, true);
+      expect(phoneInstallLink().getAttribute('data-store-badge-on-screen')).toBe('yes');
+
+      FakeIntersectionObserver.latest?.report(badge, false);
+      expect(phoneInstallLink().getAttribute('data-store-badge-on-screen')).toBe('no');
+    });
+
+    it('stays shown on a page with no store badge', () => {
+      render(
+        <>
+          <MarketingHeader />
+          <main>
+            <p>About Boardsesh</p>
+          </main>
+        </>,
+      );
+
+      expect(phoneInstallLink().getAttribute('data-store-badge-on-screen')).toBe('no');
+    });
+
+    it('leaves the server HTML without an answer, so the CSS guess holds until the browser has one', () => {
+      const markup = renderToString(<MarketingHeader />);
+
+      expect(markup).toContain('Get the app');
+      expect(markup).not.toContain('data-store-badge-on-screen');
+    });
+
+    it('keeps its store link and its click event', () => {
+      render(<MarketingHeader />);
+      const link = phoneInstallLink();
+
+      expect(link.getAttribute('href')).toBe(buildStoreUrl('ios', { placement: 'header', inbound: null }));
+      expect(link.getAttribute('target')).toBe('_blank');
+      fireEvent.click(link);
+      expect(mockTrackAppInstallClick).toHaveBeenCalledWith({
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'header',
+        mode: 'install',
+      });
     });
   });
 });
