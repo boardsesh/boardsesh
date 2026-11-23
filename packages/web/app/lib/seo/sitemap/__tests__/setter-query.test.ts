@@ -258,6 +258,10 @@ describe('setterRowsToItems', () => {
     last_modified,
   });
 
+  it('rejects an invalid content clock instead of persisting a corrupt summary', () => {
+    expect(setterRowsToItems([row('marco', 'invalid')])).toEqual({ items: [], dropped: 1 });
+  });
+
   it('emits the byte-identical path the setter page canonicalises to', () => {
     const { items, dropped } = setterRowsToItems([row('Marco & Co', '2026-05-04T11:22:33.000Z')]);
 

@@ -23,7 +23,7 @@ missed-occurrence issue.
 
 ## Job ownership
 
-All eight jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All nine jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -33,6 +33,7 @@ the route, Vercel and Railway both) reds CI.
 | `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | — (`overdue` on `/health/jobs`)        |
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | — (`overdue` on `/health/jobs`)        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
+| `refresh-sitemap-setters`    | Backend `/graphql`: `refreshSetterSitemapSummary` | `10 */6 * * *` | 120 s | — (`overdue` on `/health/jobs`) |
 | `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | — (`overdue` on `/health/jobs`)        |
 | `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
 | `snapshot-active-users`      | Backend `/graphql`: `snapshotActiveUsers`   | `20 0 * * *`   | 10 min      | — (`overdue` on `/health/jobs`)        |
@@ -49,6 +50,28 @@ the slot Vercel ran. It is overlap-safe the way `JobDefinition` requires: the
 refresher takes `pg_try_advisory_xact_lock` as the first statement of its write
 transaction, so a second run that meets a first in flight answers
 `skipped: "locked"` and writes nothing. See [sitemap.md](../web/sitemap.md).
+
+`refresh-sitemap-setters` publishes the validated setter count and newest content
+timestamp to the existing `sitemap_shard_refreshes` table. The web index reads this
+small row after a restart instead of running the full setter catalogue scan inside
+its three-second deadline. A primary transaction holds the advisory lock, runs
+the serial scan with a 45-second statement timeout, and upserts the summary only
+after validating every item. Failed, empty, or invalid builds keep the previous
+summary. No URLs are stored by this job; setter pages still check current privacy.
+
+Scheduled runs pass `force: true` to bypass only the six-hour freshness check.
+Otherwise a scan finishing after its scheduled minute would make the next tick
+appear slightly younger than six hours and skip every other run. Force never
+bypasses cron authentication, locking, validation, or the database timeout.
+`skipped: "fresh"` and `skipped: "locked"` are successful outcomes. The web can
+bootstrap a missing or stale row with the same mutation after serving its response.
+Deploy the backend and scheduler first, call the mutation once, then deploy the
+web reader. Manual bootstrap through backend `/graphql` uses the
+cron bearer and this mutation:
+
+```json
+{"query":"mutation { refreshSetterSitemapSummary(force: true) { refreshed itemCount lastModified computedAt skipped } }"}
+```
 
 `refresh-gym-activity-stats` rebuilds the per-gym activity cache daily at
 06:30 UTC through the GraphQL backend. The backend acquires a transaction-scoped

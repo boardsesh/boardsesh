@@ -5312,6 +5312,8 @@ export type Mutation = {
   redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
   refreshGymActivityStats: GymActivityStatsRefreshResult;
+  /** HTTP cron credentials only. Force bypasses freshness, never validation or locking. */
+  refreshSetterSitemapSummary: SetterSitemapSummaryRefreshResult;
   /**
    * Rebuild a pack from scratch: back to `queued` with the generation counter
    * bumped, the same licence id and the same output key, so the new zip replaces
@@ -6235,6 +6237,11 @@ export type MutationRedeemBoardShareLinkArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationRefreshGymActivityStatsArgs = {
+  force?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRefreshSetterSitemapSummaryArgs = {
   force?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -11562,6 +11569,17 @@ export type SetterSearchResult = {
   isFollowedByMe: Scalars['Boolean']['output'];
   /** The setter's Aurora username */
   username: Scalars['String']['output'];
+};
+
+/** The persisted setters sitemap summary, or the previous summary when skipped. */
+export type SetterSitemapSummaryRefreshResult = {
+  __typename?: 'SetterSitemapSummaryRefreshResult';
+  computedAt?: Maybe<Scalars['String']['output']>;
+  itemCount?: Maybe<Scalars['Int']['output']>;
+  lastModified?: Maybe<Scalars['String']['output']>;
+  refreshed: Scalars['Boolean']['output'];
+  /** fresh or locked; null when the summary was refreshed. */
+  skipped?: Maybe<Scalars['String']['output']>;
 };
 
 /**

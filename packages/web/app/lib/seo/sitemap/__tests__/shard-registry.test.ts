@@ -52,13 +52,6 @@ vi.mock('../setter-query', () => ({
   fetchSetterSitemapSummary: async () => ({ itemCount: 0, lastModified: null }),
   buildSetterSitemapItems: async () => [],
 }));
-// The build-plans shard asks PostHog whether `cnc-packs` is on. Stubbed off,
-// which is both the shipping state and the state that makes the shard's
-// `expectsUrls: false` matter.
-vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({
-  getServerFeatureFlag: async () => false,
-}));
-
 const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');
 
 const APP_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
@@ -112,20 +105,23 @@ describe('SHARD_REGISTRY', () => {
       // gyms/setters is the declared-empty design — none of these may 503.
       playlists: false,
       gyms: false,
-      // `build-plans` ships empty on purpose: the shop is behind the
-      // `cnc-packs` flag and has nothing to list until it flips. Failing closed
-      // there would 503 a shard for being in its intended pre-launch state.
+      // `build-plans` stays empty while its pages remain noindex. Failing
+      // closed would 503 a shard for being in its intended pre-launch state.
       'build-plans': false,
     });
   });
 
-  it('publishes nothing from the build-plans shard while cnc-packs is off', async () => {
-    // The whole contract of the flag gate: the shard exists, is routed, and is
-    // listed in this registry from the day it is written — and Google is told
-    // about none of it until the flag opens the shop.
+  it('publishes nothing from the build-plans shard before legal review', async () => {
+    // The route exists, but its noindex pages must never enter the sitemap.
     const buildPlans = SHARD_REGISTRY.find((shard) => shard.id === 'build-plans');
     expect(buildPlans).toBeDefined();
     await expect(buildPlans!.build()).resolves.toEqual([]);
+  });
+
+  it('opts only deliberately withheld build plans out of empty-result warnings', () => {
+    expect(SHARD_REGISTRY.filter((shard) => shard.warnWhenEmpty === false).map((shard) => shard.id)).toEqual([
+      'build-plans',
+    ]);
   });
 
   it('fans the build-plans pages out to every locale', () => {

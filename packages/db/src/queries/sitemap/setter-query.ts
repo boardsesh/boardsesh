@@ -1,0 +1,299 @@
+import { sql, type SQL } from 'drizzle-orm';
+import { toBoardName } from '@boardsesh/board-config';
+import type { SerialPlanDb } from '../util/serial-plan';
+import type { ClimbConfigGroup } from './groups';
+import { publishableAngleWhere } from './published-angle';
+import { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
+import { SETTER_IDENTITY_ORDER, authoredAccountPerSetterName, linkedLoginCandidates } from './setter-identity';
+
+export type SetterSitemapItem = { path: string; lastModified: Date | null };
+
+function setIdArray(setIds: readonly number[]) {
+  return sql`ARRAY[${sql.join(
+    setIds.map((id) => sql`${id}`),
+    sql`, `,
+  )}]::int[]`;
+}
+
+/**
+ * A climb that renders on ONE configuration the climbs sitemap resolves.
+ *
+ * Same three predicates `buildChosenSubquery` applies before the climbs shard
+ * will name a config in a climb's URL — board/layout, `@>` size containment and
+ * `<@` set containment, with MoonBoard exempt from the size half because it has
+ * one fixed size and never populates `compatible_size_ids`.
+ *
+ * This is what makes the gate *linkable* rather than merely non-empty: a setter
+ * whose climbs are all on a layout no group resolves would get a page with an
+ * `<h1>` over a list of rows carrying no crawlable link at all.
+ */
+function groupPredicate(group: ClimbConfigGroup): SQL {
+  const isMoonboard = toBoardName(group.boardType) === 'moonboard';
+
+  const parts: SQL[] = [sql`board_type = ${group.boardType}`, sql`layout_id = ${group.layoutId}`];
+
+  if (!isMoonboard) {
+    parts.push(sql`compatible_size_ids @> ARRAY[${group.sizeId}]::int[]`);
+  }
+
+  if (group.setIds.length > 0) {
+    parts.push(
+      isMoonboard
+        ? sql`(required_set_ids IS NULL OR required_set_ids <@ ${setIdArray(group.setIds)})`
+        : sql`required_set_ids <@ ${setIdArray(group.setIds)}`,
+    );
+  }
+
+  return sql`(${sql.join(parts, sql` AND `)})`;
+}
+
+/**
+ * Usernames whose `/setter/{name}` URL a crawler cannot normalise into a 404.
+ *
+ * Three rules, all in SQL rather than in JavaScript after the fact, because the
+ * summary and the item list have to select the identical set — a JS-side filter
+ * would let the summary advertise a page the item build cannot fill, which the
+ * paged handler turns into a 503.
+ *
+ *  1. **No leading or trailing ASCII whitespace.** Those encode to a
+ *     leading/trailing `%20` that crawlers and proxies routinely strip, landing
+ *     on a name nobody set a climb under. `\S` is ASCII-only here — measured
+ *     against the shipped Postgres (UTF8 / en_US.utf8), `chr(160) ~ '\s'` is
+ *     false, so a non-breaking space is `\S` to this engine and slips through.
+ *     Rule 4 is what catches it.
+ *  2. **No `/`, `?` or `#`.** A `%2F` inside a Next dynamic segment is not
+ *     reliably routable, and `?`/`#` terminate the path at the first hop that
+ *     decodes early.
+ *  3. **No control characters.** C0 and DEL, and C1 (U+0080-U+009F) because the
+ *     JS guard below cannot backstop those: `encodeURIComponent` encodes them
+ *     and `decodeURIComponent` round-trips them cleanly, so the item builder
+ *     sees a valid username.
+ *  4. **No Unicode whitespace or zero-width characters anywhere.** Rule 1's
+ *     `\S` does not see them. A name that is `chr(160) || 'marco'` is submitted
+ *     as `%C2%A0marco` and lands wherever the intermediary decides.
+ *  5. **Not `.` or `..`**, which survive `encodeURIComponent` unchanged and are
+ *     then eaten by URL normalisation: `/setter/.` collapses to `/setter/`.
+ *
+ * Encoding itself cannot fail here: `encodeURIComponent` throws only on a lone
+ * surrogate, and Postgres `text` in a UTF-8 database cannot hold one. The item
+ * builder still checks — and refuses to cache when a check fires — because
+ * "unreachable" is a claim about the database, not a guarantee from this file.
+ *
+ * `isRoutableSetterUsername` in `../setter-username.ts` is the same rule for
+ * code that links a setter page from outside the sitemap. Change both.
+ */
+const routableUsername = sql`
+  setter_username IS NOT NULL
+  AND setter_username <> ''
+  AND setter_username ~ '^\\S(.*\\S)?$'
+  AND setter_username !~ '[/?#]'
+  AND setter_username !~ '[\\x00-\\x1F\\x7F\\x80-\\x9F]'
+  AND setter_username !~ '[\\u00A0\\u1680\\u2000-\\u200B\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]'
+  AND setter_username !~ '^[.]{1,2}$'
+`;
+
+/**
+ * The setters worth submitting, one row each, with the newest content clock
+ * across their visible climbs.
+ *
+ * Split out as a `.toSQL()`-inspectable seam — the same seam `buildTier2ClimbQuery`
+ * establishes — so a test renders the predicate this really runs.
+ *
+ * `board_setter_stats` is deliberately NOT the source. `buildRecomputeSetterStatsSql`
+ * INNER JOINs `board_climb_stats`, so a setter whose climbs carry no stats row is
+ * simply absent from that table, and its `updated_at` is `now()` at nightly
+ * refresh — a job clock. Publishing that as `<lastmod>` would claim every setter
+ * changed every night, which is the exact signal destruction `entries.ts` forbids.
+ */
+export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL {
+  // Guarded here rather than only in the caller: with no groups the `OR` list
+  // renders as a bare `()` and the statement is a syntax error at the database,
+  // which is a far worse way to learn the catalogue is empty. No resolvable
+  // group means no climb on this site has a canonical URL at all.
+  if (groups.length === 0) {
+    throw new Error('[sitemap] setters shard: no resolvable board configuration — refusing to build an empty shard');
+  }
+
+  const linkable = sql.join(
+    groups.map((group) => groupPredicate(group)),
+    sql` OR `,
+  );
+
+  // Every VISIBLE climb, not just the linkable ones, because two of the three
+  // things this query decides are properties of the rendered page rather than
+  // of the submitted subset: where a climb lands in page one's ordering, and
+  // when the page last changed.
+  //
+  // The identity clock joins AFTER the aggregate, once per ELIGIBLE setter
+  // (~31k lookups) rather than once per visible climb (~10x that). It has to be
+  // in here at all because the page's `<h1>`, summary, avatar and `ProfilePage`
+  // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
+  // rename the setter's account and every one of those changes while the climb
+  // rows sit still. The account is the one `fetchSetterIdentity` renders, from
+  // the shared builders in `setter-identity.ts`: the account that set the
+  // name's visible climbs, picked for every name in ONE pass
+  // (`authoredAccountPerSetterName`, joined on the name), else a public
+  // account's linked login (`linkedLoginCandidates`, per name off the
+  // `board_username` index), in `SETTER_IDENTITY_ORDER`. Asking for the
+  // authored account per name walked the partial `user_id` index once per
+  // name, so its cost grew with every Boardsesh-authored climb.
+  //
+  // `linked_at` is in the fold because it is the only clock that moves when an
+  // account is newly linked to a setter name — the moment the rendered identity
+  // flips from the raw username to that user's name and avatar, while both user
+  // clocks can predate the setter's newest climb (#5206).
+  //
+  // It is aggregated per USER rather than read off one mapping row. One user can
+  // hold the same setter name on several boards (the unique index is
+  // `(user_id, board_type)`), and those rows share a `user_id` AND a profile —
+  // so the ORDER BY cannot separate them. Taking `linked_at` from whichever row
+  // `LIMIT 1` happened to reach would let `<lastmod>` move, or go BACKWARDS, on
+  // a page nothing changed about, after nothing worse than a plan change.
+  // `max()` over that user's mappings is the honest clock: any relink rebinds
+  // the identity the page renders. An account named by its own climbs and
+  // never linked has no mapping, and its user clocks stand alone.
+  //
+  // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
+  // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
+  // DESC, uuid`; that angle is chosen by `ascensionist_count desc nulls last`
+  // over publishable angles, so the value it lands on IS the max over those
+  // angles. `max()` skipping nulls is the same "nulls last". Taking the max
+  // directly costs one aggregate instead of a correlated LIMIT 1 per row.
+  return sql`
+    WITH visible AS (
+      SELECT
+        board_climbs.setter_username AS setter_username,
+        board_climbs.uuid AS uuid,
+        (${linkable}) AS is_linkable,
+        GREATEST(
+          board_climbs.updated_at,
+          COALESCE(stats.newest_stats_at, board_climbs.updated_at)
+        ) AS content_clock,
+        COALESCE(stats.top_ascents, 0) AS page_rank_ascents
+      FROM board_climbs
+      LEFT JOIN LATERAL (
+        SELECT
+          max(candidate.ascensionist_count) AS top_ascents,
+          max(candidate.updated_at) AS newest_stats_at
+        FROM board_climb_stats candidate
+        WHERE candidate.board_type = board_climbs.board_type
+          AND candidate.climb_uuid = board_climbs.uuid
+          AND ${publishableAngleWhere(sql`candidate.angle`, sql`board_climbs.board_type`)}
+      ) AS stats ON true
+      WHERE board_climbs.is_listed = true
+        AND board_climbs.is_draft = false
+        AND ${routableUsername}
+    ),
+    ranked AS (
+      SELECT
+        setter_username,
+        is_linkable,
+        content_clock,
+        row_number() OVER (
+          PARTITION BY setter_username
+          ORDER BY page_rank_ascents DESC, uuid
+        ) AS page_position
+      FROM visible
+    ),
+    eligible AS (
+      SELECT
+        setter_username,
+        max(content_clock) AS content_clock
+      FROM ranked
+      GROUP BY setter_username
+      HAVING count(*) FILTER (WHERE is_linkable) >= ${SETTER_MIN_VISIBLE_CLIMBS}
+         AND count(*) FILTER (WHERE is_linkable AND page_position <= ${SETTER_PAGE_SIZE}) >= 1
+    ),
+    authored_identity AS MATERIALIZED (${authoredAccountPerSetterName()})
+    SELECT
+      eligible.setter_username,
+      to_char(
+        GREATEST(eligible.content_clock, COALESCE(identity.updated_at, eligible.content_clock)),
+        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+      ) AS last_modified
+    FROM eligible
+    LEFT JOIN authored_identity ON authored_identity.setter_username = eligible.setter_username
+    LEFT JOIN LATERAL (
+      SELECT GREATEST(u.updated_at, COALESCE(linked.linked_at, u.updated_at), COALESCE(p.updated_at, u.updated_at))
+        AS updated_at
+      FROM (
+        SELECT authored_identity.user_id, 0 AS source_rank, 0 AS climb_count
+        WHERE authored_identity.user_id IS NOT NULL
+        UNION ALL
+        ${linkedLoginCandidates(sql`eligible.setter_username`)}
+      ) AS candidate
+      JOIN users u ON u.id = candidate.user_id
+      LEFT JOIN user_profiles p ON p.user_id = candidate.user_id
+      LEFT JOIN LATERAL (
+        SELECT max(ubm.linked_at) AS linked_at
+        FROM user_board_mappings ubm
+        WHERE ubm.user_id = candidate.user_id AND ubm.board_username = eligible.setter_username
+      ) AS linked ON true
+      ORDER BY ${SETTER_IDENTITY_ORDER}
+      LIMIT 1
+    ) AS identity ON true
+    ORDER BY eligible.setter_username ASC
+  `;
+}
+
+export type SetterSitemapQueryRow = {
+  setter_username: string;
+  last_modified: string | null;
+};
+
+export function runSetterSitemapQuery(db: SerialPlanDb, groups: readonly ClimbConfigGroup[]) {
+  return db.execute<SetterSitemapQueryRow>(buildSetterSitemapSql(groups));
+}
+
+/**
+ * Rows → sitemap items.
+ *
+ * The `<lastmod>` is the row's own clock, parsed from the explicit-`Z` string
+ * the query renders. `to_char` rather than a bare timestamp aggregate because
+ * the raw `sql` fragment bypasses drizzle's timestamp mapper, so the driver
+ * otherwise hands back pg text like `2026-08-10 20:39:19.492` that `new Date()`
+ * reads in the PROCESS timezone. A `new Date()` here would claim every setter
+ * changed on every crawl.
+ *
+ * The round-trip check is defence in depth, not the selection rule: the SQL
+ * predicate above already excludes everything it can reject. A non-zero drop
+ * count means a username reached here that the SQL was supposed to have
+ * filtered, and it must be loud — a silent drop desynchronises the item list
+ * from the summary that sized the pages.
+ */
+export function setterRowsToItems(rows: readonly SetterSitemapQueryRow[]): {
+  items: SetterSitemapItem[];
+  dropped: number;
+} {
+  const items: SetterSitemapItem[] = [];
+  let dropped = 0;
+
+  for (const row of rows) {
+    let encoded: string;
+    try {
+      encoded = encodeURIComponent(row.setter_username);
+      if (decodeURIComponent(encoded) !== row.setter_username) {
+        dropped += 1;
+        continue;
+      }
+    } catch {
+      // `encodeURIComponent` throws on a lone surrogate. Postgres `text` in a
+      // UTF-8 database cannot hold one, so this is unreachable from the real
+      // query — but "unreachable" is a claim about the database, and it must
+      // not become a 500 on the sitemap route if it is ever wrong.
+      dropped += 1;
+      continue;
+    }
+    const lastModified = row.last_modified ? new Date(row.last_modified) : null;
+    if (lastModified !== null && !Number.isFinite(lastModified.getTime())) {
+      dropped += 1;
+      continue;
+    }
+    items.push({
+      path: `/setter/${encoded}`,
+      lastModified,
+    });
+  }
+
+  return { items, dropped };
+}

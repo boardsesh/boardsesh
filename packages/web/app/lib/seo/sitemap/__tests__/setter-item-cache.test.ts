@@ -2,7 +2,31 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/app/lib/db/db', () => ({ dbzRead: {} }));
+const summaries = vi.hoisted(() => ({
+  reads: 0,
+  shouldThrow: false,
+  stored: {
+    itemCount: 2,
+    lastModified: new Date('2026-05-04T11:22:33.000Z'),
+    computedAt: new Date('2026-05-04T12:00:00.000Z'),
+  } as { itemCount: number; lastModified: Date | null; computedAt: Date } | null,
+}));
+vi.mock('@/app/lib/db/db', () => ({
+  dbzRead: {},
+  dbz: {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            summaries.reads += 1;
+            if (summaries.shouldThrow) throw new Error('summary read failed');
+            return summaries.stored ? [summaries.stored] : [];
+          },
+        }),
+      }),
+    }),
+  },
+}));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',
@@ -22,20 +46,6 @@ const KILTER_CONFIG: PopularBoardConfig = {
 vi.mock('@/app/lib/server-popular-configs', () => ({
   getAllBoardConfigsOrThrow: async () => [KILTER_CONFIG],
 }));
-
-// The Next Data Cache is a pass-through here: `unstable_cache` memoises across
-// requests in production, and the guard under test is the in-process one in
-// front of it, which is the half that dedupes CONCURRENT misses.
-//
-// So the two "does not memoise a failure" cases below cover the in-process
-// layer only. That is sufficient, and not by luck — read from the installed
-// next@16.3.2 (`server/web/spec-extension/unstable-cache.js`): the result is
-// `await`ed BEFORE `cacheNewResult` is called, so a rejection throws past the
-// write and never reaches the Data Cache, and the background-revalidation path
-// returns the stale value on error rather than storing the rejection. A failed
-// scan therefore cannot poison either layer for the `SUMMARY_REVALIDATE_SECONDS`
-// window. Re-check this if the Next major changes.
-vi.mock('next/cache', () => ({ unstable_cache: (fn: (...args: never[]) => unknown) => fn }));
 
 /**
  * Stands in for the whole read path, so every assertion below is "how many
@@ -72,6 +82,13 @@ afterEach(() => {
   reads.gate = null;
   reads.shouldThrow = false;
   reads.usernames = ['alice', 'bob'];
+  summaries.reads = 0;
+  summaries.shouldThrow = false;
+  summaries.stored = {
+    itemCount: 2,
+    lastModified: new Date('2026-05-04T11:22:33.000Z'),
+    computedAt: new Date('2026-05-04T12:00:00.000Z'),
+  };
 });
 
 describe('the setters item + summary caches', () => {
@@ -91,26 +108,20 @@ describe('the setters item + summary caches', () => {
     }
   });
 
-  it('runs ONE scan for concurrent summary callers', async () => {
-    let openGate = () => {};
-    reads.gate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
-
-    const pending = [fetchSetterSitemapSummary(), fetchSetterSitemapSummary()];
-    openGate();
-    const [first, second] = await Promise.all(pending);
-
-    expect(reads.count).toBe(1);
+  it('reads persisted summaries on a cold process without any scan', async () => {
+    const [first, second] = await Promise.all([fetchSetterSitemapSummary(), fetchSetterSitemapSummary()]);
+    expect(reads.count).toBe(0);
+    expect(summaries.reads).toBe(2);
+    expect(first).toEqual(second);
     expect(first.itemCount).toBe(2);
-    expect(second.itemCount).toBe(2);
     expect(first.lastModified?.toISOString()).toBe('2026-05-04T11:22:33.000Z');
+    resetSetterSitemapCachesForTests();
+    await fetchSetterSitemapSummary();
+    expect(reads.count).toBe(0);
   });
 
   it('runs ONE scan for a summary and a page arriving together', async () => {
-    // The cold-burst shape (#4461): `/sitemap.xml` reads the summary while
-    // `/sitemaps/setters/1.xml` builds the items. They share one single-flight
-    // rather than each running its own grouped scan.
+    // The summary is independent of the expensive per-page catalogue scan.
     let openGate = () => {};
     reads.gate = new Promise<void>((resolve) => {
       openGate = resolve;
@@ -144,18 +155,32 @@ describe('the setters item + summary caches', () => {
     expect(items).toHaveLength(2);
   });
 
-  it('does not memoise a failed SUMMARY either', async () => {
-    // Symmetric with the item build above, and it matters more: the index reads
-    // the summary on every hit, so a poisoned entry would keep the setters pages
-    // out of `/sitemap.xml` long after the database recovered.
-    reads.shouldThrow = true;
-    await expect(fetchSetterSitemapSummary()).rejects.toThrow('setters scan failed');
-
-    reads.shouldThrow = false;
+  it('retries a failed summary read without scanning or memoising the failure', async () => {
+    summaries.shouldThrow = true;
+    await expect(fetchSetterSitemapSummary()).rejects.toThrow('summary read failed');
+    summaries.shouldThrow = false;
     const summary = await fetchSetterSitemapSummary();
-
-    expect(reads.count).toBe(2);
+    expect(summaries.reads).toBe(2);
+    expect(reads.count).toBe(0);
     expect(summary.itemCount).toBe(2);
+  });
+
+  it('fails promptly on a missing summary without a foreground scan', async () => {
+    summaries.stored = null;
+    await expect(fetchSetterSitemapSummary()).rejects.toThrow('not populated');
+    expect(reads.count).toBe(0);
+  });
+
+  it('serves a stale last-good summary without a foreground scan', async () => {
+    summaries.stored = { itemCount: 5, lastModified: null, computedAt: new Date('2000-01-01') };
+    await expect(fetchSetterSitemapSummary()).resolves.toEqual({ itemCount: 5, lastModified: null });
+    expect(reads.count).toBe(0);
+  });
+
+  it('does not advertise an invalid persisted count', async () => {
+    summaries.stored = { itemCount: 0, lastModified: null, computedAt: new Date() };
+    await expect(fetchSetterSitemapSummary()).rejects.toThrow('not populated');
+    expect(reads.count).toBe(0);
   });
 
   it('refuses to cache a list the summary does not describe', async () => {

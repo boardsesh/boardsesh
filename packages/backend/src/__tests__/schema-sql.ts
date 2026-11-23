@@ -4,6 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs';
+const sitemapSummarySchema = readFileSync(
+  new URL('../../../db/drizzle/0203_bouncy_ken_ellis.sql', import.meta.url),
+  'utf8',
+);
 // Notification types are text in this fixture; reuse the generated conversation DDL.
 const feedbackConversationSchema = readFileSync(
   new URL('../../../db/drizzle/0331_feedback_github_conversations.sql', import.meta.url),
@@ -2624,4 +2628,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerSessionTriggersSchema};
   ${partnerSessionHintPrivacySchema};
   ${offlineWriteDeliverySchema};
+  DROP TABLE IF EXISTS sitemap_shard_refreshes;
+  ${sitemapSummarySchema};
 `;

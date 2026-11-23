@@ -117,10 +117,8 @@ vi.mock('../setter-query', () => ({
   },
   buildSetterSitemapItems: async () => [],
 }));
-// Declared-empty like gyms and setters while `cnc-packs` is off, and stubbed
-// here rather than by mocking the flag module underneath it: the real builder's
-// only I/O is that PostHog call, and routing the stub through `pureBuilder`
-// keeps `build-plans` in the throw and stall scenarios below with the others.
+// Build plans remain empty while their pages are noindex. Routing the stub
+// through `pureBuilder` keeps them in the throw and stall scenarios too.
 vi.mock('../build-plans-entries', () => ({
   buildBuildPlansEntries: () => pureBuilder(() => []),
 }));
@@ -275,7 +273,7 @@ describe('buildSitemapIndexXml', () => {
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/static.xml');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/boards.xml');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/playlists.xml');
-    // gyms and setters are declared-empty, so they stay out of the index — but
+    // Gyms is declared-empty, so it stays out of the index — but
     // "nobody has published a gym yet" and "the gyms query regressed to []" are
     // indistinguishable from here, so the omission is logged rather than silent.
     expect(xml).not.toContain('/sitemaps/gyms.xml');
@@ -283,10 +281,27 @@ describe('buildSitemapIndexXml', () => {
     // `setters` is a paged, data-backed shard now, so it IS listed — one entry
     // per page, derived from its summary rather than hardcoded.
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/setters/1.xml.gz');
-    expect(warnings.join(' ')).toContain('build-plans');
+    // Build plans deliberately remain noindex, so omitting them is expected.
+    expect(xml).not.toContain('/sitemaps/build-plans.xml');
+    expect(warnings.join(' ')).not.toContain('build-plans');
     // An empty shard is not a degradation: nothing failed, so the response keeps
     // the full cache window.
     expect(degradedShards).toEqual([]);
+  });
+
+  it('keeps empty user-content warnings while quietly omitting build plans', async () => {
+    playlistRows.count = 0;
+
+    const response = await sitemapIndexRouteHandler();
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).not.toContain('/sitemaps/playlists.xml');
+    expect(xml).not.toContain('/sitemaps/build-plans.xml');
+    expect(warnings.join(' ')).toContain('playlists');
+    expect(warnings.join(' ')).not.toContain('build-plans');
+    expect(response.headers.get('cache-control')).toBe(FULL_CACHE_CONTROL);
+    expect(response.headers.get('x-sitemap-degraded')).toBeNull();
   });
 
   it('lists one climb page per CLIMB_URLS_PER_SHARD items the summary reports', async () => {
@@ -398,6 +413,7 @@ describe('buildSitemapIndexXml', () => {
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(errors.join(' ')).toContain('7 of 7 builders failed');
+    expect(errors.join(' ')).toContain('shard "build-plans" failed');
   });
 
   it('serves the rest of the index when a builder never settles', async () => {
