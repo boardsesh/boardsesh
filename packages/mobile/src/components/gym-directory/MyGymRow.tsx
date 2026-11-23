@@ -24,7 +24,7 @@ type MyGymRowProps = {
   manageLabel: string;
   manageAccessibilityLabel: string;
   noAddressLabel: string;
-  /** Open the gym editor (only wired when `gym.canEdit`). */
+  /** Open the gym's page (only wired when `gym.canEdit`). */
   onOpenGym: (gym: Gym) => void;
   /** Hand off to the web kiosk/TV manage console (only wired when `gym.canEdit`). */
   onManageKiosks: (gym: Gym) => void;

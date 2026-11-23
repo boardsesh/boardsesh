@@ -31,6 +31,7 @@ import { BoardRowList } from '../../src/components/board-discovery/BoardRowList'
 import { BoardSelectorView } from '../../src/components/board-discovery/BoardSelectorView';
 import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
+import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { InRangeSection } from '../../src/components/board-discovery/InRangeSection';
 import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
 import { NearbyLocationBanner } from '../../src/components/board-discovery/NearbyLocationBanner';
@@ -1506,6 +1507,11 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     retryLookup();
   }, [chooseFirstBoardPath, retryLookup]);
+  // "See gym" on At {gym}: the gym's page, pushed in this modal's own stack.
+  const onSeeTopGym = useCallback(
+    (gymUuid: string) => router.push(gymPageHref(gymUuid, 'boards', boardReturnTo)),
+    [router, boardReturnTo],
+  );
   // Android can withhold what a scan heard; when it heard nothing, the top
   // says why and offers the fix, which rescans when it works.
   const locationHint = useInRangeLocationHint(topView.heardNothing, startScan);
@@ -1524,6 +1530,7 @@ export default function BoardSelection() {
       atGymMenuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
       onAtGymMenuAction={showCardMenus ? onAtGymMenuAction : undefined}
       atGymMenuKeys={myBoardKeys}
+      onSeeGym={onSeeTopGym}
     />
   );
 
@@ -1719,6 +1726,7 @@ export default function BoardSelection() {
             onSetActive={onSetActiveFromDetails}
             onReviewReports={directoryReportsEnabled ? openReviewFromDetails : undefined}
             relistGym={detailRelistGym}
+            returnTo={boardReturnTo}
           />
           {reportHost.sheet}
           {shownReviewBoard ? (

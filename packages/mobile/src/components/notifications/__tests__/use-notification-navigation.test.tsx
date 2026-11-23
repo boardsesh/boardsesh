@@ -328,3 +328,20 @@ describe('directory notice navigation', () => {
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 });
+
+describe('useNotificationNavigation gym claims', () => {
+  it('opens the gym page on the root stack when a claim comes through', () => {
+    tap(
+      makeNotification({
+        type: 'gym_claim_approved',
+        entityType: 'gym',
+        entityId: 'gym-uuid-1',
+        gymName: 'Crux',
+        climbUuid: null,
+        proposalUuid: null,
+      }),
+    );
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'gym-uuid-1' } });
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
