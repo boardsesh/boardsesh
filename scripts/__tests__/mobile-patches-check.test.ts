@@ -1460,6 +1460,7 @@ describe('checkPatchInventory', () => {
   describe.each([
     ['postgres@3.4.9', 'packages/db/patches/postgres@3.4.9.patch'],
     ['@mui/material@7.3.11', 'packages/web/patches/@mui__material@7.3.11.patch'],
+    ['next@16.3.5', 'packages/web/patches/next@16.3.5.patch'],
   ])('non-native patch %s', (patchKey, patchPath) => {
     it('accepts the explicitly registered non-native patch outside native fingerprint inputs', () => {
       expect(
