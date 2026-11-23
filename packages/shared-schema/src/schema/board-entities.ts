@@ -156,6 +156,16 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     timerName: String
     "Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym)"
     canEdit: Boolean!
+    "Whether the current viewer may delete this board with deleteBoard: its owner; the owner or an admin of its linked gym, on a synced (system-owned) board only; or a global admin. False for a deleted board and when signed out."
+    canDelete: Boolean!
+    """
+    Whether the current viewer may take this board off its gym's listing. True when
+    the board is linked to a gym and the viewer is its owner (call linkBoardToGym
+    with gymUuid null) or can edit that gym: its owner, a gym admin or editor, or a
+    community admin/leader covering it (call detachBoardFromGym). Gym staff use this
+    instead of deleting a climber's board. False when signed out.
+    """
+    canRemoveFromGym: Boolean!
     "Whether the current viewer has pinned this board to the front of their board list (false when unauthenticated)"
     isPinnedByMe: Boolean!
   }

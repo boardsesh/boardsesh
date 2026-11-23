@@ -60,6 +60,18 @@ export type UserBoard = {
   /** Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym). */
   canEdit?: boolean;
   /**
+   * Whether the viewer may delete this board: its owner, the owner/admin of its
+   * linked gym on a synced (system-owned) board, or a global admin. Optional here
+   * (though `Boolean!` on the wire) for the same reason as `canEdit`.
+   */
+  canDelete?: boolean;
+  /**
+   * Whether the viewer may take this board off its gym's listing: its owner
+   * (`linkBoardToGym` with no gym) or anyone with edit access to that gym
+   * (`detachBoardFromGym`). Optional for the same reason as `canEdit`.
+   */
+  canRemoveFromGym?: boolean;
+  /**
    * Whether the viewer pinned this board to the front of their board list.
    * Optional here (though `Boolean!` on the wire) for the same reason as
    * `canEdit`: clients build partial UserBoards from offline snapshots and board

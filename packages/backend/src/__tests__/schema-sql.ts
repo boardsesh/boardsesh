@@ -16,6 +16,10 @@ const offlineWriteDeliverySchema = readFileSync(
   new URL('../../../db/drizzle/0332_offline_write_delivery.sql', import.meta.url),
   'utf8',
 );
+const boardModerationEventsSchema = readFileSync(
+  new URL('../../../db/drizzle/0333_board_moderation_events.sql', import.meta.url),
+  'utf8',
+).replaceAll('--> statement-breakpoint', '');
 
 const partnerSessionHintPrivacySchema = readFileSync(
   new URL('../../../db/drizzle/0330_session_hint_privacy.sql', import.meta.url),
@@ -1818,6 +1822,13 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     ON "gym_owner_reassignments" ("gym_uuid", "created_at");
   CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_performed_by_idx"
     ON "gym_owner_reassignments" ("performed_by");
+
+  -- Staff and admin actions on boards (migration 0333), straight from the
+  -- generated migration. Dropped first so a reapplied fixture starts clean.
+  DROP TABLE IF EXISTS "board_moderation_events" CASCADE;
+  DROP TYPE IF EXISTS board_moderation_action;
+  DROP TYPE IF EXISTS board_moderation_actor_role;
+  ${boardModerationEventsSchema}
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

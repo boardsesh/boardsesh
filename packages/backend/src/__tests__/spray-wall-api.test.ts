@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  boardModerationEvents,
   esp32Controllers,
   feedItems,
   communityRoles,
@@ -142,6 +143,8 @@ const { betaLinkQueries } = await import('../graphql/resolvers/beta-videos/queri
 const { resetControllerOwnerChecksForTests } = await import('../graphql/resolvers/climbs/spray-read-access');
 const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 
+/** The synced-catalogue owner; a wall it owns is one gym authority may delete. */
+const SYSTEM_BOARD_OWNER_ID = '00000000-0000-0000-0000-000000000000';
 const OWNER = 'sw-owner';
 const STRANGER = 'sw-stranger';
 const GYM_EDITOR = 'sw-gym-editor';
@@ -4201,21 +4204,111 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
   });
 
-  it('lets a linked gym admin delete a public spray board with its wall and photo cleanup', async () => {
+  it("refuses a linked gym admin deleting a climber's public spray wall", async () => {
+    // A climber's wall at the gym is theirs: staff take it off the listing
+    // (detachBoardFromGym) instead of deleting it.
     const { wall } = await createPublishedWall(OWNER, { isPublic: true });
     const gym = await gymWith(STRANGER, 'admin');
     await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
-    const publicKey = await publicPhotoKeyOf(wall.layoutId);
-    expect(publicKey).not.toBeNull();
 
-    expect(await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).toBe(true);
-    const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
-    const [deletedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
-    expect(deletedWall.deletedAt).toBeInstanceOf(Date);
-    expect(deletedBoard.deletedAt).toEqual(deletedWall.deletedAt);
-    expect(deletedBoard.syncFrozenAt).toEqual(deletedWall.deletedAt);
-    expect(deletedWall.publicPhotoKey).toBeNull();
-    expect(deletedPublicKeys).toContain(publicKey);
+    await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
+      'Not authorized to delete this board',
+    );
+    await expect(sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
+      'Not authorized to delete this board',
+    );
+    const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    expect(stillLive.deletedAt).toBeNull();
+    expect(deletedPublicKeys).toHaveLength(0);
+  });
+
+  it.each(['deleteBoard', 'deleteSprayWall'] as const)(
+    'lets a global admin %s a public spray wall, with the cleanup and a moderation record',
+    async (mutation) => {
+      const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+      await db.insert(communityRoles).values({ userId: OUTSIDER, role: 'admin', boardType: null });
+      const publicKey = await publicPhotoKeyOf(wall.layoutId);
+      expect(publicKey).not.toBeNull();
+
+      const deleted =
+        mutation === 'deleteBoard'
+          ? await socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(OUTSIDER))
+          : await sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OUTSIDER));
+      expect(deleted).toBe(true);
+      const [deletedWall] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+      const [deletedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+      expect(deletedWall.deletedAt).toBeInstanceOf(Date);
+      expect(deletedBoard.deletedAt).toEqual(deletedWall.deletedAt);
+      expect(deletedBoard.syncFrozenAt).toEqual(deletedWall.deletedAt);
+      expect(deletedWall.publicPhotoKey).toBeNull();
+      expect(deletedPublicKeys).toContain(publicKey);
+      const events = await db
+        .select()
+        .from(boardModerationEvents)
+        .where(eq(boardModerationEvents.boardId, deletedBoard.id));
+      expect(events).toEqual([
+        expect.objectContaining({
+          actorUserId: OUTSIDER,
+          actorRole: 'global_admin',
+          action: 'deleted',
+          details: { mutation: 'deleteSprayWall' },
+        }),
+      ]);
+    },
+  );
+
+  it("does not let a global admin delete a private wall they can't read through deleteSprayWall", async () => {
+    // The read check deleteBoard always had: admin status never reveals a
+    // private wall by uuid. Before this, the direct mutation skipped it.
+    const { wall } = await createPublishedWall(OWNER);
+    await db.insert(communityRoles).values({ userId: OUTSIDER, role: 'admin', boardType: null });
+    await expect(sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OUTSIDER))).rejects.toThrow(
+      'Board not found',
+    );
+    const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
+    expect(stillLive.deletedAt).toBeNull();
+  });
+
+  it('records a gym admin renaming a climber wall as a staff edit, naming the field', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    const gym = await gymWith(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, name: 'Staff name' } }, ctxFor(STRANGER));
+    // The owner's own edit is not a staff action.
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, name: 'Owner name' } }, ctxFor(OWNER));
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    const events = await db.select().from(boardModerationEvents).where(eq(boardModerationEvents.boardId, board.id));
+    expect(events).toEqual([
+      expect.objectContaining({
+        gymId: gym.id,
+        actorUserId: STRANGER,
+        actorRole: 'gym_admin',
+        action: 'edited_by_staff',
+        details: { mutation: 'updateSprayWall', fields: ['name'] },
+      }),
+    ]);
+  });
+
+  it('records a gym admin taking a climber wall off the gym as a removal that holds the creator off', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    // Somebody else's gym: the wall's creator is not staff there.
+    const gymUuid = uuidv4();
+    const [gym] = await db
+      .insert(gyms)
+      .values({ uuid: gymUuid, slug: gymUuid, name: 'Their Gym', ownerId: OUTSIDER, isPublic: true })
+      .returning({ id: gyms.id, uuid: gyms.uuid });
+    await db.insert(gymMembers).values({ gymId: gym.id, userId: STRANGER, role: 'admin' });
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, gymUuid: null } }, ctxFor(STRANGER));
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board.gymId).toBeNull();
+    const events = await db.select().from(boardModerationEvents).where(eq(boardModerationEvents.boardId, board.id));
+    expect(events).toEqual([
+      expect.objectContaining({ gymId: gym.id, actorRole: 'gym_admin', action: 'removed_from_gym' }),
+    ]);
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, gymUuid: gym.uuid } }, ctxFor(OWNER)),
+    ).rejects.toThrow("This gym's staff took this board off their listing");
   });
 
   it.each(['editor', 'member'] as const)('denies a linked gym %s generic spray deletion', async (role) => {
@@ -4234,8 +4327,10 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     const { wall } = await createPublishedWall(OWNER);
     const gym = await gymWith(STRANGER, 'admin');
     await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+    // Refused on authority before the read check: a climber's wall is never
+    // the gym's to delete, private or not.
     await expect(socialBoardMutations.deleteBoard({}, { boardUuid: wall.uuid }, ctxFor(STRANGER))).rejects.toThrow(
-      'Board not found',
+      'Not authorized to delete this board',
     );
     const [stillLive] = await db.select().from(sprayWalls).where(eq(sprayWalls.layoutId, wall.layoutId));
     expect(stillLive.deletedAt).toBeNull();
@@ -4246,7 +4341,12 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     async (change) => {
       const { wall } = await createPublishedWall(OWNER, { isPublic: true });
       const gym = await gymWith(STRANGER, 'admin');
-      await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+      // A system-owned wall: the only kind gym authority may delete.
+      await insertUser(SYSTEM_BOARD_OWNER_ID);
+      await db
+        .update(userBoards)
+        .set({ gymId: gym.id, ownerId: SYSTEM_BOARD_OWNER_ID })
+        .where(eq(userBoards.uuid, wall.uuid));
       const [wallRow] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
       const wallLocked = createBarrier();
       const releaseWrite = createBarrier();
