@@ -232,7 +232,17 @@ Production-environment config this needs:
 The web-local [Next 16.3.5 patch](../../packages/web/patches/next@16.3.5.patch)
 releases request state from closed responses. Next's response adapter registers
 close callbacks with `once`, including its CJS, ESM and bundled production
-implementations. Previously, callbacks remained attached after close and could
+implementations. The generated App Router page and API-route templates also
+register their raw response hooks once: those hooks bypass the response adapter
+and feed `AfterContext` directly. Keep both CJS and ESM templates covered when
+upgrading Next. Every raw response hook invokes callbacks immediately when the
+response is already closed, preserving the original response as their receiver.
+Aborted route loading and stale-cache background rendering can reach this case;
+registering another event listener would wait for a close event that already ran.
+New work units first registered with `after()` after closure retain Next's
+existing render/action phase. This patch preserves that upstream behavior and
+does not modify `AfterContext` internals.
+Previously, callbacks remained attached after close and could
 keep `AfterContext`, work-unit stores and render/fetch state alive whenever
 another owner retained the response. A controlled test holding 100 closed
 responses retained all 100 request graphs before the change and none afterwards;
