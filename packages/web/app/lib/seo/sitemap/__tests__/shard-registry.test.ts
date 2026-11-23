@@ -101,6 +101,7 @@ describe('SHARD_REGISTRY', () => {
     expect(Object.fromEntries(SHARD_REGISTRY.map((shard) => [shard.id, shard.expectsUrls]))).toEqual({
       static: true,
       boards: true,
+      'app-guides': true,
       // Zero public playlists holding a climb is a legitimate state, and zero
       // gyms/setters is the declared-empty design — none of these may 503.
       playlists: false,

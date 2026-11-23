@@ -6,6 +6,7 @@ import { SUPPORTED_LOCALES } from '../i18n/config';
 import { marketingScreenshot, type MarketingShot } from '../marketing-screenshots';
 
 const shots: MarketingShot[] = ['kilter', 'tension', 'moonboard', 'queue', 'wall-status', 'profile', 'spray-wall'];
+const publicRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
 
 describe('marketing capture selection', () => {
   for (const platform of ['ios', 'android'] as const) {
@@ -26,12 +27,24 @@ describe('marketing capture selection', () => {
         expect(marketingScreenshot(platform, 'de', shot)).toEqual(marketingScreenshot(platform, 'en-US', shot));
       }
     });
+
+    it(`declares the actual dimensions of each ${platform} screenshot`, async () => {
+      await Promise.all(
+        shots.map(async (shot) => {
+          const capture = marketingScreenshot(platform, 'en-US', shot);
+          const metadata = await sharp(`${publicRoot}${capture.src}`).metadata();
+          expect({ width: metadata.width, height: metadata.height }, capture.src).toEqual({
+            width: capture.width,
+            height: capture.height,
+          });
+        }),
+      );
+    });
   }
 });
 
 describe('the workouts capture', () => {
   it('is the one Play Store crop on both platforms, sized to the file it names', async () => {
-    const publicRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
     for (const platform of ['ios', 'android'] as const) {
       const capture = marketingScreenshot(platform, 'en-US', 'workouts');
       expect(capture.src).toBe('/images/app/android/workouts.webp');

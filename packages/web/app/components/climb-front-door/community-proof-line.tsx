@@ -4,7 +4,8 @@ import Typography from '@mui/material/Typography';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import { cachedCommunityStats } from '@/app/lib/graphql/server-cached-client';
 import { formatCommunityProof } from '@/app/lib/community-proof';
-import { getServerTranslation } from '@/app/lib/i18n/server';
+import type { Locale } from '@/app/lib/i18n/config';
+import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 
 const lineSx = {
@@ -38,10 +39,10 @@ const iconSx = {
  * nothing when the numbers could not be read: a missing line is honest, a "0"
  * would say nobody climbs.
  */
-export default async function CommunityProofLine() {
+export default async function CommunityProofLine({ locale: requestedLocale }: { locale?: Locale } = {}) {
   const [communityStats, { t, locale }] = await Promise.all([
     cachedCommunityStats(),
-    getServerTranslation('marketing'),
+    requestedLocale ? getServerTranslationForLocale(requestedLocale, 'marketing') : getServerTranslation('marketing'),
   ]);
   if (!communityStats) return null;
 

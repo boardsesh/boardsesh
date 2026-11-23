@@ -86,5 +86,8 @@
     "nearbyCount_other": "{{count}} Spraywalls im Umkreis von {{radius}} km",
     "nearbyCapped": "Die {{shown}} nächsten von {{total}} Spraywalls werden angezeigt",
     "selectedArea": "Spraywalls im Umkreis von {{radius}} km um {{place}}"
-  }
+  },
+  "appGuidesLink": "Board-App-Ratgeber (Englisch)",
+  "boardAppGuideLink": "App-Kompatibilität mit {{board}} (Englisch)",
+  "sprayComparisonLink": "Spraywall-Apps vergleichen (Englisch)"
 }

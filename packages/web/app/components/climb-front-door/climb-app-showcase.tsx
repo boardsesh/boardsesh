@@ -1,3 +1,5 @@
+import type { BoardName } from '@/app/lib/types';
+import BoardAppGuideLink from '@/app/components/marketing/board-app-guide-link';
 import React, { Suspense } from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
@@ -27,6 +29,7 @@ type ClimbAppShowcaseProps = {
    * plain play tile (`InstantBetaVisual` says why never other climbs' beta).
    */
   betaLinks: readonly BetaLink[];
+  board?: BoardName;
 };
 
 /** How many of this climb's beta thumbnails the "Instant beta" card fans out. */
@@ -183,7 +186,7 @@ function InstantBetaVisual({ climbBeta }: { climbBeta: readonly BetaLink[] }) {
  * `brand-outlined` styles only the "Update the app" button a visitor still in
  * the retired Capacitor app gets instead.
  */
-export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcaseProps) {
+export default async function ClimbAppShowcase({ betaLinks, board }: ClimbAppShowcaseProps) {
   const [{ t }, storeLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);
 
   return (
@@ -253,6 +256,8 @@ export default async function ClimbAppShowcase({ betaLinks }: ClimbAppShowcasePr
           </Box>
         </Box>
       </MarketingPreviewProvider>
+
+      {board && <BoardAppGuideLink board={board} />}
 
       <Box className={styles.foot}>
         <Suspense fallback={null}>

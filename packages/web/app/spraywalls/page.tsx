@@ -1,3 +1,4 @@
+import BoardAppGuideLink from '@/app/components/marketing/board-app-guide-link';
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
@@ -66,6 +67,7 @@ export default async function SprayWallsPage() {
           <Prose>{t('sprayPrivacy')}</Prose>
           <Prose>{t('sprayTraining')}</Prose>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'start', gap: 2, mt: 3 }}>
+            <BoardAppGuideLink board="spray" />
             <MuiLink component={LocaleLink} href="/help/spray-walls">
               {t('photoGuide')}
             </MuiLink>

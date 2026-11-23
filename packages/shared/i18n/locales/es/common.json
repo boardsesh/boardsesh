@@ -1279,7 +1279,8 @@
       "discord": "Discord",
       "developers": "Desarrolladores",
       "bluetooth": "¿No se conecta el plafón?",
-      "reportBug": "Informa de un error"
+      "reportBug": "Informa de un error",
+      "appGuides": "Guías de apps para plafones (en inglés)"
     },
     "openBrowser": "Ábrelo en el navegador"
   },

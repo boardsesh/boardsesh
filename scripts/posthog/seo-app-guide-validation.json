@@ -1,0 +1,20 @@
+{
+  "verifiedAt": "2026-11-23",
+  "projectId": 412845,
+  "fixtureQuerySha256": "36fcfb4524d3701b952625965a7dfd82631b6e004259089f047b85f2b6750527",
+  "fixtureRows": [
+    ["/apps/kilter", "US", 7, 2, 2, 3, 2, 3],
+    ["existing site", "US", 1, 1, 0, 1, 0, 0]
+  ],
+  "productionProbe": {
+    "from": "2026-11-21",
+    "to": "2026-11-22",
+    "rows": [["existing site", "outside US or unknown", 4, 0, 0, 0, 0, 0]],
+    "sessionIdProbe": {
+      "pageviews": 66,
+      "storeClicks": 3,
+      "webOpens": 3,
+      "allHadSessionId": true
+    }
+  }
+}

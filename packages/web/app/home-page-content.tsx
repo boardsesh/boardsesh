@@ -178,6 +178,9 @@ export default function HomePageContent({
             sx={{ minHeight: 44, borderColor: 'var(--control-border)' }}
           />
         </Box>
+        <MuiLink component={LocaleLink} href="/apps" locale="en-US" sx={{ ...LINK_TARGET, mt: 2 }}>
+          {website('appGuidesLink')}
+        </MuiLink>
       </PageSection>
       <PageCard>
         <PageSection title={website('importTitle')} lead={website('importBody')} className={styles.importBand}>

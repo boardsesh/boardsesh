@@ -86,5 +86,8 @@
     "nearbyCount_other": "{{radius}} 公里内有 {{count}} 面喷点墙",
     "nearbyCapped": "共 {{total}} 面喷点墙，显示最近的 {{shown}} 面",
     "selectedArea": "{{place}} 周边 {{radius}} 公里内的喷点墙"
-  }
+  },
+  "appGuidesLink": "攀岩板应用指南（英语）",
+  "boardAppGuideLink": "应用与 {{board}} 的兼容性（英语）",
+  "sprayComparisonLink": "比较喷点墙应用（英语）"
 }

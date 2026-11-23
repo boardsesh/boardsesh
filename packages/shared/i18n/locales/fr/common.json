@@ -1279,7 +1279,8 @@
       "discord": "Discord",
       "developers": "Développeurs",
       "bluetooth": "Le board ne se connecte pas ?",
-      "reportBug": "Signaler un bug"
+      "reportBug": "Signaler un bug",
+      "appGuides": "Guides des applis de board (en anglais)"
     },
     "openBrowser": "Ouvrir dans votre navigateur"
   },

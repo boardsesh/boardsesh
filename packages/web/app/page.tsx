@@ -60,6 +60,7 @@ export default async function Home() {
         website: [
           'trust',
           'boardChoices',
+          'appGuidesLink',
           'importTitle',
           'importBody',
           'importLink',

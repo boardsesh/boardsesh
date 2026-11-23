@@ -1279,7 +1279,8 @@
       "discord": "Discord",
       "developers": "Sviluppatori",
       "bluetooth": "Il pannello non si collega?",
-      "reportBug": "Segnala un problema"
+      "reportBug": "Segnala un problema",
+      "appGuides": "Guide alle app per pannelli (in inglese)"
     },
     "openBrowser": "Aprilo nel browser"
   },

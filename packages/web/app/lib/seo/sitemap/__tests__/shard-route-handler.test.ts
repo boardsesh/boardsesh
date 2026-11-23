@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { APP_GUIDE_HUB_PATH, getBoardAppGuidePath } from '@/app/lib/i18n/published-locales';
 import type { SitemapItem } from '../entries';
 import { expandAllLocales } from '../entries';
 import { playlistRowsToItems } from '../playlist-entries';
@@ -31,7 +33,7 @@ const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang:
 const playlistRows = vi.hoisted(() => ({ count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 }));
 const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
 const setterSummary = vi.hoisted(() => ({ itemCount: 12_000, shouldThrow: false, hang: false, delayMs: 0 }));
-/** `static`, `gyms` and `build-plans` are pure builders — flags let the full index fail, or stall, at once. */
+/** Flags let the pure fixed-shard builders fail or stall along with the full index. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
 
 /** Never settles: the failure mode a try/catch cannot see. */
@@ -97,6 +99,10 @@ const pureBuilder = (real: () => SitemapItem[] | Promise<SitemapItem[]>): Sitema
 vi.mock('../static-entries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../static-entries')>();
   return { ...actual, buildStaticEntries: () => pureBuilder(actual.buildStaticEntries) };
+});
+vi.mock('../app-guide-entries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../app-guide-entries')>();
+  return { ...actual, buildAppGuideEntries: () => pureBuilder(actual.buildAppGuideEntries) };
 });
 vi.mock('../gym-entries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../gym-entries')>();
@@ -271,6 +277,9 @@ describe('buildSitemapIndexXml', () => {
 
     expect(xml).toContain('<sitemapindex');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/static.xml');
+    expect(xml).toContain(
+      '<loc>https://www.boardsesh.com/sitemaps/app-guides.xml</loc>\n    <lastmod>2026-11-23T00:00:00.000Z</lastmod>',
+    );
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/boards.xml');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/playlists.xml');
     // Gyms is declared-empty, so it stays out of the index — but
@@ -412,7 +421,7 @@ describe('buildSitemapIndexXml', () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(errors.join(' ')).toContain('7 of 7 builders failed');
+    expect(errors.join(' ')).toContain('8 of 8 builders failed');
     expect(errors.join(' ')).toContain('shard "build-plans" failed');
   });
 
@@ -525,6 +534,20 @@ describe('locale expansion is observable in the rendered shard', () => {
     expect(xml).toContain('<loc>');
     // The whole point of the change: no /de, /es or /fr climb-list URLs.
     expect(xml).not.toMatch(/<loc>[^<]*boardsesh\.com\/(de|es|fr)\//);
+  });
+
+  it('publishes the ten English guide URLs with their editorial update date', async () => {
+    const { GET } = await import('@/app/sitemaps/app-guides.xml/route');
+    const response = await GET();
+    const xml = await response.text();
+    const locations = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, location]) => location);
+    const paths = [APP_GUIDE_HUB_PATH, ...SUPPORTED_BOARDS.map(getBoardAppGuidePath)];
+
+    expect(response.status).toBe(200);
+    expect(locations).toHaveLength(10);
+    expect(locations.sort()).toEqual(paths.map((path) => `https://www.boardsesh.com${path}`).sort());
+    expect(xml).not.toContain('xhtml:link');
+    expect(xml.match(/<lastmod>2026-11-23T00:00:00.000Z<\/lastmod>/g)).toHaveLength(10);
   });
 
   it('emits one URL per item with no alternates block, not one per locale', async () => {

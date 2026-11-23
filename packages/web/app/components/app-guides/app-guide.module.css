@@ -1,0 +1,137 @@
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 210px);
+  align-items: start;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-8);
+}
+
+.heroImage {
+  justify-self: center;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.downloadActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
+}
+
+.guidePicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--spacing-4);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.comparisonFrame {
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+}
+
+.comparison {
+  table-layout: fixed;
+}
+
+.comparisonHead th:first-child {
+  width: 19%;
+}
+
+.comparisonHead th,
+.comparisonBody .comparisonFeature {
+  font-weight: 600;
+}
+
+.comparisonRow th,
+.comparisonRow td {
+  vertical-align: top;
+}
+
+.comparisonRow:last-child th,
+.comparisonRow:last-child td {
+  border-bottom: 0;
+}
+
+.comparisonSources {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  margin-inline-start: var(--spacing-2);
+}
+
+.comparisonSources a {
+  display: inline-grid;
+  min-width: var(--spacing-6);
+  min-height: var(--spacing-6);
+  place-items: center;
+}
+
+.source {
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.mobileColumn {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-6);
+  }
+
+  .heroImage {
+    max-width: 156px;
+    justify-self: start;
+  }
+
+  .comparison .comparisonHead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .comparison .comparisonBody,
+  .comparisonBody .comparisonRow {
+    display: block;
+  }
+
+  .comparisonRow .comparisonFeature,
+  .comparisonRow .comparisonDetail {
+    display: block;
+    padding: var(--spacing-3) var(--spacing-4);
+    border: 0;
+  }
+
+  .comparisonRow .comparisonFeature {
+    background: var(--semantic-surface-elevated);
+    border-block: 1px solid var(--separator);
+  }
+
+  .comparisonRow:first-child .comparisonFeature {
+    border-top: 0;
+  }
+
+  .mobileColumn {
+    display: block;
+    font-weight: 600;
+    margin-bottom: var(--spacing-1);
+  }
+}

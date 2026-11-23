@@ -30,6 +30,8 @@ type PageMetadataOptions = {
   openGraphType?: 'website' | 'article' | 'profile';
   twitterCard?: 'summary' | 'summary_large_image' | 'app' | 'player';
   locale?: Locale;
+  /** Locales with a published URL for this page. Defaults to every site locale. */
+  availableLocales?: readonly Locale[];
 };
 
 function normalizePath(path?: string): string | undefined {
@@ -58,12 +60,14 @@ export function withBrandTitle(title: string): string {
   return `${title} | ${SITE_NAME}`;
 }
 
-function buildLanguageAlternates(basePath: string): Record<string, string> {
+function buildLanguageAlternates(basePath: string, availableLocales: readonly Locale[]): Record<string, string> {
   const languages: Record<string, string> = {};
-  for (const locale of SUPPORTED_LOCALES) {
+  for (const locale of availableLocales) {
     languages[locale] = localeHref(basePath, locale);
   }
-  languages['x-default'] = localeHref(basePath, DEFAULT_LOCALE);
+  if (availableLocales.includes(DEFAULT_LOCALE)) {
+    languages['x-default'] = localeHref(basePath, DEFAULT_LOCALE);
+  }
   return languages;
 }
 
@@ -82,6 +86,7 @@ export function createPageMetadata({
   openGraphType = 'website',
   twitterCard = 'summary_large_image',
   locale = DEFAULT_LOCALE,
+  availableLocales = SUPPORTED_LOCALES,
 }: PageMetadataOptions): Metadata {
   const basePath = normalizePath(path);
   const canonicalPath = basePath ? localeHref(basePath, locale) : undefined;
@@ -90,7 +95,7 @@ export function createPageMetadata({
   const alternates: Metadata['alternates'] = basePath
     ? {
         canonical: canonicalPath,
-        languages: buildLanguageAlternates(basePath),
+        languages: buildLanguageAlternates(basePath, availableLocales),
       }
     : undefined;
 

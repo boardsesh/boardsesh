@@ -16,7 +16,7 @@ Two kinds of shard:
 
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
-| members           | `static`, `boards`, `gyms`, `playlists`, `build-plans`            | `setters`, and `climbs` when enabled             |
+| members           | `static`, `boards`, `gyms`, `playlists`, `build-plans`, `app-guides` | `setters`, and `climbs` when enabled             |
 | file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml.gz … N.xml.gz`             |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
@@ -64,6 +64,13 @@ The shard is declared `expectsUrls: false`, so an empty pre-launch answer is val
 A launch follow-up must change page indexability and sitemap publication together,
 after licence approval. Public marketing and licence pages can then join the
 all-locales hreflang expansion. Per-buyer order pages remain excluded permanently.
+
+## The app-guides shard
+
+`/sitemaps/app-guides.xml` lists the English `/apps` hub, its board app guides,
+and `/compare/spray-wall-apps`. It uses the editorial update date from each
+guide's registry entry. Locale-prefixed aliases redirect to the English URL,
+and the shard publishes only canonical URLs.
 
 ## The climb sitemap switch
 

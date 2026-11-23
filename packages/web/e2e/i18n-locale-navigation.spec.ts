@@ -67,4 +67,37 @@ test.describe('i18n locale navigation', () => {
       .evaluateAll((nodes) => nodes.map((n) => (n as HTMLAnchorElement).getAttribute('href')));
     expect(prefixedApi).toEqual([]);
   });
+
+  test('French visitors can open an English app guide and return to French', async ({ context, page }) => {
+    await page.goto('/fr/boards');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+    await page.locator('footer button[aria-haspopup="menu"]').click();
+    await expect(page.getByRole('menuitem', { name: 'Français' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.locator('a[href="/apps/kilter"]').first().click();
+    await expect(page).toHaveURL(/\/apps\/kilter$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('footer button[aria-haspopup="menu"]')).toHaveCount(0);
+
+    const alias = await page.goto('/fr/apps/kilter?ref=test');
+    expect(alias?.status()).toBe(200);
+    const aliasRequest = alias?.request().redirectedFrom();
+    expect((await aliasRequest?.response())?.status()).toBe(307);
+    expect(aliasRequest?.redirectedFrom()).toBeNull();
+    await expect(page).toHaveURL(/\/apps\/kilter\?ref=test$/);
+    expect((await context.cookies()).find(({ name }) => name === 'boardsesh-locale')?.value).toBe('fr');
+
+    await page.locator('footer a[href="/boards"]').click();
+    await expect(page).toHaveURL(/\/fr\/boards$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+  });
+
+  test('an unknown app guide still returns 404 after one alias redirect', async ({ page }) => {
+    const response = await page.goto('/fr/apps/unknown-guide?ref=test');
+    expect(response?.status()).toBe(404);
+    await expect(page).toHaveURL(/\/apps\/unknown-guide\?ref=test$/);
+    const aliasRequest = response?.request().redirectedFrom();
+    expect((await aliasRequest?.response())?.status()).toBe(307);
+    expect(aliasRequest?.redirectedFrom()).toBeNull();
+  });
 });

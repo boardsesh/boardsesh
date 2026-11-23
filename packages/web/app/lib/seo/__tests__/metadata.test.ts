@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { APP_GUIDE_LOCALES } from '@/app/lib/i18n/published-locales';
 import {
   DEFAULT_OG_IMAGE_PATH,
   SITE_NAME,
@@ -70,6 +71,21 @@ describe('SEO metadata helper', () => {
       const image = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images[0] : undefined;
       expect(image).toMatchObject({ url: absoluteImageUrl });
       expect(metadata.twitter?.images).toEqual([absoluteImageUrl]);
+    });
+
+    it('advertises only published locales for an English-only page', () => {
+      const metadata = createPageMetadata({
+        title: 'Kilter Board Apps',
+        description: 'Compare apps for Kilter Board.',
+        path: '/apps/kilter',
+        availableLocales: APP_GUIDE_LOCALES,
+      });
+
+      expect(metadata.alternates).toEqual({
+        canonical: '/apps/kilter',
+        languages: { 'en-US': '/apps/kilter', 'x-default': '/apps/kilter' },
+      });
+      expect(metadata.openGraph).toMatchObject({ locale: 'en_US', url: '/apps/kilter' });
     });
 
     it('supports pages without a canonical path or social image', () => {

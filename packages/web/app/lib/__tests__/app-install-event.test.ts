@@ -109,6 +109,16 @@ describe('buildAppInstallClickProperties', () => {
       'playlist-qr-card',
       'home-qr-card',
       'setup-report',
+      'compare-hub',
+      'compare-kilter',
+      'compare-tension',
+      'compare-moonboard',
+      'compare-decoy',
+      'compare-touchstone',
+      'compare-grasshopper',
+      'compare-so-ill',
+      'compare-woods',
+      'compare-spray',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });

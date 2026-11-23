@@ -86,5 +86,8 @@
     "nearbyCount_other": "{{count}} Spraywalls en un radio de {{radius}} km",
     "nearbyCapped": "Mostrando los {{shown}} más cercanos de {{total}} Spraywalls",
     "selectedArea": "Spraywalls en un radio de {{radius}} km de {{place}}"
-  }
+  },
+  "appGuidesLink": "Guías de apps para plafones (en inglés)",
+  "boardAppGuideLink": "Compatibilidad de la app con {{board}} (en inglés)",
+  "sprayComparisonLink": "Compara apps de Spraywall (en inglés)"
 }

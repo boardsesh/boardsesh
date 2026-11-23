@@ -24,8 +24,8 @@ type LocalizedCaptureSets = { 'en-US': MarketingCaptureSet } & Partial<
  */
 const WORKOUTS_CAPTURE: MarketingCapture = { src: '/images/app/android/workouts.webp', width: 804, height: 1429 };
 
-function englishCaptures(platform: MarketingPlatform, width: number): MarketingCaptureSet {
-  const capture = (shot: Exclude<MarketingShot, 'workouts'>): MarketingCapture => ({
+function englishCaptures(platform: MarketingPlatform, defaultWidth: number): MarketingCaptureSet {
+  const capture = (shot: Exclude<MarketingShot, 'workouts'>, width = defaultWidth): MarketingCapture => ({
     src: `/images/app/${platform}/${shot === 'profile' ? 'profile-overview' : shot}.webp`,
     width,
     height: 1600,
@@ -37,7 +37,7 @@ function englishCaptures(platform: MarketingPlatform, width: number): MarketingC
     queue: capture('queue'),
     'wall-status': capture('wall-status'),
     profile: capture('profile'),
-    'spray-wall': capture('spray-wall'),
+    'spray-wall': capture('spray-wall', platform === 'android' ? 713 : defaultWidth),
     workouts: WORKOUTS_CAPTURE,
   };
 }

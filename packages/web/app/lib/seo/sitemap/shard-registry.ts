@@ -3,6 +3,7 @@ import { gzip } from 'node:zlib';
 import { filterPublicSitemapItems } from './privacy-filter';
 import 'server-only';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { buildAppGuideEntries } from './app-guide-entries';
 import { getBoardsShardConfigsOrThrow } from './board-config-source';
 import { boardConfigsToItems } from './board-entries';
 import { buildBuildPlansEntries } from './build-plans-entries';
@@ -32,7 +33,7 @@ import {
   type SitemapUrlEntry,
 } from './sitemap-xml';
 
-export type ShardId = 'static' | 'boards' | 'gyms' | 'playlists' | 'build-plans';
+export type ShardId = 'static' | 'boards' | 'gyms' | 'playlists' | 'build-plans' | 'app-guides';
 
 export type SitemapShard = {
   id: ShardId;
@@ -61,9 +62,8 @@ export type SitemapShard = {
    * `/legal` and `/docs` are genuinely translated content, so each locale is its
    * own indexable page and belongs in the sitemap.
    *
-   * `default-locale-only` is for shards whose pages cross-canonicalise to the
-   * default locale via `createBoardContentPageMetadata` — board content is
-   * translated chrome over identical data, so the twins are not separate pages.
+   * `default-locale-only` is for content published in the default locale only,
+   * and for board content whose locale variants point to the default canonical.
    * Listing a URL whose own canonical points elsewhere is a contradiction:
    * the sitemap says "index `/de/…`" while the page says "the canonical is
    * `/…`". Keep the two in step.
@@ -72,12 +72,19 @@ export type SitemapShard = {
 };
 
 /**
- * Single source of truth: the index and the five route files both read this, so
+ * Single source of truth: the index and the route files both read this, so
  * a shard can never exist in one and not the other (pinned by a unit test that
  * walks `app/sitemaps/` on disk in both directions).
  */
 export const SHARD_REGISTRY: readonly SitemapShard[] = [
   { id: 'static', path: '/sitemaps/static.xml', expectsUrls: true, build: async () => buildStaticEntries() },
+  {
+    id: 'app-guides',
+    path: '/sitemaps/app-guides.xml',
+    expectsUrls: true,
+    expansion: 'default-locale-only',
+    build: async () => buildAppGuideEntries(),
+  },
   {
     id: 'boards',
     path: '/sitemaps/boards.xml',

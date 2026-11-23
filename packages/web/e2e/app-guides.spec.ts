@@ -1,0 +1,61 @@
+import { expect, test } from '@playwright/test';
+
+const GUIDE_PATHS = [
+  '/apps',
+  '/apps/kilter',
+  '/apps/tension',
+  '/apps/moonboard',
+  '/apps/decoy',
+  '/apps/touchstone',
+  '/apps/grasshopper',
+  '/apps/so-ill',
+  '/apps/woods',
+  '/compare/spray-wall-apps',
+];
+
+for (const width of [390, 1440]) {
+  for (const pathname of GUIDE_PATHS) {
+    test(`${pathname} is readable at ${width}px`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 844 });
+      const response = await page.goto(pathname, { waitUntil: 'domcontentloaded' });
+      expect(response?.status()).toBe(200);
+      await expect(page.locator('main h1')).toHaveCount(1);
+      await expect(page.locator('main h1')).toBeVisible();
+      await expect(page.locator('main')).toContainText('US App Store ratings');
+      await expect(page.locator('main')).toContainText('independent');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+        'href',
+        `https://www.boardsesh.com${pathname}`,
+      );
+      expect(
+        await page
+          .locator('link[rel="alternate"][hreflang]')
+          .evaluateAll((links) => links.map((link) => link.getAttribute('hreflang'))),
+      ).toEqual(['en-US', 'x-default']);
+      await expect(page.locator('main a[href*="apps.apple.com"]').first()).toBeVisible();
+      if (pathname !== '/apps') {
+        await expect(page.locator('main table')).toHaveCount(1);
+        await expect(page.locator('main table')).toContainText('Boardsesh');
+      }
+      if (pathname === '/apps/kilter' || pathname === '/compare/spray-wall-apps') {
+        await page.screenshot({ path: testInfo.outputPath(`${width}.png`), fullPage: true });
+      }
+    });
+  }
+}
+
+test('homepage guide link has visible copy and English guide navigation preserves the document', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('main a[href="/apps"]')).toHaveText('Board app guides (English)');
+  await page.goto('/boards?utm_source=partner&utm_medium=referral');
+  await page.locator('footer button[aria-haspopup="menu"]').click();
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    Reflect.set(window, '__appGuideDocument', 'retained');
+  });
+  await page.locator('main a[href="/apps/kilter"]').click();
+  await expect(page).toHaveURL(/\/apps\/kilter$/);
+  expect(await page.evaluate(() => Reflect.get(window, '__appGuideDocument'))).toBe('retained');
+  await expect(page.locator('main a[href*="play.google.com"]').first()).toHaveAttribute('href', /partner/);
+});
