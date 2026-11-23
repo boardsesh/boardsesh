@@ -68,7 +68,12 @@ const sharedComponents: Components<Theme> = {
   MuiButton: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.full,
+        // A rounded rectangle, the same 10px as inputs and the segmented toggle.
+        // Every button was a full pill until 2026-11: beside 12px cards and 10px
+        // inputs, a 44-48px control with round ends and a hairline outline read
+        // as a capsule rather than a button. Chips keep `full` (MuiChip below):
+        // they are tags and filters, and the round end is what says so.
+        borderRadius: themeTokens.borderRadius.button,
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
         // Velvet hover is a background TINT, never a lift. Contained variants carry
@@ -95,6 +100,13 @@ const sharedComponents: Components<Theme> = {
           backgroundColor: theme.palette.primaryFill.dark,
         },
       }),
+      // MUI's default outlined edge is the foreground violet at 50% alpha, which
+      // drifted from `brandCtaOutlinedSx` (the consent banner's Allow / No thanks
+      // and the gym search button wore one edge, the brand buttons another).
+      // `--control-border` is the opaque token for an interactive edge.
+      outlinedPrimary: {
+        borderColor: 'var(--control-border)',
+      },
       sizeMedium: {
         height: 40,
         padding: `0 ${themeTokens.spacing[4]}px`,
