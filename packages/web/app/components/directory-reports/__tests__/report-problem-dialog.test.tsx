@@ -138,6 +138,34 @@ describe('ReportProblemDialog', () => {
     });
   });
 
+  it('keeps a late answer for board A off the dialog reopened for board B', async () => {
+    let resolveFirst: (value: unknown) => void = () => {};
+    mockRequest.mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)));
+    const otherTarget: ReportProblemTarget = {
+      ...boardTarget,
+      board: { uuid: 'board-9', name: 'Tension', ownerId: 'sam', ownerDisplayName: null },
+    };
+    const renderWith = (open: boolean, target: ReportProblemTarget) => (
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ReportProblemDialog open={open} onClose={vi.fn()} target={target} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(renderWith(true, boardTarget));
+    fireEvent.click(screen.getByLabelText(/Not on the wall anymore/));
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    rerender(renderWith(false, boardTarget));
+    rerender(renderWith(true, otherTarget));
+    resolveFirst({
+      reportBoard: { status: 'created', reportUuid: 'r1', routedTo: ['creator'], otherReporterCount: 0 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText("Sent. We'll tell you when it's sorted.")).toBeNull();
+    expect(sendButton().disabled).toBe(true);
+  });
+
   it('shows a spinner while the page reads the board, and a retry when that failed', () => {
     const { unmount } = renderDialog(null);
     expect(screen.getByLabelText('Loading')).toBeTruthy();

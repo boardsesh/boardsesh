@@ -110,6 +110,7 @@ export default function ReportProblemDialog({
   // The target reads null while a token rotation or a reload is in flight, so a
   // change to or from null is not a new target: it must not wipe a draft or the
   // sent message.
+  const requestGenerationRef = useRef(0);
   const previousResetRef = useRef<{ open: boolean; targetKey: string | null }>({ open: false, targetKey: null });
   useEffect(() => {
     const previous = previousResetRef.current;
@@ -117,6 +118,7 @@ export default function ReportProblemDialog({
     previousResetRef.current = { open, targetKey: targetKey ?? previous.targetKey };
     if (!open) return;
     if (shouldResetReportDialog(previous, { open, targetKey })) {
+      requestGenerationRef.current += 1;
       setDraft(EMPTY_REPORT_DRAFT);
       setSending(false);
       setSent(null);
@@ -126,6 +128,9 @@ export default function ReportProblemDialog({
 
   const send = async () => {
     if (!target || sending) return;
+    requestGenerationRef.current += 1;
+    const generation = requestGenerationRef.current;
+    const isCurrent = () => requestGenerationRef.current === generation;
     setSending(true);
     setFailure(null);
     try {
@@ -136,20 +141,21 @@ export default function ReportProblemDialog({
         const response = await client.request<ReportBoardMutationResponse, ReportBoardMutationVariables>(REPORT_BOARD, {
           input,
         });
-        setSent(sentMessageFor(response.reportBoard));
+        if (isCurrent()) setSent(sentMessageFor(response.reportBoard));
       } else {
         const input = buildReportGymInput(target.gym.uuid, draft);
         if (!input) return;
         const response = await client.request<ReportGymMutationResponse, ReportGymMutationVariables>(REPORT_GYM, {
           input,
         });
-        setSent(sentMessageFor(response.reportGym));
+        if (isCurrent()) setSent(sentMessageFor(response.reportGym));
       }
     } catch (error) {
       console.error('Report a problem failed:', error);
+      if (!isCurrent()) return;
       setFailure(reportErrorKind(typeof navigator === 'undefined' ? true : navigator.onLine));
     } finally {
-      setSending(false);
+      if (isCurrent()) setSending(false);
     }
   };
 
