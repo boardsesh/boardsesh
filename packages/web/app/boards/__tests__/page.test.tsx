@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
@@ -42,7 +43,7 @@ vi.mock('@/app/lib/store-button-labels.server', () => ({
 const { default: SupportedBoardsPage, generateMetadata } = await import('../page');
 
 async function renderPage() {
-  const html = renderToStaticMarkup(await SupportedBoardsPage());
+  const html = renderToStaticMarkup(await resolveServerTree(<SupportedBoardsPage />));
   const renderedDocument = document.implementation.createHTMLDocument();
   renderedDocument.body.innerHTML = html;
   return renderedDocument;
@@ -135,11 +136,30 @@ describe('supported boards public entry', () => {
     }
     expect(document.querySelector('#spray figcaption')?.textContent).toBe('Bring your own spray wall');
     expect([...document.querySelectorAll('#spray a')].map((link) => link.textContent)).toEqual([
+      'Compare spray wall apps (English)',
       'Find a spray wall',
       'Set up your spray wall',
     ]);
     expect(document.querySelector('[data-placement="board-compat"]')).not.toBeNull();
     expect(document.querySelectorAll('a[href="/bring-your-logbook"]')).toHaveLength(1);
+  });
+
+  it('server-renders a crawlable English guide link for every board and spray wall', async () => {
+    const document = await renderPage();
+    const guidePaths = {
+      kilter: '/apps/kilter',
+      tension: '/apps/tension',
+      moonboard: '/apps/moonboard',
+      decoy: '/apps/decoy',
+      touchstone: '/apps/touchstone',
+      grasshopper: '/apps/grasshopper',
+      soill: '/apps/so-ill',
+      woods: '/apps/woods',
+      spray: '/compare/spray-wall-apps',
+    };
+    for (const [board, href] of Object.entries(guidePaths)) {
+      expect(document.querySelector(`#${board} a[href="${href}"]`)?.textContent).toMatch(/\(English\)$/);
+    }
   });
 
   it('declares canonical, social and all six translated alternate metadata', async () => {
