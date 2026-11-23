@@ -48,6 +48,13 @@ describe('static sitemap entries', () => {
     expect(urls.some((url) => url.includes('/auth'))).toBe(false);
   });
 
+  it('includes the clean spray-wall directory in every supported locale', () => {
+    for (const prefix of ['', '/es', '/fr', '/de', '/it', '/zh-CN']) {
+      expect(urls).toContain(`https://www.boardsesh.com${prefix}/spraywalls/find`);
+    }
+    expect(urls.filter((url) => url.includes('/spraywalls/find'))).toHaveLength(6);
+  });
+
   it('sets a real lastModified on every entry', () => {
     for (const entry of STATIC_ENTRIES) {
       expect(entry.lastModified).toBeInstanceOf(Date);

@@ -83,7 +83,7 @@ export default async function SupportedBoardsPage() {
                     />
                   </Box>
                   <Typography component="figcaption" className={styles.caption}>
-                    {t('sprayStep1')}
+                    {t('sprayGalleryCaption')}
                   </Typography>
                 </Box>
               ) : multipleLayouts ? (
@@ -97,6 +97,18 @@ export default async function SupportedBoardsPage() {
               ) : (
                 <Box component="ul" role="list" sx={{ listStyle: 'none', p: 0, m: 0 }}>
                   {figures}
+                </Box>
+              )}
+              {board === 'spray' && (
+                <Box>
+                  <WebsiteJourneyLink
+                    href={localeHref('/spraywalls/find', locale)}
+                    event={compatibilityBoardSelected(board, 'board-compat')}
+                    underline="hover"
+                    className={styles.action}
+                  >
+                    {t('findSprayWall')}
+                  </WebsiteJourneyLink>
                 </Box>
               )}
               <WebsiteJourneyLink

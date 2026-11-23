@@ -217,6 +217,43 @@ describe('map initialisation', () => {
 });
 
 describe('markers', () => {
+  it('uses another directory destination and escapes its popup description', async () => {
+    const view = render(
+      <GymDirectoryMap
+        pins={[pin(7, 51, -2, { href: '/b/garage-wall', description: '40° <script>bad</script>' })]}
+        pinnedCount={1}
+        shownCount={2}
+        locale="fr"
+        labels={{
+          region: 'Spray-wall map',
+          coverage: '1 of 2 walls has a map pin',
+          cluster: (count) => `${count} walls`,
+        }}
+      />,
+    );
+    expect(view.getByRole('region', { name: 'Spray-wall map' })).toBeTruthy();
+    expect(view.getByText('1 of 2 walls has a map pin')).toBeTruthy();
+    await grow();
+    await waitFor(() => expect(leaflet.markers).toHaveLength(1));
+    expect(leaflet.markers[0].popup).toContain('href="/fr/b/garage-wall"');
+    expect(leaflet.markers[0].popup).toContain('40° &lt;script&gt;bad&lt;/script&gt;');
+    expect(leaflet.markers[0].popup).not.toContain('<script>');
+  });
+
+  it('does not allow an external popup destination through the directory adapter', async () => {
+    render(
+      <GymDirectoryMap
+        pins={[pin(7, 51, -2, { href: '//example.com/steal' })]}
+        pinnedCount={1}
+        shownCount={1}
+        locale="en-US"
+      />,
+    );
+    await grow();
+    await waitFor(() => expect(leaflet.markers).toHaveLength(1));
+    expect(leaflet.markers[0].popup).toContain('href="/gym/gym-7"');
+  });
+
   it('draws one divIcon marker per pin — never leaflet default icons', async () => {
     render(
       <GymDirectoryMap

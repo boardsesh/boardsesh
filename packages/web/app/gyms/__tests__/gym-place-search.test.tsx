@@ -36,6 +36,65 @@ afterEach(() => {
 });
 
 describe('place suggestions', () => {
+  it('uses another directory route and preserves its angle filters when selecting a town', async () => {
+    render(
+      <GymPlaceSearch
+        query={{ ...parseDirectoryQuery('all', {}), boardTypes: ['spray'], angles: [30, 40] }}
+        locale="fr"
+        directory={{
+          basePath: '/spraywalls/find',
+          selectedPlaceBaseHref: '/spraywalls/find?angle=30&angle=40&q=Garage&page=3',
+          searchLabel: 'Wall or town',
+          searchPlaceholder: 'Search spray walls',
+          searchSubmit: 'Find a spray wall',
+          inputId: 'spray-directory-query',
+          placeRadiusKm: 25,
+        }}
+      />,
+    );
+    const form = screen.getByRole('search') as HTMLFormElement;
+    expect(form.getAttribute('action')).toBe('/fr/spraywalls/find');
+    expect(new FormData(form).has('boardType')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Find a spray wall' })).toBeTruthy();
+    const input = screen.getByRole('combobox', { name: 'Wall or town' });
+    fireEvent.change(input, { target: { value: 'Sydney' } });
+    await screen.findByRole('option', { name: 'Sydney, New South Wales, Australia' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const url = new URL(push.mock.calls[0][0], 'https://www.boardsesh.com');
+    expect(url.pathname).toBe('/fr/spraywalls/find');
+    expect(url.searchParams.getAll('angle')).toEqual(['30', '40']);
+    expect(url.searchParams.get('radius')).toBe('25');
+    expect(url.searchParams.has('q')).toBe(false);
+    expect(url.searchParams.has('page')).toBe(false);
+  });
+
+  it('uses directory-specific fallback copy while preserving a plain GET search', async () => {
+    request.mockRejectedValue(new Error('Offline'));
+    render(
+      <GymPlaceSearch
+        query={parseDirectoryQuery('all', {})}
+        locale="en-US"
+        directory={{
+          basePath: '/spraywalls/find',
+          selectedPlaceBaseHref: '/spraywalls/find',
+          searchLabel: 'Wall or town',
+          searchPlaceholder: 'Search spray walls',
+          searchSubmit: 'Find a spray wall',
+          placeHint: 'Search a wall name or pick a town.',
+          placeError: 'Town suggestions are unavailable. Search a wall name instead.',
+        }}
+      />,
+    );
+    expect(screen.getByText('Search a wall name or pick a town.')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Garage' } });
+    await screen.findByText('Town suggestions are unavailable. Search a wall name instead.');
+    const form = screen.getByRole('search') as HTMLFormElement;
+    expect(form.method).toBe('get');
+    expect(new FormData(form).get('q')).toBe('Garage');
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('preserves legacy geographic filters when editing a gym-name query', () => {
     render(
       <GymPlaceSearch

@@ -17,18 +17,35 @@ import type { Locale } from '@/app/lib/i18n/config';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { buildDirectoryHref, FACET_BASE_PATHS, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
 
+/** Serializable route and copy overrides for another public directory. */
+export type DirectorySearchAdapter = {
+  basePath: string;
+  /** Carries the directory's active filters when a suggested town is selected. */
+  selectedPlaceBaseHref: string;
+  searchLabel: string;
+  searchPlaceholder: string;
+  searchSubmit: string;
+  placeHint?: string;
+  placeEmpty?: string;
+  placeError?: string;
+  inputId?: string;
+  placeRadiusKm?: number;
+};
+
 export default function GymPlaceSearch({
-  facet,
+  facet = 'all',
   query,
   locale,
   children,
   actions,
   focusSearch = false,
+  directory,
 }: {
-  facet: DirectoryFacet;
+  facet?: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
   focusSearch?: boolean;
+  directory?: DirectorySearchAdapter;
   /** Secondary controls in the submit row; they must use type="button". */
   actions?: React.ReactNode;
   /**
@@ -83,6 +100,17 @@ export default function GymPlaceSearch({
   }, [input, edited]);
 
   const selectPlace = (place: PlaceSuggestion) => {
+    if (directory) {
+      const href = new URL(directory.selectedPlaceBaseHref, 'https://www.boardsesh.com');
+      href.searchParams.delete('q');
+      href.searchParams.delete('page');
+      href.searchParams.set('place', placeSuggestionLabel(place));
+      href.searchParams.set('lat', String(place.latitude));
+      href.searchParams.set('lng', String(place.longitude));
+      href.searchParams.set('radius', String(directory.placeRadiusKm ?? 50));
+      router.push(localeHref(`${href.pathname}?${href.searchParams.toString()}`, locale));
+      return;
+    }
     router.push(
       localeHref(
         buildDirectoryHref(
@@ -107,13 +135,13 @@ export default function GymPlaceSearch({
     <Box
       component="form"
       method="get"
-      action={localeHref(FACET_BASE_PATHS[facet], locale)}
+      action={localeHref(directory?.basePath ?? FACET_BASE_PATHS[facet], locale)}
       role="search"
       sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', mb: 3 }}
     >
       <Box sx={{ flex: '1 1 260px', minWidth: 0 }}>
         <Autocomplete<PlaceSuggestion, false, false, true>
-          id="gym-directory-query"
+          id={directory?.inputId ?? 'gym-directory-query'}
           freeSolo
           options={suggestions}
           filterOptions={(options) => options}
@@ -144,8 +172,8 @@ export default function GymPlaceSearch({
               name={selectedPlace ? undefined : 'q'}
               type="search"
               size="small"
-              label={t('search.label')}
-              placeholder={t('search.placeholder')}
+              label={directory?.searchLabel ?? t('search.label')}
+              placeholder={directory?.searchPlaceholder ?? t('search.placeholder')}
               sx={{ '& .MuiInputBase-root': { minHeight: 44, fontSize: 16 } }}
             />
           )}
@@ -154,10 +182,10 @@ export default function GymPlaceSearch({
           {status === 'loading'
             ? t('places.loading')
             : status === 'error'
-              ? t('places.error')
+              ? (directory?.placeError ?? t('places.error'))
               : status === 'ready' && suggestions.length === 0
-                ? t('places.empty')
-                : t('places.hint')}
+                ? (directory?.placeEmpty ?? t('places.empty'))
+                : (directory?.placeHint ?? t('places.hint'))}
         </Typography>
         <MuiLink href="https://www.geonames.org/" target="_blank" rel="noreferrer" variant="caption">
           {t('places.attribution')}
@@ -171,7 +199,8 @@ export default function GymPlaceSearch({
           panel renders them as real checkboxes inside this same form, so a
           hidden twin would submit alongside an UNCHECKED box and make the filter
           impossible to remove. Facet routes carry their board type in the path. */}
-      {facet === 'all' &&
+      {!directory &&
+        facet === 'all' &&
         query.boardTypes.map((boardType) => <input key={boardType} type="hidden" name="boardType" value={boardType} />)}
       {keepOrigin && (
         <>
@@ -183,7 +212,7 @@ export default function GymPlaceSearch({
       )}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
-          {t('search.submit')}
+          {directory?.searchSubmit ?? t('search.submit')}
         </Button>
         {actions}
       </Box>

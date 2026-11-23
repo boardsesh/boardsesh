@@ -65,9 +65,21 @@ describe('supported boards public entry', () => {
 
   it('keeps crawlable useful actions and one global logbook link', async () => {
     const document = await renderPage();
-    for (const href of ['/gyms/kilter', '/gyms/tension', '/gyms/moonboard', '/gyms?boardType=woods', '/spraywalls']) {
+    for (const href of [
+      '/gyms/kilter',
+      '/gyms/tension',
+      '/gyms/moonboard',
+      '/gyms?boardType=woods',
+      '/spraywalls',
+      '/spraywalls/find',
+    ]) {
       expect(document.querySelector(`a[href="${href}"]`)).not.toBeNull();
     }
+    expect(document.querySelector('#spray figcaption')?.textContent).toBe('Bring your own spray wall');
+    expect([...document.querySelectorAll('#spray a')].map((link) => link.textContent)).toEqual([
+      'Find a spray wall',
+      'Set up your spray wall',
+    ]);
     expect(document.querySelector('[data-placement="board-compat"]')).not.toBeNull();
     expect(document.querySelectorAll('a[href="/bring-your-logbook"]')).toHaveLength(1);
   });

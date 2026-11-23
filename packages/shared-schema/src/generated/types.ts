@@ -8458,6 +8458,12 @@ export type Query = {
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
   /**
+   * Find published, listed public spray walls using anonymous visibility, including for signed-in callers.
+   * Supports text, exact angles, proximity and pagination; catalogue selectors are ignored.
+   * Limited to 50 results per request and 300 requests per minute per caller.
+   */
+  publicSprayWalls: UserBoardConnection;
+  /**
    * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
    * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
@@ -9403,6 +9409,11 @@ export type QueryPublicAppWorkoutLaunchArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicSprayWallsArgs = {
+  input: SearchBoardsInput;
 };
 
 /** Root query type for all read operations. */
@@ -10423,6 +10434,8 @@ export type SaveTickInput = {
 
 /** Input for searching boards. */
 export type SearchBoardsInput = {
+  /** Filter by the board's recorded angle (OR), including adjustable boards */
+  angles?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Filter by board type */
   boardType?: InputMaybe<Scalars['String']['input']>;
   /** Filter by board type (OR) — multi-select; composes with boardType if both are set */
@@ -19995,6 +20008,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryPublicProfileArgs, 'userId'>
+  >;
+  publicSprayWalls?: Resolver<
+    ResolversTypes['UserBoardConnection'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicSprayWallsArgs, 'input'>
   >;
   qaPreviews?: Resolver<
     Array<ResolversTypes['QaPreview']>,

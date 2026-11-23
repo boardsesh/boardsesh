@@ -12,8 +12,9 @@ import { GUIDE_SLUGS } from '@/app/developers/guide-documents';
  * once #4381 lands the public-gyms enumeration query.
  */
 export const STATIC_ENTRIES: readonly SitemapItem[] = [
-  { path: '/boards', changeFrequency: 'monthly', priority: 0.9, lastModified: new Date('2026-11-18') },
-  { path: '/spraywalls', changeFrequency: 'monthly', priority: 0.9, lastModified: new Date('2026-11-18') },
+  { path: '/boards', changeFrequency: 'monthly', priority: 0.9, lastModified: new Date('2026-11-23') },
+  { path: '/spraywalls', changeFrequency: 'monthly', priority: 0.9, lastModified: new Date('2026-11-23') },
+  { path: '/spraywalls/find', changeFrequency: 'weekly', priority: 0.8, lastModified: new Date('2026-11-23') },
   { path: '/for-gyms', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-11-18') },
   { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-10-06') },
   { path: '/bring-your-logbook', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-11-18') },

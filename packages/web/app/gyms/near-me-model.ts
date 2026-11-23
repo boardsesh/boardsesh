@@ -59,6 +59,10 @@ export type MapPin = {
   latitude: number;
   longitude: number;
   boardSummaries: GymBoardSummary[];
+  /** Unlocalized internal destination for directories listing entities other than gyms. */
+  href?: string;
+  /** Plain text shown below the name, escaped before entering a Leaflet popup. */
+  description?: string;
 };
 
 /**

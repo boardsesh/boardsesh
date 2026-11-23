@@ -84,3 +84,21 @@ describe('SearchBoardsInput layout/size filters', () => {
     expect(SearchBoardsInputSchema.safeParse({ sizeIds: [2.2] }).success).toBe(false);
   });
 });
+
+describe('SearchBoardsInput angle filter', () => {
+  it('accepts exact angles including overhanging and slab walls', () => {
+    expect(SearchBoardsInputSchema.parse({ angles: [-90, -5, 0, 40, 90] }).angles).toEqual([-90, -5, 0, 40, 90]);
+  });
+
+  it('keeps omitted and empty angles unfiltered', () => {
+    expect(SearchBoardsInputSchema.parse({}).angles).toBeUndefined();
+    expect(SearchBoardsInputSchema.parse({ angles: [] }).angles).toEqual([]);
+  });
+
+  it.each([{ angles: [-91] }, { angles: [91] }, { angles: [40.5] }, { angles: Array.from({ length: 51 }, () => 40) }])(
+    'rejects invalid angles $angles',
+    ({ angles }) => {
+      expect(SearchBoardsInputSchema.safeParse({ angles }).success).toBe(false);
+    },
+  );
+});

@@ -697,6 +697,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!
 
+    """
+    Find published, listed public spray walls using anonymous visibility, including for signed-in callers.
+    Supports text, exact angles, proximity and pagination; catalogue selectors are ignored.
+    Limited to 50 results per request and 300 requests per minute per caller.
+    """
+    publicSprayWalls(input: SearchBoardsInput!): UserBoardConnection!
+
     "Search all active registered boards, including private boards. Global admins only."
     adminBoards(input: AdminBoardsInput!): AdminBoardConnection!
     "Stored editable metadata for one active board. Global admins only."
