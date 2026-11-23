@@ -18,6 +18,9 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Browse climbs straight from each board layout. ([#8057](https://github.com/boardsesh/boardsesh/pull/8057))
+  Find more climbs around your grade when shared-hold matches run out.
+- Open spray-wall climbs from beta links without hitting a missing page. ([#8076](https://github.com/boardsesh/boardsesh/pull/8076))
 - Training-app 4x4 workouts show clearer round numbers and name your rest between rounds. ([#7839](https://github.com/boardsesh/boardsesh/pull/7839))
 - The climb on the wall now matches the other cards in Board options. ([#7935](https://github.com/boardsesh/boardsesh/pull/7935))
 - Browse climbs and log sends with your mouse and keyboard. ([#8018](https://github.com/boardsesh/boardsesh/pull/8018))

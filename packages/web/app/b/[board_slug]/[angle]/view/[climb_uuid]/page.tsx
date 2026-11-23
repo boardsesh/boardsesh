@@ -121,7 +121,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     });
     const canonicalPath = shouldNoindex
       ? undefined
-      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName);
+      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName, currentClimb);
 
     // The same name, grade and setter the title and description already use, so
     // the card and the snippet can never disagree about the climb they describe.
@@ -210,6 +210,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     }
 
     const boardDetails = getBoardImageDetailsForBoard(parsedParams);
+    const noindex = board.isUnlisted || !board.isPublic || board.gymIsListed === false;
 
     const [angleStats, similarClimbs, betaLinks] = await Promise.all([
       // Keyed on the climb the URL resolved to: for an alias URL the requested
@@ -220,6 +221,10 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
         layoutId: parsedParams.layout_id,
         climbUuid: currentClimb.uuid,
         angle: parsedParams.angle,
+        fallback:
+          noindex || currentClimb.is_hidden
+            ? undefined
+            : { sizeId: parsedParams.size_id, setIds: parsedParams.set_ids, difficulty: currentClimb.difficulty },
       }),
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
     ]);
@@ -261,7 +266,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           // the same reason: on a noindex page a `CreativeWork.url` naming the
           // indexable config-tuple twin re-introduces exactly the conflicting
           // signal the missing `alternates` block avoids.
-          noindex={board.isUnlisted || !board.isPublic || board.gymIsListed === false}
+          noindex={noindex}
         />
       </>
     );

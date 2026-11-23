@@ -70,6 +70,8 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
       uuid: boardClimbStats.climbUuid,
       angle: boardClimbStats.angle,
       name: boardClimbs.name,
+      compatibleSizeIds: boardClimbs.compatibleSizeIds,
+      requiredSetIds: boardClimbs.requiredSetIds,
       // Both source columns are named `updated_at`; explicit aliases keep them
       // distinct through the `chosen` subquery. `mapWith` preserves drizzle's
       // UTC timestamp decoder for the per-URL item path.
@@ -111,7 +113,8 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         // publishable.
         inArray(boardClimbStats.angle, publishableAngles(boardName)),
         // The same two predicates the /list front door filters on, so the climb
-        // genuinely renders on the configuration we are about to name in its URL.
+        // genuinely renders on the group configuration used for eligibility.
+        // The canonical URL is picked from each climb's compatibility columns.
         // MoonBoard has one fixed size, so it has no size predicate at all.
         ...(isMoonboard ? [] : [sql`${boardClimbs.compatibleSizeIds} @> ARRAY[${group.sizeId}]::int[]`]),
         ...(group.setIds.length === 0
@@ -226,6 +229,8 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
     uuid: row.uuid,
     name: row.name,
     angle: row.angle,
+    compatibleSizeIds: row.compatibleSizeIds,
+    requiredSetIds: row.requiredSetIds,
     updatedAt: row.climbUpdatedAt > row.statsUpdatedAt ? row.climbUpdatedAt : row.statsUpdatedAt,
   }));
 }

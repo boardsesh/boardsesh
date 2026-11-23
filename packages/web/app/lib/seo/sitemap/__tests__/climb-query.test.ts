@@ -84,6 +84,10 @@ describe('the tier-2 climbs query', () => {
     expect(params).toContain(131);
   });
 
+  it('projects the compatibility used to choose each canonical URL', () => {
+    expect(normalised).toMatch(/select "climb_uuid", "angle", "name", "compatible_size_ids", "required_set_ids"/);
+  });
+
   it('excludes GENUINE alias uuids only, never the self-aliases every Kilter climb has', () => {
     // `board_climb_aliases` is mostly self-aliases: migration 0160 gave every
     // synced Kilter climb a row mapping its uuid to itself so deletion
@@ -106,7 +110,7 @@ describe('the MoonBoard variant', () => {
   const { normalised } = render(MOONBOARD);
 
   it('emits no size predicate — MoonBoard has one fixed size', () => {
-    expect(normalised).not.toContain('compatible_size_ids');
+    expect(normalised).not.toContain('"compatible_size_ids" @>');
   });
 
   it('allows a NULL required_set_ids, the same allowance the /list filter makes', () => {

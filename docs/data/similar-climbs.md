@@ -27,7 +27,21 @@ branches on `hasCatalogQueryAccess(ctx, boardType)`
 Supporters are meant to join the admin row. That is one change in
 `hasCatalogQueryAccess`, and every gated resolver widens with it.
 
-The rate limit (30 requests a minute) applies to both paths.
+The live path accepts 30 requests per minute and the materialised path accepts 600.
+
+## Nearby grades on public climb pages
+
+When a graded public page loads an empty shared-hold list, it uses an anonymous
+`searchClimbs` query to render up to six links under a nearby-grade heading. The
+query uses the page's layout, size, hold sets and angle, and ranks the published,
+listed, visible matches within one V grade by ascents at that angle. Its cache
+is shared across pages for the same configuration and grade band. The page
+removes the current climb after reading that cache and keeps the requested board
+configuration on each link. On MoonBoard, checking the hold sets against climb
+frames can rule out every row of a full page. The fallback checks one more page
+within the same three-second backend-request budget in that case. A failed
+similarity read keeps its existing retry state. A failed nearby-grade read shows
+that the suggestions could not load.
 
 ## What is stored
 

@@ -108,13 +108,17 @@
   line-height: 1.5;
 }
 
-.action.action {
+.action.action,
+.browseLink.browseLink {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   max-width: 100%;
-  margin-top: var(--spacing-3);
   overflow-wrap: anywhere;
+}
+
+.action.action {
+  margin-top: var(--spacing-3);
 }
 
 @media (max-width: 760px) {

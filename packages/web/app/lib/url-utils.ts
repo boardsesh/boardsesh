@@ -30,6 +30,7 @@ import { MOONBOARD_LAYOUTS } from '@boardsesh/board-config/moonboard-metadata';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
 import { PAGE_LIMIT } from './climb-list-constants';
+import { resolveCanonicalClimbConfig, type ClimbConfigCompatibility } from './canonical-climb-config';
 
 export const DEFAULT_ZONE_MODE: ZoneMatchMode = 'allHolds';
 
@@ -906,18 +907,18 @@ const getBoardSlugRouteContext = (pathname: string): { slug: string; angle: numb
 /**
  * Build the canonical config-tuple climb-view URL — `/{board}/{layout}/{size}/{sets}/{angle}/view/{slug-uuid}`.
  *
- * This is the tree the reposition treats as canonical (see `docs/web/web-reposition.md`),
- * so anything that must emit a crawlable, shareable climb link calls this
- * directly rather than `getContextAwareClimbViewUrl` — the latter keeps a
- * visitor inside `/b/{slug}` when they already are there, which is the right
- * call for in-app navigation and the wrong one for a link we want indexed.
+ * Pass the stored compatibility for indexable catalogue climb identities.
+ * Omitting it preserves an exact size/set tuple for navigation and app handoff.
  */
 export const buildCanonicalClimbViewUrl = (
   boardDetails: BoardRouteIdentity,
   angle: number,
   climbUuid: string,
   climbName?: string,
+  compatibility?: ClimbConfigCompatibility,
 ): string => {
+  const canonicalConfig =
+    compatibility && resolveCanonicalClimbConfig(boardDetails.board_name, boardDetails.layout_id, compatibility);
   // Ids first. Only the id-aware builder can emit the qualified size slug for a
   // size that shares its base slug with another on the same layout (Kilter
   // layout 1 sizes 10/27 — see `resolveSizeSlug`); the name-based builder below
@@ -926,8 +927,8 @@ export const buildCanonicalClimbViewUrl = (
   const slugUrl = tryConstructSlugViewUrl(
     boardDetails.board_name,
     boardDetails.layout_id,
-    boardDetails.size_id,
-    boardDetails.set_ids,
+    canonicalConfig?.sizeId ?? boardDetails.size_id,
+    canonicalConfig?.setIds ?? boardDetails.set_ids,
     angle,
     climbUuid,
     climbName,

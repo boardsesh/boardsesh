@@ -24,6 +24,7 @@ import {
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import type { BoardImageDetails, BoardName } from '@/app/lib/types';
+import type { ClimbPreview } from '@/app/lib/data/front-door-data.server';
 import {
   constructBoardSlugViewUrl,
   constructClimbViewUrlWithSlugs,
@@ -88,7 +89,6 @@ export default function SimilarClimbsList({
   climbUuid,
   frames,
 }: SimilarClimbsListProps) {
-  const sizeId = viewerBoardDetails?.size_id;
   const { t } = useTranslation('climbs');
   const variables = useMemo<SimilarClimbsVariables>(
     () => ({
@@ -169,12 +169,35 @@ export default function SimilarClimbsList({
     );
   }
 
+  return (
+    <ClimbPreviewRows
+      climbs={climbs}
+      boardType={boardType}
+      boardSlug={boardSlug}
+      viewerBoardDetails={viewerBoardDetails}
+    />
+  );
+}
+
+export function ClimbPreviewRows({
+  climbs,
+  boardType,
+  boardSlug,
+  viewerBoardDetails,
+}: {
+  climbs: ClimbPreview[];
+  boardType: BoardName;
+  boardSlug?: string;
+  viewerBoardDetails?: BoardImageDetails;
+}) {
+  const sizeId = viewerBoardDetails?.size_id;
+
   // Partition the server-side similarity-ranked list into compatible-first,
   // incompatible-last, preserving the similarity order within each group.
   // Incompatible climbs stay visible (greyed) — surfacing them is useful
   // for shared playlists / multi-board owners — but they shouldn't push
   // climbs the reader can pull on today down the list.
-  const isCompatible = (climb: SimilarClimb): boolean =>
+  const isCompatible = (climb: ClimbPreview): boolean =>
     sizeId == null || climb.compatibleSizeIds.length === 0 || climb.compatibleSizeIds.includes(sizeId);
   const orderedClimbs = [...climbs.filter(isCompatible), ...climbs.filter((c) => !isCompatible(c))];
 
@@ -205,7 +228,7 @@ export default function SimilarClimbsList({
 }
 
 type SimilarClimbRowProps = {
-  climb: SimilarClimb;
+  climb: ClimbPreview;
   boardSlug?: string;
   boardType: BoardName;
   /** When set, render the thumbnail on the viewer's exact wall config
@@ -369,7 +392,7 @@ function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, comp
  * Skips any segment that's missing data — most user-created climbs have no
  * quality rating or ascent count yet, so we don't want to show stale zeros.
  */
-function formatByline(climb: SimilarClimb, t: TranslateSends): string {
+function formatByline(climb: ClimbPreview, t: TranslateSends): string {
   const parts: string[] = [];
   if (climb.setterUsername) parts.push(climb.setterUsername);
   if (typeof climb.qualityAverage === 'number' && climb.qualityAverage > 0) {

@@ -1069,6 +1069,8 @@
       "show": "Kommentare anzeigen"
     },
     "similar": {
+      "nearbyHeading": "Weitere Boulder auf {{layout}} um {{grade}} bei {{angle}}°",
+      "nearbyUnavailable": "Diese Boulder wurden nicht geladen.",
       "heading": "Boulder wie dieser",
       "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…",
       "allAtAngle": "Alle {{board}}-Boulder bei {{angle}}°"

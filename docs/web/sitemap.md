@@ -280,6 +280,21 @@ in the shard, and a home wall rarely has ten people logging the same problem.
 That is the tier-2 rule working, not a bug in this source — the walls that do
 clear it are gym spray walls with real traffic.
 
+## Canonical climb configuration
+
+A catalogue climb's URL uses the existing default board for its layout when
+the climb fits. Otherwise it uses the tallest compatible catalogue size, with
+width and then size ID as tie-breakers. The chosen size carries all its
+available hold sets and must have a readable URL that resolves to the same
+tuple. Original and Homewall have separate layouts and coordinate frames.
+Woods keeps its physical size and spray keeps its public wall slug.
+
+Climb metadata, structured data, setter links and sitemap URL generation share
+this size and hold-set rule. Board browsing and app handoff use the user's board
+context. The sitemap still uses the popular group for eligibility, including
+its size and hold-set filters. It then uses each eligible climb's own
+compatibility to build the published URL.
+
 ## One rule picks the published angle
 
 The angle is a path segment (`/{board}/{layout}/{size}/{sets}/{angle}/view/…`),
@@ -789,7 +804,8 @@ way climbs has one — is #5073.
   `sitemap_climb_urls.path` is rendered at refresh time, so new URL logic keeps
   serving the old shape until the next scheduled run, the self-heal's staleness
   threshold, or someone runs the curl above. The old URLs still resolve and point at
-  the climb's selected canonical angle, so this is a staleness window, not an outage.
+  the climb's selected canonical angle and board configuration. Run the refresh
+  after deploying a canonical configuration change to replace the old paths promptly.
 - **`scripts/production-smoke.ts` pins the published state.** It fails if the index
   stops listing climb pages, if the shard stops answering 200 XML, or if either
   drops its source header. Withdrawing the surface therefore takes a smoke change

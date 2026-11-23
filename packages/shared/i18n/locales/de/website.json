@@ -1,7 +1,7 @@
 {
   "boardsTitle": "Dein Board auf Boardsesh",
-  "boardsLead": "Finde dein Board und Layout und eine Halle zum Klettern.",
-  "boardsDescription": "Sieh dir die unterstützten Boards und Layouts an und finde Kletterhallen mit einem passenden Board.",
+  "boardsLead": "Entdecke Boulder für dein Layout und finde eine Halle zum Klettern.",
+  "boardsDescription": "Sieh dir die unterstützten Boards an, entdecke Boulder nach Layout und finde Hallen mit einem passenden Board.",
   "findGyms": "Finde eine Halle mit {{board}}",
   "sprayLabel": "Spraywall",
   "sprayTitle": "Deine Spraywall: Boulder setzen und loggen.",
@@ -49,6 +49,8 @@
   "previousLayouts": "Vorherige {{board}}-Layouts",
   "nextLayouts": "Weitere {{board}}-Layouts",
   "boardLayoutAlt": "Griffanordnung {{layout}} am {{board}}",
+  "browseLayoutClimbs": "Boulder für {{layout}} entdecken",
+  "browseLayoutClimbsForBoard": "{{label}} auf dem {{board}}-Board",
   "sprayGalleryAlt": "Spraywall mit Klettergriffen",
   "sprayGalleryCaption": "Bring deine eigene Spraywall mit",
   "findSprayWall": "Finde eine Spraywall",

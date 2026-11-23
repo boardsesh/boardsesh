@@ -1,7 +1,7 @@
 {
   "boardsTitle": "Tu plafón, en Boardsesh",
-  "boardsLead": "Encuentra tu plafón y su layout, y busca un muro donde escalar.",
-  "boardsDescription": "Consulta los plafones y layouts compatibles y encuentra rocódromos donde escalar.",
+  "boardsLead": "Explora los bloques de tu layout y encuentra un muro donde escalar.",
+  "boardsDescription": "Consulta los plafones compatibles, explora los bloques por layout y encuentra rocódromos con el plafón que buscas.",
   "findGyms": "Encuentra un rocódromo con {{board}}",
   "sprayLabel": "Spraywall",
   "sprayTitle": "Tu Spraywall, con bloques y logbook.",
@@ -49,6 +49,8 @@
   "previousLayouts": "Layouts anteriores de {{board}}",
   "nextLayouts": "Siguientes layouts de {{board}}",
   "boardLayoutAlt": "Layout {{layout}} de {{board}}",
+  "browseLayoutClimbs": "Explora los bloques de {{layout}}",
+  "browseLayoutClimbsForBoard": "{{label}} en el plafón {{board}}",
   "sprayGalleryAlt": "Spraywall con presas",
   "sprayGalleryCaption": "Trae tu propio Spraywall",
   "findSprayWall": "Encuentra un Spraywall",

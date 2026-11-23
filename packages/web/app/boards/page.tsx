@@ -37,27 +37,40 @@ export default async function SupportedBoardsPage() {
           const layouts = board === 'spray' ? [] : getBoardGalleryLayouts(board);
           const multipleLayouts = layouts.length > 1;
           const headingId = `board-${board}-title`;
-          const figures = layouts.map((layout, index) => (
-            <Box component="li" key={layout.layoutId} className={styles.layout}>
-              <Box component="figure" className={styles.figure}>
-                <Box className={styles.stage}>
-                  {/* Box consumes width/height as styling; native attributes preserve the image ratio in first HTML. */}
-                  <img
-                    src={resolveStaticAssetUrl(layout.src)}
-                    width={layout.width}
-                    height={layout.height}
-                    alt={t('boardLayoutAlt', { board: boardTypeLabel(board), layout: layout.caption })}
-                    loading={board === 'kilter' && index === 0 ? 'eager' : 'lazy'}
-                    fetchPriority={board === 'kilter' && index === 0 ? 'high' : undefined}
-                    className={styles.image}
-                  />
+          const boardLabel = boardTypeLabel(board);
+          const figures = layouts.map((layout, index) => {
+            const browseLabel = t('browseLayoutClimbs', { layout: layout.caption });
+            return (
+              <Box component="li" key={layout.layoutId} className={styles.layout}>
+                <Box component="figure" className={styles.figure}>
+                  <Box className={styles.stage}>
+                    {/* Box consumes width/height as styling; native attributes preserve the image ratio in first HTML. */}
+                    <img
+                      src={resolveStaticAssetUrl(layout.src)}
+                      width={layout.width}
+                      height={layout.height}
+                      alt={t('boardLayoutAlt', { board: boardLabel, layout: layout.caption })}
+                      loading={board === 'kilter' && index === 0 ? 'eager' : 'lazy'}
+                      fetchPriority={board === 'kilter' && index === 0 ? 'high' : undefined}
+                      className={styles.image}
+                    />
+                  </Box>
+                  <Typography component="figcaption" className={styles.caption}>
+                    <MuiLink
+                      component={LocaleLink}
+                      href={layout.browseHref}
+                      aria-label={t('browseLayoutClimbsForBoard', { label: browseLabel, board: boardLabel })}
+                      locale={locale}
+                      prefetch={false}
+                      className={styles.browseLink}
+                    >
+                      {browseLabel}
+                    </MuiLink>
+                  </Typography>
                 </Box>
-                <Typography component="figcaption" className={styles.caption}>
-                  {layout.caption}
-                </Typography>
               </Box>
-            </Box>
-          ));
+            );
+          });
           return (
             <Box
               component="li"
@@ -68,7 +81,7 @@ export default async function SupportedBoardsPage() {
               data-layouts={multipleLayouts ? 'multiple' : 'single'}
             >
               <Typography component="h2" variant="h5" id={headingId} className={styles.heading}>
-                {board === 'spray' ? t('sprayLabel') : boardTypeLabel(board)}
+                {board === 'spray' ? t('sprayLabel') : boardLabel}
               </Typography>
               {board === 'spray' ? (
                 <Box component="figure" className={styles.figure}>
@@ -89,8 +102,8 @@ export default async function SupportedBoardsPage() {
               ) : multipleLayouts ? (
                 <BoardLayoutRail
                   labelledBy={headingId}
-                  previousLabel={t('previousLayouts', { board: boardTypeLabel(board) })}
-                  nextLabel={t('nextLayouts', { board: boardTypeLabel(board) })}
+                  previousLabel={t('previousLayouts', { board: boardLabel })}
+                  nextLabel={t('nextLayouts', { board: boardLabel })}
                 >
                   {figures}
                 </BoardLayoutRail>
@@ -124,7 +137,7 @@ export default async function SupportedBoardsPage() {
                 underline="hover"
                 className={styles.action}
               >
-                {board === 'spray' ? t('sprayRoute') : t('findGyms', { board: boardTypeLabel(board) })}
+                {board === 'spray' ? t('sprayRoute') : t('findGyms', { board: boardLabel })}
               </WebsiteJourneyLink>
             </Box>
           );

@@ -96,7 +96,15 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       catalogAngle: currentClimb.catalogAngle,
       angleStats,
     });
-    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName);
+    // Keep a hidden climb's noindex metadata on its own board configuration.
+    const isHiddenClimb = currentClimb.is_hidden === true;
+    const climbUrl = buildCanonicalClimbViewUrl(
+      boardDetails,
+      canonicalAngle,
+      currentClimb.uuid,
+      climbName,
+      isHiddenClimb ? undefined : currentClimb,
+    );
 
     // The same name, grade and setter the title and description already use, so
     // the card and the snippet can never disagree about the climb they describe.
@@ -107,12 +115,6 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       currentClimb.frames,
       buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     );
-
-    // A climb hidden by an approved report keeps resolving — existing links and
-    // logbook entries must not start 404ing — but it leaves the index. The
-    // canonical stays self-referential, so this is a plain noindex rather than
-    // the conflicting "noindex here, canonical there" pair.
-    const isHiddenClimb = currentClimb.is_hidden === true;
 
     return createBoardContentPageMetadata({
       title: t('metadata.view.title', {
@@ -250,6 +252,9 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
         layoutId: parsedParams.layout_id,
         climbUuid: currentClimb.uuid,
         angle: parsedParams.angle,
+        fallback: currentClimb.is_hidden
+          ? undefined
+          : { sizeId: parsedParams.size_id, setIds: parsedParams.set_ids, difficulty: currentClimb.difficulty },
       }),
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
     ]);
