@@ -104,6 +104,15 @@ Implementation calls made while building, recorded so they can be revisited.
 - **An admin can't clear the sync freeze on a board whose latest removal or relink is a staff removal** (`LOCATION_SYNC_BOARD_REMOVED_BY_GYM`). Staff can't remove synced boards any more, so this guards older rows and a global admin's own removals.
 - **No `gym_id` or `actor_user_id` index on `board_moderation_events`.** Hard deletes of users and gyms are rare, so the `SET NULL` scans they cost are accepted. Migration 0333 stays as it is; a stacked PR builds on it.
 
+### PR 2: clients read the flags
+
+- `listingState` is required on the `Gym` type now that `GYM_FIELDS` selects it. `canDelete` and `canRemoveFromGym` stay optional on `UserBoard`, because an offline snapshot written before them never carries them. The app's menu falls back to the old owner-only rule for such a board.
+- Recorded screenshot fixtures replay both board flags as `false`: no capture opens a board menu, so no shot changes.
+- In the app, staff actions show on boards the staff member saved (Your boards, and their saved walls At {gym}). Staff actions on every board at the gym arrive with the app's gym page.
+- The app offers Remove from {gym} only when it can name the gym. Location privacy can hide it; the row then stays off.
+- "Added by" comes from `boardOriginFor`: the SYSTEM owner id is public board data, the viewer's own id is "you", a named owner is named, and a hidden one is "a climber".
+- `/gym-claim/error` shows "Back to {gym}" when the redirect carries `?gym=`. The verification handler doesn't send it yet: a failed token lookup returns no gym.
+
 
 ## Where it lives
 
