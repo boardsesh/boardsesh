@@ -99,6 +99,7 @@ function EditGymForm({ gym }: { gym: Gym }) {
     () => ({
       name: gym.name,
       description: gym.description ?? '',
+      hours: gym.hours ?? '',
       address: gym.address ?? '',
       website: gym.website ?? '',
       contactEmail: gym.contactEmail ?? '',
@@ -123,6 +124,9 @@ function EditGymForm({ gym }: { gym: Gym }) {
         gymUuid: gym.uuid,
         name: values.name,
         description: values.description,
+        // Only when it changed: writing the hours stamps "Updated …" on the gym
+        // page, and a save that left them alone must not claim they were checked.
+        hours: values.hours === (gym.hours?.trim() || null) ? undefined : values.hours,
         address: values.address,
         website: values.website,
         contactEmail: values.contactEmail,
@@ -145,7 +149,7 @@ function EditGymForm({ gym }: { gym: Gym }) {
         setSubmitting(false);
       }
     },
-    [submitting, gym.uuid, updateGym, showToast, t, router],
+    [submitting, gym.uuid, gym.hours, updateGym, showToast, t, router],
   );
 
   // No claim section here: `canClaim` is only true for a viewer who can't edit
