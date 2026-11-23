@@ -88,13 +88,13 @@ export function formatFontGrade(difficulty: string | null | undefined): string |
 export type GradeDisplayFormat = 'v-grade' | 'font' | 'both';
 export const DEFAULT_GRADE_DISPLAY_FORMAT: GradeDisplayFormat = 'v-grade';
 
-/** Languages whose climbers read Font grades first, so they default to Font. */
-const FONT_FIRST_LANGUAGES: ReadonlySet<string> = new Set(['es', 'fr']);
+/** Languages whose climbers read Font grades first (most of Europe), so they default to Font. */
+const FONT_FIRST_LANGUAGES: ReadonlySet<string> = new Set(['es', 'fr', 'de', 'it']);
 
 /**
- * The grade format a climber sees before they pick one in settings. Spanish and
- * French climbers grade in Font (6A, 7B+), everyone else in V. Accepts a full
- * locale tag (`fr-CA`, `es_MX`) and matches on the language subtag.
+ * The grade format a climber sees before they pick one in settings. Spanish,
+ * French, German and Italian climbers grade in Font (6A, 7B+), everyone else in V. Accepts a full
+ * locale tag (`fr-CA`, `es_MX`, `de-AT`) and matches on the language subtag.
  */
 export function defaultGradeDisplayFormatForLocale(locale: string | null | undefined): GradeDisplayFormat {
   if (!locale) return DEFAULT_GRADE_DISPLAY_FORMAT;

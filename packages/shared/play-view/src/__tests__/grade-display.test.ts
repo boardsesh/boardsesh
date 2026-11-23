@@ -354,18 +354,20 @@ describe('MoonBoard grade scale', () => {
 });
 
 describe('defaultGradeDisplayFormatForLocale', () => {
-  it('defaults Spanish and French to Font', () => {
+  it('defaults Spanish, French, German and Italian to Font', () => {
     expect(defaultGradeDisplayFormatForLocale('es')).toBe('font');
     expect(defaultGradeDisplayFormatForLocale('fr')).toBe('font');
     expect(defaultGradeDisplayFormatForLocale('fr-CA')).toBe('font');
     expect(defaultGradeDisplayFormatForLocale('es_MX')).toBe('font');
     expect(defaultGradeDisplayFormatForLocale('ES')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('de')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('de-AT')).toBe('font');
+    expect(defaultGradeDisplayFormatForLocale('it')).toBe('font');
   });
 
   it('defaults every other language to V', () => {
     expect(defaultGradeDisplayFormatForLocale('en-US')).toBe('v-grade');
-    expect(defaultGradeDisplayFormatForLocale('de')).toBe('v-grade');
-    expect(defaultGradeDisplayFormatForLocale('it')).toBe('v-grade');
+    expect(defaultGradeDisplayFormatForLocale('en-GB')).toBe('v-grade');
     expect(defaultGradeDisplayFormatForLocale(undefined)).toBe('v-grade');
     expect(defaultGradeDisplayFormatForLocale('')).toBe('v-grade');
   });

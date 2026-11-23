@@ -79,9 +79,9 @@ describe('grade-format-preference', () => {
     await expect(loadGradeDisplayFormat()).resolves.toBe('both');
   });
 
-  it('defaults Spanish and French climbers to Font grades', async () => {
+  it.each(['es', 'fr', 'de', 'it'])('defaults %s climbers to Font grades', async (language) => {
     const { loadGradeDisplayFormat, setGradeFormatLocale } = await import('../grade-format-preference');
-    setGradeFormatLocale('fr');
+    setGradeFormatLocale(language);
     await expect(loadGradeDisplayFormat()).resolves.toBe('font');
   });
 
@@ -90,7 +90,7 @@ describe('grade-format-preference', () => {
     await expect(loadGradeDisplayFormat()).resolves.toBe('v-grade');
     setGradeFormatLocale('es');
     await expect(loadGradeDisplayFormat()).resolves.toBe('font');
-    setGradeFormatLocale('de');
+    setGradeFormatLocale('en-US');
     await expect(loadGradeDisplayFormat()).resolves.toBe('v-grade');
   });
 

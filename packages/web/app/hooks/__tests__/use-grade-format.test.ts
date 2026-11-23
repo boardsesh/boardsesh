@@ -162,9 +162,9 @@ describe('useGradeFormat', () => {
     expect(result.current.gradeFormat).toBe('v-grade');
   });
 
-  it('defaults Spanish and French pages to Font when nothing is picked', async () => {
+  it.each(['es', 'fr', 'de', 'it'])('defaults %s pages to Font when nothing is picked', async (language) => {
     mockGetFormat.mockResolvedValue(null);
-    mockLanguage = 'fr';
+    mockLanguage = language;
 
     const { result } = renderHook(() => useGradeFormat());
 

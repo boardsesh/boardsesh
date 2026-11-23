@@ -10,7 +10,7 @@ const GRADE_FORMAT_CHANGE_EVENT = 'boardsesh:gradeFormatChange';
 export function useGradeFormat() {
   const { i18n } = useTranslation();
   // The climber's explicit pick; null until they make one. Without a pick,
-  // Spanish and French pages show Font grades and every other locale shows V.
+  // Spanish, French, German and Italian pages show Font grades and every other locale shows V.
   const [chosenFormat, setGradeFormatState] = useState<GradeDisplayFormat | null>(null);
   const gradeFormat = chosenFormat ?? defaultGradeDisplayFormatForLocale(i18n?.language);
   const [loaded, setLoaded] = useState(false);
