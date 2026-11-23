@@ -12,8 +12,8 @@ import type { HandoffTree } from '../climb-handoff-cta';
  * #6027: a climb page and a climb list each ship a store link in their first
  * HTML, beside the hand-off, with their own link id.
  *
- * On the climb page the store is the one filled button below md ("Get the free
- * app", both stores stacked in one cell), and the hand-off is a text link there
+ * On the climb page the store is the official badge below md (both stores
+ * stacked in one cell, CSS showing one), and the hand-off is a text link there
  * and the filled button from md, next to a QR code for the phone.
  *
  * Rendered with `renderToString`, which is what a crawler and a reader with
@@ -155,17 +155,45 @@ function parseHtml(html: string): Document {
   return new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
 }
 
+/**
+ * The phone's store link: the official badge of each store, both in the HTML.
+ * Only one is ever on show (CSS picks it), so the App Store badge is the white
+ * one Apple allows for a lone badge, and both are the lone badge's 48px.
+ */
+function expectPhoneBadges(page: Document) {
+  const badges = [...page.querySelectorAll('[data-cta="mobile-install"] a[data-store-badge] > img')].map((image) => ({
+    store: image.parentElement?.getAttribute('data-store-badge'),
+    src: image.getAttribute('src'),
+    alt: image.getAttribute('alt'),
+    height: image.getAttribute('height'),
+  }));
+  expect(badges).toEqual([
+    {
+      store: 'ios',
+      src: '/images/store-badges/app-store-white-en-US.svg',
+      alt: 'home.hero.ctaInstallIos',
+      height: '48',
+    },
+    {
+      store: 'android',
+      src: '/images/store-badges/google-play-en-US.svg',
+      alt: 'home.hero.ctaInstallAndroid',
+      height: '48',
+    },
+  ]);
+}
+
 describe.each(TREES)('climb page store button, %s tree', (tree) => {
   it('ships a store link with the climb-view link id in the server HTML', async () => {
     const html = await renderClimbPage(tree);
 
     expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-view' })));
     expect(html).toContain('ct=climb-view');
-    expect(html).toContain('frontDoor.cta.getApp');
     expect(html).toContain('frontDoor.cta.getAppHelper');
+    expectPhoneBadges(parseHtml(html));
   });
 
-  it('puts both stores in the one mobile button, and the store first', async () => {
+  it('puts both stores in the one mobile cell, and the store first', async () => {
     const html = await renderClimbPage(tree);
     const mobileInstall = parseHtml(html).querySelector('[data-cta="mobile-install"]');
     const storeHrefs = [...(mobileInstall?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href'));
@@ -202,14 +230,12 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
     );
   });
 
-  it('fills only the store buttons, inside the mobile block; the hand-off is not a contained button', async () => {
+  it('renders no filled button: the phone gets the store badge, and the hand-off is not a contained button', async () => {
     const page = parseHtml(await renderClimbPage(tree));
-    const containedButtons = [...page.querySelectorAll('.MuiButton-contained')];
 
-    expect(containedButtons).toHaveLength(2);
-    for (const button of containedButtons) {
-      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
-    }
+    expect(page.querySelectorAll('.MuiButton-contained')).toHaveLength(0);
+    expect(page.querySelector('[data-cta="mobile-install"] .MuiButton-root')).toBeNull();
+    expectPhoneBadges(page);
     expect(page.querySelector('[data-cta="handoff"]')?.classList.contains('MuiButton-contained')).toBe(false);
     // The app module's second store pair is the official badges: no second filled action.
     expect(page.querySelectorAll('[data-cta="app-install"] img[src^="/images/store-badges/"]')).toHaveLength(2);
@@ -265,11 +291,10 @@ describe.each(TREES)('climb list store button, %s tree', (tree) => {
 
     expect(html).toContain(asAttribute(buildStoreUrl('ios', { placement: 'climb-list' })));
     expect(html).toContain('ct=climb-list');
-    expect(html).toContain('frontDoor.cta.getApp');
     expect(html).toContain('list.frontDoor.cta.getAppHelper');
   });
 
-  it('puts the store first on a phone: both stores in the one filled button, before the hand-off', async () => {
+  it('puts the store first on a phone: both store badges in the one cell, before the hand-off', async () => {
     const html = await renderListPage(tree);
     const page = parseHtml(html);
     const storeHrefs = [...page.querySelectorAll('[data-cta="mobile-install"] a')].map((link) =>
@@ -281,11 +306,8 @@ describe.each(TREES)('climb list store button, %s tree', (tree) => {
       buildStoreUrl('android', { placement: 'climb-list' }),
     ]);
     expect(html.indexOf('data-cta="mobile-install"')).toBeLessThan(html.indexOf('data-cta="handoff"'));
-    const containedButtons = [...page.querySelectorAll('.MuiButton-contained')];
-    expect(containedButtons).toHaveLength(2);
-    for (const button of containedButtons) {
-      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
-    }
+    expectPhoneBadges(page);
+    expect(page.querySelectorAll('.MuiButton-contained')).toHaveLength(0);
   });
 
   it('keeps the hand-off, still pointing at the app, with both of its labels', async () => {

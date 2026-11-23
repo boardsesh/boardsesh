@@ -62,12 +62,12 @@ One primary action per screen.
 
 | Where | Phone | Desktop |
 | --- | --- | --- |
-| Hero | Filled "Get the free app" (one store) | Filled "Open in your browser" next to a QR code |
+| Hero | The store badge for that phone (one store shown) | Filled "Open in your browser" next to a QR code |
 | Hero, second action | "Or open it in your browser" text link | QR card with both store badges |
-| Bottom of the screen | Sticky install bar, after the hero button scrolls away | None |
+| Bottom of the screen | Sticky install bar, after the hero badge scrolls away | None |
 | App module | Store badges (one store after mount) | Both store badges |
 
-Why the phone's primary button is the store: phones with the app open climb
+Why the phone's primary action is the store: phones with the app open climb
 links straight in the app (universal links), so a phone reading the web page
 almost never has it. Before the redesign the filled button sent phones to the
 browser app, which cannot light a board on an iPhone, and climb pages logged
@@ -75,18 +75,26 @@ zero store clicks in 30 days. On a laptop the browser app works, so the
 hand-off stays primary there, and the QR code carries the climb to the phone.
 
 The split is CSS only (MUI `sx` breakpoints), so nothing shifts after paint.
-`front-door-install.test.tsx` allows filled buttons only in the hero's mobile
-store block (`data-cta="mobile-install"`). The app module's pair
-(`data-cta="app-install"`) is `StoreInstallButtons`, which renders the official
-store badges, so it never adds a second filled button to a screen.
+The phone's store link (`data-cta="mobile-install"`) is the official badge, so
+`front-door-install.test.tsx` fails if a climb or list page renders any
+`contained` button: the hand-off is a text button that CSS fills from md. The
+app module's pair (`data-cta="app-install"`) is `StoreInstallButtons`, which
+renders badges too, so it never adds a second filled button to a screen.
 
 ## Store badges
 
-Every store link `StoreInstallButtons` renders is the official badge, the
-artwork Apple and Google publish, in the page's language. The files are in
-`packages/web/public/images/store-badges/`; `app/lib/store-badges.ts` maps a
-store and locale to a file and its size. To update a badge, download it again
-and replace the file:
+Every www store link is the official badge, the artwork Apple and Google
+publish, in the page's language: `StoreInstallButtons` (home, /help, the QR
+cards, the app module, spray walls), the phone's hero badge on climb, board-list
+and playlist pages (`MobileStorePrimary`) and the gym page's pair
+(`GymInstallCta`). All of them draw it through one anchor,
+`components/marketing/store-badge-link.tsx`, which marks it
+`data-store-badge="ios|android"`. Two links stay text on purpose: the sticky
+install bar's "Get the app", and the "Update the app" button below.
+
+The files are in `packages/web/public/images/store-badges/`;
+`app/lib/store-badges.ts` maps a store and locale to a file and its size. To
+update a badge, download it again and replace the file:
 
 | Files | Source |
 | --- | --- |
@@ -100,19 +108,29 @@ publishes `es-mx` and Google `es-419`.
 
 - **Never edit the artwork.** No recolouring, cropping, glow or hover effect.
   The anchor around a badge adds only a focus ring.
-- **Black, except one case.** Apple allows its white badge only when it is the
-  one store badge on the layout, and Google Play is black only. A lone App
-  Store badge on a page rendered per request (an iPhone on the home page) is
-  white and 48px tall; every pair, and every badge on shared HTML (which
-  starts as a pair for everyone), is black and 44px tall, so nothing changes
-  colour or size at hydration.
+- **Black, except where it stands alone.** Apple allows its white badge only
+  when it is the one store badge on the layout, and Google Play is black only.
+  A lone App Store badge on a page rendered per request (an iPhone on the home
+  page) is white and 48px tall; every pair, and every `StoreInstallButtons`
+  badge on shared HTML (which starts as a pair for everyone), is black and 44px
+  tall, so nothing changes colour or size at hydration. The phone's hero badge
+  on climb, board-list and playlist pages is the other lone badge: both stores
+  are in the shared HTML, stacked in one grid cell, and CSS shows exactly one
+  before hydration and after, and hides the cell from md. So its App Store
+  badge is white and both are 48px, centred over the helper line.
+- **The gym page** shows both badges, always: black, 44px, App Store first,
+  neither styled as the primary, so the look does not tilt the per-platform
+  split of `App Install Click`.
 - **Sizes.** Both heights clear the 44px target and Apple's 40px minimum. At
   the same height Google Play is wider than the App Store badge, which is what
   Google asks for. 12px between badges is more than the quarter-height clear
   space both stores want.
 - **Alt text is the badge's own words** in the page's language
-  (`marketing.home.hero.ctaInstallIos` / `ctaInstallAndroid`), so a screen
-  reader says what a sighted reader sees.
+  (`marketing.home.hero.ctaInstallIos` / `ctaInstallAndroid`, through
+  `getStoreButtonLabels()` on the server), so a screen reader says what a
+  sighted reader sees. The anchor carries no `aria-label` over it, and
+  `label-in-name.test.ts` checks every locale's words name the store the badge
+  shows.
 - **Update mode stays text.** A visitor still on the retired Capacitor app gets
   an "Update the app" button: "Download on the App Store" would be the wrong
   words for them. `appearance` styles only that button now.
@@ -129,8 +147,8 @@ stream in after it mounts, since the app module renders inside `<Suspense>`.
 
 ## Attribution
 
-Every store button has its own placement, which is also its store link id
-(`app/lib/app-install-event.ts`): `climb-view` (the phone's hero button),
+Every store link has its own placement, which is also its store link id
+(`app/lib/app-install-event.ts`): `climb-view` (the phone's hero badge),
 `climb-qr-card` (the desktop QR card), `sticky-bar` and `climb-app-module`.
 The home page uses the same QR card: `hero` is the phone's badge and
 `home-qr-card` the laptop's pair, and a scan fires `Home QR Scanned`.

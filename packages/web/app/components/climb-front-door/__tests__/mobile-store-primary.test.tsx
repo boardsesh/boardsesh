@@ -21,10 +21,11 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 const MobileStorePrimary = (await import('../mobile-store-primary')).default;
 
 const LABELS = {
-  install: 'Get the free app',
+  ios: 'Download on the App Store',
+  android: 'Get it on Google Play',
   update: 'Update the app',
-  installAria: { ios: 'Get the free app on the App Store', android: 'Get the free app on Google Play' },
-};
+  locale: 'en-US',
+} as const;
 
 const ORIGINAL_UA = navigator.userAgent;
 const ANDROID_UA =
@@ -40,8 +41,17 @@ function setUserAgent(userAgent: string): void {
 
 function wrapper(): HTMLElement {
   const wrapperElement = document.querySelector('[data-store-link]')?.parentElement;
-  if (!wrapperElement) throw new Error('no store button rendered');
+  if (!wrapperElement) throw new Error('no store link rendered');
   return wrapperElement;
+}
+
+/** The server HTML as a document, so the assertions can read the badges' attributes. */
+function parseHtml(html: string): Document {
+  return new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
+}
+
+function badgeImage(root: ParentNode, store: 'ios' | 'android'): HTMLImageElement | null {
+  return root.querySelector(`a[data-store-link="${store}"] > img`);
 }
 
 beforeEach(() => {
@@ -65,19 +75,51 @@ describe('MobileStorePrimary on the server', () => {
     ['an Android phone', ANDROID_UA],
     ['a desktop', DESKTOP_UA],
     ['no user agent at all', ''],
-  ])('ships both untagged store links and no data-store when %s asked', (_requester, userAgent) => {
+  ])('ships both untagged store badges and no data-store when %s asked', (_requester, userAgent) => {
     const html = renderToString(
       <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(userAgent)}>
         <MobileStorePrimary placement="climb-view" labels={LABELS} qrLanding="climb" />
       </MarketingPreviewProvider>,
     );
+    const page = parseHtml(html);
 
     expect(html).not.toContain('data-store=');
-    expect(html).toContain(`href="${buildStoreUrl('ios', { placement: 'climb-view' }).replaceAll('&', '&amp;')}"`);
-    expect(html).toContain(`href="${buildStoreUrl('android', { placement: 'climb-view' }).replaceAll('&', '&amp;')}"`);
-    expect(html).toContain('data-store-link="ios"');
-    expect(html).toContain('data-store-link="android"');
-    expect(html.match(/>Get the free app</g)).toHaveLength(2);
+    expect(page.querySelector('a[data-store-link="ios"]')?.getAttribute('href')).toBe(
+      buildStoreUrl('ios', { placement: 'climb-view' }),
+    );
+    expect(page.querySelector('a[data-store-link="android"]')?.getAttribute('href')).toBe(
+      buildStoreUrl('android', { placement: 'climb-view' }),
+    );
+    // Both anchors are badges, named for anything that looks for the page's badges.
+    expect(
+      [...page.querySelectorAll('a[data-store-badge]')].map((link) => link.getAttribute('data-store-badge')),
+    ).toEqual(['ios', 'android']);
+    expect(badgeImage(page, 'ios')?.getAttribute('alt')).toBe('Download on the App Store');
+    expect(badgeImage(page, 'android')?.getAttribute('alt')).toBe('Get it on Google Play');
+    // No text button: the badge is the store link, and it carries no aria-label over its alt text.
+    expect(page.querySelector('.MuiButton-root')).toBeNull();
+    expect(page.querySelector('[aria-label]')).toBeNull();
+  });
+
+  it('ships the white App Store badge and Google Play at the lone 48px, since CSS shows only one', () => {
+    const page = parseHtml(renderToString(<MobileStorePrimary placement="climb-view" labels={LABELS} />));
+
+    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+    expect(badgeImage(page, 'android')?.getAttribute('src')).toBe('/images/store-badges/google-play-en-US.svg');
+    for (const store of ['ios', 'android'] as const) {
+      expect(badgeImage(page, store)?.getAttribute('height')).toBe('48');
+      // Lazy: an eager image would make React add a preload for each badge.
+      expect(badgeImage(page, store)?.getAttribute('loading')).toBe('lazy');
+    }
+  });
+
+  it("shows the badges in the page's language", () => {
+    const page = parseHtml(
+      renderToString(<MobileStorePrimary placement="climb-view" labels={{ ...LABELS, locale: 'de' }} />),
+    );
+
+    expect(badgeImage(page, 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-de.svg');
+    expect(badgeImage(page, 'android')?.getAttribute('src')).toBe('/images/store-badges/google-play-de.svg');
   });
 
   it('never carries the scanned medium in the server HTML', () => {
@@ -104,18 +146,18 @@ describe('MobileStorePrimary after mount', () => {
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('ios'));
   });
 
-  it('keeps both anchors in the DOM either way, so the swap cannot shift anything', async () => {
+  it('keeps both badges, unchanged, in the DOM either way, so the swap cannot shift anything', async () => {
     setUserAgent(ANDROID_UA);
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('android'));
 
-    expect(wrapper().querySelector('[data-store-link="ios"]')?.getAttribute('aria-label')).toBe(
-      'Get the free app on the App Store',
-    );
+    // Mount changes nothing but `data-store`: same artwork, same size, so the
+    // white App Store badge is still the only badge on show.
+    expect(badgeImage(wrapper(), 'ios')?.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+    expect(badgeImage(wrapper(), 'ios')?.getAttribute('height')).toBe('48');
+    expect(badgeImage(wrapper(), 'android')?.getAttribute('height')).toBe('48');
     // Only the chosen store is visible: the other one is `display: none` in the same cell.
-    expect(screen.getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'Get the free app on Google Play',
-    ]);
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('data-store-badge'))).toEqual(['android']);
   });
 
   it('reports the click with its store, placement and mode', async () => {
@@ -123,8 +165,12 @@ describe('MobileStorePrimary after mount', () => {
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
     await waitFor(() => expect(wrapper().getAttribute('data-store')).toBe('android'));
 
-    fireEvent.click(screen.getByRole('link', { name: 'Get the free app on Google Play' }));
+    const playLink = screen.getByRole('link', { name: 'Get it on Google Play' });
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    playLink.dispatchEvent(clickEvent);
 
+    // The handler adds the event and nothing else: the anchor still navigates.
+    expect(clickEvent.defaultPrevented).toBe(false);
     expect(track).toHaveBeenCalledWith('App Install Click', {
       platform: 'android',
       source: 'google-play',
@@ -138,7 +184,7 @@ describe('MobileStorePrimary after mount', () => {
     window.history.replaceState(null, '', '/b/the-kilter/40/view/abc?src=qr&medium=desktop');
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} qrLanding="climb" />);
 
-    const appStoreLink = screen.getByRole('link', { name: 'Get the free app on the App Store' });
+    const appStoreLink = screen.getByRole('link', { name: 'Download on the App Store' });
     await waitFor(() =>
       expect(appStoreLink.getAttribute('href')).toBe(
         buildStoreUrl('ios', { placement: 'climb-view', qrMedium: 'desktop' }),
@@ -160,16 +206,29 @@ describe('MobileStorePrimary after mount', () => {
     window.history.replaceState(null, '', '/b/the-kilter/40/view/abc?utm_source=instagram&utm_medium=social');
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
 
-    const playLink = screen.getByRole('link', { name: 'Get the free app on Google Play' });
+    const playLink = screen.getByRole('link', { name: 'Get it on Google Play' });
     await waitFor(() => expect(playLink.getAttribute('href')).toContain('instagram'));
   });
 
-  it('asks a retired native app for an update instead', async () => {
+  it('asks a retired native app for an update with a text button, not a download badge', async () => {
     capacitor.native = true;
     setUserAgent(IPHONE_UA);
     render(<MobileStorePrimary placement="climb-view" labels={LABELS} />);
 
     await waitFor(() => expect(screen.getAllByText('Update the app')).toHaveLength(2));
     expect(wrapper().getAttribute('data-store')).toBe('ios');
+    expect(wrapper().querySelector('img')).toBeNull();
+    expect(wrapper().querySelector('[data-store-badge]')).toBeNull();
+
+    const updateLink = screen.getByRole('link', { name: 'Update the app' });
+    expect(updateLink.className).toContain('MuiButton-contained');
+    expect(updateLink.getAttribute('href')).toBe(buildStoreUrl('ios', { placement: 'climb-view' }));
+    fireEvent.click(updateLink);
+    expect(track).toHaveBeenCalledWith('App Install Click', {
+      platform: 'ios',
+      source: 'app-store',
+      placement: 'climb-view',
+      mode: 'update',
+    });
   });
 });

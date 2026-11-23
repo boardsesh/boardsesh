@@ -276,14 +276,6 @@ export default async function StaticListFrontDoor({
             qrUrl={listQrUrl(basePath, locale)}
             storeLabels={storeButtonLabels}
             labels={{
-              store: {
-                install: t('frontDoor.cta.getApp'),
-                update: storeButtonLabels.update,
-                installAria: {
-                  ios: t('frontDoor.cta.getAppAriaIos'),
-                  android: t('frontDoor.cta.getAppAriaAndroid'),
-                },
-              },
               storeHelper: t('list.frontDoor.cta.getAppHelper', { board: boardLabel }),
               // The list's own words: the climb page's "open it" names a climb,
               // which reads wrong in the languages where a list is feminine.

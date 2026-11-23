@@ -1076,9 +1076,6 @@
       "allAtAngle": "Alle {{board}}-Boulder bei {{angle}}°"
     },
     "cta": {
-      "getApp": "Hol dir die kostenlose App",
-      "getAppAriaIos": "Hol dir die kostenlose App im App Store",
-      "getAppAriaAndroid": "Hol dir die kostenlose App bei Google Play",
       "getAppHelper": "Beleuchte diesen Boulder an deinem {{board}} und trag die Begehung ein.",
       "openInBrowser": "Im Browser öffnen",
       "openInBrowserMobile": "Oder im Browser öffnen"

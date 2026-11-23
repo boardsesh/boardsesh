@@ -7,14 +7,15 @@ import {
   heroCtaBlockSx,
   MobileInstallBlock,
 } from '@/app/components/climb-front-door/front-door-cta-parts';
-import type { MobileStorePrimaryLabels } from '@/app/components/climb-front-door/mobile-store-primary';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { themeTokens } from '@/app/theme/theme-config';
 import PlaylistHandoffButton from './playlist-handoff-button';
 
 /** Every word the block shows, already translated. */
 export type PlaylistHeroCtaLabels = {
-  store: MobileStorePrimaryLabels;
-  /** The line under the phone's store button. */
+  /** The badges' own words and the page's language. */
+  store: StoreButtonLabels;
+  /** The line under the phone's store badge. */
   storeHelper: string;
   /** "Or open the playlist in your browser": the phone's text link. */
   handoffMobile: string;
@@ -51,9 +52,9 @@ const handoffRowSx = {
 
 /**
  * The playlist page's call to action, the climb page's split by screen width
- * (`FrontDoorHeroCta`): below md the store is the one filled button, with the
- * hand-off as "Or open the playlist in your browser"; from md the hand-off is
- * the filled button and the QR card carries the playlist to a phone.
+ * (`FrontDoorHeroCta`): below md the phone's store badge is the primary action,
+ * with the hand-off as "Or open the playlist in your browser"; from md the
+ * hand-off is the filled button and the QR card carries the playlist to a phone.
  *
  * A phone reading a shared playlist link almost never has the app: one with it
  * opens `/playlists/{uuid}` straight in the app. The split is CSS only, so the

@@ -3,42 +3,32 @@
 import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import InstallMobileIcon from '@mui/icons-material/InstallMobile';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';
 import { resolveHeroInstall, type HeroInstallStore } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import StoreBadgeLink, { LONE_BADGE_HEIGHT } from '@/app/components/marketing/store-badge-link';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import type { QrLandingKind } from '@/app/lib/qr-landing';
 import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
 
-/** The wording, translated by the server page so this island needs no i18n bundle. */
-export type MobileStorePrimaryLabels = {
-  /** What both buttons say: "Get the free app". */
-  install: string;
-  /** For someone still on the retired Capacitor app, who needs an update and not an install. */
-  update: string;
-  /** Which store the button opens, for a screen reader: the two look the same. */
-  installAria: Record<HeroInstallStore, string>;
-};
-
 type MobileStorePrimaryProps = {
   placement: AppInstallPlacement;
-  labels: MobileStorePrimaryLabels;
+  /** The badges' own words (their alt text) and the page's language, translated by the server page. */
+  labels: StoreButtonLabels;
   /** Which kind of code lands on this page, so the link id names it after a scan. */
   qrLanding?: QrLandingKind;
 };
 
 const STORES: readonly HeroInstallStore[] = ['ios', 'android'];
 
-const BUTTON_SX = {
-  ...brandCtaSx({ size: 'large' }),
-  // Both anchors share the one cell, so swapping them cannot move anything.
-  gridArea: '1 / 1',
-  width: '100%',
-};
+/** Both anchors share the one cell, so swapping them cannot move anything. */
+const CELL_SX = { gridArea: '1 / 1' };
+
+const UPDATE_BUTTON_SX = { ...brandCtaSx({ size: 'large' }), ...CELL_SX };
 
 /**
  * The store anchor that is NOT this visitor's is `display: none`. Before
@@ -48,11 +38,12 @@ const BUTTON_SX = {
  * else shows Google Play. After mount `data-store` names the store
  * `useInstallPlatform` chose and wins over the guess.
  *
- * A guess that turns out wrong costs nothing visible: both anchors carry the
- * same words, the same icon and the same size in the same cell.
+ * The cell is centred, like the helper line under it: a badge keeps its own
+ * width, never stretched.
  */
 const WRAPPER_SX = {
   display: 'grid',
+  justifyItems: 'center',
   '&:not([data-store]) > [data-store-link="ios"]': { display: 'none' },
   '@supports (-webkit-touch-callout: none)': {
     '&:not([data-store]) > [data-store-link="ios"]': { display: 'inline-flex' },
@@ -63,8 +54,8 @@ const WRAPPER_SX = {
 };
 
 /**
- * The one filled button a phone sees on a climb page: "Get the free app", to
- * the store for the phone in the reader's hand.
+ * The phone's one store link on a climb, board-list or playlist page: the
+ * official badge for the store of the phone in the reader's hand.
  *
  * Why the store and not the hand-off: a phone with Boardsesh opens climb links
  * straight in the app, so a phone that is reading this page almost never has
@@ -72,11 +63,23 @@ const WRAPPER_SX = {
  * board on an iPhone, which has no Web Bluetooth.
  *
  * The page's HTML is stored at the edge and handed to everyone, so BOTH store
- * links are always in it, with no campaign and no `data-store`. The visitor's
+ * badges are always in it, with no campaign and no `data-store`. The visitor's
  * store, their inbound campaign and a scanned code's medium all arrive after
  * mount, like `StoreInstallButtons`' `sharedHtml` mode. Unlike that pair, the
  * two anchors stack in one grid cell and CSS picks one before hydration, so the
- * phone never sees two buttons, and the pick cannot shift the layout.
+ * phone never sees two badges, and the pick cannot shift the layout.
+ *
+ * WHITE APP STORE BADGE. Apple allows its white badge only when it is the one
+ * store badge on the layout. Here it always is, before hydration and after:
+ * the CSS above shows exactly one of the two anchors, and the whole block is
+ * hidden from md, where the QR card's black pair takes over. So the App Store
+ * badge is the white one, which reads far better on the dark page, and both
+ * are the lone badge's 48px. Neither changes at hydration: the markup is the
+ * same, only `data-store` arrives.
+ *
+ * A visitor still in the retired Capacitor app gets a filled "Update the app"
+ * button after mount instead: "Download on the App Store" would be the wrong
+ * words for them.
  *
  * The click only adds the event; the link opens in a new tab, so the document
  * stays and a plain `track()` lands.
@@ -92,33 +95,51 @@ export default function MobileStorePrimary({ placement, labels, qrLanding }: Mob
   const decided = hasMounted && platform !== 'unknown';
   const { stores, mode } = resolveHeroInstall(platform, nativeStore);
   const chosenStore = decided ? stores[0] : undefined;
+  const asksForUpdate = decided && mode === 'update';
 
   return (
     <Box sx={WRAPPER_SX} data-store={chosenStore}>
-      {STORES.map((store) => (
-        <Button
-          key={store}
-          data-store-link={store}
-          href={buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium })}
-          target="_blank"
-          rel="noopener noreferrer"
-          variant="contained"
-          startIcon={<InstallMobileIcon aria-hidden />}
-          aria-label={decided && mode === 'update' ? undefined : labels.installAria[store]}
-          sx={BUTTON_SX}
-          onClick={() => {
-            trackAppInstallClick({
-              platform: store,
-              source: store === 'ios' ? 'app-store' : 'google-play',
-              placement,
-              mode: decided ? mode : 'install',
-              ...(qrMedium ? { qrMedium } : {}),
-            });
-          }}
-        >
-          {decided && mode === 'update' ? labels.update : labels.install}
-        </Button>
-      ))}
+      {STORES.map((store) => {
+        const href = buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium });
+        const trackClick = () => {
+          trackAppInstallClick({
+            platform: store,
+            source: store === 'ios' ? 'app-store' : 'google-play',
+            placement,
+            mode: decided ? mode : 'install',
+            ...(qrMedium ? { qrMedium } : {}),
+          });
+        };
+        if (asksForUpdate) {
+          return (
+            <Button
+              key={store}
+              data-store-link={store}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="contained"
+              sx={UPDATE_BUTTON_SX}
+              onClick={trackClick}
+            >
+              {labels.update}
+            </Button>
+          );
+        }
+        return (
+          <StoreBadgeLink
+            key={store}
+            store={store}
+            href={href}
+            labels={labels}
+            height={LONE_BADGE_HEIGHT}
+            tone="white"
+            onClick={trackClick}
+            sx={CELL_SX}
+            data-store-link={store}
+          />
+        );
+      })}
     </Box>
   );
 }

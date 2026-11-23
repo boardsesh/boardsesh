@@ -141,8 +141,8 @@ describe('PlaylistDetailContent app hand-off', () => {
   it('renders a playlist hand-off and an attributed fallback for each store', () => {
     const { container } = renderDetail();
 
-    // The phone's store button holds both stores in the HTML (CSS shows one per
-    // phone), then the hand-off: three anchors, whichever one a screen reader hears.
+    // The phone's store cell holds both store badges in the HTML (CSS shows one
+    // per phone), then the hand-off: three anchors, whichever one a screen reader hears.
     expect(container.querySelectorAll('a')).toHaveLength(3);
     const handoff = handoffOf(container);
     expect(handoff?.getAttribute('href')).toBe(`${APP_URL}/discover/playlist-uuid-1`);
@@ -158,14 +158,16 @@ describe('PlaylistDetailContent app hand-off', () => {
     expect(storeHrefs[1]).toContain('utm_content%3Dplaylist');
   });
 
-  it('puts the store first on a phone: the one filled button, before the hand-off text link', () => {
+  it('puts the store first on a phone: its official badge, before the hand-off text link', () => {
     const { container } = renderDetail();
 
-    const containedButtons = [...container.querySelectorAll('.MuiButton-contained')];
-    expect(containedButtons).toHaveLength(2);
-    for (const button of containedButtons) {
-      expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
-    }
+    // No filled button: the store link is the badge itself.
+    expect(container.querySelectorAll('.MuiButton-contained')).toHaveLength(0);
+    const badges = [...container.querySelectorAll('[data-cta="mobile-install"] a[data-store-badge] > img')];
+    expect(badges.map((image) => [image.getAttribute('src'), image.getAttribute('alt')])).toEqual([
+      ['/images/store-badges/app-store-white-en-US.svg', tFromCatalog('marketing', 'home.hero.ctaInstallIos')],
+      ['/images/store-badges/google-play-en-US.svg', tFromCatalog('marketing', 'home.hero.ctaInstallAndroid')],
+    ]);
     const mobileInstall = container.querySelector('[data-cta="mobile-install"]');
     const handoff = handoffOf(container);
     expect(mobileInstall && handoff && mobileInstall.compareDocumentPosition(handoff)).toBe(

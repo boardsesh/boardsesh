@@ -6,7 +6,8 @@ import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import type { QrLandingKind } from '@/app/lib/qr-landing';
 import { themeTokens } from '@/app/theme/theme-config';
-import MobileStorePrimary, { type MobileStorePrimaryLabels } from './mobile-store-primary';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
+import MobileStorePrimary from './mobile-store-primary';
 import { STICKY_INSTALL_HIDE_ATTRIBUTE } from './sticky-install-markers';
 
 // The pieces of a public page's phone-first call to action, without the QR
@@ -38,19 +39,20 @@ const helperSx = {
 };
 
 type MobileInstallBlockProps = {
-  /** The store button's placement: its link id and `App Install Click`. */
+  /** The store badge's placement: its link id and `App Install Click`. */
   placement: AppInstallPlacement;
   /** Which code lands on this page, so the link id names it after a scan. */
   qrLanding?: QrLandingKind;
-  labels: MobileStorePrimaryLabels;
-  /** The line under the button: what the app does with this page. */
+  /** The badges' own words and the page's language: `getStoreButtonLabels()` on the server. */
+  labels: StoreButtonLabels;
+  /** The line under the badge: what the app does with this page. */
   helper: string;
 };
 
 /**
- * Below md: the one filled button, the store ("Get the free app"), and a line
- * saying what the app does here. Hidden from md, where the QR card carries the
- * page to a phone instead.
+ * Below md: the official badge of this phone's store, and a line saying what
+ * the app does here, both centred. Hidden from md, where the QR card carries
+ * the page to a phone instead.
  *
  * `data-cta="mobile-install"` names the block for the pages' tests; the sticky
  * install bar, where a page has one, hides while this block is on screen.
@@ -79,10 +81,11 @@ const FILLED_TEXT_BUTTON_HOVER = '&.MuiButton-root.MuiButton-text.MuiButton-colo
 
 /**
  * The hand-off's look: one anchor, two looks. Below md it is the quiet way out
- * under the store button: a centred text link, with the theme's text-button
+ * under the store badge: a centred text link, with the theme's text-button
  * hover. From md it is the filled button, the page's one primary action on a
  * laptop, where the browser app works. The anchor stays `variant="text"` at
- * every width, so the store button is the only `contained` one on the page.
+ * every width, so the page renders no `contained` button: on a phone the store
+ * badge is the one primary action.
  */
 export const handoffSx = {
   justifySelf: { xs: 'center', md: 'start' },
