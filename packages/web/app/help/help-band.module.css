@@ -82,10 +82,10 @@
 
 /* ---- type ---- */
 
-/* --color-primary on --read-surface: 6.6:1. */
+/* --neutral-500 on --read-surface: 7.9:1. */
 .eyebrow.eyebrow {
   margin: 0 0 var(--spacing-3);
-  color: var(--color-primary);
+  color: var(--neutral-500);
   font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.02em;

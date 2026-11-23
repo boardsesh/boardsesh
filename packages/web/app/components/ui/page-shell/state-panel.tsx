@@ -30,7 +30,7 @@ export type StatePanelProps = {
  * that flashes.
  */
 export default function StatePanel({ tone, icon, title, body, actions }: StatePanelProps) {
-  const glyphColor = tone === 'warning' ? 'var(--color-warning)' : 'var(--color-primary)';
+  const glyphColor = tone === 'warning' ? 'var(--color-warning)' : 'var(--neutral-500)';
 
   return (
     <PageCard
