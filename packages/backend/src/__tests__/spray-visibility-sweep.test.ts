@@ -665,6 +665,11 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.boardDiscovery':
     'anonymous marketing discovery never includes private walls, even for their owner; the explicit public/private/unlisted/hidden transition test below proves its positive and negative paths',
 
+  'Query.boardMergeCandidates':
+    'public catalogue-board metadata only; the discovery SQL excludes board_type spray, even for wall owners (board-merges.test.ts)',
+  'Query.boardMergeRequests':
+    'public catalogue-board merge requests only; submission rejects spray walls and does not name climbs (board-merges.test.ts)',
+
   // --- serial-number lookups --------------------------------------------------
   // A spray wall is LED-less by construction (`has_leds` is forced false and is
   // not in the input schema at all), so it never gets a serial number and there

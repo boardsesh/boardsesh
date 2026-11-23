@@ -3,7 +3,7 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
-import { SessionContext } from 'next-auth/react';
+import { BrowserSessionContext } from '@/app/components/providers/session-provider';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
@@ -114,7 +114,7 @@ export default function DeferredClimbSocial({
   // The context rather than `useSession`, which throws outside a provider: the
   // page's server render in a test, or anywhere the root layout is not above
   // it, then reads as signed out, which is what the shared HTML says anyway.
-  const signedIn = useContext(SessionContext)?.status === 'authenticated';
+  const signedIn = useContext(BrowserSessionContext)?.status === 'authenticated';
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);

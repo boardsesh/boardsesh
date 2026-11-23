@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
+import { useBrowserSession } from '@/app/components/providers/session-provider';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -57,7 +57,7 @@ export default function BoardMergesPanel({
 }) {
   const { t } = useTranslation('boards');
   const { token } = useWsAuthToken();
-  const { data: session } = useSession();
+  const { data: session } = useBrowserSession();
   const viewerId = session?.user?.id;
   const queryClient = useQueryClient();
   const router = useLocaleRouter();

@@ -18,7 +18,7 @@ import {
   WEB_SESSION_CHECK_EVENT,
 } from '../../lib/auth/session-guard';
 
-export { useSession as useBrowserSession } from 'next-auth/react';
+export { useSession as useBrowserSession, SessionContext as BrowserSessionContext } from 'next-auth/react';
 export type { Session as BrowserSession } from 'next-auth';
 
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';

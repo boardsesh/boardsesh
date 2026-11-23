@@ -436,4 +436,18 @@ describe('public board merges', () => {
     expect(audits).toHaveLength(1);
     expect(JSON.stringify(audits[0].beforeState)).toContain(kiosk.uuid);
   });
+  it('excludes spray walls from merge discovery and requests even for their owners', async () => {
+    const { boards, boardUuids } = await pair();
+    for (const board of boards)
+      await db.update(schema.userBoards).set({ boardType: 'spray' }).where(eq(schema.userBoards.uuid, board.uuid));
+    const candidates = await boardMergeQueries.boardMergeCandidates(null, { input: {} }, ctx(reporter));
+    expect(candidates.boards).toEqual([]);
+    await expect(
+      boardMergeMutations.requestBoardMerge(
+        null,
+        { input: { boardUuids, canonicalBoardUuid: boards[0].uuid, reason: 'Two entries for one spray wall' } },
+        ctx(reporter),
+      ),
+    ).rejects.toThrow('public catalog');
+  });
 });

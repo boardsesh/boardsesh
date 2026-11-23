@@ -8,7 +8,9 @@ vi.setConfig({ testTimeout: 15_000 });
 
 const request = vi.hoisted(() => vi.fn());
 const identity = vi.hoisted(() => ({ token: 'token', userId: 'reporter' }));
-vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { id: identity.userId } } }) }));
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useBrowserSession: () => ({ data: { user: { id: identity.userId } } }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: (namespace: string) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),

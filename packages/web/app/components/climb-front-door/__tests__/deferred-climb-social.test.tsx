@@ -3,8 +3,10 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { SessionContext } from 'next-auth/react';
-import type { Session } from 'next-auth';
+import {
+  BrowserSessionContext as SessionContext,
+  type BrowserSession as Session,
+} from '@/app/components/providers/session-provider';
 
 /**
  * The comments section's queries used to run on every climb page view,
