@@ -1,6 +1,50 @@
 {
-  "generatedAt": "2026-11-23T19:43:43.296Z",
+  "generatedAt": "2026-11-23T23:11:59.460Z",
   "entries": [
+    {
+      "prNumber": 8053,
+      "category": "new",
+      "title": "Every gym now has its own page in the app: its boards, who runs it, and how to claim it.",
+      "mergedAt": "2026-11-23T22:55:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8053",
+      "body": "Gym staff can take a climber's board off their gym without deleting it, and see who added each board.\nEvery gym shows who runs it, and gym staff can claim their listing from the gym page.\nRemoving a board you follow no longer looks like deleting it. Delete now says it's for everyone, and your logged sends stay.\nCan't edit a board or gym? The screen now says who can."
+    },
+    {
+      "prNumber": 8051,
+      "category": "new",
+      "title": "Gym staff now take a climber's board off their gym's listing instead of deleting it. The climber keeps their board.",
+      "mergedAt": "2026-11-23T22:37:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8051",
+      "body": "A board a gym took off its listing stays off, even after the next board sync."
+    },
+    {
+      "prNumber": 8093,
+      "category": "new",
+      "title": "Climbing in German or Italian? Grades now show in Font by default. You can switch back to V-grades in settings.",
+      "mergedAt": "2026-11-23T22:20:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8093"
+    },
+    {
+      "prNumber": 8096,
+      "category": "new",
+      "title": "Climb, board and playlist pages show the official App Store or Google Play badge on your phone",
+      "mergedAt": "2026-11-23T22:20:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8096"
+    },
+    {
+      "prNumber": 8097,
+      "category": "new",
+      "title": "On your phone the header no longer repeats the app link while the page's own store badge is showing.",
+      "mergedAt": "2026-11-23T22:20:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8097"
+    },
+    {
+      "prNumber": 8068,
+      "category": "improved",
+      "title": "Gym kiosk screens match the new near-black look",
+      "mergedAt": "2026-11-23T20:57:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8068"
+    },
     {
       "prNumber": 8088,
       "category": "improved",
