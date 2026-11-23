@@ -1,6 +1,41 @@
 {
-  "generatedAt": "2026-11-23T09:55:48.877Z",
+  "generatedAt": "2026-11-23T14:11:46.660Z",
   "entries": [
+    {
+      "prNumber": 7839,
+      "category": "fixed",
+      "title": "Training-app 4x4 workouts show clearer round numbers and name your rest between rounds.",
+      "mergedAt": "2026-11-23T13:59:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7839"
+    },
+    {
+      "prNumber": 8049,
+      "category": "new",
+      "title": "Get the app straight from the App Store and Google Play badges on boardsesh.com, and scan the QR code on the home page to get it on your phone.",
+      "mergedAt": "2026-11-23T13:53:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8049"
+    },
+    {
+      "prNumber": 8050,
+      "category": "improved",
+      "title": "Find public spray walls by name, town or nearby location on the website.",
+      "mergedAt": "2026-11-23T13:51:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8050"
+    },
+    {
+      "prNumber": 7935,
+      "category": "fixed",
+      "title": "The climb on the wall now matches the other cards in Board options.",
+      "mergedAt": "2026-11-23T13:50:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7935"
+    },
+    {
+      "prNumber": 8041,
+      "category": "new",
+      "title": "Buttons on boardsesh.com have cleaner rounded corners.",
+      "mergedAt": "2026-11-23T13:29:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8041"
+    },
     {
       "prNumber": 8018,
       "category": "fixed",
