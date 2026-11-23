@@ -30,13 +30,15 @@ vi.mock('@/app/lib/data/queries', () => ({
     quality_average: '4.20',
     ascensionist_count: 12,
     frames: 'p1r12',
+    compatibleSizeIds: [7, 10, 28],
+    requiredSetIds: [1, 20],
   })),
   getClimbStatsForAllAngles: vi.fn(async () => []),
-  getLayouts: vi.fn(() => [{ id: 8, name: 'Original' }]),
+  getLayouts: vi.fn(() => [{ id: 1, name: 'Original' }]),
   getSizes: vi.fn(() => [{ id: 10, name: '12 x 12', description: '' }]),
   getSets: vi.fn(() => [
     { id: 1, name: 'Bolt Ons' },
-    { id: 2, name: 'Screw Ons' },
+    { id: 20, name: 'Screw Ons' },
   ]),
 }));
 
@@ -49,9 +51,9 @@ vi.mock('@/app/lib/url-utils.server', () => ({
   parseRouteParams: vi.fn(async (params: { climb_uuid: string }) => ({
     parsedParams: {
       board_name: 'kilter',
-      layout_id: 8,
+      layout_id: 1,
       size_id: 10,
-      set_ids: [1, 2],
+      set_ids: [1, 20],
       angle: 40,
       climb_uuid: params.climb_uuid,
     },
@@ -128,7 +130,7 @@ describe('an alias URL on the config-tuple tree', () => {
     );
   });
 
-  it('keys the metadata angle stats on the canonical climb', async () => {
+  it('uses the resolved climb’s angle stats and board compatibility in metadata', async () => {
     await generateMetadata(props);
 
     // Not the fallback metadata: a throw inside generateMetadata would be
@@ -144,6 +146,11 @@ describe('an alias URL on the config-tuple tree', () => {
       40,
       'canonical-climb',
       'Test Climb',
+      expect.objectContaining({
+        uuid: 'canonical-climb',
+        compatibleSizeIds: [7, 10, 28],
+        requiredSetIds: [1, 20],
+      }),
     );
   });
 });
