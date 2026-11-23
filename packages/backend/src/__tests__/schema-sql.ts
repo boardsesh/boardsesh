@@ -1639,7 +1639,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "claim_id" bigint PRIMARY KEY NOT NULL REFERENCES "gym_claims"("id") ON DELETE CASCADE,
     "gym_uuid" text NOT NULL,
     "did_transfer" boolean NOT NULL,
-    "decided_at" timestamp NOT NULL
+    "decided_at" timestamp NOT NULL,
+    "previous_owner_id" text
   );
   CREATE INDEX IF NOT EXISTS "gym_claim_ownership_decisions_transfer_history_idx"
     ON "gym_claim_ownership_decisions" ("gym_uuid", "decided_at") WHERE "did_transfer";

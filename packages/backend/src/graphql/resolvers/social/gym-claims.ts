@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { eq, ne, gt, or, and, isNull, desc, asc, count, sql, inArray, lte } from 'drizzle-orm';
+import { eq, ne, gt, gte, or, and, isNull, desc, asc, count, sql, inArray, lte } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
@@ -41,6 +41,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * (docs/product/gym-claims.md). Domain claims expire on their own 24-hour token.
  */
 export const ADMIN_CLAIM_EXPIRY_DAYS = 30;
+
+/**
+ * Only admin-review claims filed on or after this instant expire. Claims filed
+ * before the expiry shipped stay `pending` for a person to review, so the first
+ * sweep after the deploy doesn't expire the whole backlog at once and email
+ * every one of those claimants (docs/product/gym-claims.md).
+ */
+export const GYM_CLAIM_EXPIRY_STARTS_AT = '2026-11-24T00:00:00Z';
 
 /**
  * How many gyms one account may have waiting on review at once. The unique index
@@ -303,11 +311,14 @@ export async function applyGymClaim(
     // Keep an immutable account of what this approval did while the same gym
     // row lock is held. `updatedAt` remains the ordinary claim-resolution audit
     // timestamp; it is not treated as a transfer unless this event says so.
+    // `previousOwnerId` is what lets an admin revert the claim: only a claim
+    // that took the gym from SYSTEM can be handed back to it.
     await tx.insert(dbSchema.gymClaimOwnershipDecisions).values({
       claimId: claim.id,
       gymUuid: gym.uuid,
       didTransfer: priorOwnerId !== claimantId,
       decidedAt: sql`clock_timestamp()`,
+      previousOwnerId: priorOwnerId,
     });
 
     return {
@@ -811,8 +822,9 @@ async function loadClaimantHistory(
 
 /**
  * Admin-review claims nobody decided within {@link ADMIN_CLAIM_EXPIRY_DAYS}
- * days expire. A step of the hourly directory-report sweep
- * (`services/directory-report-sweep.ts`): each claim is expired in its own
+ * days expire, if they were filed on or after
+ * {@link GYM_CLAIM_EXPIRY_STARTS_AT}. A step of the hourly directory-report
+ * sweep (`services/directory-report-sweep.ts`): each claim is expired in its own
  * transaction, which writes the claimant's in-app `gym_claim_denied` notice
  * (flag permitting) and, once committed, emails them. Reads what is due, so a
  * missed hour or a second runner changes nothing twice. Returns how many
@@ -827,6 +839,7 @@ export async function expireStaleAdminClaims(now: Date, failures: { count: numbe
       and(
         eq(dbSchema.gymClaims.status, 'pending'),
         eq(dbSchema.gymClaims.method, 'admin'),
+        gte(dbSchema.gymClaims.createdAt, new Date(GYM_CLAIM_EXPIRY_STARTS_AT)),
         lte(dbSchema.gymClaims.createdAt, cutoff),
       ),
     )

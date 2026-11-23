@@ -820,6 +820,46 @@ async function requireGymGrantAccess(gymUuid: string, userId: string): Promise<t
   throw new Error('Not authorized to grant write access for this gym');
 }
 
+/**
+ * Add someone to a gym's staff under the gym's row lock, after reading the
+ * caller's authority again under it: the owner, a gym admin, or (when
+ * `allowCommunityAccess`) a community admin/leader covering the gym.
+ *
+ * `revertGymClaim` takes the same lock, gym row first, before it removes the
+ * members added since the claim. Without it, a claimant who passed the gate
+ * just before a revert could insert a member just after the revert's delete,
+ * and that member would outlive the revert. Under it, their insert either lands
+ * first and the revert removes it, or waits and is refused.
+ */
+async function withGymStaffLock<T>(
+  gym: typeof dbSchema.gyms.$inferSelect,
+  userId: string,
+  { allowCommunityAccess, unauthorizedMessage }: { allowCommunityAccess: boolean; unauthorizedMessage: string },
+  work: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ ownerId: dbSchema.gyms.ownerId })
+      .from(dbSchema.gyms)
+      .where(and(eq(dbSchema.gyms.id, gym.id), isNull(dbSchema.gyms.deletedAt)))
+      .limit(1)
+      .for('update');
+    if (!locked) throw new Error('Gym not found');
+    if (locked.ownerId !== userId) {
+      const [member] = await tx
+        .select({ role: dbSchema.gymMembers.role })
+        .from(dbSchema.gymMembers)
+        .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
+        .limit(1);
+      const isAdmin = member?.role === 'admin';
+      if (!isAdmin && !(allowCommunityAccess && (await hasGymCommunityAccess(gym, userId)))) {
+        throw new Error(unauthorizedMessage);
+      }
+    }
+    return work(tx);
+  });
+}
+
 // ============================================
 // Queries
 // ============================================
@@ -1487,9 +1527,6 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
-    // A new admin is held during probation: a second account would get round
-    // every other probation rule (docs/product/gym-claims.md).
-    if (validatedInput.role === 'admin') await assertNoGymClaimProbation(gym.id, userId);
 
     // Verify target user exists
     const [targetUser] = await db
@@ -1502,15 +1539,26 @@ export const socialGymMutations = {
       throw new Error('User not found');
     }
 
-    const inserted = await db
-      .insert(dbSchema.gymMembers)
-      .values({
-        gymId: gym.id,
-        userId: validatedInput.userId,
-        role: validatedInput.role,
-      })
-      .onConflictDoNothing()
-      .returning({ userId: dbSchema.gymMembers.userId });
+    const unauthorizedMessage = 'Not authorized: must be gym owner or admin';
+    const inserted = await withGymStaffLock(
+      gym,
+      userId,
+      { allowCommunityAccess: false, unauthorizedMessage },
+      async (tx) => {
+        // A new admin is held during probation: a second account would get round
+        // every other probation rule (docs/product/gym-claims.md).
+        if (validatedInput.role === 'admin') await assertNoGymClaimProbation(gym.id, userId, tx);
+        return tx
+          .insert(dbSchema.gymMembers)
+          .values({
+            gymId: gym.id,
+            userId: validatedInput.userId,
+            role: validatedInput.role,
+          })
+          .onConflictDoNothing()
+          .returning({ userId: dbSchema.gymMembers.userId });
+      },
+    );
 
     // A fresh admin member gets the same "you now manage this gym" heads-up as a
     // granted editor — admins manage staff, so they're being handed the keys too.
@@ -1579,19 +1627,22 @@ export const socialGymMutations = {
     // insert or a member→editor promotion, and empty on a no-op re-grant of an
     // existing editor/admin — so we don't re-ping someone who already manages the
     // gym.
-    const granted = await db
-      .insert(dbSchema.gymMembers)
-      .values({
-        gymId: gym.id,
-        userId: validatedInput.userId,
-        role: 'editor',
-      })
-      .onConflictDoUpdate({
-        target: [dbSchema.gymMembers.gymId, dbSchema.gymMembers.userId],
-        set: { role: 'editor' },
-        setWhere: sql`${dbSchema.gymMembers.role} = 'member'`,
-      })
-      .returning({ userId: dbSchema.gymMembers.userId });
+    const unauthorizedMessage = 'Not authorized to grant write access for this gym';
+    const granted = await withGymStaffLock(gym, userId, { allowCommunityAccess: true, unauthorizedMessage }, (tx) =>
+      tx
+        .insert(dbSchema.gymMembers)
+        .values({
+          gymId: gym.id,
+          userId: validatedInput.userId,
+          role: 'editor',
+        })
+        .onConflictDoUpdate({
+          target: [dbSchema.gymMembers.gymId, dbSchema.gymMembers.userId],
+          set: { role: 'editor' },
+          setWhere: sql`${dbSchema.gymMembers.role} = 'member'`,
+        })
+        .returning({ userId: dbSchema.gymMembers.userId }),
+    );
 
     // Tell the new editor they can manage the gym now (best-effort; the helper
     // swallows its own errors so a notification hiccup never fails the grant).
@@ -1610,6 +1661,9 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymGrantAccess(validatedInput.gymUuid, userId);
+    // Taking an editor's access away removes staff, like removeGymMember, so
+    // it waits out the probation too (docs/product/gym-claims.md).
+    await assertNoGymClaimProbation(gym.id, userId);
 
     // Only remove editor rows — never a gym admin or plain member.
     await db

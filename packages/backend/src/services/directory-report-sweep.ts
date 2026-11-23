@@ -13,6 +13,8 @@
  *    notice to the people the report went to.
  * 4. Admin-review gym claims nobody decided within 30 days expire, and the
  *    claimant hears (`expireStaleAdminClaims`, docs/product/gym-claims.md).
+ *    Only claims filed from `GYM_CLAIM_EXPIRY_STARTS_AT` on; older ones wait
+ *    for a person.
  * 5. Once a UTC day, from 08:00, the team gets the digest: reports that reached
  *    the admin queue since the last digest, claims that approved themselves,
  *    and the sections other features add. No email when every section is empty.

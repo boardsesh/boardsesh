@@ -2353,6 +2353,13 @@
       "when": 1795439791727,
       "tag": "0335_gym_claim_revoked",
       "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1795443893672,
+      "tag": "0336_gym_claim_decision_previous_owner",
+      "breakpoints": true
     }
   ]
 }

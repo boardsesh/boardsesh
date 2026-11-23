@@ -5687,10 +5687,12 @@ export type Mutation = {
   retrySprayWallDetection: SprayWallDetection;
   /**
    * Take back an approved gym claim (global admin only): the gym goes back to
-   * the SYSTEM account, the claim becomes `revoked`, the sync freeze set at
-   * approval is cleared so the location sync curates the listing again, and the
-   * claimant plus every gym member or editor added since the claim lose their
-   * membership. Refused when the gym has changed hands since the claim.
+   * the SYSTEM account, every approved claim on it becomes `revoked`, the sync
+   * freeze set at approval is cleared so the location sync curates the listing
+   * again, and the claimant plus every gym member or editor added since the
+   * claim lose their membership. Only for a claim that took the gym from the
+   * SYSTEM account when nobody has moved it since; anything else is refused, and
+   * reassignGymOwner is the tool for it.
    */
   revertGymClaim: RevertGymClaimResult;
   /**

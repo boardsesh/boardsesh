@@ -48,6 +48,7 @@ export type AutoApproveGuard =
   | 'already_auto_approved'
   | 'account_too_new'
   | 'climber_boards_linked'
+  | 'gym_has_staff'
   | 'daily_cap_reached';
 
 /**
@@ -77,7 +78,10 @@ export async function lockAutoApprovals(tx: GuardrailExecutor): Promise<void> {
  * 3. No live board owned by another climber is linked to the gym. A claim like
  *    that hands someone power over other people's boards, so a person decides.
  *    The claimant's own boards and synced (SYSTEM) boards don't count.
- * 4. Fewer than `gym_claim_auto_approve_daily_cap` claims approved themselves
+ * 4. The gym has no admin or editor (`gym_members`), the claimant's own row
+ *    included. An unowned gym with staff is run by someone already: a claim
+ *    would put the claimant over them, so a person decides.
+ * 5. Fewer than `gym_claim_auto_approve_daily_cap` claims approved themselves
  *    in the last 24 hours, across every account.
  *
  * Whether the gym is still unclaimed is `applyGymClaim`'s
@@ -122,6 +126,13 @@ export async function firstFailedAutoApproveGuard(
     )
     .limit(1);
   if (climberBoard) return 'climber_boards_linked';
+
+  const [staff] = await executor
+    .select({ id: dbSchema.gymMembers.id })
+    .from(dbSchema.gymMembers)
+    .where(and(eq(dbSchema.gymMembers.gymId, claim.gymId), inArray(dbSchema.gymMembers.role, ['admin', 'editor'])))
+    .limit(1);
+  if (staff) return 'gym_has_staff';
 
   const dailyCap = await gymClaimAutoApproveDailyCap();
   const [recent] = await executor
