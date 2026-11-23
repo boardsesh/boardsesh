@@ -482,7 +482,8 @@
         "emailPlaceholder": "you@{{domain}}",
         "submit": "Send verification email",
         "submitShort": "Send",
-        "sent": "Check your inbox at {{email}} and tap the link to finish."
+        "sent": "Check your inbox at {{email}} and tap the link to finish.",
+        "mismatch": "That email isn’t at {{domain}}. Use an address at the gym’s website domain, or request a review instead."
       },
       "admin": {
         "description": "Tell us you run {{gym}} and our team will review your claim.",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "Remove from {{gym}}",
     "removeTitle": "Remove {{board}} from {{gym}}?",
     "removeBodyOwn": "It comes off {{gym}}'s page and kiosks. It stays in your boards.",
-    "removeBodyOther": "It comes off your gym page and kiosks. {{name}} keeps it in their boards.",
-    "removeBodyOtherHidden": "It comes off your gym page and kiosks. The climber who added it keeps it in their boards.",
+    "removeBodyOther": "It comes off {{gym}}'s page and kiosks. {{name}} keeps it in their boards.",
+    "removeBodyOtherHidden": "It comes off {{gym}}'s page and kiosks. The climber who added it keeps it in their boards.",
     "removeBodySynced": "It comes off {{gym}}'s page and kiosks.",
     "removeConfirm": "Remove",
     "removed": "Removed from {{gym}}.",

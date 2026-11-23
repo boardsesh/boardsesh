@@ -6,7 +6,12 @@ import { StyleSheet, View } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
-import { extractDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH, GYM_CLAIM_SUPPORT_EMAIL } from '@boardsesh/gym-claim';
+import {
+  emailDomainMatchesWebsite,
+  extractDomain,
+  GYM_CLAIM_MESSAGE_MAX_LENGTH,
+  GYM_CLAIM_SUPPORT_EMAIL,
+} from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
@@ -101,6 +106,16 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     [requestClaim, gym.uuid, t],
   );
 
+  const submitDomainClaim = useCallback(() => {
+    // Checked here so the mismatch reads in the app's language, not the
+    // backend's English.
+    if (!emailDomainMatchesWebsite(trimmedEmail, gym.website)) {
+      setErrorMessage(t('mobile.gymClaim.domain.mismatch', { domain: domain ?? '' }));
+      return;
+    }
+    void submit({ claimEmail: trimmedEmail });
+  }, [trimmedEmail, gym.website, domain, submit, t]);
+
   const switchMode = useCallback((next: ClaimMode) => {
     setErrorMessage(null);
     setMode(next);
@@ -151,7 +166,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
                 kind: 'send',
                 label: t('mobile.gymClaim.domain.submitShort'),
                 accessibilityLabel: t('mobile.gymClaim.domain.submit'),
-                onPress: () => void submit({ claimEmail: trimmedEmail }),
+                onPress: submitDomainClaim,
                 disabled: !canSubmitDomain || requestClaim.isPending,
                 loading: requestClaim.isPending,
                 prominent: true,

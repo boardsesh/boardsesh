@@ -482,7 +482,8 @@
         "emailPlaceholder": "toi@{{domain}}",
         "submit": "Envoyer l'e-mail de vérification",
         "submitShort": "Envoyer",
-        "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer."
+        "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer.",
+        "mismatch": "Cet e-mail n’est pas chez {{domain}}. Utilisez une adresse du domaine du site de la salle, ou demandez une vérification."
       },
       "admin": {
         "description": "Dis-nous que tu gères {{gym}} et notre équipe examinera ta demande.",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "Retirer de {{gym}}",
     "removeTitle": "Retirer {{board}} de {{gym}} ?",
     "removeBodyOwn": "Elle disparaît de la page et des bornes de {{gym}}. Elle reste dans tes boards.",
-    "removeBodyOther": "Elle disparaît de la page et des bornes de ta salle. {{name}} la garde dans ses boards.",
-    "removeBodyOtherHidden": "Elle disparaît de la page et des bornes de ta salle. La personne qui l'a ajoutée la garde dans ses boards.",
+    "removeBodyOther": "Elle disparaît de la page et des bornes de {{gym}}. {{name}} la garde dans ses boards.",
+    "removeBodyOtherHidden": "Elle disparaît de la page et des bornes de {{gym}}. La personne qui l'a ajoutée la garde dans ses boards.",
     "removeBodySynced": "Elle disparaît de la page et des bornes de {{gym}}.",
     "removeConfirm": "Retirer",
     "removed": "Retirée de {{gym}}.",

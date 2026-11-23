@@ -225,7 +225,26 @@ describe('GymBoardsTab — permission gating', () => {
 
     await screen.findByText(/no boards linked yet/i);
     expect(screen.queryByRole('button', { name: /add a board/i })).toBeNull();
-    expect(screen.getByText(/you can remove boards that aren't on your walls/i)).toBeTruthy();
+    expect(screen.getByText(/you can remove boards climbers added/i)).toBeTruthy();
+  });
+
+  it('tells an editor who can delete a synced board that has no action for them', async () => {
+    stubRequests({
+      gymBoards: [
+        makeBoard({
+          uuid: 'synced',
+          name: 'Synced',
+          ownerId: '00000000-0000-0000-0000-000000000000',
+          canRemoveFromGym: false,
+          canDelete: false,
+        }),
+      ],
+      myBoards: [],
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Synced');
+    expect(screen.getByText('Ask an owner or admin to delete this one.')).toBeTruthy();
   });
 
   it('says where each board came from', async () => {
@@ -298,7 +317,7 @@ describe('GymBoardAssociation — Remove from gym', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^remove from gym$/i }));
     const confirmation = await screen.findByRole('dialog');
     expect(
-      within(confirmation).getByText('It comes off your gym page and kiosks. Sam keeps it in their boards.'),
+      within(confirmation).getByText("It comes off Test Gym's page and kiosks. Sam keeps it in their boards."),
     ).toBeTruthy();
     stubRequests({ gymBoards: [], myBoards: [] });
     fireEvent.click(within(confirmation).getByRole('button', { name: /^remove$/i }));

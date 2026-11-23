@@ -482,7 +482,8 @@
         "emailPlaceholder": "tu@{{domain}}",
         "submit": "Invia l'email di verifica",
         "submitShort": "Invia",
-        "sent": "Controlla la posta di {{email}} e tocca il link per finire."
+        "sent": "Controlla la posta di {{email}} e tocca il link per finire.",
+        "mismatch": "Quell'email non è del dominio {{domain}}. Usa un indirizzo del dominio del sito della palestra, oppure richiedi una revisione."
       },
       "admin": {
         "description": "Dicci che gestisci {{gym}} e il nostro team esaminerà la tua richiesta.",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "Togli da {{gym}}",
     "removeTitle": "Togliere {{board}} da {{gym}}?",
     "removeBodyOwn": "Sparisce dalla pagina e dai kiosk di {{gym}}. Resta tra i tuoi pannelli.",
-    "removeBodyOther": "Sparisce dalla pagina e dai kiosk della tua palestra. {{name}} lo tiene tra i suoi pannelli.",
-    "removeBodyOtherHidden": "Sparisce dalla pagina e dai kiosk della tua palestra. Chi l'ha aggiunto lo tiene tra i suoi pannelli.",
+    "removeBodyOther": "Sparisce dalla pagina e dai kiosk di {{gym}}. {{name}} lo tiene tra i suoi pannelli.",
+    "removeBodyOtherHidden": "Sparisce dalla pagina e dai kiosk di {{gym}}. Chi l'ha aggiunto lo tiene tra i suoi pannelli.",
     "removeBodySynced": "Sparisce dalla pagina e dai kiosk di {{gym}}.",
     "removeConfirm": "Togli",
     "removed": "Tolto da {{gym}}.",

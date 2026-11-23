@@ -482,7 +482,8 @@
         "emailPlaceholder": "du@{{domain}}",
         "submit": "Bestätigungs-E-Mail senden",
         "submitShort": "Senden",
-        "sent": "Schau in dein Postfach bei {{email}} und tipp auf den Link, um fertig zu werden."
+        "sent": "Schau in dein Postfach bei {{email}} und tipp auf den Link, um fertig zu werden.",
+        "mismatch": "Diese E-Mail liegt nicht bei {{domain}}. Nutz eine Adresse auf der Website-Domain der Halle oder frag stattdessen eine Prüfung an."
       },
       "admin": {
         "description": "Sag uns, dass du {{gym}} leitest, und unser Team prüft deinen Anspruch.",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "Aus {{gym}} entfernen",
     "removeTitle": "{{board}} aus {{gym}} entfernen?",
     "removeBodyOwn": "Es verschwindet von der Seite und den Kiosken von {{gym}}. In deinen Boards bleibt es.",
-    "removeBodyOther": "Es verschwindet von deiner Hallenseite und deinen Kiosken. {{name}} behält es in den eigenen Boards.",
-    "removeBodyOtherHidden": "Es verschwindet von deiner Hallenseite und deinen Kiosken. Wer es angelegt hat, behält es in den eigenen Boards.",
+    "removeBodyOther": "Es verschwindet von der Seite und den Kiosken von {{gym}}. {{name}} behält es in den eigenen Boards.",
+    "removeBodyOtherHidden": "Es verschwindet von der Seite und den Kiosken von {{gym}}. Wer es angelegt hat, behält es in den eigenen Boards.",
     "removeBodySynced": "Es verschwindet von der Seite und den Kiosken von {{gym}}.",
     "removeConfirm": "Entfernen",
     "removed": "Aus {{gym}} entfernt.",

@@ -482,7 +482,8 @@
         "emailPlaceholder": "you@{{domain}}",
         "submit": "发送验证邮件",
         "submitShort": "发送",
-        "sent": "请查看 {{email}} 的收件箱，点击链接完成验证。"
+        "sent": "请查看 {{email}} 的收件箱，点击链接完成验证。",
+        "mismatch": "此邮箱不属于 {{domain}}。请使用岩馆网站域名的邮箱，或改为申请人工审核。"
       },
       "admin": {
         "description": "告诉我们你在经营 {{gym}}，团队会审核你的认领申请。",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "从 {{gym}} 移除",
     "removeTitle": "要把 {{board}} 从 {{gym}} 移除吗？",
     "removeBodyOwn": "它会从 {{gym}} 的页面和展示终端上消失，但仍保留在你的训练板中。",
-    "removeBodyOther": "它会从你的岩馆页面和展示终端上消失。{{name}} 仍会保留这块训练板。",
-    "removeBodyOtherHidden": "它会从你的岩馆页面和展示终端上消失。添加它的攀岩者仍会保留这块训练板。",
+    "removeBodyOther": "它会从{{gym}}的页面和展示终端上消失。{{name}} 仍会保留这块训练板。",
+    "removeBodyOtherHidden": "它会从{{gym}}的页面和展示终端上消失。添加它的攀岩者仍会保留这块训练板。",
     "removeBodySynced": "它会从 {{gym}} 的页面和展示终端上消失。",
     "removeConfirm": "移除",
     "removed": "已从 {{gym}} 移除。",

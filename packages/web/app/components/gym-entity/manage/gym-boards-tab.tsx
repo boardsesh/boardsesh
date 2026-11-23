@@ -116,9 +116,9 @@ function removeBody(board: UserBoard, gymName: string, viewerUserId: string | nu
     case 'synced':
       return t('gymBoards.removeBodySynced', { gym: gymName });
     case 'climber':
-      return t('gymBoards.removeBodyOther', { name: board.ownerDisplayName ?? '' });
+      return t('gymBoards.removeBodyOther', { name: board.ownerDisplayName ?? '', gym: gymName });
     case 'hidden':
-      return t('gymBoards.removeBodyOtherHidden');
+      return t('gymBoards.removeBodyOtherHidden', { gym: gymName });
   }
 }
 
@@ -210,12 +210,11 @@ export function GymBoardAssociation({
       errorMessage: t('manage.boards.linkFailed'),
       // A board this gym's staff took off the listing can't be self-linked
       // back. Staff linking their own board never meets it, but say it plainly
-      // if the server ever does rather than show its English.
-      onError: (error, serverMessage) =>
+      // if the server ever does rather than show its English. Any other code
+      // gets the translated failure, never the server's raw message.
+      onError: (error) =>
         showMessage(
-          isBoardRemovedByGymError(error)
-            ? tBoards('gymBoards.removedByGymError')
-            : (serverMessage ?? t('manage.boards.linkFailed')),
+          isBoardRemovedByGymError(error) ? tBoards('gymBoards.removedByGymError') : t('manage.boards.linkFailed'),
           'error',
         ),
     },
@@ -236,11 +235,11 @@ export function GymBoardAssociation({
       successMessage: tBoards('gymBoards.removed', { gym: gym.name }),
       errorMessage: tBoards('gymBoards.removeFailed'),
       // A synced board is deleted, not removed: the server says so by code.
-      onError: (error, serverMessage) =>
+      onError: (error) =>
         showMessage(
           isSystemBoardDeleteInsteadError(error)
             ? tBoards('gymBoards.removeSyncedError')
-            : (serverMessage ?? tBoards('gymBoards.removeFailed')),
+            : tBoards('gymBoards.removeFailed'),
           'error',
         ),
     },
@@ -387,7 +386,7 @@ export function GymBoardAssociation({
       </Box>
       {/* Editors (and community roles without a gym seat) can remove boards
           and add the ones near the gym, but not link their own or delete. */}
-      {!canLinkBoards && (
+      {!canLinkBoards && !boards?.some((board) => board.canDelete === true) && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           {t('manage.boards.readOnlyHint')}
         </Typography>
@@ -483,6 +482,14 @@ export function GymBoardAssociation({
                     <Box component="span" sx={{ display: 'block' }}>
                       {boardOriginLabel(board, viewerUserId, tBoards)}
                     </Box>
+                    {/* A synced board with no action for this viewer: say who can. */}
+                    {boardOriginFor(board, viewerUserId) === 'synced' &&
+                      board.canRemoveFromGym !== true &&
+                      board.canDelete !== true && (
+                        <Box component="span" sx={{ display: 'block' }}>
+                          {t('manage.boards.askAdminToDelete')}
+                        </Box>
+                      )}
                   </>
                 }
               />
