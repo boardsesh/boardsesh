@@ -1210,6 +1210,15 @@ export const SHARED_EVENTS = {
   // makes has its own events (Board Created, the spray funnel, Board Picker
   // Selection Completed with gym_finder). Expected about 1 per 10 picker opens.
   BoardPickerAddSelected: 'Board Picker Add Selected',
+  // A gym's page opened, once per gym per visit, after the gym loaded and the
+  // viewer's identity resolved. Props: { surface: app (the app's gym page,
+  // from 2026-11) | web (reserved for www's /gym/{slug}), listingState:
+  // UNCLAIMED | CLIMBER_LISTED | RUN_BY_GYM, viewerRole: signed_out | climber
+  // | member | moderator (edits the gym without being its staff: a community
+  // leader or our team) | editor | admin | owner }. No gym id: the question is
+  // how often staff and climbers open the page, not which gym. Expected a few
+  // hundred a week.
+  GymPageViewed: 'Gym Page Viewed',
   // The launch follow heal (#5654): fired when the app follows the board it
   // launched on because the server says it is neither the climber's nor
   // followed. Repairs picks made before picks followed boards, and keeps
