@@ -131,6 +131,20 @@ describe('StoreInstallButtons', () => {
     }
   });
 
+  it('outlines every store, with the install icon, in the brand-outlined appearance', async () => {
+    // A page's second store pair: the brand pill without a second filled button.
+    setUserAgent(DESKTOP_UA);
+    render(<StoreInstallButtons placement="climb-app-module" labels={LABELS} appearance="brand-outlined" />);
+
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2));
+
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.className).toContain('MuiButton-outlined');
+      expect(link.className).not.toContain('MuiButton-contained');
+      expect(link.querySelector('.MuiButton-startIcon svg')).not.toBeNull();
+    }
+  });
+
   it('fills the first store only in the brand appearance', async () => {
     setUserAgent(DESKTOP_UA);
     render(<StoreInstallButtons placement="help" labels={LABELS} />);

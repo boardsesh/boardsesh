@@ -284,6 +284,30 @@ describe('StickyInstallBar and the page around it', () => {
     expect(observer.options.rootMargin).toMatch(/^0px 0px -\d+px 0px$/);
   });
 
+  it('stays down over a store block that streams in after mount, like the app module', async () => {
+    setUserAgent(ANDROID_CHROME);
+    renderPage();
+    const stickyBar = await waitForBar();
+    scrollPastHero();
+    expect(stickyBar.getAttribute('data-open')).toBe('true');
+
+    // The app module's store pair arrives from a <Suspense> boundary.
+    const appModule = document.createElement('section');
+    appModule.innerHTML = '<div data-cta="app-install" data-sticky-install-hide="">store pair</div>';
+    act(() => {
+      document.querySelector('main')?.insertBefore(appModule, document.querySelector('[data-sticky-install-end]'));
+    });
+    await waitFor(() => expect(() => observerOf('[data-cta="app-install"]')).not.toThrow());
+    const { observer, target } = observerOf('[data-cta="app-install"]');
+    observer.report(target, { isIntersecting: true, top: 300, bottom: 360 });
+
+    expect(stickyBar.getAttribute('data-open')).toBe('false');
+
+    // Scrolled past it as well, the bar comes back.
+    observer.report(target, { isIntersecting: false, top: -200, bottom: -140 });
+    expect(stickyBar.getAttribute('data-open')).toBe('true');
+  });
+
   it('ignores a store block that is display:none (the desktop layout)', async () => {
     setUserAgent(ANDROID_CHROME);
     renderPage();

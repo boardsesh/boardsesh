@@ -1011,12 +1011,44 @@
       "headingCount_one": "Beta · {{count}} vidéo",
       "headingCount_other": "Beta · {{count}} vidéos"
     },
+    "app": {
+      "heading": "Ce que t’apporte l’app",
+      "lead": "Gratuite sur iPhone et Android. Tout marche sur ta board dès ce soir.",
+      "beta": {
+        "title": "La beta tout de suite",
+        "body": "Quand quelqu’un ajoute une vidéo de beta, elle apparaît sur le bloc pour tout le monde aussitôt."
+      },
+      "wall": {
+        "title": "Vois ce qui est allumé sur la board",
+        "body": "Tout le monde à la board voit le bloc allumé en ce moment et ceux allumés avant lui, en direct.",
+        "alt": "Boardsesh affichant le bloc allumé sur la board au-dessus de la liste des blocs"
+      },
+      "boards": {
+        "title": "Toutes tes boards, une seule app",
+        "body": "Une app pour toutes tes boards. Compatible avec Kilter, Tension, MoonBoard et d’autres.",
+        "alt": "Boardsesh sur une board Kilter, un Spraywall et une board Tension"
+      },
+      "logbook": {
+        "title": "Un seul carnet",
+        "body": "Toutes tes croix, de toutes tes boards, au même endroit.",
+        "link": "Importe ton carnet",
+        "alt": "Tes croix et ta progression sur toutes tes boards dans le profil Boardsesh"
+      },
+      "workouts": {
+        "title": "Entraînements",
+        "body": "Des 4×4 et des séances de volume à ton niveau, avec un minuteur intégré.",
+        "alt": "Préparation d’une séance de volume en V2 dans Boardsesh"
+      }
+    },
     "community": {
-      "heading": "Communauté"
+      "heading": "Commentaires et votes de cotation",
+      "signIn": "Connecte-toi pour participer",
+      "show": "Voir les commentaires"
     },
     "similar": {
       "heading": "Des blocs dans le même esprit",
-      "unavailable": "Les blocs similaires n’ont pas chargé. Rechargement en cours…"
+      "unavailable": "Les blocs similaires n’ont pas chargé. Rechargement en cours…",
+      "allAtAngle": "Tous les blocs {{board}} à {{angle}}°"
     },
     "cta": {
       "getApp": "Installe l’app gratuite",

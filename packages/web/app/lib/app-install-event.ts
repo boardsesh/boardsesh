@@ -46,6 +46,9 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `sticky-bar`: the install strip at the bottom of a phone's climb page
  *    (`StickyInstallBar`), on Android and on iOS browsers that show no Smart
  *    App Banner.
+ *  - `climb-app-module`: the store pair under "What you get in the app" near
+ *    the end of a climb page (`ClimbAppShowcase`), so a click after reading
+ *    the app's benefits reads apart from the hero's.
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
  *  - `bring-your-logbook`: the Kilter and Tension import guide.
@@ -88,6 +91,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'run-a-wall',
   'auth-login',
   'climb-qr-card',
+  'climb-app-module',
 ] as const;
 
 /**

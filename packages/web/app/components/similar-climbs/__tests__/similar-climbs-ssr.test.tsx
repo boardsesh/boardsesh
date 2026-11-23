@@ -169,6 +169,19 @@ describe('SimilarClimbsList server render', () => {
     expect(html).toContain('/view/similar-boulder-5-SIMILAR5');
   });
 
+  it('renders each climb as a row: name with its grade in words, setter and sends, and a grade tile', () => {
+    const page = new DOMParser().parseFromString(`<!doctype html><body>${renderSeededList()}</body>`, 'text/html');
+    const rows = [...page.querySelectorAll('ul > li')];
+    const firstRow = rows[0].querySelector('a');
+
+    expect(rows).toHaveLength(seededClimbs.length);
+    expect(firstRow?.textContent).toContain('Similar Boulder 0');
+    // The tile is aria-hidden; the hidden ", V4" is how a screen reader hears the grade.
+    expect(firstRow?.textContent).toContain('frontDoor.hero.gradeForSearch');
+    expect(firstRow?.querySelector('[aria-hidden="true"]')?.textContent).toBe('V4');
+    expect(firstRow?.textContent).toContain('setter · ★3.0 · sends');
+  });
+
   it('renders no <button> cards — the queue-activation path is gone', () => {
     const html = renderSeededList();
 

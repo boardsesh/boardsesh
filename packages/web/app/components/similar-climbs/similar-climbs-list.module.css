@@ -1,122 +1,103 @@
-.scroller {
-  display: flex;
-  gap: var(--spacing-3);
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  padding: var(--spacing-1) 0 var(--spacing-2);
+/*
+ * "Climbs like this one" as rows in the app's format: thumbnail, name, the
+ * setter and sends under it, the grade tile at the end. One column on a phone,
+ * two from md (900px). The whole row is the link.
+ */
+
+.rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.scroller::-webkit-scrollbar {
-  display: none;
+@media (min-width: 900px) {
+  .rows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px var(--spacing-4);
+  }
 }
 
-/* Fixed-width slot in the horizontal scroller. Kept as a wrapper around the
-   card link so the scroll-snap and flex sizing stay off the <a> itself. */
-.cardWrapper {
-  position: relative;
-  flex-shrink: 0;
-  scroll-snap-align: start;
-  /* 180px is the canonical board-preview thumbnail size shared with the
-     homepage board card; no spacing-token analogue applies. */
-  width: 180px;
+.item {
+  min-width: 0;
 }
 
-.card {
-  flex-shrink: 0;
-  scroll-snap-align: start;
-  width: 180px;
-  display: flex;
-  flex-direction: column;
-  /* 6px sits between --spacing-1 (4) and --spacing-2 (8); used here to
-     keep the name row tight against the thumbnail without crowding. */
-  gap: 6px;
-  cursor: pointer;
-  text-decoration: none;
+.row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px var(--spacing-4) 10px 10px;
+  border-radius: calc(var(--border-radius-lg) + 2px);
+  background: var(--semantic-surface);
   color: inherit;
+  text-decoration: none;
 }
 
-.cardDisabled {
-  cursor: default;
+a.row:hover {
+  background: var(--semantic-surface-elevated);
 }
 
-/* Applied to the inner content elements (thumbnail / name row / byline) of
-   a card whose climb's compatibleSizeIds doesn't include the viewer's
-   product size. 0.45 is between --opacity-subtle (0.7) and
-   --opacity-disabled (0.5); the lower value reads as "not for you" at a
-   glance while keeping the climb name readable. */
+a.row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Applied to the thumbnail only, when the climb's compatibleSizeIds doesn't
+   include the viewer's product size. 0.45 is between --opacity-subtle (0.7) and
+   --opacity-disabled (0.5); the lower value reads as "not for you" at a glance.
+   The text stays at full strength, so it keeps its 4.5:1. */
 .dimmed {
   opacity: 0.45;
 }
 
-.boardSquare {
-  width: 180px;
-  height: 180px;
-  aspect-ratio: 1;
-  border-radius: var(--border-radius-md);
+/* The board's own colour behind the art, so a slow thumbnail is a dark tile,
+   not a hole. 52 x 68 matches the app's climb rows. */
+.thumb {
+  width: 52px;
+  height: 68px;
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
-  background: var(--neutral-100);
-  position: relative;
+  border-radius: var(--border-radius-md);
+  background: var(--neutral-50);
 }
 
-.card:active .boardSquare::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  /* Matches the press-feedback overlay used by .cardScroll on the homepage
-     board card (board-scroll.module.css:46). No --overlay-tap design token
-     exists yet; introducing one would touch every active-state surface. */
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.boardSquare svg {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-}
-
-.nameRow {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 0 2px;
+.text {
   min-width: 0;
 }
 
 .name {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--neutral-900);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: left;
-}
-
-.grade {
-  flex: 0 0 auto;
-  /* 13px is the visually-balanced size for a numeric grade next to a 14px
-     name (--font-size-sm); design tokens jump from xs (12) to sm (14). */
-  font-size: 13px;
-  font-weight: 700;
-  /* --grade-color is set as a CSS custom property on each instance from
-     getSoftGradeColor; the fallback is the surrounding text colour so the
-     label stays legible if the helper returned undefined. */
-  color: var(--grade-color, inherit);
+  color: var(--neutral-900);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.3;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .byline {
-  font-size: var(--font-size-xs);
-  line-height: 1.3;
-  color: var(--neutral-500);
-  padding: 0 2px;
-  white-space: nowrap;
+  margin-top: 3px;
   overflow: hidden;
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.grade {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-1);
+}
+
+.fontGrade {
+  color: var(--neutral-500);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
 }

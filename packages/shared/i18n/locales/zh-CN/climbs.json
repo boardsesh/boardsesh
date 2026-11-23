@@ -1011,12 +1011,44 @@
       "headingCount_one": "攀爬方法 · {{count}} 个视频",
       "headingCount_other": "攀爬方法 · {{count}} 个视频"
     },
+    "app": {
+      "heading": "应用里有什么",
+      "lead": "iPhone 和 Android 均可免费使用。今晚就能在你的训练板上用起来。",
+      "beta": {
+        "title": "攀爬方法即时可见",
+        "body": "有人链接攀爬方法视频后，所有人马上就能在这条线路上看到。"
+      },
+      "wall": {
+        "title": "训练板上正亮着什么",
+        "body": "训练板前的每个人都能实时看到现在点亮的线路，以及之前点亮过的线路。",
+        "alt": "Boardsesh 在线路列表上方显示训练板上正在点亮的线路"
+      },
+      "boards": {
+        "title": "所有训练板，一个应用",
+        "body": "一个应用用于你所有的训练板。支持 Kilter、Tension、MoonBoard 等。",
+        "alt": "Boardsesh 用在 Kilter 训练板、喷点墙和 Tension 训练板上"
+      },
+      "logbook": {
+        "title": "一份攀爬记录",
+        "body": "每块训练板上的每次完攀，都在同一个地方。",
+        "link": "导入攀爬记录",
+        "alt": "Boardsesh 个人资料中各训练板的完攀和进步"
+      },
+      "workouts": {
+        "title": "训练计划",
+        "body": "按你的难度安排 4×4 和攀爬量训练，自带计时器。",
+        "alt": "在 Boardsesh 中设置 V2 的攀爬量训练"
+      }
+    },
     "community": {
-      "heading": "社区"
+      "heading": "评论和难度投票",
+      "signIn": "登录后参与",
+      "show": "查看评论"
     },
     "similar": {
       "heading": "类似线路",
-      "unavailable": "类似线路加载失败，正在重试…"
+      "unavailable": "类似线路加载失败，正在重试…",
+      "allAtAngle": "{{angle}}° 的所有 {{board}} 线路"
     },
     "cta": {
       "getApp": "免费下载应用",

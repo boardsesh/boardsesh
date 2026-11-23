@@ -30,6 +30,11 @@ vi.mock('@/app/lib/i18n/server', () => ({
 
 vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), trackBeforeNavigation: vi.fn() }));
 
+// The app module's 30-day line: one cached read, here a fixed answer.
+vi.mock('@/app/lib/graphql/server-cached-client', () => ({
+  cachedCommunityStats: vi.fn(async () => ({ climbersLast30Days: 3249, litLast30Days: 205_800 })),
+}));
+
 // What the root layout's provider gives a cold server render: no answer yet.
 vi.mock('@/app/components/consent/consent-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
@@ -190,6 +195,23 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
       expect(button.closest('[data-cta="mobile-install"]')).not.toBeNull();
     }
     expect(page.querySelector('[data-cta="handoff"]')?.classList.contains('MuiButton-contained')).toBe(false);
+    // The app module's second store pair is outlined: one filled action per screen.
+    expect(page.querySelectorAll('[data-cta="app-install"] .MuiButton-outlined')).toHaveLength(2);
+  });
+
+  it('ships the app module its own store pair, with its own link id, that keeps the sticky bar down', async () => {
+    const page = parseHtml(await renderClimbPage(tree));
+    const appInstall = page.querySelector('[data-cta="app-install"]');
+    const storeHrefs = [...(appInstall?.querySelectorAll('a') ?? [])].map((link) => link.getAttribute('href'));
+
+    expect(storeHrefs).toEqual([
+      buildStoreUrl('ios', { placement: 'climb-app-module' }),
+      buildStoreUrl('android', { placement: 'climb-app-module' }),
+    ]);
+    expect(appInstall?.hasAttribute('data-sticky-install-hide')).toBe(true);
+    // The module follows the climb, not the other way round.
+    const html = page.body.innerHTML;
+    expect(html.indexOf('data-cta="mobile-install"')).toBeLessThan(html.indexOf('data-cta="app-install"'));
   });
 
   it('shows a QR code that opens this climb on a phone, from the page it is on', async () => {
@@ -281,6 +303,36 @@ describe('a cached front door', () => {
     // mount: whoever populated the cache must not have picked it for everyone.
     expect(html).not.toContain('data-store=');
     expect(parseHtml(html).querySelectorAll('[data-cta="mobile-install"] [data-store-link]')).toHaveLength(2);
+  });
+
+  it('renders the same app screenshots whoever populated the cache', async () => {
+    const showcaseFor = async (userAgent: string) => {
+      const page = await resolveServerTree(
+        await ClimbFrontDoor({
+          climb: CLIMB,
+          boardDetails: BOARD_DETAILS,
+          angle: 40,
+          canonicalAngle: 40,
+          angleStats: [],
+          similarClimbs: { status: 'loaded', items: [] },
+          betaLinks: { status: 'loaded', items: [] },
+          handoffPath: HANDOFF_PATHS['config-tuple'],
+          tree: 'config-tuple',
+        }),
+      );
+      const html = renderToString(
+        <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser(userAgent)}>
+          {page}
+        </MarketingPreviewProvider>,
+      );
+      return parseHtml(html).querySelector('section[aria-labelledby="climb-app-showcase-heading"]')?.outerHTML;
+    };
+
+    const fromGooglebot = await showcaseFor(GOOGLEBOT_SMARTPHONE_UA);
+    expect(fromGooglebot).toContain('data-marketing-shot="wall-status"');
+    expect(await showcaseFor(IPHONE_UA)).toBe(fromGooglebot);
+    expect(await showcaseFor(DESKTOP_UA)).toBe(fromGooglebot);
+    expect(await showcaseFor('')).toBe(fromGooglebot);
   });
 
   it('ships both stores on a cached list page too', async () => {

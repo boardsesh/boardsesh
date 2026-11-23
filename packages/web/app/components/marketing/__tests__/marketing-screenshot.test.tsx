@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { MarketingPreviewProvider } from '../marketing-preview-provider';
-import { MarketingPreviewSwitch, MarketingScreenshot } from '../marketing-screenshot';
+import { MarketingScreenshot } from '../marketing-screenshot';
+import { MarketingPreviewSwitch } from '../marketing-preview-switch';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key), i18n: { language: 'de' } }),

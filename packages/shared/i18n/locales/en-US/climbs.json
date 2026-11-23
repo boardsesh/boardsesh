@@ -1011,12 +1011,44 @@
       "headingCount_one": "Beta · {{count}} video",
       "headingCount_other": "Beta · {{count}} videos"
     },
+    "app": {
+      "heading": "What you get in the app",
+      "lead": "Free on iPhone and Android. All of it works on your board tonight.",
+      "beta": {
+        "title": "Instant beta",
+        "body": "When someone links a beta video, it shows up on the climb for everyone straight away."
+      },
+      "wall": {
+        "title": "Know what's on the board",
+        "body": "Everyone at the board sees what's lit now and what was up before it, as it happens.",
+        "alt": "Boardsesh showing the climb lit on the board above the climb list"
+      },
+      "boards": {
+        "title": "Every board, one app",
+        "body": "One app for all your boards. Works with Kilter, Tension, MoonBoard and more.",
+        "alt": "Boardsesh on a Kilter board, a Spraywall and a Tension board"
+      },
+      "logbook": {
+        "title": "One logbook",
+        "body": "Every send from every board in one place.",
+        "link": "Bring your logbook",
+        "alt": "Sends and progress across boards in the Boardsesh profile"
+      },
+      "workouts": {
+        "title": "Workouts",
+        "body": "4×4s and volume sessions at your grade, with a built-in timer.",
+        "alt": "Setting up a volume workout at V2 in Boardsesh"
+      }
+    },
     "community": {
-      "heading": "Community"
+      "heading": "Comments and grade votes",
+      "signIn": "Sign in to join in",
+      "show": "Show comments"
     },
     "similar": {
       "heading": "Climbs like this one",
-      "unavailable": "Climbs like this one didn't load. Trying again…"
+      "unavailable": "Climbs like this one didn't load. Trying again…",
+      "allAtAngle": "All {{board}} climbs at {{angle}}°"
     },
     "cta": {
       "getApp": "Get the free app",

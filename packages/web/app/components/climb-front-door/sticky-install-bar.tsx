@@ -140,7 +140,8 @@ const endMarkerSx = { height: 0 };
  *    that never gets the card (outside the prompt regions, Global Privacy
  *    Control included) gets the bar once the lookup has answered;
  *  - any of the page's store buttons (`data-sticky-install-hide`) is on screen,
- *    or none has been scrolled past yet;
+ *    or none has been scrolled past yet. A block that streams in after mount
+ *    (the climb page's app module, inside `<Suspense>`) counts too;
  *  - the end of `<main>` has reached the bar. Below md `<main>` carries a bottom
  *    padding the bar's height, so the last line of content is above the bar
  *    when it leaves, and the footer is never covered.
@@ -169,6 +170,10 @@ export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyI
     if (!store || dismissed || typeof IntersectionObserver === 'undefined') return;
 
     const buttonPositions = new Map<Element, { visible: boolean; above: boolean }>();
+    const settle = () => {
+      const positions = [...buttonPositions.values()];
+      setScrolledPastButtons(positions.some(({ above }) => above) && !positions.some(({ visible }) => visible));
+    };
     const buttonObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         buttonPositions.set(entry.target, {
@@ -177,12 +182,37 @@ export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyI
           above: !entry.isIntersecting && entry.boundingClientRect.height > 0 && entry.boundingClientRect.bottom <= 0,
         });
       }
-      const positions = [...buttonPositions.values()];
-      setScrolledPastButtons(positions.some(({ above }) => above) && !positions.some(({ visible }) => visible));
+      settle();
     });
-    for (const button of document.querySelectorAll(`[${STICKY_INSTALL_HIDE_ATTRIBUTE}]`)) {
+    const hideSelector = `[${STICKY_INSTALL_HIDE_ATTRIBUTE}]`;
+    const markersIn = (node: Node): Element[] => {
+      if (!(node instanceof Element)) return [];
+      return [...(node.matches(hideSelector) ? [node] : []), ...node.querySelectorAll(hideSelector)];
+    };
+    for (const button of document.querySelectorAll(hideSelector)) {
       buttonObserver.observe(button);
     }
+
+    // A page can stream a store block in after this effect has run: the climb
+    // page's app module renders inside <Suspense>. Watch <main> for markers that
+    // arrive (observing one twice is harmless) and forget the ones that leave.
+    const markerWatcher = new MutationObserver((mutations) => {
+      let forgot = false;
+      for (const mutation of mutations) {
+        for (const added of mutation.addedNodes) {
+          for (const marker of markersIn(added)) buttonObserver.observe(marker);
+        }
+        for (const removed of mutation.removedNodes) {
+          for (const marker of markersIn(removed)) {
+            buttonObserver.unobserve(marker);
+            forgot = buttonPositions.delete(marker) || forgot;
+          }
+        }
+      }
+      if (forgot) settle();
+    });
+    const watchedRoot = endMarkerRef.current?.closest('main') ?? document.body;
+    markerWatcher.observe(watchedRoot, { childList: true, subtree: true });
 
     // The end counts as reached once it is above the bar's top edge.
     const barHeight = barRef.current?.offsetHeight ?? 0;
@@ -197,6 +227,7 @@ export default function StickyInstallBar({ labels, markUrl, qrLanding }: StickyI
     return () => {
       buttonObserver.disconnect();
       endObserver.disconnect();
+      markerWatcher.disconnect();
     };
   }, [store, dismissed]);
 

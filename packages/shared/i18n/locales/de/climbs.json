@@ -1011,12 +1011,44 @@
       "headingCount_one": "Beta · {{count}} Video",
       "headingCount_other": "Beta · {{count}} Videos"
     },
+    "app": {
+      "heading": "Das bekommst du in der App",
+      "lead": "Kostenlos für iPhone und Android. Alles davon läuft heute Abend an deinem Board.",
+      "beta": {
+        "title": "Beta sofort",
+        "body": "Wenn jemand ein Beta-Video verlinkt, sehen es alle sofort beim Boulder."
+      },
+      "wall": {
+        "title": "Sieh, was am Board leuchtet",
+        "body": "Alle am Board sehen live, welcher Boulder gerade beleuchtet ist und welche vorher dran waren.",
+        "alt": "Boardsesh zeigt über der Boulderliste den Boulder, der am Board beleuchtet ist"
+      },
+      "boards": {
+        "title": "Jedes Board, eine App",
+        "body": "Eine App für alle deine Boards. Funktioniert mit Kilter, Tension, MoonBoard und mehr.",
+        "alt": "Drei Handys mit Boardsesh: Kilter, Spraywall und Tension"
+      },
+      "logbook": {
+        "title": "Ein Routenbuch",
+        "body": "Jede Begehung von jedem Board an einem Ort.",
+        "link": "Routenbuch mitnehmen",
+        "alt": "Begehungen und Fortschritt über alle Boards im Boardsesh-Profil"
+      },
+      "workouts": {
+        "title": "Trainings",
+        "body": "4×4 und Volumen-Sessions in deinem Grad, mit eingebautem Timer.",
+        "alt": "Ein Volumen-Training bei V2 in Boardsesh einrichten"
+      }
+    },
     "community": {
-      "heading": "Community"
+      "heading": "Kommentare und Grad-Abstimmungen",
+      "signIn": "Melde dich an, um mitzumachen",
+      "show": "Kommentare anzeigen"
     },
     "similar": {
       "heading": "Boulder wie dieser",
-      "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…"
+      "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…",
+      "allAtAngle": "Alle {{board}}-Boulder bei {{angle}}°"
     },
     "cta": {
       "getApp": "Hol dir die kostenlose App",

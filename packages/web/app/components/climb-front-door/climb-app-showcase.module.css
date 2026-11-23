@@ -1,0 +1,304 @@
+/*
+ * "What you get in the app" (`climb-app-showcase.tsx`).
+ *
+ * Below md (900px) the five cards are a snap scroller that bleeds to the
+ * screen edges, so the next card peeks in, with a thin scrollbar for a mouse. From md they are a six-column grid:
+ * three cards across, then two wide ones. From 1100px the wide cards lay their
+ * words beside the phone instead of above it.
+ *
+ * Every picture sits in a box of fixed height and the card clips it, so a
+ * phone taller than its box (an iPhone capture is taller than an Android one)
+ * runs off the bottom of the card instead of moving anything.
+ */
+
+.section {
+  margin-top: var(--spacing-12);
+}
+
+/* The scroll container. A thin scrollbar stays visible: a mouse on a narrow
+   window (600-899px) has no swipe, and the bar is how it reaches the last
+   cards. It takes keyboard focus too (`tabIndex` in the component), so the
+   arrow keys scroll it. Touch phones draw their own overlay bar. */
+.scroller {
+  margin: var(--spacing-5) calc(-1 * var(--page-gutter)) 0;
+  padding: 0 var(--page-gutter) var(--spacing-3);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--page-gutter);
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-300) transparent;
+}
+
+.scroller:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.cards {
+  display: flex;
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* 286px, or less on a narrow phone so a sliver of the next card still shows. */
+  flex: 0 0 min(286px, calc(100vw - 2 * var(--page-gutter) - var(--spacing-12)));
+  min-width: 0;
+  min-height: 432px;
+  overflow: hidden;
+  scroll-snap-align: start;
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
+  border-radius: calc(var(--border-radius-xl) + var(--spacing-1));
+}
+
+.cardText {
+  padding: var(--spacing-5) var(--spacing-5) 0;
+}
+
+.visual {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  height: 262px;
+  margin-top: auto;
+  padding-top: var(--spacing-5);
+}
+
+/* A real app capture in a phone bezel. `MarketingScreenshot` owns the frame;
+   this sizes and rounds it, two classes deep so it beats the frame's own rule
+   whichever stylesheet loads first. */
+.visual .phone {
+  flex: none;
+  width: 182px;
+  padding: 6px;
+  border-radius: 28px;
+  background: var(--semantic-background);
+}
+
+.visual .phone img {
+  border-radius: 22px;
+}
+
+/* The homepage poster, cropped to its three labelled phones. */
+.poster {
+  height: 286px;
+  padding-top: 0;
+}
+
+.posterImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 66%;
+}
+
+/* This climb's beta, fanned: each card shifts right and down, newest on top. */
+.fan {
+  position: relative;
+  width: 296px;
+  height: 246px;
+  transform: scale(0.88);
+  transform-origin: top center;
+}
+
+.fan[data-count='1'] {
+  width: 120px;
+  height: 190px;
+}
+
+.fan[data-count='2'] {
+  width: 208px;
+  height: 218px;
+}
+
+.fanCard {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 190px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--semantic-surface-elevated);
+  border: 2px solid var(--semantic-surface);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.fanCard:nth-child(1) {
+  left: 0;
+  top: 0;
+}
+
+.fanCard:nth-child(2) {
+  left: 88px;
+  top: 28px;
+}
+
+.fanCard:nth-child(3) {
+  left: 176px;
+  top: 56px;
+}
+
+.fanCard img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fanCaption {
+  /* A solid pill under the handle, not a fade: white thumbnails are common
+     (a white wall, a bright gym), and the text has to clear 4.5:1 on any of
+     them. 90% of the page ground is 12:1 against the ink even over white. */
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  box-sizing: border-box;
+  padding: 3px 7px;
+  overflow: hidden;
+  border-radius: var(--border-radius-full);
+  background: color-mix(in srgb, var(--semantic-background) 90%, transparent);
+  color: var(--neutral-900);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* No thumbnails: one plain tile with a play mark, the beta grid's fallback. */
+.betaTile {
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 234px;
+  background: linear-gradient(160deg, var(--neutral-300), var(--neutral-100));
+  border: 2px solid var(--semantic-surface);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.playMark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--border-radius-full);
+  background: color-mix(in srgb, var(--semantic-background) 72%, transparent);
+  color: var(--neutral-900);
+  font-size: 32px;
+}
+
+.foot {
+  display: grid;
+  gap: var(--spacing-5);
+  margin-top: var(--spacing-6);
+  padding-top: var(--spacing-6);
+  border-top: 1px solid var(--separator);
+}
+
+/* Two equal buttons across a phone. */
+.stores :global(.MuiButton-root) {
+  flex: 1 1 0;
+}
+
+@media (min-width: 900px) {
+  .section {
+    margin-top: calc(var(--spacing-16) + var(--spacing-8));
+  }
+
+  .scroller {
+    margin: var(--spacing-6) 0 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--spacing-4);
+  }
+
+  .card {
+    grid-column: span 2;
+    min-height: 448px;
+  }
+
+  .wide {
+    grid-column: span 3;
+  }
+
+  .cardText {
+    padding: var(--spacing-6) var(--spacing-6) 0;
+  }
+
+  .visual {
+    height: 292px;
+    padding-top: var(--spacing-6);
+  }
+
+  .visual .phone {
+    width: 196px;
+  }
+
+  .poster {
+    height: 318px;
+    padding-top: 0;
+  }
+
+  .fan {
+    transform: none;
+  }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-6);
+  }
+
+  .stores {
+    flex: none;
+  }
+
+  .stores :global(.MuiButton-root) {
+    flex: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .wide {
+    flex-direction: row;
+    height: 340px;
+    min-height: 0;
+  }
+
+  .wide .cardText {
+    flex: 1;
+    padding: calc(var(--spacing-6) + 6px) var(--spacing-2) calc(var(--spacing-6) + 6px) calc(var(--spacing-6) + 6px);
+  }
+
+  .wide .visual {
+    flex: none;
+    width: 268px;
+    height: auto;
+    margin-top: 0;
+    padding-top: calc(var(--spacing-6) + 6px);
+  }
+
+  .wide .visual .phone {
+    width: 212px;
+  }
+}

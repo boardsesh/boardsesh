@@ -1011,12 +1011,44 @@
       "headingCount_one": "Beta · {{count}} vídeo",
       "headingCount_other": "Beta · {{count}} vídeos"
     },
+    "app": {
+      "heading": "Lo que tienes en la app",
+      "lead": "Gratis en iPhone y Android. Todo funciona en tu plafón esta misma noche.",
+      "beta": {
+        "title": "Beta al momento",
+        "body": "Cuando alguien enlaza un vídeo de beta, aparece en el bloque para todos al momento."
+      },
+      "wall": {
+        "title": "Mira qué hay en el plafón",
+        "body": "Todos en el plafón ven qué bloque está iluminado ahora y cuáles lo estuvieron antes, en directo.",
+        "alt": "Boardsesh mostrando el bloque iluminado en el plafón encima de la lista de bloques"
+      },
+      "boards": {
+        "title": "Todos tus plafones, una app",
+        "body": "Una app para todos tus plafones. Funciona con Kilter, Tension, MoonBoard y más.",
+        "alt": "Boardsesh en un Kilter Board, un Spraywall y un Tension Board"
+      },
+      "logbook": {
+        "title": "Un solo logbook",
+        "body": "Cada encadene de cada plafón, en un solo sitio.",
+        "link": "Trae tu logbook",
+        "alt": "Encadenes y progreso de todos tus plafones en el perfil de Boardsesh"
+      },
+      "workouts": {
+        "title": "Entrenamientos",
+        "body": "4×4 y sesiones de volumen a tu grado, con temporizador incluido.",
+        "alt": "Preparando un entrenamiento de volumen en V2 en Boardsesh"
+      }
+    },
     "community": {
-      "heading": "Comunidad"
+      "heading": "Comentarios y votos de grado",
+      "signIn": "Inicia sesión para participar",
+      "show": "Ver comentarios"
     },
     "similar": {
       "heading": "Bloques parecidos a este",
-      "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…"
+      "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…",
+      "allAtAngle": "Todos los bloques de {{board}} a {{angle}}°"
     },
     "cta": {
       "getApp": "Descarga la app gratis",
