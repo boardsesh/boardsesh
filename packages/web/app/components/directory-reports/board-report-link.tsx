@@ -3,7 +3,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
+import { useOptionalBrowserSession } from '@/app/components/providers/session-provider';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -39,7 +39,7 @@ import { useReportRequest } from './use-report-request';
 export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
   const { t } = useTranslation('boards');
   const { token, error: tokenError } = useWsAuthToken();
-  const { data: session } = useSession();
+  const session = useOptionalBrowserSession()?.data;
   // Keyed on who is signed in, not the token: a rotation keeps the loaded board.
   const viewerUserId = session?.user?.id ?? null;
   const [open, setOpen] = useState(false);

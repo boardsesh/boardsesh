@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
+import { useOptionalBrowserSession } from '@/app/components/providers/session-provider';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -97,7 +97,7 @@ export default function ReportProblemDialog({
 }: ReportProblemDialogProps) {
   const { t } = useTranslation('boards');
   const { token } = useWsAuthToken();
-  const { data: session } = useSession();
+  const session = useOptionalBrowserSession()?.data;
   const viewerUserId = session?.user?.id ?? null;
   const [draft, setDraft] = useState<ReportDraft>(EMPTY_REPORT_DRAFT);
   const [sending, setSending] = useState(false);

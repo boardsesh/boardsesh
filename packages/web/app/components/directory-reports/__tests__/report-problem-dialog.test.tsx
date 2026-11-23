@@ -17,8 +17,8 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({ token: 'test-token' }),
 }));
 
-vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: { user: { id: 'viewer' } }, status: 'authenticated' }),
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useOptionalBrowserSession: () => ({ data: { user: { id: 'viewer' } }, status: 'authenticated' }),
 }));
 
 const mockRequest = vi.fn();

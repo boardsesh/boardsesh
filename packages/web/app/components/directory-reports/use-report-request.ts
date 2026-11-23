@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSession } from 'next-auth/react';
+import { useOptionalBrowserSession } from '@/app/components/providers/session-provider';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { buildReportReturnPath, readReportReturnKey, stripReportParam } from './report-return-param';
 
@@ -28,7 +28,7 @@ export function useReportRequest({
   isKnownKey: (key: string) => boolean;
 }): (key: string) => void {
   const { t } = useTranslation('boards');
-  const { status } = useSession();
+  const status = useOptionalBrowserSession()?.status ?? 'loading';
   const { openAuthModal } = useAuthModal();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const onOpenRef = useRef(onOpen);

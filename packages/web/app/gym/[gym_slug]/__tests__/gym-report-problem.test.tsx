@@ -13,8 +13,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 const session = vi.hoisted(() => ({ status: 'authenticated' as 'authenticated' | 'unauthenticated' | 'loading' }));
-vi.mock('next-auth/react', () => ({
-  useSession: () => ({
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useOptionalBrowserSession: () => ({
     data: session.status === 'authenticated' ? { user: { id: 'viewer' } } : null,
     status: session.status,
   }),
