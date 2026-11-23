@@ -64,8 +64,33 @@ dialog's approved state link there ("Check your boards").
   off their listing. Ask them to put it back." The app's board editor shows the
   same line when a creator re-picks the gym.
 
+- **Reported boards** (docs/product/directory-reports.md). A row with waiting
+  reports the viewer can act on (`openReportCount`, selected by
+  `GET_GYM_BOARDS_FOR_MANAGE`) carries a **Reported** chip and a **Review**
+  button, and reported rows sort first. Review
+  (`board-report-review-dialog.tsx`) reads `boardReports` and lists each
+  reason with its climber count and what they said, never who: reporters are
+  anonymous to creators and staff, and the dialog never renders a name even
+  for a global admin. Its actions are the row's own: **Fix the setup** opens
+  the editor (`canEdit`), **Remove from {gym}** and **Delete board** open the
+  tab's confirms (`canRemoveFromGym`, `canDelete`), and **It's right as it is**
+  closes every waiting report the viewer may close as `kept`, with an optional
+  note the reporters receive. A report in the admin queue (routed to the team,
+  or open 14 days) is shown with "Our team is looking at this one" and can't
+  be kept here; one still with the creator or staff shows the date it moves
+  to the team.
+
 `gym-board-permissions.ts` keeps only `canManageGymBoards` (owner or admin: who
 may link their own boards) and `linkableBoards`.
+
+## Manage gym for someone who can't manage it
+
+A signed-in climber who opens `/gym/{slug}/manage` on a public gym they can't
+edit gets "You can't edit this gym" and who can, from `Gym.listingState`:
+"{gym} staff run this listing", "{name} added this gym, so they can change it",
+or "Nobody runs this gym on Boardsesh yet" (`manage-no-access.tsx`). Then
+**Claim this gym** (when `canClaim`, the claim dialog), **Report a problem**
+(while the `directory-reports` flag is on) and **Back to {gym}**.
 
 ## The board menu in the app
 
@@ -145,3 +170,9 @@ role the actor used. The creator's own gym link changes are recorded too, as
 4. As its creator, link it back in the app; the editor names the gym's staff.
 5. Open the same gym as an editor; no board offers Delete, and the hint says
    what an editor can do.
+6. With the `directory-reports` flag on, report a board from the gym page as a
+   climber; as the gym's admin, the board sits first in Manage gym → Boards
+   with a Reported chip, and Review lists the reason without the reporter's
+   name.
+7. Open Manage gym for a gym you don't run; the page says who runs it and
+   offers Claim this gym and Report a problem.
