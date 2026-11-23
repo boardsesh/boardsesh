@@ -1004,12 +1004,24 @@
       "unavailable": "Climbs like this one didn't load. Trying again…"
     },
     "cta": {
-      "climbThis": "Open climb in the app",
-      "ariaLabel": "Open {{climbName}} in the Boardsesh app",
-      "helper": "Opens it in the app, ready to put on your board."
+      "getApp": "Get the free app",
+      "getAppAriaIos": "Get the free app on the App Store",
+      "getAppAriaAndroid": "Get the free app on Google Play",
+      "getAppHelper": "Light this climb on your {{board}} and log the send.",
+      "openInBrowser": "Open in your browser",
+      "openInBrowserMobile": "Or open it in your browser"
     },
-    "install": {
-      "helper": "No app yet? Get it and light this climb on your board."
+    "qr": {
+      "title": "Scan to open this climb on your phone",
+      "body": "Free on iPhone and Android.",
+      "imageLabel": "QR code that opens {{climbName}} on your phone"
+    },
+    "stickyBar": {
+      "free": "Free",
+      "cta": "Get the app",
+      "dismiss": "Hide this bar",
+      "ctaAriaIos": "Get the app on the App Store",
+      "ctaAriaAndroid": "Get the app on Google Play"
     }
   },
   "spray": {

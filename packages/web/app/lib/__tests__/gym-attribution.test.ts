@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { SITE_URL } from '@/app/lib/seo/base-url';
-import { boardQrUrl, gymQrAttributionQuery, gymQrUrl, gymRedirectAttributionQuery } from '../gym-attribution';
+import { parseClimbQrLanding } from '@boardsesh/analytics';
+import {
+  boardQrUrl,
+  climbQrUrl,
+  gymQrAttributionQuery,
+  gymQrUrl,
+  gymRedirectAttributionQuery,
+} from '../gym-attribution';
 
 describe('gymQrUrl', () => {
   it('builds the absolute poster URL a printed code encodes', () => {
@@ -46,6 +53,27 @@ describe('boardQrUrl', () => {
 
   it('adds nothing when there is no capability to carry', () => {
     expect(boardQrUrl('garage-wall', 'board', {})).toBe('https://www.boardsesh.com/b/garage-wall?src=qr&medium=board');
+  });
+});
+
+describe('climbQrUrl', () => {
+  it('encodes the climb page itself with the desktop pair', () => {
+    expect(climbQrUrl('/b/main-kilter/40/view/abc-the-climb', 'en-US')).toBe(
+      `${SITE_URL}/b/main-kilter/40/view/abc-the-climb?src=qr&medium=desktop`,
+    );
+  });
+
+  it("keeps the reader's language, so the phone opens the same page", () => {
+    expect(climbQrUrl('/kilter/original/12x12-square/screw_bolt/40/view/abc-the-climb', 'de')).toBe(
+      `${SITE_URL}/de/kilter/original/12x12-square/screw_bolt/40/view/abc-the-climb?src=qr&medium=desktop`,
+    );
+  });
+
+  it('parses back as a climb scan', () => {
+    const scanned = new URL(climbQrUrl('/b/main-kilter/40/view/abc-the-climb', 'fr'));
+
+    expect(scanned.pathname).toBe('/fr/b/main-kilter/40/view/abc-the-climb');
+    expect(parseClimbQrLanding(Object.fromEntries(scanned.searchParams))).toEqual({ medium: 'desktop' });
   });
 });
 

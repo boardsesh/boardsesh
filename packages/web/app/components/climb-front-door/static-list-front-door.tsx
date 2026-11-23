@@ -187,7 +187,7 @@ export default async function StaticListFrontDoor({
           labels={storeButtonLabels}
           // A kiosk or poster code lands on the `/b/{slug}` list only, so only
           // that tree's link id names the code (`climb-list.kiosk`).
-          qrLanding={tree === 'slug'}
+          qrLanding={tree === 'slug' ? 'board' : undefined}
         />
       </ClimbHandoffCta>
 
@@ -274,7 +274,7 @@ export default async function StaticListFrontDoor({
           labels={storeButtonLabels}
           // A kiosk or poster code lands on the `/b/{slug}` list only, so only
           // that tree's link id names the code (`climb-list.kiosk`).
-          qrLanding={tree === 'slug'}
+          qrLanding={tree === 'slug' ? 'board' : undefined}
         />
       </ClimbHandoffCta>
     </Box>

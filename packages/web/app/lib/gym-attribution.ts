@@ -21,6 +21,8 @@ import {
   type GymQrSearchParams,
 } from '@boardsesh/analytics';
 import { INBOUND_CAMPAIGN_PARAMS, parseInboundCampaign } from '@/app/lib/inbound-campaign';
+import { localeHref } from '@/app/lib/i18n/locale-href';
+import type { Locale } from '@/app/lib/i18n/config';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { WALL_CAPABILITY_PARAM } from '@/app/lib/spray/spray-visibility';
 
@@ -43,7 +45,7 @@ export function gymQrUrl(gymSlug: string, medium: GymQrMedium = 'poster'): strin
  *
  * `/b/{slug}` is not a gym page, so these scans never fire `Gym QR Scanned`.
  * `app/b/[board_slug]/page.tsx`'s redirect carries the params onto
- * `/b/{slug}/{angle}/list`, where `BoardQrLandingTracker` counts them as
+ * `/b/{slug}/{angle}/list`, where `QrLandingTracker` counts them as
  * `Board QR Scanned`. See "Which code fires which event" in
  * `docs/analytics/gym-funnel-analytics.md`.
  *
@@ -61,6 +63,25 @@ export function boardQrUrl(boardSlug: string, medium: GymQrMedium, options: { wa
     ? `${boardPath}?${WALL_CAPABILITY_PARAM}=${encodeURIComponent(options.wallUuid)}`
     : boardPath;
   return absoluteUrl(buildGymQrHref(path, medium));
+}
+
+/**
+ * The absolute URL a climb page's code encodes: the climb page itself, in the
+ * reader's language, with `?src=qr&medium=desktop`.
+ *
+ * The code sits beside "Open in your browser" on a laptop, so a climber can
+ * carry the climb to their phone. A phone with the app opens the climb in it
+ * (the app claims climb links); one without lands on this page, where
+ * `QrLandingTracker` counts `Climb QR Scanned` and the store button is the
+ * first thing on screen.
+ *
+ * `handoffPath` is the pathname the reader is on, without a locale prefix and
+ * without a query string: on `/b/{slug}` it keeps the board the reader arrived
+ * with, like the hand-off. The page never reads the two params on the server,
+ * so the scanned URL renders the same HTML as the plain one.
+ */
+export function climbQrUrl(handoffPath: string, locale: Locale): string {
+  return absoluteUrl(buildGymQrHref(localeHref(handoffPath, locale), 'desktop'));
 }
 
 /**

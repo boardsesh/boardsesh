@@ -166,6 +166,10 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 // mounting them under `renderToString` would drag React Query and the socket
 // providers into a node test.
 vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default: () => null }));
+// The root layout's provider, as a cold server render sees it: no answer yet.
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
+}));
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({ default: () => null }));
 

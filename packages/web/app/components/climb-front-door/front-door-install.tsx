@@ -6,6 +6,7 @@ import StoreInstallButtons, {
   type StoreButtonLabels,
 } from '@/app/components/marketing/store-install-buttons';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
+import type { QrLandingKind } from '@/app/lib/qr-landing';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorInstallProps = {
@@ -13,8 +14,8 @@ type FrontDoorInstallProps = {
   /** One line saying who the button is for, already translated. */
   helperText: string;
   labels: StoreButtonLabels;
-  /** The page a printed board code lands on: the link id names the code after a scan. See `StoreInstallButtons`. */
-  qrLanding?: boolean;
+  /** Which kind of code lands on this page; the link id names the code after a scan. See `StoreInstallButtons`. */
+  qrLanding?: QrLandingKind;
   /**
    * `plain` (outlined) under a filled hand-off, the default. `brand` where the
    * store IS the primary action: a Spraywall's page, which a poster scan
@@ -55,7 +56,7 @@ export default function FrontDoorInstall({
   placement,
   helperText,
   labels,
-  qrLanding = false,
+  qrLanding,
   appearance = 'plain',
 }: FrontDoorInstallProps) {
   return (

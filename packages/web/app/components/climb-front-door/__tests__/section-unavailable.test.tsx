@@ -40,7 +40,11 @@ vi.mock('react-i18next', () => ({
 vi.mock('../front-door-breadcrumb', () => ({ default: () => null }));
 vi.mock('../climb-creative-work-json-ld', () => ({ default: () => null }));
 vi.mock('../climb-facts', () => ({ default: () => null }));
-vi.mock('../climb-handoff-cta', () => ({ default: () => null }));
+vi.mock('../climb-hero-cta', () => ({ default: () => null }));
+// The root layout's provider, as a cold server render sees it: no answer yet.
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
+}));
 vi.mock('../angle-cross-links', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));

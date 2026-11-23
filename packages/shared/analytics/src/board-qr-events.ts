@@ -18,7 +18,7 @@
 //    also stamps the page URL (`$current_url`, `$pathname`) on every event,
 //    and keeping a wall's `?wall=` capability out of it is web's URL scrub.
 //  * The medium vocabulary is the gym funnel's (`GYM_QR_MEDIUMS`), parsed by the
-//    same strict `parseGymQrLanding`: one printed-code param contract for every
+//    same strict `parseQrLanding`: one printed-code param contract for every
 //    poster, whichever page it lands on. A board landing accepts only the two
 //    mediums a board code prints (`BOARD_QR_MEDIUMS`); `poster` is the gym
 //    poster's, which never points at a board, so `parseBoardQrLanding` refuses it.
@@ -28,7 +28,7 @@
 
 import { boardTypeProperty, type BoardTypeProperty } from './board-type-property';
 import { SHARED_EVENTS } from './events';
-import { parseGymQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
+import { parseQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
 
 /**
  * The mediums a board code prints: `kiosk` (the kiosk screen's install code) and
@@ -45,13 +45,13 @@ function isBoardQrMedium(medium: GymQrMedium): medium is BoardQrMedium {
 }
 
 /**
- * Recognise a scan of a BOARD code, or return `null`. `parseGymQrLanding`'s
+ * Recognise a scan of a BOARD code, or return `null`. `parseQrLanding`'s
  * strict rules, then one more: the medium must be one a board code prints.
  * `?src=qr&medium=poster` on a board page is a hand-edited or misprinted link,
  * not a scan of anything we made, so it is not counted.
  */
 export function parseBoardQrLanding(searchParams: GymQrSearchParams): BoardQrLanding | null {
-  const landing = parseGymQrLanding(searchParams);
+  const landing = parseQrLanding(searchParams);
   if (!landing || !isBoardQrMedium(landing.medium)) return null;
   return { medium: landing.medium };
 }

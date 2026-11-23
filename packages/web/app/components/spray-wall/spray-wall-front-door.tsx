@@ -75,7 +75,7 @@ const haveAppTextSx = { color: 'var(--neutral-400)' };
  * "Already have Boardsesh?" row with the Open link (the scheme link, which
  * keeps `?wall=`). A scheme link with no app behind it is an error page, so it
  * must not be the first thing a climber taps. The scan itself is counted by
- * `BoardQrLandingTracker` on the page.
+ * `QrLandingTracker` on the page.
  */
 export default async function SprayWallFrontDoor({
   wallData,
@@ -132,7 +132,7 @@ export default async function SprayWallFrontDoor({
           helperText={t('spray.wall.install.helper')}
           labels={storeButtonLabels}
           appearance="brand"
-          qrLanding
+          qrLanding="board"
         />
         <SprayWallScanAgainNote text={t('spray.wall.install.scanAgain')} />
         <Box sx={haveAppRowSx}>

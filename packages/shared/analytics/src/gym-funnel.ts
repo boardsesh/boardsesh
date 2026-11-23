@@ -119,10 +119,15 @@ export type GymClaimResultStatus = 'email_sent' | 'approved' | 'admin_review' | 
  * That page counts them as `Board QR Scanned` (board-qr-events.ts), which names
  * no board and so has no `gymSlug`.
  *
- * One vocabulary and one parser for both events: a code printed today has to
+ * `desktop` is not printed: it is the code a climb page shows beside its
+ * "Open in your browser" button on a laptop, so a climber can carry the climb
+ * to their phone. It encodes the climb page itself, which counts the scan as
+ * `Climb QR Scanned` (climb-qr-events.ts).
+ *
+ * One vocabulary and one parser for every event: a code printed today has to
  * keep parsing whichever page it is pointed at later.
  */
-export const GYM_QR_MEDIUMS = ['poster', 'kiosk', 'board'] as const;
+export const GYM_QR_MEDIUMS = ['poster', 'kiosk', 'board', 'desktop'] as const;
 export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
 
 /**
@@ -363,10 +368,11 @@ export function gymDirectorySearched(
 // ---------------------------------------------------------------------------
 //
 // Printed QR codes point at a normal Boardsesh URL with two extra params:
-// `?src=qr&medium=<poster|kiosk|board>`. The landing surface reads them, fires
-// its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned` on a
-// board page), then rewrites the URL without them so a shared or bookmarked
-// link doesn't re-attribute someone else's visit to a poster.
+// `?src=qr&medium=<poster|kiosk|board|desktop>`. The landing surface reads them,
+// fires its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned`
+// on a board page, `Climb QR Scanned` on a climb page), then rewrites the URL
+// without them so a shared or bookmarked link doesn't re-attribute someone
+// else's visit to a poster.
 
 export const GYM_QR_SRC_PARAM = 'src';
 export const GYM_QR_MEDIUM_PARAM = 'medium';
@@ -379,12 +385,31 @@ export type GymQrLanding = {
   medium: GymQrMedium;
 };
 
+/**
+ * The mediums that may land on a GYM page: a gym poster, and the kiosk and
+ * board codes that once pointed there. `desktop` is a climb page's own code and
+ * never names a gym, so `parseGymQrLanding` refuses it and `Gym QR Scanned`
+ * cannot carry it.
+ */
+export const GYM_PAGE_QR_MEDIUMS = ['poster', 'kiosk', 'board'] as const satisfies readonly GymQrMedium[];
+export type GymPageQrMedium = (typeof GYM_PAGE_QR_MEDIUMS)[number];
+
+export type GymPageQrLanding = {
+  medium: GymPageQrMedium;
+};
+
 function isGymQrMedium(candidate: string): candidate is GymQrMedium {
   return (GYM_QR_MEDIUMS as readonly string[]).includes(candidate);
 }
 
+function isGymPageQrMedium(medium: GymQrMedium): medium is GymPageQrMedium {
+  return (GYM_PAGE_QR_MEDIUMS as readonly GymQrMedium[]).includes(medium);
+}
+
 /**
- * Recognise a QR landing, or return `null`.
+ * Recognise a QR landing with any medium in the shared vocabulary, or return
+ * `null`. The landing pages narrow it to the mediums their codes print:
+ * `parseGymQrLanding`, `parseBoardQrLanding`, `parseClimbQrLanding`.
  *
  * Deliberately strict — this decides whether an acquisition event fires, so
  * every ambiguity resolves to "not a QR scan":
@@ -394,7 +419,7 @@ function isGymQrMedium(candidate: string): candidate is GymQrMedium {
  *    rejected outright rather than picking one, because a duplicated param is a
  *    hand-edited or crawler-mangled URL, not a scan.
  */
-export function parseGymQrLanding(searchParams: GymQrSearchParams): GymQrLanding | null {
+export function parseQrLanding(searchParams: GymQrSearchParams): GymQrLanding | null {
   // Own properties only. Next's searchParams is a plain object so this is not
   // reachable today, but the function gates an acquisition event and callers
   // will hand it whatever object they have; a `medium` inherited from a
@@ -406,6 +431,17 @@ export function parseGymQrLanding(searchParams: GymQrSearchParams): GymQrLanding
   if (typeof source !== 'string' || source !== GYM_QR_SRC_VALUE) return null;
   if (typeof medium !== 'string' || !isGymQrMedium(medium)) return null;
   return { medium };
+}
+
+/**
+ * Recognise a QR landing on a gym page, or return `null`: `parseQrLanding`'s
+ * strict rules, narrowed to `GYM_PAGE_QR_MEDIUMS`. `?src=qr&medium=desktop` on a
+ * gym page is a hand-edited link, not a scan of anything we made.
+ */
+export function parseGymQrLanding(searchParams: GymQrSearchParams): GymPageQrLanding | null {
+  const landing = parseQrLanding(searchParams);
+  if (!landing || !isGymPageQrMedium(landing.medium)) return null;
+  return { medium: landing.medium };
 }
 
 /**

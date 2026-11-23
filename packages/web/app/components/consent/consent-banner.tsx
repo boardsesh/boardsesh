@@ -1,5 +1,5 @@
 'use client';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -19,13 +19,16 @@ import { useConsentRegionPromptState, type ConsentRegionPromptState } from './us
 
 export default function ConsentBanner({ children }: { children?: (region: ConsentRegionPromptState) => ReactNode }) {
   const { t } = useTranslation('consent');
-  const { decide, dialogOpen, openChoices, closeChoices, syncFailed } = useConsent();
+  const { decide, dialogOpen, openChoices, closeChoices, syncFailed, reportPromptShowing } = useConsent();
   const pathname = usePathnameWithoutLocale();
   const chromeLess = isChromeLessPath(pathname.toLowerCase());
   // The banner asks only in the prompt regions (or an unknown one). Privacy
   // choices in the footer and Settings open the dialog below for everyone.
   // The welcome consumes this same lookup state, including focus refreshes.
   const region = useConsentRegionPromptState(!chromeLess);
+  // The card is up, or may still come up while the region lookup is out.
+  const promptShowing = region.prompt || !region.settled;
+  useEffect(() => reportPromptShowing(promptShowing), [promptShowing, reportPromptShowing]);
   if (chromeLess) return null;
   const choose = (choice: 'granted' | 'denied') => {
     void decide(choice);

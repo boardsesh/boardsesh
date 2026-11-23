@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render } from '@testing-library/react';
 import React from 'react';
-import { __resetBoardQrLandingForTests, captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
+import type { AnalyticsBoardType } from '@boardsesh/analytics';
+import { __resetQrLandingForTests, captureQrLandingMedium } from '@/app/lib/qr-landing';
 
 const track = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track }));
@@ -12,9 +13,14 @@ vi.mock('@/app/components/consent/consent-provider', () => ({
   useConsent: () => ({ granted: consentState.granted }),
 }));
 
-const trackerModule = await import('../board-qr-landing-tracker');
-const BoardQrLandingTracker = trackerModule.default;
-const { __resetReportedBoardQrLandingsForTests } = trackerModule;
+const trackerModule = await import('../qr-landing-tracker');
+const QrLandingTracker = trackerModule.default;
+const { __resetReportedQrLandingsForTests } = trackerModule;
+
+/** The board-list mount, as `/b/{slug}/{angle}/list` renders it. */
+function BoardQrLandingTracker({ boardType }: { boardType: AnalyticsBoardType | null }) {
+  return <QrLandingTracker kind="board" boardType={boardType} />;
+}
 
 const WALL_PATH = '/b/garage-wall/40/list';
 const WALL_UUID = 'ab12cd34ef56ab12cd34ef56ab12cd34';
@@ -31,8 +37,8 @@ beforeEach(() => {
   // Both the dedupe Set and the remembered landing are module-level and outlive
   // unmounts on purpose; without this a later test reusing a path would assert
   // nothing and still pass.
-  __resetReportedBoardQrLandingsForTests();
-  __resetBoardQrLandingForTests();
+  __resetReportedQrLandingsForTests();
+  __resetQrLandingForTests();
   window.history.replaceState(null, '', '/');
 });
 
@@ -40,7 +46,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('BoardQrLandingTracker', () => {
+describe('QrLandingTracker on a board list', () => {
   it('renders nothing and reports a poster scan once, naming the board type and nothing else', () => {
     window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board&wall=${WALL_UUID}`);
 
@@ -228,6 +234,61 @@ describe('BoardQrLandingTracker', () => {
     flushStrip();
 
     expect(window.location.search).toBe(`?wall=${WALL_UUID}`);
-    expect(captureBoardQrLandingMedium()).toBe('board');
+    expect(captureQrLandingMedium('board')).toBe('board');
+  });
+});
+
+describe('QrLandingTracker on a climb page', () => {
+  const CLIMB_PATH = '/b/the-kilter/40/view/abc-the-climb';
+
+  it('reports the desktop code once as a climb scan, naming the board type and nothing else', () => {
+    window.history.replaceState(null, '', `${CLIMB_PATH}?src=qr&medium=desktop`);
+
+    const { rerender } = render(<QrLandingTracker kind="climb" boardType="kilter" />);
+    rerender(<QrLandingTracker kind="climb" boardType="kilter" />);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('Climb QR Scanned', { medium: 'desktop', surface: 'web', boardType: 'kilter' });
+  });
+
+  it('strips the pair from the address bar and keeps the medium for the store buttons', () => {
+    window.history.replaceState(null, '', `${CLIMB_PATH}?src=qr&medium=desktop#beta`);
+
+    render(<QrLandingTracker kind="climb" boardType="kilter" />);
+    flushStrip();
+
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#beta');
+    expect(captureQrLandingMedium('climb')).toBe('desktop');
+  });
+
+  it.each(['?src=qr&medium=board', '?src=qr&medium=poster', '?src=qr&medium=kiosk'])(
+    'counts nothing and leaves %s in place, since no climb page prints it',
+    (search) => {
+      window.history.replaceState(null, '', `${CLIMB_PATH}${search}`);
+
+      render(<QrLandingTracker kind="climb" boardType="kilter" />);
+      flushStrip();
+
+      expect(track).not.toHaveBeenCalled();
+      expect(window.location.search).toBe(search);
+    },
+  );
+
+  it('waits for consent before counting', () => {
+    consentState.granted = false;
+    window.history.replaceState(null, '', `${CLIMB_PATH}?src=qr&medium=desktop`);
+    const { rerender } = render(<QrLandingTracker kind="climb" boardType="moonboard" />);
+    flushStrip();
+    expect(track).not.toHaveBeenCalled();
+
+    consentState.granted = true;
+    rerender(<QrLandingTracker kind="climb" boardType="moonboard" />);
+
+    expect(track).toHaveBeenCalledWith('Climb QR Scanned', {
+      medium: 'desktop',
+      surface: 'web',
+      boardType: 'moonboard',
+    });
   });
 });

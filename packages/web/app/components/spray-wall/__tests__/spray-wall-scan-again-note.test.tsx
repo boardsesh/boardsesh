@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { __resetBoardQrLandingForTests } from '@/app/lib/board-qr-landing';
+import { __resetQrLandingForTests } from '@/app/lib/qr-landing';
 import SprayWallScanAgainNote from '../spray-wall-scan-again-note';
 
 const TEXT = 'Just installed? Scan again to open this Spraywall.';
 
 beforeEach(() => {
-  __resetBoardQrLandingForTests();
+  __resetQrLandingForTests();
   window.history.replaceState(null, '', '/');
 });
 

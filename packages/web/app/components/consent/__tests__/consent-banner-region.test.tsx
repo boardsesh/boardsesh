@@ -60,11 +60,12 @@ async function renderBanner(showReadiness = false) {
   const { ConsentProvider, useConsent } = await import('../consent-provider');
   const { default: ConsentBanner } = await import('../consent-banner');
   function OpenChoices() {
-    const { openChoices, granted } = useConsent();
+    const { openChoices, granted, promptShowing } = useConsent();
     return (
       <>
         <button onClick={openChoices}>open-privacy-choices</button>
         <span data-testid="analytics-authorized">{granted ? 'on' : 'off'}</span>
+        <span data-testid="prompt-showing">{promptShowing ? 'showing' : 'clear'}</span>
       </>
     );
   }
@@ -488,5 +489,41 @@ describe('consent banner by region', () => {
     transport.region = true;
     const view = await renderBanner();
     expect(await view.findByTestId('consent-banner')).toBeTruthy();
+  });
+});
+
+describe('consent card visibility in the consent context', () => {
+  it('reports the card while it is up and clears once the visitor answers', async () => {
+    transport.region = true;
+    const view = await renderBanner();
+    const banner = await view.findByTestId('consent-banner');
+    expect(view.getByTestId('prompt-showing').textContent).toBe('showing');
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'deny' }));
+
+    await waitFor(() => expect(view.getByTestId('prompt-showing').textContent).toBe('clear'));
+  });
+
+  it('counts a lookup still in flight as the card possibly coming up', async () => {
+    let resolveRegion!: (promptRequired: boolean) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      resolveRegion = resolve;
+    });
+    const view = await renderBanner();
+    await waitFor(() => expect(regionLookups()).toBe(1));
+    expect(view.getByTestId('prompt-showing').textContent).toBe('showing');
+
+    await act(async () => resolveRegion(false));
+
+    await waitFor(() => expect(view.getByTestId('prompt-showing').textContent).toBe('clear'));
+  });
+
+  it('clears for Global Privacy Control outside the prompt regions, with no answer stored', async () => {
+    transport.headerGpc = true;
+    transport.region = false;
+    const view = await renderBanner();
+
+    await waitFor(() => expect(view.getByTestId('prompt-showing').textContent).toBe('clear'));
+    expect(consentCookie()).toBeUndefined();
   });
 });

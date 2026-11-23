@@ -5,12 +5,13 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
-import { useBoardQrLandingMedium } from '@/app/hooks/use-board-qr-landing-medium';
+import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';
 import { resolveHeroInstall, type HeroInstall } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { type AppInstallPlacement } from '@/app/lib/app-install-event';
 import { trackAppInstallClick } from '@/app/lib/track-app-install-click';
+import type { QrLandingKind } from '@/app/lib/qr-landing';
 
 /**
  * The three things a store button can say, already translated by whoever
@@ -50,12 +51,14 @@ type StoreInstallButtonsProps = {
    */
   sharedHtml?: boolean;
   /**
-   * Set on a page a printed board code lands on (`/b/{slug}/{angle}/list`).
-   * After a scan, the link id and the click say which code it was
-   * (`spray-wall.board`), read in the browser after mount, so the shared HTML
-   * stays the same for everyone.
+   * Which kind of code lands on this page: `board` on a page a printed board
+   * code lands on (`/b/{slug}/{angle}/list`), `climb` on a climb page, whose
+   * desktop layout shows a code for the phone. After a scan, the link id and
+   * the click say which code it was (`spray-wall.board`, `climb-view.desktop`),
+   * read in the browser after mount, so the shared HTML stays the same for
+   * everyone. Leave it out on a page no code points at.
    */
-  qrLanding?: boolean;
+  qrLanding?: QrLandingKind;
 };
 
 /** What a shared page says before the browser has been asked: both stores, App Store first. */
@@ -100,10 +103,10 @@ export default function StoreInstallButtons({
   appearance = 'brand',
   align = 'center',
   sharedHtml = false,
-  qrLanding = false,
+  qrLanding,
 }: StoreInstallButtonsProps) {
   const inboundCampaign = useInboundCampaign();
-  const qrMedium = useBoardQrLandingMedium(qrLanding);
+  const qrMedium = useQrLandingMedium(qrLanding ?? null);
   const { platform, nativeStore } = useInstallPlatform();
   // Flips in the same commit as `useInstallPlatform`'s own effect, so the pair
   // goes straight from both stores to this visitor's, with no frame in between

@@ -1004,12 +1004,24 @@
       "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…"
     },
     "cta": {
-      "climbThis": "Boulder in der App öffnen",
-      "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
-      "helper": "Öffnet ihn in der App, bereit zum Beleuchten auf deinem Board."
+      "getApp": "Hol dir die kostenlose App",
+      "getAppAriaIos": "Hol dir die kostenlose App im App Store",
+      "getAppAriaAndroid": "Hol dir die kostenlose App bei Google Play",
+      "getAppHelper": "Beleuchte diesen Boulder an deinem {{board}} und trag die Begehung ein.",
+      "openInBrowser": "Im Browser öffnen",
+      "openInBrowserMobile": "Oder im Browser öffnen"
     },
-    "install": {
-      "helper": "Noch keine App? Hol sie dir und beleuchte diesen Boulder an deinem Board."
+    "qr": {
+      "title": "Scanne den Code, um diesen Boulder auf deinem Handy zu öffnen",
+      "body": "Kostenlos für iPhone und Android.",
+      "imageLabel": "QR-Code, der {{climbName}} auf deinem Handy öffnet"
+    },
+    "stickyBar": {
+      "free": "Kostenlos",
+      "cta": "App holen",
+      "dismiss": "Leiste ausblenden",
+      "ctaAriaIos": "App holen im App Store",
+      "ctaAriaAndroid": "App holen bei Google Play"
     }
   },
   "spray": {

@@ -1004,12 +1004,24 @@
       "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…"
     },
     "cta": {
-      "climbThis": "Abre el bloque en la app",
-      "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
-      "helper": "Se abre en la app, listo para iluminarlo en tu plafón."
+      "getApp": "Descarga la app gratis",
+      "getAppAriaIos": "Descarga la app gratis en la App Store",
+      "getAppAriaAndroid": "Descarga la app gratis en Google Play",
+      "getAppHelper": "Ilumina este bloque en tu {{board}} y apunta el encadene.",
+      "openInBrowser": "Ábrelo en el navegador",
+      "openInBrowserMobile": "O ábrelo en el navegador"
     },
-    "install": {
-      "helper": "¿Aún no tienes la app? Descárgala y enciende este bloque en tu plafón."
+    "qr": {
+      "title": "Escanea para abrir este bloque en tu móvil",
+      "body": "Gratis en iPhone y Android.",
+      "imageLabel": "Código QR que abre {{climbName}} en tu móvil"
+    },
+    "stickyBar": {
+      "free": "Gratis",
+      "cta": "Descarga la app",
+      "dismiss": "Ocultar esta barra",
+      "ctaAriaIos": "Descarga la app en la App Store",
+      "ctaAriaAndroid": "Descarga la app en Google Play"
     }
   },
   "spray": {

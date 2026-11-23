@@ -69,3 +69,31 @@ export function smartAppBannerContent(pathname: string | null, locale: Locale): 
   }
   return parts.join(', ');
 }
+
+/**
+ * iOS browsers that are not Safari, and in-app browsers, by the token each puts
+ * in its user agent. None of them reads the `apple-itunes-app` tag. Chrome,
+ * Firefox, Edge and Opera on iOS run WebKit and still say `Safari/`, so the
+ * token is the only way to tell them apart; an in-app browser (Instagram,
+ * Facebook, the Google app) is a web view that never shows Safari's banner.
+ */
+const NOT_SAFARI_TOKENS =
+  /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|YaBrowser|DuckDuckGo\/|Ddg\/|FBAN|FBAV|FBIOS|Instagram|Line\/|Snapchat|TikTok|musical_ly|LinkedInApp|Pinterest|Twitter/i;
+
+/**
+ * Whether Safari's own Smart App Banner shows for this browser: Safari on an
+ * iPhone, iPod or iPad, and nowhere else. A page that offers its own install
+ * bar asks this first, so an iPhone reader never gets two.
+ *
+ * `maxTouchPoints` tells an iPad from a Mac: iPadOS Safari asks for desktop
+ * pages by default and says `Macintosh`, like a Mac, which shows no banner.
+ *
+ * A user agent can lie, and Brave on iOS sends Safari's exactly. Both errors are
+ * cheap: the reader gets either Safari's banner or ours, never a broken page.
+ */
+export function smartAppBannerShows(userAgent: string, maxTouchPoints = 0): boolean {
+  const appleMobile = /iPhone|iPad|iPod/i.test(userAgent) || (/Macintosh/i.test(userAgent) && maxTouchPoints > 1);
+  if (!appleMobile) return false;
+  const safari = /Version\/\d/.test(userAgent) && /Safari\//.test(userAgent);
+  return safari && !NOT_SAFARI_TOKENS.test(userAgent);
+}

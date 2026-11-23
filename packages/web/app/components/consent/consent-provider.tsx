@@ -50,6 +50,17 @@ type ConsentContextValue = {
   snapshot: ConsentSyncSnapshot;
   granted: boolean;
   dialogOpen: boolean;
+  /**
+   * Whether the consent card is on screen, or may still come up on this page
+   * because the region lookup has not answered. `ConsentBanner` reports it;
+   * true until it has. Lets a bottom-of-screen strip (the climb page's sticky
+   * install bar) stay out of the card's way without asking whether an answer is
+   * stored: a browser sending Global Privacy Control outside the prompt regions
+   * stores none and never sees the card.
+   */
+  promptShowing: boolean;
+  /** For `ConsentBanner` only. */
+  reportPromptShowing: (showing: boolean) => void;
   syncFailed: boolean;
   decide: (choice: AnalyticsConsentChoice) => Promise<void>;
   openChoices: () => void;
@@ -60,6 +71,7 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const { token } = useWsAuthToken(status === 'authenticated');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [promptShowing, setPromptShowing] = useState(true);
   const [syncFailed, setSyncFailed] = useState(false);
   const authRef = useRef({ accountId: session?.user.id ?? null, token, status });
   authRef.current = { accountId: session?.user.id ?? null, token, status };
@@ -165,17 +177,30 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   );
   const openChoices = useCallback(() => setDialogOpen(true), []);
   const closeChoices = useCallback(() => setDialogOpen(false), []);
+  const reportPromptShowing = useCallback((showing: boolean) => setPromptShowing(showing), []);
   const context = useMemo(
     () => ({
       snapshot,
       granted: analyticsAuthorized,
       dialogOpen,
+      promptShowing,
+      reportPromptShowing,
       syncFailed,
       decide,
       openChoices,
       closeChoices,
     }),
-    [snapshot, analyticsAuthorized, dialogOpen, syncFailed, decide, openChoices, closeChoices],
+    [
+      snapshot,
+      analyticsAuthorized,
+      dialogOpen,
+      promptShowing,
+      reportPromptShowing,
+      syncFailed,
+      decide,
+      openChoices,
+      closeChoices,
+    ],
   );
   return <ConsentContext.Provider value={context}>{children}</ConsentContext.Provider>;
 }

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
-import { __resetBoardQrLandingForTests, captureBoardQrLandingMedium, searchToGymQrParams } from '../board-qr-landing';
+import { __resetQrLandingForTests, captureQrLanding, captureQrLandingMedium, searchToGymQrParams } from '../qr-landing';
+
+const captureBoardQrLandingMedium = () => captureQrLandingMedium('board');
 
 beforeEach(() => {
-  __resetBoardQrLandingForTests();
+  __resetQrLandingForTests();
   window.history.replaceState(null, '', '/');
 });
 
@@ -20,7 +22,7 @@ describe('searchToGymQrParams', () => {
   });
 });
 
-describe('captureBoardQrLandingMedium', () => {
+describe('captureQrLandingMedium on a board page', () => {
   it('reads the medium of a scan off the address bar', () => {
     window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
 
@@ -37,7 +39,7 @@ describe('captureBoardQrLandingMedium', () => {
       // The gym poster's medium: no board code prints it.
       '?src=qr&medium=poster',
     ]) {
-      __resetBoardQrLandingForTests();
+      __resetQrLandingForTests();
       window.history.replaceState(null, '', `/b/garage-wall/40/list${search}`);
       expect(captureBoardQrLandingMedium(), search).toBeNull();
     }
@@ -70,5 +72,37 @@ describe('captureBoardQrLandingMedium', () => {
     window.history.replaceState(null, '', '/b/the-kilter/40/list?src=qr&medium=kiosk');
 
     expect(captureBoardQrLandingMedium()).toBe('kiosk');
+  });
+});
+
+describe('captureQrLandingMedium on a climb page', () => {
+  const CLIMB_PATH = '/b/the-kilter/40/view/abc-the-climb';
+
+  it('reads the desktop code a climb page shows', () => {
+    window.history.replaceState(null, '', `${CLIMB_PATH}?src=qr&medium=desktop`);
+
+    expect(captureQrLandingMedium('climb')).toBe('desktop');
+    expect(captureQrLanding('climb')).toEqual({ kind: 'climb', medium: 'desktop' });
+  });
+
+  it.each([
+    '?src=qr&medium=board',
+    '?src=qr&medium=kiosk',
+    '?src=qr&medium=poster',
+    '?src=qr&medium=desktop&medium=desktop',
+  ])('reads null for %s, which no climb page prints', (search) => {
+    window.history.replaceState(null, '', `${CLIMB_PATH}${search}`);
+
+    expect(captureQrLandingMedium('climb')).toBeNull();
+  });
+
+  it('keeps the kinds apart: a board landing reads null to a climb reader, and back', () => {
+    window.history.replaceState(null, '', `${CLIMB_PATH}?src=qr&medium=desktop`);
+    expect(captureQrLandingMedium('board')).toBeNull();
+    expect(captureQrLandingMedium('climb')).toBe('desktop');
+
+    window.history.replaceState(null, '', CLIMB_PATH);
+    expect(captureQrLandingMedium('board')).toBeNull();
+    expect(captureQrLandingMedium('climb')).toBe('desktop');
   });
 });

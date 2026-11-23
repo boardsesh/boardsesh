@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderHook } from '@testing-library/react';
-import { __resetBoardQrLandingForTests } from '@/app/lib/board-qr-landing';
+import { __resetQrLandingForTests } from '@/app/lib/qr-landing';
 
 // The router's pathname, moved by each test the way a client-side navigation would.
 const routerPathname = vi.hoisted(() => ({ current: '/' }));
 vi.mock('next/navigation', () => ({ usePathname: () => routerPathname.current }));
 
-const { useBoardQrLandingMedium } = await import('../use-board-qr-landing-medium');
+const { useQrLandingMedium } = await import('../use-qr-landing-medium');
 
 /** Navigate the way Next does: the address bar and the router pathname move together. */
 function navigateTo(url: string): void {
@@ -15,22 +15,22 @@ function navigateTo(url: string): void {
 }
 
 beforeEach(() => {
-  __resetBoardQrLandingForTests();
+  __resetQrLandingForTests();
   navigateTo('/');
 });
 
-describe('useBoardQrLandingMedium', () => {
+describe('useQrLandingMedium', () => {
   it('reads the scanned medium once mounted', () => {
     navigateTo('/b/garage-wall/40/list?src=qr&medium=board');
 
-    const { result } = renderHook(() => useBoardQrLandingMedium());
+    const { result } = renderHook(() => useQrLandingMedium('board'));
 
     expect(result.current).toBe('board');
   });
 
   it('drops the medium when the same component lands on a page nobody scanned', () => {
     navigateTo('/b/garage-wall/40/list?src=qr&medium=board');
-    const { result, rerender } = renderHook(() => useBoardQrLandingMedium());
+    const { result, rerender } = renderHook(() => useQrLandingMedium('board'));
     expect(result.current).toBe('board');
 
     navigateTo('/b/the-kilter/40/list');
@@ -41,7 +41,7 @@ describe('useBoardQrLandingMedium', () => {
 
   it('gets the medium back on returning to the scanned page', () => {
     navigateTo('/b/garage-wall/40/list?src=qr&medium=board');
-    const { result, rerender } = renderHook(() => useBoardQrLandingMedium());
+    const { result, rerender } = renderHook(() => useQrLandingMedium('board'));
 
     navigateTo('/b/the-kilter/40/list');
     rerender();
@@ -54,7 +54,7 @@ describe('useBoardQrLandingMedium', () => {
   it('reads nothing for the gym poster medium, which no board code prints', () => {
     navigateTo('/b/garage-wall/40/list?src=qr&medium=poster');
 
-    const { result } = renderHook(() => useBoardQrLandingMedium());
+    const { result } = renderHook(() => useQrLandingMedium('board'));
 
     expect(result.current).toBeNull();
   });
@@ -62,7 +62,23 @@ describe('useBoardQrLandingMedium', () => {
   it('reads nothing when turned off', () => {
     navigateTo('/b/garage-wall/40/list?src=qr&medium=board');
 
-    const { result } = renderHook(() => useBoardQrLandingMedium(false));
+    const { result } = renderHook(() => useQrLandingMedium(null));
+
+    expect(result.current).toBeNull();
+  });
+
+  it('reads the desktop code on a climb page', () => {
+    navigateTo('/b/the-kilter/40/view/abc-the-climb?src=qr&medium=desktop');
+
+    const { result } = renderHook(() => useQrLandingMedium('climb'));
+
+    expect(result.current).toBe('desktop');
+  });
+
+  it('reads nothing for a board code on a climb reader', () => {
+    navigateTo('/b/the-kilter/40/view/abc-the-climb?src=qr&medium=board');
+
+    const { result } = renderHook(() => useQrLandingMedium('climb'));
 
     expect(result.current).toBeNull();
   });

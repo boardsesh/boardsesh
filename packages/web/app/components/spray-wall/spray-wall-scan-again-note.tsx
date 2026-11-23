@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Typography from '@mui/material/Typography';
-import { useBoardQrLandingMedium } from '@/app/hooks/use-board-qr-landing-medium';
+import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';
 
 type SprayWallScanAgainNoteProps = {
   /** "Just installed? Scan again to open this Spraywall.", already translated. */
@@ -20,7 +20,7 @@ const noteSx = { color: 'var(--neutral-400)' };
  * HTML, which is the same for everyone.
  */
 export default function SprayWallScanAgainNote({ text }: SprayWallScanAgainNoteProps) {
-  const qrMedium = useBoardQrLandingMedium();
+  const qrMedium = useQrLandingMedium('board');
   if (!qrMedium) return null;
   return (
     <Typography variant="body2" sx={noteSx}>
