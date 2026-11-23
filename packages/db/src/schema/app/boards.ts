@@ -59,9 +59,10 @@ export const userBoards = pgTable(
     presenceSeq: bigint('presence_seq', { mode: 'number' }).default(0).notNull(),
     deletedAt: timestamp('deleted_at'),
     // Human-curation marker. Non-null means someone with edit access changed this
-    // row (edited, claimed, or soft-deleted it), so the location sync must never
-    // overwrite its metadata again — the sync engine skips its ON CONFLICT SET
-    // when this is set. Sync still keeps the board→gym link current.
+    // row (edited, attached, removed from a gym, or soft-deleted it), so the
+    // location sync must never overwrite it again: the board upsert's ON CONFLICT
+    // SET is skipped entirely for a frozen row, the gym link included. The one
+    // write a frozen row still gets is a missing serial number filled in.
     syncFrozenAt: timestamp('sync_frozen_at'),
     // Merge tombstone: when the serial-board dedupe consolidates duplicate
     // rows for the same physical wall, losers are soft-deleted with this set
