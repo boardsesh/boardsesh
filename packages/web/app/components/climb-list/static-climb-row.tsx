@@ -67,7 +67,7 @@ const rowLinkSx = {
   display: 'block',
   color: 'inherit',
   textDecoration: 'none',
-  '&:hover': { backgroundColor: 'var(--semantic-selected-light)' },
+  '&:hover': { backgroundColor: 'var(--semantic-hover)' },
 } as const;
 
 // Same geometry as the linked row, minus the hover affordance: nothing happens

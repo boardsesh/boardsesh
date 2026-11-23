@@ -80,7 +80,7 @@
 
 .jump .chip:hover {
   border-color: var(--color-primary);
-  background: var(--semantic-selected-light);
+  background: var(--semantic-hover);
 }
 
 .jump .chip:focus-visible {

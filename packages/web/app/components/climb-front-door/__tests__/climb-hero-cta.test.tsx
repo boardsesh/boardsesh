@@ -90,7 +90,7 @@ describe('ClimbHeroCta hand-off hover', () => {
 
     // The theme's wash does reach this button (it is a text button at every width)...
     expect(
-      rules.some((rule) => rule.style.getPropertyValue('background-color') === 'var(--semantic-selected-hover)'),
+      rules.some((rule) => rule.style.getPropertyValue('background-color') === 'var(--semantic-button-hover)'),
     ).toBe(true);
     // ...and from md the hand-off's own hover wins it.
     const laptopRules = rules.filter((rule) => rule.media === null || rule.media.includes('900px'));
@@ -105,7 +105,7 @@ describe('ClimbHeroCta hand-off hover', () => {
 
     const phoneRules = hoverRulesFor(handoff).filter((rule) => rule.media === null);
 
-    expect(cascadeWinner(phoneRules, 'background-color')).toBe('var(--semantic-selected-hover)');
+    expect(cascadeWinner(phoneRules, 'background-color')).toBe('var(--semantic-button-hover)');
   });
 
   it('stays a text button, so the store is the only contained one', async () => {
