@@ -113,15 +113,19 @@
     "home": "Zurück zu Boardsesh"
   },
   "card": {
-    "claimed": "Von der Halle gepflegt",
-    "unclaimed": "Nicht beansprucht",
+    "claimed": "Von der Halle betreut",
+    "climberListed": "Von der Community eingetragen",
+    "unclaimed": "Noch nicht beansprucht",
+    "claimCta": "Diese Halle beanspruchen",
+    "claimCtaAria": "{{gym}} beanspruchen",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km entfernt"
   },
   "claim": {
-    "body": "Ist das deine Halle? Beanspruche sie und du legst fest, welche Boards, Zeiten und Links hier stehen.",
+    "body": "Du betreust eine dieser Hallen? Beanspruche sie, um Boards, Zeiten und Links zu korrigieren.",
     "action": "Finde deine Halle",
-    "topAction": "Betreibst du eine dieser Wände? Finde und übernimm deinen Eintrag kostenlos."
+    "topAction": "Du betreust eine dieser Hallen? Such sie und beanspruche sie. Kostenlos.",
+    "modeHint": "Such deine Halle und beanspruche sie direkt in ihrer Karte."
   },
   "nearMe": {
     "cta": "Meinen Standort nutzen",

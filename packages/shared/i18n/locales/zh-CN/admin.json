@@ -305,6 +305,13 @@
       "disabled": "已关闭自动批准。",
       "saveFailed": "无法保存，请重试。",
       "loadFailed": "无法加载岩馆设置。"
+    },
+    "dailyCap": {
+      "label": "每日上限",
+      "description": "24 小时内所有账号合计最多可以自动批准多少条认领。超过上限的认领会等待审核。设为 0 则全部进入审核。",
+      "save": "保存上限",
+      "invalid": "请输入 0 到 1000 之间的整数。",
+      "saved": "每日上限已保存。"
     }
   },
   "gymClaims": {
@@ -335,7 +342,36 @@
       "date": "日期",
       "actions": "操作"
     },
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "autoApproved": {
+      "heading": "自动批准的认领",
+      "intro": "每一条都未经审核就接管了一家未认领的岩馆。撤销会把岩馆交还给公开训练板数据。",
+      "empty": "还没有自动批准的认领。",
+      "error": "无法加载这些认领，请重试。",
+      "approvedOn": "批准于 {{date}}",
+      "reverted": "已撤销",
+      "revert": "撤销",
+      "revertAria": "撤销 {{claimant}} 对 {{gym}} 的认领"
+    },
+    "revert": {
+      "title": "撤销 {{claimant}} 对 {{gym}} 的认领？",
+      "body": "{{gym}} 将恢复为未认领。{{claimant}} 以及认领后被添加为成员或编辑的人都会失去权限，位置同步会重新维护这条资料，我们也会发邮件告诉 {{claimant}}。",
+      "notUndone": "训练板的改动、展示屏以及岩馆的简介、营业时间和照片都会保持原样，需要手动修正。",
+      "reasonLabel": "原因（可选）",
+      "confirm": "撤销认领",
+      "cancel": "取消",
+      "done": "{{gym}} 已恢复为未认领。",
+      "missing": "认领 {{claimId}} 不是自动批准的，或已不存在。要交还岩馆，请使用下方的转移岩馆所有权。",
+      "alreadyReverted": "认领 {{claimId}} 已被撤销。",
+      "errors": {
+        "notFound": "该认领或其岩馆已不存在。",
+        "notApproved": "该认领已不再是已批准状态，没有可撤销的内容。",
+        "notTransferred": "该认领从未转移过岩馆，没有可撤销的内容。请使用下方的转移岩馆所有权。",
+        "ownerChanged": "该认领之后岩馆已更换所有者。请使用下方的转移岩馆所有权。",
+        "priorOwner": "该认领是从某个人手中接管的岩馆，而不是从公开训练板数据。请使用下方的转移岩馆所有权把它交还。",
+        "failed": "无法撤销认领，请重试。"
+      }
+    }
   },
   "gymOwnerReassign": {
     "title": "转移岩馆所有权",

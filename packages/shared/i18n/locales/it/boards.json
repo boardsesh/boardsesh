@@ -152,7 +152,7 @@
       "hoursPlaceholder": "Lun-Ven 10-22, Sab-Dom 9-20"
     },
     "manage": {
-      "ownedHeader": "I tuoi pannelli",
+      "ownedHeader": "Aggiunti da te",
       "followingHeader": "Pannelli che segui",
       "deleteConfirm": "Elimina",
       "cancel": "Annulla",
@@ -248,7 +248,7 @@
       "nearbyMap": "Mappa",
       "allowLocation": "Consenti posizione",
       "locationBanner": "La posizione è disattivata. Attivala per vedere i pannelli vicino a te.",
-      "manage": "Gestisci",
+      "manage": "Vedi tutti",
       "nearbyAllAbove": "Nessun altro pannello entro 20 km",
       "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"
     },
@@ -344,7 +344,7 @@
       "aria": "Aggiungi un pannello",
       "setUp": "Configura un pannello",
       "sprayWall": "Aggiungi una Spraywall",
-      "findGym": "Trova il pannello di una palestra"
+      "findGym": "Trova una palestra"
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",
@@ -427,17 +427,6 @@
       "seeGymAria": "Vedi {{gym}}"
     },
     "gymPage": {
-      "pillRunByGym": "Gestita dalla palestra",
-      "pillClimberListed": "Aggiunta da un climber",
-      "pillUnclaimed": "Non ancora rivendicata",
-      "pillYouOwner": "Gestisci questa palestra",
-      "pillYouAdmin": "Sei admin qui",
-      "pillYouEditor": "Sei editor qui",
-      "lineStaff": "Lo staff di {{gym}} tiene aggiornata questa pagina.",
-      "lineClimber": "{{name}} ha aggiunto questa palestra. Lo staff può rivendicarla.",
-      "lineClimberHidden": "Un climber ha aggiunto questa palestra. Lo staff può rivendicarla.",
-      "lineUnclaimed": "Da dati pubblici sui pannelli. Nessuno la gestisce ancora su Boardsesh.",
-      "claimInline": "Gestisci questa palestra? Rivendicala",
       "addressHint": "Si apre in Mappe",
       "boardsTitle": "Pannelli",
       "emptyBoardsTitle": "Ancora nessun pannello qui",
@@ -472,12 +461,14 @@
       "claimCta": "Rivendica questa palestra",
       "claimCtaSignedOut": "Accedi e rivendicala",
       "claimPending": "La tua richiesta è in revisione. Ti scriveremo via email in ogni caso, di solito entro pochi giorni.",
+      "claimDenied": "Non siamo riusciti a confermare che gestisci {{gym}}. Rispondi alla nostra email se ci siamo sbagliati, oppure riprova.",
+      "claimRetry": "Riprova",
       "notFound": "Non abbiamo trovato questa palestra",
       "report": "Segnala un problema"
     },
     "myGyms": {
-      "moreRowTitle": "Le mie palestre",
-      "screenTitle": "Le mie palestre",
+      "moreRowTitle": "Palestre che gestisci",
+      "screenTitle": "Palestre che gestisci",
       "loadError": "Impossibile caricare le tue palestre. Riprova.",
       "retry": "Riprova",
       "emptyTitle": "Ancora nessuna palestra",
@@ -549,8 +540,7 @@
       },
       "approved": {
         "sent": "Ora puoi gestire {{gym}}.",
-        "manageCta": "Controlla i tuoi pannelli",
-        "manageError": "Impossibile aprire la configurazione della palestra. Provaci da un browser."
+        "manageCta": "Controlla i tuoi pannelli"
       },
       "protections": {
         "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
@@ -1822,5 +1812,18 @@
     "goBack": "Indietro",
     "rule": "Chi l'ha aggiunta può modificarla. Quando una palestra viene rivendicata, può farlo anche il suo staff. Tutti gli altri possono segnalare un problema.",
     "backToGym": "Torna a {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Gestita dalla palestra",
+    "pillClimberListed": "Aggiunta da un climber",
+    "pillUnclaimed": "Non ancora rivendicata",
+    "pillYouOwner": "Gestisci questa palestra",
+    "pillYouAdmin": "Sei admin qui",
+    "pillYouEditor": "Sei editor qui",
+    "lineStaff": "Lo staff di {{gym}} tiene aggiornata questa pagina.",
+    "lineClimber": "{{name}} ha aggiunto questa palestra. Lo staff può rivendicarla.",
+    "lineClimberHidden": "Un climber ha aggiunto questa palestra. Lo staff può rivendicarla.",
+    "lineUnclaimed": "Da dati pubblici sui pannelli. Nessuno la gestisce ancora su Boardsesh.",
+    "claimInline": "Gestisci questa palestra? Rivendicala"
   }
 }

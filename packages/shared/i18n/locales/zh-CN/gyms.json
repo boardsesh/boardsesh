@@ -90,15 +90,19 @@
     "home": "返回 Boardsesh"
   },
   "card": {
-    "claimed": "由该岩馆管理",
-    "unclaimed": "未认领",
+    "claimed": "由岩馆运营",
+    "climberListed": "由攀岩者添加",
+    "unclaimed": "尚未认领",
+    "claimCta": "认领这家岩馆",
+    "claimCtaAria": "认领 {{gym}}",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "距离 {{distance}} 公里"
   },
   "claim": {
-    "body": "这是你的岩馆吗？认领后，你可以设置攀岩者在这里看到的训练板、营业时间和链接。",
+    "body": "你运营其中一家岩馆？认领后即可修正它的训练板、营业时间和链接。",
     "action": "查找你的岩馆",
-    "topAction": "你负责其中一家岩馆吗？免费查找并认领该馆的资料。"
+    "topAction": "你运营其中一家岩馆？找到它并认领，完全免费。",
+    "modeHint": "搜索你的岩馆，然后在它的卡片上认领。"
   },
   "nearMe": {
     "cta": "使用我的位置",

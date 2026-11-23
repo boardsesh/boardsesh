@@ -152,7 +152,7 @@
       "hoursPlaceholder": "Mo-Fr 10-22, Sa-So 9-20"
     },
     "manage": {
-      "ownedHeader": "Deine Boards",
+      "ownedHeader": "Von dir hinzugefügt",
       "followingHeader": "Du folgst",
       "deleteConfirm": "Löschen",
       "cancel": "Abbrechen",
@@ -248,7 +248,7 @@
       "nearbyMap": "Karte",
       "allowLocation": "Standort erlauben",
       "locationBanner": "Standort ist aus. Schalte ihn ein, um Boards in deiner Nähe zu sehen.",
-      "manage": "Verwalten",
+      "manage": "Alle ansehen",
       "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km",
       "yourBoardsAllAbove": "Alle deine Boards stehen weiter oben"
     },
@@ -344,7 +344,7 @@
       "aria": "Board hinzufügen",
       "setUp": "Board einrichten",
       "sprayWall": "Spraywall hinzufügen",
-      "findGym": "Board in einer Halle finden"
+      "findGym": "Halle finden"
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",
@@ -427,17 +427,6 @@
       "seeGymAria": "{{gym}} ansehen"
     },
     "gymPage": {
-      "pillRunByGym": "Von der Halle betreut",
-      "pillClimberListed": "Von der Community eingetragen",
-      "pillUnclaimed": "Noch nicht beansprucht",
-      "pillYouOwner": "Du betreust diese Halle",
-      "pillYouAdmin": "Du bist hier Admin",
-      "pillYouEditor": "Du bist hier Editor*in",
-      "lineStaff": "Das Team von {{gym}} hält diese Seite aktuell.",
-      "lineClimber": "{{name}} hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
-      "lineClimberHidden": "Jemand aus der Community hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
-      "lineUnclaimed": "Aus öffentlichen Board-Daten. Noch betreut niemand sie auf Boardsesh.",
-      "claimInline": "Du betreust diese Halle? Beanspruch sie",
       "addressHint": "Öffnet sich in Karten",
       "boardsTitle": "Boards",
       "emptyBoardsTitle": "Hier noch keine Boards",
@@ -472,12 +461,14 @@
       "claimCta": "Diese Halle beanspruchen",
       "claimCtaSignedOut": "Anmelden und beanspruchen",
       "claimPending": "Dein Anspruch wird geprüft. Wir schreiben dir so oder so per E-Mail, meist innerhalb weniger Tage.",
+      "claimDenied": "Wir konnten nicht bestätigen, dass du {{gym}} betreibst. Antworte auf unsere E-Mail, falls wir uns geirrt haben, oder versuch es noch einmal.",
+      "claimRetry": "Noch einmal versuchen",
       "notFound": "Diese Halle haben wir nicht gefunden",
       "report": "Problem melden"
     },
     "myGyms": {
-      "moreRowTitle": "Meine Hallen",
-      "screenTitle": "Meine Hallen",
+      "moreRowTitle": "Hallen, die du betreust",
+      "screenTitle": "Hallen, die du betreust",
       "loadError": "Deine Hallen ließen sich nicht laden. Versuch es nochmal.",
       "retry": "Nochmal versuchen",
       "emptyTitle": "Noch keine Hallen",
@@ -549,8 +540,7 @@
       },
       "approved": {
         "sent": "{{gym}} gehört jetzt dir.",
-        "manageCta": "Boards prüfen",
-        "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
+        "manageCta": "Boards prüfen"
       },
       "protections": {
         "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
@@ -1822,5 +1812,18 @@
     "goBack": "Zurück",
     "rule": "Wer etwas angelegt hat, kann es ändern. Sobald eine Halle übernommen ist, kann das auch ihr Team. Alle anderen können ein Problem melden.",
     "backToGym": "Zurück zu {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Von der Halle betreut",
+    "pillClimberListed": "Von der Community eingetragen",
+    "pillUnclaimed": "Noch nicht beansprucht",
+    "pillYouOwner": "Du betreust diese Halle",
+    "pillYouAdmin": "Du bist hier Admin",
+    "pillYouEditor": "Du bist hier Editor*in",
+    "lineStaff": "Das Team von {{gym}} hält diese Seite aktuell.",
+    "lineClimber": "{{name}} hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
+    "lineClimberHidden": "Jemand aus der Community hat diese Halle eingetragen. Das Hallenteam kann sie beanspruchen.",
+    "lineUnclaimed": "Aus öffentlichen Board-Daten. Noch betreut niemand sie auf Boardsesh.",
+    "claimInline": "Du betreust diese Halle? Beanspruch sie"
   }
 }

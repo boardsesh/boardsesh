@@ -48,7 +48,7 @@
     "newClimbsSyncedSetter": "{{setter}} montó nuevos bloques",
     "newClimbsSynced": "{{actor}} montó nuevos bloques",
     "gymClaimApproved": "Ahora gestionas {{gym}}",
-    "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del rocódromo",
+    "gymClaimApprovedGeneric": "Se aprobó tu solicitud del rocódromo. Ahora lo gestionas tú.",
     "default": "Tienes una nueva notificación",
     "sprayWallReady": "{{wall}} está listo para revisar.",
     "sprayWallReadyGeneric": "La foto de tu Spraywall está lista para revisar.",

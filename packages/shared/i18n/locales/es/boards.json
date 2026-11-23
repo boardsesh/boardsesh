@@ -152,7 +152,7 @@
       "hoursPlaceholder": "Lun-Vie 10-22, Sáb-Dom 9-20"
     },
     "manage": {
-      "ownedHeader": "Tus plafones",
+      "ownedHeader": "Añadidos por ti",
       "followingHeader": "Siguiendo",
       "deleteConfirm": "Eliminar",
       "cancel": "Cancelar",
@@ -248,7 +248,7 @@
       "nearbyMap": "Mapa",
       "allowLocation": "Permitir ubicación",
       "locationBanner": "La ubicación está desactivada. Actívala para ver plafones cerca de ti.",
-      "manage": "Gestionar",
+      "manage": "Ver todos",
       "nearbyAllAbove": "No hay más plafones a menos de 20 km",
       "yourBoardsAllAbove": "Todos tus plafones están más arriba"
     },
@@ -344,7 +344,7 @@
       "aria": "Añadir un plafón",
       "setUp": "Configurar un plafón",
       "sprayWall": "Añadir un Spraywall",
-      "findGym": "Buscar el plafón de un rocódromo"
+      "findGym": "Buscar un rocódromo"
     },
     "boardDetail": {
       "setActive": "Usar este plafón",
@@ -427,17 +427,6 @@
       "seeGymAria": "Ver {{gym}}"
     },
     "gymPage": {
-      "pillRunByGym": "Lo gestiona el rocódromo",
-      "pillClimberListed": "Añadido por un escalador",
-      "pillUnclaimed": "Sin reclamar",
-      "pillYouOwner": "Tú gestionas este rocódromo",
-      "pillYouAdmin": "Eres admin aquí",
-      "pillYouEditor": "Eres editor aquí",
-      "lineStaff": "El personal de {{gym}} mantiene esta página al día.",
-      "lineClimber": "{{name}} añadió este rocódromo. Su personal puede reclamarlo.",
-      "lineClimberHidden": "Un escalador añadió este rocódromo. Su personal puede reclamarlo.",
-      "lineUnclaimed": "Viene de datos públicos de plafones. Nadie lo gestiona aún en Boardsesh.",
-      "claimInline": "¿Gestionas este rocódromo? Reclámalo",
       "addressHint": "Se abre en Mapas",
       "boardsTitle": "Plafones",
       "emptyBoardsTitle": "Aún no hay plafones aquí",
@@ -472,12 +461,14 @@
       "claimCta": "Reclamar este rocódromo",
       "claimCtaSignedOut": "Inicia sesión y reclámalo",
       "claimPending": "Tu solicitud está en revisión. Te escribiremos por correo con la respuesta, normalmente en unos días.",
+      "claimDenied": "No pudimos confirmar que gestionas {{gym}}. Responde a nuestro correo si nos equivocamos, o inténtalo de nuevo.",
+      "claimRetry": "Volver a intentarlo",
       "notFound": "No encontramos ese rocódromo",
       "report": "Informar de un problema"
     },
     "myGyms": {
-      "moreRowTitle": "Mis rocódromos",
-      "screenTitle": "Mis rocódromos",
+      "moreRowTitle": "Rocódromos que gestionas",
+      "screenTitle": "Rocódromos que gestionas",
       "loadError": "No pudimos cargar tus rocódromos. Inténtalo de nuevo.",
       "retry": "Reintentar",
       "emptyTitle": "Aún no tienes rocódromos",
@@ -549,8 +540,7 @@
       },
       "approved": {
         "sent": "{{gym}} ya es tuyo.",
-        "manageCta": "Revisa tus plafones",
-        "manageError": "No se pudo abrir la configuración del rocódromo. Ábrela en un navegador."
+        "manageCta": "Revisa tus plafones"
       },
       "protections": {
         "syncFreeze": "Cuando sea tuyo, tus cambios se quedan: la sincronización de ubicaciones nunca sobrescribe lo que pone quien lo gestiona.",
@@ -1822,5 +1812,18 @@
     "goBack": "Volver",
     "rule": "Quien lo añadió puede cambiarlo. Cuando se reclama un rocódromo, su equipo también. Cualquier otra persona puede reportar un problema.",
     "backToGym": "Volver a {{gym}}"
+  },
+  "runBy": {
+    "pillRunByGym": "Lo gestiona el rocódromo",
+    "pillClimberListed": "Añadido por un escalador",
+    "pillUnclaimed": "Sin reclamar",
+    "pillYouOwner": "Tú gestionas este rocódromo",
+    "pillYouAdmin": "Eres admin aquí",
+    "pillYouEditor": "Eres editor aquí",
+    "lineStaff": "El personal de {{gym}} mantiene esta página al día.",
+    "lineClimber": "{{name}} añadió este rocódromo. Su personal puede reclamarlo.",
+    "lineClimberHidden": "Un escalador añadió este rocódromo. Su personal puede reclamarlo.",
+    "lineUnclaimed": "Viene de datos públicos de plafones. Nadie lo gestiona aún en Boardsesh.",
+    "claimInline": "¿Gestionas este rocódromo? Reclámalo"
   }
 }
