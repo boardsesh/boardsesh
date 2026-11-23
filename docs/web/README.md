@@ -38,5 +38,6 @@ a production rollout or a physical-device result.
 | [Website review evidence](www-refresh/screenshots/README.md) | `www-refresh/screenshots/README.md` |
 | [First-visit consent notice: current review evidence](www-refresh/consent-7845/README.md) | `www-refresh/consent-7845/README.md` |
 | [Usable gym directory search and map controls](www-refresh/directory-actions-7863.md) | `www-refresh/directory-actions-7863.md` |
+| [Supported-board image gallery](../www-refresh/boards-readability.md) | `../www-refresh/boards-readability.md` |
 | [Spray-climb sender counts (#7864, #7865)](www-refresh/spray-counts.md) | `www-refresh/spray-counts.md` |
 | [Localized spray-wall tool descriptions](www-refresh/spray-tool-labels-7866.md) | `www-refresh/spray-tool-labels-7866.md` |
