@@ -1,0 +1,3 @@
+ALTER TABLE "board_climb_stats" ADD COLUMN "play_count" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "board_climb_stats_positive_play_count_idx" ON "board_climb_stats" USING btree ("board_type","climb_uuid","angle") WHERE "board_climb_stats"."play_count" > 0;--> statement-breakpoint
+ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_play_count_nonnegative" CHECK ("board_climb_stats"."play_count" >= 0);

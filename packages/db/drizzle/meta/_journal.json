@@ -2360,6 +2360,13 @@
       "when": 1795443893672,
       "tag": "0336_gym_claim_decision_previous_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1795474912694,
+      "tag": "0337_climb_play_count",
+      "breakpoints": true
     }
   ]
 }

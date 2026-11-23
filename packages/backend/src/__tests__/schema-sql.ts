@@ -607,6 +607,13 @@ export const schemaSQL = `
   -- it here so tick_graded_at is present everywhere.
   ALTER TABLE "board_climb_stats" ADD COLUMN IF NOT EXISTS "tick_graded_at" timestamp;
 
+  ALTER TABLE "board_climb_stats" ADD COLUMN IF NOT EXISTS "play_count" bigint DEFAULT 0 NOT NULL;
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_play_count_nonnegative" CHECK (play_count >= 0);
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+  CREATE INDEX IF NOT EXISTS board_climb_stats_positive_play_count_idx ON board_climb_stats (board_type,climb_uuid,angle) WHERE play_count>0;
+
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (
     "board_type" text NOT NULL,
     "climb_uuid" text NOT NULL,
