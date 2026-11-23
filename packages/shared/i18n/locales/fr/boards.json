@@ -1718,6 +1718,8 @@
     "fixedToast": "Enregistré. On prévient les grimpeurs qui l'ont signalée.",
     "keptToast": "Signalement fermé. On transmet ta note.",
     "keepError": "Ça n'est pas passé. Réessaie.",
+    "keepPartial_one": "{{count}} signalement sur {{total}} a été fermé. Les autres ne sont pas passés. Réessaie.",
+    "keepPartial_other": "{{count}} signalements sur {{total}} ont été fermés. Les autres ne sont pas passés. Réessaie.",
     "statusPill": "Signalée",
     "open": "Voir les signalements"
   },

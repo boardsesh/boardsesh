@@ -79,8 +79,19 @@ type DetailProps = {
   visible: boolean;
   onClose: () => void;
   onSetActive: (board: UserBoard) => void;
+  onReviewReports?: (board: UserBoard) => void;
+  relistGym?: { uuid: string; name: string | null } | null;
 };
 const detailProps = vi.hoisted(() => ({ last: null as DetailProps | null }));
+// The review sheet the picker hosts: the board it shows and its action hand-off.
+type ReviewProps = {
+  board: UserBoard;
+  onClose: () => void;
+  onAction: (action: 'fix' | 'remove' | 'delete', board: UserBoard) => void;
+};
+const reviewProps = vi.hoisted(() => ({ last: null as ReviewProps | null }));
+// Every read of the board a deep link names: its uuid and options.
+const boardReads = vi.hoisted(() => [] as { boardUuid: string | null; options?: { staleTime?: number } }[]);
 // The last props each carousel was handed, keyed by its first item, so Your
 // boards and Near you can be told apart when both render.
 const carouselProps = vi.hoisted(() => ({
@@ -133,6 +144,12 @@ const state = vi.hoisted(() => ({
   myBoardsInputs: [] as unknown[],
   gymRosters: {} as Record<string, unknown[]>,
   locationStatus: 'idle' as string,
+  // A deep link into the picker (`board`, `details`, `review`, `relistGym*`),
+  // the read of the board it names, and the flag it is gated on.
+  linkParams: {} as Record<string, string>,
+  linkedQuery: { data: undefined as UserBoard | null | undefined, isFetching: false },
+  directoryReports: false,
+  flagsResolved: true,
 }));
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
@@ -187,7 +204,7 @@ vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
 
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
-  useLocalSearchParams: () => ({ source: state.source }),
+  useLocalSearchParams: () => ({ source: state.source, ...state.linkParams }),
   useIsFocused: () => true,
   useNavigation: () => navigationMock,
 }));
@@ -282,7 +299,10 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
-  useBoard: () => ({ data: undefined }),
+  useBoard: (boardUuid: string | null, options?: { staleTime?: number }) => {
+    boardReads.push({ boardUuid, options });
+    return boardUuid ? state.linkedQuery : { data: undefined, isFetching: false };
+  },
   useGymBoards: (gymUuid: string | null) => {
     gymBoardsArgs.last = gymUuid;
     return { data: gymUuid ? state.gymRosters[gymUuid] : undefined };
@@ -388,7 +408,8 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
-  useDirectoryReportsEnabled: () => false,
+  useDirectoryReportsEnabled: () => state.directoryReports,
+  useFeatureFlagsResolved: () => state.flagsResolved,
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
@@ -424,7 +445,12 @@ vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ Fir
 vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
   useReportProblemHost: () => ({ openReport: vi.fn(), sheet: null }),
 }));
-vi.mock('../../../src/components/report-problem/ReportReviewSheet', () => ({ ReportReviewSheet: () => null }));
+vi.mock('../../../src/components/report-problem/ReportReviewSheet', () => ({
+  ReportReviewSheet: (props: ReviewProps) => {
+    reviewProps.last = props;
+    return null;
+  },
+}));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
   BoardDetailSheet: (props: DetailProps) => {
     detailProps.last = props;
@@ -538,6 +564,12 @@ beforeEach(() => {
   carouselProps.last = null;
   carouselProps.byFirstKey.clear();
   detailProps.last = null;
+  reviewProps.last = null;
+  boardReads.length = 0;
+  state.linkParams = {};
+  state.linkedQuery = { data: undefined, isFetching: false };
+  state.directoryReports = false;
+  state.flagsResolved = true;
   state.isAuthenticated = true;
   scanCtrl.phase = 'hidden';
   scanCtrl.rows = [];
@@ -1823,5 +1855,107 @@ describe('what delete and remove say, and which mutation they run', () => {
     await waitFor(() => expect(unfollowBoardMock).toHaveBeenCalledWith('gym'));
     const confirmation = confirmMock.mock.calls[0]?.[0] as { destructive?: boolean };
     expect(confirmation.destructive).toBeFalsy();
+  });
+});
+
+describe('a board the picker was opened on (notifications, About this board)', () => {
+  // The creator's board, which a gym's staff took off their listing a minute
+  // ago. The cached copy still names the gym.
+  const cachedCopy = board({
+    uuid: 'linked',
+    name: 'Crux Kilter',
+    ownerId: 'me',
+    gymUuid: 'crux-uuid',
+    gymName: 'Crux',
+    openReportCount: 1,
+  } as Partial<UserBoard> & { uuid: string; name: string });
+  const freshCopy = { ...cachedCopy, gymUuid: null, gymName: null } as UserBoard;
+
+  it('reads the board fresh on arrival and opens nothing until that read lands', () => {
+    state.directoryReports = true;
+    state.linkParams = { board: 'linked', review: '1' };
+    state.linkedQuery = { data: cachedCopy, isFetching: true };
+    const mounted = render(createElement(BoardSelection));
+    expect(boardReads.find((read) => read.boardUuid === 'linked')?.options).toEqual({ staleTime: 0 });
+    expect(reviewProps.last).toBeNull();
+    state.linkedQuery = { data: freshCopy, isFetching: false };
+    mounted.rerender(createElement(BoardSelection));
+    expect(reviewProps.last?.board).toBe(freshCopy);
+  });
+
+  it('keeps an open sheet on the board as it is now, not the copy it opened with', () => {
+    state.directoryReports = true;
+    state.linkParams = { board: 'linked', details: '1' };
+    state.linkedQuery = { data: cachedCopy, isFetching: false };
+    const mounted = render(createElement(BoardSelection));
+    expect(detailProps.last?.board).toBe(cachedCopy);
+    state.linkedQuery = { data: freshCopy, isFetching: false };
+    mounted.rerender(createElement(BoardSelection));
+    expect(detailProps.last?.board).toBe(freshCopy);
+    expect(detailProps.last?.visible).toBe(true);
+  });
+
+  it('hands the detail sheet the gym a staff removal notice named', () => {
+    state.directoryReports = true;
+    state.linkParams = { board: 'linked', details: '1', relistGymUuid: 'crux-uuid', relistGym: 'Crux' };
+    state.linkedQuery = { data: freshCopy, isFetching: false };
+    render(createElement(BoardSelection));
+    expect(detailProps.last?.relistGym).toEqual({ uuid: 'crux-uuid', name: 'Crux' });
+  });
+
+  it('opens the plain detail sheet instead of the review sheet while the flag is off', () => {
+    state.directoryReports = false;
+    state.linkParams = { board: 'linked', review: '1' };
+    state.linkedQuery = { data: freshCopy, isFetching: false };
+    render(createElement(BoardSelection));
+    expect(reviewProps.last).toBeNull();
+    expect(detailProps.last?.board).toBe(freshCopy);
+    expect(detailProps.last?.relistGym).toBeNull();
+  });
+
+  it('waits for the flag to resolve before it picks the review or the detail sheet', () => {
+    state.directoryReports = false;
+    state.flagsResolved = false;
+    state.linkParams = { board: 'linked', review: '1' };
+    state.linkedQuery = { data: freshCopy, isFetching: false };
+    const mounted = render(createElement(BoardSelection));
+    expect(reviewProps.last).toBeNull();
+    expect(detailProps.last?.board ?? null).toBeNull();
+    state.directoryReports = true;
+    state.flagsResolved = true;
+    mounted.rerender(createElement(BoardSelection));
+    expect(reviewProps.last?.board).toBe(freshCopy);
+    expect(detailProps.last?.board ?? null).toBeNull();
+  });
+});
+
+describe("the review sheet's Remove and Delete", () => {
+  it('act on the board the sheet showed, even one no list holds', async () => {
+    // The active wall, at a gym the viewer runs, reached from the hero's
+    // details row: neither followed nor near, and no deep link names it.
+    state.directoryReports = true;
+    state.myBoards = [];
+    state.nearbyBoards = [];
+    const wall = board({
+      uuid: 'active-wall',
+      name: 'Crux wall',
+      boardType: 'spray',
+      ownerId: 'sam',
+      isOwned: false,
+      canRemoveFromGym: true,
+      gymUuid: 'crux-uuid',
+      gymName: 'Crux',
+      openReportCount: 1,
+    } as Partial<UserBoard> & { uuid: string; name: string });
+    state.activeBoard = wall;
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByText('mobile.boardDetail.activeSprayDetails'));
+    act(() => detailProps.last?.onReviewReports?.(wall));
+    expect(reviewProps.last?.board).toBe(wall);
+    act(() => reviewProps.last?.onAction('remove', wall));
+    await waitFor(() =>
+      expect(detachBoardFromGymMock).toHaveBeenCalledWith({ boardUuid: 'active-wall', gymUuid: 'crux-uuid' }),
+    );
+    expect(toastMock.showToast).not.toHaveBeenCalledWith('Could not switch board', 'error');
   });
 });

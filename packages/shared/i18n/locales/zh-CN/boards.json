@@ -1718,6 +1718,8 @@
     "fixedToast": "已保存。我们会通知举报的攀岩者。",
     "keptToast": "举报已关闭。我们会转达你的说明。",
     "keepError": "未能提交，请重试。",
+    "keepPartial_one": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
+    "keepPartial_other": "已关闭 {{total}} 条举报中的 {{count}} 条，其余未能提交，请重试。",
     "statusPill": "已举报",
     "open": "查看举报"
   },
