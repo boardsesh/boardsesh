@@ -15,7 +15,7 @@ Auto-approval is off until a global admin turns it on. It is two community setti
 | `gym_claim_auto_approve` | `0` | `1` turns auto-approval on |
 | `gym_claim_auto_approve_daily_cap` | `10` | at most this many claims approve themselves in any 24 hours, across all accounts. `0` stops them all; a value that is not a whole number reads as 10 |
 
-The switch is in /admin settings (`gym-settings-panel.tsx`). The cap has no control there yet; until it does, the default of 10 applies, or a global admin sets it with the `setCommunitySettings` mutation. The founder turns `gym_claim_auto_approve` on in production; nobody else flips it.
+Both are in /admin settings (`gym-settings-panel.tsx`): the switch, and under it the daily limit, a whole number from 0 to 1000 that shows 10 while the setting is unset. The founder turns `gym_claim_auto_approve` on in production; nobody else flips it.
 
 ## The guards
 
@@ -96,7 +96,13 @@ After the commit, best effort, it sends the claimant the in-app `gym_claim_denie
 
 Not undone: boards the claimant edited, took off the listing or attached from nearby, kiosks they set up, a pre-claim member they promoted to editor, and the gym's description, hours, photo and branding. An admin fixes those by hand.
 
-The web screen for it is PR 7. The daily digest already links each auto-approval to `/admin/gym-claims?revert=<claim id>`.
+### The admin screen
+
+`/admin/gym-claims` lists the claims that approved themselves under the pending queue ("Claims that approved themselves", `gym-claim-revert-panel.tsx`), newest first, from `autoApprovedGymClaims(input: { limit, offset, claimId })` (global admins). The list is the claims that are admin-method, unreviewed and moved their gym (`autoApprovedClaimCondition` plus `did_transfer`), approved or already `revoked`, with the claimant's history and `approvedAt` (the decision time). An approved one has **Revert**; a revoked one says Reverted.
+
+Revert opens a confirm that names the gym and the claimant, says what goes back to SYSTEM and what doesn't (board changes, kiosks, the description, hours and photo), and takes an optional reason for the audit row. A refusal keeps the confirm open with its own line, and every line but `NOT_APPROVED` points at Move gym ownership, the panel below it on the same page.
+
+The daily digest's `?revert=<claim id>` opens that claim's confirm straight away, looked up with `claimId` so an approval older than the first page still opens. A claim already reverted, or one that didn't approve itself, gets a line saying so instead. Only a positive whole number is read from the link (`parseRevertParam`).
 
 ## The daily digest
 
@@ -141,7 +147,8 @@ When a domain-claim link fails (`used`, `expired`, `superseded`) the redirect to
 
 - Guards and probation: `packages/backend/src/graphql/resolvers/social/gym-claim-guardrails.ts`.
 - Auto-approval, notices, expiry, queue: `packages/backend/src/graphql/resolvers/social/gym-claims.ts`.
-- Revert: `packages/backend/src/graphql/resolvers/social/gym-claim-revert.ts`.
+- Revert: `packages/backend/src/graphql/resolvers/social/gym-claim-revert.ts`; the list it reverts from is `autoApprovedGymClaims` in `gym-claims.ts`.
+- Admin screen: `packages/web/app/components/admin/gym-claim-revert-panel.tsx` (list, confirm, `?revert=`) and `gym-settings-panel.tsx` (the switch and the daily limit).
 - Probation gates: `deleteGym`, `addGymMember`, `removeGymMember`, `revokeGymWriteAccess` in `gyms.ts`; `boardDeleteAuthority` and `viewerMayDeleteBoard` in `boards.ts`.
 - Staff writes and `deleteGym` under the gym row lock: `withGymStaffLock` and `deleteGym` in `gyms.ts`.
 - Sweep step and digest section: `packages/backend/src/services/directory-report-sweep.ts`.
