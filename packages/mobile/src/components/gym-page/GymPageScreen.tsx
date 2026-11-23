@@ -83,8 +83,9 @@ const MAPS_PLATFORM: 'ios' | 'android' | 'web' =
 /**
  * A gym's page in the app: who runs it, its boards, its details, and a way to
  * claim it. A pushed route, because it is a destination (notifications and the
- * claim approval open it) that hosts its own sheets (claim, and report once it
- * lands). See docs/mobile/mobile-sheets-vs-routes.md.
+ * claim approval open it) that hosts its own sheets (claim, Report a problem on
+ * the gym and its boards, and the boards' report review). See
+ * docs/mobile/mobile-sheets-vs-routes.md.
  *
  * Registered at `app/gyms/[gym].tsx` on the root stack and re-exported at
  * `app/boards/gym/[gym].tsx` for the board picker's own stack (`gymPageHref`).
@@ -214,8 +215,10 @@ function GymPageContent({
         activeUuid: activeBoard?.uuid,
         viewerId,
         labelOptions: gymLabelOptions,
+        // Staff open the page on what needs fixing.
+        reportedFirst: model.staffRole !== null,
       }),
-    [boards, gym.name, activeBoard?.uuid, viewerId, gymLabelOptions],
+    [boards, gym.name, activeBoard?.uuid, viewerId, gymLabelOptions, model.staffRole],
   );
   // Cached-roster placeholder rows are not the gym's list: the count waits for the server.
   const boardsState: GymBoardsState = boardsQuery.isError
@@ -437,6 +440,7 @@ function GymPageContent({
       />
       {claimOpen ? <ClaimGymSheet sheetRef={claimSheetRef} gym={gym} onClosed={onClaimClosed} /> : null}
       {reportAction?.sheet ?? null}
+      {boardMenu.sheets ?? null}
     </>
   );
 }

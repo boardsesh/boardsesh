@@ -15,10 +15,21 @@ export type GymBoardItemsOptions = {
   viewerId?: string;
   /** The `within-gym` scope, so a subtitle leads with the wall rather than the gym the page already names. */
   labelOptions?: BoardLabelOptions;
+  /**
+   * Gym staff: boards with a report waiting on them (`openReportCount > 0`)
+   * come first, in the server's order among themselves, so the page opens on
+   * what needs fixing.
+   */
+  reportedFirst?: boolean;
 };
 
+function hasWaitingReport(item: DiscoveryBoardItem): boolean {
+  return (item.openReportCount ?? 0) > 0;
+}
+
 /**
- * One item per board, in the server's order (name, then age), titled without
+ * One item per board, in the server's order (name, then age, with reported
+ * boards first for staff), titled without
  * the gym's name in front ("Crux - Kilter" reads "Kilter" under Crux's heading,
  * as on the website).
  *
@@ -29,9 +40,9 @@ export type GymBoardItemsOptions = {
  * gym and Delete still follow the server's flags on every row.
  */
 export function gymBoardsToItems(boards: UserBoard[], options: GymBoardItemsOptions): DiscoveryBoardItem[] {
-  const { gymName, activeUuid, viewerId, labelOptions } = options;
+  const { gymName, activeUuid, viewerId, labelOptions, reportedFirst = false } = options;
   const followedUuids = new Set(boards.filter((board) => board.isFollowedByMe === true).map((board) => board.uuid));
-  return userBoardsToItems(boards, { activeUuid, currentUserId: viewerId, labelOptions }).map((item) => ({
+  const items = userBoardsToItems(boards, { activeUuid, currentUserId: viewerId, labelOptions }).map((item) => ({
     ...item,
     title: stripGymNamePrefix(item.title, gymName),
     isViewerOwner: item.isViewerOwner === false && !followedUuids.has(item.key) ? undefined : item.isViewerOwner,
@@ -40,4 +51,6 @@ export function gymBoardsToItems(boards: UserBoard[], options: GymBoardItemsOpti
     offlineState: undefined,
     gymName: item.gymName ?? gymName,
   }));
+  if (!reportedFirst || !items.some(hasWaitingReport)) return items;
+  return [...items.filter(hasWaitingReport), ...items.filter((item) => !hasWaitingReport(item))];
 }
