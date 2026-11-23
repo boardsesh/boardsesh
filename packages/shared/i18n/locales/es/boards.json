@@ -482,7 +482,8 @@
         "emailPlaceholder": "tu@{{domain}}",
         "submit": "Enviar correo de verificación",
         "submitShort": "Enviar",
-        "sent": "Revisa tu bandeja en {{email}} y toca el enlace para terminar."
+        "sent": "Revisa tu bandeja en {{email}} y toca el enlace para terminar.",
+        "mismatch": "Ese correo no es de {{domain}}. Usa una dirección del dominio del sitio web del rocódromo, o solicita una revisión."
       },
       "admin": {
         "description": "Dinos que gestionas {{gym}} y nuestro equipo revisará tu solicitud.",
@@ -1606,8 +1607,8 @@
     "removeFromNamed": "Quitar de {{gym}}",
     "removeTitle": "¿Quitar {{board}} de {{gym}}?",
     "removeBodyOwn": "Desaparece de la página y los kioscos de {{gym}}. Sigue en tus plafones.",
-    "removeBodyOther": "Desaparece de la página y los kioscos de tu rocódromo. {{name}} lo sigue teniendo en sus plafones.",
-    "removeBodyOtherHidden": "Desaparece de la página y los kioscos de tu rocódromo. Quien lo añadió lo sigue teniendo en sus plafones.",
+    "removeBodyOther": "Desaparece de la página y los kioscos de {{gym}}. {{name}} lo sigue teniendo en sus plafones.",
+    "removeBodyOtherHidden": "Desaparece de la página y los kioscos de {{gym}}. Quien lo añadió lo sigue teniendo en sus plafones.",
     "removeBodySynced": "Desaparece de la página y los kioscos de {{gym}}.",
     "removeConfirm": "Quitar",
     "removed": "Quitado de {{gym}}.",
