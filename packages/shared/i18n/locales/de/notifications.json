@@ -85,7 +85,16 @@
     "gymReportKeptByStaff": "Die Mitarbeitenden von {{gym}} haben den Eintrag geprüft und so belassen",
     "gymReportKeptByTeam": "Unser Team hat {{gym}} geprüft und so belassen",
     "gymClaimedWithYourBoard": "{{gym}} wird jetzt von den Mitarbeitenden geführt, und dein Board {{board}} ist dort gelistet",
-    "gymClaimDenied": "Wir konnten nicht bestätigen, dass du {{gym}} betreibst. Antworte auf unsere E-Mail, falls wir uns geirrt haben."
+    "gymClaimDenied": "Wir konnten nicht bestätigen, dass du {{gym}} betreibst. Antworte auf unsere E-Mail, falls wir uns geirrt haben.",
+    "boardReportOpenedGeneric": "Jemand hat ein Board gemeldet, um das du dich kümmerst",
+    "boardReportResolvedGeneric": "Ein Board, das du gemeldet hast, wurde geklärt",
+    "boardRemovedFromGymGeneric": "Eines deiner Boards wurde aus der Liste einer Halle entfernt. Es ist weiterhin in deinen Boards.",
+    "boardDeletedByStaffGeneric": "Eines deiner Boards wurde gelöscht. Deine geloggten Begehungen bleiben erhalten.",
+    "boardEditedByStaffGeneric": "Eines deiner Boards wurde aktualisiert",
+    "gymReportOpenedGeneric": "Jemand hat eine Halle gemeldet, die du betreibst",
+    "gymReportResolvedGeneric": "Eine Halle, die du gemeldet hast, wurde geklärt",
+    "gymClaimedWithYourBoardGeneric": "Eine Halle mit einem deiner Boards wird jetzt von den Mitarbeitenden geführt",
+    "gymClaimDeniedGeneric": "Wir konnten deine Anfrage für die Halle nicht bestätigen. Antworte auf unsere E-Mail, falls wir uns geirrt haben."
   },
   "followRequest": {
     "approve": "Bestätigen",

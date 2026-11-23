@@ -85,7 +85,16 @@
     "gymReportKeptByStaff": "Lo staff di {{gym}} ha controllato la scheda e l'ha lasciata così",
     "gymReportKeptByTeam": "Il nostro team ha controllato la scheda di {{gym}} e l'ha lasciata così",
     "gymClaimedWithYourBoard": "La palestra {{gym}} ora è gestita dal suo staff, e il tuo pannello {{board}} è elencato lì",
-    "gymClaimDenied": "Non siamo riusciti a confermare che gestisci {{gym}}. Rispondi alla nostra email se ci siamo sbagliati."
+    "gymClaimDenied": "Non siamo riusciti a confermare che gestisci {{gym}}. Rispondi alla nostra email se ci siamo sbagliati.",
+    "boardReportOpenedGeneric": "Un climber ha segnalato un pannello che gestisci",
+    "boardReportResolvedGeneric": "Un pannello che hai segnalato è stato sistemato",
+    "boardRemovedFromGymGeneric": "Uno dei tuoi pannelli è stato tolto dalla scheda di una palestra. È ancora tra i tuoi pannelli.",
+    "boardDeletedByStaffGeneric": "Uno dei tuoi pannelli è stato eliminato. Le tue ripetizioni registrate restano.",
+    "boardEditedByStaffGeneric": "Uno dei tuoi pannelli è stato aggiornato",
+    "gymReportOpenedGeneric": "Un climber ha segnalato una palestra che gestisci",
+    "gymReportResolvedGeneric": "Una scheda di palestra che hai segnalato è stata sistemata",
+    "gymClaimedWithYourBoardGeneric": "Una palestra con uno dei tuoi pannelli ora è gestita dal suo staff",
+    "gymClaimDeniedGeneric": "Non siamo riusciti a confermare la tua richiesta per la palestra. Rispondi alla nostra email se ci siamo sbagliati."
   },
   "followRequest": {
     "approve": "Approva",
