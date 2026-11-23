@@ -9,10 +9,10 @@
   max-width: 68ch;
   margin-block: var(--spacing-5);
   padding: var(--spacing-4) var(--spacing-5) var(--spacing-4) var(--spacing-4);
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-left: 3px solid var(--color-info);
   border-radius: var(--border-radius-lg);
-  background: var(--read-surface-raised);
+  background: var(--semantic-surface);
 }
 
 .calloutIcon.calloutIcon {
@@ -23,14 +23,14 @@
 
 .calloutTitle.calloutTitle {
   margin: 0 0 var(--spacing-1);
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: var(--font-size-base);
   font-weight: 700;
   line-height: 1.4;
 }
 
 .calloutBody.calloutBody {
-  color: var(--read-text);
+  color: var(--neutral-900);
   font-size: var(--font-size-base);
   line-height: 1.6;
 }
@@ -69,10 +69,10 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--read-line);
+  border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-full);
-  background: var(--read-surface-raised);
-  color: var(--read-text);
+  background: var(--semantic-surface);
+  color: var(--neutral-900);
   font-size: var(--font-size-sm);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -80,7 +80,7 @@
 
 .stepBody.stepBody {
   padding-top: var(--spacing-1);
-  color: var(--read-text);
+  color: var(--neutral-900);
   line-height: 1.6;
 }
 

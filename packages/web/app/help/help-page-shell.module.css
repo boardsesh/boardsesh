@@ -91,8 +91,8 @@
 /* ---- the reading surface the bands sit on ---- */
 
 .read {
-  background: var(--read-surface);
-  color: var(--read-text);
+  background: var(--semantic-background);
+  color: var(--neutral-900);
 }
 
 @media (max-width: 900px) {
@@ -130,7 +130,7 @@
   width: 100%;
   min-width: 0;
   padding: var(--spacing-2) var(--page-gutter);
-  background: var(--read-surface);
+  background: var(--semantic-background);
   border-bottom: 1px solid var(--separator);
 }
 
