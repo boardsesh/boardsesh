@@ -1,0 +1,1 @@
+ALTER TYPE "public"."gym_claim_status" ADD VALUE 'revoked';
