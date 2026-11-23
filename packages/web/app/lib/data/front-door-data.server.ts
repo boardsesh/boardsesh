@@ -1,7 +1,11 @@
 import 'server-only';
 
 import * as Sentry from '@sentry/nextjs';
-import type { SimilarClimb } from '@boardsesh/shared-schema';
+import { gql } from 'graphql-request';
+import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { canAddClimbToBoard } from '@boardsesh/board-config';
+import type { Climb, SimilarClimb } from '@boardsesh/shared-schema';
+import type { ClimbSearchInputVariables } from '@boardsesh/graphql/operations/climb-search';
 import { SIMILAR_CLIMBS_QUERY, type SimilarClimbsResponse } from '@boardsesh/graphql/operations/new-climb-feed';
 import { GET_BETA_LINKS, type GetBetaLinksQueryResponse } from '@boardsesh/graphql/operations/beta-links';
 import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
@@ -9,29 +13,9 @@ import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { dedupeBetaLinks, mapBetaLinksResponse, type BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardName } from '@/app/lib/types';
 
-/**
- * Server-side reads for the climb front door's two GraphQL-backed sections.
- *
- * Both are cached, and the cache on `similarClimbs` is load-bearing rather than
- * an optimisation. The resolver is rate-limited 30 requests/minute per IP
- * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and a
- * server-side call presents ONE IP — the web server's — for the whole world's
- * traffic. Its CTE also scans `board_climb_holds` across the entire layout. A
- * crawler walking a few hundred thousand climb pages is precisely the workload
- * that saturates both.
- *
- * Since #4968 it is no longer the ONLY cache on that path. `unstable_cache` is
- * per web instance and starts empty on every build, so a second one lives
- * behind the resolver in Redis
- * (`packages/backend/src/graphql/resolvers/climbs/similar-climbs-cache.ts`),
- * shared across instances and surviving a web deploy. This one still earns its
- * keep: it saves the round trip entirely.
- *
- * Both helpers swallow their errors. A 429 or a backend blip must degrade the
- * section, never 500 an indexed page.
- *
- * What they must NOT do is degrade to `[]`. See {@link FrontDoorSection}.
- */
+// Cache the anonymous reads across page renders. Crawlers can put hundreds of
+// requests per minute through the web server's single backend rate-limit bucket.
+// Nearby searches share entries across all climbs in a grade band on one wall.
 
 /**
  * What one supplemental front-door section resolved to.
@@ -51,8 +35,28 @@ import type { BoardName } from '@/app/lib/types';
  */
 export type FrontDoorSection<Item> = { status: 'loaded'; items: Item[] } | { status: 'unavailable' };
 
+export type ClimbPreview = Pick<
+  SimilarClimb,
+  | 'uuid'
+  | 'name'
+  | 'setterUsername'
+  | 'angle'
+  | 'layoutId'
+  | 'frames'
+  | 'difficultyName'
+  | 'qualityAverage'
+  | 'ascensionistCount'
+  | 'compatibleSizeIds'
+>;
+
+export type FrontDoorSimilarClimbs =
+  | { status: 'loaded'; items: SimilarClimb[]; nearby?: FrontDoorSection<ClimbPreview> & { grade: string } }
+  | { status: 'unavailable' };
+
 const SIMILAR_CLIMBS_REVALIDATE_SECONDS = 3600;
 const BETA_LINKS_REVALIDATE_SECONDS = 3600;
+const NEARBY_CLIMBS_REVALIDATE_SECONDS = 300;
+const NEARBY_CLIMBS_LIMIT = 6;
 /**
  * Wall-clock ceiling on each backend round trip. Both callers already degrade to
  * an honest "didn't load" state, so this turns "the page hangs behind a wedged
@@ -60,18 +64,17 @@ const BETA_LINKS_REVALIDATE_SECONDS = 3600;
  * deadline: these two sections are supplementary, the climb itself is not.
  *
  * **Deliberately not raised, and deliberately not retried.** Both would trade
- * the reader's time for a section they can live without, and both push MORE
- * work at the backend that just failed to answer in three seconds — a second
- * attempt from the same wedged pool is the load that made the first one slow.
+ * the reader's time for a section they can live without. A nearby-grade read
+ * runs only after a successful empty similarity read.
  * The similar-climbs section retries instead from the reader's own browser
  * (`SimilarClimbsList` re-runs the query on hydration when the server hands it
  * no seed), which costs the crawler nothing, spends nobody's server-render
- * budget, and bills the resolver's 30/min rate limit against the reader's IP
+ * budget, and bills the resolver's rate limit against the reader's IP
  * rather than the web server's single shared one.
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
-type FrontDoorSectionName = 'similar-climbs' | 'beta-links';
+type FrontDoorSectionName = 'similar-climbs' | 'nearby-climbs' | 'beta-links';
 
 /**
  * At most once per section per 15-minute window, not once per outage.
@@ -169,14 +172,135 @@ type SimilarClimbsQueryVariables = {
   };
 };
 
-export async function getFrontDoorSimilarClimbs(params: {
+type FrontDoorSimilarClimbsParams = {
   boardType: BoardName;
   layoutId: number;
   climbUuid: string;
   angle: number;
   threshold?: number;
   limit?: number;
-}): Promise<FrontDoorSection<SimilarClimb>> {
+  fallback?: { sizeId: number; setIds: readonly number[]; difficulty: string };
+};
+
+type NearbyClimbRow = Pick<
+  Climb,
+  | 'uuid'
+  | 'name'
+  | 'setter_username'
+  | 'frames'
+  | 'difficulty'
+  | 'quality_average'
+  | 'ascensionist_count'
+  | 'compatibleSizeIds'
+>;
+
+const NEARBY_CLIMBS_QUERY = gql`
+  query FrontDoorNearbyClimbs($input: ClimbSearchInput!) {
+    searchClimbs(input: $input) {
+      climbs {
+        uuid
+        name
+        setter_username
+        frames
+        difficulty
+        quality_average
+        ascensionist_count
+        compatibleSizeIds
+      }
+    }
+  }
+`;
+
+async function getNearbyClimbs({
+  boardType,
+  layoutId,
+  angle,
+  climbUuid,
+  fallback,
+}: FrontDoorSimilarClimbsParams): Promise<(FrontDoorSection<ClimbPreview> & { grade: string }) | undefined> {
+  if (!fallback?.setIds.length || !fallback.difficulty || boardType === 'spray') return;
+
+  const { sizeId, setIds, difficulty } = fallback;
+  const grades = getBoulderGradesForBoard(boardType);
+  const fontGrade = difficulty.split('/')[0].trim().toLowerCase();
+  const targetGrade = grades.find(
+    (grade) => grade.font_grade === fontGrade || grade.v_grade.toLowerCase() === fontGrade,
+  );
+  if (!targetGrade) return;
+
+  const grade = targetGrade.difficulty_name;
+  const targetV = Number(targetGrade.v_grade.slice(1));
+  const gradeBand = grades.filter((grade) => Math.abs(Number(grade.v_grade.slice(1)) - targetV) <= 1);
+  const minGrade = gradeBand[0]?.difficulty_id;
+  const maxGrade = gradeBand.at(-1)?.difficulty_id;
+  if (minGrade == null || maxGrade == null) return;
+
+  const selectedSetIds = [...setIds].sort((first, second) => first - second);
+  const pageSize = NEARBY_CLIMBS_LIMIT + 1;
+  const deadline = performance.now() + FRONT_DOOR_BACKEND_TIMEOUT_MS;
+  const readPage = async (page: number): Promise<NearbyClimbRow[]> => {
+    const timeoutMs = Math.ceil(deadline - performance.now());
+    if (timeoutMs <= 0) throw new Error('Nearby climb search timed out');
+
+    // Cache by wall and grade band so many climb pages can share a fetch.
+    const query = createCachedGraphQLQuery<{ searchClimbs: { climbs: NearbyClimbRow[] } }, ClimbSearchInputVariables>(
+      NEARBY_CLIMBS_QUERY,
+      'nearby-climbs',
+      NEARBY_CLIMBS_REVALIDATE_SECONDS,
+      timeoutMs,
+    );
+    const { searchClimbs } = await query({
+      input: {
+        boardName: boardType,
+        layoutId,
+        sizeId,
+        setIds: selectedSetIds.join(','),
+        angle,
+        minGrade,
+        maxGrade,
+        // One ascent at this angle guarantees the candidate has an actual stats row here.
+        minAscents: 1,
+        sortBy: 'ascents',
+        sortOrder: 'desc',
+        page,
+        pageSize,
+      },
+    });
+    return searchClimbs.climbs;
+  };
+
+  const targetBoard = { board_name: boardType, layout_id: layoutId, size_id: sizeId, set_ids: selectedSetIds };
+  const isEligible = (row: NearbyClimbRow) =>
+    row.uuid !== climbUuid && Boolean(row.difficulty) && canAddClimbToBoard(row, targetBoard).ok;
+
+  try {
+    const firstPage = await readPage(0);
+    let eligible = firstPage.filter(isEligible);
+    // MoonBoard's catalogue search allows unknown set membership. The frame
+    // check can reject a whole page, so sample the next page if it may exist.
+    if (eligible.length === 0 && firstPage.length === pageSize) {
+      eligible = (await readPage(1)).filter(isEligible);
+    }
+    const items = eligible.slice(0, NEARBY_CLIMBS_LIMIT).map((row) => ({
+      uuid: row.uuid,
+      name: row.name,
+      setterUsername: row.setter_username,
+      frames: row.frames,
+      difficultyName: row.difficulty,
+      qualityAverage: Number(row.quality_average),
+      ascensionistCount: row.ascensionist_count,
+      layoutId,
+      angle,
+      compatibleSizeIds: row.compatibleSizeIds ?? [],
+    }));
+    return { status: 'loaded', grade, items };
+  } catch (error) {
+    reportFrontDoorOutage('nearby-climbs', { boardType, climbUuid }, error);
+    return { status: 'unavailable', grade };
+  }
+}
+
+export async function getFrontDoorSimilarClimbs(params: FrontDoorSimilarClimbsParams): Promise<FrontDoorSimilarClimbs> {
   const query = createCachedGraphQLQuery<SimilarClimbsResponse, SimilarClimbsQueryVariables>(
     SIMILAR_CLIMBS_QUERY,
     'similar-climbs',
@@ -195,7 +319,10 @@ export async function getFrontDoorSimilarClimbs(params: {
         limit: params.limit ?? 10,
       },
     });
-    return { status: 'loaded', items: response.similarClimbs ?? [] };
+    const items = response.similarClimbs;
+    if (items.length > 0) return { status: 'loaded', items };
+    const nearby = await getNearbyClimbs(params);
+    return { status: 'loaded', items, ...(nearby && { nearby }) };
   } catch (error) {
     reportFrontDoorOutage('similar-climbs', params, error);
     return { status: 'unavailable' };

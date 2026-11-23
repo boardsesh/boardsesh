@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
+import type { ClimbConfigCompatibility } from '@/app/lib/canonical-climb-config';
 
 /**
  * Reposition invariant — A1 (canonical consolidation), LANDED in W-15 (#4369).
@@ -57,6 +58,7 @@ const CLIMB_UUID = 'abcdef1234567890abcdef1234567890';
  * shadowed size (27) and watch both trees follow it.
  */
 const boardConfig = { layoutId: 1, sizeId: 10, setIds: [1, 20] as number[], angle: 40 };
+let storedCompatibility: ClimbConfigCompatibility;
 
 vi.mock('@/app/lib/data/queries', () => ({
   getClimb: vi.fn(async () => ({
@@ -67,6 +69,7 @@ vi.mock('@/app/lib/data/queries', () => ({
     quality_average: 4,
     ascensionist_count: 12,
     frames: 'p1r12',
+    ...storedCompatibility,
   })),
   getClimbStatsForAllAngles: vi.fn(async () => []),
 }));
@@ -254,7 +257,9 @@ function slugListMetadata(searchParams: Record<string, string> = {}) {
 
 beforeEach(() => {
   boardConfig.sizeId = 10;
+  boardConfig.setIds = [1, 20];
   boardConfig.angle = 40;
+  storedCompatibility = {};
   vi.mocked(getClimbStatsForAllAngles).mockReset();
   vi.mocked(getClimbStatsForAllAngles).mockResolvedValue([]);
 });
@@ -388,7 +393,15 @@ describe('sitemap ↔ canonical parity (W-23)', () => {
    */
   const sitemapPath = (sizeId: number) =>
     climbRowsToItems(
-      [{ uuid: CLIMB_UUID, name: 'My Test Climb', angle: boardConfig.angle, updatedAt: new Date('2026-05-04') }],
+      [
+        {
+          uuid: CLIMB_UUID,
+          name: 'My Test Climb',
+          angle: boardConfig.angle,
+          updatedAt: new Date('2026-05-04'),
+          ...storedCompatibility,
+        },
+      ],
       { boardType: 'kilter', layoutId: boardConfig.layoutId, sizeId, setIds: boardConfig.setIds },
     ).items[0].path;
 
@@ -397,6 +410,23 @@ describe('sitemap ↔ canonical parity (W-23)', () => {
 
     expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(legacy.alternates?.canonical));
     expect(sitemapPath(boardConfig.sizeId)).toBe(canonicalPath(slug.alternates?.canonical));
+  });
+
+  it('shares a canonical across compatible 12x14 and 16x12 Original configurations', async () => {
+    storedCompatibility = { compatibleSizeIds: [28, 7], requiredSetIds: [1] };
+    boardConfig.sizeId = 7;
+    const commercial = await legacyViewMetadata();
+
+    boardConfig.sizeId = 28;
+    boardConfig.setIds = [1];
+    const [superWide, slug] = await Promise.all([legacyViewMetadata(), slugViewMetadata()]);
+    const expected = `/kilter/original/12x14-commercial/screw_bolt/40/view/my-test-climb-${CLIMB_UUID}`;
+
+    expect(canonicalPath(commercial.alternates?.canonical)).toBe(expected);
+    expect(canonicalPath(superWide.alternates?.canonical)).toBe(expected);
+    expect(canonicalPath(slug.alternates?.canonical)).toBe(expected);
+    expect(sitemapPath(28)).toBe(expected);
+    expect(superWide.openGraph?.url).toBe(superWide.alternates?.canonical);
   });
 
   it('the emitted <loc> is the absolute form of that same canonical', () => {

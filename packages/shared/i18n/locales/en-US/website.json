@@ -1,7 +1,7 @@
 {
   "boardsTitle": "Your board, on Boardsesh",
-  "boardsLead": "Find your board and layout, then find a wall to climb on.",
-  "boardsDescription": "See supported climbing boards and layouts, and find gyms with a wall you can climb on.",
+  "boardsLead": "Browse climbs for your layout and find a wall to climb on.",
+  "boardsDescription": "See supported climbing boards, browse climbs by layout, and find gyms with a matching wall.",
   "findGyms": "Find a wall with {{board}}",
   "sprayLabel": "Spray wall",
   "sprayTitle": "Your spray wall, set and logged.",
@@ -49,6 +49,8 @@
   "previousLayouts": "Previous {{board}} layouts",
   "nextLayouts": "Next {{board}} layouts",
   "boardLayoutAlt": "{{layout}} on {{board}}",
+  "browseLayoutClimbs": "Browse {{layout}} climbs",
+  "browseLayoutClimbsForBoard": "{{label}} on {{board}}",
   "sprayGalleryAlt": "Spray wall with climbing holds",
   "sprayGalleryCaption": "Bring your own spray wall",
   "findSprayWall": "Find a spray wall",

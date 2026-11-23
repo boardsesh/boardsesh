@@ -1069,6 +1069,8 @@
       "show": "Show comments"
     },
     "similar": {
+      "nearbyHeading": "More {{layout}} climbs around {{grade}} at {{angle}}°",
+      "nearbyUnavailable": "These climbs didn't load.",
       "heading": "Climbs like this one",
       "unavailable": "Climbs like this one didn't load. Trying again…",
       "allAtAngle": "All {{board}} climbs at {{angle}}°"

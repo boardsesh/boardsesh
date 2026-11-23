@@ -3,10 +3,10 @@ import React, { Suspense } from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
+import { getDisplayDescription } from '@boardsesh/shared-schema';
 import { boardTypeProperty } from '@boardsesh/analytics';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
-import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
+import SimilarClimbsList, { ClimbPreviewRows } from '@/app/components/similar-climbs/similar-climbs-list';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
 import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
@@ -17,7 +17,7 @@ import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/strin
 import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { buildClimbSearchDescription } from '@/app/lib/seo/search-description';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
+import type { FrontDoorSection, FrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardImageDetails, BoardName, Climb } from '@/app/lib/types';
 import AboutClimb from './about-climb';
@@ -48,7 +48,7 @@ type ClimbFrontDoorProps = {
    * page can tell "nobody has filmed this" apart from "the backend did not
    * answer in three seconds" and say the true one. See `FrontDoorSection`.
    */
-  similarClimbs: FrontDoorSection<SimilarClimb>;
+  similarClimbs: FrontDoorSimilarClimbs;
   betaLinks: FrontDoorSection<BetaLink>;
   /**
    * The pathname the hand-off opens in the browser app and the QR code carries
@@ -159,8 +159,9 @@ export default async function ClimbFrontDoor({
   const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
   // The breadcrumb's leaf is the page's CANONICAL, not `handoffPath`: on `/b`
   // those differ, and the JSON-LD has to name the URL the page claims.
-  const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, climb.uuid, climbName);
+  const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, climb.uuid, climbName, climb);
   const isCanonicalAngle = angle === canonicalAngle;
+  const emitJsonLd = !noindex && climb.is_hidden !== true && isCanonicalAngle;
   // Board photo layers (Woods only) and the holds render, split as `ClimbBoardStage`
   // documents.
   const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, false);
@@ -172,6 +173,8 @@ export default async function ClimbFrontDoor({
   const setterNotes = getDisplayDescription(climb.description);
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
+  const nearbyClimbs = similarClimbs.status === 'loaded' && similarClimbs.items.length === 0 && similarClimbs.nearby;
+  const showNearbyClimbs = nearbyClimbs && (nearbyClimbs.status === 'unavailable' || nearbyClimbs.items.length > 0);
   // The meta description `generateMetadata` builds, by the same rule: no rating
   // unless the angle's quality is honest, no sends sentence at zero.
   const jsonLdDescription = buildClimbSearchDescription({
@@ -196,9 +199,9 @@ export default async function ClimbFrontDoor({
         boardListUrl={boardListUrl}
         navigationBoardListUrl={boardSlug ? navigationBoardListUrl : undefined}
         leaf={{ label: climbName, url: canonicalClimbUrl }}
-        emitJsonLd={!noindex && isCanonicalAngle}
+        emitJsonLd={emitJsonLd}
       />
-      {noindex || !isCanonicalAngle ? null : (
+      {emitJsonLd ? (
         <ClimbCreativeWorkJsonLd
           climb={climb}
           climbName={climbName}
@@ -208,7 +211,7 @@ export default async function ClimbFrontDoor({
           angleStats={angleStats}
           description={jsonLdDescription}
         />
-      )}
+      ) : null}
 
       <Box className={styles.hero}>
         <Box className={styles.title}>
@@ -316,7 +319,13 @@ export default async function ClimbFrontDoor({
       <Box component="section" sx={sectionSx} aria-labelledby="climb-similar-heading">
         <Box sx={similarHeadSx}>
           <Typography variant="h5" component="h2" id="climb-similar-heading" sx={similarHeadingSx}>
-            {t('frontDoor.similar.heading')}
+            {showNearbyClimbs
+              ? t('frontDoor.similar.nearbyHeading', {
+                  layout: climbBoardForSearch(boardDetails.board_name, layoutName),
+                  grade: climbGradeForSearch(nearbyClimbs.grade),
+                  angle,
+                })
+              : t('frontDoor.similar.heading')}
           </Typography>
           <MuiLink component={LocaleLink} href={navigationBoardListUrl} sx={boardListLinkSx}>
             {t('frontDoor.similar.allAtAngle', { board: boardDisplayName, angle })}
@@ -330,19 +339,32 @@ export default async function ClimbFrontDoor({
               reader's own IP rather than the web server's single shared one.
               `pendingMessage` is what the crawler (and the reader, for that one
               round trip) reads meanwhile: prose, never a bare spinner. */}
-        <SimilarClimbsList
-          boardType={boardDetails.board_name as BoardName}
-          boardSlug={boardSlug}
-          layoutId={boardDetails.layout_id}
-          viewerBoardDetails={toBoardImageDetails(boardDetails)}
-          climbUuid={climb.uuid}
-          angle={angle}
-          threshold={0.5}
-          limit={10}
-          initialClimbs={similarClimbs.status === 'loaded' ? similarClimbs.items : undefined}
-          pendingMessage={similarClimbs.status === 'unavailable' ? t('frontDoor.similar.unavailable') : undefined}
-          emptyMessage={t('similarClimbs.emptyOnLayout')}
-        />
+        {showNearbyClimbs && nearbyClimbs.status === 'loaded' ? (
+          <ClimbPreviewRows
+            climbs={nearbyClimbs.items}
+            boardType={boardDetails.board_name as BoardName}
+            boardSlug={boardSlug}
+            viewerBoardDetails={toBoardImageDetails(boardDetails)}
+          />
+        ) : showNearbyClimbs ? (
+          <Typography variant="body2" component="p" sx={emptySectionSx}>
+            {t('frontDoor.similar.nearbyUnavailable')}
+          </Typography>
+        ) : (
+          <SimilarClimbsList
+            boardType={boardDetails.board_name as BoardName}
+            boardSlug={boardSlug}
+            layoutId={boardDetails.layout_id}
+            viewerBoardDetails={toBoardImageDetails(boardDetails)}
+            climbUuid={climb.uuid}
+            angle={angle}
+            threshold={0.5}
+            limit={10}
+            initialClimbs={similarClimbs.status === 'loaded' ? similarClimbs.items : undefined}
+            pendingMessage={similarClimbs.status === 'unavailable' ? t('frontDoor.similar.unavailable') : undefined}
+            emptyMessage={t('similarClimbs.emptyOnLayout')}
+          />
+        )}
       </Box>
 
       <DeferredClimbSocial

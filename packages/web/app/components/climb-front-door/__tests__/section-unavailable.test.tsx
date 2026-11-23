@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
+import climbsEn from '@boardsesh/i18n/locales/en-US/climbs.json';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
-import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
+import type { FrontDoorSection, FrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
 
@@ -26,7 +27,13 @@ vi.mock('server-only', () => ({}));
 
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: { grade: string; layout: string; angle: number }) =>
+      key === 'frontDoor.similar.nearbyHeading' && values
+        ? climbsEn.frontDoor.similar.nearbyHeading
+            .replace('{{layout}}', values.layout)
+            .replace('{{grade}}', values.grade)
+            .replace('{{angle}}', String(values.angle))
+        : key,
     locale: 'en-US',
   })),
 }));
@@ -126,7 +133,7 @@ function makeSimilarClimb(): SimilarClimb {
 }
 
 async function renderFrontDoor(sections: {
-  similarClimbs: FrontDoorSection<SimilarClimb>;
+  similarClimbs: FrontDoorSimilarClimbs;
   betaLinks: FrontDoorSection<BetaLink>;
 }): Promise<string> {
   const element = (
@@ -194,5 +201,32 @@ describe('front-door sections whose backend read timed out', () => {
     expect(html).not.toContain('frontDoor.beta.empty');
     expect(html).not.toContain('frontDoor.beta.unavailable');
     expect(html).not.toContain('frontDoor.similar.unavailable');
+  });
+
+  it('server-renders nearby-grade links under their own heading when shared holds have no matches', async () => {
+    const nearbyClimb = { ...makeSimilarClimb(), uuid: 'NEARBY0', name: 'Nearby Boulder', difficultyName: '7a/V6' };
+    const html = await renderFrontDoor({
+      similarClimbs: {
+        status: 'loaded',
+        items: [],
+        nearby: { status: 'loaded', grade: '7a+/V7', items: [nearbyClimb] },
+      },
+      betaLinks: { status: 'loaded', items: [] },
+    });
+
+    expect(html).toContain('More Kilter Board Original climbs around V7 (7a+) at 40°');
+    expect(html).toContain('href="/kilter/original/12x12-square/screw_bolt/40/view/nearby-boulder-NEARBY0"');
+    expect(html).not.toContain('frontDoor.similar.heading');
+    expect(html).not.toContain('similarClimbs.emptyOnLayout');
+  });
+
+  it('shows an unavailable fallback without claiming an empty layout', async () => {
+    const html = await renderFrontDoor({
+      similarClimbs: { status: 'loaded', items: [], nearby: { status: 'unavailable', grade: '7a+/V7' } },
+      betaLinks: { status: 'loaded', items: [] },
+    });
+
+    expect(html).toContain('frontDoor.similar.nearbyUnavailable');
+    expect(html).not.toContain('similarClimbs.emptyOnLayout');
   });
 });

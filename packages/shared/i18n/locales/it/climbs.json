@@ -1069,6 +1069,8 @@
       "show": "Mostra i commenti"
     },
     "similar": {
+      "nearbyHeading": "Altri blocchi su {{layout}} di grado intorno a {{grade}} a {{angle}}°",
+      "nearbyUnavailable": "Questi blocchi non si sono caricati.",
       "heading": "Blocchi come questo",
       "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…",
       "allAtAngle": "Tutti i blocchi {{board}} a {{angle}}°"

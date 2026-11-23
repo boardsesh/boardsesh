@@ -54,7 +54,9 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 
 // Every band of the two pages except the hand-off block under test.
 vi.mock('../front-door-breadcrumb', () => ({ default: () => null }));
-vi.mock('../climb-creative-work-json-ld', () => ({ default: () => null }));
+vi.mock('../climb-creative-work-json-ld', () => ({
+  default: ({ canonicalClimbUrl }: { canonicalClimbUrl: string }) => <meta data-climb-canonical={canonicalClimbUrl} />,
+}));
 vi.mock('../climb-list-json-ld', () => ({ default: () => null }));
 vi.mock('../angle-table', () => ({ default: () => null }));
 vi.mock('../about-climb', () => ({ default: () => null }));
@@ -118,9 +120,9 @@ function asAttribute(url: string): string {
   return `href="${url.replaceAll('&', '&amp;')}"`;
 }
 
-async function renderClimbPage(tree: HandoffTree): Promise<string> {
+async function renderClimbPage(tree: HandoffTree, climb = CLIMB): Promise<string> {
   const element = await ClimbFrontDoor({
-    climb: CLIMB,
+    climb,
     boardDetails: BOARD_DETAILS,
     boardSlug: tree === 'slug' ? 'my-garage-board' : undefined,
     angle: 40,
@@ -185,6 +187,19 @@ describe.each(TREES)('climb page store button, %s tree', (tree) => {
     expect(handoff?.hasAttribute('aria-label')).toBe(false);
     expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowserMobile');
     expect(handoff?.textContent).toContain('frontDoor.cta.openInBrowser');
+  });
+
+  it('uses the compatible canonical configuration in structured data and keeps the hand-off context', async () => {
+    const page = parseHtml(
+      await renderClimbPage(tree, { ...CLIMB, compatibleSizeIds: [7, 10], requiredSetIds: [1, 20] }),
+    );
+
+    expect(page.querySelector('meta[data-climb-canonical]')?.getAttribute('data-climb-canonical')).toBe(
+      '/kilter/original/12x14-commercial/screw_bolt/40/view/test-climb-CLIMB-UNDER-TEST',
+    );
+    expect(page.querySelector('[data-cta="handoff"]')?.getAttribute('href')).toBe(
+      `https://app.boardsesh.com${HANDOFF_PATHS[tree]}`,
+    );
   });
 
   it('fills only the store buttons, inside the mobile block; the hand-off is not a contained button', async () => {

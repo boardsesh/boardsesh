@@ -83,38 +83,27 @@ function sitemapHref(configs: PopularBoardConfig[], row: SetterClimbRow): string
     (candidate) => candidate.boardType === row.boardType && candidate.layoutId === row.layoutId,
   );
   if (!group) return null;
-  const { items } = climbRowsToItems(
-    [{ uuid: row.uuid, name: row.name, angle: row.angle, updatedAt: row.updatedAt }],
-    group,
-  );
+  const { items } = climbRowsToItems([row], group);
   return items[0]?.path ?? null;
 }
 
 describe('resolveSetterClimbLinks', () => {
   it('links a climb to the same URL the climbs sitemap submits for it', () => {
-    // Two configs on one layout: the sitemap picks size 10 (most boards); the
-    // client path this replaces picked the LARGEST size plus every set, which is
-    // a different tuple and therefore a second indexable URL per climb.
-    const configs = [
-      config({ sizeId: 10, boardCount: 12 }),
-      config({ sizeId: 27, boardCount: 3, setIds: [1, 20, 26] }),
-    ];
-    const row = climb();
+    // The eligible group is size 27; the climb also fits the canonical size 7.
+    const configs = [config({ sizeId: 7, boardCount: 3 }), config({ sizeId: 27, boardCount: 12 })];
+    const row = climb({ compatibleSizeIds: [7, 27] });
 
     const links = resolveSetterClimbLinks([row], configs);
     const expected = sitemapHref(configs, row);
 
     expect(expected).toBeTruthy();
+    expect(links.boardDetailsByClimb[row.uuid].size_id).toBe(7);
     expect(renderedHref(links, row)).toBe(expected);
   });
 
-  it('does not build the link the way the old client list did', () => {
-    // The mutation this file exists to catch: resolving the board with
-    // `getBoardDetailsForPlaylist` (largest size + every set) instead of the
-    // sitemap group. If the two ever agree the assertion below is vacuous, so
-    // it asserts they differ before asserting which one we picked.
-    const configs = [config({ sizeId: 10, boardCount: 12 })];
-    const row = climb();
+  it('links to a board the climb fits when the largest size is incompatible', () => {
+    const configs = [config({ sizeId: 27, boardCount: 12 })];
+    const row = climb({ compatibleSizeIds: [27] });
 
     const playlistDetails = getBoardDetailsForPlaylist(row.boardType, row.layoutId);
     expect(playlistDetails).not.toBeNull();
@@ -159,6 +148,15 @@ describe('resolveSetterClimbLinks', () => {
     const links = resolveSetterClimbLinks([row], configs);
     expect(links.unlinkedClimbUuids.has(row.uuid)).toBe(true);
     expect(renderedHref(links, row)).toBeNull();
+  });
+
+  it('links a Kilter climb with an empty required-set list and leaves missing compatibility unlinked', () => {
+    const unknownSets = climb({ uuid: 'a'.repeat(32), requiredSetIds: null });
+    const noRequiredSets = climb({ uuid: 'b'.repeat(32), requiredSetIds: [] });
+    const links = resolveSetterClimbLinks([unknownSets, noRequiredSets], [config({})]);
+
+    expect(renderedHref(links, unknownSets)).toBeNull();
+    expect(renderedHref(links, noRequiredSets)).toContain(noRequiredSets.uuid);
   });
 
   it('names the board the most linked climbs sit on', () => {

@@ -18534,6 +18534,28 @@ export type JoinRedirectSessionBoardPathQuery = {
   session?: { __typename?: 'Session'; boardPath: string } | null;
 };
 
+export type FrontDoorNearbyClimbsQueryVariables = Exact<{
+  input: ClimbSearchInput;
+}>;
+
+export type FrontDoorNearbyClimbsQuery = {
+  __typename?: 'Query';
+  searchClimbs: {
+    __typename?: 'ClimbSearchResult';
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      name: string;
+      setter_username: string;
+      frames: string;
+      difficulty: string;
+      quality_average: string;
+      ascensionist_count: number;
+      compatibleSizeIds?: Array<number> | null;
+    }>;
+  };
+};
+
 export const SessionFeedItemFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -30465,3 +30487,58 @@ export const JoinRedirectSessionBoardPathDocument = {
     },
   ],
 } as unknown as DocumentNode<JoinRedirectSessionBoardPathQuery, JoinRedirectSessionBoardPathQueryVariables>;
+export const FrontDoorNearbyClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'FrontDoorNearbyClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClimbSearchInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'searchClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FrontDoorNearbyClimbsQuery, FrontDoorNearbyClimbsQueryVariables>;
