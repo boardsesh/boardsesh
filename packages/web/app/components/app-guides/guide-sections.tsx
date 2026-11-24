@@ -104,8 +104,14 @@ export function ComparisonHero({
           {t(`appGuides:pages.${guide.id}.hero.lead`)}
         </Typography>
         {byline}
-        <RunsOnStrip t={t} browserLighting={guide.browserLighting} />
-        <CtaRow t={t} storeLabels={storeLabels} placement={guide.placement} />
+        <RunsOnStrip t={t} runsOn={guide.runsOn} />
+        <CtaRow
+          t={t}
+          storeLabels={storeLabels}
+          placement={guide.placement}
+          pageId={guide.id}
+          action={guide.primaryAction}
+        />
         <ProofLines t={t} />
       </Box>
       <Box className={styles.heroArt}>
@@ -629,7 +635,7 @@ export function CtaBand({
         <Typography variant="lead" component="p" className={styles.lead}>
           {t(`appGuides:pages.${guide.id}.cta.body`)}
         </Typography>
-        <CtaRow t={t} storeLabels={storeLabels} placement={placement} />
+        <CtaRow t={t} storeLabels={storeLabels} placement={placement} pageId={guide.id} action={guide.primaryAction} />
         <RatingLine t={t} />
       </Box>
       <Box className={styles.ctaBoard} aria-hidden="true">

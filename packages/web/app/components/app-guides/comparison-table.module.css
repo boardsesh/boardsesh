@@ -62,6 +62,11 @@
   background: var(--semantic-fill-subtle);
 }
 
+/* "Doesn't list it" is not a win: the Boardsesh cell stays plain on those rows. */
+.table [data-verdict='unlisted'] [data-product='boardsesh'] {
+  background: none;
+}
+
 .table tbody tr:last-child > * {
   border-bottom: 0;
 }

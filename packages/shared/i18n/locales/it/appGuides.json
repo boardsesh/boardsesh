@@ -16,13 +16,12 @@
     "checkedAt": "Checked {{date}}",
     "rating": "{{rating}} out of 5 from {{count}} App Store ratings in {{storefronts}} countries",
     "ratingCheckedAt": "Checked {{date}}",
-    "openWebApp": "Open it in your browser",
-    "openWebAppLabel": "Open Boardsesh in your browser",
     "runsOn": {
       "label": "Where Boardsesh runs",
       "ios": {
         "title": "iPhone and iPad",
-        "body": "Lights the board over Bluetooth"
+        "body": "Lights the board over Bluetooth",
+        "bodyWled": "Lights your wall through WLED over Wi-Fi"
       },
       "android": {
         "title": "Any Android phone",
@@ -31,7 +30,8 @@
       "browser": {
         "title": "Any web browser",
         "body": "Chrome and Edge light the board too",
-        "bodyNoLighting": "Browse, queue and log at app.boardsesh.com"
+        "bodyNoLighting": "Browse, queue and log at app.boardsesh.com",
+        "bodyFamilies": "Chrome and Edge light Kilter, Tension, MoonBoard and Aurora boards"
       }
     },
     "eyebrows": {
@@ -67,7 +67,9 @@
         "same": "Same in both",
         "sameAll": "Same in all {{count}}",
         "competitor_one": "{{app}} does it better",
-        "competitor_other": "{{app}} do it better"
+        "competitor_other": "{{app}} do it better",
+        "unlisted": "{{app}} doesn't list it",
+        "unlistedMany": "Others don't list it"
       },
       "legendItems": {
         "competitor": "{{app}} does it better"
@@ -155,7 +157,16 @@
       "googlePlay": "Google Play",
       "listLabel": "Store reviews from climbers"
     },
-    "browserShotAlt": "Boardsesh in a web browser: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board"
+    "browserShotAlt": "Boardsesh in a web browser: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board",
+    "cta": {
+      "hub": "Find climbs for your board",
+      "kilter": "Browse Kilter climbs",
+      "aurora": "Browse Tension and Aurora climbs",
+      "moonboard": "Browse MoonBoard problems",
+      "woods": "Browse Woods climbs",
+      "spray-wall-apps": "Set up your spray wall"
+    },
+    "ctaAria": "{{label}} in the Boardsesh browser app"
   },
   "pages": {
     "hub": {

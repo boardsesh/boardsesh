@@ -16,6 +16,7 @@ import {
   quotesFor,
 } from '@/app/lib/seo/app-guides';
 import { AURORA_BRAND_SLUGS, HUB_BOARD_SLUGS, hubBoardHref } from '@/app/lib/seo/app-guide-model';
+import { verdictLabel } from '@/app/components/app-guides/comparison-table';
 import HubPage, { generateMetadata as getHubMetadata } from '../page';
 import BoardPage, { generateMetadata as getBoardMetadata, generateStaticParams } from '../[slug]/page';
 import SprayPage, { generateMetadata as getSprayMetadata } from '../../compare/spray-wall-apps/page';
@@ -35,6 +36,18 @@ const boards = [
 ] as const;
 
 const routeProps = (slug: string) => ({ params: Promise.resolve({ slug }) });
+const CTA_LABELS: Record<string, string> = {
+  kilter: 'Browse Kilter climbs',
+  aurora: 'Browse Tension and Aurora climbs',
+  moonboard: 'Browse MoonBoard problems',
+  woods: 'Browse Woods climbs',
+};
+const CTA_BOARDS: Record<string, string> = {
+  kilter: 'kilter',
+  aurora: 'tension',
+  moonboard: 'moonboard',
+  woods: 'woods',
+};
 const { i18n } = await getServerTranslationForLocale('fr', 'common');
 
 async function parsePage(element: ReactNode) {
@@ -84,7 +97,14 @@ describe('app guide pages before hydration', () => {
     expect(markup.querySelectorAll('#verdict ul')[0]?.querySelectorAll('li')).toHaveLength(5);
 
     // The one filled action opens the browser app; both store badges carry this page's placement.
-    expect(markup.querySelector(`a[href="${APP_URL}"]`)?.textContent).toBe('Open it in your browser');
+    // The filled button says what it opens, and deep-links to this board's climb list.
+    const browse = Array.from(markup.querySelectorAll<HTMLAnchorElement>(`a[href^="${APP_URL}/"]`)).find(
+      (link) => link.textContent === CTA_LABELS[slug],
+    );
+    expect(browse?.getAttribute('href'), slug).toMatch(
+      new RegExp(`^${APP_URL}/${CTA_BOARDS[slug]}/[^/]+/[^/]+/[^/]+/40/list$`),
+    );
+    expect(browse?.getAttribute('aria-label')).toBe(`${CTA_LABELS[slug]} in the Boardsesh browser app`);
     expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
     expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
 
@@ -320,13 +340,13 @@ describe('what climbers say', () => {
     expect(quotesFor('hub').some((quote) => quote.text.includes('I’m'))).toBe(true);
   });
 
-  it('follows the comparison table on board pages and opens the hub, right after the hero', async () => {
+  it('follows the comparison table on board pages and "Pick your board" on the hub', async () => {
     const kilter = await parsePage(await BoardPage(routeProps('kilter')));
     const comparison = kilter.querySelector('#comparison');
     expect(comparison?.nextElementSibling?.id).toBe('quotes');
     const hub = await parsePage(await HubPage());
-    expect(hub.querySelector('#quotes')?.nextElementSibling?.id).toBe('choose-board');
-    expect(hub.querySelector('#quotes')?.previousElementSibling?.querySelector('h1')).toBeTruthy();
+    expect(hub.querySelector('#choose-board')?.previousElementSibling?.querySelector('h1')).toBeTruthy();
+    expect(hub.querySelector('#choose-board')?.nextElementSibling?.id).toBe('quotes');
   });
 });
 
@@ -341,6 +361,31 @@ describe('page-level claims from the registry', () => {
       const strip = markup.querySelector('ul[aria-label="Where Boardsesh runs"]')?.textContent ?? '';
       expect(strip.includes('Chrome and Edge light the board'), id).toBe(!['woods', 'spray-wall-apps'].includes(id));
     }
+  });
+
+  it('says how each page lights the wall, and where its filled button goes', async () => {
+    const pages = Object.fromEntries((await renderAll()).map(({ id, markup }) => [id, markup]));
+    const strip = (id: string) => pages[id].querySelector('ul[aria-label="Where Boardsesh runs"]')?.textContent ?? '';
+    expect(strip('hub')).toContain('Chrome and Edge light Kilter, Tension, MoonBoard and Aurora boards');
+    expect(strip('spray-wall-apps')).toContain('Lights your wall through WLED over Wi-Fi');
+    expect(strip('spray-wall-apps')).not.toMatch(/Bluetooth|Chrome and Edge light/);
+    expect(strip('woods')).not.toContain('Chrome and Edge light');
+    const button = (id: string, label: string) =>
+      Array.from(pages[id].querySelectorAll('a'))
+        .find((link) => link.textContent === label)
+        ?.getAttribute('href');
+    expect(button('hub', 'Find climbs for your board')).toBe(APP_URL);
+    expect(button('spray-wall-apps', 'Set up your spray wall')).toBe(`${APP_URL}/boards/spray/new`);
+  });
+});
+
+describe('the "unlisted" verdict', () => {
+  it('reads as a neutral fact naming the app, or "Others" when there are several', async () => {
+    const { t } = await getServerTranslationForLocale('en-US', 'appGuides');
+    const kilter = getAppGuide('kilter');
+    if (!kilter) throw new Error('kilter guide missing');
+    expect(verdictLabel(t, kilter, { verdict: 'unlisted', winners: [] })).toBe("Kilter Board app doesn't list it");
+    expect(verdictLabel(t, APP_GUIDE_COMPARISON, { verdict: 'unlisted', winners: [] })).toBe("Others don't list it");
   });
 });
 

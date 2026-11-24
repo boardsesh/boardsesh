@@ -15,7 +15,17 @@ import StartClimbingButton from '@/app/components/start-climbing-button';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { BOARDSESH_APP_STORE_RATING, BOARDSESH_PLAY_RATING, type GuidePlacement } from '@/app/lib/seo/app-guides';
+import { getBoardGalleryLayouts } from '@/app/boards/board-gallery';
+import { APP_URL } from '@/app/lib/app-origin';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import {
+  BOARDSESH_APP_STORE_RATING,
+  BOARDSESH_PLAY_RATING,
+  type GuidePlacement,
+  type PrimaryAction,
+  type RunsOn,
+} from '@/app/lib/seo/app-guides';
+import type { AppGuidePageId } from '@/app/lib/seo/app-guide-model';
 import type { AppGuideCopy } from './app-guide-copy';
 import type { GuideImage } from './app-guide-assets';
 import HoldRing, { type HoldRole } from './hold-ring';
@@ -104,11 +114,20 @@ export function WorksWithPill({ children }: { children: string }) {
 }
 
 /**
- * Where Boardsesh runs: iPhone, any Android phone, any browser. `browserLighting`
- * comes from the page's registry entry: off, the browser line says what the
- * browser app does without claiming it lights this board.
+ * Where Boardsesh runs: iPhone, any Android phone, any browser. What each line
+ * may claim about lighting comes from the page's registry entry (`runsOn`).
  */
-export function RunsOnStrip({ t, browserLighting }: { t: T; browserLighting: boolean }) {
+export function RunsOnStrip({ t, runsOn }: { t: T; runsOn: RunsOn }) {
+  const body = {
+    ios: runsOn.ios === 'wled' ? t('appGuides:common.runsOn.ios.bodyWled') : t('appGuides:common.runsOn.ios.body'),
+    android: t('appGuides:common.runsOn.android.body'),
+    browser:
+      runsOn.browser === 'lights'
+        ? t('appGuides:common.runsOn.browser.body')
+        : runsOn.browser === 'lightsFamilies'
+          ? t('appGuides:common.runsOn.browser.bodyFamilies')
+          : t('appGuides:common.runsOn.browser.bodyNoLighting'),
+  };
   const items = [
     { id: 'ios', Icon: PhoneIphoneOutlined },
     { id: 'android', Icon: PhoneAndroidOutlined },
@@ -121,11 +140,7 @@ export function RunsOnStrip({ t, browserLighting }: { t: T; browserLighting: boo
           <Icon aria-hidden className={styles.runsOnIcon} />
           <span>
             <strong>{t(`appGuides:common.runsOn.${id}.title`)}</strong>
-            <span className={styles.runsOnBody}>
-              {id === 'browser' && !browserLighting
-                ? t('appGuides:common.runsOn.browser.bodyNoLighting')
-                : t(`appGuides:common.runsOn.${id}.body`)}
-            </span>
+            <span className={styles.runsOnBody}>{body[id]}</span>
           </span>
         </li>
       ))}
@@ -133,26 +148,40 @@ export function RunsOnStrip({ t, browserLighting }: { t: T; browserLighting: boo
   );
 }
 
+/** The browser-app URL a page's filled button opens: a board's climb list, spray setup, or the app's root. */
+function primaryActionHref(action: PrimaryAction): string {
+  if (action.target.kind === 'root') return APP_URL;
+  if (action.target.kind === 'spray-setup') return buildAppHandoffUrl('/boards/spray/new');
+  const layout = getBoardGalleryLayouts(action.target.board)[0];
+  return layout ? buildAppHandoffUrl(layout.browseHref) : APP_URL;
+}
+
 /**
- * The page's one filled action, "Open it in your browser" (a desktop visitor can't
- * install a phone app), then both store badges.
+ * The page's one filled action, saying what it opens ("Browse Kilter climbs"),
+ * then both store badges. A desktop visitor can't install a phone app, so the
+ * browser app comes first.
  */
 export function CtaRow({
   t,
   storeLabels,
   placement,
+  pageId,
+  action,
 }: {
   t: T;
   storeLabels: StoreButtonLabels;
   placement: GuidePlacement;
+  pageId: AppGuidePageId;
+  action: PrimaryAction;
 }) {
-  const label = t('appGuides:common.openWebApp');
+  const label = t(`appGuides:common.cta.${pageId}`);
   return (
     <Box className={styles.ctaRow}>
       <StartClimbingButton
         label={label}
-        ariaLabel={t('appGuides:common.openWebAppLabel')}
+        ariaLabel={t('appGuides:common.ctaAria', { label })}
         placement={placement}
+        href={primaryActionHref(action)}
         variant="contained"
         size="large"
         sx={BROWSER_CTA_SX}

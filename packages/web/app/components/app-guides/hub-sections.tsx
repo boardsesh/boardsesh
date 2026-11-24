@@ -62,8 +62,8 @@ export function HubHero({
         {t('appGuides:pages.hub.hero.lead')}
       </Typography>
       {byline}
-      <RunsOnStrip t={t} browserLighting={guide.browserLighting} />
-      <CtaRow t={t} storeLabels={storeLabels} placement={guide.placement} />
+      <RunsOnStrip t={t} runsOn={guide.runsOn} />
+      <CtaRow t={t} storeLabels={storeLabels} placement={guide.placement} pageId="hub" action={guide.primaryAction} />
       <ProofLines t={t} communityLine={false} />
       {/* Three real climb views, one per board family, on a faded hole grid. */}
       <Box className={styles.fan}>

@@ -51,9 +51,11 @@ export type VerificationDate = `${number}-${number}-${number}`;
 
 /**
  * Who does a row better. `only` is a Boardsesh win the other apps do not
- * document at all; `same` is a tie; `competitor` names its winners.
+ * document at all; `same` is a tie; `competitor` names its winners;
+ * `unlisted` says only that the other app does not document the feature, which
+ * is not claimed as a win.
  */
-export type GuideVerdict = 'boardsesh' | 'only' | 'same' | 'competitor';
+export type GuideVerdict = 'boardsesh' | 'only' | 'same' | 'competitor' | 'unlisted';
 
 /**
  * Display names of the apps a page compares against. Brand names, so they stay

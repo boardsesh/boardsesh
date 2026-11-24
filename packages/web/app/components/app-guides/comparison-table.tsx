@@ -20,6 +20,8 @@ const VERDICT_RING: Record<GuideVerdict, HoldRole> = {
   only: 'finish',
   same: 'hand',
   competitor: 'foot',
+  // Not a win for anyone: a hold that isn't part of the climb.
+  unlisted: 'unlit',
 };
 
 const listFormat = new Intl.ListFormat(DEFAULT_LOCALE, { style: 'long', type: 'conjunction' });
@@ -64,6 +66,12 @@ export function verdictLabel(
       return guide.competitors.length === 1
         ? t('appGuides:common.comparison.verdicts.same')
         : t('appGuides:common.comparison.verdicts.sameAll', { count: guide.competitors.length + 1 });
+    case 'unlisted':
+      return guide.competitors.length === 1
+        ? t('appGuides:common.comparison.verdicts.unlisted', {
+            app: guide.competitorNames[guide.competitors[0]] ?? guide.competitors[0],
+          })
+        : t('appGuides:common.comparison.verdicts.unlistedMany');
     case 'competitor':
       return t('appGuides:common.comparison.verdicts.competitor', {
         app: listFormat.format(row.winners.map((winner) => guide.competitorNames[winner] ?? winner)),
@@ -173,7 +181,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
             {rows.map((row) => {
               const feature = t(`appGuides:pages.${guide.id}.comparison.rows.${row.id}.feature`);
               return (
-                <TableRow key={row.id} role="row">
+                <TableRow key={row.id} role="row" data-verdict={row.verdict}>
                   <TableCell
                     component="th"
                     scope="row"
@@ -221,7 +229,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
         </Table>
       </Box>
       <Box component="ul" className={styles.legend} aria-label={t('appGuides:common.comparison.legend')}>
-        {(['boardsesh', 'only', 'same', 'competitor'] as const)
+        {(['boardsesh', 'only', 'same', 'competitor', 'unlisted'] as const)
           .filter((verdict) => usedVerdicts.has(verdict))
           .map((verdict) => (
             <li key={verdict}>

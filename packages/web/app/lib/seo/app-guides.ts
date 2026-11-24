@@ -68,8 +68,8 @@ export type ComparisonGuide = ComparisonPageRegistry & {
   placement: GuidePlacement;
   /** The logbook section's button: an import route, or the logbook help where history can't come across. */
   logbookCta: 'import' | 'help';
-  /** Whether the hero may say Chrome and Edge light the board. */
-  browserLighting: boolean;
+  runsOn: RunsOn;
+  primaryAction: PrimaryAction;
 };
 
 export type HubGuide = HubPageRegistry & {
@@ -77,7 +77,26 @@ export type HubGuide = HubPageRegistry & {
   path: '/apps';
   related: readonly GuideLink[];
   placement: 'compare-hub';
-  browserLighting: boolean;
+  runsOn: RunsOn;
+  primaryAction: PrimaryAction;
+};
+
+/**
+ * What the hero's "Where Boardsesh runs" strip may say about lighting, per page.
+ * `ios`: Bluetooth from the phone, or (spray walls) WLED over Wi-Fi.
+ * `browser`: lights this board; lights the families the browser app supports
+ * (the hub); or browse, queue and log only (no lighting claim).
+ */
+export type RunsOn = { ios: 'bluetooth' | 'wled'; browser: 'lights' | 'lightsFamilies' | 'browseOnly' };
+
+/**
+ * The page's one filled action: where the browser app opens and what the button
+ * says it does. `board` deep-links to that board's climb list (the app's
+ * `/<board>/<layout>/<size>/<sets>/<angle>/list` route); `spray-setup` opens the
+ * spray wall setup; `root` the app's own board picker.
+ */
+export type PrimaryAction = {
+  target: { kind: 'root' } | { kind: 'board'; board: CatalogBoard } | { kind: 'spray-setup' };
 };
 
 export type AppGuidePage = ComparisonGuide | HubGuide;
@@ -196,17 +215,27 @@ const LOGBOOK_CTA: Record<ComparisonPageId, ComparisonGuide['logbookCta']> = {
 };
 
 /**
- * Whether the hero's "Any web browser" line may claim Chrome and Edge light the
- * board. Off on Woods (its own row says browser lighting is untested there) and
- * on the spray page (the editors removed the spray LED claim).
+ * The runs-on strip per page. Woods: browser lighting is untested there (its own
+ * row says so). Spray: LEDs run through WLED over Wi-Fi, so no Bluetooth promise
+ * and no browser lighting. Hub: browser lighting named for the boards that have it.
  */
-const BROWSER_LIGHTING: Record<AppGuidePageId, boolean> = {
-  hub: true,
-  kilter: true,
-  aurora: true,
-  moonboard: true,
-  woods: false,
-  'spray-wall-apps': false,
+const RUNS_ON: Record<AppGuidePageId, RunsOn> = {
+  hub: { ios: 'bluetooth', browser: 'lightsFamilies' },
+  kilter: { ios: 'bluetooth', browser: 'lights' },
+  aurora: { ios: 'bluetooth', browser: 'lights' },
+  moonboard: { ios: 'bluetooth', browser: 'lights' },
+  woods: { ios: 'bluetooth', browser: 'browseOnly' },
+  'spray-wall-apps': { ios: 'wled', browser: 'browseOnly' },
+};
+
+/** Where each page's filled button opens the browser app (the label is `common.cta.<page>`). */
+const PRIMARY_ACTION: Record<AppGuidePageId, PrimaryAction> = {
+  hub: { target: { kind: 'root' } },
+  kilter: { target: { kind: 'board', board: 'kilter' } },
+  aurora: { target: { kind: 'board', board: 'tension' } },
+  moonboard: { target: { kind: 'board', board: 'moonboard' } },
+  woods: { target: { kind: 'board', board: 'woods' } },
+  'spray-wall-apps': { target: { kind: 'spray-setup' } },
 };
 
 /** Art for a feature tile, by tile id. A tile without a capture gets a diagram, never a borrowed screen. */
@@ -254,7 +283,8 @@ function comparisonGuide(id: ComparisonPageId): ComparisonGuide {
     related: RELATED[id],
     placement: isSpray ? 'compare-spray' : `compare-${id}`,
     logbookCta: LOGBOOK_CTA[id],
-    browserLighting: BROWSER_LIGHTING[id],
+    runsOn: RUNS_ON[id],
+    primaryAction: PRIMARY_ACTION[id],
   };
 }
 
@@ -270,7 +300,8 @@ export const APP_GUIDE_HUB: HubGuide = {
   path: '/apps',
   related: [help.boards, help.bluetooth, help.sessions],
   placement: 'compare-hub',
-  browserLighting: BROWSER_LIGHTING.hub,
+  runsOn: RUNS_ON.hub,
+  primaryAction: PRIMARY_ACTION.hub,
 };
 
 export const APP_GUIDE_COMPARISON: ComparisonGuide = comparisonGuide('spray-wall-apps');

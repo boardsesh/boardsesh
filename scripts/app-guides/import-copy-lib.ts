@@ -65,6 +65,8 @@ const VERDICTS: Record<string, GuideVerdict> = {
   tie: 'same',
   official: 'competitor',
   competitor: 'competitor',
+  // The competitor doesn't document it: shown as a neutral fact, never a win.
+  unlisted: 'unlisted',
 };
 
 /**

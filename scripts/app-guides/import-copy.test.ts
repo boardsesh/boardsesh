@@ -159,6 +159,25 @@ describe('import-copy', () => {
     expect(errors(importComparisonPage('kilter', broken, { allowPending: false, draft: true }))).toEqual([]);
   });
 
+  it('accepts "unlisted": the other app does not document it, which is no win', () => {
+    const page = boardPage((json) => {
+      rows(json)[2].verdict = 'unlisted';
+    });
+    const result = importComparisonPage('kilter', page, { allowPending: false });
+    expect(errors(result)).toEqual([]);
+    expect((result.registry as unknown as { rows: { id: string; verdict: string }[] }).rows[2]).toMatchObject({
+      id: 'crew',
+      verdict: 'unlisted',
+    });
+    // An "unlisted" row is not the honesty row: a page still needs a tie or an official win.
+    const allOurs = boardPage((json) => {
+      for (const row of rows(json)) row.verdict = row.verdict === 'only-boardsesh' ? 'only-boardsesh' : 'unlisted';
+    });
+    expect(errors(importComparisonPage('kilter', allOurs, { allowPending: false }))).toContain(
+      'comparison.rows needs at least one row the other app wins or ties',
+    );
+  });
+
   it('needs a row the official app wins or ties', () => {
     const allOurs = boardPage((page) => {
       for (const row of rows(page)) if (row.verdict === 'tie' || row.verdict === 'official') row.verdict = 'boardsesh';
