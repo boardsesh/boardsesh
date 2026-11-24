@@ -6,6 +6,7 @@ import { db } from '../../db/client';
 import { logger } from '../../utils/logger';
 import {
   __resetPasswordGuessStateForTests,
+  __passwordGuessTransactionLifetimesForTests,
   clearPasswordGuesses,
   giveBackPasswordGuess,
   PASSWORD_GUESS_EMAIL_KEY_ENV,
@@ -60,6 +61,14 @@ async function reserveMany(subject: PasswordGuessSubject, count: number, now: Da
   return results;
 }
 
+const releaseHungStores: (() => void)[] = [];
+function hungStore(): PasswordGuessStore {
+  const pending = new Promise<never>((_resolve, reject) => {
+    releaseHungStores.push(() => reject(new Error('Test transaction released')));
+  });
+  return { transaction: vi.fn(() => pending) } as unknown as PasswordGuessStore;
+}
+
 const outcomes = (results: readonly PasswordGuessReservation[]) =>
   results.reduce<Record<string, number>>(
     (counts, { outcome }) => ({ ...counts, [outcome]: (counts[outcome] ?? 0) + 1 }),
@@ -68,7 +77,11 @@ const outcomes = (results: readonly PasswordGuessReservation[]) =>
 
 describe('password guess windows (#7656)', () => {
   beforeEach(() => __resetPasswordGuessStateForTests());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(async () => {
+    for (const release of releaseHungStores.splice(0)) release();
+    await vi.waitFor(() => expect(__passwordGuessTransactionLifetimesForTests()).toBe(0));
+    vi.restoreAllMocks();
+  });
 
   describe('subjects', () => {
     it('digests the normalised email under the key and never stores the address', () => {
@@ -364,7 +377,7 @@ describe('password guess windows (#7656)', () => {
 
     it('answers unavailable within the 250 ms deadline when no connection comes free', async () => {
       vi.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const hung = { transaction: () => new Promise(() => {}) } as unknown as PasswordGuessStore;
+      const hung = hungStore();
       const startedAt = Date.now();
       // The transaction never began, so this reads as a pool wait, not a slow statement.
       expect(await reservePasswordGuess(hung, freshEmailSubject())).toEqual({

@@ -48,7 +48,7 @@ export type AccountGuessLimitMode = 'off' | 'observe' | 'enforce';
 export const ACCOUNT_GUESS_LIMIT_ENFORCE_BLOCKERS: readonly string[] = Object.freeze([
   // The in-flight cap and the dedicated pool should stop an attacker forcing
   // the counter to fail open. Production `observe` data has to show they do
-  // (reserve deadlines, lock waits and pool waits near zero under real load)
+  // (reserve deadlines, lock waits, pool waits and capacity shedding near zero under real load)
   // before refusals start.
   'FORCED_FAIL_OPEN_CLOSURE_UNPROVEN_IN_PRODUCTION_OBSERVE',
   // A reset voids the phone's device token and its refresh tokens, so a native
@@ -58,9 +58,9 @@ export const ACCOUNT_GUESS_LIMIT_ENFORCE_BLOCKERS: readonly string[] = Object.fr
   // The 5 s rule reads `user_credentials.updated_at`; under the Better Auth
   // authority the password lives in `auth_account`. Needs an authority-aware read.
   'PASSWORD_CHANGE_TIME_IGNORES_AUTHORITY',
-  // The in-flight cap is per subject: a burst over many emails can still fill
-  // the counter's pool, so the target's reserves end as pool waits and run
-  // uncounted. Needs a global bound or proof under a many-email burst.
+  // Counter transaction lifetimes are bounded across subjects, but shedding
+  // still fails open. Closing bypass without refusing unrelated owners before
+  // recognition needs an overload/recovery policy and owner-access evidence.
   'CROSS_SUBJECT_POOL_SATURATION',
 ]);
 

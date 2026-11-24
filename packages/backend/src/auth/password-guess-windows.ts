@@ -52,6 +52,20 @@ export const PASSWORD_GUESS_LIMITS: Readonly<
 /** How long the store gets before a call fails open. */
 export const PASSWORD_GUESS_DEADLINE_MS = 250;
 
+/**
+ * Maximum underlying counter transactions per process, including pool checkouts
+ * still queued after their callers' deadlines. This bounds memory/queue growth,
+ * not password guessing: shedding still fails open and enforcement stays gated.
+ * Fixed independently of the pool size; no additional connection is opened.
+ */
+export const PASSWORD_GUESS_TRANSACTION_CAP = 32;
+let transactionLifetimes = 0;
+
+/** The actual lifetimes still occupying capacity, not callers still awaiting replies. */
+export function __passwordGuessTransactionLifetimesForTests(): number {
+  return transactionLifetimes;
+}
+
 /** Names the HMAC key for email digests. Unset means the limit is off. */
 export const PASSWORD_GUESS_EMAIL_KEY_ENV = 'AUTH_ACCOUNT_GUESS_LIMIT_EMAIL_KEY';
 
@@ -77,8 +91,15 @@ export interface ReservedPasswordGuess {
  * - `pool_wait`: no connection came free before the deadline (a busy or unreachable pool).
  * - `deadline`: the statement itself ran out of time.
  * - `store_error`: the store answered with an error (an outage, a missing table).
+ * - `capacity`: this process already holds the bounded number of counter transaction lifetimes.
  */
-export type PasswordGuessUnavailableReason = 'not_configured' | 'store_error' | 'deadline' | 'lock_wait' | 'pool_wait';
+export type PasswordGuessUnavailableReason =
+  | 'not_configured'
+  | 'store_error'
+  | 'deadline'
+  | 'lock_wait'
+  | 'pool_wait'
+  | 'capacity';
 
 export type PasswordGuessReservation =
   | { readonly outcome: 'reserved'; readonly reservation: ReservedPasswordGuess }
@@ -102,7 +123,7 @@ export interface PasswordGuessMetrics {
 }
 
 function emptyCounts(): Record<PasswordGuessOperation, Record<PasswordGuessUnavailableReason, number>> {
-  const reasons = () => ({ not_configured: 0, store_error: 0, deadline: 0, lock_wait: 0, pool_wait: 0 });
+  const reasons = () => ({ not_configured: 0, store_error: 0, deadline: 0, lock_wait: 0, pool_wait: 0, capacity: 0 });
   return { reserve: reasons(), give_back: reasons(), clear: reasons(), prune: reasons() };
 }
 
@@ -145,12 +166,16 @@ function recordUnavailable(operation: PasswordGuessOperation, reason: PasswordGu
     reserveDeadline: sinceLastWarning.reserve.deadline,
     reserveLockWait: sinceLastWarning.reserve.lock_wait,
     reservePoolWait: sinceLastWarning.reserve.pool_wait,
+    reserveCapacity: sinceLastWarning.reserve.capacity,
     giveBackStoreError: sinceLastWarning.give_back.store_error,
     giveBackDeadline: sinceLastWarning.give_back.deadline,
+    giveBackCapacity: sinceLastWarning.give_back.capacity,
     clearStoreError: sinceLastWarning.clear.store_error,
     clearDeadline: sinceLastWarning.clear.deadline,
+    clearCapacity: sinceLastWarning.clear.capacity,
     pruneStoreError: sinceLastWarning.prune.store_error,
     pruneDeadline: sinceLastWarning.prune.deadline,
+    pruneCapacity: sinceLastWarning.prune.capacity,
   });
   sinceLastWarning = emptyCounts();
 }
@@ -258,25 +283,23 @@ type Deadlined<Result> =
  */
 const LOCK_WAIT_MARGIN_MS = 40;
 
-/**
- * Runs one transaction under the deadline. Postgres is told the same deadline
- * (`statement_timeout`, `lock_timeout`), so a statement still waiting when the
- * caller gives up is cancelled and rolls back. A transaction that only starts
- * after the deadline (a slow pool checkout) rolls back before writing.
- * `onLate` receives a result that arrives after the caller was answered.
- */
-async function runWithDeadline<Result>(
+class CounterCapacityReached extends Error {}
+
+type CounterWork<Result> = (transaction: PasswordGuessTransaction) => Promise<Result>;
+type LateCompensation = (work: CounterWork<void>) => Promise<void>;
+
+/** A transaction's own budget also covers time waiting for a connection. */
+function startBudgetedTransaction<Result>(
   store: PasswordGuessStore,
   deadlineMs: number,
-  work: (transaction: PasswordGuessTransaction) => Promise<Result>,
-  onLate: (value: Result) => void,
-): Promise<Deadlined<Result>> {
+  work: CounterWork<Result>,
+  onStarted: () => void = () => {},
+): Promise<Result> {
   const startedAt = Date.now();
-  let started = false;
-  const run = store.transaction(async (transaction) => {
+  return store.transaction(async (transaction) => {
     const remaining = deadlineMs - (Date.now() - startedAt);
     if (remaining <= 0) throw new DeadlinePassed();
-    started = true;
+    onStarted();
     const statementBudget = String(Math.max(1, Math.ceil(remaining)));
     const lockBudget = String(Math.max(1, Math.ceil(remaining) - LOCK_WAIT_MARGIN_MS));
     await transaction.execute(
@@ -284,17 +307,55 @@ async function runWithDeadline<Result>(
     );
     return work(transaction);
   });
+}
+
+/**
+ * A caller gets its deadline even if its pool checkout/COMMIT is still pending.
+ * The capacity slot belongs to the underlying transaction until it settles,
+ * including compensation for a reservation that committed after the deadline.
+ * Compensation reuses that slot: a full counter can still undo late writes.
+ */
+async function runWithDeadline<Result>(
+  store: PasswordGuessStore,
+  deadlineMs: number,
+  work: CounterWork<Result>,
+  onLate: (value: Result, compensate: LateCompensation) => void | Promise<unknown>,
+  onSettled: (committed: boolean) => void = () => {},
+): Promise<Deadlined<Result>> {
+  if (transactionLifetimes >= PASSWORD_GUESS_TRANSACTION_CAP) {
+    onSettled(false);
+    throw new CounterCapacityReached();
+  }
+  transactionLifetimes += 1;
+  let started = false;
+  let late = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<Deadlined<Result>>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: 'late', started }), deadlineMs);
+    timer = setTimeout(() => {
+      late = true;
+      resolve({ kind: 'late', started });
+    }, deadlineMs);
   });
+  const run = (async () => {
+    let committed = false;
+    try {
+      const result = await startBudgetedTransaction(store, deadlineMs, work, () => {
+        started = true;
+      });
+      committed = true;
+      if (late) {
+        await onLate(result, (compensation) =>
+          startBudgetedTransaction(store, PASSWORD_GUESS_DEADLINE_MS, compensation),
+        );
+      }
+      return result;
+    } finally {
+      transactionLifetimes -= 1;
+      onSettled(committed);
+    }
+  })();
   try {
-    const outcome = await Promise.race([
-      run.then((value): Deadlined<Result> => ({ kind: 'settled', value })),
-      deadline,
-    ]);
-    if (outcome.kind === 'late') run.then(onLate, () => {});
-    return outcome;
+    return await Promise.race([run.then((value): Deadlined<Result> => ({ kind: 'settled', value })), deadline]);
   } finally {
     clearTimeout(timer);
   }
@@ -359,7 +420,13 @@ export async function reservePasswordGuess(
         }
       },
       // The caller already proceeded uncounted, so a reservation that commits late is taken back.
-      () => void giveBackPasswordGuess(store, reservation),
+      async (_result, compensate) => {
+        try {
+          await compensate((transaction) => uncount(transaction, reservation));
+        } catch (error) {
+          recordUnavailable('give_back', unavailableReason(error));
+        }
+      },
     );
     if (outcome.kind === 'late') {
       const reason = outcome.started ? 'deadline' : 'pool_wait';
@@ -434,7 +501,8 @@ const giveBacks = new WeakMap<ReservedPasswordGuess, 'done' | Promise<PasswordGu
  * on; a window already pruned has nothing to uncount.
  *
  * Once it has succeeded, another call answers `done` and writes nothing; a call
- * while one is running shares its result. After `unavailable` a call retries.
+ * while one is running shares its result, including after the caller's deadline.
+ * Only a settled failure permits another write; a late commit is still done.
  */
 export async function giveBackPasswordGuess(
   store: PasswordGuessStore,
@@ -443,9 +511,14 @@ export async function giveBackPasswordGuess(
 ): Promise<PasswordGuessWriteResult> {
   const previous = giveBacks.get(reservation);
   if (previous !== undefined) return previous;
-  const running = writeGiveBack(store, reservation, options.deadlineMs).then((result) => {
+  let underlyingSettled = false;
+  const running = writeGiveBack(store, reservation, options.deadlineMs, (committed) => {
+    underlyingSettled = true;
+    if (committed) giveBacks.set(reservation, 'done');
+    else giveBacks.delete(reservation);
+  }).then((result) => {
     if (result === 'done') giveBacks.set(reservation, 'done');
-    else if (giveBacks.get(reservation) === running) giveBacks.delete(reservation);
+    else if (underlyingSettled && giveBacks.get(reservation) === running) giveBacks.delete(reservation);
     return result;
   });
   giveBacks.set(reservation, running);
@@ -456,15 +529,9 @@ function writeGiveBack(
   store: PasswordGuessStore,
   reservation: ReservedPasswordGuess,
   deadlineMs: number | undefined,
+  onSettled: (committed: boolean) => void,
 ): Promise<PasswordGuessWriteResult> {
-  return runWrite(
-    'give_back',
-    store,
-    deadlineMs,
-    (transaction) => uncount(transaction, reservation),
-    // A give-back that commits after its caller was told `unavailable` still counts as done.
-    () => giveBacks.set(reservation, 'done'),
-  );
+  return runWrite('give_back', store, deadlineMs, (transaction) => uncount(transaction, reservation), onSettled);
 }
 
 async function uncount(transaction: PasswordGuessTransaction, reservation: ReservedPasswordGuess): Promise<void> {
@@ -616,10 +683,10 @@ async function runWrite(
   store: PasswordGuessStore,
   deadlineMs: number | undefined,
   work: (transaction: PasswordGuessTransaction) => Promise<void>,
-  onLate: () => void = () => {},
+  onSettled: (committed: boolean) => void = () => {},
 ): Promise<PasswordGuessWriteResult> {
   try {
-    const outcome = await runWithDeadline(store, deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS, work, onLate);
+    const outcome = await runWithDeadline(store, deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS, work, () => {}, onSettled);
     if (outcome.kind === 'late') {
       recordUnavailable(operation, outcome.started ? 'deadline' : 'pool_wait');
       return 'unavailable';
@@ -637,6 +704,7 @@ async function runWrite(
  */
 function unavailableReason(error: unknown): PasswordGuessUnavailableReason {
   if (error instanceof DeadlinePassed) return 'pool_wait';
+  if (error instanceof CounterCapacityReached) return 'capacity';
   const code = getPostgresErrorCode(error);
   if (code === '55P03') return 'lock_wait';
   if (code === '57014') return 'deadline';
