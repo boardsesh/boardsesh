@@ -6,7 +6,8 @@ const displayFont = localFont({
   src: './fonts/GeistVF.woff',
   variable: '--font-display',
   display: 'swap',
-  preload: false,
+  // Every public page uses this face in its heading; discover it with the document.
+  preload: true,
 });
 import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
