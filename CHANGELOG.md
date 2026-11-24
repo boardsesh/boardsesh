@@ -8,16 +8,21 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- See how Boardsesh compares with the Kilter, Aurora, MoonBoard, Woods and spray wall apps, row by row with sources, before your first session. ([#8098](https://github.com/boardsesh/boardsesh/pull/8098))
 - Compare your gym’s recorded climbers and sends, then inspect twelve weeks of board activity. See where history is still too short to compare. ([#8087](https://github.com/boardsesh/boardsesh/pull/8087))
 - See recorded board activity at your gym, with local dates and verified wall groups. ([#8084](https://github.com/boardsesh/boardsesh/pull/8084))
 
 ### Improved
 
+- Refine Spraywall holds without breaking your climbs. ([#8111](https://github.com/boardsesh/boardsesh/pull/8111))
+  Removal warnings count each climb once.
+  Choose Keep editing to return to your edits before saving.
 - See the board clearly on light gym screens, including when the lit climb changes. ([#8115](https://github.com/boardsesh/boardsesh/pull/8115))
 - Choose light or dark for each gym screen, with readable logos, climb details and leaderboards. ([#8110](https://github.com/boardsesh/boardsesh/pull/8110))
 
 ### Fixed
 
+- On iPhone Duo, the Climbs buttons on the side no longer overlap the tab bar. Create a climb lives in the ⋯ menu there. ([#8125](https://github.com/boardsesh/boardsesh/pull/8125))
 - Climb actions open beside the three-dot button or your pointer in the browser. ([#8117](https://github.com/boardsesh/boardsesh/pull/8117))
 - Climb grades line up at the right edge in your browser. ([#8114](https://github.com/boardsesh/boardsesh/pull/8114))
 - Get an email link to your bug report when using Hide My Email. ([#8113](https://github.com/boardsesh/boardsesh/pull/8113))

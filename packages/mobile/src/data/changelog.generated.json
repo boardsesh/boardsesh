@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-24T13:50:03.891Z",
+  "generatedAt": "2026-11-24T17:48:01.759Z",
   "entries": [
+    {
+      "prNumber": 8125,
+      "category": "fixed",
+      "title": "On iPhone Duo, the Climbs buttons on the side no longer overlap the tab bar. Create a climb lives in the ⋯ menu there.",
+      "mergedAt": "2026-11-24T17:30:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8125"
+    },
+    {
+      "prNumber": 8098,
+      "category": "new",
+      "title": "See how Boardsesh compares with the Kilter, Aurora, MoonBoard, Woods and spray wall apps, row by row with sources, before your first session.",
+      "mergedAt": "2026-11-24T17:22:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8098"
+    },
+    {
+      "prNumber": 8111,
+      "category": "improved",
+      "title": "Refine Spraywall holds without breaking your climbs.",
+      "mergedAt": "2026-11-24T14:02:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8111",
+      "body": "Removal warnings count each climb once.\nChoose Keep editing to return to your edits before saving."
+    },
     {
       "prNumber": 8117,
       "category": "fixed",
