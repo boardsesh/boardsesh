@@ -93,6 +93,11 @@ const boardseshWorkoutGuide = source(
   'https://github.com/boardsesh/boardsesh/blob/6e14bac8ba24b49161a4a26f0d5b90a2fd0f78f0/docs/product/workout-stages.md#building-a-workout',
   WORKOUT_UPDATE_DATE,
 );
+const boardseshWorkoutTimer = source(
+  'boardseshWorkoutTimer',
+  'https://github.com/boardsesh/boardsesh/blob/6d1b696a162ed7f74f3fbdad6259e6bbcd3f8dcb/docs/product/rest-timer.md#effective-pacing',
+  WORKOUT_UPDATE_DATE,
+);
 
 const guides = {
   kilter: {
@@ -112,7 +117,7 @@ const guides = {
         sourceIds: ['boardseshPlayer', 'boardseshPlayerButtons', 'boardseshTickControls', 'officialScreenshots'],
       },
       { id: 'session', sourceIds: ['boardseshSessions', 'official', 'support'] },
-      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official'] },
+      { id: 'training', sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official'] },
       { id: 'history', sourceIds: ['boardseshMigration', 'support'] },
       { id: 'auroraImportTiming', sourceIds: ['boardseshAuroraImport', 'claim', 'claimWaitReports'] },
     ],
@@ -150,6 +155,7 @@ const guides = {
       boardGallerySource('kilter'),
       boardseshWorkoutStore,
       boardseshWorkoutGuide,
+      boardseshWorkoutTimer,
       boardseshSessions,
       boardseshMigration,
     ],
@@ -164,7 +170,10 @@ const guides = {
     workflow: [{ id: 'layout' }, { id: 'training' }, { id: 'import' }],
     comparisonRows: [
       { id: 'layout', sourceIds: ['boardseshGallery', 'aurora', 'layouts'] },
-      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official', 'circuits', 'timer'] },
+      {
+        id: 'training',
+        sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official', 'circuits', 'timer'],
+      },
       { id: 'history', sourceIds: ['boardseshMigration', 'official'] },
     ],
     competitors: ['official'],
@@ -180,6 +189,7 @@ const guides = {
       boardGallerySource('tension'),
       boardseshWorkoutStore,
       boardseshWorkoutGuide,
+      boardseshWorkoutTimer,
       boardseshMigration,
     ],
     related: [help.findingClimbs, help.migration, help.bluetooth, help.sprayComparison],
@@ -194,7 +204,7 @@ const guides = {
     comparisonRows: [
       { id: 'benchmarks', sourceIds: ['boardseshGallery', 'boardseshClimbs', 'benchmarks'] },
       { id: 'lighting', sourceIds: ['led', 'audit'] },
-      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official'] },
+      { id: 'training', sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official'] },
       { id: 'history', sourceIds: ['boardseshGallery', 'official'] },
     ],
     competitors: ['official'],
@@ -213,6 +223,7 @@ const guides = {
       ),
       boardseshWorkoutStore,
       boardseshWorkoutGuide,
+      boardseshWorkoutTimer,
     ],
     related: [help.bluetooth, help.findingClimbs, help.logbook],
   },
@@ -349,7 +360,7 @@ export const APP_GUIDE_HUB = {
   workflow: [],
   comparisonRows: [],
   competitors: [],
-  sources: [boardseshWorkoutStore, boardseshWorkoutGuide],
+  sources: [boardseshWorkoutStore, boardseshWorkoutGuide, boardseshWorkoutTimer],
   related: [help.boards, help.bluetooth, help.sessions],
 } as const satisfies AppGuidePage;
 

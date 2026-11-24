@@ -26,13 +26,14 @@
       "title": "Climbing Board Apps | Boardsesh",
       "description": "Find a climbing board app for Kilter, Tension, MoonBoard, Woods and more. Check compatible layouts, LED control and logbook imports before installing.",
       "heading": "One climbing app for your boards",
-      "intro": "Get Boardsesh free for iPhone or Android to find climbs, light compatible boards and keep one logbook across your walls. Build a workout at your grade, preview the climbs and set rests or intervals for timed blocks. In a shared session, your crew can add problems to the same queue from their own phones.",
+      "intro": "Get Boardsesh free for iPhone or Android to find climbs, light compatible boards and keep one logbook across your walls. Build a workout at your grade and preview the climbs. Once you start it, the timer follows the rests or intervals you set for each timed block. In a shared session, your crew can add problems to the same queue from their own phones.",
       "compatibility": "Choose your board below to check the exact layout, how to connect to the LEDs, and whether you can bring your logbook. If you set on your own holds, start with the spray wall comparison.",
       "tradeoffs": "You can explore the browser app before your session. Browser LED control requires Web Bluetooth and a compatible controller. On iPhone, use the native app for Bluetooth lighting.",
       "screenshotAlt": "Boardsesh shared climb queue with problems and grades from a group session",
       "sources": {
         "boardseshStore": "Boardsesh App Store listing and workout features",
-        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks"
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
+        "boardseshWorkoutTimer": "How timed workout blocks drive the Boardsesh timer"
       },
       "related": {
         "boards": "See supported board layouts",
@@ -58,8 +59,8 @@
           "body": "Scan the hold thumbnails and swipe through previews. Connect near the board and tap Put on board to light your pick. Start a shared session so each climber can queue their next problem."
         },
         "training": {
-          "title": "Build a Kilter workout",
-          "body": "Pick a target grade and add a warm-up, then choose a block such as 4x4 or On the Minute. Preview the climbs and rests before you start. Follow your reps or intervals in the app."
+          "title": "Let the workout set the timer",
+          "body": "Add an On the Minute block at your target grade. Set your interval and review the climbs. Start a session, then tap Start workout to begin the countdown."
         },
         "import": {
           "title": "Link your current Kilter account",
@@ -90,8 +91,8 @@
           "official": "Bluetooth lighting, a board map and shareable climbs."
         },
         "training": {
-          "label": "Plan a workout",
-          "boardsesh": "Build a workout from warm-up and training blocks at your chosen grade. Preview the climbs, then follow your reps, rests or intervals on timed blocks.",
+          "label": "Build and run a workout",
+          "boardsesh": "Build a workout from blocks at your chosen grade. Once you start it, the active timed block sets the timer. In a solo On the Minute block, the running timer brings up the next queued climb at each interval.",
           "official": "Kilter documents playlists for organizing climbs and creating training circuits."
         },
         "history": {
@@ -120,6 +121,7 @@
         "boardseshGallery": "Kilter layouts in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing, including Verified climbs and workouts",
         "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
+        "boardseshWorkoutTimer": "How timed workout blocks drive the Boardsesh timer",
         "boardseshSessions": "Boardsesh shared session and queue guide",
         "boardseshMigration": "Boardsesh Kilter logbook import guide"
       },
@@ -135,7 +137,7 @@
       "heading": "Boardsesh for Tension Board",
       "intro": "Boardsesh is an independent alternative to the official Tension Board app for TB1 and TB2. Use it on iPhone or Android to find climbs at your wall angle, light them and keep your sends from every board in one logbook.",
       "compatibility": "Boardsesh supports Tension Board 1 and Tension Board 2 in both Mirror and Spray layouts. TB2 Spray is the manufactured Tension hold layout. For a wall with your own hold placement, use the photo-based spray wall setup.",
-      "tradeoffs": "The official Tension app offers Workout AI, circuits and a timer. Boardsesh lets you combine warm-ups and timed blocks, share a queue with your crew and keep a logbook across boards. Imports run one way into Boardsesh.",
+      "tradeoffs": "Choose Boardsesh to track reps in a 4x4 and let the workout change the timer for you. Share a queue with your crew and keep one logbook across boards. Tension’s Workout AI picks climbs using your logbook and workout type. Imports run one way into Boardsesh.",
       "screenshotAlt": "Boardsesh displaying a Tension Board climb and its marked holds",
       "workflow": {
         "layout": {
@@ -143,8 +145,8 @@
           "body": "Match your wall’s hold layout, dimensions and angle. Check the layout first if the LEDs seem to mark a different problem from the diagram."
         },
         "training": {
-          "title": "Build a session at that angle",
-          "body": "Set your wall angle and choose a target grade. Add a 4x4 block and preview the climbs and rests. The default is four climbs, each done four times in a row. Follow the rep counter as you go."
+          "title": "Run a 4x4 with rep and set rests",
+          "body": "Choose your wall angle and target grade, then add a 4x4. The default is four climbs, each done four times in a row. Start your session, tap Start workout and log each go as a rep."
         },
         "import": {
           "title": "Bring in older sessions",
@@ -161,9 +163,9 @@
           "official": "Aurora lists the Tension app alongside Tension Board 1 and 2. Tension documents Mirror and Spray for TB2."
         },
         "training": {
-          "label": "Plan a session",
-          "boardsesh": "Combine a warm-up with a 4x4, Pyramid or other blocks. Preview the climbs before you start. Timed blocks guide your reps, rests or intervals.",
-          "official": "Workout AI generates a climb list from your workout type and logbook. Tension also documents circuits and a timer."
+          "label": "Build and run a workout",
+          "boardsesh": "In a solo 4x4, log each attempt or send. Boardsesh keeps the same climb up between reps and switches to the set rest after the last rep. When that rest ends, the running timer automatically brings up the next queued climb.",
+          "official": "Workout AI builds a personalized climb list from your workout type and logbook. Tension also documents circuits and a timer."
         },
         "history": {
           "label": "Log sends",
@@ -180,6 +182,7 @@
         "boardseshGallery": "Tension layouts in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and workout features",
         "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
+        "boardseshWorkoutTimer": "Boardsesh timer rules for reps and sets",
         "boardseshMigration": "Boardsesh Tension logbook import guide"
       },
       "related": {
@@ -207,8 +210,8 @@
           "body": "If your board uses a supported legacy profile, connect in the app and try one climb. You can still follow the on-screen grid and log the session with the LEDs off."
         },
         "training": {
-          "title": "Build a workout for your MoonBoard setup",
-          "body": "Add a warm-up and a Grade Focus block at your target grade. Preview the climbs available for your setup and angle before you start."
+          "title": "Pace your limit bouldering tries",
+          "body": "Add a Limit Bouldering block at your target grade and set a rest between tries. Preview the climbs for your setup and angle, then tap Start workout when you’re ready."
         },
         "import": {
           "title": "Copy your MoonBoard logbook",
@@ -230,8 +233,8 @@
           "official": "Moon supports its LED system in the official app and publishes hardware and setup instructions."
         },
         "training": {
-          "label": "Plan a workout",
-          "boardsesh": "Build a workout from blocks such as Grade Focus or Limit Bouldering. Preview the climbs and follow the rest timer on timed blocks.",
+          "label": "Build and run a workout",
+          "boardsesh": "Build a workout for your setup and angle. With a rest set in Limit Bouldering, logging a fall starts that rest so you can retry the same climb. A logged flash or send lets the timer advance after the rest.",
           "official": "Moon’s app lets you save problem lists for warm-ups, projects and training circuits."
         },
         "history": {
@@ -248,7 +251,8 @@
         "boardseshGallery": "MoonBoard layouts and CSV import in Boardsesh",
         "boardseshClimbs": "Boardsesh app source for the Benchmark filter",
         "boardseshStore": "Boardsesh App Store listing and workout features",
-        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks"
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
+        "boardseshWorkoutTimer": "Boardsesh timer rules for retries and sends"
       },
       "related": {
         "bluetooth": "Connect to a compatible LED controller",
