@@ -7,6 +7,8 @@ import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { socialGymInsightsQueries } from '../graphql/resolvers/social/gym-insights';
 import { gymReportingSettingsMutations } from '../graphql/resolvers/social/gym-reporting-settings';
+import { readGymBusyTimes } from '../graphql/resolvers/social/gym-busy-times';
+import { withGymReportingScope } from '../graphql/resolvers/social/gym-reporting';
 
 const AS_OF = '2026-10-28T19:00:00.000Z';
 const OLD_FLOOR = '2025-01-01T00:00:00.000Z';
@@ -16,6 +18,9 @@ const operation = parse('{ gymStats(input: { gymUuid: "fixture" }) { reachOvervi
   .definitions[0];
 if (operation.kind !== 'OperationDefinition') throw new Error('Expected a test query');
 const overviewInfo = { fieldNodes: operation.selectionSet.selections, fragments: {} } as unknown as GraphQLResolveInfo;
+const busyOperation = parse('{ gymStats(input: { gymUuid: "fixture" }) { busyTimes { status } } }').definitions[0];
+if (busyOperation.kind !== 'OperationDefinition') throw new Error('Expected a test query');
+const busyInfo = { fieldNodes: busyOperation.selectionSet.selections, fragments: {} } as unknown as GraphQLResolveInfo;
 
 let connection = 0;
 let boardSize = 400;
@@ -425,5 +430,286 @@ describe('gym reach overview', () => {
     const merged = await report(venue);
     expect(merged.observationStartedAt).not.toBe(prior.observationStartedAt);
     expect(merged.current.sends.coverage).toBe('complete');
+  });
+});
+
+describe('gym busy times', () => {
+  async function busy(
+    venue: Awaited<ReturnType<typeof gym>>,
+    opts: { period?: 'week' | 'month' | 'quarter'; boardUuid?: string } = {},
+  ) {
+    const stats = await socialGymInsightsQueries.gymStats(
+      null,
+      { input: { gymUuid: venue.uuid, ...opts } },
+      auth(venue.ownerId),
+      busyInfo,
+    );
+    expect(stats.reachOverview).toBeNull();
+    if (!stats.busyTimes) throw new Error('Expected the requested busy-times field');
+    return stats.busyTimes;
+  }
+
+  it('deduplicates repeated hours and people across sources and aliases and excludes today', async () => {
+    vi.setSystemTime(new Date('2024-11-04T17:00:00Z'));
+    const [owner, second, outsider] = await Promise.all([user(), user(), user()]);
+    const venue = await gym(owner, 'America/New_York');
+    await receipt(venue.id, '2024-10-26T00:00:00Z');
+    const [wallA, wallB, privateWall] = await Promise.all([
+      board(venue),
+      board(venue),
+      board(venue, { owner: outsider, isPublic: false }),
+    ]);
+    await gymReportingSettingsMutations.setGymReportingBoardAlias(
+      null,
+      { input: { gymUuid: venue.uuid, boardUuid: wallB.uuid, rootBoardUuid: wallA.uuid } },
+      auth(owner),
+    );
+    await Promise.all([
+      display(wallA, owner, '2024-11-03T05:15:00Z'),
+      tick(wallA, owner, '2024-11-03T06:30:00Z', { status: 'attempt' }),
+      tick(wallB, owner, '2024-11-03T06:30:00Z', { mirror: true }),
+      tick(wallB, second, '2024-11-03T06:45:00Z'),
+      tick(wallB, outsider, '2024-11-03T06:45:00Z', { origin: 'kilter_pull' }),
+      tick(wallB, outsider, '2024-11-03T06:45:00Z', { capturedGym: null }),
+      display(wallA, null, '2024-11-03T05:10:00Z'),
+      tick(privateWall, outsider, '2024-11-03T06:45:00Z'),
+      display(wallA, owner, '2024-11-04T02:00:00Z'),
+      tick(wallA, outsider, '2024-11-04T05:00:00Z'),
+      tick(wallA, outsider, '2024-11-04T18:00:00Z'),
+      tick(wallA, outsider, '2024-10-25T22:00:00Z'),
+      tick(wallA, outsider, '2023-11-05T06:30:00Z'),
+    ]);
+    const data = await busy(venue, { boardUuid: wallB.uuid });
+    expect(data).toMatchObject({
+      status: 'ready',
+      startDate: '2024-08-06',
+      endDate: '2024-11-03',
+      coveredDates: 9,
+      firstCoveredDate: '2024-10-26',
+      instantDisplays: 2,
+      instantTicks: 3,
+      dateOnlyRecords: 0,
+      unknownTimeRecords: 0,
+    });
+    expect(data.weekdays.map((entry) => entry.dayOfWeek)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(data.hours).toHaveLength(168);
+    expect(
+      data.hours.every((entry, index) => entry.hour === index % 24 && entry.dayOfWeek === Math.floor(index / 24) + 1),
+    ).toBe(true);
+    expect(data.weekdays[6]).toEqual({ dayOfWeek: 7, eligibleDates: 2, recordedClimbers: 2 });
+    expect(data.hours[6 * 24 + 1]).toEqual({ dayOfWeek: 7, hour: 1, eligibleDates: 2, recordedClimbers: 2 });
+    expect(data.hours[6 * 24 + 21]).toMatchObject({ eligibleDates: 2, recordedClimbers: 1 });
+    expect(data.hours[6 * 24 + 3]).toMatchObject({ eligibleDates: 2, recordedClimbers: 0 });
+    expect(JSON.stringify(data)).not.toContain(second);
+    expect(await busy(venue, { boardUuid: wallA.uuid, period: 'quarter' })).toEqual(data);
+  });
+
+  it.each([
+    {
+      zone: 'America/New_York',
+      floor: '2024-03-09T05:00:00Z',
+      asOf: '2024-03-11T15:00:00Z',
+      weekday: 7,
+      hour: 2,
+      dateCount: 2,
+      expected: 0,
+    },
+    {
+      zone: 'Australia/Lord_Howe',
+      floor: '2024-10-04T13:30:00Z',
+      asOf: '2024-10-06T16:00:00Z',
+      weekday: 7,
+      hour: 2,
+      dateCount: 2,
+      expected: 1,
+    },
+    {
+      zone: 'Australia/Lord_Howe',
+      floor: '2024-04-05T13:00:00Z',
+      asOf: '2024-04-07T15:30:00Z',
+      weekday: 7,
+      hour: 1,
+      dateCount: 2,
+      expected: 1,
+    },
+    {
+      zone: 'America/Havana',
+      floor: '2024-11-03T04:30:00Z',
+      asOf: '2024-11-04T17:00:00Z',
+      weekday: 7,
+      hour: 0,
+      dateCount: 0,
+      expected: 0,
+    },
+    {
+      zone: 'America/Havana',
+      floor: '2024-03-10T05:00:00Z',
+      asOf: '2024-03-11T17:00:00Z',
+      weekday: 7,
+      hour: 0,
+      dateCount: 1,
+      expected: 0,
+    },
+    {
+      zone: 'Pacific/Apia',
+      floor: '2011-12-29T10:00:00Z',
+      asOf: '2012-01-01T15:00:00Z',
+      weekday: 5,
+      hour: 12,
+      dateCount: 3,
+      expected: 0,
+    },
+  ])(
+    'uses actual civil-hour coverage in $zone at $asOf, independent of the DB timezone',
+    async ({ zone, floor, asOf, weekday, hour, dateCount, expected }) => {
+      vi.setSystemTime(new Date(asOf));
+      const venue = await gym(await user(), zone);
+      const wall = await board(venue);
+      await receipt(venue.id, floor);
+      const data = await withGymReportingScope(
+        { gymUuid: venue.uuid, boardUuid: wall.uuid },
+        auth(venue.ownerId),
+        async (tx, scope) => {
+          await tx.execute(sql`SET LOCAL TIME ZONE 'Pacific/Auckland'`);
+          return readGymBusyTimes(tx, scope, floor);
+        },
+      );
+      expect(data.coveredDates).toBe(dateCount);
+      expect(data.hours[(weekday - 1) * 24 + hour]).toMatchObject({ eligibleDates: expected, recordedClimbers: 0 });
+      if (dateCount === 0) expect(data.status).toBe('historyUnavailable');
+    },
+  );
+
+  it('uses correctly dated late logs only for the weekday and reports timing loss separately', async () => {
+    vi.setSystemTime(new Date('1988-10-31T21:00:00Z'));
+    const owner = await user();
+    const venue = await gym(owner, 'America/Goose_Bay');
+    const wall = await board(venue);
+    await receipt(venue.id, '1988-10-29T01:00:00Z');
+    await tick(wall, owner, '1988-10-30T14:00:00Z', {
+      authorDate: '1988-10-30',
+      authorZone: 'Atlantic/South_Georgia',
+    });
+    await tick(wall, owner, '1988-10-30T15:00:00Z', {
+      authorDate: '1988-10-30',
+      authorZone: 'America/Goose_Bay',
+    });
+    await tick(wall, owner, '1988-10-30T15:00:00Z', { unknown: true });
+    await tick(wall, owner, '1988-10-30T15:00:00Z', {
+      origin: 'kilter_pull',
+      authorDate: '1988-10-30',
+      authorZone: 'America/Goose_Bay',
+    });
+    const data = await busy(venue);
+    expect(data).toMatchObject({
+      dateOnlyRecords: 2,
+      unplacedDateOnlyRecords: 1,
+      unknownTimeRecords: 1,
+      instantTicks: 0,
+    });
+    expect(data.weekdays[6]).toMatchObject({ eligibleDates: 1, recordedClimbers: 1 });
+    expect(data.hours.every((entry) => entry.recordedClimbers === 0)).toBe(true);
+  });
+
+  it('keeps the author-calendar budget for the identified population only', async () => {
+    vi.setSystemTime(new Date('2024-02-02T15:00:00Z'));
+    const [owner, anonymous, hidden] = await Promise.all([user(), user(), user()]);
+    const venue = await gym(owner, 'Europe/Berlin');
+    const wall = await board(venue);
+    await receipt(venue.id, '2024-01-30T23:00:00Z');
+    await tick(wall, owner, '2024-02-01T11:00:00Z', {
+      authorDate: '2024-02-01',
+      authorZone: 'Europe/Paris',
+    });
+    const before = await busy(venue);
+    expect(before).toMatchObject({ dateOnlyRecords: 1, unplacedDateOnlyRecords: 0, unknownTimeRecords: 0 });
+    expect(before.weekdays[3]).toMatchObject({ eligibleDates: 1, recordedClimbers: 1 });
+
+    await db.execute(sql`
+      INSERT INTO user_profiles (user_id, is_private, anonymous_on_foreign_boards, privacy_revision)
+      VALUES (${anonymous}, false, true, 1), (${hidden}, true, false, 1)
+    `);
+    const pressurePrefix = `${randomUUID()}-busy-pressure-`;
+    await db.execute(sql`
+      WITH zones AS (
+        SELECT name, row_number() OVER (ORDER BY name) AS ordinal,
+          timezone(interval '0', timestamp '2024-02-01 12:00' AT TIME ZONE name) AS saved_at
+        FROM pg_timezone_names
+        WHERE name ~ '^(Africa|America|Antarctica|Asia|Atlantic|Australia)/[A-Za-z0-9_+/-]+$'
+        ORDER BY name LIMIT 270
+      ), pressure AS (
+        INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at,
+          board_id, origin, reporting_board_id, reporting_gym_id, reporting_attribution,
+          reporting_time_precision, reporting_date, reporting_date_time_zone, reporting_climbed_at)
+        SELECT ${pressurePrefix} || ordinal, CASE WHEN ordinal % 2 = 0 THEN ${anonymous} ELSE ${hidden} END,
+          'kilter', ${CLIMB}, 40, 'send', saved_at, ${wall.id}, 'native', ${wall.id}, ${venue.id}, 'uuid',
+          'day', date '2024-02-01', name, saved_at FROM zones
+        RETURNING uuid, user_id
+      )
+      INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience, public_consent_revision)
+      SELECT 'tick', uuid, user_id, 'public', 1 FROM pressure WHERE user_id = ${hidden}
+    `);
+    const [pressureSize] = rowsFromResult<{ count: number }>(
+      await db.execute(sql`SELECT count(*)::int AS count FROM boardsesh_ticks WHERE uuid LIKE ${pressurePrefix + '%'}`),
+    );
+    expect(pressureSize.count).toBe(270);
+
+    // Earlier-sorting zones would consume all 24,000 samples before Europe/Paris.
+    expect(await busy(venue)).toEqual(before);
+
+    // The same pressure from genuine identified records still exhausts the
+    // budget conservatively. No authored day can produce an hourly peak.
+    await db.execute(sql`UPDATE boardsesh_ticks SET user_id = ${owner} WHERE uuid LIKE ${pressurePrefix + '%'}`);
+    const after = await busy(venue);
+    expect(after.dateOnlyRecords).toBeGreaterThan(1);
+    expect(after.unknownTimeRecords).toBeGreaterThan(0);
+    expect(after.hasUnboundedUnknownTime).toBe(false);
+    expect(after.hours.every((entry) => entry.recordedClimbers === 0)).toBe(true);
+  }, 30_000);
+
+  it('reports unbounded timing from an old saved timestamp without placing it on a date', async () => {
+    vi.setSystemTime(new Date('2024-07-30T18:00:00Z'));
+    const owner = await user();
+    const venue = await gym(owner, 'UTC');
+    const wall = await board(venue);
+    await receipt(venue.id, '2024-07-27T00:00:00Z');
+    await tick(wall, owner, '2018-01-03T09:00:00Z', { unknown: true });
+    const data = await busy(venue);
+    expect(data).toMatchObject({ coveredDates: 3, unknownTimeRecords: 0, hasUnboundedUnknownTime: true });
+    expect([...data.weekdays, ...data.hours].every((entry) => entry.recordedClimbers === 0)).toBe(true);
+    const combined = parse(
+      '{ gymStats(input: { gymUuid: "fixture" }) { reachOverview { observationStartedAt } busyTimes { status } } }',
+    ).definitions[0];
+    if (combined.kind !== 'OperationDefinition') throw new Error('Expected a test query');
+    const overviewAndBusyInfo = {
+      fieldNodes: combined.selectionSet.selections,
+      fragments: {},
+    } as unknown as GraphQLResolveInfo;
+    const dashboard = await socialGymInsightsQueries.gymStats(
+      null,
+      { input: { gymUuid: venue.uuid } },
+      auth(owner),
+      overviewAndBusyInfo,
+    );
+    expect(dashboard.reachOverview).toBeTruthy();
+    expect(dashboard.busyTimes).toEqual(data);
+  });
+
+  it('keeps setup, no boards and not-yet-observed history distinct from mature recorded zeros', async () => {
+    vi.setSystemTime(new Date('2024-07-30T18:00:00Z'));
+    const owner = await user();
+    const noZone = await gym(owner, null);
+    await board(noZone);
+    expect(await busy(noZone)).toMatchObject({ status: 'zoneRequired', startDate: null, coveredDates: 0 });
+    const venue = await gym(owner, 'UTC');
+    expect(await busy(venue)).toMatchObject({ status: 'historyUnavailable', startDate: '2024-05-01', coveredDates: 0 });
+    await board(venue);
+    expect(await busy(venue)).toMatchObject({ status: 'historyUnavailable', coveredDates: 0 });
+    const mature = await gym(owner, 'UTC');
+    await board(mature);
+    await receipt(mature.id, OLD_FLOOR.replace('2025-', '2020-'));
+    const zero = await busy(mature);
+    expect(zero).toMatchObject({ status: 'ready', coveredDates: 90, firstCoveredDate: '2024-05-01' });
+    expect(zero.hours.every((entry) => entry.eligibleDates >= 12 && entry.recordedClimbers === 0)).toBe(true);
   });
 });

@@ -4377,6 +4377,57 @@ export type GymBoardSummary = {
   boardType: Scalars['String']['output'];
 };
 
+export type GymBusyHour = {
+  __typename?: 'GymBusyHour';
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: Scalars['Int']['output'];
+  /** Completed covered dates on which this local hour existed. */
+  eligibleDates: Scalars['Int']['output'];
+  /** Civil hour from 0 to 23 in the gym time zone. */
+  hour: Scalars['Int']['output'];
+  /** Sum of distinct identified climbers per eligible date and civil hour. */
+  recordedClimbers: Scalars['Int']['output'];
+};
+
+export type GymBusyTimes = {
+  __typename?: 'GymBusyTimes';
+  coveredDates: Scalars['Int']['output'];
+  /** Eligible identified date-only ticks that could have occurred in a covered date. */
+  dateOnlyRecords: Scalars['Int']['output'];
+  /** Last nominal local date of the fixed 90-day interval. */
+  endDate?: Maybe<Scalars['String']['output']>;
+  firstCoveredDate?: Maybe<Scalars['String']['output']>;
+  /** At least one in-scope identified tick has no provable occurrence date, regardless of its saved timestamp. */
+  hasUnboundedUnknownTime: Scalars['Boolean']['output'];
+  /** 168 weekday and civil-hour cells in ISO weekday then hour order. */
+  hours: Array<GymBusyHour>;
+  /** Identified confirmed display records with a trustworthy occurrence instant in covered dates. */
+  instantDisplays: Scalars['Int']['output'];
+  /** Identified eligible ticks with a trustworthy occurrence instant in covered dates. */
+  instantTicks: Scalars['Int']['output'];
+  /** First nominal local date of the fixed 90-day interval. */
+  startDate?: Maybe<Scalars['String']['output']>;
+  status: GymBusyTimesStatus;
+  /** Identified candidates with unproved time in the bounded source scan. */
+  unknownTimeRecords: Scalars['Int']['output'];
+  /** Date-only ticks with no definite assignment to a covered date. */
+  unplacedDateOnlyRecords: Scalars['Int']['output'];
+  /** Seven weekday cells in ISO order. */
+  weekdays: Array<GymBusyWeekday>;
+};
+
+export type GymBusyTimesStatus = 'calendarUnavailable' | 'historyUnavailable' | 'ready' | 'zoneRequired';
+
+export type GymBusyWeekday = {
+  __typename?: 'GymBusyWeekday';
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: Scalars['Int']['output'];
+  /** Completed covered dates of this weekday. */
+  eligibleDates: Scalars['Int']['output'];
+  /** Sum of distinct identified climbers per eligible date. */
+  recordedClimbers: Scalars['Int']['output'];
+};
+
 /** A pending or resolved gym ownership claim (admin queue). */
 export type GymClaim = {
   __typename?: 'GymClaim';
@@ -4870,6 +4921,7 @@ export type GymStats = {
   boards: Array<GymReportingBoard>;
   /** Ascents per day of week in the current window (only non-empty days). */
   busiestDays: Array<GymDayActivity>;
+  busyTimes?: Maybe<GymBusyTimes>;
   canManageBoardAliases: Scalars['Boolean']['output'];
   coverage: GymReportingCoverage;
   /** Counts for the current window (last `periodDays` days). */
@@ -15001,6 +15053,10 @@ export type ResolversTypes = ResolversObject<{
   GymAngleUsageRow: ResolverTypeWrapper<GymAngleUsageRow>;
   GymBoardAngleUsage: ResolverTypeWrapper<GymBoardAngleUsage>;
   GymBoardSummary: ResolverTypeWrapper<GymBoardSummary>;
+  GymBusyHour: ResolverTypeWrapper<GymBusyHour>;
+  GymBusyTimes: ResolverTypeWrapper<GymBusyTimes>;
+  GymBusyTimesStatus: GymBusyTimesStatus;
+  GymBusyWeekday: ResolverTypeWrapper<GymBusyWeekday>;
   GymClaim: ResolverTypeWrapper<GymClaim>;
   GymClaimConnection: ResolverTypeWrapper<GymClaimConnection>;
   GymClaimDecision: GymClaimDecision;
@@ -15666,6 +15722,9 @@ export type ResolversParentTypes = ResolversObject<{
   GymAngleUsageRow: GymAngleUsageRow;
   GymBoardAngleUsage: GymBoardAngleUsage;
   GymBoardSummary: GymBoardSummary;
+  GymBusyHour: GymBusyHour;
+  GymBusyTimes: GymBusyTimes;
+  GymBusyWeekday: GymBusyWeekday;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
   GymConnection: GymConnection;
@@ -18272,6 +18331,47 @@ export type GymBoardSummaryResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type GymBusyHourResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBusyHour'] = ResolversParentTypes['GymBusyHour'],
+> = ResolversObject<{
+  dayOfWeek?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  eligibleDates?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  hour?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  recordedClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymBusyTimesResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBusyTimes'] = ResolversParentTypes['GymBusyTimes'],
+> = ResolversObject<{
+  coveredDates?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  dateOnlyRecords?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  endDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  firstCoveredDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasUnboundedUnknownTime?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  hours?: Resolver<Array<ResolversTypes['GymBusyHour']>, ParentType, ContextType>;
+  instantDisplays?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  instantTicks?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['GymBusyTimesStatus'], ParentType, ContextType>;
+  unknownTimeRecords?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unplacedDateOnlyRecords?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  weekdays?: Resolver<Array<ResolversTypes['GymBusyWeekday']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymBusyWeekdayResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBusyWeekday'] = ResolversParentTypes['GymBusyWeekday'],
+> = ResolversObject<{
+  dayOfWeek?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  eligibleDates?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  recordedClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type GymClaimResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymClaim'] = ResolversParentTypes['GymClaim'],
@@ -18608,6 +18708,7 @@ export type GymStatsResolvers<
   boardUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   boards?: Resolver<Array<ResolversTypes['GymReportingBoard']>, ParentType, ContextType>;
   busiestDays?: Resolver<Array<ResolversTypes['GymDayActivity']>, ParentType, ContextType>;
+  busyTimes?: Resolver<Maybe<ResolversTypes['GymBusyTimes']>, ParentType, ContextType>;
   canManageBoardAliases?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   coverage?: Resolver<ResolversTypes['GymReportingCoverage'], ParentType, ContextType>;
   current?: Resolver<ResolversTypes['GymStatsWindow'], ParentType, ContextType>;
@@ -23830,6 +23931,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymAngleUsageRow?: GymAngleUsageRowResolvers<ContextType>;
   GymBoardAngleUsage?: GymBoardAngleUsageResolvers<ContextType>;
   GymBoardSummary?: GymBoardSummaryResolvers<ContextType>;
+  GymBusyHour?: GymBusyHourResolvers<ContextType>;
+  GymBusyTimes?: GymBusyTimesResolvers<ContextType>;
+  GymBusyWeekday?: GymBusyWeekdayResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;
   GymConnection?: GymConnectionResolvers<ContextType>;

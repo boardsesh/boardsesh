@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
 import type {
   GymAngleUsageRow,
+  GymBusyTimes,
   GymGradeCollectionPage,
   GymGradeComparison,
   GymReachOverview,
@@ -19,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   viewer: 'viewer-one',
   generation: 1,
   focused: true,
+  selectionCheckmark: '#007f66',
+  selectionSeparator: '#999999',
 }));
 
 type Children = { children?: ReactNode };
@@ -34,6 +37,8 @@ type FlashListProps = {
   ListHeaderComponent?: ReactNode;
   ListFooterComponent?: ReactNode;
 };
+type LayoutProps = Children & { style?: { flexDirection?: string } };
+type ScrollProps = Children & { horizontal?: boolean; contentContainerStyle?: LayoutProps['style'] };
 type MenuProps = { actions: { label: string }[]; onSelectIndex: (index: number) => void };
 type SegmentedProps = { options: { key: string; label: string }[]; onSelect: (key: string) => void };
 vi.mock('react-native', () => ({
@@ -49,9 +54,18 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  ScrollView: ({ children }: Children) => createElement('div', null, children),
-  View: ({ children }: Children) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  ScrollView: ({ children, horizontal, contentContainerStyle }: ScrollProps) =>
+    createElement(
+      'div',
+      horizontal
+        ? { 'data-testid': 'horizontal-native-scroll', 'data-content-direction': contentContainerStyle?.flexDirection }
+        : null,
+      children,
+    ),
+  View: ({ children, style }: LayoutProps) =>
+    createElement('div', { 'data-layout-direction': style?.flexDirection }, children),
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  useWindowDimensions: () => ({ width: 320, fontScale: 1 }),
 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({ data, renderItem, keyExtractor, ListHeaderComponent, ListFooterComponent }: FlashListProps) =>
@@ -78,7 +92,11 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 vi.mock('../../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: { primary: '#8b5cf6' } }),
+  useTheme: () => ({
+    systemColors: { separator: mocks.selectionSeparator },
+    brandColors: { primary: '#8b5cf6' },
+    selection: { checkmark: mocks.selectionCheckmark },
+  }),
 }));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({
   useStackScreenOptions: () => ({}),
@@ -175,24 +193,34 @@ vi.mock('../../../src/components/Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress, type: 'button' }, title),
 }));
-vi.mock('../../../src/components/PressableSurface', () => ({
-  PressableSurface: ({
+vi.mock('../../../src/components/PressableSurface', () => {
+  const Pressable = ({
     children,
     onPress,
     accessibilityLabel,
     accessibilityState,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
     accessibilityState?: { selected?: boolean };
+    style?: { borderColor?: string }[];
   }) =>
     createElement(
       'button',
-      { onClick: onPress, 'aria-label': accessibilityLabel, 'aria-pressed': accessibilityState?.selected },
+      {
+        onClick: onPress,
+        'aria-label': accessibilityLabel,
+        'aria-pressed': accessibilityState?.selected,
+        'data-border-color': Array.isArray(style)
+          ? style.findLast((entry) => entry?.borderColor)?.borderColor
+          : undefined,
+      },
       children,
-    ),
-}));
+    );
+  return { PressableSurface: Pressable, StaticPressableSurface: Pressable };
+});
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
@@ -209,6 +237,33 @@ vi.mock('../../../src/components/gym-directory/GymReportingSettings', () => ({
 }));
 
 import GymAnalyticsScreen from '../analytics';
+
+const busyWeekdays = Array.from({ length: 7 }, (_, index) => ({
+  dayOfWeek: index + 1,
+  eligibleDates: index === 2 ? 0 : 12,
+  recordedClimbers: index === 0 ? 36 : 0,
+}));
+const busyTimes: GymBusyTimes = {
+  status: 'ready',
+  startDate: '2026-08-09',
+  endDate: '2026-11-06',
+  firstCoveredDate: '2026-08-10',
+  coveredDates: 72,
+  instantDisplays: 4,
+  instantTicks: 3,
+  dateOnlyRecords: 0,
+  unplacedDateOnlyRecords: 0,
+  unknownTimeRecords: 0,
+  hasUnboundedUnknownTime: false,
+  weekdays: busyWeekdays,
+  hours: busyWeekdays.flatMap((entry) =>
+    Array.from({ length: 24 }, (_, hour) => ({
+      ...entry,
+      hour,
+      recordedClimbers: entry.dayOfWeek === 1 && hour === 0 ? 36 : 0,
+    })),
+  ),
+};
 
 const activeWindow = {
   startAt: '2026-11-01T00:00:00Z',
@@ -336,6 +391,41 @@ afterEach(() => {
 });
 
 describe('GymAnalyticsScreen', () => {
+  it('renders the full 90-day chart and exact numeric view with no overview activity', async () => {
+    mocks.request.mockResolvedValue({
+      gymStats: { ...report, busyTimes, current: { ...activeWindow, displayCount: 0, tickCount: 0 } },
+    });
+    renderScreen();
+    expect(await screen.findByText('gymBusyTimes.title')).toBeTruthy();
+    const heatmap = screen.getByTestId('horizontal-native-scroll');
+    expect(heatmap.getAttribute('data-content-direction')).toBe('column');
+    expect(heatmap.children).toHaveLength(8);
+    expect(Array.from(heatmap.children, (row) => row.getAttribute('data-layout-direction'))).toEqual(
+      Array(8).fill('row'),
+    );
+    const chartButtons = screen.getAllByRole('button', { name: /gymBusyTimes\.(dayDetail|hourDetail|noDates)/ });
+    expect(chartButtons).toHaveLength(175);
+    const weekday = screen.getByRole('button', { name: /gymBusyTimes\.dayDetail.*Tuesday/ });
+    expect(weekday.dataset.borderColor).toBe(mocks.selectionSeparator);
+    fireEvent.click(weekday);
+    expect(weekday.dataset.borderColor).toBe(mocks.selectionCheckmark);
+    const zero = screen.getByRole('button', {
+      name: /gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 12:00 AM 1:00 AM 0 0 12/,
+    });
+    expect(zero.dataset.borderColor).toBe(mocks.selectionSeparator);
+    fireEvent.click(zero);
+    expect(zero.getAttribute('aria-pressed')).toBe('true');
+    expect(zero.dataset.borderColor).toBe(mocks.selectionCheckmark);
+    expect(screen.getByText(/gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 12:00 AM 1:00 AM 0 0 12/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'gymBusyTimes.numbers' }));
+    const wednesday = screen.getByRole('button', { name: 'Wednesday' });
+    expect(wednesday.dataset.borderColor).toBe(mocks.selectionSeparator);
+    fireEvent.click(wednesday);
+    expect(wednesday.dataset.borderColor).toBe(mocks.selectionCheckmark);
+    expect(screen.getAllByText(/gymBusyTimes.noDates.*Wednesday.*gymBusyTimes.hourSpan/)).toHaveLength(24);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  });
+
   it('opens display-only data with zero sends and applies a physical board, range and zone', async () => {
     mocks.request.mockResolvedValue({ gymStats: report });
     renderScreen();

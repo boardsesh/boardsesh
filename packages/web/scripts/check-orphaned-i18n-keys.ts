@@ -769,6 +769,7 @@ function run(): Report {
       connectedAppsSrcRoot,
     ]),
     join(packagesRoot, 'shared', 'graphql', 'src', 'gym-reporting-overview.ts'),
+    join(packagesRoot, 'shared', 'graphql', 'src', 'gym-busy-times.ts'),
   ];
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();

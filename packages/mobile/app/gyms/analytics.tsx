@@ -8,6 +8,7 @@ import {
   formatGymReportingObservationWindow,
   formatGymReportingTime,
   GYM_REPORTING_PERIODS,
+  gymBusyTimesScope,
   gymReportingHasActivity,
   gymReportingHasExactObservations,
   gymReportingQueryPrefix,
@@ -41,6 +42,7 @@ import {
   GymAngleUsageListItem,
   type GymAngleUsageListRow,
 } from '../../src/components/gym-directory/GymAngleUsage';
+import { GymBusyTimesCard } from '../../src/components/gym-directory/GymBusyTimesCard';
 import { spacing } from '../../src/theme/tokens';
 
 function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
@@ -261,12 +263,18 @@ function GymAnalyticsReport({
               <Button title={t('gymReporting.refresh')} variant="outlined" onPress={() => void query.refetch()} />
             </View>
           )}
-          {angleUsageRows.length > 0 && (
-            <Text accessibilityRole="header" variant="title2">
-              {t('gymReporting.angleUsage.title')}
-            </Text>
-          )}
         </>
+      )}
+      <GymBusyTimesCard
+        key={JSON.stringify([gymUuid, boardUuid])}
+        report={stats?.busyTimes}
+        timeZone={stats?.timeZone}
+        scope={gymBusyTimesScope(stats)}
+      />
+      {angleUsageRows.length > 0 && (
+        <Text accessibilityRole="header" variant="title2">
+          {t('gymReporting.angleUsage.title')}
+        </Text>
       )}
     </View>
   );

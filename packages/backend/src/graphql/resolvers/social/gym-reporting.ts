@@ -368,6 +368,8 @@ type ReportingActivityBounds = {
   end: string;
   candidateActorIds?: SQL;
   sendsOnly?: boolean;
+  includeBoardsWhen?: SQL;
+  identifiedOnly?: boolean;
 } & (
   | { firstObservedOnly?: false; start?: string; predecessorDaysOnly?: false }
   | { firstObservedOnly?: false; start: string; predecessorDaysOnly: true }
@@ -398,7 +400,8 @@ function reportingTickTimesSql(timeZone: string): SQL {
     { sampleBudget: GYM_CALENDAR_SAMPLE_BUDGET },
   );
   return sql`
-    WITH author_calendar AS (${authorCalendar}),
+    -- Share each bounded calendar projection across the candidate records.
+    WITH author_calendar AS MATERIALIZED (${authorCalendar}),
     proved_author_days AS MATERIALIZED (
       SELECT tick.activity_id, tick.author_zone, calendar.spans,
         lower(range_merge(calendar.spans)) AS possible_start_at,
@@ -410,8 +413,8 @@ function reportingTickTimesSql(timeZone: string): SQL {
       WHERE tick.candidate_precision = 'day'
         AND calendar.spans @> ${timestampUtc(sql`tick.stored_at`)}
     ),
-    gym_calendar AS (${gymCalendar})
-    SELECT tick.*, author.possible_start_at, author.possible_end_at,
+    gym_calendar AS MATERIALIZED (${gymCalendar})
+    SELECT tick.*, author.possible_start_at, author.possible_end_at, author.spans AS possible_spans,
       CASE WHEN tick.candidate_precision = 'instant' THEN (tick.occurred_at AT TIME ZONE ${timeZone})::date
         WHEN author.author_zone = ${timeZone} OR gym.spans @> author.spans THEN author.gym_day END AS local_date,
       CASE WHEN tick.candidate_precision = 'day' AND author.spans IS NULL THEN 'unknown'
@@ -464,22 +467,23 @@ type ReportingSourceBounds = {
   start?: SQL | null;
   end?: SQL;
   actorFilter: SQL;
+  identifiedOnly?: boolean;
   tail: SQL;
 };
 
 function reportingDisplaySourceSql(
   scope: GymReportingScope,
-  { start: beginUtc, end: endUtc, actorFilter, tail }: ReportingSourceBounds,
+  { start: beginUtc, end: endUtc, actorFilter, identifiedOnly, tail }: ReportingSourceBounds,
 ): SQL {
   const acceptedGyms = reportingAcceptedGymsSql(scope);
-  const displayActor = identifiedActor(sql`display.user_id`, sql`display.board_id`, scope.viewerId);
+  const displayActor = sql`CASE WHEN display.reporting_board_id IS NOT NULL OR display.identity_policy_version > 0
+    THEN ${identifiedActor(sql`display.user_id`, sql`display.board_id`, scope.viewerId)} END`;
   const displayClimb = sql`COALESCE(display_alias.canonical_uuid, display.climb_uuid)`;
   return sql`
       SELECT 'display'::text AS source, display.id::text AS activity_id, display.board_id,
         selected.physical_board_uuid, display.board_type, ${displayClimb} AS climb_uuid,
         display.angle, display.reporting_mirrored AS is_mirror,
-        CASE WHEN display.reporting_board_id IS NOT NULL OR display.identity_policy_version > 0
-          THEN ${displayActor} END AS actor_id,
+        ${displayActor} AS actor_id,
         ${timestampUtc(sql`display.confirmed_at`)} AS occurred_at,
         NULL::timestamptz AS possible_start_at, NULL::timestamptz AS possible_end_at,
         (${timestampUtc(sql`display.confirmed_at`)} AT TIME ZONE ${scope.timeZone})::date AS local_date,
@@ -494,6 +498,7 @@ function reportingDisplaySourceSql(
         ${endUtc ? sql`AND display.confirmed_at < ${endUtc}` : sql``}
         ${beginUtc ? sql`AND display.confirmed_at >= ${beginUtc}` : sql``}
         ${actorFilter}
+        ${identifiedOnly ? sql`AND (${displayActor}) IS NOT NULL` : sql``}
         AND (
           (display.reporting_board_id = display.board_id AND display.reporting_gym_id IN (${acceptedGyms}))
           OR (display.reporting_board_id IS NULL AND logical.owner_id <> ${SYSTEM_BOARD_OWNER_ID} AND NOT EXISTS (
@@ -507,7 +512,7 @@ function reportingDisplaySourceSql(
 
 function reportingTickSourceSql(
   scope: GymReportingScope,
-  { start: tickBegin, end: tickEnd, actorFilter, tail }: ReportingSourceBounds,
+  { start: tickBegin, end: tickEnd, actorFilter, identifiedOnly, tail }: ReportingSourceBounds,
 ): SQL {
   const acceptedGyms = reportingAcceptedGymsSql(scope);
   const tickActor = identifiedActor(sql`tick.user_id`, sql`tick.board_id`, scope.viewerId);
@@ -532,6 +537,7 @@ function reportingTickSourceSql(
         ${tickEnd ? sql`AND tick.climbed_at < ${tickEnd}` : sql``}
         ${tickBegin ? sql`AND tick.climbed_at >= ${tickBegin}` : sql``}
         ${actorFilter}
+        ${identifiedOnly ? sql`AND (${tickActor}) IS NOT NULL` : sql``}
         AND ${contentVisibilityCondition('tick', sql`tick.uuid`, sql`tick.user_id`, scope.viewerId)}
         AND ${historicalClimbAllowed(sql`tick.board_type`, sql`logical.layout_id`, tickClimb, scope.viewerId)}
         ${tail}
@@ -595,6 +601,19 @@ export function reportingUnboundedTickEvidenceSql(scope: GymReportingScope): SQL
   `;
 }
 
+/** Busy-only reads need a single existence result, using the same partial index as Reach. */
+export function reportingHasUnboundedIdentifiedTimeSql(scope: GymReportingScope): SQL {
+  const tick = reportingTickSourceSql(scope, {
+    actorFilter: sql``,
+    identifiedOnly: true,
+    tail: sql`AND ${unboundedTickEvidence}`,
+  });
+  return sql`EXISTS (
+    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${reportingScopedBoardsSql(scope)})
+    SELECT 1 FROM scoped_boards selected CROSS JOIN LATERAL (${tick}) eligible
+  )`;
+}
+
 /** Shared, authorized physical scope. Caller aggregates the rows in SQL and returns no identity list. */
 export function reportingActivitySql(scope: GymReportingScope, bounds: ReportingActivityBounds): SQL {
   const endUtc = sql`(${bounds.end}::timestamptz AT TIME ZONE 'UTC')`;
@@ -607,12 +626,18 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
 
   const tickTimes = bounds.firstObservedOnly
     ? sql`SELECT tick.*, NULL::timestamptz AS possible_start_at, NULL::timestamptz AS possible_end_at,
-        (tick.occurred_at AT TIME ZONE ${scope.timeZone})::date AS local_date, 'instant'::text AS precision
+        (tick.occurred_at AT TIME ZONE ${scope.timeZone})::date AS local_date, 'instant'::text AS precision,
+        NULL::tstzmultirange AS possible_spans
         FROM candidate_ticks tick`
     : reportingTickTimesSql(scope.timeZone);
 
+  const scopedBoards = reportingScopedBoardsSql(scope);
+  const enabledBoards = bounds.includeBoardsWhen
+    ? sql`SELECT * FROM (VALUES ${scopedBoards}) selected WHERE ${bounds.includeBoardsWhen}`
+    : sql`VALUES ${scopedBoards}`;
+
   return sql`
-    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${reportingScopedBoardsSql(scope)}),
+    WITH scoped_boards(board_id, physical_board_uuid) AS (${enabledBoards}),
     precise_displays AS (
       SELECT eligible.* FROM scoped_boards selected
       CROSS JOIN LATERAL (
@@ -620,6 +645,7 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         start: beginUtc,
         end: endUtc,
         actorFilter: boundActor(sql`display.user_id`),
+        identifiedOnly: bounds.identifiedOnly,
         tail:
           bounds.sendsOnly || bounds.predecessorDaysOnly
             ? sql`AND false`
@@ -636,6 +662,7 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         start: tickBegin,
         end: tickEnd,
         actorFilter: boundActor(sql`tick.user_id`),
+        identifiedOnly: bounds.identifiedOnly,
         tail: sql`
           ${bounds.sendsOnly ? sql`AND tick.status IN ('flash', 'send')` : sql``}
           ${
@@ -662,12 +689,12 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         END AS uncertainty_span
       FROM timed_ticks
     )
-    SELECT *, NULL::tstzrange AS uncertainty_span
+    SELECT *, NULL::tstzrange AS uncertainty_span, NULL::tstzmultirange AS possible_spans
     FROM precise_displays
     UNION ALL
     SELECT source, activity_id, board_id, physical_board_uuid, board_type, climb_uuid, angle, is_mirror, actor_id,
       occurred_at, possible_start_at, possible_end_at, local_date, precision, attribution, status, quality, difficulty,
-      uncertainty_span
+      uncertainty_span, possible_spans
     FROM timed_evidence
     WHERE (precision = 'instant' AND occurred_at < ${bounds.end}::timestamptz
       ${bounds.start ? sql`AND occurred_at >= ${bounds.start}::timestamptz` : sql``})
