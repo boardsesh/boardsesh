@@ -316,21 +316,21 @@
     "kilter": {
       "meta": {
         "title": "Kilter Board App Alternative: Boardsesh vs the Kilter App",
-        "description": "Boardsesh vs the Kilter Board app for Original and Homewall: bring back your old Aurora logbook today, share a crew queue, and see where Kilter's app wins."
+        "description": "Boardsesh vs the Kilter Board app: link your Kilter account and keep Kilter, Tension, MoonBoard and spray wall sends in one logbook. See where Kilter wins."
       },
       "hero": {
         "pill": "Works with Kilter Board Original and Homewall",
         "h1": "Boardsesh vs the Kilter Board app",
-        "lead": "Boardsesh lights your Kilter Board, imports your old Aurora logbook the moment you load the file, and runs one queue for your whole crew on a phone, an iPad or a laptop. Kilter's own app is where Kilter picks its Verified climbs and curates its playlists.",
+        "lead": "Boardsesh puts every board you climb in one logbook: link your current Kilter account and your Kilter sends sit next to your Tension, MoonBoard, Woods and spray wall sends. It lights your Kilter Board and runs one queue for your whole crew on a phone, an iPad or a laptop. Kilter's own app is where Kilter picks its Verified climbs and curates its playlists.",
         "byline": "A guide from Boardsesh. We make Boardsesh; Kilter doesn't endorse it."
       },
       "verdict": {
         "heading": "Which app fits your session?",
         "pickIf": {
-          "p1": "You want your pre-March Kilter logbook back without a claim queue.",
+          "p1": "You want your Kilter, Tension, MoonBoard and spray wall sends in one logbook.",
           "p2": "Your crew wants one shared queue from four different phones.",
           "p3": "You train with pyramids, ladders and 4x4s on a rest timer.",
-          "p4": "You also climb a Tension, a MoonBoard or your own spray wall.",
+          "p4": "You want to export your whole logbook yourself, any time.",
           "p5": "You run sessions from a laptop in Chrome or from an iPad."
         },
         "keepIf": {
@@ -338,23 +338,23 @@
           "k2": "You set climbs and want Kilter's own setter credit and claims.",
           "k3": "You want Kilter's Live at your Board view."
         },
-        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. Use Kilter's app for its curated climbs, and Boardsesh for your logbook, crew and training, free and with no ads."
+        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. Use Kilter's app for its curated climbs, and Boardsesh for one logbook across boards, your crew and training, free and with no ads."
       },
       "only": {
         "heading": "Where Boardsesh goes further",
         "lead": "Three things Kilter's app doesn't document today. Each has a source below.",
         "tiles": {
-          "history": {
-            "title": "Your old logbook, today",
-            "body": "Kilter's claim page takes your Aurora file and quotes 5 to 7 business days. Boardsesh imports the same file the moment you load it, and links your current Kilter account too."
+          "one-logbook": {
+            "title": "One logbook for every board",
+            "body": "Link your current Kilter account and its sends sit next to your Tension, MoonBoard and spray wall sends in one profile. Kilter's app covers Kilter boards; Boardsesh covers 8 brands plus spray walls."
+          },
+          "crew": {
+            "title": "One queue for the whole crew",
+            "body": "Everyone adds climbs from their own phone to one queue of up to 500, joined by invite link. At a gym with several boards, switch walls without leaving the queue or changing apps."
           },
           "browser": {
             "title": "Light the board from a browser",
             "body": "Kilter's app runs on phones and iPads, and its website covers claims and support. Boardsesh also runs at app.boardsesh.com and lights the wall from Chrome or Edge."
-          },
-          "one-logbook": {
-            "title": "One logbook for every board",
-            "body": "Kilter's app covers Kilter boards. Boardsesh covers 8 board brands plus spray walls, so your Kilter sends sit next to your Tension and MoonBoard sends in one profile. At a gym with several boards, switch walls in the same session without changing apps."
           }
         }
       },
@@ -371,11 +371,6 @@
             "feature": "How your climb looks",
             "boardsesh": "Holds glow in their LED colours; routes play frame by frame on screen and wall",
             "official": "Coloured rings around each hold; Animated Routes play frame by frame on the wall"
-          },
-          "history": {
-            "feature": "Bring your old logbook",
-            "boardsesh": "Imports Aurora's file the moment you load it, and links your current Kilter account.",
-            "official": "Upload Aurora's file at /claim (6 MB cap); Kilter quotes 5 to 7 business days."
           },
           "export": {
             "feature": "Export your data",
@@ -412,6 +407,11 @@
             "boardsesh": "8 board brands plus spray walls; switch walls at the gym, even within one queue",
             "official": "Covers Kilter boards; since version 2.3 one playlist can mix boards."
           },
+          "history": {
+            "feature": "Bring your logbook",
+            "boardsesh": "Links your current Kilter account; also imports an old Aurora file the moment you load it.",
+            "official": "Upload Aurora's file at /claim (6 MB cap); Kilter quotes 5 to 7 business days."
+          },
           "curated": {
             "feature": "Kilter-curated climbs",
             "boardsesh": "Marks Kilter's Verified climbs and filters for them, but Kilter picks them.",
@@ -441,12 +441,12 @@
         }
       },
       "logbook": {
-        "heading": "Bring your Kilter logbook",
-        "lead": "Imports flow into Boardsesh. Nothing is written back to Kilter or Aurora, and you can export your logbook as JSON any time.",
+        "heading": "Bring all your logbooks into one",
+        "lead": "Link your current Kilter account and your Kilter sends join everything else you climb. Imports flow into Boardsesh only, because Kilter and Aurora give other apps no way to write back; we would sync both ways the day they allow it. Export your logbook as JSON any time.",
         "paths": {
           "current-account": {
             "title": "Link your current Kilter account",
-            "subtitle": "For anything you logged since the March 2026 relaunch",
+            "subtitle": "Your Kilter sends, next to every other board you climb",
             "steps": {
               "s1": "Tap your avatar, then Settings, then Connected apps.",
               "s2": "Under Board accounts, tap Sign in to Kilter on the Kilter card.",
@@ -454,12 +454,12 @@
             }
           },
           "aurora-file": {
-            "title": "Load your old Aurora file",
-            "subtitle": "For the history from before March 2026",
+            "title": "Load an old Aurora export",
+            "subtitle": "If you still have an old Aurora export from before March 2026",
             "steps": {
-              "s1": "Tap Request your data on the Kilter (Aurora) card, or email support@auroraclimbing.com.",
-              "s2": "When the file arrives, tap Import on the same card and choose it.",
-              "s3": "Check the preview counts, then import. It starts right away."
+              "s1": "In Connected apps, tap Import on the Kilter (Aurora) card and choose the file.",
+              "s2": "Check the preview counts, then import. It starts right away.",
+              "s3": "No file? Tap Request your data on the same card, or email support@auroraclimbing.com."
             }
           }
         }
@@ -475,10 +475,6 @@
             "q": "Can I use Boardsesh and the Kilter app on the same board?",
             "a": "Yes, both light the same board over Bluetooth. A Kilter board talks to one phone at a time, so disconnect one app before you connect the other."
           },
-          "old-logbook": {
-            "q": "How do I get my old Kilter logbook into a new app?",
-            "a": "Email support@auroraclimbing.com for your JSON export, then load it in Boardsesh, where the import starts right away. Kilter's claim page takes the same file and quotes 5 to 7 business days."
-          },
           "not-working": {
             "q": "Why is the Kilter app not working for me?",
             "a": "Kilter's support page says to update the app and restart it, and to register a new account, because old logins don't carry over. If it still fails, report it at kilterboard.io/feedback and light the board with Boardsesh in the meantime."
@@ -490,6 +486,10 @@
           "tablet": {
             "q": "Does it work on an iPad or tablet?",
             "a": "Yes, on iPad you get a sidebar, a mini player and a landscape player, and Android tablets get a sidebar rail. Kilter's iPad app shows its phone layout scaled up in its App Store screenshots."
+          },
+          "old-logbook": {
+            "q": "How do I get my old Kilter logbook into a new app?",
+            "a": "Email support@auroraclimbing.com for your JSON export, then load it in Boardsesh, where the import starts right away. Kilter's claim page takes the same file and quotes 5 to 7 business days."
           }
         }
       },
@@ -592,7 +592,7 @@
           },
           "setting": {
             "feature": "Set for the brand's community",
-            "boardsesh": "Climbs you set stay in Boardsesh; nothing is sent to Aurora",
+            "boardsesh": "Climbs you set stay in Boardsesh; Aurora gives other apps no way to send them back",
             "official": "Create new boulders inside each brand's app"
           },
           "queue": {
@@ -711,7 +711,7 @@
       },
       "logbook": {
         "heading": "Bring your Aurora logbook",
-        "lead": "Sign in with your Aurora account for each brand and Boardsesh pulls that logbook into yours. It copies one way: nothing is written back to Aurora's apps.",
+        "lead": "Sign in with your Aurora account for each brand and Boardsesh pulls that logbook into yours. It copies one way because Aurora gives other apps no way to write back; we would sync both ways the day it does.",
         "paths": {
           "link": {
             "title": "Sign in with your Aurora account",
@@ -930,7 +930,7 @@
       },
       "logbook": {
         "heading": "Bring your MoonBoard logbook",
-        "lead": "You ask Moon for a CSV by email, then import it. The import runs one way, into Boardsesh, and your Moon account stays as it is.",
+        "lead": "You ask Moon for a CSV by email, then import it. It runs one way, into Boardsesh, because Moon gives other apps no way to write to your Moon account; we would sync both ways if it did.",
         "paths": {
           "csv": {
             "title": "Upload a MoonBoard CSV",
@@ -1066,7 +1066,7 @@
           },
           "database": {
             "feature": "Official climb database",
-            "boardsesh": "5,392 Woods climbs at a September 2026 audit; nothing is published upstream",
+            "boardsesh": "5,392 Woods climbs (Sept 2026 audit); Woods gives other apps no way to send climbs back",
             "official": "The official database behind a Woods account; create and submit climbs to it"
           },
           "leaderboards": {

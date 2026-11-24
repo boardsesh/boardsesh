@@ -155,21 +155,21 @@ export const APP_GUIDE_REGISTRY = {
   kilter: {
     id: 'kilter',
     hasByline: true,
-    heroSourceIds: ['kilter-support', 'kilter-appstore', 'boardsesh-bring-logbook'],
+    heroSourceIds: ['boardsesh-boards', 'boardsesh-bring-logbook', 'kilter-support', 'kilter-appstore'],
     pickIf: ['p1', 'p2', 'p3', 'p4', 'p5'],
     keepIf: ['k1', 'k2', 'k3'],
     tiles: [
       {
-        id: 'history',
-        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
+        id: 'one-logbook',
+        sourceIds: ['kilter-appstore', 'boardsesh-boards', 'boardsesh-bring-logbook'],
+      },
+      {
+        id: 'crew',
+        sourceIds: ['boardsesh-sessions', 'boardsesh-queue-limit', 'boardsesh-boards'],
       },
       {
         id: 'browser',
         sourceIds: ['kilter-appstore', 'kilter-site', 'kilter-support', 'boardsesh-app-web'],
-      },
-      {
-        id: 'one-logbook',
-        sourceIds: ['kilter-appstore', 'boardsesh-boards'],
       },
     ],
     competitors: ['official'],
@@ -186,13 +186,6 @@ export const APP_GUIDE_REGISTRY = {
         verdict: 'boardsesh',
         winners: [],
         sourceIds: ['kilter-play', 'kilter-appstore', 'bs-board-look'],
-        pendingCells: [],
-      },
-      {
-        id: 'history',
-        verdict: 'boardsesh',
-        winners: [],
-        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
         pendingCells: [],
       },
       {
@@ -245,6 +238,13 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
+        id: 'history',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
+        pendingCells: [],
+      },
+      {
         id: 'curated',
         verdict: 'competitor',
         winners: ['official'],
@@ -292,10 +292,6 @@ export const APP_GUIDE_REGISTRY = {
         sourceIds: ['boardsesh-bluetooth'],
       },
       {
-        id: 'old-logbook',
-        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
-      },
-      {
         id: 'not-working',
         sourceIds: ['kilter-support'],
       },
@@ -306,6 +302,10 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'tablet',
         sourceIds: ['boardsesh-tablet', 'kilter-appstore'],
+      },
+      {
+        id: 'old-logbook',
+        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
       },
     ],
     sources: [
