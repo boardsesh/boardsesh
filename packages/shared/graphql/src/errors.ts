@@ -78,6 +78,46 @@ export function readDuplicateBoardError(error: unknown): DuplicateBoardError | n
   return null;
 }
 
+/** One wall named by a BOARD_EXISTING_WALLS refusal. */
+export type ExistingWallErrorCandidate = {
+  boardUuid: string;
+  matchKind: 'EXACT' | 'SETS_DIFFER' | 'LAYOUT_OR_SIZE_DIFFERS' | null;
+};
+
+const WALL_MATCH_KINDS = new Set(['EXACT', 'SETS_DIFFER', 'LAYOUT_OR_SIZE_DIFFERS']);
+
+/**
+ * `createBoard` refusing because the gym (or a listing within 150 m) already
+ * has this wall, under the `existingWallCheck` recheck (#8151). Returns the
+ * walls it named, or null when the error is something else. The error carries
+ * only uuids and match kinds; the client refetches `existingWallCandidates` to
+ * show them, and retries with `CONFIRMED_SEPARATE` and the walls the climber
+ * said are different. An empty list still means the refusal happened.
+ */
+export function readExistingWallsError(error: unknown): ExistingWallErrorCandidate[] | null {
+  for (const graphqlError of getGraphqlErrors(error)) {
+    if (graphqlError.extensions?.code !== 'BOARD_EXISTING_WALLS') continue;
+    const rawCandidates = graphqlError.extensions.candidates;
+    if (!Array.isArray(rawCandidates)) return [];
+    return rawCandidates.flatMap((rawCandidate: unknown): ExistingWallErrorCandidate[] => {
+      if (!rawCandidate || typeof rawCandidate !== 'object') return [];
+      const { boardUuid, matchKind } = rawCandidate as { boardUuid?: unknown; matchKind?: unknown };
+      const uuid = asString(boardUuid);
+      if (!uuid) return [];
+      return [
+        {
+          boardUuid: uuid,
+          matchKind:
+            typeof matchKind === 'string' && WALL_MATCH_KINDS.has(matchKind)
+              ? (matchKind as ExistingWallErrorCandidate['matchKind'])
+              : null,
+        },
+      ];
+    });
+  }
+  return null;
+}
+
 /**
  * The server refusing to add another board because the account is at its
  * ceiling. Worth branching on rather than surfacing as a generic failure: the
