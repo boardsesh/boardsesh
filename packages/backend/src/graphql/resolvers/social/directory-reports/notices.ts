@@ -360,7 +360,8 @@ type DirectoryNoticeHolder = {
 };
 
 function noticeActorRole(actorRole: BoardModerationActorRole | null): DirectoryNotice['actorRole'] {
-  if (!actorRole || actorRole === 'board_owner') return null;
+  // A climber's setup change is worded by its own notice type, not as staff or a moderator.
+  if (!actorRole || actorRole === 'board_owner' || actorRole === 'climber') return null;
   if (actorRole === 'gym_owner' || actorRole === 'gym_admin' || actorRole === 'gym_editor') return 'gym_staff';
   return 'moderator';
 }

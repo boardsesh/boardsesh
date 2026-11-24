@@ -66,6 +66,11 @@ function submitResult(filed: FiledReport) {
   };
 }
 
+/** The suggested setup resolvers are not written yet (docs/product/directory-reports.md, "Suggested setup"). */
+function setupSuggestionsNotImplemented(): GraphQLError {
+  return new GraphQLError('Not implemented yet', { extensions: { code: 'NOT_IMPLEMENTED' } });
+}
+
 function reportNotFound(): GraphQLError {
   return new GraphQLError('Report not found', { extensions: { code: 'NOT_FOUND' } });
 }
@@ -110,6 +115,12 @@ export const directoryReportQueries = {
       first: validated.first ?? DEFAULT_PAGE_SIZE,
       after: validated.after ?? null,
     });
+  },
+
+  // TODO(setup-suggest PR1 resolver agent): list setup_changed_by_climber events, newest first.
+  adminBoardSetupChanges: async (_: unknown, _args: unknown, ctx: ConnectionContext) => {
+    await requireAdmin(ctx);
+    throw setupSuggestionsNotImplemented();
   },
 };
 
@@ -207,6 +218,12 @@ export const directoryReportMutations = {
     const [presented] = await presentReports(resolved, viewer);
     if (!presented) throw reportNotFound();
     return presented;
+  },
+
+  // TODO(setup-suggest PR1 resolver agent): compare-and-set undo of a setup_changed_by_climber event.
+  undoBoardSetupChange: async (_: unknown, _args: { eventId: string }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    throw setupSuggestionsNotImplemented();
   },
 };
 

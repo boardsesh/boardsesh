@@ -199,6 +199,8 @@ export async function viewerGymStaffing(
 /** How a staff action's role reads to the person who closed a report with it. */
 export function resolverRoleForActor(actorRole: BoardModerationActorRole): DirectoryReportResolverRole {
   if (actorRole === 'board_owner') return 'creator';
+  // A climber's suggested setup closed it: not an admin's call.
+  if (actorRole === 'climber') return 'climber';
   if (actorRole === 'gym_owner' || actorRole === 'gym_admin' || actorRole === 'gym_editor') return 'gym_staff';
   return 'admin';
 }
