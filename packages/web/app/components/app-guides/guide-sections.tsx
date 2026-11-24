@@ -748,6 +748,15 @@ export function SourcesDisclosure({ guide, t, groups }: { guide: AppGuidePage; t
       ? [{ id: 'sources-other', title: t('appGuides:common.sources.other'), sourceIds: other }]
       : []),
   ];
+  // One link per URL on the page: a store listing cited by six rows is linked
+  // under the first row that cites it, and later rows name it as plain text.
+  const linkedAt = new Map<string, string>();
+  for (const group of allGroups) {
+    for (const sourceId of group.sourceIds) {
+      const url = byId.get(sourceId)?.url;
+      if (url && !linkedAt.has(url)) linkedAt.set(url, `${group.id}:${sourceId}`);
+    }
+  }
   const dates = guide.sources.map((source) => source.checkedAt).sort();
   const from = dates[0];
   const to = dates[dates.length - 1];
@@ -786,9 +795,18 @@ export function SourcesDisclosure({ guide, t, groups }: { guide: AppGuidePage; t
               {group.sourceIds.map((sourceId) => {
                 const source = byId.get(sourceId);
                 if (!source) return null;
+                const label = t(`appGuides:pages.${guide.id}.sources.${sourceId}`);
                 return (
                   <li key={sourceId}>
-                    <MuiLink href={source.url}>{t(`appGuides:pages.${guide.id}.sources.${sourceId}`)}</MuiLink>
+                    {linkedAt.get(source.url) === `${group.id}:${sourceId}` ? (
+                      <MuiLink href={source.url}>{label}</MuiLink>
+                    ) : (
+                      <>
+                        {label}
+                        {' · '}
+                        {t('appGuides:common.sources.linkedAbove')}
+                      </>
+                    )}
                     {' · '}
                     <time dateTime={source.checkedAt}>
                       {t('appGuides:common.checkedAt', { date: dateFormat.format(new Date(source.checkedAt)) })}

@@ -221,6 +221,9 @@ describe('app guide pages before hydration', () => {
       expect(graph.filter((entry) => entry['@type'] === 'MobileApplication')).toEqual([
         expect.objectContaining({ name: 'Boardsesh' }),
       ]);
+      // Every source URL is linked once per page; a repeat names it as plain text.
+      const sourceLinks = Array.from(markup.querySelectorAll('#sources a')).map((link) => link.getAttribute('href'));
+      expect(new Set(sourceLinks).size, id).toBe(sourceLinks.length);
       const json = markup.querySelector('script[type="application/ld+json"]')?.textContent ?? '';
       expect(json).not.toMatch(/AggregateRating|"Review"|FAQPage|aggregateRating/);
       expect(types.includes('ItemList'), id).toBe(id === 'hub');
@@ -452,7 +455,14 @@ describe('verdict chips as source links', () => {
         const target = markup.querySelector(chip.getAttribute('href') ?? '#missing');
         expect(target, `${id} ${chip.getAttribute('href')}`).toBeTruthy();
         expect(target?.closest('details#sources'), `${id} ${chip.getAttribute('href')}`).toBeTruthy();
-        expect(target?.nextElementSibling?.querySelectorAll('a[href^="https://"]').length).toBeGreaterThan(0);
+        // Each cited source is either linked here or, when an earlier row already linked it, named.
+        const items = Array.from(target?.nextElementSibling?.querySelectorAll('li') ?? []);
+        expect(items.length, `${id} ${chip.getAttribute('href')}`).toBeGreaterThan(0);
+        for (const item of items) {
+          expect(
+            Boolean(item.querySelector('a[href^="https://"]')) || /linked above/.test(item.textContent ?? ''),
+          ).toBe(true);
+        }
       }
     }
   });

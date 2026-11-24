@@ -143,6 +143,7 @@
       "checkedBetween": "checked {{from}} to {{to}}",
       "rating": "App Store rating checked {{date}}",
       "other": "Other sources",
+      "linkedAbove": "linked above",
       "hero": "The summary at the top"
     },
     "profileCardAlt": "Boardsesh profile: 254 climbs sent across 9 board layouts, including MoonBoard Masters and Kilter Homewall",
